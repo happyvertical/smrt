@@ -80,6 +80,12 @@ const factualContent = $derived(
       }
     : undefined,
 );
+const activeReviewProfileKey = $derived(
+  governanceState?.publicationReviewProfileKey || reviewProfileKey,
+);
+const activeEnforcePublishReadiness = $derived(
+  governanceState?.enforcePublishReadiness ?? enforcePublishReadiness,
+);
 const publishReadinessState = $derived(
   evaluateContentPublishReadiness({
     status: draftContent?.status || factualContent?.status,
@@ -87,9 +93,9 @@ const publishReadinessState = $derived(
       typeof resolvedContentId === 'string' && resolvedContentId !== 'new'
         ? resolvedContentId
         : null,
-    reviewProfileKey,
+    reviewProfileKey: activeReviewProfileKey,
     reviewProfiles: governanceState?.reviewProfiles || [],
-    enforce: enforcePublishReadiness,
+    enforce: activeEnforcePublishReadiness,
   }),
 );
 const publishSaveNotice = $derived(
@@ -138,7 +144,7 @@ function handleSave(data: ContentData) {
       <div class="publish-readiness-card__header">
         <strong>{publishReadinessState.title}</strong>
         <span class="publish-readiness-card__profile">
-          {reviewProfileKey}
+          {activeReviewProfileKey}
         </span>
       </div>
       <p>{publishReadinessState.message}</p>
@@ -167,7 +173,7 @@ function handleSave(data: ContentData) {
     selectedFactIds={selectedFactIds}
     selectedFacts={selectedFacts}
     defaultRelationship={defaultRelationship}
-    reviewProfileKey={reviewProfileKey}
+    reviewProfileKey={activeReviewProfileKey}
     customReviewLabel={customReviewLabel}
     customReviewInstructions={customReviewInstructions}
     customReviewPolicyKey={customReviewPolicyKey}

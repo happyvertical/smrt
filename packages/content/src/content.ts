@@ -4,7 +4,12 @@ import {
   AssetCollection,
 } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtObject,
+  smrt,
+  ValidationError,
+} from '@happyvertical/smrt-core';
 import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
@@ -16,12 +21,14 @@ import {
   type CreateContentVersionOptions,
   getAcceptedContentReviewStatuses,
   getContentGovernanceConfig,
+  getContentPublicationReviewProfileKey,
   getContentReviewKind,
   getContentReviewPolicies,
   getContentReviewPolicy,
   getContentReviewProfileKeys,
   getContentReviewRequirements,
   type IssueContentCorrectionOptions,
+  isContentPublishReadinessEnforced,
   isFactualContentEnabled,
   parseContentReviewResponse,
   type RunContentReviewOptions,
@@ -38,6 +45,58 @@ import {
 } from './serialization';
 import type { ThumbnailOptions } from './thumbnail-generator';
 import { ThumbnailGenerator } from './thumbnail-generator';
+
+const USED_FACT_RELATIONSHIPS = new Set<FactContentRelationship>([
+  'supports',
+  'referenced_in',
+  'contradicts',
+]);
+
+function normalizeFingerprintValue(value: unknown): unknown {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeFingerprintValue(entry));
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, entryValue]) => [
+          key,
+          normalizeFingerprintValue(entryValue),
+        ]),
+    );
+  }
+
+  return value ?? null;
+}
+
+function hashFingerprint(input: string): string {
+  let hash = 5381;
+
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 33) ^ input.charCodeAt(index);
+  }
+
+  return `fp-${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function createFingerprint(value: unknown): string {
+  return hashFingerprint(JSON.stringify(normalizeFingerprintValue(value)));
+}
+
+function getPublicPrompt(metadata: Record<string, any>): string | null {
+  return (
+    metadata?.transparency?.generation?.publicPrompt ||
+    metadata?.generation?.publicPrompt ||
+    metadata?.publicPrompt ||
+    null
+  );
+}
 
 /**
  * Options for Content initialization
@@ -349,6 +408,90 @@ export class Content extends SmrtObject {
     return this;
   }
 
+  protected override async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+
+    if (
+      this.status !== 'published' ||
+      !isContentPublishReadinessEnforced(this)
+    ) {
+      return;
+    }
+
+    const profileKey = getContentPublicationReviewProfileKey();
+    const evaluation = await this.evaluateReviewProfile(profileKey);
+    const blockingRequirements = evaluation.requirements.filter(
+      (requirement) => requirement.blocking && !requirement.satisfied,
+    );
+
+    if (blockingRequirements.length === 0) {
+      return;
+    }
+
+    const details = blockingRequirements.map((requirement) => {
+      if (requirement.missing) {
+        return `${requirement.label} has not been run yet`;
+      }
+
+      if (requirement.stale) {
+        return `${requirement.label} is stale and must be rerun`;
+      }
+
+      if (requirement.latestStatus) {
+        return `${requirement.label} returned ${requirement.latestStatus}`;
+      }
+
+      return `${requirement.label} is not satisfied`;
+    });
+
+    throw new ValidationError(
+      `Cannot publish content until the "${profileKey}" review profile is satisfied. ${details.join('; ')}`,
+      'VALIDATION_PUBLISH_READINESS',
+      {
+        profileKey,
+        blockingRequirements: blockingRequirements.map((requirement) => ({
+          policyKey: requirement.policyKey,
+          label: requirement.label,
+          missing: requirement.missing,
+          stale: requirement.stale,
+          latestStatus: requirement.latestStatus,
+        })),
+      },
+    );
+  }
+
+  override async save() {
+    const previous = await this.getPersistedContent();
+    const previousPublicationFingerprint =
+      await this.getLatestPublicationSnapshotFingerprint();
+    const nextPublicationFingerprint =
+      this.status === 'published'
+        ? await this.buildPublicationSnapshotFingerprint()
+        : null;
+
+    await super.save();
+
+    if (
+      this.status === 'published' &&
+      nextPublicationFingerprint &&
+      nextPublicationFingerprint !== previousPublicationFingerprint
+    ) {
+      await this.createVersion({
+        kind: 'publication',
+        summary:
+          previous?.status === 'published'
+            ? 'Published content updated.'
+            : 'Content published.',
+        metadata: {
+          publicationSnapshotFingerprint: nextPublicationFingerprint,
+          transparency: await this.buildPublicationTransparencySnapshot(),
+        },
+      });
+    }
+
+    return this;
+  }
+
   private async getReferenceCollection() {
     return ContentReferences.create({ db: this.db });
   }
@@ -361,6 +504,11 @@ export class Content extends SmrtObject {
   private async getFactContentCollection() {
     const { FactContentCollection } = await import('@happyvertical/smrt-facts');
     return FactContentCollection.create(this.options);
+  }
+
+  private async getFactSourceCollection() {
+    const { FactSourceCollection } = await import('@happyvertical/smrt-facts');
+    return FactSourceCollection.create(this.options);
   }
 
   private async getContentVersionCollection() {
@@ -383,6 +531,342 @@ export class Content extends SmrtObject {
   private async getContentsCollection() {
     const { Contents } = await import('./contents');
     return Contents.create({ db: this.db });
+  }
+
+  private async getPersistedContent(): Promise<Content | null> {
+    if (!this.id) {
+      return null;
+    }
+
+    const contents = await this.getContentsCollection();
+    return (await contents.get({ id: this.id as string })) as Content | null;
+  }
+
+  private async buildReviewFingerprint(policyKey: string): Promise<string> {
+    const kind = getContentReviewKind(policyKey);
+    const policy = getContentReviewPolicy(policyKey);
+    const [references, facts, factLinks] = await Promise.all([
+      this.getReferences(),
+      kind === 'facts'
+        ? this.getFacts({
+            latestOnly: true,
+            includeSuperseded: false,
+          })
+        : Promise.resolve([]),
+      kind === 'facts' ? this.getFactLinks() : Promise.resolve([]),
+    ]);
+
+    return createFingerprint({
+      scope: 'content-review',
+      policyKey,
+      kind,
+      policyInstructions: policy?.instructions || '',
+      content: {
+        id: this.id || null,
+        type: this.type,
+        variant: this.variant,
+        title: this.title,
+        description: this.description,
+        body: this.body,
+        author: this.author,
+        status: this.status,
+        state: this.state,
+        publishDate: this.publish_date,
+        language: this.language,
+        category: this.category,
+        tags: this.tags,
+        metadata: this.metadata,
+      },
+      referenceIds: references
+        .map((reference) => reference.id)
+        .filter(Boolean)
+        .sort(),
+      facts: facts.map((fact: any) => ({
+        id: fact.id || null,
+        parentId: fact.parentId || null,
+        status: fact.status || null,
+        textRefined: fact.textRefined || '',
+        sourceCount: fact.sourceCount ?? 0,
+        confidence: fact.confidence ?? null,
+        metadata:
+          typeof fact?.getMetadata === 'function' ? fact.getMetadata() : {},
+      })),
+      factLinks: factLinks.map((link: any) => ({
+        factId: link.factId || null,
+        relationship: link.relationship || null,
+        metadata:
+          typeof link?.getMetadata === 'function' ? link.getMetadata() : {},
+      })),
+    });
+  }
+
+  private async buildPublicationTransparencySnapshot() {
+    const factual = this.isFactual();
+    const [
+      references,
+      facts,
+      factLinks,
+      reviews,
+      corrections,
+      versions,
+      reviewProfiles,
+    ] = await Promise.all([
+      this.getReferences(),
+      factual
+        ? this.getFacts({
+            latestOnly: true,
+            includeSuperseded: false,
+          })
+        : Promise.resolve([]),
+      factual ? this.getFactLinks() : Promise.resolve([]),
+      this.listReviews(),
+      this.listCorrections(),
+      this.listVersions(),
+      this.listReviewProfilesAction(),
+    ]);
+
+    const factSources = await this.getFactSourceCollection();
+    const factSourcesByFactId = new Map<string, any[]>();
+
+    for (const fact of facts) {
+      const factId = fact.id as string | undefined;
+      if (!factId) {
+        continue;
+      }
+
+      const sources = await factSources.getForFact(factId);
+      factSourcesByFactId.set(factId, sources);
+    }
+
+    const usedFactIds = new Set(
+      factLinks
+        .filter((link: any) =>
+          USED_FACT_RELATIONSHIPS.has(
+            (link.relationship || 'related') as FactContentRelationship,
+          ),
+        )
+        .map((link: any) => link.factId)
+        .filter(Boolean),
+    );
+
+    const linkedFacts = facts.map((fact: any) => {
+      const factId = fact.id as string | undefined;
+      const link = factLinks.find((entry: any) => entry.factId === factId);
+      const sources = (factId ? factSourcesByFactId.get(factId) : []) || [];
+
+      return {
+        ...serializeFact(fact),
+        relationship: link?.relationship || null,
+        linkMetadata:
+          typeof link?.getMetadata === 'function' ? link.getMetadata() : {},
+        usedInArticle: factId ? usedFactIds.has(factId) : false,
+        sources: sources.map((source: any) => ({
+          id: source.id || null,
+          sourceType: source.sourceType || null,
+          sourceUrl: source.sourceUrl || null,
+          sourceTitle: source.sourceTitle || null,
+          credibility: source.credibility ?? null,
+          extractedAt: source.extractedAt || null,
+          metadata:
+            typeof source?.getMetadata === 'function'
+              ? source.getMetadata()
+              : {},
+        })),
+      };
+    });
+
+    const referenceGroups = await Promise.all(
+      references.map(async (reference) => {
+        const sourceUrls = [
+          reference.url,
+          reference.original_url,
+          reference.source,
+        ].filter(Boolean) as string[];
+
+        const extractedFacts = new Map<string, any>();
+        for (const sourceUrl of sourceUrls) {
+          const matches = await factSources.list({
+            where: { sourceUrl },
+            orderBy: 'created_at ASC',
+          });
+
+          for (const match of matches) {
+            if (!match.factId || extractedFacts.has(match.factId)) {
+              continue;
+            }
+
+            const fact = await match.getFact();
+            if (fact?.id) {
+              extractedFacts.set(fact.id as string, fact);
+            }
+          }
+        }
+
+        const extractedFactRecords = [...extractedFacts.values()].map(
+          (fact) => {
+            const factId = fact.id as string | undefined;
+            return {
+              ...serializeFact(fact),
+              usedInArticle: factId ? usedFactIds.has(factId) : false,
+            };
+          },
+        );
+
+        return {
+          id: reference.id || null,
+          title: reference.title || reference.name || reference.url || null,
+          url: reference.url || null,
+          originalUrl: reference.original_url || null,
+          type: reference.type || null,
+          source: reference.source || null,
+          usedFactIds: extractedFactRecords
+            .filter((fact: any) => fact.id && usedFactIds.has(fact.id))
+            .map((fact: any) => fact.id),
+          extractedFacts: extractedFactRecords,
+        };
+      }),
+    );
+
+    const publicGeneration = (this.metadata?.transparency?.generation ??
+      {}) as Record<string, any>;
+    const generationMetadata = (this.metadata?.generation ?? {}) as Record<
+      string,
+      any
+    >;
+
+    return {
+      generatedAt: new Date().toISOString(),
+      publicationReviewProfileKey: getContentPublicationReviewProfileKey(),
+      generation: {
+        aiAssisted:
+          publicGeneration.aiAssisted ??
+          generationMetadata.aiAssisted ??
+          Boolean(getPublicPrompt(this.metadata)),
+        publicPrompt: getPublicPrompt(this.metadata),
+        model: publicGeneration.model || generationMetadata.model || null,
+      },
+      factsUsed: linkedFacts.filter((fact) => fact.usedInArticle),
+      linkedFacts,
+      references: referenceGroups,
+      reviews,
+      reviewProfiles,
+      corrections: corrections.filter(
+        (correction: any) => correction.status === 'published',
+      ),
+      versionHistory: versions.map((version: any) => ({
+        id: version.id || null,
+        version: version.version ?? null,
+        kind: version.kind || null,
+        summary: version.summary || '',
+        createdAt: version.createdAt || null,
+      })),
+    };
+  }
+
+  private async buildPublicationSnapshotFingerprint(): Promise<string> {
+    const { generatedAt, ...stableSnapshot } =
+      await this.buildPublicationTransparencySnapshot();
+    return createFingerprint(stableSnapshot);
+  }
+
+  private async getLatestPublicationSnapshotFingerprint(): Promise<
+    string | null
+  > {
+    const versions = await this.getVersions();
+    const latestPublicationVersion = [...versions]
+      .reverse()
+      .find((version) => version.kind === 'publication');
+
+    if (!latestPublicationVersion) {
+      return null;
+    }
+
+    return (
+      latestPublicationVersion.getMetadata().publicationSnapshotFingerprint ||
+      null
+    );
+  }
+
+  private async buildCorrectionDraftSnapshot(
+    options: IssueContentCorrectionOptions,
+    replacementFactId: string,
+  ): Promise<{
+    snapshot: Record<string, any>;
+    metadata: Record<string, any>;
+  }> {
+    const correctedText =
+      options.correctedText || options.correctedFactText || '';
+    const incorrectText = options.incorrectText || '';
+    let body = this.body;
+    let generationMethod = 'metadata';
+
+    if (incorrectText && correctedText && body.includes(incorrectText)) {
+      body = body.replace(incorrectText, correctedText);
+      generationMethod = 'replace';
+    } else if (correctedText) {
+      const ai = this.ai as { message?: (prompt: string) => Promise<string> };
+      if (ai?.message) {
+        const prompt = `You are revising an article draft to apply a factual correction.
+
+Return ONLY the fully revised body text, with no commentary.
+
+Current body:
+${this.body}
+
+Correction summary:
+${options.summary}
+
+Incorrect text to fix:
+${incorrectText || 'Not provided'}
+
+Corrected text to incorporate:
+${correctedText}
+`;
+
+        try {
+          const proposedBody = (await ai.message(prompt)).trim();
+          if (proposedBody) {
+            body = proposedBody;
+            generationMethod = 'ai';
+          }
+        } catch {
+          generationMethod = 'metadata';
+        }
+      }
+    }
+
+    return {
+      snapshot: {
+        title: this.title,
+        description: this.description,
+        body,
+        status: 'draft',
+        metadata: {
+          ...(this.metadata || {}),
+          governance: {
+            ...((this.metadata?.governance || {}) as Record<string, any>),
+            correctionDraft: {
+              summary: options.summary,
+              incorrectText,
+              correctedText,
+              factId: options.factId || null,
+              replacementFactId: replacementFactId || null,
+              autoGenerated: true,
+              generationMethod,
+            },
+          },
+        },
+      },
+      metadata: {
+        summary: options.summary,
+        incorrectText,
+        correctedText,
+        factId: options.factId || null,
+        replacementFactId: replacementFactId || null,
+        autoGenerated: true,
+        generationMethod,
+      },
+    };
   }
 
   private async getAssetCollection() {
@@ -707,6 +1191,8 @@ export class Content extends SmrtObject {
     return {
       isFactual: this.isFactual(),
       defaultFactRelationship: governance.defaultFactRelationship,
+      publicationReviewProfileKey: getContentPublicationReviewProfileKey(),
+      enforcePublishReadiness: isContentPublishReadinessEnforced(this),
       reviewPolicies: getContentReviewPolicies(),
       reviewProfiles: await this.listReviewProfilesAction(),
     };
@@ -739,8 +1225,16 @@ export class Content extends SmrtObject {
     }
 
     const reviews = await this.getContentReviewCollection();
+    const reviewFingerprintCache = new Map<string, string>();
     const evaluatedRequirements = await Promise.all(
       requirements.map(async (requirement) => {
+        if (!reviewFingerprintCache.has(requirement.policyKey)) {
+          reviewFingerprintCache.set(
+            requirement.policyKey,
+            await this.buildReviewFingerprint(requirement.policyKey),
+          );
+        }
+
         const latestReview =
           this.id && requirement.policyKey
             ? await reviews.getLatestForPolicyKey(
@@ -750,10 +1244,27 @@ export class Content extends SmrtObject {
             : null;
         const acceptedStatuses = getAcceptedContentReviewStatuses(requirement);
         const latestStatus = latestReview?.status ?? null;
+        const latestMetadata =
+          typeof latestReview?.getMetadata === 'function'
+            ? latestReview.getMetadata()
+            : {};
+        const currentFingerprint =
+          reviewFingerprintCache.get(requirement.policyKey) || null;
+        const reviewedFingerprint =
+          latestMetadata?.reviewFingerprint ||
+          latestMetadata?.contentFingerprint ||
+          null;
         const missing = !latestReview;
-        const executed = latestStatus !== null && latestStatus !== 'pending';
+        const stale =
+          !missing &&
+          !!reviewedFingerprint &&
+          reviewedFingerprint !== currentFingerprint;
+        const executed =
+          latestStatus !== null && latestStatus !== 'pending' && !stale;
         const satisfied =
-          latestStatus !== null && acceptedStatuses.includes(latestStatus);
+          !stale &&
+          latestStatus !== null &&
+          acceptedStatuses.includes(latestStatus);
 
         return {
           kind: getContentReviewKind(requirement.policyKey),
@@ -765,6 +1276,7 @@ export class Content extends SmrtObject {
           blocking: requirement.blocking === true,
           acceptedStatuses,
           missing,
+          stale,
           executed,
           satisfied,
           latestReviewId: (latestReview?.id as string) || null,
@@ -829,6 +1341,7 @@ export class Content extends SmrtObject {
       policy,
       customInstructions: options.instructions,
     });
+    const reviewFingerprint = await this.buildReviewFingerprint(policyKey);
     const ai = this.ai as { message?: (prompt: string) => Promise<string> };
     if (!ai?.message) {
       throw new Error('AI client is not configured for content reviews');
@@ -845,6 +1358,7 @@ export class Content extends SmrtObject {
             metadata: {
               kind,
               policyKey,
+              reviewFingerprint,
             },
           });
 
@@ -860,6 +1374,7 @@ export class Content extends SmrtObject {
         ...(options.metadata || {}),
         prompt,
         rawResponse,
+        reviewFingerprint,
         factIds: filteredFacts.map((fact) => fact.id),
       },
       tenantId: this.tenantId,
@@ -958,6 +1473,23 @@ export class Content extends SmrtObject {
               replacementFactId: replacementFactId || null,
             },
           });
+    const correctionDraft =
+      options.createVersion === false
+        ? null
+        : await this.buildCorrectionDraftSnapshot(options, replacementFactId);
+    const draftVersion =
+      options.createVersion === false || !correctionDraft
+        ? null
+        : await this.createVersion({
+            kind: 'draft',
+            summary: `Auto-created correction draft: ${options.summary}`,
+            snapshot: correctionDraft.snapshot,
+            metadata: {
+              ...correctionDraft.metadata,
+              sourceCorrectionVersionId: (version?.id as string) || null,
+              sourceCorrectionVersionNumber: version?.version ?? null,
+            },
+          });
 
     const corrections = await this.getContentCorrectionCollection();
     const shouldPublish = options.publish ?? this.status === 'published';
@@ -972,7 +1504,14 @@ export class Content extends SmrtObject {
       incorrectText: options.incorrectText || '',
       correctedText: options.correctedText || options.correctedFactText || '',
       publicNote: options.publicNote || '',
-      metadata: options.metadata || {},
+      metadata: {
+        ...(options.metadata || {}),
+        autoGeneratedDraft: Boolean(draftVersion),
+        draftVersionId: (draftVersion?.id as string) || null,
+        draftVersionNumber: draftVersion?.version ?? null,
+        sourceCorrectionVersionId: (version?.id as string) || null,
+        sourceCorrectionVersionNumber: version?.version ?? null,
+      },
       tenantId: this.tenantId,
       publishedAt: shouldPublish ? new Date() : null,
     });

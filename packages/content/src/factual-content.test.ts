@@ -1,6 +1,12 @@
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  FactCollection,
+  FactSourceCollection,
+} from '@happyvertical/smrt-facts';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { syncSchema } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { Content } from './content';
 import { ContentCorrection } from './content-correction';
 import {
   buildContentReviewPrompt,
@@ -19,6 +25,92 @@ import { ContentVersion } from './content-version';
 afterEach(() => {
   resetContentGovernanceConfig();
 });
+
+const CONTENT_REFERENCES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_references (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  source_id TEXT,
+  target_id TEXT
+);
+CREATE INDEX IF NOT EXISTS content_references_id_idx ON content_references (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_references_source_id_target_id_idx ON content_references (source_id, target_id);
+`;
+
+const CONTENT_VERSIONS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_versions (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  content_id TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  kind TEXT DEFAULT 'manual',
+  title TEXT,
+  description TEXT,
+  body TEXT,
+  status TEXT,
+  summary TEXT,
+  snapshot TEXT,
+  metadata TEXT,
+  tenant_id TEXT
+);
+CREATE INDEX IF NOT EXISTS content_versions_id_idx ON content_versions (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_versions_content_id_version_idx ON content_versions (content_id, version);
+`;
+
+const CONTENT_CORRECTIONS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_corrections (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  content_id TEXT,
+  content_version_id TEXT,
+  fact_id TEXT,
+  replacement_fact_id TEXT,
+  correction_type TEXT,
+  status TEXT,
+  summary TEXT,
+  incorrect_text TEXT,
+  corrected_text TEXT,
+  public_note TEXT,
+  metadata TEXT,
+  tenant_id TEXT,
+  published_at DATETIME
+);
+CREATE INDEX IF NOT EXISTS content_corrections_id_idx ON content_corrections (id);
+`;
+
+const FACT_CONTENTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS fact_contents (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  fact_id TEXT,
+  content_id TEXT,
+  relationship TEXT,
+  metadata TEXT,
+  tenant_id TEXT
+);
+CREATE INDEX IF NOT EXISTS fact_contents_id_idx ON fact_contents (id);
+CREATE UNIQUE INDEX IF NOT EXISTS fact_contents_fact_id_content_id_relationship_idx ON fact_contents (fact_id, content_id, relationship);
+`;
+
+async function prepareContentWorkflowSchemas(db: DatabaseInterface) {
+  await syncSchema({ db, schema: CONTENT_REFERENCES_SCHEMA });
+  await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+  await syncSchema({ db, schema: CONTENT_CORRECTIONS_SCHEMA });
+  await syncSchema({ db, schema: FACT_CONTENTS_SCHEMA });
+}
 
 describe('FactualContent foundations', () => {
   it('marks factual content as opted in via metadata and helper methods', () => {
@@ -40,6 +132,8 @@ describe('FactualContent foundations', () => {
   it('supports app-level governance overrides and reset', () => {
     const configured = configureContentGovernance({
       defaultFactRelationship: 'referenced_in',
+      publicationReviewProfileKey: 'preflight',
+      enforcePublishReadiness: true,
       reviewPolicies: {
         newsroom: {
           key: 'newsroom',
@@ -57,6 +151,8 @@ describe('FactualContent foundations', () => {
     });
 
     expect(configured.defaultFactRelationship).toBe('referenced_in');
+    expect(configured.publicationReviewProfileKey).toBe('preflight');
+    expect(configured.enforcePublishReadiness).toBe(true);
     expect(configured.reviewPolicies.newsroom.instructions).toContain(
       'local publication rules',
     );
@@ -64,6 +160,8 @@ describe('FactualContent foundations', () => {
 
     const reset = resetContentGovernanceConfig();
     expect(reset.defaultFactRelationship).toBe('supports');
+    expect(reset.publicationReviewProfileKey).toBe('publication');
+    expect(reset.enforcePublishReadiness).toBe(false);
     expect(reset.reviewPolicies.newsroom).toBeUndefined();
     expect(reset.reviewProfiles.publish).toBeUndefined();
   });
@@ -367,6 +465,228 @@ describe('FactualContent foundations', () => {
     }
   });
 
+  it('marks version-bound reviews as stale after content changes', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      configureContentGovernance({
+        reviewProfiles: {
+          publication: [
+            {
+              policyKey: 'safety',
+              blocking: true,
+            },
+          ],
+        },
+      });
+
+      const content = new FactualContent({
+        name: 'transit-safety',
+        title: 'Transit safety',
+        body: 'Transit service remains available.',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: vi.fn().mockResolvedValue(
+            JSON.stringify({
+              status: 'passed',
+              summary: 'Safety review passed.',
+              findings: [],
+            }),
+          ),
+        },
+      });
+      await content.initialize();
+      await content.save();
+      await content.reviewSafety({ createVersion: false });
+
+      const freshEvaluation =
+        await content.evaluateReviewProfile('publication');
+      expect(freshEvaluation.ready).toBe(true);
+      expect(freshEvaluation.requirements[0]?.stale).toBe(false);
+
+      content.body = 'Transit service is suspended tonight.';
+
+      const staleEvaluation =
+        await content.evaluateReviewProfile('publication');
+      expect(staleEvaluation.ready).toBe(false);
+      expect(staleEvaluation.complete).toBe(false);
+      expect(staleEvaluation.requirements[0]?.stale).toBe(true);
+      expect(staleEvaluation.requirements[0]?.satisfied).toBe(false);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('enforces blocking publish requirements on save when configured', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      configureContentGovernance({
+        enforcePublishReadiness: true,
+        reviewProfiles: {
+          publication: [
+            {
+              policyKey: 'safety',
+              blocking: true,
+            },
+          ],
+        },
+      });
+
+      const content = new FactualContent({
+        name: 'overnight-publish',
+        title: 'Overnight publish',
+        body: 'Breaking copy without review.',
+        status: 'published',
+        db,
+      });
+      await content.initialize();
+
+      await expect(content.save()).rejects.toThrow(
+        /review profile is satisfied/i,
+      );
+
+      content.status = 'draft';
+      await expect(content.save()).resolves.toBe(content);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('captures a transparency snapshot when published content is saved', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+
+      const content = new FactualContent({
+        name: 'bridge-update',
+        title: 'Bridge update',
+        body: 'The bridge reopened this morning.',
+        db,
+        metadata: {
+          generation: {
+            publicPrompt: 'Write a concise public-service update.',
+            aiAssisted: true,
+            model: 'gpt-test',
+          },
+        },
+      });
+      await content.initialize();
+      await content.save();
+
+      const reference = new Content({
+        name: 'bridge-reference',
+        title: 'Bridge authority release',
+        url: 'https://example.com/bridge-release',
+        body: 'Official release from the bridge authority.',
+        db,
+      });
+      await reference.initialize();
+      await reference.save();
+      await content.addReference(reference);
+
+      const facts = await FactCollection.create({ db });
+      const factSources = await FactSourceCollection.create({ db });
+      const fact = await facts.create({
+        textRefined: 'The bridge reopened on Friday morning.',
+        textRaw: 'The bridge reopened on Friday morning.',
+        status: 'active',
+      });
+      await factSources.create({
+        factId: fact.id as string,
+        sourceUrl: reference.url || '',
+        sourceTitle: reference.title,
+        sourceType: 'article',
+      });
+      await content.addFact(fact, 'supports');
+
+      content.status = 'published';
+      await content.save();
+
+      const versions = await content.getVersions();
+      const publicationVersion = versions.find(
+        (version) => version.kind === 'publication',
+      );
+
+      expect(publicationVersion).toBeTruthy();
+
+      const metadata = publicationVersion?.getMetadata() || {};
+      expect(metadata.publicationSnapshotFingerprint).toBeTruthy();
+      expect(metadata.transparency?.generation?.publicPrompt).toBe(
+        'Write a concise public-service update.',
+      );
+      expect(metadata.transparency?.factsUsed).toHaveLength(1);
+      expect(metadata.transparency?.references[0]?.usedFactIds).toContain(
+        fact.id,
+      );
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('auto-creates a correction draft version when issuing a correction', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+
+      const content = new FactualContent({
+        name: 'budget-fix',
+        title: 'Budget fix',
+        body: 'The budget is $4.2 million.',
+        status: 'published',
+        db,
+      });
+      await content.initialize();
+      await content.save();
+
+      const correction = await content.issueCorrection({
+        summary: 'Correct the budget amount.',
+        incorrectText: '$4.2 million',
+        correctedText: '$5.1 million',
+      });
+
+      expect(correction.getMetadata().autoGeneratedDraft).toBe(true);
+      expect(correction.getMetadata().draftVersionId).toBeTruthy();
+
+      const versions = await content.getVersions();
+      const draftVersion = versions.find(
+        (version) =>
+          version.kind === 'draft' &&
+          version.summary ===
+            'Auto-created correction draft: Correct the budget amount.',
+      );
+
+      expect(draftVersion).toBeTruthy();
+      expect(draftVersion?.getSnapshot().status).toBe('draft');
+      expect(draftVersion?.getSnapshot().body).toContain('$5.1 million');
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
   it('returns governance state with policies and evaluated profiles', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',
@@ -410,6 +730,8 @@ describe('FactualContent foundations', () => {
 
       expect(governanceState.isFactual).toBe(true);
       expect(governanceState.defaultFactRelationship).toBe('supports');
+      expect(governanceState.publicationReviewProfileKey).toBe('publication');
+      expect(governanceState.enforcePublishReadiness).toBe(false);
       expect(
         governanceState.reviewPolicies.find(
           (policy) => policy.key === 'editorial',

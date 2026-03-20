@@ -61,6 +61,7 @@ export interface ContentReviewProfileEvaluationItem {
   blocking: boolean;
   acceptedStatuses: ContentReviewStatus[];
   missing: boolean;
+  stale: boolean;
   executed: boolean;
   satisfied: boolean;
   latestReviewId: string | null;
@@ -85,6 +86,8 @@ export interface ContentReviewPolicyDefinition {
 export interface ContentGovernanceState {
   isFactual: boolean;
   defaultFactRelationship: FactContentRelationship;
+  publicationReviewProfileKey: string;
+  enforcePublishReadiness: boolean;
   reviewPolicies: ContentReviewPolicyDefinition[];
   reviewProfiles: ContentReviewProfileEvaluation[];
 }
@@ -92,6 +95,8 @@ export interface ContentGovernanceState {
 export interface ContentGovernanceConfig {
   isFactual?: (content: Content) => boolean;
   defaultFactRelationship: FactContentRelationship;
+  publicationReviewProfileKey: string;
+  enforcePublishReadiness: boolean | ((content: Content) => boolean);
   safetyPrompt: string;
   reviewPolicies: Record<string, ContentReviewPolicy>;
   reviewProfiles: Record<string, ContentReviewRequirement[]>;
@@ -101,6 +106,7 @@ export interface CreateContentVersionOptions {
   kind?: ContentVersionKind;
   summary?: string;
   metadata?: Record<string, any>;
+  snapshot?: Record<string, any>;
 }
 
 export interface RunContentReviewOptions {
@@ -196,6 +202,8 @@ const DEFAULT_REVIEW_PROFILES: Record<string, ContentReviewRequirement[]> = {
 
 let governanceConfig: ContentGovernanceConfig = {
   defaultFactRelationship: 'supports',
+  publicationReviewProfileKey: 'publication',
+  enforcePublishReadiness: false,
   safetyPrompt: DEFAULT_SAFETY_PROMPT,
   reviewPolicies: { ...DEFAULT_REVIEW_POLICIES },
   reviewProfiles: { ...DEFAULT_REVIEW_PROFILES },
@@ -290,6 +298,8 @@ export function configureContentGovernance(
 export function resetContentGovernanceConfig(): ContentGovernanceConfig {
   governanceConfig = {
     defaultFactRelationship: 'supports',
+    publicationReviewProfileKey: 'publication',
+    enforcePublishReadiness: false,
     safetyPrompt: DEFAULT_SAFETY_PROMPT,
     reviewPolicies: { ...DEFAULT_REVIEW_POLICIES },
     reviewProfiles: cloneReviewProfiles(DEFAULT_REVIEW_PROFILES),
@@ -355,6 +365,20 @@ export function getAcceptedContentReviewStatuses(
   return requirement.acceptedStatuses && requirement.acceptedStatuses.length > 0
     ? [...requirement.acceptedStatuses]
     : ['passed', 'waived'];
+}
+
+export function getContentPublicationReviewProfileKey(): string {
+  return governanceConfig.publicationReviewProfileKey || 'publication';
+}
+
+export function isContentPublishReadinessEnforced(content: Content): boolean {
+  const { enforcePublishReadiness } = governanceConfig;
+
+  if (typeof enforcePublishReadiness === 'function') {
+    return enforcePublishReadiness(content);
+  }
+
+  return enforcePublishReadiness === true;
 }
 
 export function isFactualContentEnabled(content: Content): boolean {

@@ -45,6 +45,7 @@ describe('evaluateContentPublishReadiness', () => {
                 label: 'Safety Review',
                 blocking: true,
                 missing: true,
+                stale: false,
                 satisfied: false,
                 latestStatus: null,
               },
@@ -57,6 +58,38 @@ describe('evaluateContentPublishReadiness', () => {
       level: 'advisory',
       disableSave: false,
       details: ['Safety Review: not run yet'],
+    });
+  });
+
+  it('treats stale blocking reviews as requiring a rerun', () => {
+    expect(
+      evaluateContentPublishReadiness({
+        status: 'published',
+        contentId: 'content-2',
+        reviewProfileKey: 'publication',
+        reviewProfiles: [
+          {
+            profileKey: 'publication',
+            ready: false,
+            complete: false,
+            requirements: [
+              {
+                label: 'Facts Review',
+                blocking: true,
+                missing: false,
+                stale: true,
+                satisfied: false,
+                latestStatus: 'passed',
+              },
+            ],
+          },
+        ],
+        enforce: true,
+      }),
+    ).toMatchObject({
+      level: 'blocked',
+      disableSave: true,
+      details: ['Facts Review: stale, rerun required'],
     });
   });
 
@@ -76,6 +109,7 @@ describe('evaluateContentPublishReadiness', () => {
                 label: 'Safety Review',
                 blocking: true,
                 missing: false,
+                stale: false,
                 satisfied: true,
                 latestStatus: 'passed',
               },

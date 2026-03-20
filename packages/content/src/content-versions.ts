@@ -42,7 +42,23 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
     }
 
     const version = await this.getNextVersionNumber(content.id as string);
-    const snapshot = {
+    const [references, assets, factsState] = await Promise.all([
+      typeof content.getReferences === 'function'
+        ? content.getReferences()
+        : [],
+      typeof content.getAssets === 'function' ? content.getAssets() : [],
+      typeof content.getFactsState === 'function' &&
+      typeof content.isFactual === 'function' &&
+      content.isFactual()
+        ? content.getFactsState()
+        : {
+            factIds: [],
+            facts: [],
+            factLinks: [],
+          },
+    ]);
+
+    const baseSnapshot = {
       id: content.id,
       slug: content.slug,
       context: content.context,
@@ -65,18 +81,35 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       state: content.state,
       metadata: content.metadata,
       thumbnailAssetId: content.thumbnailAssetId,
+      referenceIds: references.map((reference) => reference.id).filter(Boolean),
+      assetIds: assets.map((asset) => asset.id).filter(Boolean),
+      factIds: factsState.factIds,
+      factLinks: factsState.factLinks,
       tenantId: content.tenantId,
       _meta_type: content.toJSON()._meta_type,
     };
+    const snapshot = {
+      ...baseSnapshot,
+      ...(options.snapshot || {}),
+    };
+    const versionSlugBase =
+      snapshot.slug ||
+      content.slug ||
+      content.name ||
+      content.title ||
+      content.id;
+    const versionSlug = `${versionSlugBase}-v${version}`;
 
     return this.create({
+      slug: versionSlug,
+      context: content.context || '',
       contentId: content.id as string,
       version,
       kind: options.kind || 'manual',
-      title: content.title,
-      description: content.description || '',
-      body: content.body,
-      status: content.status,
+      title: snapshot.title || '',
+      description: snapshot.description || '',
+      body: snapshot.body || '',
+      status: snapshot.status || 'draft',
       summary: options.summary || '',
       snapshot: JSON.stringify(snapshot),
       metadata: JSON.stringify(options.metadata || {}),

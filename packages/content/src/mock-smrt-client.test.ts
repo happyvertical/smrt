@@ -113,6 +113,8 @@ describe('mock-smrt-client', () => {
           result: {
             isFactual: true,
             defaultFactRelationship: 'supports',
+            publicationReviewProfileKey: 'publication',
+            enforcePublishReadiness: true,
             reviewPolicies: [
               {
                 key: 'editorial',
@@ -135,5 +137,6 @@ describe('mock-smrt-client', () => {
       kind: 'custom',
     });
     expect(response.data.isFactual).toBe(true);
+    expect(response.data.enforcePublishReadiness).toBe(true);
   });
 });

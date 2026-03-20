@@ -124,6 +124,7 @@ export interface ContentReviewProfileRequirementData {
   blocking: boolean;
   acceptedStatuses: string[];
   missing: boolean;
+  stale?: boolean;
   executed: boolean;
   satisfied: boolean;
   latestReviewId: string | null;
@@ -148,6 +149,8 @@ export interface ContentReviewPolicyData {
 export interface ContentGovernanceStateData {
   isFactual: boolean;
   defaultFactRelationship: string;
+  publicationReviewProfileKey: string;
+  enforcePublishReadiness: boolean;
   reviewPolicies: ContentReviewPolicyData[];
   reviewProfiles: ContentReviewProfileData[];
 }

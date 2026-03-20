@@ -2,6 +2,7 @@ export interface PublishReadinessRequirement {
   label: string;
   blocking: boolean;
   missing: boolean;
+  stale?: boolean;
   satisfied: boolean;
   latestStatus: string | null;
 }
@@ -32,6 +33,10 @@ export interface EvaluateContentPublishReadinessOptions {
 function describeRequirement(requirement: PublishReadinessRequirement): string {
   if (requirement.missing) {
     return `${requirement.label}: not run yet`;
+  }
+
+  if (requirement.stale) {
+    return `${requirement.label}: stale, rerun required`;
   }
 
   if (requirement.latestStatus) {
