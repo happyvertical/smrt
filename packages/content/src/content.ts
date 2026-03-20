@@ -196,6 +196,17 @@ export interface ContentOptions extends SmrtObjectOptions {
   thumbnailAssetId?: string | null;
 
   /**
+   * Transient reference IDs used by editors and API payloads.
+   * These are synchronized into ContentReference links during save.
+   */
+  referenceIds?: string[];
+
+  /**
+   * Transient asset IDs used by editors and API payloads.
+   */
+  assetIds?: string[];
+
+  /**
    * Tenant ID for multi-tenant isolation
    */
   tenantId?: string | null;
@@ -405,6 +416,12 @@ export class Content extends SmrtObject {
     this.state = options.state || 'active';
     this.metadata = options.metadata || {};
     this.thumbnailAssetId = options.thumbnailAssetId ?? null;
+    if (Array.isArray(options.referenceIds)) {
+      (this as any).referenceIds = [...options.referenceIds];
+    }
+    if (Array.isArray(options.assetIds)) {
+      (this as any).assetIds = [...options.assetIds];
+    }
   }
 
   /**
@@ -482,35 +499,38 @@ export class Content extends SmrtObject {
   }
 
   override async save() {
-    if (this.status !== 'published') {
-      await super.save();
-      return this;
+    const shouldConsiderPublicationSnapshot = this.status === 'published';
+    const configuredGovernance = shouldConsiderPublicationSnapshot
+      ? this.getConfiguredGovernance()
+      : null;
+
+    let governance: ResolvedContentGovernance | null = null;
+    let previous: Content | null = null;
+    let previousPublicationFingerprint: string | null = null;
+
+    if (configuredGovernance?.isGoverned) {
+      governance = await this.resolveGovernance();
+
+      if (governance.isGoverned && governance.transparencyEnabled) {
+        previous = await this.getPersistedContent();
+        previousPublicationFingerprint =
+          await this.getLatestPublicationSnapshotFingerprint();
+      }
     }
-
-    const configuredGovernance = this.getConfiguredGovernance();
-    if (!configuredGovernance.isGoverned) {
-      await super.save();
-      return this;
-    }
-
-    const governance = await this.resolveGovernance();
-
-    if (
-      !governance.isGoverned ||
-      !governance.transparencyEnabled ||
-      this.status !== 'published'
-    ) {
-      await super.save();
-      return this;
-    }
-
-    const previous = await this.getPersistedContent();
-    const previousPublicationFingerprint =
-      await this.getLatestPublicationSnapshotFingerprint();
-    const nextPublicationFingerprint =
-      await this.buildPublicationSnapshotFingerprint(governance);
 
     await super.save();
+    await this.syncPendingReferenceIds();
+
+    if (
+      !shouldConsiderPublicationSnapshot ||
+      !governance?.isGoverned ||
+      !governance.transparencyEnabled
+    ) {
+      return this;
+    }
+
+    const nextPublicationFingerprint =
+      await this.buildPublicationSnapshotFingerprint(governance);
 
     if (
       nextPublicationFingerprint &&
@@ -1075,6 +1095,75 @@ ${correctedText}
    * @returns Promise that resolves when references are loaded
    */
   public async loadReferences() {
+    this.references = await this.getReferences();
+  }
+
+  private getPendingReferenceIds(): string[] | null {
+    const pendingReferenceIds = (this as any).referenceIds;
+
+    if (!Array.isArray(pendingReferenceIds)) {
+      return null;
+    }
+
+    return [
+      ...new Set(
+        pendingReferenceIds.filter(
+          (referenceId): referenceId is string =>
+            typeof referenceId === 'string' &&
+            referenceId.length > 0 &&
+            referenceId !== this.id,
+        ),
+      ),
+    ];
+  }
+
+  private async syncPendingReferenceIds(): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const pendingReferenceIds = this.getPendingReferenceIds();
+    if (pendingReferenceIds === null) {
+      return;
+    }
+
+    const currentReferences = await this.getReferences();
+    const currentReferenceIds = currentReferences
+      .map((reference) => reference.id)
+      .filter((referenceId): referenceId is string => Boolean(referenceId));
+    const currentReferenceIdSet = new Set(currentReferenceIds);
+    const pendingReferenceIdSet = new Set(pendingReferenceIds);
+
+    for (const referenceId of currentReferenceIds) {
+      if (!pendingReferenceIdSet.has(referenceId)) {
+        await this.removeReference(referenceId);
+      }
+    }
+
+    const referenceIdsToAdd = pendingReferenceIds.filter(
+      (referenceId) => !currentReferenceIdSet.has(referenceId),
+    );
+
+    if (referenceIdsToAdd.length === 0) {
+      this.references = await this.getReferences();
+      return;
+    }
+
+    const contents = await this.getContentsCollection();
+    const resolvedReferences = await contents.listByIds(referenceIdsToAdd);
+    const referencesById = new Map(
+      resolvedReferences
+        .filter((reference) => reference.id)
+        .map((reference) => [reference.id as string, reference]),
+    );
+
+    for (const referenceId of referenceIdsToAdd) {
+      const reference = referencesById.get(referenceId);
+      if (reference) {
+        await this.addReference(reference);
+      }
+    }
+
     this.references = await this.getReferences();
   }
 

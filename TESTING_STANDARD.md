@@ -9,6 +9,17 @@ This document outlines testing standards and best practices for the SMRT framewo
 - **BDD/TDD for bug fixes**: Write failing tests before fixing bugs
 - **README parity**: All README code examples must have corresponding tests
 
+## Release Gate For Touched Packages
+
+When a feature or refactor touches a package, the testing bar applies to the
+entire touched package, not just the new tests added for the change.
+
+- **Full touched-package suite must pass**: targeted regression tests are required, but they do not replace the package's full `vitest` suite
+- **Fix or remove stale tests as part of the work**: if older tests drift from current behavior, bring them up to date before calling the package release-ready
+- **Skipped tests must be intentional**: only skip for explicit environment gates or intentionally expensive cases, and keep the reason obvious in the test source
+- **Generated surfaces need tests**: if SMRT-generated REST/CLI/MCP behavior changes, add or update tests that exercise the generated contract
+- **Coverage must be wired in**: every actively developed package should enable Vitest coverage reporting in `vitest.config.ts`
+
 ## Running Tests
 
 ### ⚠️ CRITICAL: Use the Vitest Plugin
@@ -469,15 +480,20 @@ describe('README examples', () => {
 
 ## Coverage Requirements
 
+- **Coverage is required for active packages**: package `vitest.config.ts` files should enable coverage reporting so feature work can produce a report without extra setup
 - **Minimum coverage**: 80% line coverage
 - **Critical paths**: 100% coverage for core ORM operations
 - **Error paths**: Test both success and failure cases
 - **Edge cases**: Empty inputs, null values, boundary conditions
+- **Document exclusions**: exclude generated files or non-product test harnesses deliberately, not by accident
 
 ## Running Coverage Reports
 
 ```bash
 npm run test:coverage
+
+# Or run coverage for a specific touched package
+pnpm --filter @happyvertical/smrt-<package> exec vitest run --coverage
 ```
 
 ## Additional Resources

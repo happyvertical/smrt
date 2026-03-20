@@ -53,7 +53,7 @@ See [WORKFLOW.md](./WORKFLOW.md) for detailed SOPs:
 1. Create feature branch: `{type}/issue-{number}-{short-description}`
 2. Implement changes following coding standards
 3. Write tests following [TESTING_STANDARD.md](../TESTING_STANDARD.md)
-4. Run quality checks: `npm run lint && npm test`
+4. Run quality checks, including the full suite for each touched package
 5. Create PR with conventional commit message
 
 ### 3. Code Review
@@ -95,6 +95,8 @@ All code changes must include tests. See [TESTING_STANDARD.md](../TESTING_STANDA
 - Tests should read like documentation
 - Follow BDD/TDD for bug fixes
 - README examples must have corresponding tests
+- A touched package is not release-ready until its full suite is green
+- Keep package coverage enabled and generate a coverage report when doing significant package work
 
 **Test Types**:
 - **Unit tests** (`*.test.ts`): Fast, isolated component tests

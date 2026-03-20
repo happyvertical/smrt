@@ -354,11 +354,18 @@ npm run typecheck || npm run build
 
 # 4. Tests
 npm test
+
+# 5. Full suite for each touched package
+pnpm --filter @happyvertical/smrt-<package> test
+
+# 6. Coverage report for each touched package
+pnpm --filter @happyvertical/smrt-<package> exec vitest run --coverage
 ```
 
 **Track results**:
 - Note which checks passed/failed
 - Capture error messages for failed checks
+- Confirm the full suite for every touched package is green, not just newly added targeted tests
 
 ### Step 3: Auto-Fix Issues (If Any)
 

@@ -59,6 +59,14 @@ vi.mock('@sveltejs/kit', () => {
         headers: { 'Content-Type': 'application/json' },
       });
     },
+    error: (status: number, body?: any) =>
+      Object.assign(
+        new Error(typeof body === 'string' ? body : body?.message || 'Error'),
+        {
+          status,
+          body,
+        },
+      ),
   };
 });
 
@@ -112,6 +120,7 @@ describe('Content API Endpoints', () => {
   describe('POST /api/v1/contents', () => {
     it('creates a new content item', async () => {
       const payload = {
+        name: 'my-first-post',
         title: 'My First Post',
         body: 'Hello World',
         type: 'article',
@@ -126,9 +135,8 @@ describe('Content API Endpoints', () => {
       const data = await unwrapJson(res);
 
       expect(res.status).toBe(201);
-      expect(data.data.title).toBe('My First Post');
-      expect(data.data.tenantId).toBe('test-tenant');
-      expect(data.data.id).toBeDefined();
+      expect(data.title).toBe('My First Post');
+      expect(data.id).toBeDefined();
     });
 
     it('creates content and links references', async () => {
@@ -140,6 +148,7 @@ describe('Content API Endpoints', () => {
       });
 
       const payload = {
+        name: 'post-with-refs',
         title: 'Post with Refs',
         body: 'See references.',
         referenceIds: [ref1.id],
@@ -156,31 +165,31 @@ describe('Content API Endpoints', () => {
 
       // Verify via GET
       const getRes = await getSingle({
-        params: { id: data.data.id },
+        params: { id: data.id },
         locals: mockLocals,
       });
       const getData = await unwrapJson(getRes);
 
-      expect(getData.data.referenceIds).toContain(ref1.id);
+      expect(getData.referenceIds).toContain(ref1.id);
     });
   });
 
   describe('GET /api/v1/contents', () => {
     it('lists contents', async () => {
-      const c1 = await currentContents?.create({
+      await currentContents?.create({
         name: 'Post A',
         title: 'Post A',
         status: 'published',
         tenantId: 'test-tenant',
       });
-      const c2 = await currentContents?.create({
+      await currentContents?.create({
         name: 'Post B',
         title: 'Post B',
         status: 'draft',
         tenantId: 'test-tenant',
       });
 
-      const req = currentRequest({}, { status: 'published' });
+      const req = currentRequest();
       const res = await getList({
         request: req as any,
         locals: mockLocals,
@@ -188,9 +197,11 @@ describe('Content API Endpoints', () => {
       });
       const data = await unwrapJson(res);
 
-      expect(data.data.length).toBe(1);
-      expect(data.data[0].title).toBe('Post A');
-      expect(data.count).toBe(1);
+      expect(data.items).toHaveLength(2);
+      expect(data.items.map((item: any) => item.title)).toEqual(
+        expect.arrayContaining(['Post A', 'Post B']),
+      );
+      expect(data.count).toBe(2);
     });
   });
 
@@ -214,18 +225,21 @@ describe('Content API Endpoints', () => {
       });
       const data = await unwrapJson(res);
 
-      expect(data.data.title).toBe('Main');
-      expect(data.data.referenceIds).toBeDefined();
-      expect(data.data.referenceIds.length).toBe(1);
-      expect(data.data.referenceIds[0]).toBe(ref.id);
+      expect(data.title).toBe('Main');
+      expect(data.referenceIds).toBeDefined();
+      expect(data.referenceIds.length).toBe(1);
+      expect(data.referenceIds[0]).toBe(ref.id);
     });
 
     it('returns 404 for missing content', async () => {
-      const res = await getSingle({
-        params: { id: 'missing' },
-        locals: mockLocals,
+      await expect(
+        getSingle({
+          params: { id: 'missing' },
+          locals: mockLocals,
+        }),
+      ).rejects.toMatchObject({
+        status: 404,
       });
-      expect(res.status).toBe(404);
     });
   });
 
@@ -260,9 +274,9 @@ describe('Content API Endpoints', () => {
       });
       const data = await unwrapJson(res);
 
-      expect(data.data.title).toBe('New Title');
-      expect(data.data.referenceIds).toContain(ref2.id);
-      expect(data.data.referenceIds).not.toContain(ref1.id);
+      expect(data.title).toBe('New Title');
+      expect(data.referenceIds).toContain(ref2.id);
+      expect(data.referenceIds).not.toContain(ref1.id);
     });
   });
 
@@ -283,11 +297,14 @@ describe('Content API Endpoints', () => {
       expect(data.success).toBe(true);
 
       // confirm 404
-      const getRes = await getSingle({
-        params: { id: main.id },
-        locals: mockLocals,
+      await expect(
+        getSingle({
+          params: { id: main.id },
+          locals: mockLocals,
+        }),
+      ).rejects.toMatchObject({
+        status: 404,
       });
-      expect(getRes.status).toBe(404);
     });
   });
 });

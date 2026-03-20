@@ -45,6 +45,7 @@
     "@semantic-release/exec": "^7.1.0",
     "@semantic-release/git": "^10.0.1",
     "@semantic-release/github": "^12.0.2",
+    "@vitest/coverage-v8": "4.0.17",
     "chokidar": "^5.0.0",
     "concurrently": "9.2.1",
     "conventional-changelog-conventionalcommits": "^9.1.0",

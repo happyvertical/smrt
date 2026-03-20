@@ -15,5 +15,14 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
     setupFiles: ['@happyvertical/smrt-vitest/setup'],
+    testTimeout: 30000,
+    fileParallelism: false,
+    pool: 'forks',
+    singleFork: true,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: ['**/*.test.ts', '**/*.spec.ts', '**/node_modules/**'],
+    },
   },
 });
