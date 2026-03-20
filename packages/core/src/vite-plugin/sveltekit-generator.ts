@@ -6,6 +6,11 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type {
+  ApiConfig,
+  ApiCustomRouteConfig,
+  ApiHttpMethod,
+} from '../registry/types.js';
+import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
@@ -20,6 +25,21 @@ export interface SvelteKitOptions {
 
 // Keep this aligned with biome.json formatter.lineWidth.
 const BIOME_LINE_WIDTH = 80;
+const STANDARD_API_ACTIONS = ['list', 'get', 'create', 'update', 'delete'];
+
+interface ResolvedApiActionRouteConfig {
+  scope: 'item' | 'collection';
+  method: ApiHttpMethod;
+  pathSegments: string[];
+}
+
+interface GeneratedActionRouteSpec {
+  lookupClassName: string;
+  actionName: string;
+  actionDef: any;
+  routeConfig: ResolvedApiActionRouteConfig;
+  hostType: 'item' | 'collection';
+}
 
 /**
  * Extract simple class name from potentially qualified name.
@@ -45,7 +65,7 @@ function extractSimpleClassName(qualifiedName: string): string {
  * so generating routes for both would cause file collisions.
  */
 function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
-  return objectDef.extends === 'SmrtCollection';
+  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
 }
 
 function getRegistrationPackageName(
@@ -64,6 +84,106 @@ function toSingleQuotedStringLiteral(value: string): string {
   const jsonLiteral = JSON.stringify(value);
   const jsonContent = jsonLiteral.slice(1, -1).replaceAll("'", "\\'");
   return `'${jsonContent}'`;
+}
+
+function getApiConfigObject(apiConfig: unknown): ApiConfig | null {
+  if (!apiConfig || typeof apiConfig !== 'object') {
+    return null;
+  }
+
+  return apiConfig as ApiConfig;
+}
+
+function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
+  switch (method?.toUpperCase()) {
+    case 'GET':
+    case 'POST':
+    case 'PUT':
+    case 'PATCH':
+    case 'DELETE':
+      return method.toUpperCase() as ApiHttpMethod;
+    default:
+      return 'POST';
+  }
+}
+
+function normalizeCustomRoutePath(actionName: string, path?: string): string[] {
+  const normalizedPath = (path || actionName)
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  return normalizedPath.length > 0 ? normalizedPath : [actionName];
+}
+
+function resolveApiActionRouteConfig(
+  actionName: string,
+  actionDef: { isStatic?: boolean },
+  apiConfig: unknown,
+  defaultScope: 'item' | 'collection' = actionDef.isStatic
+    ? 'collection'
+    : 'item',
+): ResolvedApiActionRouteConfig {
+  const config = getApiConfigObject(apiConfig);
+  const routeConfig: ApiCustomRouteConfig | undefined =
+    config?.routes?.[actionName];
+
+  return {
+    scope: routeConfig?.scope || defaultScope,
+    method: normalizeApiHttpMethod(routeConfig?.method),
+    pathSegments: normalizeCustomRoutePath(actionName, routeConfig?.path),
+  };
+}
+
+function findItemClassRegistryKey(
+  className: string,
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+): string {
+  const itemClassName =
+    objectDef.extendsTypeArg ||
+    (className.endsWith('Collection')
+      ? className.slice(0, -'Collection'.length)
+      : undefined);
+
+  if (!itemClassName) {
+    return className;
+  }
+
+  const manifestMatch = Object.entries(manifest.objects).find(
+    ([manifestKey, candidate]) =>
+      manifestKey === itemClassName || candidate.className === itemClassName,
+  );
+
+  return manifestMatch?.[0] || itemClassName;
+}
+
+function groupCustomActionRoutes(
+  actionSpecs: Array<{
+    routeDir: string;
+    spec: GeneratedActionRouteSpec;
+  }>,
+): Map<string, GeneratedActionRouteSpec[]> {
+  const groupedRoutes = new Map<string, GeneratedActionRouteSpec[]>();
+
+  for (const { routeDir, spec } of actionSpecs) {
+    const existing = groupedRoutes.get(routeDir) || [];
+    const duplicateMethod = existing.find(
+      (candidate) => candidate.routeConfig.method === spec.routeConfig.method,
+    );
+
+    if (duplicateMethod) {
+      throw new Error(
+        `Duplicate custom API route handler for ${routeDir} (${spec.routeConfig.method}). ` +
+          `Methods ${duplicateMethod.actionName} and ${spec.actionName} resolve to the same generated route.`,
+      );
+    }
+
+    existing.push(spec);
+    groupedRoutes.set(routeDir, existing);
+  }
+
+  return groupedRoutes;
 }
 
 /**
@@ -85,10 +205,21 @@ export async function generateSvelteKitRoutes(
   let skippedCollections = 0;
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
     if (isCollectionClass(objectDef)) {
-      console.log(
-        `[smrt] Skipping ${className} - collection class (routes handled by item class)`,
+      const generatedCollectionRoutes = await generateCollectionRoutesForObject(
+        projectRoot,
+        className,
+        objectDef,
+        manifest,
+        options,
       );
-      skippedCollections++;
+      if (generatedCollectionRoutes) {
+        generatedCount++;
+      } else {
+        console.log(
+          `[smrt] Skipping ${className} - no collection API routes to generate`,
+        );
+        skippedCollections++;
+      }
       continue;
     }
     await generateRoutesForObject(projectRoot, className, objectDef, options);
@@ -183,10 +314,14 @@ async function generateRegistrationFile(
   const imports = [packageImports, localImports].filter(Boolean).join('\n');
   const registrations = Object.entries(manifest.objects)
     .map(([className, objectDef]) => {
+      if (isCollectionClass(objectDef)) {
+        // Importing the collection class is enough to trigger its decorator.
+        // Explicit package-qualified re-registration only applies to object
+        // classes, because ObjectRegistry.register() is object-only.
+        return null;
+      }
+
       const simpleClassName = extractSimpleClassName(className);
-      const registrationTarget = isCollectionClass(objectDef)
-        ? `${simpleClassName} as any`
-        : simpleClassName;
       const localObject = isLocalObject(projectRoot, objectDef);
       const packageName = getRegistrationPackageName(
         manifest,
@@ -199,14 +334,14 @@ async function generateRegistrationFile(
       }
 
       const packageNameLiteral = toSingleQuotedStringLiteral(packageName);
-      const singleLineRegistration = `ObjectRegistry.register(${registrationTarget}, { packageName: ${packageNameLiteral} });`;
+      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { packageName: ${packageNameLiteral} });`;
 
       if (singleLineRegistration.length <= BIOME_LINE_WIDTH) {
         return singleLineRegistration;
       }
 
       return [
-        `ObjectRegistry.register(${registrationTarget}, {`,
+        `ObjectRegistry.register(${simpleClassName}, {`,
         `  packageName: ${packageNameLiteral},`,
         `});`,
       ].join('\n');
@@ -409,19 +544,18 @@ async function generateRoutesForObject(
   }
 
   // Determine which actions to include
-  const standardActions = ['list', 'get', 'create', 'update', 'delete'];
   let includedActions: string[] = [];
 
   if (apiConfig === true || apiConfig === undefined) {
     // Include all standard actions by default
-    includedActions = [...standardActions];
+    includedActions = [...STANDARD_API_ACTIONS];
   } else if (typeof apiConfig === 'object') {
     if (apiConfig.include) {
       includedActions = apiConfig.include.filter((action) =>
-        standardActions.includes(action),
+        STANDARD_API_ACTIONS.includes(action),
       );
     } else {
-      includedActions = [...standardActions];
+      includedActions = [...STANDARD_API_ACTIONS];
     }
 
     if (apiConfig.exclude && Array.isArray(apiConfig.exclude)) {
@@ -462,22 +596,135 @@ async function generateRoutesForObject(
   // Generate custom action routes
   const customActions = Object.entries(objectDef.methods).filter(
     ([name, method]) =>
-      !standardActions.includes(name) &&
+      !STANDARD_API_ACTIONS.includes(name) &&
       method.isPublic &&
       shouldIncludeInApi(name, apiConfig),
   );
 
+  const actionSpecs: Array<{
+    routeDir: string;
+    spec: GeneratedActionRouteSpec;
+  }> = [];
+
   for (const [actionName, actionDef] of customActions) {
-    const actionRoute = generateActionRouteTemplate(
-      projectRoot,
-      className,
+    const routeConfig = resolveApiActionRouteConfig(
       actionName,
       actionDef,
+      apiConfig,
+    );
+
+    if (routeConfig.scope === 'collection' && !actionDef.isStatic) {
+      console.warn(
+        `[smrt] Skipping ${className}.${actionName} - collection API routes require a static method`,
+      );
+      continue;
+    }
+
+    const actionBaseDir =
+      routeConfig.scope === 'collection' ? routeDir : join(routeDir, '[id]');
+    actionSpecs.push({
+      routeDir: join(actionBaseDir, ...routeConfig.pathSegments),
+      spec: {
+        lookupClassName: className,
+        actionName,
+        actionDef,
+        routeConfig,
+        hostType: 'item',
+      },
+    });
+  }
+
+  for (const [actionRouteDir, routeSpecs] of groupCustomActionRoutes(
+    actionSpecs,
+  )) {
+    const actionRoute = generateActionRouteTemplate(
+      projectRoot,
+      routeSpecs,
       objectDef,
       options,
     );
-    writeRoute(join(routeDir, '[id]', actionName), '+server.ts', actionRoute);
+    writeRoute(actionRouteDir, '+server.ts', actionRoute);
   }
+}
+
+async function generateCollectionRoutesForObject(
+  projectRoot: string,
+  className: string,
+  objectDef: SmartObjectDefinition,
+  manifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+): Promise<boolean> {
+  const apiConfig = objectDef.decoratorConfig?.api;
+  if (apiConfig === false) {
+    console.log(`[smrt] Skipping ${className} - API disabled`);
+    return false;
+  }
+
+  const routeDir = join(projectRoot, options.routesDir, objectDef.collection);
+  const lookupClassName = findItemClassRegistryKey(
+    className,
+    objectDef,
+    manifest,
+  );
+
+  const customActions = Object.entries(objectDef.methods).filter(
+    ([name, method]) =>
+      !STANDARD_API_ACTIONS.includes(name) &&
+      method.isPublic &&
+      shouldIncludeInApi(name, apiConfig),
+  );
+
+  if (customActions.length === 0) {
+    return false;
+  }
+
+  let generatedAnyRoutes = false;
+  const actionSpecs: Array<{
+    routeDir: string;
+    spec: GeneratedActionRouteSpec;
+  }> = [];
+
+  for (const [actionName, actionDef] of customActions) {
+    const routeConfig = resolveApiActionRouteConfig(
+      actionName,
+      actionDef,
+      apiConfig,
+      'collection',
+    );
+
+    if (routeConfig.scope !== 'collection') {
+      console.warn(
+        `[smrt] Skipping ${className}.${actionName} - collection class methods only support collection-scoped API routes`,
+      );
+      continue;
+    }
+
+    actionSpecs.push({
+      routeDir: join(routeDir, ...routeConfig.pathSegments),
+      spec: {
+        lookupClassName,
+        actionName,
+        actionDef,
+        routeConfig,
+        hostType: 'collection',
+      },
+    });
+  }
+
+  for (const [actionRouteDir, routeSpecs] of groupCustomActionRoutes(
+    actionSpecs,
+  )) {
+    const actionRoute = generateActionRouteTemplate(
+      projectRoot,
+      routeSpecs,
+      objectDef,
+      options,
+    );
+    writeRoute(actionRouteDir, '+server.ts', actionRoute);
+    generatedAnyRoutes = true;
+  }
+
+  return generatedAnyRoutes;
 }
 
 /**
@@ -712,29 +959,119 @@ export const DELETE: RequestHandler = async ({ params }) => {
  */
 function generateActionRouteTemplate(
   _projectRoot: string,
-  className: string,
-  actionName: string,
-  actionDef: any,
+  routeSpecs: GeneratedActionRouteSpec[],
   _objectDef: SmartObjectDefinition,
   _options: SvelteKitOptions,
 ): string {
-  const paramsList = actionDef.parameters.map((p: any) => p.name).join(', ');
+  if (routeSpecs.length === 0) {
+    throw new Error('Cannot generate a custom action route without handlers');
+  }
+
+  const [firstSpec] = routeSpecs;
+  const { lookupClassName, routeConfig, hostType } = firstSpec;
+
+  const hasMixedHosts = routeSpecs.some(
+    (spec) =>
+      spec.hostType !== hostType ||
+      spec.lookupClassName !== lookupClassName ||
+      spec.routeConfig.scope !== routeConfig.scope,
+  );
+
+  if (hasMixedHosts) {
+    throw new Error(
+      `Cannot generate mixed custom route handlers for ${lookupClassName}. ` +
+        'All handlers sharing a route path must target the same host type and scope.',
+    );
+  }
+
+  const importBlock =
+    hostType === 'collection'
+      ? `import { json, error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { getCollection } from '$lib/server/smrt';`
+      : routeConfig.scope === 'collection'
+        ? `import { json, error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { ObjectRegistry } from '@happyvertical/smrt-core';`
+        : `import { json, error } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+import { getCollection } from '$lib/server/smrt';`;
+
+  const handlers = routeSpecs
+    .map((spec) =>
+      generateActionRouteHandler(
+        spec.lookupClassName,
+        spec.actionName,
+        spec.actionDef,
+        spec.routeConfig,
+        spec.hostType,
+      ),
+    )
+    .join('\n');
 
   return `// Auto-generated by @smrt/core vite plugin
 // DO NOT EDIT - changes will be overwritten
 
-import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { getCollection } from '$lib/server/smrt';
+${importBlock}
 
-// Custom action: ${actionName}
-export const POST: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<any>('${className}');
+${handlers}`;
+}
+
+function generateActionRouteHandler(
+  lookupClassName: string,
+  actionName: string,
+  actionDef: any,
+  routeConfig: ResolvedApiActionRouteConfig,
+  hostType: 'item' | 'collection',
+): string {
+  const paramsList = actionDef.parameters.map((p: any) => p.name).join(', ');
+  const handlerName = routeConfig.method;
+  const hasInput = actionDef.parameters.length > 0;
+  const optionsLoad =
+    hasInput && routeConfig.method === 'GET'
+      ? '  const options = Object.fromEntries(new URL(request.url).searchParams.entries());\n'
+      : hasInput
+        ? '  const options = await request.json();\n'
+        : '';
+
+  if (hostType === 'collection') {
+    return `// Custom collection method: ${actionName}
+export const ${handlerName}: RequestHandler = async ({ request }) => {
+  const collection = await getCollection<any>('${lookupClassName}') as any;
+  if (!collection) throw error(500, '${lookupClassName} collection is not registered');
+
+${optionsLoad}  const result = ${
+      actionDef.isStatic
+        ? `await (collection.constructor as any).${actionName}(${paramsList ? 'options' : ''})`
+        : `await collection.${actionName}(${paramsList ? 'options' : ''})`
+    }
+
+  return json({ action: '${actionName}', result });
+};
+`;
+  }
+
+  if (routeConfig.scope === 'collection') {
+    return `// Custom collection action: ${actionName}
+export const ${handlerName}: RequestHandler = async ({ request }) => {
+  const registered = ObjectRegistry.getClass('${lookupClassName}');
+  if (!registered) throw error(500, '${lookupClassName} is not registered');
+
+${optionsLoad}  const ClassRef = registered.constructor as any;
+  const result = await ClassRef.${actionName}(${paramsList ? 'options' : ''});
+
+  return json({ action: '${actionName}', result });
+};
+`;
+  }
+
+  return `// Custom action: ${actionName}
+export const ${handlerName}: RequestHandler = async ({ params, request }) => {
+  const collection = await getCollection<any>('${lookupClassName}');
   const item = await collection.get(params.id);
-  if (!item) throw error(404, '${className} not found');
+  if (!item) throw error(404, '${lookupClassName} not found');
 
-  const options = await request.json();
-  const result = await item.${actionName}(${paramsList ? 'options' : ''});
+${optionsLoad}  const result = await item.${actionName}(${paramsList ? 'options' : ''});
 
   return json({ action: '${actionName}', result });
 };

@@ -985,6 +985,51 @@ export class ObjectRegistry {
   }
 
   /**
+   * Resolve a collection lookup name to the registered object metadata and
+   * collection constructor that should back it.
+   *
+   * Accepts any supported collection identifier:
+   * - simple class name (`FactRecord`)
+   * - qualified class name (`@pkg:FactRecord`)
+   * - explicit collection alias (`fact_records`) when registered
+   *
+   * Returns a canonical class identity so cache keys remain stable across
+   * aliases that refer to the same underlying collection.
+   */
+  private static resolveCollectionRegistration(className: string): {
+    canonicalName: string;
+    registered?: RegisteredClass;
+    collectionConstructor?: new (options: any) => SmrtCollection<any>;
+  } {
+    let registered = ObjectRegistry.findClass(className);
+    let collectionConstructor = registered?.collectionConstructor;
+
+    if (!collectionConstructor) {
+      collectionConstructor = ObjectRegistry.collections.get(className);
+    }
+
+    if (!registered && collectionConstructor) {
+      const itemClass = (collectionConstructor as any)._itemClass as
+        | SmrtObjectConstructor
+        | undefined;
+      if (itemClass) {
+        registered =
+          ObjectRegistry.getClassByConstructor(itemClass) ||
+          ObjectRegistry.findClass(itemClass.name);
+      }
+    }
+
+    const canonicalName =
+      registered?.qualifiedName || registered?.name || className;
+
+    return {
+      canonicalName,
+      registered,
+      collectionConstructor,
+    };
+  }
+
+  /**
    * Get or create a cached collection instance (Singleton pattern - Phase 4 optimization)
    *
    * Returns a cached collection if one exists for the given class and options,
@@ -1032,6 +1077,27 @@ export class ObjectRegistry {
     className: string,
     options: any = {},
   ): Promise<SmrtCollection<T>> {
+    let { canonicalName, registered, collectionConstructor } =
+      ObjectRegistry.resolveCollectionRegistration(className);
+
+    if (!registered && !collectionConstructor) {
+      // Try to auto-load from external SMRT packages before throwing error
+      // This handles cases where classes from @happyvertical/smrt-* packages
+      // are used without explicitly importing them (e.g., Person from smrt-profiles)
+      const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
+
+      if (loaded) {
+        ({ canonicalName, registered, collectionConstructor } =
+          ObjectRegistry.resolveCollectionRegistration(className));
+      }
+
+      if (!registered && !collectionConstructor) {
+        throw new Error(
+          `Class ${className} not found in ObjectRegistry. Make sure to register it with @smrt() decorator or ObjectRegistry.register()`,
+        );
+      }
+    }
+
     // Create a cache key from className and relevant options
     // We use a simplified key that includes only persistence config
     // to avoid cache misses from transient options
@@ -1048,7 +1114,7 @@ export class ObjectRegistry {
       dbId = ObjectRegistry.dbInstanceIds.get(options.db);
     }
 
-    const cacheKey = `${className}:${JSON.stringify({
+    const cacheKey = `${canonicalName}:${JSON.stringify({
       persistence: options.persistence,
       db: dbId !== undefined ? `db:${dbId}` : undefined,
       ai: options.ai ? 'present' : undefined,
@@ -1059,30 +1125,14 @@ export class ObjectRegistry {
       return ObjectRegistry.collectionCache.get(cacheKey) as SmrtCollection<T>;
     }
 
-    // Get registered class info (case-insensitive)
-    let registered = ObjectRegistry.findClass(className);
-    if (!registered) {
-      // Try to auto-load from external SMRT packages before throwing error
-      // This handles cases where classes from @happyvertical/smrt-* packages
-      // are used without explicitly importing them (e.g., Person from smrt-profiles)
-      const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
-
-      if (loaded) {
-        // Successfully loaded and registered from external package
-        registered = ObjectRegistry.findClass(className);
-      }
-
+    // Auto-create default collection if not registered
+    if (!collectionConstructor) {
       if (!registered) {
         throw new Error(
-          `Class ${className} not found in ObjectRegistry. Make sure to register it with @smrt() decorator or ObjectRegistry.register()`,
+          `Collection ${className} is registered without a backing object class, which is not supported.`,
         );
       }
-    }
 
-    // Auto-create default collection if not registered
-    let collectionConstructor = registered.collectionConstructor;
-
-    if (!collectionConstructor) {
       // Lazy-load SmrtCollection to avoid circular dependency
       const { SmrtCollection: SmrtCollectionClass } = await import(
         './collection'
@@ -1096,7 +1146,7 @@ export class ObjectRegistry {
       // Register it for future use
       collectionConstructor = DefaultCollection as any;
       registered.collectionConstructor = DefaultCollection as any;
-      ObjectRegistry.collections.set(className, DefaultCollection as any);
+      ObjectRegistry.collections.set(canonicalName, DefaultCollection as any);
     }
 
     // Create and initialize new collection instance using static factory method
@@ -2676,8 +2726,22 @@ export function smrt(config: SmartObjectConfig = {}) {
 
         ObjectRegistry.register(itemClass, { ...config, tableName });
 
-        // Register the collection constructor using tableName (not class name)
-        // This ensures CLI lookups by tableName (e.g., "meetings") find the collection
+        const registeredItemClass = ObjectRegistry.getClass(itemClass.name);
+
+        // Register the collection constructor under the item class identity first.
+        // This ensures ObjectRegistry.getCollection('ItemClass') uses the explicit
+        // collection subclass rather than falling back to a generated default.
+        ObjectRegistry.registerCollection(itemClass.name, ctor as any);
+        if (registeredItemClass?.qualifiedName) {
+          ObjectRegistry.registerCollection(
+            registeredItemClass.qualifiedName,
+            ctor as any,
+          );
+        }
+
+        // Also register the collection constructor using tableName.
+        // This preserves existing CLI/introspection lookups by table name
+        // (e.g., "meetings") and keeps backward compatibility.
         ObjectRegistry.registerCollection(tableName, ctor as any);
 
         // Store collection class name -> tableName mapping for getTableName lookups

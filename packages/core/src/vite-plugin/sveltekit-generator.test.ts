@@ -272,7 +272,7 @@ describe('SvelteKit Route Generator', () => {
       );
     });
 
-    it('should wrap long package registrations to match repository formatting', async () => {
+    it('should skip explicit re-registration for collection classes', async () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const manifest: SmartObjectManifest = {
@@ -306,11 +306,12 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationCall).toBeDefined();
       const registrationContent = registrationCall?.[1] as string;
 
-      expect(
-        registrationContent,
-      ).toContain(`ObjectRegistry.register(ImageCollection as any, {
-  packageName: '@happyvertical/smrt-images',
-});`);
+      expect(registrationContent).toContain(
+        "import { ImageCollection } from '../objects/ImageCollection';",
+      );
+      expect(registrationContent).not.toContain(
+        'ObjectRegistry.register(ImageCollection',
+      );
     });
   });
 
@@ -495,6 +496,184 @@ describe('SvelteKit Route Generator', () => {
         );
 
       expect(summarizeRoute).toBeDefined();
+    });
+
+    it('should generate collection-scoped custom routes for static methods', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Document: {
+            className: 'Document',
+            collection: 'documents',
+            fields: {},
+            methods: {
+              browseFacts: {
+                name: 'browseFacts',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isStatic: true,
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['browseFacts'],
+                routes: {
+                  browseFacts: {
+                    scope: 'collection',
+                    method: 'GET',
+                    path: 'facts',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const browseFactsRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('documents/facts/+server.ts'),
+        );
+
+      expect(browseFactsRoute).toBeDefined();
+      const content = browseFactsRoute?.[1] as string;
+
+      expect(content).toContain(
+        "import { ObjectRegistry } from '@happyvertical/smrt-core'",
+      );
+      expect(content).toContain('export const GET: RequestHandler');
+      expect(content).toContain(
+        'Object.fromEntries(new URL(request.url).searchParams.entries())',
+      );
+      expect(content).toContain("ObjectRegistry.getClass('Document')");
+      expect(content).toContain('await ClassRef.browseFacts(options)');
+      expect(content).not.toContain('params.id');
+    });
+
+    it('should merge custom handlers that share the same route path', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Document: {
+            className: 'Document',
+            collection: 'documents',
+            fields: {},
+            methods: {
+              getFactsState: {
+                name: 'getFactsState',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              syncFacts: {
+                name: 'syncFacts',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['getFactsState', 'syncFacts'],
+                routes: {
+                  getFactsState: {
+                    scope: 'item',
+                    method: 'GET',
+                    path: 'facts',
+                  },
+                  syncFacts: {
+                    scope: 'item',
+                    method: 'PUT',
+                    path: 'facts',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const factsRouteWrites = vi
+        .mocked(writeFileSync)
+        .mock.calls.filter((call) =>
+          call[0].toString().includes('documents/[id]/facts/+server.ts'),
+        );
+
+      expect(factsRouteWrites).toHaveLength(1);
+      const content = factsRouteWrites[0]?.[1] as string;
+
+      expect(content).toContain('export const GET: RequestHandler');
+      expect(content).toContain('export const PUT: RequestHandler');
+      expect(content).toContain('await item.getFactsState(options)');
+      expect(content).toContain('await item.syncFacts(options)');
+    });
+
+    it('should skip collection-scoped custom routes for non-static methods', async () => {
+      const consoleWarnSpy = vi
+        .spyOn(console, 'warn')
+        .mockImplementation(() => {});
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Document: {
+            className: 'Document',
+            collection: 'documents',
+            fields: {},
+            methods: {
+              browseFacts: {
+                name: 'browseFacts',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isStatic: false,
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['browseFacts'],
+                routes: {
+                  browseFacts: {
+                    scope: 'collection',
+                    method: 'GET',
+                    path: 'facts',
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      expect(consoleWarnSpy).toHaveBeenCalledWith(
+        '[smrt] Skipping Document.browseFacts - collection API routes require a static method',
+      );
+
+      const browseFactsRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('documents/facts/+server.ts'),
+        );
+      expect(browseFactsRoute).toBeUndefined();
+
+      consoleWarnSpy.mockRestore();
     });
 
     it('should skip actions not in api config', async () => {
@@ -1081,7 +1260,7 @@ describe('SvelteKit Route Generator', () => {
   });
 
   describe('Collection Class Filtering', () => {
-    it('should skip collection classes and only generate routes for item classes', async () => {
+    it('should generate collection class methods as collection-scoped routes', async () => {
       const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
       const manifest: SmartObjectManifest = {
@@ -1123,14 +1302,9 @@ describe('SvelteKit Route Generator', () => {
         objectsDir: 'src/lib/objects',
       });
 
-      // Should log that collection class was skipped
+      // Should report both the item class and collection class route generation
       expect(consoleSpy).toHaveBeenCalledWith(
-        '[smrt] Skipping InvitationCollection - collection class (routes handled by item class)',
-      );
-
-      // Should report 1 generated + 1 skipped
-      expect(consoleSpy).toHaveBeenCalledWith(
-        '[smrt] Generated routes for 1 SMRT objects (skipped 1 collection classes)',
+        '[smrt] Generated routes for 2 SMRT objects',
       );
 
       // Should generate routes for Invitation (item class)
@@ -1141,20 +1315,29 @@ describe('SvelteKit Route Generator', () => {
         p.includes('invitations'),
       );
 
-      // Should have collection route, item route, and canBeRedeemed action route
+      // Should have collection route, item route, item action route, and collection method route
       expect(invitationRoutes).toEqual(
         expect.arrayContaining([
           expect.stringContaining('invitations/+server.ts'),
           expect.stringContaining('invitations/[id]/+server.ts'),
           expect.stringContaining('invitations/[id]/canBeRedeemed/+server.ts'),
+          expect.stringContaining('invitations/findByToken/+server.ts'),
         ]),
       );
 
-      // Should NOT have findByToken route (that's on the collection class which was skipped)
-      const findByTokenRoutes = writeFileCalls.filter((p) =>
-        p.includes('findByToken'),
+      const findByTokenRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('invitations/findByToken/+server.ts'),
+        );
+      expect(findByTokenRoute).toBeDefined();
+      const findByTokenContent = findByTokenRoute?.[1] as string;
+      expect(findByTokenContent).toContain(
+        "const collection = await getCollection<any>('Invitation')",
       );
-      expect(findByTokenRoutes).toHaveLength(0);
+      expect(findByTokenContent).toContain(
+        'await collection.findByToken(options)',
+      );
 
       consoleSpy.mockRestore();
     });

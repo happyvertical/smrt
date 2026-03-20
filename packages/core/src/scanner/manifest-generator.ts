@@ -1288,12 +1288,57 @@ ${fields}
   /**
    * Get simple endpoint strings for an object
    */
+  private getApiRouteMetadata(
+    obj: SmartObjectDefinition,
+    actionName: string,
+    actionDef: { isStatic?: boolean },
+  ): {
+    scope: 'item' | 'collection';
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    path: string;
+  } {
+    const config =
+      obj.decoratorConfig.api && typeof obj.decoratorConfig.api === 'object'
+        ? obj.decoratorConfig.api
+        : undefined;
+    const routeConfig = config?.routes?.[actionName];
+    const normalizedPath = (routeConfig?.path || actionName)
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean)
+      .join('/');
+    const isCollectionClass =
+      obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg;
+
+    return {
+      scope:
+        routeConfig?.scope ||
+        (isCollectionClass || actionDef.isStatic ? 'collection' : 'item'),
+      method:
+        routeConfig?.method?.toUpperCase() === 'GET' ||
+        routeConfig?.method?.toUpperCase() === 'POST' ||
+        routeConfig?.method?.toUpperCase() === 'PUT' ||
+        routeConfig?.method?.toUpperCase() === 'PATCH' ||
+        routeConfig?.method?.toUpperCase() === 'DELETE'
+          ? (routeConfig.method.toUpperCase() as
+              | 'GET'
+              | 'POST'
+              | 'PUT'
+              | 'PATCH'
+              | 'DELETE')
+          : 'POST',
+      path: normalizedPath || actionName,
+    };
+  }
+
   private getSimpleEndpoints(obj: SmartObjectDefinition): string[] {
     const { collection } = obj;
     const config = obj.decoratorConfig.api;
     const exclude = (typeof config === 'object' && config?.exclude) || [];
     const include =
       (typeof config === 'object' && config?.include) || undefined;
+    const isCollectionClass =
+      obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg;
 
     const endpoints: string[] = [];
 
@@ -1304,20 +1349,49 @@ ${fields}
       return true;
     };
 
-    if (shouldInclude('list')) {
-      endpoints.push(`GET /${collection}`);
+    if (!isCollectionClass) {
+      if (shouldInclude('list')) {
+        endpoints.push(`GET /${collection}`);
+      }
+      if (shouldInclude('create')) {
+        endpoints.push(`POST /${collection}`);
+      }
+      if (shouldInclude('get')) {
+        endpoints.push(`GET /${collection}/:id`);
+      }
+      if (shouldInclude('update')) {
+        endpoints.push(`PUT /${collection}/:id`);
+      }
+      if (shouldInclude('delete')) {
+        endpoints.push(`DELETE /${collection}/:id`);
+      }
     }
-    if (shouldInclude('create')) {
-      endpoints.push(`POST /${collection}`);
-    }
-    if (shouldInclude('get')) {
-      endpoints.push(`GET /${collection}/:id`);
-    }
-    if (shouldInclude('update')) {
-      endpoints.push(`PUT /${collection}/:id`);
-    }
-    if (shouldInclude('delete')) {
-      endpoints.push(`DELETE /${collection}/:id`);
+
+    const standardActions = ['list', 'get', 'create', 'update', 'delete'];
+    for (const [actionName, actionDef] of Object.entries(obj.methods)) {
+      if (
+        standardActions.includes(actionName) ||
+        !actionDef.isPublic ||
+        !shouldInclude(actionName)
+      ) {
+        continue;
+      }
+
+      const route = this.getApiRouteMetadata(obj, actionName, actionDef);
+      if (
+        route.scope === 'collection' &&
+        !isCollectionClass &&
+        !actionDef.isStatic
+      ) {
+        continue;
+      }
+
+      if (route.scope === 'item' && isCollectionClass) {
+        continue;
+      }
+
+      const suffix = route.scope === 'collection' ? '' : '/:id';
+      endpoints.push(`${route.method} /${collection}${suffix}/${route.path}`);
     }
 
     return endpoints;
