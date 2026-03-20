@@ -1,7 +1,9 @@
 <script lang="ts">
 import {
   type ContentCorrectionData,
+  type ContentGovernanceStateData,
   type ContentReviewData,
+  type ContentReviewPolicyData,
   type ContentReviewProfileData,
   type ContentVersionData,
   createClient,
@@ -48,8 +50,10 @@ let catalogFacts = $state<FactData[]>([]);
 let reviews = $state<ContentReviewData[]>([]);
 let corrections = $state<ContentCorrectionData[]>([]);
 let versions = $state<ContentVersionData[]>([]);
+let governanceState = $state<ContentGovernanceStateData | null>(null);
 let reviewProfiles = $state<ContentReviewProfileData[]>([]);
 let activeReviewProfileKey = $state(reviewProfileKey);
+let activeCustomPolicyKey = $state(customReviewPolicyKey);
 
 let catalogLoading = $state(false);
 let syncingFacts = $state(false);
@@ -104,6 +108,19 @@ const activeReviewProfile = $derived(
 const activeProfileReviewActions = $derived(
   getReviewActions(activeReviewProfile),
 );
+const availableCustomPolicies = $derived(
+  (governanceState?.reviewPolicies ?? []).filter(
+    (policy) => policy.kind === 'custom',
+  ),
+);
+const activeCustomPolicy = $derived(
+  availableCustomPolicies.find(
+    (policy) => policy.key === activeCustomPolicyKey,
+  ) ?? null,
+);
+const customReviewButtonLabel = $derived(
+  activeCustomPolicy?.label || customReviewLabel,
+);
 
 $effect(() => {
   customReviewText = customReviewInstructions;
@@ -111,6 +128,10 @@ $effect(() => {
 
 $effect(() => {
   activeReviewProfileKey = reviewProfileKey;
+});
+
+$effect(() => {
+  activeCustomPolicyKey = customReviewPolicyKey;
 });
 
 $effect(() => {
@@ -126,6 +147,7 @@ $effect(() => {
     reviews = [];
     corrections = [];
     versions = [];
+    governanceState = null;
     reviewProfiles = [];
     workflowError = null;
     workflowNotice = null;
@@ -197,6 +219,30 @@ function resolveActiveReviewProfileKey(
   }
 
   return profiles[0]?.profileKey ?? fallbackKey;
+}
+
+function resolveActiveCustomPolicyKey(
+  policies: ContentReviewPolicyData[],
+  preferredKey: string | null | undefined,
+  fallbackKey: string,
+) {
+  const customPolicies = policies.filter((policy) => policy.kind === 'custom');
+
+  if (
+    preferredKey &&
+    customPolicies.some((policy) => policy.key === preferredKey)
+  ) {
+    return preferredKey;
+  }
+
+  if (
+    fallbackKey &&
+    customPolicies.some((policy) => policy.key === fallbackKey)
+  ) {
+    return fallbackKey;
+  }
+
+  return customPolicies[0]?.key ?? fallbackKey;
 }
 
 function createReviewAction(
@@ -291,7 +337,7 @@ async function syncFactsIfSaved(nextFacts: FactData[]) {
       relationship: defaultRelationship,
     });
     updateSelectedFacts(response.data.facts || nextFacts);
-    await refreshReviewProfiles();
+    await refreshGovernanceState();
     workflowNotice = 'Saved fact associations.';
   } catch (err: any) {
     workflowError = err.message || 'Failed to sync facts';
@@ -329,24 +375,30 @@ async function loadSavedWorkflow() {
       reviewsResponse,
       correctionsResponse,
       versionsResponse,
-      reviewProfilesResponse,
+      governanceResponse,
     ] = await Promise.all([
       client.contents.getFacts(savedContentId),
       client.contents.getReviews(savedContentId),
       client.contents.getCorrections(savedContentId),
       client.contents.getVersions(savedContentId),
-      client.contents.getReviewProfiles(savedContentId),
+      client.contents.getGovernanceState(savedContentId),
     ]);
 
     updateSelectedFacts(factsResponse.data.facts || []);
     reviews = reviewsResponse.data;
     corrections = correctionsResponse.data;
     versions = versionsResponse.data;
-    reviewProfiles = reviewProfilesResponse.data;
+    governanceState = governanceResponse.data;
+    reviewProfiles = governanceResponse.data.reviewProfiles || [];
     activeReviewProfileKey = resolveActiveReviewProfileKey(
-      reviewProfilesResponse.data,
+      governanceResponse.data.reviewProfiles || [],
       activeReviewProfileKey,
       reviewProfileKey,
+    );
+    activeCustomPolicyKey = resolveActiveCustomPolicyKey(
+      governanceResponse.data.reviewPolicies || [],
+      activeCustomPolicyKey,
+      customReviewPolicyKey,
     );
   } catch (err: any) {
     workflowError = err.message || 'Failed to load factual workflow state';
@@ -381,7 +433,7 @@ async function runReview(action: ReviewAction) {
 
     const response = await client.contents.runReview(savedContentId, payload);
     reviews = [response.data, ...reviews];
-    await refreshReviewProfiles();
+    await refreshGovernanceState();
     workflowNotice = `${action.label} completed.`;
     await refreshVersions();
   } catch (err: any) {
@@ -483,18 +535,25 @@ async function refreshVersions() {
   versions = response.data;
 }
 
-async function refreshReviewProfiles() {
+async function refreshGovernanceState() {
   if (!savedContentId) {
+    governanceState = null;
     reviewProfiles = [];
     return;
   }
 
-  const response = await client.contents.getReviewProfiles(savedContentId);
-  reviewProfiles = response.data;
+  const response = await client.contents.getGovernanceState(savedContentId);
+  governanceState = response.data;
+  reviewProfiles = response.data.reviewProfiles || [];
   activeReviewProfileKey = resolveActiveReviewProfileKey(
-    response.data,
+    response.data.reviewProfiles || [],
     activeReviewProfileKey,
     reviewProfileKey,
+  );
+  activeCustomPolicyKey = resolveActiveCustomPolicyKey(
+    response.data.reviewPolicies || [],
+    activeCustomPolicyKey,
+    customReviewPolicyKey,
   );
 }
 
@@ -514,8 +573,8 @@ function formatTimestamp(value: string | null | undefined) {
   return new Date(value).toLocaleString();
 }
 
-function hasCustomReview() {
-  return customReviewText.trim().length > 0;
+function canRunCustomReview() {
+  return Boolean(activeCustomPolicy) || customReviewText.trim().length > 0;
 }
 </script>
 
@@ -697,35 +756,48 @@ function hasCustomReview() {
         {/each}
       </div>
 
-      {#if hasCustomReview()}
+      <div class="workflow-field-group">
+        {#if availableCustomPolicies.length > 0}
+          <label class="workflow-field">
+            App review policy
+            <select bind:value={activeCustomPolicyKey}>
+              {#each availableCustomPolicies as policy (policy.key)}
+                <option value={policy.key}>
+                  {policy.label}
+                </option>
+              {/each}
+            </select>
+          </label>
+        {/if}
+
         <label class="workflow-field">
-          {customReviewLabel}
+          {customReviewButtonLabel}
           <textarea
             rows="3"
             bind:value={customReviewText}
-            placeholder="Add app-level review instructions"
+            placeholder="Optional additional review instructions"
           ></textarea>
         </label>
         <button
           type="button"
-          disabled={reviewBusy !== null}
+          disabled={reviewBusy !== null || !canRunCustomReview()}
           onclick={() =>
             void runReview(
               createReviewAction(
                 'custom',
-                customReviewPolicyKey,
-                customReviewLabel,
-                customReviewText,
+                activeCustomPolicy?.key || customReviewPolicyKey,
+                customReviewButtonLabel,
+                customReviewText || undefined,
               ),
             )}
         >
-          {#if reviewBusy === customReviewPolicyKey}
-            Running {customReviewLabel.toLowerCase()}...
+          {#if reviewBusy === (activeCustomPolicy?.key || customReviewPolicyKey)}
+            Running {customReviewButtonLabel.toLowerCase()}...
           {:else}
-            {customReviewLabel}
+            Run {customReviewButtonLabel}
           {/if}
         </button>
-      {/if}
+      </div>
 
       <div class="review-list">
         <div class="section-caption">Recent reviews</div>
@@ -913,6 +985,12 @@ function hasCustomReview() {
     margin: 0;
     font-size: 1rem;
     color: var(--smrt-color-on-surface);
+  }
+
+  .workflow-field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .section-status,

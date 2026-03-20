@@ -11,11 +11,13 @@ import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   buildContentReviewPrompt,
+  type ContentGovernanceState,
   type ContentReviewProfileEvaluation,
   type CreateContentVersionOptions,
   getAcceptedContentReviewStatuses,
   getContentGovernanceConfig,
   getContentReviewKind,
+  getContentReviewPolicies,
   getContentReviewPolicy,
   getContentReviewProfileKeys,
   getContentReviewRequirements,
@@ -160,6 +162,7 @@ export interface ContentOptions extends SmrtObjectOptions {
       'delete',
       'getFactsState',
       'syncFactsState',
+      'getGovernanceStateAction',
       'listReviews',
       'runReviewAction',
       'listReviewProfilesAction',
@@ -172,6 +175,7 @@ export interface ContentOptions extends SmrtObjectOptions {
     routes: {
       getFactsState: { method: 'GET', path: 'facts' },
       syncFactsState: { method: 'PUT', path: 'facts' },
+      getGovernanceStateAction: { method: 'GET', path: 'governance' },
       listReviews: { method: 'GET', path: 'reviews' },
       runReviewAction: { method: 'POST', path: 'reviews' },
       listReviewProfilesAction: { method: 'GET', path: 'review-profiles' },
@@ -695,6 +699,21 @@ export class Content extends SmrtObject {
 
   public getReviewRequirements(profileKey: string) {
     return getContentReviewRequirements(this, profileKey);
+  }
+
+  public async getGovernanceState(): Promise<ContentGovernanceState> {
+    const governance = getContentGovernanceConfig();
+
+    return {
+      isFactual: this.isFactual(),
+      defaultFactRelationship: governance.defaultFactRelationship,
+      reviewPolicies: getContentReviewPolicies(),
+      reviewProfiles: await this.listReviewProfilesAction(),
+    };
+  }
+
+  public async getGovernanceStateAction() {
+    return this.getGovernanceState();
   }
 
   public async listReviewProfilesAction() {

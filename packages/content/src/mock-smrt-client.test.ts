@@ -103,4 +103,37 @@ describe('mock-smrt-client', () => {
       },
     ]);
   });
+
+  it('reads governance state responses from the result envelope', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        mockJsonResponse({
+          action: 'getGovernanceStateAction',
+          result: {
+            isFactual: true,
+            defaultFactRelationship: 'supports',
+            reviewPolicies: [
+              {
+                key: 'editorial',
+                label: 'Editorial Review',
+                kind: 'custom',
+                instructions: 'Check style and tone.',
+              },
+            ],
+            reviewProfiles: [],
+          },
+        }),
+      ),
+    );
+
+    const client = createClient('/api/v1');
+    const response = await client.contents.getGovernanceState('content-6');
+
+    expect(response.data.reviewPolicies[0]).toMatchObject({
+      key: 'editorial',
+      kind: 'custom',
+    });
+    expect(response.data.isFactual).toBe(true);
+  });
 });

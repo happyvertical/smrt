@@ -5,6 +5,7 @@ import { ContentCorrection } from './content-correction';
 import {
   buildContentReviewPrompt,
   configureContentGovernance,
+  getContentReviewPolicies,
   getContentReviewProfileKeys,
   getContentReviewRequirements,
   parseContentReviewResponse,
@@ -173,6 +174,9 @@ describe('FactualContent foundations', () => {
       publicationRequirements.map((requirement) => requirement.policyKey),
     ).toContain('facts');
     expect(getContentReviewProfileKeys()).toContain('publication');
+    expect(getContentReviewPolicies().map((policy) => policy.key)).toContain(
+      'facts',
+    );
   });
 
   it('evaluates review profile readiness separately from completeness', async () => {
@@ -356,6 +360,66 @@ describe('FactualContent foundations', () => {
 
       expect(review.kind).toBe('safety');
       expect(review.policyKey).toBe('legal');
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('returns governance state with policies and evaluated profiles', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      configureContentGovernance({
+        reviewPolicies: {
+          editorial: {
+            key: 'editorial',
+            label: 'Editorial Review',
+            kind: 'custom',
+            instructions: 'Check voice, style, and clarity.',
+          },
+        },
+        reviewProfiles: {
+          publication: [
+            {
+              policyKey: 'safety',
+              blocking: true,
+            },
+            {
+              policyKey: 'editorial',
+              blocking: false,
+            },
+          ],
+        },
+      });
+
+      const content = new FactualContent({
+        name: 'budget-roundup',
+        title: 'Budget roundup',
+        body: 'The budget passed last night.',
+        db,
+      });
+      await content.initialize();
+      await content.save();
+
+      const governanceState = await content.getGovernanceStateAction();
+
+      expect(governanceState.isFactual).toBe(true);
+      expect(governanceState.defaultFactRelationship).toBe('supports');
+      expect(
+        governanceState.reviewPolicies.find(
+          (policy) => policy.key === 'editorial',
+        )?.kind,
+      ).toBe('custom');
+      expect(
+        governanceState.reviewProfiles.find(
+          (profile) => profile.profileKey === 'publication',
+        ),
+      ).toBeTruthy();
     } finally {
       if (typeof db.close === 'function') {
         await db.close();

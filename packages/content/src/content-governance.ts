@@ -75,6 +75,20 @@ export interface ContentReviewProfileEvaluation {
   requirements: ContentReviewProfileEvaluationItem[];
 }
 
+export interface ContentReviewPolicyDefinition {
+  key: string;
+  label: string;
+  kind: ContentReviewKind;
+  instructions: string;
+}
+
+export interface ContentGovernanceState {
+  isFactual: boolean;
+  defaultFactRelationship: FactContentRelationship;
+  reviewPolicies: ContentReviewPolicyDefinition[];
+  reviewProfiles: ContentReviewProfileEvaluation[];
+}
+
 export interface ContentGovernanceConfig {
   isFactual?: (content: Content) => boolean;
   defaultFactRelationship: FactContentRelationship;
@@ -315,6 +329,15 @@ export function getContentReviewProfile(
 
 export function getContentReviewProfileKeys(): string[] {
   return Object.keys(governanceConfig.reviewProfiles);
+}
+
+export function getContentReviewPolicies(): ContentReviewPolicyDefinition[] {
+  return Object.values(governanceConfig.reviewPolicies).map((policy) => ({
+    key: policy.key,
+    label: policy.label || policy.key,
+    kind: getContentReviewKind(policy.key),
+    instructions: policy.instructions,
+  }));
 }
 
 export function getContentReviewRequirements(

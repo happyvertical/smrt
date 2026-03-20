@@ -138,6 +138,20 @@ export interface ContentReviewProfileData {
   requirements: ContentReviewProfileRequirementData[];
 }
 
+export interface ContentReviewPolicyData {
+  key: string;
+  label: string;
+  kind: string;
+  instructions: string;
+}
+
+export interface ContentGovernanceStateData {
+  isFactual: boolean;
+  defaultFactRelationship: string;
+  reviewPolicies: ContentReviewPolicyData[];
+  reviewProfiles: ContentReviewProfileData[];
+}
+
 export interface ApiResponse<T> {
   data: T;
   success: boolean;
@@ -355,6 +369,18 @@ class ApiClient {
       if (!res.ok) throw new Error(await res.text());
       const payload = await res.json();
       return { data: getListData<ContentReviewData>(payload), success: true };
+    },
+
+    getGovernanceState: async (
+      id: string,
+    ): Promise<ApiResponse<ContentGovernanceStateData>> => {
+      const res = await fetch(`${this.baseUrl}/contents/${id}/governance`);
+      if (!res.ok) throw new Error(await res.text());
+      const payload = await res.json();
+      return {
+        data: getItemData<ContentGovernanceStateData>(payload),
+        success: true,
+      };
     },
 
     getReviewProfiles: async (

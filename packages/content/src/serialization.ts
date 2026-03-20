@@ -69,6 +69,33 @@ export function serializeContentCorrection(correction: any) {
   };
 }
 
+export function serializeContentReviewProfileEvaluation(profile: any) {
+  const data = toJSON<Record<string, any>>(profile);
+  return {
+    ...data,
+    requirements: Array.isArray(data.requirements) ? data.requirements : [],
+  };
+}
+
+export function serializeContentReviewPolicy(policy: any) {
+  return {
+    ...toJSON<Record<string, any>>(policy),
+  };
+}
+
+export function serializeContentGovernanceState(state: any) {
+  const data = toJSON<Record<string, any>>(state);
+  return {
+    ...data,
+    reviewPolicies: Array.isArray(data.reviewPolicies)
+      ? data.reviewPolicies.map(serializeContentReviewPolicy)
+      : [],
+    reviewProfiles: Array.isArray(data.reviewProfiles)
+      ? data.reviewProfiles.map(serializeContentReviewProfileEvaluation)
+      : [],
+  };
+}
+
 export async function serializeContent(content: any) {
   const isFactual =
     typeof content?.isFactual === 'function' ? content.isFactual() : false;
