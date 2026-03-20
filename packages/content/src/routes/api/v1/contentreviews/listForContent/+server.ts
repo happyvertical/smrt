@@ -18,8 +18,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
   const options = await request.json();
   const result = await collection.listForContent(
-    options['contentId'],
-    options['kind'],
+    options.contentId,
+    options.kind,
   );
 
   return json({ action: 'listForContent', result });

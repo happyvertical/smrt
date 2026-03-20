@@ -18,7 +18,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
   const options = await request.json();
   const result = await collection.getLatestPublishedForContent(
-    options['contentId'],
+    options.contentId,
   );
 
   return json({ action: 'getLatestPublishedForContent', result });

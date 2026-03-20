@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.listForContent(options['contentId']);
+  const result = await collection.listForContent(options.contentId);
 
   return json({ action: 'listForContent', result });
 };

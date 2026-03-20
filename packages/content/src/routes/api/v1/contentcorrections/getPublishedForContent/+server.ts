@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getPublishedForContent(options['contentId']);
+  const result = await collection.getPublishedForContent(options.contentId);
 
   return json({ action: 'getPublishedForContent', result });
 };

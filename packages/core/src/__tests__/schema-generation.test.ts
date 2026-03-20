@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { field, SmrtObject, smrt } from '../index';
+import { ObjectRegistry } from '../registry';
 import { generateSchema } from '../schema/utils';
 import { tableNameFromClass } from '../utils';
 
@@ -32,6 +33,14 @@ class SchemaGenArticle extends SmrtObject {
 class UniqueEmailRecord extends SmrtObject {
   @field({ unique: true })
   email: string = '';
+}
+
+@smrt({ conflictColumns: ['key'] })
+class ConflictKeyRecord extends SmrtObject {
+  @field({ required: true })
+  key: string = '';
+
+  label: string = '';
 }
 
 // Move to module level so AST scanner can pick it up during test manifest generation
@@ -163,5 +172,29 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     const schema = await generateSchema(UniqueEmailRecord);
 
     expect(schema).toContain('"email" TEXT UNIQUE');
+  });
+
+  it('should honor runtime conflictColumns when generating CTI schema indexes', async () => {
+    await generateSchema(ConflictKeyRecord);
+
+    const registered = ObjectRegistry.getClass('ConflictKeyRecord');
+    const uniqueIndexes =
+      registered?.schema?.indexes.filter((index) => index.unique) || [];
+
+    expect(uniqueIndexes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          columns: ['key'],
+        }),
+      ]),
+    );
+    expect(
+      uniqueIndexes.some(
+        (index) =>
+          index.columns.length === 2 &&
+          index.columns[0] === 'slug' &&
+          index.columns[1] === 'context',
+      ),
+    ).toBe(false);
   });
 });

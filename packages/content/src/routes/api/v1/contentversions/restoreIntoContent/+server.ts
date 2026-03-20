@@ -18,8 +18,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
   const options = await request.json();
   const result = await collection.restoreIntoContent(
-    options['content'],
-    options['versionNumber'],
+    options.content,
+    options.versionNumber,
   );
 
   return json({ action: 'restoreIntoContent', result });

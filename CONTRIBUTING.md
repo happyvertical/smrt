@@ -99,6 +99,8 @@ All code changes must include tests. See [TESTING_STANDARD.md](../TESTING_STANDA
 - Keep package coverage enabled and generate a coverage report when doing significant package work
 - Packages that export UI components should include component tests for the
   touched public UI surface
+- If a touched package has a maintained Playwright browser harness or demo app,
+  run that browser suite as part of the package release gate
 - Use reference-app e2e tests selectively for critical workflows when a real
   app harness exists
 
@@ -107,8 +109,8 @@ All code changes must include tests. See [TESTING_STANDARD.md](../TESTING_STANDA
   component behavior in a lightweight DOM environment
 - **Integration tests** (`*.spec.ts`): Real resource, runtime seam, and package
   wiring coverage
-- **End-to-end tests** (`*.e2e.ts`): Reference-app browser workflows for
-  critical user journeys
+- **End-to-end tests** (`e2e/**/*.spec.ts` or `*.e2e.ts`): Playwright browser
+  workflows for critical user journeys
 - **Example tests** (`*.examples.test.ts`): Demonstrate common patterns
 - **Optional tests** (`*.optional.test.ts`): Expensive or external API tests
 

@@ -18,8 +18,8 @@ export const POST: RequestHandler = async ({ request }) => {
 
   const options = await request.json();
   const result = await collection.getLatestForPolicyKey(
-    options['contentId'],
-    options['policyKey'],
+    options.contentId,
+    options.policyKey,
   );
 
   return json({ action: 'getLatestForPolicyKey', result });

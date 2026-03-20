@@ -436,6 +436,14 @@ export class Content extends SmrtObject {
   }
 
   protected override async validateBeforeSave(): Promise<void> {
+    if (!this.name && this.title) {
+      this.name = this.title;
+    }
+
+    if (!this.title && this.name) {
+      this.title = this.name;
+    }
+
     await super.validateBeforeSave();
 
     if (this.status !== 'published') {

@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getByProfileId(options['profileId']);
+  const result = await collection.getByProfileId(options.profileId);
 
   return json({ action: 'getByProfileId', result });
 };

@@ -19,6 +19,7 @@ entire touched package, not just the new tests added for the change.
 - **Skipped tests must be intentional**: only skip for explicit environment gates or intentionally expensive cases, and keep the reason obvious in the test source
 - **Generated surfaces need tests**: if SMRT-generated REST/CLI/MCP behavior changes, add or update tests that exercise the generated contract
 - **Coverage must be wired in**: every actively developed package should enable Vitest coverage reporting in `vitest.config.ts`
+- **Browser harnesses must be exercised**: if a touched package ships a maintained demo app, dev server, or reference-app harness with Playwright coverage, the touched-package release gate includes the Playwright suite too
 
 ## Testing Pyramid For SMRT Packages
 
@@ -80,11 +81,20 @@ E2E tests are strongly recommended when a maintained reference app or demo app
 exists, but they are not a substitute for unit, component, and integration
 coverage in the package itself.
 
+When browser e2e tests exist in SMRT, prefer Playwright and keep the setup
+package-local and deterministic:
+
+- Run against the real package dev server or reference-app harness
+- Use isolated databases, temp files, or reset scripts so runs are repeatable
+- Capture screenshots or video on failure for debugging
+- Cover only the highest-value user journeys, not every component permutation
+- Treat browser e2e as a release gate for that package once the harness exists
+
 ### Test Naming Conventions
 
 - **Unit and component tests**: `*.test.ts`
 - **Integration tests**: `*.spec.ts`
-- **Browser e2e tests**: `*.e2e.ts`
+- **Browser e2e tests**: Playwright suites under `e2e/**/*.spec.ts` or `*.e2e.ts`
 - **Example tests**: `*.examples.test.ts`
 - **Optional or expensive tests**: `*.optional.test.ts`
 
@@ -142,6 +152,24 @@ npx vitest --watch
 # With the plugin, just run the specific test directly
 npx vitest run src/specific-test.test.ts
 ```
+
+### Browser E2E Suites
+
+If a package maintains a browser harness, expose it with package scripts and
+run it from the package root:
+
+```bash
+pnpm run test:e2e
+pnpm run test:e2e:headed
+```
+
+Recommended conventions for browser suites:
+
+- Keep Playwright config in `playwright.config.ts` at the package root
+- Put browser specs in `e2e/`
+- Start the real dev server from Playwright `webServer`
+- Point the server at an isolated database or temp state
+- Fail the release gate if the maintained browser suite is red
 
 ## Test File Structure
 

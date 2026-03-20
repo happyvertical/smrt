@@ -374,12 +374,17 @@ pnpm --filter @happyvertical/smrt-<package> test
 
 # 6. Coverage report for each touched package
 pnpm --filter @happyvertical/smrt-<package> exec vitest run --coverage
+
+# 7. Browser e2e for each touched package with a maintained Playwright harness
+pnpm --filter @happyvertical/smrt-<package> run test:e2e
 ```
 
 **Track results**:
 - Note which checks passed/failed
 - Capture error messages for failed checks
 - Confirm the full suite for every touched package is green, not just newly added targeted tests
+- If a touched package exposes a maintained browser harness, confirm its
+  Playwright suite is green too
 
 ### Step 3: Auto-Fix Issues (If Any)
 

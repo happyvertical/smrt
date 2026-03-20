@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getByEmail(options['email']);
+  const result = await collection.getByEmail(options.email);
 
   return json({ action: 'getByEmail', result });
 };

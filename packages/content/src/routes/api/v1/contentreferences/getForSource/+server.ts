@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getForSource(options['sourceId']);
+  const result = await collection.getForSource(options.sourceId);
 
   return json({ action: 'getForSource', result });
 };

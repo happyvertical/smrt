@@ -14,7 +14,7 @@ export const GET: RequestHandler = async ({ params, request }) => {
   if (!item) throw error(404, '@happyvertical/smrt-content:Content not found');
 
   const pathParams = {
-    profileKey: params['profileKey'],
+    profileKey: params.profileKey,
   };
   const options = {
     ...Object.fromEntries(new URL(request.url).searchParams.entries()),

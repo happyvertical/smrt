@@ -125,7 +125,7 @@ function handleSubmit() {
           </div>
           <div class="actions">
             <button type="button" class="secondary" onclick={() => (editing = type)}>Edit</button>
-            {#if onDelete}
+            {#if onDelete && type.id}
               <button type="button" class="danger" onclick={() => onDelete?.(type)}>Delete</button>
             {/if}
           </div>

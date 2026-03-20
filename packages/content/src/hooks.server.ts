@@ -13,6 +13,15 @@ import {
 import { getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
 
+// Register dependency package objects used by the content dev server QA
+// surfaces so schema bootstrap can prepare their tables too.
+import '@happyvertical/smrt-assets';
+import '@happyvertical/smrt-chat';
+import '@happyvertical/smrt-facts';
+import '@happyvertical/smrt-images';
+import '@happyvertical/smrt-messages';
+import '@happyvertical/smrt-profiles';
+
 // Side-effect: import registers all SMRT classes via @smrt() decorators
 import './lib/server/smrt-register.js';
 import { getSmrtConfig } from '$lib/server/smrt';
@@ -39,19 +48,19 @@ async function bootstrapSchema() {
       // Load all available manifests so cross-package classes (Image, Asset, etc.) are known
       ObjectRegistry.loadAllManifests();
 
-      // Compile schemas for all local concrete objects in this package so
-      // runtime-only routes do not depend on stale manifests.
-      const localClasses = ObjectRegistry.getClassNames()
+      // Compile schemas for all registered objects, including dependency
+      // packages used by the content QA surfaces. The dev server now exposes
+      // governance, contributions, facts, chat, images, and other generated
+      // routes, so only preparing local content classes leaves hidden runtime
+      // gaps that browser E2E catches immediately.
+      const registeredClasses = ObjectRegistry.getClassNames()
         .map((name) => ObjectRegistry.getClass(name))
         .filter((registered): registered is NonNullable<typeof registered> =>
-          Boolean(
-            registered &&
-              registered.packageName === '@happyvertical/smrt-content',
-          ),
+          Boolean(registered),
         )
         .map((registered) => registered.constructor);
 
-      for (const cls of localClasses) {
+      for (const cls of registeredClasses) {
         try {
           await generateSchema(cls);
         } catch (error) {

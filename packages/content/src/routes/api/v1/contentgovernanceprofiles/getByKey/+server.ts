@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getByKey(options['key']);
+  const result = await collection.getByKey(options.key);
 
   return json({ action: 'getByKey', result });
 };

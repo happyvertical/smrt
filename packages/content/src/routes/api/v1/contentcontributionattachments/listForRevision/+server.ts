@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.listForRevision(options['revisionId']);
+  const result = await collection.listForRevision(options.revisionId);
 
   return json({ action: 'listForRevision', result });
 };
