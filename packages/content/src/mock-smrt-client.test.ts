@@ -48,6 +48,33 @@ describe('mock-smrt-client', () => {
     expect(response.data).toEqual([{ id: 'content-2', title: 'World' }]);
   });
 
+  it('reads slug lookups for published content', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        mockJsonResponse({
+          action: 'getBySlug',
+          result: {
+            id: 'content-lookup',
+            slug: 'bridge-update',
+            status: 'published',
+          },
+        }),
+      ),
+    );
+
+    const client = createClient('/api/v1');
+    const response = await client.contents.getBySlug('bridge-update', {
+      status: 'published',
+    });
+
+    expect(response.data).toMatchObject({
+      id: 'content-lookup',
+      slug: 'bridge-update',
+      status: 'published',
+    });
+  });
+
   it('reads single-item responses whether they are wrapped or raw', async () => {
     vi.stubGlobal(
       'fetch',

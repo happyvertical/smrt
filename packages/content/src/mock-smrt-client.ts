@@ -247,6 +247,25 @@ class ApiClient {
       return { data: getListData(payload), success: true };
     },
 
+    getBySlug: async (
+      slug: string,
+      options: {
+        context?: string;
+        status?: string;
+      } = {},
+    ): Promise<ApiResponse<ContentData | null>> => {
+      const res = await fetch(
+        `${this.baseUrl}/contents/by-slug${toQueryString({
+          slug,
+          context: options.context,
+          status: options.status,
+        })}`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const payload = await res.json();
+      return { data: getItemData<ContentData | null>(payload), success: true };
+    },
+
     get: async (id: string): Promise<ApiResponse<ContentData>> => {
       const res = await fetch(`${this.baseUrl}/contents/${id}`);
       if (!res.ok) throw new Error(await res.text());

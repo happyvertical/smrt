@@ -10,7 +10,7 @@ import type { Image } from '@happyvertical/smrt-images';
 import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
 import { Content } from './content';
-import { serializeFact } from './serialization';
+import { serializeContent, serializeFact } from './serialization';
 import type {
   ThumbnailOptions,
   ThumbnailStrategy,
@@ -48,12 +48,17 @@ function isAIClientOptions(
  */
 @smrt({
   api: {
-    include: ['browseFacts'],
+    include: ['browseFacts', 'getBySlug'],
     routes: {
       browseFacts: {
         scope: 'collection',
         method: 'GET',
         path: 'facts',
+      },
+      getBySlug: {
+        scope: 'collection',
+        method: 'GET',
+        path: 'by-slug',
       },
     },
   },
@@ -154,6 +159,29 @@ export class Contents extends SmrtCollection<Content> {
     });
 
     return results.map(serializeFact);
+  }
+
+  public async getBySlug(
+    options: { slug?: string; context?: string; status?: string } = {},
+  ) {
+    if (!options.slug) {
+      throw new Error('slug is required');
+    }
+
+    const content = await this.get({
+      slug: options.slug,
+      context: options.context || '',
+    });
+
+    if (!content) {
+      return null;
+    }
+
+    if (options.status && content.status !== options.status) {
+      return null;
+    }
+
+    return serializeContent(content);
   }
 
   /**

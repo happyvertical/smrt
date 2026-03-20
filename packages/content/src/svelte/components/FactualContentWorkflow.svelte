@@ -726,6 +726,34 @@ function formatTimestamp(value: string | null | undefined) {
 function canRunCustomReview() {
   return Boolean(activeCustomPolicy) || customReviewText.trim().length > 0;
 }
+
+function getCorrectionProvenanceCopy(correction: ContentCorrectionData) {
+  const metadata = correction.metadata || {};
+
+  if (metadata.draftVersionNumber) {
+    return `Auto-created draft v${metadata.draftVersionNumber} for editorial follow-up.`;
+  }
+
+  return null;
+}
+
+function getVersionProvenanceCopy(version: ContentVersionData) {
+  const metadata = version.metadata || {};
+
+  if (metadata.sourceCorrectionVersionNumber) {
+    return `Generated from correction version v${metadata.sourceCorrectionVersionNumber}.`;
+  }
+
+  if (metadata.policyKey) {
+    return `Created from the ${metadata.policyKey} review flow.`;
+  }
+
+  if (version.kind === 'publication') {
+    return 'Frozen public transparency snapshot.';
+  }
+
+  return null;
+}
 </script>
 
 <div class="factual-workflow">
@@ -1006,6 +1034,10 @@ function canRunCustomReview() {
     {:else if !transparencyPreview}
       <p class="empty-copy">No transparency preview is available yet.</p>
     {:else}
+      <p class="section-caption">
+        The preview below reflects the latest saved article state. The published snapshot stays frozen until the next successful publication.
+      </p>
+
       <div class="transparency-stats">
         <div class="transparency-stat">
           <strong>{transparencyPreview.factsUsed.length}</strong>
@@ -1177,6 +1209,9 @@ function canRunCustomReview() {
                 </div>
                 <p>{correction.summary}</p>
                 <span>{formatTimestamp(correction.publishedAt)}</span>
+                {#if getCorrectionProvenanceCopy(correction)}
+                  <span>{getCorrectionProvenanceCopy(correction)}</span>
+                {/if}
               </div>
             {/each}
           {/if}
@@ -1207,6 +1242,9 @@ function canRunCustomReview() {
                   <span class="pill pill--neutral">{version.kind}</span>
                 </div>
                 <p>{version.summary || 'Snapshot saved'}</p>
+                {#if getVersionProvenanceCopy(version)}
+                  <span>{getVersionProvenanceCopy(version)}</span>
+                {/if}
                 <div class="version-card__footer">
                   <span>{formatTimestamp(version.createdAt)}</span>
                   <button

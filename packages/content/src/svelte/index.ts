@@ -14,6 +14,7 @@ import { CONTENT_MODULE_META } from '../ui.js';
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
 import FactualContentEditor from './components/FactualContentEditor.svelte';
 import FactualContentWorkflow from './components/FactualContentWorkflow.svelte';
 import Markdown from './components/Markdown.svelte';
@@ -22,6 +23,7 @@ import Markdown from './components/Markdown.svelte';
 export {
   ArticleCard,
   ArticleList,
+  ContentTransparencyReport,
   FactualContentEditor,
   FactualContentWorkflow,
   Markdown,
@@ -30,6 +32,9 @@ export {
 // Export component prop types
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
+export type ContentTransparencyReportProps = ComponentProps<
+  typeof ContentTransparencyReport
+>;
 export type FactualContentEditorProps = ComponentProps<
   typeof FactualContentEditor
 >;

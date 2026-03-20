@@ -49,7 +49,7 @@ function getInitialFormData(c: any) {
 }
 
 let formData = $state<any>(getInitialFormData(undefined));
-let lastContentId = $state<string | undefined>(undefined);
+let lastContentKey = $state<string | undefined>(undefined);
 let currentEditorState = $derived(formData.body || '');
 let currentReferenceIds = $derived(formData.referenceIds || []);
 const editorSnapshot = $derived({
@@ -66,9 +66,9 @@ let showUndoBanner = $state(false);
 
 // When content prop changes from outside (different item), reset formData.
 $effect(() => {
-  const newId = content?.id;
-  if (newId !== lastContentId) {
-    lastContentId = newId;
+  const newKey = content?.id ?? contentId;
+  if (newKey !== lastContentKey) {
+    lastContentKey = newKey;
     formData = getInitialFormData(content);
     fieldUndoStack = [];
     showUndoBanner = false;
@@ -231,7 +231,7 @@ function removeAsset(id: string) {
 
 <div class="form-container">
   <div class="header-row">
-    <h3>{content ? 'Edit Content' : 'Add New Content'}</h3>
+    <h3>{content?.id ? 'Edit Content' : 'Add New Content'}</h3>
     
   </div>
   

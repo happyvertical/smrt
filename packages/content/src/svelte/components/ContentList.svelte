@@ -9,6 +9,7 @@ let {
   onDelete,
   onAdd,
   controls,
+  getViewHref = undefined,
 } = $props<{
   contents: any[];
   type?: string;
@@ -16,6 +17,7 @@ let {
   onDelete: (content: any) => void;
   onAdd: () => void;
   controls?: Snippet;
+  getViewHref?: (content: any) => string | null;
 }>();
 
 let searchTerm = $state('');
@@ -201,6 +203,9 @@ function handleDeleteContent(content: any) {
               <td><span class="badge status-{getStatusBadge(content.status)}">{content.status}</span></td>
               <td><span class="badge state-{getStateBadge(content.state)}">{content.state}</span></td>
               <td class="actions-cell">
+                {#if getViewHref?.(content)}
+                  <a class="icon-btn" href={getViewHref(content) || '#'} title="View published article">🔎</a>
+                {/if}
                 <button class="icon-btn" onclick={() => onEdit(content)} title="Edit">✏️</button>
                 <button class="icon-btn delete-icon" onclick={() => handleDeleteContent(content)} title="Delete">🗑️</button>
               </td>
@@ -245,6 +250,9 @@ function handleDeleteContent(content: any) {
             </div>
             
             <div class="content-actions">
+              {#if getViewHref?.(content)}
+                <a href={getViewHref(content) || '#'} class="view-btn">View Article</a>
+              {/if}
               <button onclick={() => onEdit(content)}>Edit</button>
               <button onclick={() => handleDeleteContent(content)} class="delete-btn">Delete</button>
             </div>
@@ -477,7 +485,8 @@ function handleDeleteContent(content: any) {
     padding-top: 1rem;
   }
 
-  .content-actions button {
+  .content-actions button,
+  .content-actions a {
     flex: 1;
     padding: 0.5rem 1rem;
     border: 1px solid var(--smrt-color-outline-variant);
@@ -488,11 +497,18 @@ function handleDeleteContent(content: any) {
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
+    text-align: center;
+    text-decoration: none;
   }
 
-  .content-actions button:hover {
+  .content-actions button:hover,
+  .content-actions a:hover {
     background: var(--smrt-color-surface-variant);
     border-color: var(--smrt-color-outline);
+  }
+
+  .view-btn {
+    color: var(--smrt-color-primary) !important;
   }
 
   .delete-btn {

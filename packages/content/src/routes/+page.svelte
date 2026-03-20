@@ -4,6 +4,7 @@ import { onMount } from 'svelte';
 import { createClient } from '../mock-smrt-client';
 import ContentEditor from '../svelte/components/ContentEditor.svelte';
 import ContentList from '../svelte/components/ContentList.svelte';
+import FactualContentEditor from '../svelte/components/FactualContentEditor.svelte';
 
 const client = createClient('/api/v1');
 
@@ -14,6 +15,7 @@ let error = $state<string | null>(null);
 // UI State
 let showAddForm = $state(false);
 let editingContent = $state<any>(null);
+let editorMode = $state<'generic' | 'factual'>('generic');
 
 const stats = $derived({
   total: contents.length,
@@ -40,17 +42,33 @@ async function loadContents() {
 
 async function handleSaveContent(formData: any) {
   try {
+    const payload =
+      editorMode === 'factual'
+        ? {
+            ...formData,
+            metadata: {
+              ...(formData.metadata || {}),
+              factual: true,
+              governance: {
+                ...((formData.metadata?.governance || {}) as Record<
+                  string,
+                  any
+                >),
+                enabled: true,
+                factual: true,
+              },
+            },
+          }
+        : formData;
+
     if (editingContent) {
       // Update existing
-      const response = await client.contents.update(
-        editingContent.id,
-        formData,
-      );
+      const response = await client.contents.update(editingContent.id, payload);
       const index = contents.findIndex((c) => c.id === editingContent.id);
       contents[index] = response.data;
     } else {
       // Create new
-      const response = await client.contents.create(formData);
+      const response = await client.contents.create(payload);
       contents = [...contents, response.data];
     }
     closeForms();
@@ -73,10 +91,12 @@ async function handleEditContent(content: any) {
     // Fetch the full record with hydrated assets/referenceIds
     const response = await client.contents.get(content.id);
     editingContent = response.data;
+    editorMode = isFactualContent(response.data) ? 'factual' : 'generic';
   } catch (err: any) {
     // Fall back to the list item if fetch fails
     console.error('Failed to fetch full content record:', err);
     editingContent = content;
+    editorMode = isFactualContent(content) ? 'factual' : 'generic';
   }
   showAddForm = false;
 }
@@ -84,11 +104,47 @@ async function handleEditContent(content: any) {
 function handleAddContent() {
   editingContent = null;
   showAddForm = true;
+  editorMode = 'generic';
+}
+
+function handleAddFactualContent() {
+  editingContent = {
+    type: 'article',
+    status: 'draft',
+    state: 'active',
+    source: 'manual',
+    metadata: {
+      factual: true,
+      governance: {
+        enabled: true,
+        factual: true,
+      },
+    },
+  };
+  showAddForm = true;
+  editorMode = 'factual';
 }
 
 function closeForms() {
   editingContent = null;
   showAddForm = false;
+  editorMode = 'generic';
+}
+
+function isFactualContent(content: any) {
+  return Boolean(
+    content?.isFactual ||
+      content?.metadata?.factual ||
+      content?.metadata?.governance?.factual,
+  );
+}
+
+function getPublishedHref(content: any) {
+  if (content?.status !== 'published' || !content?.slug) {
+    return null;
+  }
+
+  return `/articles/${content.slug}`;
 }
 </script>
 
@@ -141,16 +197,26 @@ function closeForms() {
         
           {#if showAddForm || editingContent}
             <div class="editor-unified-container">
-              <ContentEditor 
-                content={editingContent}
-                contentId={editingContent?.id || 'new'}
-                onSave={handleSaveContent}
-                onCancel={closeForms}
-              />
+              {#if editorMode === 'factual'}
+                <FactualContentEditor
+                  content={editingContent}
+                  contentId={editingContent?.id || 'new-factual'}
+                  onSave={handleSaveContent}
+                  onCancel={closeForms}
+                />
+              {:else}
+                <ContentEditor 
+                  content={editingContent}
+                  contentId={editingContent?.id || 'new'}
+                  onSave={handleSaveContent}
+                  onCancel={closeForms}
+                />
+              {/if}
             </div>
           {:else}
             <ContentList 
               {contents}
+              getViewHref={getPublishedHref}
               onEdit={handleEditContent}
               onDelete={handleDeleteContent}
               onAdd={handleAddContent}
@@ -158,7 +224,10 @@ function closeForms() {
               <!-- Example of injecting custom controls via Svelte Snippet -->
               {#snippet controls()}
                 <div class="custom-control">
-                  <span class="badge state-active">App Injected Control</span>
+                  <button type="button" class="secondary-action" onclick={handleAddFactualContent}>
+                    Add factual
+                  </button>
+                  <span class="badge state-active">Published QA ready</span>
                 </div>
               {/snippet}
             </ContentList>
@@ -315,6 +384,21 @@ function closeForms() {
   .custom-control {
     display: flex;
     align-items: center;
+    gap: 0.75rem;
+  }
+
+  .secondary-action {
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    border-radius: 999px;
+    padding: 0.55rem 0.95rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .secondary-action:hover {
+    background: var(--smrt-color-surface-variant);
   }
   
   .badge {
