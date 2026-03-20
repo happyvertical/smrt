@@ -22,6 +22,7 @@ export interface Props {
   customReviewInstructions?: string;
   customReviewPolicyKey?: string;
   onFactsChange?: (factIds: string[], facts: FactData[]) => void;
+  onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
 }
 
 type ReviewKind = 'facts' | 'safety' | 'custom';
@@ -43,6 +44,7 @@ let {
   customReviewInstructions = '',
   customReviewPolicyKey = 'custom',
   onFactsChange = undefined,
+  onGovernanceStateChange = undefined,
 } = $props<Props>();
 
 let factQuery = $state('');
@@ -149,6 +151,7 @@ $effect(() => {
     versions = [];
     governanceState = null;
     reviewProfiles = [];
+    onGovernanceStateChange?.(null);
     workflowError = null;
     workflowNotice = null;
     return;
@@ -390,6 +393,7 @@ async function loadSavedWorkflow() {
     versions = versionsResponse.data;
     governanceState = governanceResponse.data;
     reviewProfiles = governanceResponse.data.reviewProfiles || [];
+    onGovernanceStateChange?.(governanceResponse.data);
     activeReviewProfileKey = resolveActiveReviewProfileKey(
       governanceResponse.data.reviewProfiles || [],
       activeReviewProfileKey,
@@ -539,12 +543,14 @@ async function refreshGovernanceState() {
   if (!savedContentId) {
     governanceState = null;
     reviewProfiles = [];
+    onGovernanceStateChange?.(null);
     return;
   }
 
   const response = await client.contents.getGovernanceState(savedContentId);
   governanceState = response.data;
   reviewProfiles = response.data.reviewProfiles || [];
+  onGovernanceStateChange?.(response.data);
   activeReviewProfileKey = resolveActiveReviewProfileKey(
     response.data.reviewProfiles || [],
     activeReviewProfileKey,

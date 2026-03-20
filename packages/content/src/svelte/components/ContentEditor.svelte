@@ -7,11 +7,17 @@ import ContentAgentChat from './ContentAgentChat.svelte';
 let {
   content = undefined,
   contentId = 'new',
+  saveDisabled = false,
+  saveNotice = null,
+  onChange = undefined,
   onSave,
   onCancel,
 } = $props<{
   content?: any;
   contentId?: string;
+  saveDisabled?: boolean;
+  saveNotice?: string | null;
+  onChange?: (data: any) => void;
   onSave: (data: any) => void;
   onCancel: () => void;
 }>();
@@ -46,6 +52,12 @@ let formData = $state<any>(getInitialFormData(undefined));
 let lastContentId = $state<string | undefined>(undefined);
 let currentEditorState = $derived(formData.body || '');
 let currentReferenceIds = $derived(formData.referenceIds || []);
+const editorSnapshot = $derived({
+  ...formData,
+  referenceIds: [...(formData.referenceIds || [])],
+  assetIds: [...(formData.assetIds || [])],
+  assets: [...(formData.assets || [])],
+});
 
 // Undo stack for AI field edits — each entry stores the old values of changed fields
 let fieldUndoStack = $state<Record<string, string>[]>([]);
@@ -61,6 +73,10 @@ $effect(() => {
     fieldUndoStack = [];
     showUndoBanner = false;
   }
+});
+
+$effect(() => {
+  onChange?.(editorSnapshot);
 });
 
 /** Called by ContentAgentChat when AI wants to update form fields */
@@ -115,6 +131,9 @@ function getImageRecord(payload: any) {
 
 function handleSubmit(e: Event) {
   e.preventDefault();
+  if (saveDisabled) {
+    return;
+  }
   onSave(formData);
 }
 
@@ -250,9 +269,12 @@ function removeAsset(id: string) {
             </label>
             
             <div class="form-actions" style="margin-top: 1.5rem; justify-content: flex-start;">
-              <button type="submit" class="save-button">{content ? 'Update Content' : 'Add Content'}</button>
+              <button type="submit" class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Add Content'}</button>
               <button type="button" onclick={onCancel} class="cancel-button">Cancel</button>
             </div>
+            {#if saveNotice}
+              <p class="save-notice">{saveNotice}</p>
+            {/if}
           </form>
         </div>
       </details>
@@ -693,6 +715,13 @@ function removeAsset(id: string) {
     box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
   }
 
+  .save-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+    transform: none;
+    box-shadow: none;
+  }
+
   .cancel-button {
     background: white;
     color: #475569;
@@ -708,6 +737,12 @@ function removeAsset(id: string) {
     background: #f8fafc;
     color: #1e293b;
     border-color: #94a3b8;
+  }
+
+  .save-notice {
+    margin: 0.75rem 0 0;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.875rem;
   }
   
   .inline-uploader-container {

@@ -64,6 +64,13 @@ export { ContentVersion } from './content-version';
 export { ContentVersionCollection } from './content-versions';
 export type { ContentsOptions } from './contents';
 export { Contents } from './contents';
+export type {
+  ContentPublishReadinessState,
+  EvaluateContentPublishReadinessOptions,
+  PublishReadinessProfile,
+  PublishReadinessRequirement,
+} from './publish-readiness';
+export { evaluateContentPublishReadiness } from './publish-readiness';
 // Thumbnail generation
 export {
   type AIGenerateThumbnailOptions,
