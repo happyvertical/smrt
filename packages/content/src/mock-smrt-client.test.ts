@@ -139,4 +139,71 @@ describe('mock-smrt-client', () => {
     expect(response.data.isFactual).toBe(true);
     expect(response.data.enforcePublishReadiness).toBe(true);
   });
+
+  it('reads transparency responses for content preview and published snapshots', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockJsonResponse({
+            action: 'previewTransparencyAction',
+            result: {
+              snapshotKind: 'preview',
+              factsUsed: [{ id: 'fact-1' }],
+              references: [],
+            },
+          }),
+        )
+        .mockResolvedValueOnce(
+          mockJsonResponse({
+            action: 'getPublishedTransparencyAction',
+            result: {
+              snapshotKind: 'published',
+              publicationVersion: {
+                id: 'version-1',
+                version: 2,
+              },
+              factsUsed: [],
+              references: [{ id: 'reference-1' }],
+            },
+          }),
+        ),
+    );
+
+    const client = createClient('/api/v1');
+    const preview = await client.contents.getTransparencyPreview('content-7');
+    const published =
+      await client.contents.getPublishedTransparency('content-7');
+
+    expect(preview.data?.snapshotKind).toBe('preview');
+    expect(preview.data?.factsUsed).toHaveLength(1);
+    expect(published.data?.snapshotKind).toBe('published');
+    expect(published.data?.publicationVersion?.version).toBe(2);
+  });
+
+  it('reads transparency for a specific content version', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        mockJsonResponse({
+          action: 'getTransparencyAction',
+          result: {
+            snapshotKind: 'published',
+            publicationVersion: {
+              id: 'version-2',
+              version: 4,
+            },
+            versionHistory: [],
+          },
+        }),
+      ),
+    );
+
+    const client = createClient('/api/v1');
+    const response = await client.contentVersions.getTransparency('version-2');
+
+    expect(response.data.publicationVersion?.id).toBe('version-2');
+    expect(response.data.publicationVersion?.version).toBe(4);
+  });
 });

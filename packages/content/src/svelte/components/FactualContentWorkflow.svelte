@@ -5,6 +5,7 @@ import {
   type ContentReviewData,
   type ContentReviewPolicyData,
   type ContentReviewProfileData,
+  type ContentTransparencyData,
   type ContentVersionData,
   createClient,
   type FactData,
@@ -52,6 +53,8 @@ let catalogFacts = $state<FactData[]>([]);
 let reviews = $state<ContentReviewData[]>([]);
 let corrections = $state<ContentCorrectionData[]>([]);
 let versions = $state<ContentVersionData[]>([]);
+let transparencyPreview = $state<ContentTransparencyData | null>(null);
+let publishedTransparency = $state<ContentTransparencyData | null>(null);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
 let reviewProfiles = $state<ContentReviewProfileData[]>([]);
 let activeReviewProfileKey = $state(reviewProfileKey);
@@ -63,6 +66,7 @@ let workflowLoading = $state(false);
 let reviewBusy = $state<string | null>(null);
 let correctionBusy = $state(false);
 let versionBusy = $state(false);
+let transparencyLoading = $state(false);
 
 let catalogError = $state<string | null>(null);
 let workflowError = $state<string | null>(null);
@@ -107,6 +111,11 @@ const activeReviewProfile = $derived(
     (profile) => profile.profileKey === activeReviewProfileKey,
   ) ?? null,
 );
+const activeUnsatisfiedRequirements = $derived(
+  (activeReviewProfile?.requirements ?? []).filter(
+    (requirement) => !requirement.satisfied,
+  ),
+);
 const activeProfileReviewActions = $derived(
   getReviewActions(activeReviewProfile),
 );
@@ -149,6 +158,8 @@ $effect(() => {
     reviews = [];
     corrections = [];
     versions = [];
+    transparencyPreview = null;
+    publishedTransparency = null;
     governanceState = null;
     reviewProfiles = [];
     onGovernanceStateChange?.(null);
@@ -200,6 +211,112 @@ function formatProfileLabel(profileKey: string) {
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(' ');
+}
+
+function getRequirementStateLabel(requirement: {
+  missing: boolean;
+  stale?: boolean;
+  satisfied: boolean;
+  latestStatus: string | null;
+}) {
+  if (requirement.satisfied) {
+    return 'Satisfied';
+  }
+
+  if (requirement.stale) {
+    return 'Stale';
+  }
+
+  if (requirement.missing) {
+    return 'Missing';
+  }
+
+  if (requirement.latestStatus === 'failed') {
+    return 'Failed';
+  }
+
+  if (requirement.latestStatus === 'flagged') {
+    return 'Flagged';
+  }
+
+  if (requirement.latestStatus === 'waived') {
+    return 'Waived';
+  }
+
+  return 'Pending';
+}
+
+function getRequirementStateTone(requirement: {
+  missing: boolean;
+  stale?: boolean;
+  satisfied: boolean;
+  latestStatus: string | null;
+}) {
+  if (requirement.satisfied) {
+    return 'passed';
+  }
+
+  if (requirement.latestStatus === 'failed') {
+    return 'failed';
+  }
+
+  return 'flagged';
+}
+
+function getRequirementStateCopy(requirement: {
+  missing: boolean;
+  stale?: boolean;
+  latestStatus: string | null;
+  latestSummary: string | null;
+}) {
+  if (requirement.missing) {
+    return 'No review run yet.';
+  }
+
+  if (requirement.stale) {
+    return 'This review is stale because the content or linked evidence changed. Rerun required.';
+  }
+
+  if (requirement.latestSummary) {
+    return requirement.latestSummary;
+  }
+
+  if (requirement.latestStatus) {
+    return `Latest status: ${requirement.latestStatus}.`;
+  }
+
+  return 'Review pending.';
+}
+
+function getReviewTone(review: ContentReviewData) {
+  switch (review.status) {
+    case 'passed':
+    case 'waived':
+      return 'passed';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'flagged';
+  }
+}
+
+function getFindingTone(severity: string | undefined) {
+  if (severity === 'error') {
+    return 'failed';
+  }
+
+  if (severity === 'info') {
+    return 'neutral';
+  }
+
+  return 'flagged';
+}
+
+function getTransparencyReferenceLabel(reference: {
+  title?: string | null;
+  url?: string | null;
+}) {
+  return reference.title || reference.url || 'Untitled reference';
 }
 
 function resolveActiveReviewProfileKey(
@@ -340,7 +457,7 @@ async function syncFactsIfSaved(nextFacts: FactData[]) {
       relationship: defaultRelationship,
     });
     updateSelectedFacts(response.data.facts || nextFacts);
-    await refreshGovernanceState();
+    await Promise.all([refreshGovernanceState(), refreshTransparency()]);
     workflowNotice = 'Saved fact associations.';
   } catch (err: any) {
     workflowError = err.message || 'Failed to sync facts';
@@ -379,18 +496,24 @@ async function loadSavedWorkflow() {
       correctionsResponse,
       versionsResponse,
       governanceResponse,
+      transparencyPreviewResponse,
+      publishedTransparencyResponse,
     ] = await Promise.all([
       client.contents.getFacts(savedContentId),
       client.contents.getReviews(savedContentId),
       client.contents.getCorrections(savedContentId),
       client.contents.getVersions(savedContentId),
       client.contents.getGovernanceState(savedContentId),
+      client.contents.getTransparencyPreview(savedContentId),
+      client.contents.getPublishedTransparency(savedContentId),
     ]);
 
     updateSelectedFacts(factsResponse.data.facts || []);
     reviews = reviewsResponse.data;
     corrections = correctionsResponse.data;
     versions = versionsResponse.data;
+    transparencyPreview = transparencyPreviewResponse.data;
+    publishedTransparency = publishedTransparencyResponse.data;
     governanceState = governanceResponse.data;
     reviewProfiles = governanceResponse.data.reviewProfiles || [];
     onGovernanceStateChange?.(governanceResponse.data);
@@ -437,7 +560,7 @@ async function runReview(action: ReviewAction) {
 
     const response = await client.contents.runReview(savedContentId, payload);
     reviews = [response.data, ...reviews];
-    await refreshGovernanceState();
+    await Promise.all([refreshGovernanceState(), refreshTransparency()]);
     workflowNotice = `${action.label} completed.`;
     await refreshVersions();
   } catch (err: any) {
@@ -494,7 +617,7 @@ async function createSnapshot() {
       summary: 'Manual editorial snapshot',
     });
     workflowNotice = 'Snapshot created.';
-    await refreshVersions();
+    await Promise.all([refreshVersions(), refreshTransparency()]);
   } catch (err: any) {
     workflowError = err.message || 'Failed to create version snapshot';
   } finally {
@@ -537,6 +660,27 @@ async function refreshVersions() {
 
   const response = await client.contents.getVersions(savedContentId);
   versions = response.data;
+}
+
+async function refreshTransparency() {
+  if (!savedContentId) {
+    transparencyPreview = null;
+    publishedTransparency = null;
+    return;
+  }
+
+  transparencyLoading = true;
+
+  try {
+    const [previewResponse, publishedResponse] = await Promise.all([
+      client.contents.getTransparencyPreview(savedContentId),
+      client.contents.getPublishedTransparency(savedContentId),
+    ]);
+    transparencyPreview = previewResponse.data;
+    publishedTransparency = publishedResponse.data;
+  } finally {
+    transparencyLoading = false;
+  }
 }
 
 async function refreshGovernanceState() {
@@ -713,6 +857,15 @@ function canRunCustomReview() {
             </div>
           </div>
 
+          {#if activeUnsatisfiedRequirements.length > 0}
+            <div class="review-profile-callout">
+              <strong>Needs attention</strong>
+              <span>
+                {activeUnsatisfiedRequirements.length} review requirement(s) still need attention before this profile is fully ready.
+              </span>
+            </div>
+          {/if}
+
           {#if activeReviewProfile.requirements?.length === 0}
             <p class="empty-copy">No review requirements are configured for this profile.</p>
           {:else}
@@ -721,22 +874,14 @@ function canRunCustomReview() {
                 <div class="review-profile-item">
                   <div class="review-profile-item__body">
                     <strong>{requirement.label}</strong>
-                    <span>
-                      {#if requirement.missing}
-                        No review run yet
-                      {:else if requirement.latestStatus}
-                        Latest status: {requirement.latestStatus}
-                      {:else}
-                        Review pending
-                      {/if}
-                    </span>
+                    <span>{getRequirementStateCopy(requirement)}</span>
                   </div>
                   <div class="review-profile-item__meta">
                     {#if requirement.blocking}
                       <span class="pill pill--neutral">Blocking</span>
                     {/if}
-                    <span class={`pill ${requirement.satisfied ? 'pill--passed' : requirement.missing ? 'pill--flagged' : 'pill--failed'}`}>
-                      {requirement.satisfied ? 'Satisfied' : requirement.missing ? 'Missing' : 'Not satisfied'}
+                    <span class={`pill pill--${getRequirementStateTone(requirement)}`}>
+                      {getRequirementStateLabel(requirement)}
                     </span>
                   </div>
                 </div>
@@ -813,14 +958,151 @@ function canRunCustomReview() {
           {#each reviews as review (review.id ?? `${review.kind}-${review.createdAt}`)}
             <div class="review-card">
               <div class="review-card__header">
-                <strong>{review.kind}</strong>
-                <span class={`pill pill--${review.status}`}>{review.status}</span>
+                <strong>{review.policyKey || review.kind}</strong>
+                <span class={`pill pill--${getReviewTone(review)}`}>
+                  {review.status || 'pending'}
+                </span>
               </div>
-              <p>{review.summary}</p>
-              <span>{review.findings?.length || 0} finding(s)</span>
+              <p>{review.summary || 'Review completed.'}</p>
+              {#if review.findings && review.findings.length > 0}
+                <div class="review-findings">
+                  {#each review.findings.slice(0, 2) as finding (`${review.id}-${finding.title ?? finding.detail}`)}
+                    <div class="review-finding">
+                      <span class={`pill pill--${getFindingTone(finding.severity)}`}>
+                        {finding.severity || 'warning'}
+                      </span>
+                      <div class="review-finding__body">
+                        <strong>{finding.title || 'Finding'}</strong>
+                        <span>{finding.detail || 'No detail provided.'}</span>
+                      </div>
+                    </div>
+                  {/each}
+                  {#if review.findings.length > 2}
+                    <span>+ {review.findings.length - 2} more finding(s)</span>
+                  {/if}
+                </div>
+              {:else}
+                <span>0 finding(s)</span>
+              {/if}
             </div>
           {/each}
         {/if}
+      </div>
+    {/if}
+  </div>
+
+  <div class="workflow-section">
+    <div class="workflow-section__header">
+      <h4>Transparency</h4>
+      {#if transparencyLoading}
+        <span class="section-status">Loading...</span>
+      {/if}
+    </div>
+
+    {#if !savedContentId}
+      <p class="empty-copy">
+        Save this content to preview the public transparency breakdown.
+      </p>
+    {:else if !transparencyPreview}
+      <p class="empty-copy">No transparency preview is available yet.</p>
+    {:else}
+      <div class="transparency-stats">
+        <div class="transparency-stat">
+          <strong>{transparencyPreview.factsUsed.length}</strong>
+          <span>Facts used</span>
+        </div>
+        <div class="transparency-stat">
+          <strong>{transparencyPreview.references.length}</strong>
+          <span>References</span>
+        </div>
+        <div class="transparency-stat">
+          <strong>{transparencyPreview.otherExtractedFacts.length}</strong>
+          <span>Other extracted facts</span>
+        </div>
+        <div class="transparency-stat">
+          <strong>{transparencyPreview.corrections.length}</strong>
+          <span>Public corrections</span>
+        </div>
+      </div>
+
+      <div class="transparency-grid">
+        <div class="transparency-card">
+          <div class="transparency-card__header">
+            <strong>Current preview</strong>
+            <span class="pill pill--neutral">{transparencyPreview.snapshotKind}</span>
+          </div>
+          <span>
+            {#if transparencyPreview.generation.publicPrompt}
+              Public prompt is set for publication.
+            {:else}
+              No public prompt is exposed yet.
+            {/if}
+          </span>
+          {#if transparencyPreview.generation.publicPrompt}
+            <p class="transparency-card__prompt">
+              {transparencyPreview.generation.publicPrompt}
+            </p>
+          {/if}
+
+          <div class="transparency-list">
+            <div class="transparency-list__section">
+              <div class="section-caption">Facts used in the article</div>
+              {#if transparencyPreview.factsUsed.length === 0}
+                <p class="empty-copy">No used facts will be shown publicly yet.</p>
+              {:else}
+                {#each transparencyPreview.factsUsed.slice(0, 3) as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
+                  <div class="transparency-list__item">
+                    <strong>{fact.textRefined || fact.textRaw || fact.id}</strong>
+                    <span>
+                      {fact.relationship || 'linked'}
+                      {#if fact.sources && fact.sources.length > 0}
+                        · {fact.sources.length} source(s)
+                      {/if}
+                    </span>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+
+            <div class="transparency-list__section">
+              <div class="section-caption">Source material</div>
+              {#if transparencyPreview.references.length === 0}
+                <p class="empty-copy">No references will be shown publicly yet.</p>
+              {:else}
+                {#each transparencyPreview.references.slice(0, 3) as reference (reference.id ?? reference.url ?? reference.title)}
+                  <div class="transparency-list__item">
+                    <strong>{getTransparencyReferenceLabel(reference)}</strong>
+                    <span>
+                      {reference.usedFactIds.length} used fact(s) · {reference.extractedFacts.length} extracted fact(s)
+                    </span>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          </div>
+        </div>
+
+        <div class="transparency-card">
+          <div class="transparency-card__header">
+            <strong>Latest published snapshot</strong>
+            {#if publishedTransparency?.publicationVersion?.version !== null && publishedTransparency?.publicationVersion?.version !== undefined}
+              <span class="pill pill--passed">v{publishedTransparency.publicationVersion.version}</span>
+            {/if}
+          </div>
+
+          {#if publishedTransparency}
+            <span>
+              Published {formatTimestamp(publishedTransparency.publicationVersion?.createdAt || publishedTransparency.generatedAt)}
+            </span>
+            <span>
+              {publishedTransparency.versionHistory.length} timeline event(s) and {publishedTransparency.corrections.length} public correction(s)
+            </span>
+          {:else}
+            <p class="empty-copy">
+              No published transparency snapshot yet. Publish this article to freeze one for the built site.
+            </p>
+          {/if}
+        </div>
       </div>
     {/if}
   </div>
@@ -1146,6 +1428,16 @@ function canRunCustomReview() {
     justify-content: flex-end;
   }
 
+  .review-profile-callout {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    border-radius: 0.65rem;
+    border: 1px solid rgba(245, 158, 11, 0.28);
+    background: rgba(245, 158, 11, 0.1);
+    padding: 0.75rem;
+  }
+
   .review-profile-item {
     padding: 0.65rem 0.75rem;
     border: 1px solid var(--smrt-color-outline-variant);
@@ -1154,6 +1446,95 @@ function canRunCustomReview() {
   }
 
   .review-profile-item__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .review-findings {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .review-finding {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+  }
+
+  .review-finding__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .transparency-grid {
+    display: grid;
+    gap: 1rem;
+  }
+
+  @media (min-width: 900px) {
+    .transparency-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .transparency-stats {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .transparency-stat,
+  .transparency-card,
+  .transparency-list__item {
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.75rem;
+  }
+
+  .transparency-stat {
+    padding: 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .transparency-card {
+    padding: 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .transparency-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .transparency-card__prompt {
+    margin: 0;
+    color: var(--smrt-color-on-surface-variant);
+    white-space: pre-wrap;
+  }
+
+  .transparency-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .transparency-list__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .transparency-list__item {
+    padding: 0.7rem 0.8rem;
     display: flex;
     flex-direction: column;
     gap: 0.2rem;

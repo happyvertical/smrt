@@ -54,6 +54,16 @@ export { ContentReferences } from './content-references';
 export type { ContentReviewOptions } from './content-review';
 export { ContentReview } from './content-review';
 export { ContentReviewCollection } from './content-reviews';
+export type {
+  ContentTransparencyData,
+  ContentTransparencyFact,
+  ContentTransparencyGeneration,
+  ContentTransparencyPublicationVersion,
+  ContentTransparencyReference,
+  ContentTransparencySource,
+  ContentTransparencyVersionHistoryItem,
+} from './content-transparency';
+export { normalizeContentTransparency } from './content-transparency';
 // Content subclasses (STI)
 export {
   Article,

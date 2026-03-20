@@ -634,6 +634,22 @@ describe('FactualContent foundations', () => {
       expect(metadata.transparency?.references[0]?.usedFactIds).toContain(
         fact.id,
       );
+
+      const previewTransparency = await content.previewTransparencyAction();
+      const publishedTransparency =
+        await content.getPublishedTransparencyAction();
+      const versionTransparency =
+        await publicationVersion?.getTransparencyAction();
+
+      expect(previewTransparency.snapshotKind).toBe('preview');
+      expect(previewTransparency.factsUsed).toHaveLength(1);
+      expect(publishedTransparency?.snapshotKind).toBe('published');
+      expect(publishedTransparency?.publicationVersion?.id).toBe(
+        publicationVersion?.id,
+      );
+      expect(versionTransparency?.publicationVersion?.version).toBe(
+        publicationVersion?.version,
+      );
     } finally {
       if (typeof db.close === 'function') {
         await db.close();
@@ -680,6 +696,19 @@ describe('FactualContent foundations', () => {
       expect(draftVersion).toBeTruthy();
       expect(draftVersion?.getSnapshot().status).toBe('draft');
       expect(draftVersion?.getSnapshot().body).toContain('$5.1 million');
+
+      const previewTransparency = await content.previewTransparencyAction();
+      const correctionEntry = previewTransparency.corrections[0];
+      const draftHistoryEntry = previewTransparency.versionHistory.find(
+        (version) => version.id === draftVersion?.id,
+      );
+
+      expect(correctionEntry?.provenance?.draftVersionId).toBe(
+        draftVersion?.id,
+      );
+      expect(draftHistoryEntry?.provenance?.sourceCorrectionVersionId).toBe(
+        correction.getMetadata().sourceCorrectionVersionId,
+      );
     } finally {
       if (typeof db.close === 'function') {
         await db.close();

@@ -59,6 +59,71 @@ const parsed = stringToContent(markdown);
 await contents.syncContentDir({ contentDir: './blog-posts' });
 ```
 
+## Factual Governance
+
+```typescript
+import {
+  FactualContent,
+  configureContentGovernance,
+} from '@happyvertical/smrt-content';
+
+configureContentGovernance({
+  publicationReviewProfileKey: 'publication',
+  enforcePublishReadiness: (content) => content.isFactual(),
+  reviewPolicies: {
+    editorial: {
+      key: 'editorial',
+      label: 'Editorial Review',
+      kind: 'custom',
+      instructions: 'Check tone, sourcing, and local publication standards.',
+    },
+  },
+  reviewProfiles: {
+    publication: [
+      { policyKey: 'safety', blocking: true },
+      { policyKey: 'facts', blocking: true, when: (content) => content.isFactual() },
+      { policyKey: 'editorial', blocking: false },
+    ],
+  },
+});
+
+const article = new FactualContent({
+  title: 'Transit service changes',
+  body: 'Weekend service will resume on April 3.',
+  metadata: {
+    generation: {
+      publicPrompt: 'Summarize the service change for riders.',
+      aiAssisted: true,
+      model: 'gpt-5.4',
+    },
+  },
+});
+
+await article.initialize();
+await article.save();
+await article.addFact('fact_123', 'supports');
+await article.runReviewAction({ kind: 'facts', policyKey: 'facts' });
+await article.runReviewAction({ kind: 'safety', policyKey: 'safety' });
+
+article.status = 'published';
+await article.save();
+```
+
+### Published Transparency
+
+```typescript
+const publishedTransparency = await article.getPublishedTransparencyAction();
+const previewTransparency = await article.previewTransparencyAction();
+
+console.log(publishedTransparency?.factsUsed);
+console.log(previewTransparency.references);
+```
+
+Published transparency is frozen into `ContentVersion.metadata.transparency` when a
+publication snapshot is created. Built sites should render the published snapshot,
+while editors can use the preview snapshot to inspect what will be shown publicly
+before publishing.
+
 ## API
 
 ### Classes

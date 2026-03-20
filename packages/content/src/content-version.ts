@@ -2,6 +2,7 @@ import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ContentVersionKind } from './content-governance';
+import { normalizeContentTransparency } from './content-transparency';
 
 export interface ContentVersionOptions extends SmrtObjectOptions {
   contentId?: string;
@@ -23,7 +24,12 @@ export interface ContentVersionOptions extends SmrtObjectOptions {
 @smrt({
   tableName: 'content_versions',
   conflictColumns: ['content_id', 'version'],
-  api: { include: ['list', 'get', 'create'] },
+  api: {
+    include: ['list', 'get', 'create', 'getTransparencyAction'],
+    routes: {
+      getTransparencyAction: { method: 'GET', path: 'transparency' },
+    },
+  },
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
@@ -91,5 +97,29 @@ export class ContentVersion extends SmrtObject {
     } catch {
       return {};
     }
+  }
+
+  getTransparency() {
+    const metadata = this.getMetadata();
+    const snapshot = this.getSnapshot();
+
+    return normalizeContentTransparency(metadata.transparency, {
+      snapshotKind: this.kind === 'publication' ? 'published' : 'preview',
+      contentId: this.contentId || (snapshot.contentId as string) || null,
+      currentContentStatus:
+        this.status || (snapshot.status as string) || 'draft',
+      publicationVersion: {
+        id: (this.id as string) || null,
+        version: this.version ?? null,
+        kind: this.kind || null,
+        summary: this.summary || '',
+        createdAt:
+          this.createdAt instanceof Date ? this.createdAt.toISOString() : null,
+      },
+    });
+  }
+
+  async getTransparencyAction() {
+    return this.getTransparency();
   }
 }

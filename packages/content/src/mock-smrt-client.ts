@@ -5,6 +5,10 @@
  * that demonstrates the intended functionality.
  */
 
+import type { ContentTransparencyData as ContentTransparencyShape } from './content-transparency';
+
+export type ContentTransparencyData = ContentTransparencyShape;
+
 export interface ContentData {
   id?: string;
   references?: any;
@@ -386,6 +390,32 @@ class ApiClient {
       };
     },
 
+    getPublishedTransparency: async (
+      id: string,
+    ): Promise<ApiResponse<ContentTransparencyData | null>> => {
+      const res = await fetch(`${this.baseUrl}/contents/${id}/transparency`);
+      if (!res.ok) throw new Error(await res.text());
+      const payload = await res.json();
+      return {
+        data: getItemData<ContentTransparencyData | null>(payload),
+        success: true,
+      };
+    },
+
+    getTransparencyPreview: async (
+      id: string,
+    ): Promise<ApiResponse<ContentTransparencyData>> => {
+      const res = await fetch(
+        `${this.baseUrl}/contents/${id}/transparency/preview`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const payload = await res.json();
+      return {
+        data: getItemData<ContentTransparencyData>(payload),
+        success: true,
+      };
+    },
+
     getReviewProfiles: async (
       id: string,
     ): Promise<ApiResponse<ContentReviewProfileData[]>> => {
@@ -499,6 +529,22 @@ class ApiClient {
       if (!res.ok) throw new Error(await res.text());
       const payload = await res.json();
       return { data: getItemData<ContentData>(payload), success: true };
+    },
+  };
+
+  contentVersions = {
+    getTransparency: async (
+      id: string,
+    ): Promise<ApiResponse<ContentTransparencyData>> => {
+      const res = await fetch(
+        `${this.baseUrl}/contentversions/${id}/transparency`,
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const payload = await res.json();
+      return {
+        data: getItemData<ContentTransparencyData>(payload),
+        success: true,
+      };
     },
   };
 }

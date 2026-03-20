@@ -18,6 +18,20 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
     return versions.length > 0 ? versions[versions.length - 1] : null;
   }
 
+  async getLatestPublishedForContent(
+    contentId: string,
+  ): Promise<ContentVersion | null> {
+    const versions = await this.list({
+      where: {
+        contentId,
+        kind: 'publication',
+      },
+      orderBy: 'version DESC',
+    });
+
+    return versions[0] || null;
+  }
+
   async getVersion(
     contentId: string,
     versionNumber: number,
