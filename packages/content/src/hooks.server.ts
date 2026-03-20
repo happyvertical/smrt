@@ -43,12 +43,11 @@ async function bootstrapSchema() {
       // runtime-only routes do not depend on stale manifests.
       const localClasses = ObjectRegistry.getClassNames()
         .map((name) => ObjectRegistry.getClass(name))
-        .filter(
-          (registered): registered is NonNullable<typeof registered> =>
-            Boolean(
-              registered &&
-                registered.packageName === '@happyvertical/smrt-content',
-            ),
+        .filter((registered): registered is NonNullable<typeof registered> =>
+          Boolean(
+            registered &&
+              registered.packageName === '@happyvertical/smrt-content',
+          ),
         )
         .map((registered) => registered.constructor);
 

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import { dev } from '$app/environment';
+import { env } from '$env/dynamic/private';
 import { seedImages } from '$lib/server/seed-images';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';

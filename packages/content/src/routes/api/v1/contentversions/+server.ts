@@ -2,8 +2,8 @@
 // DO NOT EDIT - changes will be overwritten
 
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
 import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';
 // Note: @happyvertical/smrt-content:ContentVersion is auto-registered by the Vite plugin scanner
 
 // List all @happyvertical/smrt-content:contentversions
@@ -11,7 +11,9 @@ export const GET: RequestHandler = async ({ url }) => {
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
-  const collection = await getCollection('@happyvertical/smrt-content:ContentVersion');
+  const collection = await getCollection(
+    '@happyvertical/smrt-content:ContentVersion',
+  );
   const items = await collection.list({ limit, offset });
   const count = await collection.count();
 
@@ -22,7 +24,9 @@ export const GET: RequestHandler = async ({ url }) => {
 export const POST: RequestHandler = async ({ request }) => {
   const data = await request.json();
 
-  const collection = await getCollection('@happyvertical/smrt-content:ContentVersion');
+  const collection = await getCollection(
+    '@happyvertical/smrt-content:ContentVersion',
+  );
   const item = await collection.create(data);
   await item.save();
 

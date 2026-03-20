@@ -2,9 +2,9 @@
 // DO NOT EDIT - changes will be overwritten
 
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { getCollection } from '$lib/server/smrt';
 import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';
+import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';
 // Note: @happyvertical/smrt-content:Content is auto-registered by the Vite plugin scanner
 
 // List all @happyvertical/smrt-content:contents

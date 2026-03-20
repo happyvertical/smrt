@@ -617,7 +617,8 @@ export class Content extends SmrtObject {
         this.variant || '',
       );
       const typeOnlyKey = buildContentGovernanceAssignmentKey(this.type || '');
-      const keys = exactKey === typeOnlyKey ? [exactKey] : [exactKey, typeOnlyKey];
+      const keys =
+        exactKey === typeOnlyKey ? [exactKey] : [exactKey, typeOnlyKey];
       const placeholders = keys.map(() => '?').join(', ');
       const result = await this.db.query(
         `SELECT 1 AS matched FROM content_governance_assignments WHERE key IN (${placeholders}) LIMIT 1`,
