@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.4
+
+### Patch Changes
+
+- ### Features
+
+  - add governed content workflows and transparency (#1036) (content)
+  - @happyvertical/smrt-scanner@0.21.4
+  - @happyvertical/smrt-config@0.21.4
+  - @happyvertical/smrt-types@0.21.4
+
 ## 0.21.3
 
 ### Patch Changes
