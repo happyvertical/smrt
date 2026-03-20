@@ -269,6 +269,40 @@ describe('ContentGovernanceManager component', () => {
     );
   });
 
+  it('resets editor fields when switching between policies', async () => {
+    const target = renderManager();
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('Facts review'),
+    );
+
+    const editButtons = Array.from(target.querySelectorAll('button')).filter(
+      (button) => button.textContent?.includes('Edit'),
+    );
+
+    editButtons[0]?.click();
+    flushSync();
+
+    await vi.waitFor(() => {
+      const inputs = target.querySelectorAll(
+        'form.governance-editor input[type="text"]',
+      );
+      expect((inputs[0] as HTMLInputElement).value).toBe('facts');
+      expect((inputs[1] as HTMLInputElement).value).toBe('Facts review');
+    });
+
+    editButtons[1]?.click();
+    flushSync();
+
+    await vi.waitFor(() => {
+      const inputs = target.querySelectorAll(
+        'form.governance-editor input[type="text"]',
+      );
+      expect((inputs[0] as HTMLInputElement).value).toBe('newsroom-style');
+      expect((inputs[1] as HTMLInputElement).value).toBe('Newsroom style');
+    });
+  });
+
   it('deletes persisted overrides from the rendered list', async () => {
     const target = renderManager();
 

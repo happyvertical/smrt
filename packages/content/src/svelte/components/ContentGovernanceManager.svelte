@@ -143,11 +143,13 @@ function cancelEditing() {
           </button>
         </div>
         {#if editMode === 'policy'}
-          <ContentGovernancePolicyEditor
-            policy={editingPolicy || {}}
-            onSave={savePolicy}
-            onCancel={cancelEditing}
-          />
+          {#key editingPolicy?.id ?? editingPolicy?.key ?? 'new-policy'}
+            <ContentGovernancePolicyEditor
+              policy={editingPolicy || {}}
+              onSave={savePolicy}
+              onCancel={cancelEditing}
+            />
+          {/key}
         {/if}
         <div class="list">
           {#each definitions.effective.policies as policy (policy.key)}
@@ -185,12 +187,14 @@ function cancelEditing() {
           </button>
         </div>
         {#if editMode === 'profile'}
-          <ContentGovernanceProfileEditor
-            profile={editingProfile || {}}
-            policies={definitions.effective.policies}
-            onSave={saveProfile}
-            onCancel={cancelEditing}
-          />
+          {#key editingProfile?.id ?? editingProfile?.key ?? 'new-profile'}
+            <ContentGovernanceProfileEditor
+              profile={editingProfile || {}}
+              policies={definitions.effective.policies}
+              onSave={saveProfile}
+              onCancel={cancelEditing}
+            />
+          {/key}
         {/if}
         <div class="list">
           {#each definitions.effective.profiles as profile (profile.key)}
@@ -228,12 +232,14 @@ function cancelEditing() {
           </button>
         </div>
         {#if editMode === 'assignment'}
-          <ContentGovernanceAssignmentEditor
-            assignment={editingAssignment || {}}
-            profiles={definitions.effective.profiles}
-            onSave={saveAssignment}
-            onCancel={cancelEditing}
-          />
+          {#key editingAssignment?.id ?? editingAssignment?.key ?? 'new-assignment'}
+            <ContentGovernanceAssignmentEditor
+              assignment={editingAssignment || {}}
+              profiles={definitions.effective.profiles}
+              onSave={saveAssignment}
+              onCancel={cancelEditing}
+            />
+          {/key}
         {/if}
         <div class="list">
           {#each definitions.effective.assignments as assignment (assignment.key)}

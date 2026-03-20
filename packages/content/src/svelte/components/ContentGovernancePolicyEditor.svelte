@@ -9,20 +9,30 @@ export interface Props {
 
 let { policy = {}, onSave, onCancel = undefined } = $props<Props>();
 
-let key = $state(policy.key || '');
-let label = $state(policy.label || '');
-let kind = $state(policy.kind || 'custom');
-let instructions = $state(policy.instructions || '');
-let enabled = $state(policy.enabled ?? true);
+function createDraft(sourcePolicy: Partial<ContentReviewPolicyData>) {
+  return {
+    key: sourcePolicy.key || '',
+    label: sourcePolicy.label || '',
+    kind: sourcePolicy.kind || 'custom',
+    instructions: sourcePolicy.instructions || '',
+    enabled: sourcePolicy.enabled ?? true,
+  };
+}
+
+let draft = $state(createDraft({}));
+
+$effect(() => {
+  draft = createDraft(policy);
+});
 
 function handleSubmit() {
   onSave({
     ...policy,
-    key,
-    label,
-    kind,
-    instructions,
-    enabled,
+    key: draft.key,
+    label: draft.label,
+    kind: draft.kind,
+    instructions: draft.instructions,
+    enabled: draft.enabled,
   });
 }
 </script>
@@ -33,15 +43,15 @@ function handleSubmit() {
 }}>
   <label>
     Key
-    <input type="text" bind:value={key} required />
+    <input type="text" bind:value={draft.key} required />
   </label>
   <label>
     Label
-    <input type="text" bind:value={label} />
+    <input type="text" bind:value={draft.label} />
   </label>
   <label>
     Kind
-    <select bind:value={kind}>
+    <select bind:value={draft.kind}>
       <option value="facts">Facts</option>
       <option value="safety">Safety</option>
       <option value="custom">Custom</option>
@@ -49,10 +59,10 @@ function handleSubmit() {
   </label>
   <label>
     Instructions
-    <textarea rows="4" bind:value={instructions}></textarea>
+    <textarea rows="4" bind:value={draft.instructions}></textarea>
   </label>
   <label class="checkbox">
-    <input type="checkbox" bind:checked={enabled} />
+    <input type="checkbox" bind:checked={draft.enabled} />
     Enabled
   </label>
   <div class="actions">

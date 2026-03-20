@@ -18,37 +18,49 @@ let {
   onCancel = undefined,
 } = $props<Props>();
 
-let key = $state(profile.key || '');
-let label = $state(profile.label || '');
-let description = $state(profile.description || '');
-let enabled = $state(profile.enabled ?? true);
-let requirements = $state(
-  Array.isArray(profile.requirements) && profile.requirements.length > 0
-    ? profile.requirements.map((requirement) => ({ ...requirement }))
-    : [
-        {
-          policyKey: policies[0]?.key || 'safety',
-          label: policies[0]?.label || 'Safety Review',
-          blocking: false,
-          acceptedStatuses: ['passed', 'waived'],
-        },
-      ],
-);
+function createDefaultRequirement(
+  availablePolicies: ContentReviewPolicyData[],
+) {
+  return {
+    policyKey: availablePolicies[0]?.key || 'safety',
+    label: availablePolicies[0]?.label || 'Safety Review',
+    blocking: false,
+    acceptedStatuses: ['passed', 'waived'],
+  };
+}
+
+function createDraft(
+  sourceProfile: Partial<ContentGovernanceProfileData>,
+  availablePolicies: ContentReviewPolicyData[],
+) {
+  return {
+    key: sourceProfile.key || '',
+    label: sourceProfile.label || '',
+    description: sourceProfile.description || '',
+    enabled: sourceProfile.enabled ?? true,
+    requirements:
+      Array.isArray(sourceProfile.requirements) &&
+      sourceProfile.requirements.length > 0
+        ? sourceProfile.requirements.map((requirement) => ({ ...requirement }))
+        : [createDefaultRequirement(availablePolicies)],
+  };
+}
+
+let draft = $state(createDraft({}, []));
+
+$effect(() => {
+  draft = createDraft(profile, policies);
+});
 
 function addRequirement() {
-  requirements = [
-    ...requirements,
-    {
-      policyKey: policies[0]?.key || 'safety',
-      label: policies[0]?.label || 'Safety Review',
-      blocking: false,
-      acceptedStatuses: ['passed', 'waived'],
-    },
+  draft.requirements = [
+    ...draft.requirements,
+    createDefaultRequirement(policies),
   ];
 }
 
 function removeRequirement(index: number) {
-  requirements = requirements.filter(
+  draft.requirements = draft.requirements.filter(
     (_, requirementIndex) => requirementIndex !== index,
   );
 }
@@ -56,11 +68,11 @@ function removeRequirement(index: number) {
 function handleSubmit() {
   onSave({
     ...profile,
-    key,
-    label,
-    description,
-    enabled,
-    requirements,
+    key: draft.key,
+    label: draft.label,
+    description: draft.description,
+    enabled: draft.enabled,
+    requirements: draft.requirements,
   });
 }
 </script>
@@ -71,18 +83,18 @@ function handleSubmit() {
 }}>
   <label>
     Key
-    <input type="text" bind:value={key} required />
+    <input type="text" bind:value={draft.key} required />
   </label>
   <label>
     Label
-    <input type="text" bind:value={label} />
+    <input type="text" bind:value={draft.label} />
   </label>
   <label>
     Description
-    <textarea rows="2" bind:value={description}></textarea>
+    <textarea rows="2" bind:value={draft.description}></textarea>
   </label>
   <label class="checkbox">
-    <input type="checkbox" bind:checked={enabled} />
+    <input type="checkbox" bind:checked={draft.enabled} />
     Enabled
   </label>
 
@@ -94,7 +106,7 @@ function handleSubmit() {
       </button>
     </div>
 
-    {#each requirements as requirement, index (`${requirement.policyKey}-${index}`)}
+    {#each draft.requirements as requirement, index (`${requirement.policyKey}-${index}`)}
       <div class="requirement-row">
         <label>
           Policy

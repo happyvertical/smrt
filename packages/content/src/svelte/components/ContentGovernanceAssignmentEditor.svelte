@@ -18,38 +18,50 @@ let {
   onCancel = undefined,
 } = $props<Props>();
 
-let label = $state(assignment.label || '');
-let contentType = $state(assignment.contentType || 'article');
-let contentVariant = $state(assignment.contentVariant || '');
-let enabled = $state(assignment.enabled ?? true);
-let factLinkingEnabled = $state(assignment.factLinkingEnabled ?? true);
-let transparencyEnabled = $state(assignment.transparencyEnabled ?? true);
-let publicationProfileKey = $state(
-  assignment.publicationProfileKey || profiles[0]?.key || 'publication',
-);
-let correctionProfileKey = $state(
-  assignment.correctionProfileKey || profiles[1]?.key || 'correction',
-);
-let enforcePublishReadiness = $state(
-  assignment.enforcePublishReadiness ?? false,
-);
-let defaultFactRelationship = $state(
-  assignment.defaultFactRelationship || 'supports',
-);
+function createDraft(
+  sourceAssignment: Partial<ContentGovernanceAssignmentData>,
+  availableProfiles: ContentGovernanceProfileData[],
+) {
+  return {
+    label: sourceAssignment.label || '',
+    contentType: sourceAssignment.contentType || 'article',
+    contentVariant: sourceAssignment.contentVariant || '',
+    enabled: sourceAssignment.enabled ?? true,
+    factLinkingEnabled: sourceAssignment.factLinkingEnabled ?? true,
+    transparencyEnabled: sourceAssignment.transparencyEnabled ?? true,
+    publicationProfileKey:
+      sourceAssignment.publicationProfileKey ||
+      availableProfiles[0]?.key ||
+      'publication',
+    correctionProfileKey:
+      sourceAssignment.correctionProfileKey ||
+      availableProfiles[1]?.key ||
+      'correction',
+    enforcePublishReadiness: sourceAssignment.enforcePublishReadiness ?? false,
+    defaultFactRelationship:
+      sourceAssignment.defaultFactRelationship || 'supports',
+  };
+}
+
+let draft = $state(createDraft({}, []));
+
+$effect(() => {
+  draft = createDraft(assignment, profiles);
+});
 
 function handleSubmit() {
   onSave({
     ...assignment,
-    label,
-    contentType,
-    contentVariant: contentVariant || null,
-    enabled,
-    factLinkingEnabled,
-    transparencyEnabled,
-    publicationProfileKey: publicationProfileKey || null,
-    correctionProfileKey: correctionProfileKey || null,
-    enforcePublishReadiness,
-    defaultFactRelationship,
+    label: draft.label,
+    contentType: draft.contentType,
+    contentVariant: draft.contentVariant || null,
+    enabled: draft.enabled,
+    factLinkingEnabled: draft.factLinkingEnabled,
+    transparencyEnabled: draft.transparencyEnabled,
+    publicationProfileKey: draft.publicationProfileKey || null,
+    correctionProfileKey: draft.correctionProfileKey || null,
+    enforcePublishReadiness: draft.enforcePublishReadiness,
+    defaultFactRelationship: draft.defaultFactRelationship,
   });
 }
 </script>
@@ -60,19 +72,19 @@ function handleSubmit() {
 }}>
   <label>
     Label
-    <input type="text" bind:value={label} />
+    <input type="text" bind:value={draft.label} />
   </label>
   <label>
     Content type
-    <input type="text" bind:value={contentType} required />
+    <input type="text" bind:value={draft.contentType} required />
   </label>
   <label>
     Content variant
-    <input type="text" bind:value={contentVariant} />
+    <input type="text" bind:value={draft.contentVariant} />
   </label>
   <label>
     Publication profile
-    <select bind:value={publicationProfileKey}>
+    <select bind:value={draft.publicationProfileKey}>
       {#each profiles as profile (profile.key)}
         <option value={profile.key}>{profile.label}</option>
       {/each}
@@ -80,7 +92,7 @@ function handleSubmit() {
   </label>
   <label>
     Correction profile
-    <select bind:value={correctionProfileKey}>
+    <select bind:value={draft.correctionProfileKey}>
       {#each profiles as profile (profile.key)}
         <option value={profile.key}>{profile.label}</option>
       {/each}
@@ -88,7 +100,7 @@ function handleSubmit() {
   </label>
   <label>
     Default fact relationship
-    <select bind:value={defaultFactRelationship}>
+    <select bind:value={draft.defaultFactRelationship}>
       <option value="supports">supports</option>
       <option value="referenced_in">referenced_in</option>
       <option value="contradicts">contradicts</option>
@@ -98,19 +110,19 @@ function handleSubmit() {
 
   <div class="checkbox-grid">
     <label class="checkbox">
-      <input type="checkbox" bind:checked={enabled} />
+      <input type="checkbox" bind:checked={draft.enabled} />
       Enabled
     </label>
     <label class="checkbox">
-      <input type="checkbox" bind:checked={factLinkingEnabled} />
+      <input type="checkbox" bind:checked={draft.factLinkingEnabled} />
       Fact linking
     </label>
     <label class="checkbox">
-      <input type="checkbox" bind:checked={transparencyEnabled} />
+      <input type="checkbox" bind:checked={draft.transparencyEnabled} />
       Transparency
     </label>
     <label class="checkbox">
-      <input type="checkbox" bind:checked={enforcePublishReadiness} />
+      <input type="checkbox" bind:checked={draft.enforcePublishReadiness} />
       Enforce publish readiness
     </label>
   </div>
