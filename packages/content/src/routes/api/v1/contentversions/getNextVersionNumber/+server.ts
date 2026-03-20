@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getNextVersionNumber(options);
+  const result = await collection.getNextVersionNumber(options.contentId);
 
   return json({ action: 'getNextVersionNumber', result });
 };

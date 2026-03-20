@@ -16,7 +16,29 @@ let {
   profiles = [],
   onSave,
   onCancel = undefined,
-} = $props<Props>();
+}: Props = $props();
+
+function resolveProfileKey(
+  preferredKey: string | null | undefined,
+  availableProfiles: ContentGovernanceProfileData[],
+  fallbackKey?: string,
+) {
+  if (
+    preferredKey &&
+    availableProfiles.some((profile) => profile.key === preferredKey)
+  ) {
+    return preferredKey;
+  }
+
+  if (
+    fallbackKey &&
+    availableProfiles.some((profile) => profile.key === fallbackKey)
+  ) {
+    return fallbackKey;
+  }
+
+  return availableProfiles[0]?.key || '';
+}
 
 function createDraft(
   sourceAssignment: Partial<ContentGovernanceAssignmentData>,
@@ -29,14 +51,16 @@ function createDraft(
     enabled: sourceAssignment.enabled ?? true,
     factLinkingEnabled: sourceAssignment.factLinkingEnabled ?? true,
     transparencyEnabled: sourceAssignment.transparencyEnabled ?? true,
-    publicationProfileKey:
-      sourceAssignment.publicationProfileKey ||
-      availableProfiles[0]?.key ||
+    publicationProfileKey: resolveProfileKey(
+      sourceAssignment.publicationProfileKey,
+      availableProfiles,
       'publication',
-    correctionProfileKey:
-      sourceAssignment.correctionProfileKey ||
-      availableProfiles[1]?.key ||
+    ),
+    correctionProfileKey: resolveProfileKey(
+      sourceAssignment.correctionProfileKey,
+      availableProfiles,
       'correction',
+    ),
     enforcePublishReadiness: sourceAssignment.enforcePublishReadiness ?? false,
     defaultFactRelationship:
       sourceAssignment.defaultFactRelationship || 'supports',
@@ -85,6 +109,7 @@ function handleSubmit() {
   <label>
     Publication profile
     <select bind:value={draft.publicationProfileKey}>
+      <option value="" disabled={profiles.length > 0}>Select a profile</option>
       {#each profiles as profile (profile.key)}
         <option value={profile.key}>{profile.label}</option>
       {/each}
@@ -93,6 +118,7 @@ function handleSubmit() {
   <label>
     Correction profile
     <select bind:value={draft.correctionProfileKey}>
+      <option value="" disabled={profiles.length > 0}>Select a profile</option>
       {#each profiles as profile (profile.key)}
         <option value={profile.key}>{profile.label}</option>
       {/each}

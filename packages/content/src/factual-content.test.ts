@@ -16,6 +16,7 @@ import {
   ContentGovernanceAssignmentCollection,
   ContentGovernancePolicyCollection,
   ContentGovernanceProfileCollection,
+  ContentReviewCollection,
 } from './index';
 
 afterEach(() => {
@@ -583,6 +584,39 @@ describe('Content governance', () => {
       await expect(profile.delete()).rejects.toThrow(
         'referenced by assignments',
       );
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('persists reviews created from collection results', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await syncSchema({ db, schema: CONTENT_REVIEWS_SCHEMA });
+
+      const reviews = await ContentReviewCollection.create({ db });
+      const created = await reviews.createFromResult({
+        contentId: 'content-1',
+        kind: 'facts',
+        policyKey: 'facts',
+        result: {
+          status: 'passed',
+          summary: 'Looks good',
+          findings: [],
+        },
+        tenantId: 'tenant-1',
+      });
+
+      const reloaded = await reviews.get({ id: created.id as string });
+      expect(reloaded?.status).toBe('passed');
+      expect(reloaded?.policyKey).toBe('facts');
+      expect(reloaded?.summary).toBe('Looks good');
     } finally {
       if (typeof db.close === 'function') {
         await db.close();

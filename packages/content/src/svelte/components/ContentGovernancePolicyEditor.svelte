@@ -7,7 +7,7 @@ export interface Props {
   onCancel?: () => void;
 }
 
-let { policy = {}, onSave, onCancel = undefined } = $props<Props>();
+let { policy = {}, onSave, onCancel = undefined }: Props = $props();
 
 function createDraft(sourcePolicy: Partial<ContentReviewPolicyData>) {
   return {

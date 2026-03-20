@@ -108,6 +108,36 @@ export interface ContentGovernanceConfig {
   assignments: ContentGovernanceAssignmentDefinition[];
 }
 
+export interface PersistedContentGovernancePolicyRecord
+  extends ContentReviewPolicyDefinition {
+  id?: string;
+  tenantId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface PersistedContentGovernanceProfileRecord
+  extends ContentGovernanceProfileDefinition {
+  id?: string;
+  tenantId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface PersistedContentGovernanceAssignmentRecord
+  extends ContentGovernanceAssignmentDefinition {
+  id?: string;
+  tenantId?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface PersistedContentGovernanceDefinitions {
+  policies: PersistedContentGovernancePolicyRecord[];
+  profiles: PersistedContentGovernanceProfileRecord[];
+  assignments: PersistedContentGovernanceAssignmentRecord[];
+}
+
 export interface ResolvedContentGovernance {
   isGoverned: boolean;
   factLinkingEnabled: boolean;
@@ -251,6 +281,8 @@ const DEFAULT_CONTENT_GOVERNANCE_CONFIG: ContentGovernanceConfig = {
 let governanceConfig: ContentGovernanceConfig = cloneGovernanceConfig(
   DEFAULT_CONTENT_GOVERNANCE_CONFIG,
 );
+// Process-global by design: apps are expected to configure governance once at
+// startup and use persisted records for runtime admin overrides.
 
 function cloneReviewRequirement(
   requirement: ContentReviewRequirement,
@@ -420,153 +452,190 @@ function isMissingGovernanceTableError(error: unknown): boolean {
   );
 }
 
-async function loadPersistedPolicies(
-  db?: DatabaseInterface | null,
-): Promise<ContentReviewPolicyDefinition[]> {
-  if (!db) {
-    return [];
-  }
-
-  try {
-    const rows = await db.list('content_governance_policies', {});
-    rows.sort((a: any, b: any) =>
-      String(a.created_at || a.createdAt || '').localeCompare(
-        String(b.created_at || b.createdAt || ''),
-      ),
-    );
-    return rows.map((row: any) =>
-      normalizePolicyDefinition({
-        key: String(row.key || ''),
-        label: String(row.label || row.key || ''),
-        kind: (row.kind ||
-          getFallbackPolicyKind(String(row.key || ''))) as ContentReviewKind,
-        instructions: String(row.instructions || ''),
-        enabled: row.enabled !== false && row.enabled !== 0,
-        metadata: safeParseMetadata(row.metadata),
-      }),
-    );
-  } catch (error) {
-    if (isMissingGovernanceTableError(error)) {
-      return [];
-    }
-    throw error;
-  }
+function getRowTimestamp(
+  row: Record<string, any>,
+  primaryKey: 'createdAt' | 'updatedAt',
+): string | null {
+  const snakeCaseKey = primaryKey === 'createdAt' ? 'created_at' : 'updated_at';
+  const value = row[primaryKey] ?? row[snakeCaseKey];
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-async function loadPersistedProfiles(
-  db?: DatabaseInterface | null,
-): Promise<ContentGovernanceProfileDefinition[]> {
-  if (!db) {
-    return [];
-  }
-
-  try {
-    const rows = await db.list('content_governance_profiles', {});
-    rows.sort((a: any, b: any) =>
-      String(a.created_at || a.createdAt || '').localeCompare(
-        String(b.created_at || b.createdAt || ''),
-      ),
-    );
-    return rows.map((row: any) =>
-      normalizeProfileDefinition({
-        key: String(row.key || ''),
-        label: String(row.label || row.key || ''),
-        description: String(row.description || ''),
-        enabled: row.enabled !== false && row.enabled !== 0,
-        requirements: safeParseRequirements(row.requirements),
-        metadata: safeParseMetadata(row.metadata),
-      }),
-    );
-  } catch (error) {
-    if (isMissingGovernanceTableError(error)) {
-      return [];
-    }
-    throw error;
-  }
+function getRowTenantId(row: Record<string, any>): string | null {
+  const value = row.tenantId ?? row.tenant_id ?? null;
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-async function loadPersistedAssignments(
-  db?: DatabaseInterface | null,
-): Promise<ContentGovernanceAssignmentDefinition[]> {
-  if (!db) {
-    return [];
-  }
-
-  try {
-    const rows = await db.list('content_governance_assignments', {});
-    rows.sort((a: any, b: any) =>
-      String(a.created_at || a.createdAt || '').localeCompare(
-        String(b.created_at || b.createdAt || ''),
-      ),
-    );
-    return rows.map((row: any) =>
-      normalizeAssignmentDefinition({
-        key: String(row.key || ''),
-        label: String(row.label || ''),
-        contentType: String(row.contentType || row.content_type || ''),
-        contentVariant: String(row.contentVariant || row.content_variant || ''),
-        enabled: row.enabled !== false && row.enabled !== 0,
-        factLinkingEnabled:
-          row.factLinkingEnabled === true ||
-          row.fact_linking_enabled === true ||
-          row.fact_linking_enabled === 1,
-        transparencyEnabled:
-          row.transparencyEnabled === true ||
-          row.transparency_enabled === true ||
-          row.transparency_enabled === 1,
-        publicationProfileKey:
-          row.publicationProfileKey || row.publication_profile_key || null,
-        correctionProfileKey:
-          row.correctionProfileKey || row.correction_profile_key || null,
-        enforcePublishReadiness:
-          row.enforcePublishReadiness === true ||
-          row.enforce_publish_readiness === true ||
-          row.enforce_publish_readiness === 1,
-        defaultFactRelationship:
-          row.defaultFactRelationship ||
-          row.default_fact_relationship ||
-          DEFAULT_FACT_RELATIONSHIP,
-        metadata: safeParseMetadata(row.metadata),
-      }),
-    );
-  } catch (error) {
-    if (isMissingGovernanceTableError(error)) {
-      return [];
-    }
-    throw error;
-  }
-}
-
-function safeParseMetadata(value: unknown): Record<string, any> {
+function safeParseJSONObject(value: unknown): Record<string, any> {
   if (!value) {
     return {};
   }
 
-  if (typeof value === 'object') {
+  if (typeof value === 'object' && !Array.isArray(value)) {
     return { ...(value as Record<string, any>) };
   }
 
   try {
-    return JSON.parse(String(value));
+    const parsed = JSON.parse(String(value));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? { ...(parsed as Record<string, any>) }
+      : {};
   } catch {
     return {};
   }
 }
 
-function safeParseRequirements(value: unknown): ContentReviewRequirement[] {
+function safeParseJSONArray<T>(value: unknown, mapEntry: (entry: T) => T): T[] {
   if (!value) {
     return [];
   }
 
   if (Array.isArray(value)) {
-    return value.map(cloneReviewRequirement);
+    return value.map((entry) => mapEntry(entry as T));
   }
 
   try {
     const parsed = JSON.parse(String(value));
-    return Array.isArray(parsed) ? parsed.map(cloneReviewRequirement) : [];
+    return Array.isArray(parsed)
+      ? parsed.map((entry) => mapEntry(entry as T))
+      : [];
   } catch {
     return [];
+  }
+}
+
+function mapPersistedPolicyRow(
+  row: Record<string, any>,
+): PersistedContentGovernancePolicyRecord {
+  return {
+    id: typeof row.id === 'string' ? row.id : undefined,
+    tenantId: getRowTenantId(row),
+    createdAt: getRowTimestamp(row, 'createdAt'),
+    updatedAt: getRowTimestamp(row, 'updatedAt'),
+    ...normalizePolicyDefinition({
+      key: String(row.key || ''),
+      label: String(row.label || row.key || ''),
+      kind: (row.kind ||
+        getFallbackPolicyKind(String(row.key || ''))) as ContentReviewKind,
+      instructions: String(row.instructions || ''),
+      enabled: row.enabled !== false && row.enabled !== 0,
+      metadata: safeParseJSONObject(row.metadata),
+    }),
+  };
+}
+
+function mapPersistedProfileRow(
+  row: Record<string, any>,
+): PersistedContentGovernanceProfileRecord {
+  return {
+    id: typeof row.id === 'string' ? row.id : undefined,
+    tenantId: getRowTenantId(row),
+    createdAt: getRowTimestamp(row, 'createdAt'),
+    updatedAt: getRowTimestamp(row, 'updatedAt'),
+    ...normalizeProfileDefinition({
+      key: String(row.key || ''),
+      label: String(row.label || row.key || ''),
+      description: String(row.description || ''),
+      enabled: row.enabled !== false && row.enabled !== 0,
+      requirements: safeParseJSONArray<ContentReviewRequirement>(
+        row.requirements,
+        cloneReviewRequirement,
+      ),
+      metadata: safeParseJSONObject(row.metadata),
+    }),
+  };
+}
+
+function mapPersistedAssignmentRow(
+  row: Record<string, any>,
+): PersistedContentGovernanceAssignmentRecord {
+  return {
+    id: typeof row.id === 'string' ? row.id : undefined,
+    tenantId: getRowTenantId(row),
+    createdAt: getRowTimestamp(row, 'createdAt'),
+    updatedAt: getRowTimestamp(row, 'updatedAt'),
+    ...normalizeAssignmentDefinition({
+      key: String(row.key || ''),
+      label: String(row.label || ''),
+      contentType: String(row.contentType || row.content_type || ''),
+      contentVariant: String(row.contentVariant || row.content_variant || ''),
+      enabled: row.enabled !== false && row.enabled !== 0,
+      factLinkingEnabled:
+        row.factLinkingEnabled === true ||
+        row.fact_linking_enabled === true ||
+        row.fact_linking_enabled === 1,
+      transparencyEnabled:
+        row.transparencyEnabled === true ||
+        row.transparency_enabled === true ||
+        row.transparency_enabled === 1,
+      publicationProfileKey:
+        row.publicationProfileKey || row.publication_profile_key || null,
+      correctionProfileKey:
+        row.correctionProfileKey || row.correction_profile_key || null,
+      enforcePublishReadiness:
+        row.enforcePublishReadiness === true ||
+        row.enforce_publish_readiness === true ||
+        row.enforce_publish_readiness === 1,
+      defaultFactRelationship:
+        row.defaultFactRelationship ||
+        row.default_fact_relationship ||
+        DEFAULT_FACT_RELATIONSHIP,
+      metadata: safeParseJSONObject(row.metadata),
+    }),
+  };
+}
+
+export async function loadPersistedContentGovernanceDefinitions(
+  options: { db?: DatabaseInterface | null } = {},
+): Promise<PersistedContentGovernanceDefinitions> {
+  const { db } = options;
+  if (!db) {
+    return {
+      policies: [],
+      profiles: [],
+      assignments: [],
+    };
+  }
+
+  try {
+    const [policyRows, profileRows, assignmentRows] = await Promise.all([
+      db.list('content_governance_policies', {}),
+      db.list('content_governance_profiles', {}),
+      db.list('content_governance_assignments', {}),
+    ]);
+
+    policyRows.sort((a: any, b: any) =>
+      String(a.created_at || a.createdAt || '').localeCompare(
+        String(b.created_at || b.createdAt || ''),
+      ),
+    );
+    profileRows.sort((a: any, b: any) =>
+      String(a.created_at || a.createdAt || '').localeCompare(
+        String(b.created_at || b.createdAt || ''),
+      ),
+    );
+    assignmentRows.sort((a: any, b: any) =>
+      String(a.created_at || a.createdAt || '').localeCompare(
+        String(b.created_at || b.createdAt || ''),
+      ),
+    );
+
+    return {
+      policies: policyRows.map((row: any) => mapPersistedPolicyRow(row)),
+      profiles: profileRows.map((row: any) => mapPersistedProfileRow(row)),
+      assignments: assignmentRows.map((row: any) =>
+        mapPersistedAssignmentRow(row),
+      ),
+    };
+  } catch (error) {
+    if (isMissingGovernanceTableError(error)) {
+      return {
+        policies: [],
+        profiles: [],
+        assignments: [],
+      };
+    }
+    throw error;
   }
 }
 
@@ -609,25 +678,35 @@ function buildResolvedGovernance(
   const normalizedAssignment = assignment
     ? normalizeAssignmentDefinition(assignment)
     : null;
-  const enabled = normalizedAssignment?.enabled === true;
+  if (!normalizedAssignment || normalizedAssignment.enabled !== true) {
+    return {
+      isGoverned: false,
+      factLinkingEnabled: false,
+      transparencyEnabled: false,
+      publicationProfileKey: null,
+      correctionProfileKey: null,
+      enforcePublishReadiness: false,
+      defaultFactRelationship: DEFAULT_FACT_RELATIONSHIP,
+      reviewPolicies: config.policies
+        .map(clonePolicyDefinition)
+        .filter((policy) => policy.enabled !== false),
+      availableProfiles: config.profiles
+        .map(cloneProfileDefinition)
+        .filter((profile) => profile.enabled !== false),
+      assignment: normalizedAssignment,
+    };
+  }
 
   return {
-    isGoverned: enabled,
-    factLinkingEnabled:
-      enabled && normalizedAssignment.factLinkingEnabled === true,
-    transparencyEnabled:
-      enabled && normalizedAssignment.transparencyEnabled === true,
-    publicationProfileKey: enabled
-      ? normalizedAssignment.publicationProfileKey || null
-      : null,
-    correctionProfileKey: enabled
-      ? normalizedAssignment.correctionProfileKey || null
-      : null,
+    isGoverned: true,
+    factLinkingEnabled: normalizedAssignment.factLinkingEnabled === true,
+    transparencyEnabled: normalizedAssignment.transparencyEnabled === true,
+    publicationProfileKey: normalizedAssignment.publicationProfileKey || null,
+    correctionProfileKey: normalizedAssignment.correctionProfileKey || null,
     enforcePublishReadiness:
-      enabled && normalizedAssignment.enforcePublishReadiness === true,
+      normalizedAssignment.enforcePublishReadiness === true,
     defaultFactRelationship:
-      normalizedAssignment?.defaultFactRelationship ||
-      DEFAULT_FACT_RELATIONSHIP,
+      normalizedAssignment.defaultFactRelationship || DEFAULT_FACT_RELATIONSHIP,
     reviewPolicies: config.policies
       .map(clonePolicyDefinition)
       .filter((policy) => policy.enabled !== false),
@@ -717,27 +796,24 @@ export function resetContentGovernanceConfig(): ContentGovernanceConfig {
 export async function getEffectiveContentGovernanceConfig(
   options: { db?: DatabaseInterface | null } = {},
 ): Promise<ContentGovernanceConfig> {
-  const [persistedPolicies, persistedProfiles, persistedAssignments] =
-    await Promise.all([
-      loadPersistedPolicies(options.db),
-      loadPersistedProfiles(options.db),
-      loadPersistedAssignments(options.db),
-    ]);
+  const persisted = await loadPersistedContentGovernanceDefinitions({
+    db: options.db,
+  });
 
   return {
     policies: mergeByKey(
       governanceConfig.policies,
-      persistedPolicies,
+      persisted.policies,
       normalizePolicyDefinition,
     ),
     profiles: mergeByKey(
       governanceConfig.profiles,
-      persistedProfiles,
+      persisted.profiles,
       normalizeProfileDefinition,
     ),
     assignments: mergeByKey(
       governanceConfig.assignments,
-      persistedAssignments,
+      persisted.assignments,
       normalizeAssignmentDefinition,
     ),
   };
@@ -761,10 +837,9 @@ export function getContentReviewPolicy(
 export function getContentReviewKind(
   policyKey: string,
   policies: ContentReviewPolicyDefinition[] = governanceConfig.policies,
-  fallback: ContentReviewKind = 'custom',
 ): ContentReviewKind {
   const configuredKind = getPolicyMap(policies).get(policyKey)?.kind;
-  return configuredKind || getFallbackPolicyKind(policyKey) || fallback;
+  return configuredKind || getFallbackPolicyKind(policyKey);
 }
 
 export function getContentReviewProfile(

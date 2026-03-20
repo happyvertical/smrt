@@ -138,4 +138,29 @@ describe('ContentGovernanceAssignmentEditor component', () => {
     cancelButton?.click();
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('does not submit hidden fallback profile keys when none are available', () => {
+    const onSave = vi.fn();
+    const target = renderAssignmentEditor({
+      onSave,
+      profiles: [],
+      assignment: {
+        contentType: 'article',
+        publicationProfileKey: 'publication',
+        correctionProfileKey: 'correction',
+      },
+    });
+
+    const form = target.querySelector('form.governance-editor');
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publicationProfileKey: null,
+        correctionProfileKey: null,
+      }),
+    );
+  });
 });

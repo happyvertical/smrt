@@ -32,4 +32,16 @@ describe('parseAgentMessageBlocks', () => {
       { type: 'text', content: '```json\n{not valid json}\n```' },
     ]);
   });
+
+  it('supports windows newlines and whitespace after the language tag', () => {
+    expect(
+      parseAgentMessageBlocks(
+        'Intro\r\n```markdown   \r\n# Heading\r\n\r\nBody copy\r\n```\r\nDone',
+      ),
+    ).toEqual([
+      { type: 'text', content: 'Intro\r\n' },
+      { type: 'markdown', content: '# Heading\r\n\r\nBody copy' },
+      { type: 'text', content: '\r\nDone' },
+    ]);
+  });
 });

@@ -520,6 +520,7 @@ export class Content extends SmrtObject {
 
     await super.save();
     await this.syncPendingReferenceIds();
+    await this.syncPendingAssetIds();
 
     if (
       !shouldConsiderPublicationSnapshot ||
@@ -1117,6 +1118,23 @@ ${correctedText}
     ];
   }
 
+  private getPendingAssetIds(): string[] | null {
+    const pendingAssetIds = (this as any).assetIds;
+
+    if (!Array.isArray(pendingAssetIds)) {
+      return null;
+    }
+
+    return [
+      ...new Set(
+        pendingAssetIds.filter(
+          (assetId): assetId is string =>
+            typeof assetId === 'string' && assetId.length > 0,
+        ),
+      ),
+    ];
+  }
+
   private async syncPendingReferenceIds(): Promise<void> {
     if (!this.id) {
       return;
@@ -1165,6 +1183,53 @@ ${correctedText}
     }
 
     this.references = await this.getReferences();
+  }
+
+  private async syncPendingAssetIds(): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const pendingAssetIds = this.getPendingAssetIds();
+    if (pendingAssetIds === null) {
+      return;
+    }
+
+    const currentAssets = await this.getAssets();
+    const currentAssetIds = currentAssets
+      .map((asset) => asset.id)
+      .filter((assetId): assetId is string => Boolean(assetId));
+    const currentAssetIdSet = new Set(currentAssetIds);
+    const pendingAssetIdSet = new Set(pendingAssetIds);
+
+    for (const assetId of currentAssetIds) {
+      if (!pendingAssetIdSet.has(assetId)) {
+        await this.removeAsset(assetId);
+      }
+    }
+
+    const assetIdsToAdd = pendingAssetIds.filter(
+      (assetId) => !currentAssetIdSet.has(assetId),
+    );
+
+    if (assetIdsToAdd.length === 0) {
+      return;
+    }
+
+    const assets = await this.getAssetCollection();
+    const resolvedAssets = await assets.listByIds(assetIdsToAdd);
+    const assetsById = new Map(
+      resolvedAssets
+        .filter((asset) => asset.id)
+        .map((asset) => [asset.id as string, asset]),
+    );
+
+    for (const assetId of assetIdsToAdd) {
+      const asset = assetsById.get(assetId);
+      if (asset) {
+        await this.addAsset(asset);
+      }
+    }
   }
 
   /**

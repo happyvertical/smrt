@@ -7,6 +7,7 @@ import { ContentGovernancePolicyCollection } from './content-governance-policies
 import { ContentGovernancePolicy } from './content-governance-policy';
 import { ContentGovernanceProfile } from './content-governance-profile';
 import { ContentGovernanceProfileCollection } from './content-governance-profiles';
+import { ContentReviewCollection } from './content-reviews';
 import { ContentVersionCollection } from './content-versions';
 
 afterEach(() => {
@@ -364,5 +365,94 @@ describe('content governance models', () => {
     await expect(
       versions.restoreIntoContent({ id: 'content-1' } as any, 99),
     ).rejects.toThrow('version 99');
+  });
+
+  it('restores linked references, assets, and facts from a version snapshot', async () => {
+    const versions = new ContentVersionCollection({} as any);
+    (versions as any)._db = {};
+    vi.spyOn(versions, 'getVersion').mockResolvedValue({
+      getSnapshot: () => ({
+        title: 'Restored title',
+        body: 'Restored body',
+        referenceIds: ['reference-1'],
+        assetIds: ['asset-1'],
+        factLinks: [
+          {
+            factId: 'fact-1',
+            relationship: 'supports',
+          },
+        ],
+      }),
+    } as any);
+    vi.spyOn(governance, 'resolveEffectiveContentGovernance').mockResolvedValue(
+      {
+        isGoverned: true,
+        factLinkingEnabled: true,
+        transparencyEnabled: true,
+        publicationProfileKey: 'publication',
+        correctionProfileKey: 'correction',
+        enforcePublishReadiness: true,
+        defaultFactRelationship: 'supports',
+        reviewPolicies: [],
+        availableProfiles: [],
+        assignment: null,
+      },
+    );
+
+    const save = vi.fn().mockResolvedValue(undefined);
+    const getFactLinks = vi
+      .fn()
+      .mockResolvedValue([{ factId: 'fact-2', relationship: 'supports' }]);
+    const syncFacts = vi.fn().mockResolvedValue({
+      added: ['fact-1'],
+      kept: [],
+      removed: ['fact-2'],
+    });
+    const content = {
+      id: 'content-1',
+      type: 'article',
+      variant: 'news',
+      save,
+      getFactLinks,
+      syncFacts,
+    } as any;
+
+    await versions.restoreIntoContent(content, 3);
+
+    expect(content.title).toBe('Restored title');
+    expect(content.body).toBe('Restored body');
+    expect(content.referenceIds).toEqual(['reference-1']);
+    expect(content.assetIds).toEqual(['asset-1']);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(syncFacts).toHaveBeenCalledWith(['fact-1'], 'supports');
+  });
+
+  it('creates review records through the collection persistence path', async () => {
+    const reviews = new ContentReviewCollection({} as any);
+    const createSpy = vi
+      .spyOn(reviews, 'create')
+      .mockResolvedValue({ id: 'review-1' } as any);
+
+    const review = await reviews.createFromResult({
+      contentId: 'content-1',
+      kind: 'facts',
+      policyKey: 'facts',
+      result: {
+        status: 'passed',
+        summary: 'Looks good',
+        findings: [],
+      },
+      tenantId: 'tenant-1',
+    });
+
+    expect(createSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contentId: 'content-1',
+        kind: 'facts',
+        policyKey: 'facts',
+        status: 'passed',
+      }),
+    );
+    expect(review).toEqual({ id: 'review-1' });
   });
 });

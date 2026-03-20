@@ -53,7 +53,7 @@ let {
   customReviewPolicyKey = 'custom',
   onFactsChange = undefined,
   onGovernanceStateChange = undefined,
-} = $props<Props>();
+}: Props = $props();
 
 let factQuery = $state('');
 let catalogFacts = $state<FactData[]>([]);
@@ -67,8 +67,8 @@ let reviewProfiles = $state<ContentReviewProfileData[]>([]);
 let governanceDefinitions = $state<ContentGovernanceDefinitionsData | null>(
   null,
 );
-let activeReviewProfileKey = $state(reviewProfileKey);
-let activeCustomPolicyKey = $state(customReviewPolicyKey);
+let activeReviewProfileKey = $state('');
+let activeCustomPolicyKey = $state('');
 
 let catalogLoading = $state(false);
 let syncingFacts = $state(false);
@@ -117,8 +117,8 @@ function createFactMap(facts: FactData[]) {
 const selectedFactsMap = $derived(createFactMap(selectedFacts));
 const selectedFactsResolved = $derived(
   selectedFactIds
-    .map((factId) => selectedFactsMap.get(factId))
-    .filter((fact): fact is FactData => Boolean(fact)),
+    .map((factId: string) => selectedFactsMap.get(factId))
+    .filter((fact: FactData | undefined): fact is FactData => Boolean(fact)),
 );
 const activeReviewProfile = $derived(
   reviewProfiles.find(
@@ -513,7 +513,9 @@ function addFact(fact: FactData) {
 
 function removeFact(factId: string) {
   void syncFactsIfSaved(
-    selectedFactsResolved.filter((fact) => getFactId(fact) !== factId),
+    selectedFactsResolved.filter(
+      (fact: FactData) => getFactId(fact) !== factId,
+    ),
   );
 }
 

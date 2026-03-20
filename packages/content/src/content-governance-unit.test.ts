@@ -222,6 +222,85 @@ describe('content governance helpers', () => {
     });
   });
 
+  it('keeps loading persisted governance definitions when one row has bad JSON', async () => {
+    const db = {
+      list: vi.fn(async (table: string) => {
+        switch (table) {
+          case 'content_governance_policies':
+            return [
+              {
+                key: 'facts',
+                label: 'Broken facts metadata',
+                kind: 'facts',
+                instructions: 'Check facts',
+                enabled: 1,
+                metadata: '{not-json}',
+                created_at: '2026-03-20T08:00:00.000Z',
+              },
+              {
+                key: 'editorial',
+                label: 'Editorial review',
+                kind: 'custom',
+                instructions: 'Check style',
+                enabled: 1,
+                metadata: '{"source":"admin"}',
+                created_at: '2026-03-20T08:05:00.000Z',
+              },
+            ];
+          case 'content_governance_profiles':
+            return [
+              {
+                key: 'publication',
+                label: 'Publication',
+                enabled: 1,
+                requirements: '[not-json]',
+                metadata: '{"source":"admin"}',
+                created_at: '2026-03-20T08:10:00.000Z',
+              },
+            ];
+          case 'content_governance_assignments':
+            return [
+              {
+                key: 'article::',
+                content_type: 'article',
+                enabled: 1,
+                fact_linking_enabled: 1,
+                transparency_enabled: 1,
+                publication_profile_key: 'publication',
+                metadata: '{not-json}',
+                created_at: '2026-03-20T08:15:00.000Z',
+              },
+            ];
+          default:
+            return [];
+        }
+      }),
+    } as any;
+
+    const effective = await getEffectiveContentGovernanceConfig({ db });
+    const resolved = await resolveEffectiveContentGovernance({
+      contentType: 'article',
+      db,
+    });
+
+    expect(
+      effective.policies.find((policy) => policy.key === 'facts'),
+    ).toMatchObject({
+      label: 'Broken facts metadata',
+      metadata: {},
+    });
+    expect(
+      effective.policies.find((policy) => policy.key === 'editorial'),
+    ).toMatchObject({
+      metadata: { source: 'admin' },
+    });
+    expect(
+      effective.profiles.find((profile) => profile.key === 'publication')
+        ?.requirements,
+    ).toEqual([]);
+    expect(resolved.isGoverned).toBe(true);
+  });
+
   it('builds structured prompts and parses JSON or fallback review outputs', () => {
     const prompt = buildContentReviewPrompt({
       kind: 'facts',

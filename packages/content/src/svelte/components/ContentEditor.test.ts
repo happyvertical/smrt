@@ -148,4 +148,92 @@ describe('ContentEditor component', () => {
       expect(target.textContent).toContain('Thumbnail');
     });
   });
+
+  it('creates placeholder reference records for dropped files without storing data URLs', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'reference-upload-1',
+      }),
+    } as Response);
+
+    const target = renderEditor({
+      content: {
+        title: 'Test Article',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+    });
+
+    const refZone = target.querySelectorAll('.drop-zone')[1] as HTMLElement;
+    const file = new File(['reference body'], 'source.pdf', {
+      type: 'application/pdf',
+    });
+
+    refZone.dispatchEvent(
+      createDropEvent({
+        files: [file],
+        getData: () => '',
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/contents',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      ),
+    );
+
+    const payload = JSON.parse(
+      (vi.mocked(fetch).mock.calls[0]?.[1] as RequestInit).body as string,
+    );
+    expect(payload.name).toBe('source.pdf');
+    expect(payload.fileKey).toBe('source.pdf');
+    expect(payload.body).toContain('does not upload the file contents');
+    expect(payload.metadata.upload).toMatchObject({
+      fileName: 'source.pdf',
+      mimeType: 'application/pdf',
+    });
+    expect(payload.fileKey).not.toContain('data:');
+  });
+
+  it('parses the tags input into formData.tags on save', () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'Tagged Article',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+        tags: [],
+      },
+      onSave,
+    });
+
+    const tagsInput = Array.from(
+      target.querySelectorAll('input[type="text"]'),
+    ).find((input) =>
+      (input as HTMLInputElement).placeholder.includes('e.g. news, tech'),
+    ) as HTMLInputElement | undefined;
+    const form = target.querySelector('#content-edit-form');
+
+    expect(tagsInput).toBeDefined();
+
+    tagsInput!.value = 'news, tech, updates';
+    tagsInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tags: ['news', 'tech', 'updates'],
+      }),
+    );
+  });
 });

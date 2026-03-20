@@ -17,7 +17,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.unlink(options);
+  const result = await collection.unlink(options.sourceId, options.targetId);
 
   return json({ action: 'unlink', result });
 };

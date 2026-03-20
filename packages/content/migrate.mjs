@@ -1,8 +1,10 @@
-import './src/lib/server/smrt-register.ts';
+import { register } from 'node:module';
 import '@happyvertical/smrt-chat';
 import { resolveDatabase, ObjectRegistry } from '@happyvertical/smrt-core';
 
 async function migrate() {
+  register('tsx/esm', new URL('./', import.meta.url));
+  await import('./src/lib/server/smrt-register.ts');
   const { ensureSchema } = await import('@happyvertical/smrt-core/schema/utils');
   
   const db = await resolveDatabase({

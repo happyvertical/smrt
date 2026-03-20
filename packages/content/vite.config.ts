@@ -25,7 +25,7 @@ export default defineConfig(async ({ mode }) => {
       alias: {
         '@happyvertical/smrt-facts': resolve(
           __dirname,
-          'src/workspace-facts.ts',
+          '../facts/src/index.ts',
         ),
       },
     },

@@ -11,7 +11,7 @@ let {
   transparency = null,
   title = 'Transparency report',
   emptyCopy = 'No transparency snapshot is available.',
-} = $props<Props>();
+}: Props = $props();
 
 function formatTimestamp(value: string | null | undefined) {
   if (!value) {

@@ -17,7 +17,10 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getVersion(options);
+  const result = await collection.getVersion(
+    options.contentId,
+    options.versionNumber,
+  );
 
   return json({ action: 'getVersion', result });
 };

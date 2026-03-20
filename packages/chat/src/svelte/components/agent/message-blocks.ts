@@ -6,7 +6,7 @@ export type ParsedBlock =
 export function parseAgentMessageBlocks(text: string): ParsedBlock[] {
   if (!text) return [];
 
-  const regex = /```(json|markdown)\n([\s\S]*?)```/gi;
+  const regex = /```(json|markdown)[ \t]*\r?\n([\s\S]*?)```/gi;
   const blocks: ParsedBlock[] = [];
   let lastIndex = 0;
   let match: RegExpExecArray | null = regex.exec(text);

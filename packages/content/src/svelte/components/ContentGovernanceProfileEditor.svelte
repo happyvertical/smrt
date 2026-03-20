@@ -16,7 +16,7 @@ let {
   policies = [],
   onSave,
   onCancel = undefined,
-} = $props<Props>();
+}: Props = $props();
 
 function createDefaultRequirement(
   availablePolicies: ContentReviewPolicyData[],

@@ -19,7 +19,7 @@ export interface Props {
   onChange?: (definitions: ContentGovernanceDefinitionsData | null) => void;
 }
 
-let { onChange = undefined } = $props<Props>();
+let { onChange = undefined }: Props = $props();
 
 let definitions = $state<ContentGovernanceDefinitionsData | null>(null);
 let loading = $state(true);

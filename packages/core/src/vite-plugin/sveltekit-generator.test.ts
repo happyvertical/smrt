@@ -628,6 +628,62 @@ describe('SvelteKit Route Generator', () => {
       );
     });
 
+    it('should expand multi-parameter collection methods into positional args', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Document: {
+            className: 'Document',
+            collection: 'documents',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+          },
+          DocumentCollection: {
+            className: 'DocumentCollection',
+            collection: 'documents',
+            fields: {},
+            methods: {
+              restoreIntoContent: {
+                name: 'restoreIntoContent',
+                parameters: [
+                  { name: 'contentId', type: 'string' },
+                  { name: 'versionNumber', type: 'number' },
+                ],
+                returnType: 'Promise<any>',
+                isStatic: false,
+                isPublic: true,
+              },
+            },
+            decoratorConfig: { api: true },
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Document',
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const restoreRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0]
+            .toString()
+            .includes('documents/restoreIntoContent/+server.ts'),
+        );
+
+      expect(restoreRoute).toBeDefined();
+      const content = restoreRoute?.[1] as string;
+
+      expect(content).toContain('const options = await request.json();');
+      expect(content).toContain(
+        'await collection.restoreIntoContent(options["contentId"], options["versionNumber"])',
+      );
+    });
+
     it('should merge custom handlers that share the same route path', async () => {
       const manifest: SmartObjectManifest = {
         objects: {
@@ -1459,7 +1515,7 @@ describe('SvelteKit Route Generator', () => {
         "const collection = await getCollection<any>('Invitation')",
       );
       expect(findByTokenContent).toContain(
-        'await collection.findByToken(options)',
+        'await collection.findByToken(options["token"])',
       );
 
       consoleSpy.mockRestore();

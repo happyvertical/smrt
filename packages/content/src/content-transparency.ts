@@ -182,6 +182,8 @@ function dedupeFacts(facts: ContentTransparencyFact[]) {
   const byKey = new Map<string, ContentTransparencyFact>();
 
   for (const fact of facts) {
+    // Collapse effectively empty facts into a single placeholder bucket rather
+    // than rendering duplicate blank entries in the public transparency view.
     const key =
       fact.id ||
       fact.textRefined ||

@@ -1,4 +1,5 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import type { FactContentRelationship } from '@happyvertical/smrt-facts';
 import type { Content } from './content';
 import type { CreateContentVersionOptions } from './content-governance';
 import { resolveEffectiveContentGovernance } from './content-governance';
@@ -6,6 +7,52 @@ import { ContentVersion } from './content-version';
 
 export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
   static readonly _itemClass = ContentVersion;
+
+  private buildSnapshotFactRelationships(
+    snapshot: Record<string, any>,
+    defaultRelationship: FactContentRelationship,
+  ): Map<FactContentRelationship, string[]> {
+    const byRelationship = new Map<FactContentRelationship, string[]>();
+    const rawLinks = Array.isArray(snapshot.factLinks)
+      ? snapshot.factLinks
+      : [];
+
+    for (const link of rawLinks) {
+      const factId =
+        typeof link?.factId === 'string' && link.factId.length > 0
+          ? link.factId
+          : null;
+      const relationship =
+        typeof link?.relationship === 'string' && link.relationship.length > 0
+          ? (link.relationship as FactContentRelationship)
+          : defaultRelationship;
+
+      if (!factId) {
+        continue;
+      }
+
+      byRelationship.set(relationship, [
+        ...(byRelationship.get(relationship) || []),
+        factId,
+      ]);
+    }
+
+    if (
+      byRelationship.size === 0 &&
+      Array.isArray(snapshot.factIds) &&
+      snapshot.factIds.length > 0
+    ) {
+      byRelationship.set(
+        defaultRelationship,
+        snapshot.factIds.filter(
+          (factId: unknown): factId is string =>
+            typeof factId === 'string' && factId.length > 0,
+        ),
+      );
+    }
+
+    return byRelationship;
+  }
 
   async listForContent(contentId: string): Promise<ContentVersion[]> {
     return this.list({
@@ -180,7 +227,53 @@ export class ContentVersionCollection extends SmrtCollection<ContentVersion> {
       }
     }
 
+    if (Array.isArray(snapshot.referenceIds)) {
+      (content as any).referenceIds = [...snapshot.referenceIds];
+    }
+
+    if (Array.isArray(snapshot.assetIds)) {
+      (content as any).assetIds = [...snapshot.assetIds];
+    }
+
     await content.save();
+
+    const governance = await resolveEffectiveContentGovernance({
+      contentType: content.type,
+      contentVariant: content.variant,
+      db: this.db,
+    });
+
+    if (
+      governance.isGoverned &&
+      governance.factLinkingEnabled &&
+      typeof content.getFactLinks === 'function' &&
+      typeof content.syncFacts === 'function'
+    ) {
+      const desiredByRelationship = this.buildSnapshotFactRelationships(
+        snapshot,
+        governance.defaultFactRelationship,
+      );
+      const currentLinks = await content.getFactLinks();
+      const currentRelationships = new Set(
+        currentLinks.map(
+          (link: any) =>
+            (link.relationship as FactContentRelationship) ||
+            governance.defaultFactRelationship,
+        ),
+      );
+      const relationshipsToSync = new Set<FactContentRelationship>([
+        ...currentRelationships,
+        ...desiredByRelationship.keys(),
+      ]);
+
+      for (const relationship of relationshipsToSync) {
+        await content.syncFacts(
+          desiredByRelationship.get(relationship) || [],
+          relationship,
+        );
+      }
+    }
+
     return content;
   }
 }

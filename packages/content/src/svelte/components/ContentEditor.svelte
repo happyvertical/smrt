@@ -26,6 +26,7 @@ function getInitialFormData(c: any) {
   return c
     ? {
         ...c,
+        tags: c.tags || [],
         referenceIds: c.referenceIds || [],
         assetIds: c.assetIds || [],
         assets: c.assets || [],
@@ -42,6 +43,7 @@ function getInitialFormData(c: any) {
         url: '',
         fileKey: '',
         thumbnailAssetId: null,
+        tags: [],
         referenceIds: [],
         assetIds: [],
         assets: [],
@@ -197,24 +199,25 @@ async function handleRefDrop(e: DragEvent) {
   const files = Array.from(e.dataTransfer.files);
   for (const file of files) {
     try {
-      const reader = new FileReader();
-      const dataUrl: string = await new Promise((resolve, reject) => {
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-
       const resp = await fetch('/api/v1/contents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          name: file.name,
           title: file.name,
           type: 'document',
           status: 'draft',
           state: 'active',
           source: 'upload',
-          fileKey: dataUrl,
-          body: `Uploaded reference: ${file.name}`,
+          fileKey: file.name,
+          body: `Uploaded reference placeholder for ${file.name}. Local drag-and-drop creates a reference record but does not upload the file contents.`,
+          metadata: {
+            upload: {
+              fileName: file.name,
+              mimeType: file.type || 'application/octet-stream',
+              size: file.size,
+            },
+          },
         }),
       });
       if (resp.ok) {
@@ -254,6 +257,13 @@ function handleSubmit(e: Event) {
     return;
   }
   onSave(formData);
+}
+
+function parseTagsInput(value: string) {
+  formData.tags = value
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean);
 }
 
 function handleImageSelect(selected: Image | File | string) {
@@ -561,7 +571,15 @@ function removeAsset(id: string) {
 
             <label class="form-row-block">
               Tags (Comma separated):
-              <input type="text" placeholder="e.g. news, tech, updates" />
+              <input
+                type="text"
+                value={(formData.tags || []).join(', ')}
+                placeholder="e.g. news, tech, updates"
+                oninput={(event) =>
+                  parseTagsInput(
+                    (event.currentTarget as HTMLInputElement).value,
+                  )}
+              />
             </label>
         </div>
       </details>

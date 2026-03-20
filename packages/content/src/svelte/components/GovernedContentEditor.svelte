@@ -37,7 +37,7 @@ let {
   enforcePublishReadiness = false,
   onSave,
   onCancel,
-} = $props<Props>();
+}: Props = $props();
 
 function getInitialSelectedFactIds(nextContent?: ContentData) {
   return Array.isArray(nextContent?.factIds)
@@ -49,10 +49,10 @@ function getInitialSelectedFacts(nextContent?: ContentData) {
   return Array.isArray(nextContent?.facts) ? nextContent.facts : [];
 }
 
-let selectedFactIds = $state<string[]>(getInitialSelectedFactIds(content));
-let selectedFacts = $state<FactData[]>(getInitialSelectedFacts(content));
-let lastResetKey = $state<string | null>(content?.id ?? contentId ?? null);
-let draftContent = $state<ContentData | undefined>(content);
+let selectedFactIds = $state<string[]>([]);
+let selectedFacts = $state<FactData[]>([]);
+let lastResetKey = $state<string | null | undefined>(undefined);
+let draftContent = $state<ContentData | undefined>(undefined);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
 const resolvedContentId = $derived(content?.id ?? contentId);
 

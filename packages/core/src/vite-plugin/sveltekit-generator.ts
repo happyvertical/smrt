@@ -243,6 +243,24 @@ ${pathParamNames
   }`;
 }
 
+function buildActionInvocationArgs(actionDef: any): string {
+  const parameters = Array.isArray(actionDef.parameters)
+    ? actionDef.parameters
+    : [];
+
+  if (parameters.length === 0) {
+    return '';
+  }
+
+  if (parameters.length === 1 && parameters[0]?.name === 'options') {
+    return 'options';
+  }
+
+  return parameters
+    .map((parameter: any) => `options[${JSON.stringify(parameter.name)}]`)
+    .join(', ');
+}
+
 function findItemClassRegistryKey(
   className: string,
   objectDef: SmartObjectDefinition,
@@ -1226,10 +1244,10 @@ function generateActionRouteHandler(
   routeConfig: ResolvedApiActionRouteConfig,
   hostType: 'item' | 'collection',
 ): string {
-  const paramsList = actionDef.parameters.map((p: any) => p.name).join(', ');
   const handlerName = routeConfig.method;
   const hasInput = actionDef.parameters.length > 0;
   const needsRequest = hasInput;
+  const invocationArgs = buildActionInvocationArgs(actionDef);
   const hasPathParams = routeConfig.pathParamNames.length > 0;
   const pathParamsObjectLiteral = buildPathParamsObjectLiteral(
     routeConfig.pathParamNames,
@@ -1272,8 +1290,8 @@ export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) =
 
 ${optionsLoad}  const result = ${
       actionDef.isStatic
-        ? `await (collection.constructor as any).${actionName}(${paramsList ? 'options' : ''})`
-        : `await collection.${actionName}(${paramsList ? 'options' : ''})`
+        ? `await (collection.constructor as any).${actionName}(${invocationArgs})`
+        : `await collection.${actionName}(${invocationArgs})`
     }
 
   return json({ action: '${actionName}', result });
@@ -1288,7 +1306,7 @@ export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) =
   if (!registered) throw error(500, '${lookupClassName} is not registered');
 
 ${optionsLoad}  const ClassRef = registered.constructor as any;
-  const result = await ClassRef.${actionName}(${paramsList ? 'options' : ''});
+  const result = await ClassRef.${actionName}(${invocationArgs});
 
   return json({ action: '${actionName}', result });
 };
@@ -1301,7 +1319,7 @@ export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
   const item = await collection.get(params.id);
   if (!item) throw error(404, '${lookupClassName} not found');
 
-${optionsLoad}  const result = await item.${actionName}(${paramsList ? 'options' : ''});
+${optionsLoad}  const result = await item.${actionName}(${invocationArgs});
 
   return json({ action: '${actionName}', result });
 };

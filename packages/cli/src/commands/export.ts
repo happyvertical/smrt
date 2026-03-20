@@ -147,7 +147,7 @@ function buildWhereClause(
 /**
  * Query records with field projection
  */
-async function queryWithProjection(
+export async function queryWithProjection(
   db: any,
   tableName: string,
   types: string[],
@@ -230,7 +230,7 @@ async function queryWithProjection(
   }
 
   try {
-    const result = await db.query(sql, ...whereValues);
+    const result = await db.query(sql, whereValues);
     return Array.isArray(result) ? result : (result?.rows ?? []);
   } catch (error) {
     // If query fails (missing column, etc.), return empty
@@ -239,6 +239,38 @@ async function queryWithProjection(
     );
     return [];
   }
+}
+
+function parseExportValue(value: unknown) {
+  if (
+    typeof value === 'string' &&
+    (value.startsWith('{') || value.startsWith('['))
+  ) {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+
+  return value;
+}
+
+export function formatProjectedRecords(
+  records: any[],
+  fieldColumns: Array<{ field: string; column: string }>,
+) {
+  return records.map((row: any) => {
+    const record: Record<string, any> = {};
+    for (const { field, column } of fieldColumns) {
+      const rawValue =
+        row[field] !== undefined && row[field] !== null
+          ? row[field]
+          : row[column];
+      record[field] = parseExportValue(rawValue);
+    }
+    return record;
+  });
 }
 
 /**
@@ -510,25 +542,7 @@ export const exportCommand: CLICommand = {
           column: toColumnName(field),
         }));
 
-        const formattedRecords = records.map((row: any) => {
-          const record: Record<string, any> = {};
-          for (const { column } of fieldColumns) {
-            let value = row[column];
-            // Try to parse JSON fields
-            if (
-              typeof value === 'string' &&
-              (value.startsWith('{') || value.startsWith('['))
-            ) {
-              try {
-                value = JSON.parse(value);
-              } catch {
-                // Keep as string
-              }
-            }
-            record[column] = value;
-          }
-          return record;
-        });
+        const formattedRecords = formatProjectedRecords(records, fieldColumns);
 
         // Write file
         const format = fileConfig.format || defaultFormat;

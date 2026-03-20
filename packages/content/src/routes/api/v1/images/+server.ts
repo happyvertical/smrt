@@ -1,4 +1,5 @@
 import { json } from '@sveltejs/kit';
+import { dev } from '$app/environment';
 import { seedImages } from '$lib/server/seed-images';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
@@ -22,7 +23,13 @@ export const GET: RequestHandler = async () => {
     });
   } catch (err: any) {
     console.error('GET Images Error:', err);
-    return json({ error: err.message, stack: err.stack }, { status: 500 });
+    return json(
+      {
+        error: 'Internal server error',
+        ...(dev && err?.stack ? { stack: err.stack } : {}),
+      },
+      { status: 500 },
+    );
   }
 };
 

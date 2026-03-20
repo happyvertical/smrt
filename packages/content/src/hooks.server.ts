@@ -22,48 +22,64 @@ import { Content } from './content.js';
 import { ContentReference } from './content-reference.js';
 
 let schemaReady = false;
+let bootstrapPromise: Promise<void> | null = null;
 
 async function bootstrapSchema() {
-  if (schemaReady) return;
-  schemaReady = true; // Mark early to prevent concurrent bootstrap attempts
-
-  try {
-    const config = getSmrtConfig('Content');
-    const dbUrl = (config.db as any)?.url || '.smrt/local.db';
-    const db = await getDatabase({ url: dbUrl, type: 'sqlite' });
-
-    // Load all available manifests so cross-package classes (Image, Asset, etc.) are known
-    ObjectRegistry.loadAllManifests();
-
-    // For local classes, we need to compile schemas first
-    // (external classes already have schemas in their manifests)
-    const localClasses = [Content, ContentReference];
-    for (const cls of localClasses) {
-      try {
-        await generateSchema(cls);
-      } catch {
-        // Schema generation may fail for abstract/collection classes
-      }
-    }
-
-    // Now ensure all schemas exist in the database
-    const classNames = ObjectRegistry.getClassNames();
-    let created = 0;
-    for (const className of classNames) {
-      try {
-        await ensureSchema(db, className);
-        created++;
-      } catch {
-        // Some classes (collection types, abstract) don't need tables — skip
-      }
-    }
-
-    console.log(
-      `[hooks] Database schema bootstrap complete (${created} tables ensured)`,
-    );
-  } catch (err: any) {
-    console.error('[hooks] Failed to bootstrap schema:', err.message);
+  if (schemaReady) {
+    return;
   }
+
+  if (bootstrapPromise) {
+    return bootstrapPromise;
+  }
+
+  bootstrapPromise = (async () => {
+    try {
+      const config = getSmrtConfig('@happyvertical/smrt-content:Content');
+      const dbUrl = (config.db as any)?.url || '.smrt/local.db';
+      const dbType = (config.db as any)?.type || 'sqlite';
+      const db = await getDatabase({ url: dbUrl, type: dbType });
+
+      // Load all available manifests so cross-package classes (Image, Asset, etc.) are known
+      ObjectRegistry.loadAllManifests();
+
+      // For local classes, we need to compile schemas first
+      // (external classes already have schemas in their manifests)
+      const localClasses = [Content, ContentReference];
+      for (const cls of localClasses) {
+        try {
+          await generateSchema(cls);
+        } catch {
+          // Schema generation may fail for abstract/collection classes
+        }
+      }
+
+      // Now ensure all schemas exist in the database
+      const classNames = ObjectRegistry.getClassNames();
+      let created = 0;
+      for (const className of classNames) {
+        try {
+          await ensureSchema(db, className);
+          created++;
+        } catch {
+          // Some classes (collection types, abstract) don't need tables — skip
+        }
+      }
+
+      console.log(
+        `[hooks] Database schema bootstrap complete (${created} tables ensured)`,
+      );
+      schemaReady = true;
+    } catch (err: any) {
+      console.error('[hooks] Failed to bootstrap schema:', err.message);
+    } finally {
+      if (!schemaReady) {
+        bootstrapPromise = null;
+      }
+    }
+  })();
+
+  return bootstrapPromise;
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
