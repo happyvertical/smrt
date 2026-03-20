@@ -361,9 +361,9 @@ class ApiClient {
       profileKey: string,
     ): Promise<ApiResponse<ContentReviewProfileData>> => {
       const res = await fetch(
-        `${this.baseUrl}/contents/${id}/review-profiles${toQueryString({
+        `${this.baseUrl}/contents/${id}/review-profiles/${encodeURIComponent(
           profileKey,
-        })}`,
+        )}`,
       );
       if (!res.ok) throw new Error(await res.text());
       const payload = await res.json();

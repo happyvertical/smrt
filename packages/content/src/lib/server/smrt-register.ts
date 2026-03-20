@@ -8,10 +8,13 @@
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
-import { Content } from '../../content';
+
 import { ContentCorrection } from '../../content-correction';
+import '../../content-corrections';
 import { ContentReference } from '../../content-reference';
+import '../../content-references';
 import { ContentReview } from '../../content-review';
+import '../../content-reviews';
 import {
   Article,
   ContentDocument,
@@ -19,6 +22,9 @@ import {
   Mirror,
 } from '../../content-types';
 import { ContentVersion } from '../../content-version';
+import '../../content-versions';
+import { Content } from '../../content';
+import '../../contents';
 
 // Re-register imported objects with explicit package names for bundled runtimes
 ObjectRegistry.register(ContentCorrection, {

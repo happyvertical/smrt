@@ -173,7 +173,7 @@ export interface ContentOptions extends SmrtObjectOptions {
       runReviewAction: { method: 'POST', path: 'reviews' },
       evaluateReviewProfileAction: {
         method: 'GET',
-        path: 'review-profiles',
+        path: 'review-profiles/[profileKey]',
       },
       listCorrections: { method: 'GET', path: 'corrections' },
       issueCorrectionAction: { method: 'POST', path: 'corrections' },
