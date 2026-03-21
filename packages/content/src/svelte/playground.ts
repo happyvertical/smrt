@@ -6,6 +6,32 @@ import ContentContributionPortal from './components/ContentContributionPortal.sv
 import ContentGovernanceManager from './components/ContentGovernanceManager.svelte';
 import Markdown from './components/Markdown.svelte';
 
+const DEFAULT_CONTENT_PLAYGROUND_API_BASE_URL = 'http://localhost:5173/api/v1';
+
+type ContentPlaygroundGlobal = typeof globalThis & {
+  __SMRT_CONTENT_PLAYGROUND_API_BASE_URL__?: string;
+};
+
+function resolveContentPlaygroundApiBaseUrl(): string {
+  const configuredViaGlobal = (globalThis as ContentPlaygroundGlobal)
+    .__SMRT_CONTENT_PLAYGROUND_API_BASE_URL__;
+  if (configuredViaGlobal) {
+    return configuredViaGlobal;
+  }
+
+  if (typeof globalThis.location !== 'undefined') {
+    const configuredViaQuery = new URLSearchParams(
+      globalThis.location.search,
+    ).get('smrtContentApiBaseUrl');
+
+    if (configuredViaQuery) {
+      return configuredViaQuery;
+    }
+  }
+
+  return DEFAULT_CONTENT_PLAYGROUND_API_BASE_URL;
+}
+
 const sampleArticles = [
   {
     id: 'article-aurora-kitchen',
@@ -159,14 +185,14 @@ export default {
         'Live administrative view driven by the package-local generated API routes.',
       component: ContentGovernanceManager,
       order: 6,
-      props: {
-        apiBaseUrl: '/api/v1',
-      },
       modes: {
         live: {
           label: 'Live',
           description:
-            'Requires the content package dev server and generated routes.',
+            'Requires the content package dev server and generated routes. Override the base URL with ?smrtContentApiBaseUrl=... or window.__SMRT_CONTENT_PLAYGROUND_API_BASE_URL__ when needed.',
+          props: {
+            apiBaseUrl: resolveContentPlaygroundApiBaseUrl(),
+          },
         },
       },
     },

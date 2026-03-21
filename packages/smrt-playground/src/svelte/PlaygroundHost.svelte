@@ -201,11 +201,12 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
                 </div>
 
                 {#if selectedEntry.availableModes.length > 1}
-                  <div class="mode-toggle" role="tablist" aria-label="Preview mode">
+                  <div class="mode-toggle" role="group" aria-label="Preview mode">
                     {#each selectedEntry.availableModes as mode}
                       <button
                         type="button"
                         class:active={mode === selectedMode}
+                        aria-pressed={mode === selectedMode}
                         onclick={() => (selectedMode = mode)}
                       >
                         {mode}

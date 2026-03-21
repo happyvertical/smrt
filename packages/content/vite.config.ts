@@ -35,6 +35,14 @@ export default defineConfig(async ({ mode }) => {
           __dirname,
           '../profiles/src/index.ts',
         ),
+        '@happyvertical/smrt-playground': resolve(
+          __dirname,
+          '../smrt-playground/src/index.ts',
+        ),
+        '@happyvertical/smrt-playground/svelte': resolve(
+          __dirname,
+          '../smrt-playground/src/svelte/index.ts',
+        ),
       },
     },
     plugins: [

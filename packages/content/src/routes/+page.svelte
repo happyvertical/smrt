@@ -1,5 +1,5 @@
 <script lang="ts">
-import { PlaygroundHost } from '../../../smrt-playground/src/svelte/index.js';
+import { PlaygroundHost } from '@happyvertical/smrt-playground/svelte';
 import contentPlayground from '../playground.js';
 
 const modules = [contentPlayground];

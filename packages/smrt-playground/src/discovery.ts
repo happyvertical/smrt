@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import fg from 'fast-glob';
 import { coercePlaygroundModules } from './runtime.js';
@@ -26,10 +26,27 @@ export function findWorkspaceRoot(startDir = process.cwd()): string | null {
   }
 }
 
+export function findSmrtWorkspaceRoot(startDir = process.cwd()): string | null {
+  const workspaceRoot = findWorkspaceRoot(startDir);
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const hostPackageJsonPath = join(
+    workspaceRoot,
+    'packages',
+    'smrt-playground',
+    'host',
+    'package.json',
+  );
+
+  return existsSync(hostPackageJsonPath) ? workspaceRoot : null;
+}
+
 export function detectPlaygroundMode(
   projectRoot = process.cwd(),
 ): 'workspace' | 'consumer' {
-  return findWorkspaceRoot(projectRoot) ? 'workspace' : 'consumer';
+  return findSmrtWorkspaceRoot(projectRoot) ? 'workspace' : 'consumer';
 }
 
 function readJson(path: string): any {
@@ -133,7 +150,10 @@ export async function discoverPlaygroundTargets(
     mode === 'auto' ? detectPlaygroundMode(projectRoot) : mode;
 
   if (effectiveMode === 'workspace') {
-    const workspaceRoot = findWorkspaceRoot(projectRoot);
+    const workspaceRoot =
+      mode === 'workspace'
+        ? findWorkspaceRoot(projectRoot)
+        : findSmrtWorkspaceRoot(projectRoot);
     if (!workspaceRoot) {
       return [];
     }
@@ -173,7 +193,7 @@ export async function importPlaygroundModule(
   input: string,
 ): Promise<SmrtPlaygroundModule[]> {
   const imported =
-    input.startsWith('/') || input.startsWith('.')
+    isAbsolute(input) || input.startsWith('.')
       ? await import(pathToFileURL(resolve(input)).href)
       : await import(input);
 
@@ -188,7 +208,7 @@ export function describePlaygroundSource(
   cwd = process.cwd(),
 ): string {
   if (target.source === 'package') {
-    return target.importSpecifier || target.packageName || 'package';
+    return target.importSpecifier || target.packageName || 'installed package';
   }
 
   const path = target.sourcePath || target.runtimePath;

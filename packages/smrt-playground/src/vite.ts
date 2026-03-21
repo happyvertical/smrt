@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync } from 'node:fs';
+import { isAbsolute, resolve } from 'node:path';
 import fg from 'fast-glob';
 import { normalizePath, type Plugin } from 'vite';
 import {
@@ -10,17 +10,21 @@ import {
 import type { SmrtPlaygroundVitePluginOptions } from './types.js';
 
 const VIRTUAL_PLAYGROUND_MODULE_ID = 'virtual:smrt-playground/modules';
-const RESOLVED_VIRTUAL_PLAYGROUND_MODULE_ID = `\\0${VIRTUAL_PLAYGROUND_MODULE_ID}`;
+const RESOLVED_VIRTUAL_PLAYGROUND_MODULE_ID = `\0${VIRTUAL_PLAYGROUND_MODULE_ID}`;
 
-function readJson(path: string): any {
-  return JSON.parse(readFileSync(path, 'utf-8'));
+function toViteImportSpecifier(specifier: string): string {
+  if (!isAbsolute(specifier)) {
+    return specifier;
+  }
+
+  return `/@fs/${normalizePath(specifier)}`;
 }
 
 function buildVirtualModuleCode(specifiers: string[]): string {
   const imports = specifiers
     .map(
       (specifier, index) =>
-        `import module${index} from ${JSON.stringify(specifier)};`,
+        `import module${index} from ${JSON.stringify(toViteImportSpecifier(specifier))};`,
     )
     .join('\n');
 
@@ -116,10 +120,19 @@ export function smrtPlaygroundVitePlugin(
         const workspaceRoot =
           options.workspaceRoot || findWorkspaceRoot(projectRoot);
         if (workspaceRoot) {
-          this.addWatchFile(joinIfExists(workspaceRoot, 'pnpm-workspace.yaml'));
+          const workspaceConfigPath = resolve(
+            workspaceRoot,
+            'pnpm-workspace.yaml',
+          );
+          if (existsSync(workspaceConfigPath)) {
+            this.addWatchFile(workspaceConfigPath);
+          }
         }
       } else {
-        this.addWatchFile(joinIfExists(projectRoot, 'package.json'));
+        const packageJsonPath = resolve(projectRoot, 'package.json');
+        if (existsSync(packageJsonPath)) {
+          this.addWatchFile(packageJsonPath);
+        }
         const localPlayground = resolve(
           projectRoot,
           options.localPlaygroundPath || 'src/playground.ts',
@@ -130,7 +143,7 @@ export function smrtPlaygroundVitePlugin(
       }
 
       for (const specifier of specifiers) {
-        if (specifier.startsWith('/')) {
+        if (isAbsolute(specifier)) {
           this.addWatchFile(specifier);
         }
       }
@@ -138,11 +151,6 @@ export function smrtPlaygroundVitePlugin(
       return buildVirtualModuleCode(specifiers);
     },
   };
-}
-
-function joinIfExists(root: string, relativePath: string): string {
-  const fullPath = resolve(root, relativePath);
-  return existsSync(fullPath) ? fullPath : fullPath;
 }
 
 export { VIRTUAL_PLAYGROUND_MODULE_ID };

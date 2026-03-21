@@ -6,18 +6,7 @@ import type {
   SmrtPlaygroundModule,
   SmrtPlaygroundModuleExport,
 } from './types.js';
-
-function titleCase(value: string): string {
-  return value
-    .split(/[-_/]/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(' ');
-}
-
-function packageDisplayName(packageName: string): string {
-  return titleCase(packageName.replace(/^@happyvertical\/smrt-/, ''));
-}
+import { displayNameForSmrtPackage } from './utils.js';
 
 function normalizeModeConfig(
   value: SmrtPlaygroundModeConfig | true | undefined,
@@ -59,7 +48,7 @@ export function normalizePlaygroundModule(
   const displayName =
     module.displayName ||
     module.moduleMeta?.displayName ||
-    packageDisplayName(module.packageName);
+    displayNameForSmrtPackage(module.packageName);
 
   const entries: ResolvedSmrtPlaygroundEntry[] = [...(module.entries || [])]
     .map((entry) => {
@@ -102,6 +91,8 @@ export function normalizePlaygroundModule(
 export function mergePlaygroundModules(
   modules: SmrtPlaygroundModule[],
 ): ResolvedSmrtPlaygroundModule[] {
+  // Later modules intentionally override earlier ones so app-local entries can
+  // replace installed package previews by packageName + entry id.
   const mergedByPackage = new Map<
     string,
     {

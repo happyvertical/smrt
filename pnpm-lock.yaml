@@ -613,6 +613,9 @@ importers:
       '@faker-js/faker':
         specifier: ^10.2.0
         version: 10.3.0
+      '@happyvertical/smrt-playground':
+        specifier: workspace:*
+        version: link:../smrt-playground
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte

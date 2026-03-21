@@ -1,17 +1,10 @@
-function titleCase(value: string): string {
-  return value
-    .split(/[-_/]/)
-    .filter(Boolean)
-    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-    .join(' ');
-}
-
-function displayNameForPackage(packageName: string): string {
-  return titleCase(packageName.replace(/^@happyvertical\/smrt-/, ''));
-}
+import {
+  displayNameForScopedPackage,
+  displayNameForSmrtPackage,
+} from './utils.js';
 
 export function createPackagePlaygroundTemplate(packageName: string): string {
-  const displayName = displayNameForPackage(packageName);
+  const displayName = displayNameForSmrtPackage(packageName);
 
   return `/**
  * ${displayName} playground definitions
@@ -28,9 +21,7 @@ export default {
 }
 
 export function createAppPlaygroundTemplate(packageName: string): string {
-  const displayName = titleCase(
-    packageName.replace(/^@/, '').replace(/\//g, ' '),
-  );
+  const displayName = displayNameForScopedPackage(packageName);
 
   return `/**
  * Local app playground overrides

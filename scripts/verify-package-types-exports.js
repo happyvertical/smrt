@@ -6,8 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 function fail(message) {
-  console.error(`❌ ${message}`);
-  process.exit(1);
+  throw new Error(message);
 }
 
 function run(command, args, options = {}) {
@@ -173,6 +172,9 @@ try {
       ...runtimePaths.map((runtimePath) => `runtime=${runtimePath}`),
     ].join(', ')}`,
   );
+} catch (error) {
+  console.error(`❌ ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
 } finally {
   rmSync(tempDir, { recursive: true, force: true });
 }

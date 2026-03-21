@@ -4,6 +4,7 @@ export {
   discoverInstalledPlaygrounds,
   discoverPlaygroundTargets,
   discoverWorkspacePlaygrounds,
+  findSmrtWorkspaceRoot,
   findWorkspaceRoot,
   importPlaygroundModule,
 } from './discovery.js';

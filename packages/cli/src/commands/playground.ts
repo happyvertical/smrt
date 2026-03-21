@@ -14,7 +14,7 @@ import {
   describePlaygroundSource,
   detectPlaygroundMode,
   discoverPlaygroundTargets,
-  findWorkspaceRoot,
+  findSmrtWorkspaceRoot,
   importPlaygroundModule,
 } from '@happyvertical/smrt-playground';
 import type { CLICommand } from '../cli-generator.js';
@@ -64,7 +64,7 @@ function detectPackageManager(projectRoot: string): 'pnpm' | 'yarn' | 'npm' {
 function addPlaygroundDependency(projectRoot: string) {
   const packageJsonPath = resolve(projectRoot, 'package.json');
   const packageJson = readJson(packageJsonPath);
-  const workspaceRoot = findWorkspaceRoot(projectRoot);
+  const workspaceRoot = findSmrtWorkspaceRoot(projectRoot);
   const cliPackageJsonPath = resolve(__dirname, '../../package.json');
   const cliVersion = readJson(cliPackageJsonPath).version;
   const version =
@@ -344,7 +344,7 @@ export const playgroundCommands: Record<string, CLICommand> = {
       const mode = detectPlaygroundMode(projectRoot);
 
       if (mode === 'workspace') {
-        const workspaceRoot = findWorkspaceRoot(projectRoot);
+        const workspaceRoot = findSmrtWorkspaceRoot(projectRoot);
         if (!workspaceRoot) {
           throw new Error('Could not determine workspace root');
         }
