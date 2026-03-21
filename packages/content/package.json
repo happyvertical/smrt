@@ -24,6 +24,10 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./mock-smrt-client": {
+      "types": "./dist/mock-smrt-client.d.ts",
+      "import": "./dist/mock-smrt-client.js"
     }
   },
   "scripts": {

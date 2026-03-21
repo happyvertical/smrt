@@ -9,7 +9,7 @@ export default defineConfig(async ({ mode }) => {
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.
     const config = createPackageConfig('content', {
-      entries: ['ui'],
+      entries: ['ui', 'mock-smrt-client'],
       svelte: 'svelte'
     });
     // createPackageConfig returns a UserConfigExport; resolve it
