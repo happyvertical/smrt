@@ -13,6 +13,7 @@ import type { QualifiedClassName, SmrtVisibility } from '../scanner/types.js';
 import {
   createQualifiedName,
   isQualifiedName,
+  parseQualifiedName,
 } from '../utils/qualified-names.js';
 import {
   getClasses,
@@ -84,7 +85,9 @@ export function hasClassCaseInsensitive(name: string): boolean {
  *
  * Lookup priority:
  * 1. Direct hit on classes map (works for qualified names as keys)
- * 2. If input contains ':', treat as qualified name — direct only, no fallback
+ * 2. If input contains ':', prefer direct qualified lookup, then fall back to
+ *    an exact/simple registration when runtime source imports registered the
+ *    class before package-qualified promotion happened
  * 3. classNameMap lookup by simple name (lowercase)
  *    - Unambiguous (1 entry) → return it
  *    - Ambiguous (>1 entry) → log warning, return first match
@@ -99,8 +102,33 @@ export function findClass(name: string): RegisteredClass | undefined {
     return registered;
   }
 
-  // 2. If input looks like a qualified name, no fallback — it's not found
-  if (name.includes(':') && name.startsWith('@')) {
+  // 2. Qualified lookup fallback for source-registered classes.
+  // In workspace/dev mode a package can be imported from source before a
+  // manifest-promoted qualified key exists. If we already have exactly the
+  // requested package or a single unqualified registration for this class
+  // name, treat it as the same class instead of forcing node_modules manifest
+  // discovery.
+  if (isQualifiedName(name)) {
+    const { packageName, className } = parseQualifiedName(name);
+    const entries = getClassNameMap().get(className.toLowerCase());
+
+    if (entries && entries.length > 0) {
+      const exactPackageMatch = entries
+        .map((entry) => classes.get(entry))
+        .find((candidate) => candidate?.packageName === packageName);
+
+      if (exactPackageMatch) {
+        return exactPackageMatch;
+      }
+
+      if (entries.length === 1) {
+        const fallback = classes.get(entries[0]);
+        if (fallback && !fallback.packageName) {
+          return fallback;
+        }
+      }
+    }
+
     return undefined;
   }
 

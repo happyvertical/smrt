@@ -17,6 +17,12 @@ interface PackageConfigOptions {
    * Each entry is emitted as a separate file in dist/ (e.g., `ui` → `dist/ui.js`).
    */
   entries?: string[];
+  /**
+   * Additional declaration-file exclude globs, relative to the package root.
+   * Use this for package-local app/dev surfaces that should not ship as
+   * publishable library types.
+   */
+  dtsExclude?: string[];
 }
 
 /**
@@ -215,6 +221,7 @@ export function createPackageConfig(
             '**/*.d.ts',
             // Svelte dir is handled by svelte-package
             ...(options.svelte ? [`**/${options.svelte}/**`] : []),
+            ...(options.dtsExclude ?? []),
           ],
           insertTypesEntry: false, // We handle this in package.json
           // Don't rollup types when svelte subdir exists (separate entry points)

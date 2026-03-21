@@ -1,14 +1,16 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import { onMount } from 'svelte';
-import {
-  setThemeContext,
-  type ThemeContext,
-  type ThemeState as ThemeStateType,
-} from './context.svelte.js';
+import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { generateThemeVariables } from './css-generator.js';
 import { getTheme } from './registry.js';
-import type { ColorScheme, Theme, ThemeConfig, ThemePreset } from './types.js';
+import type {
+  ColorScheme,
+  Theme,
+  ThemeConfig,
+  ThemePreset,
+  ThemeState as ThemeStateType,
+} from './types.js';
 import { defaultThemeConfig } from './types.js';
 
 interface Props {
@@ -43,13 +45,13 @@ let {
 
 // Internal state
 let config = $state<ThemeConfig>({
-  preset,
-  colorScheme,
-  primaryColor,
-  borderRadius,
-  overrides,
-  persist,
-  storageKey,
+  preset: defaultThemeConfig.preset,
+  colorScheme: defaultThemeConfig.colorScheme,
+  primaryColor: undefined,
+  borderRadius: defaultThemeConfig.borderRadius,
+  overrides: {},
+  persist: defaultThemeConfig.persist,
+  storageKey: defaultThemeConfig.storageKey,
 });
 
 let systemPrefersDark = $state(false);
@@ -233,6 +235,14 @@ $effect(() => {
 // Sync overrides prop to state
 $effect(() => {
   config.overrides = overrides;
+});
+
+$effect(() => {
+  config.persist = persist;
+});
+
+$effect(() => {
+  config.storageKey = storageKey;
 });
 </script>
 

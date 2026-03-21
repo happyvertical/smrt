@@ -59,12 +59,10 @@ function handlePointerUp() {
     />
   </aside>
 
-  <div
+  <button
+    type="button"
     class="chat-layout__resize-handle"
-    role="separator"
-    aria-orientation="vertical"
     aria-label="Resize sidebar"
-    tabindex="0"
     onpointerdown={handlePointerDown}
     onpointermove={handlePointerMove}
     onpointerup={handlePointerUp}
@@ -72,7 +70,7 @@ function handlePointerUp() {
       if (e.key === 'ArrowLeft') sidebarWidth = Math.max(MIN_WIDTH, sidebarWidth - 10);
       if (e.key === 'ArrowRight') sidebarWidth = Math.min(MAX_WIDTH, sidebarWidth + 10);
     }}
-  ></div>
+  ></button>
 
   <main class="chat-layout__content">
     {@render children()}
@@ -107,6 +105,8 @@ function handlePointerUp() {
   .chat-layout__resize-handle {
     flex-shrink: 0;
     width: 4px;
+    padding: 0;
+    border: 0;
     cursor: col-resize;
     background: transparent;
     transition: background var(--smrt-duration-short2, 150ms);

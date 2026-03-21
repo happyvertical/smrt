@@ -5,36 +5,131 @@
  * create tables on server startup before any routes can function.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  ObjectRegistry,
+  SmrtCollection,
+  type SmrtObject,
+} from '@happyvertical/smrt-core';
 import {
   ensureSchema,
   generateSchema,
 } from '@happyvertical/smrt-core/schema/utils';
 import { getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
-
-// Side-effect: import registers all SMRT classes via @smrt() decorators
-import './lib/server/smrt-register.js';
 import { seedContents } from '$lib/server/seed-contents';
 import { getSmrtConfig } from '$lib/server/smrt';
-
-// Also import actual class constructors so generateSchema can resolve them
-import { Content } from './content.js';
-import { ContentContribution } from './content-contribution.js';
-import { ContentContributionAttachment } from './content-contribution-attachment.js';
-import { ContentContributionRevision } from './content-contribution-revision.js';
-import { ContentContributionType } from './content-contribution-type.js';
-import { ContentContributor } from './content-contributor.js';
-import { ContentCorrection } from './content-correction.js';
-import { ContentGovernanceAssignment } from './content-governance-assignment.js';
-import { ContentGovernancePolicy } from './content-governance-policy.js';
-import { ContentGovernanceProfile } from './content-governance-profile.js';
-import { ContentReference } from './content-reference.js';
-import { ContentReview } from './content-review.js';
-import { ContentVersion } from './content-version.js';
+import { workspacePackageRoots } from '../workspace-aliases.js';
 
 let schemaReady = false;
 let bootstrapPromise: Promise<void> | null = null;
+let runtimeRegistrationReady = false;
+let runtimeRegistrationPromise: Promise<void> | null = null;
+const currentPackageRoot = fileURLToPath(new URL('..', import.meta.url));
+
+const dependencyPackageLoaders = [
+  () => import('@happyvertical/smrt-assets'),
+  () => import('@happyvertical/smrt-chat'),
+  () => import('@happyvertical/smrt-facts'),
+  () => import('@happyvertical/smrt-images'),
+  () => import('@happyvertical/smrt-messages'),
+  () => import('@happyvertical/smrt-profiles'),
+] as const;
+
+function resolveWorkspaceManifestPaths(): string[] {
+  const packageRoots = [
+    currentPackageRoot,
+    ...Object.values(workspacePackageRoots),
+  ];
+
+  const candidates = packageRoots
+    .map((packageRoot) =>
+      [
+        resolve(packageRoot, '.smrt/manifest.json'),
+        resolve(packageRoot, 'dist/manifest.json'),
+        resolve(packageRoot, 'src/manifest/manifest.json'),
+        resolve(packageRoot, 'src/manifest/test-manifest.json'),
+      ].find((manifestPath) => existsSync(manifestPath)),
+    )
+    .filter((manifestPath): manifestPath is string => Boolean(manifestPath));
+
+  return [...new Set(candidates)];
+}
+
+async function registerContentWorkspaceRuntime() {
+  if (runtimeRegistrationReady) {
+    return;
+  }
+
+  if (runtimeRegistrationPromise) {
+    return runtimeRegistrationPromise;
+  }
+
+  runtimeRegistrationPromise = (async () => {
+    const externalManifestPaths = resolveWorkspaceManifestPaths();
+    if (externalManifestPaths.length > 0) {
+      ObjectRegistry.loadAllManifests({
+        manifestPaths: externalManifestPaths,
+      });
+    } else {
+      ObjectRegistry.loadAllManifests();
+    }
+
+    for (const loadDependencyPackage of dependencyPackageLoaders) {
+      await loadDependencyPackage();
+    }
+
+    // Register the content package after dependency manifests are cached so the
+    // generated routes and qualified lookups resolve against the same runtime
+    // metadata the package publishes.
+    await import('./lib/server/smrt-register.js');
+    runtimeRegistrationReady = true;
+  })();
+
+  return runtimeRegistrationPromise;
+}
+
+function getRegisteredObjectClasses(): Array<typeof SmrtObject> {
+  const constructors = new Set<typeof SmrtObject>();
+  const frameworkBaseClassNames = new Set([
+    'SmrtClass',
+    'SmrtCollection',
+    'SmrtObject',
+  ]);
+
+  for (const registered of ObjectRegistry.getAllClasses().values()) {
+    const ctor = registered.constructor;
+
+    if (!ctor) {
+      continue;
+    }
+
+    if (frameworkBaseClassNames.has(ctor.name)) {
+      continue;
+    }
+
+    if (ctor.prototype instanceof SmrtCollection) {
+      continue;
+    }
+
+    if (
+      registered.extends === 'SmrtCollection' ||
+      registered.inheritanceChain?.includes('SmrtCollection')
+    ) {
+      continue;
+    }
+
+    if ('_itemClass' in (ctor as object) || ctor.name.endsWith('Collection')) {
+      continue;
+    }
+
+    constructors.add(ctor as typeof SmrtObject);
+  }
+
+  return [...constructors];
+}
 
 async function bootstrapSchema() {
   if (schemaReady) {
@@ -47,58 +142,51 @@ async function bootstrapSchema() {
 
   bootstrapPromise = (async () => {
     try {
+      await registerContentWorkspaceRuntime();
+
       const config = getSmrtConfig('@happyvertical/smrt-content:Content');
       const dbUrl = (config.db as any)?.url || '.smrt/local.db';
       const dbType = (config.db as any)?.type || 'sqlite';
       const db = await getDatabase({ url: dbUrl, type: dbType });
 
-      // Load all available manifests so cross-package classes (Image, Asset, etc.) are known
-      ObjectRegistry.loadAllManifests();
+      // Only generate schema for persisted object classes. Collection classes
+      // and base framework types are registered too, but they should never hit
+      // schema generation.
+      const registeredClasses = getRegisteredObjectClasses();
+      const schemaReadyClassNames = new Set<string>();
 
-      // For local classes, we need to compile schemas first
-      // (external classes already have schemas in their manifests)
-      const localClasses = [
-        Content,
-        ContentReference,
-        ContentContribution,
-        ContentContributionRevision,
-        ContentContributionAttachment,
-        ContentContributionType,
-        ContentContributor,
-        ContentCorrection,
-        ContentGovernancePolicy,
-        ContentGovernanceProfile,
-        ContentGovernanceAssignment,
-        ContentReview,
-        ContentVersion,
-      ];
-      for (const cls of localClasses) {
+      for (const cls of registeredClasses) {
         try {
           await generateSchema(cls);
-        } catch {
-          // Schema generation may fail for abstract/collection classes
+          schemaReadyClassNames.add(cls.name);
+        } catch (error) {
+          console.warn(
+            `[hooks] Skipped schema generation for ${cls.name}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
         }
       }
 
-      // Now ensure all schemas exist in the database
-      const classNames = ObjectRegistry.getClassNames();
       let created = 0;
-      for (const className of classNames) {
+      for (const className of schemaReadyClassNames) {
         try {
           await ensureSchema(db, className);
           created++;
-        } catch {
-          // Some classes (collection types, abstract) don't need tables — skip
+        } catch (error) {
+          console.warn(
+            `[hooks] Skipped schema ensure for ${className}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
         }
       }
 
       console.log(
         `[hooks] Database schema bootstrap complete (${created} tables ensured)`,
       );
-      schemaReady = true;
-
-      // Seed sample content for dev mode
       await seedContents();
+      schemaReady = true;
     } catch (err: any) {
       console.error('[hooks] Failed to bootstrap schema:', err.message);
     } finally {
@@ -111,7 +199,14 @@ async function bootstrapSchema() {
   return bootstrapPromise;
 }
 
+function requestNeedsSchemaBootstrap(pathname: string): boolean {
+  return pathname.startsWith('/api/');
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
-  await bootstrapSchema();
+  if (requestNeedsSchemaBootstrap(event.url.pathname)) {
+    await bootstrapSchema();
+  }
+
   return resolve(event);
 };

@@ -9,7 +9,7 @@
  */
 
 import { Asset } from '@happyvertical/smrt-assets';
-import { smrt } from '@happyvertical/smrt-core';
+import { field, smrt } from '@happyvertical/smrt-core';
 import type { ImageOptions } from './types';
 
 @smrt({
@@ -19,10 +19,13 @@ import type { ImageOptions } from './types';
 })
 export class Image extends Asset {
   // Core image dimensions (regular columns for querying)
+  @field()
   width: number = 0;
+  @field()
   height: number = 0;
 
   // Accessibility text
+  @field()
   alt: string = '';
 
   constructor(options: ImageOptions = {}) {

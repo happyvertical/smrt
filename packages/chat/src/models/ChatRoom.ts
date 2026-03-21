@@ -1,4 +1,4 @@
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ChatRoomOptions,
@@ -28,16 +28,27 @@ export class ChatRoom extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
+  @field()
   name: string = '';
+  @field()
   description: string = '';
+  @field({ required: true })
   roomType: ChatRoomType = 'public';
+  @field({ required: true })
   status: ChatRoomStatus = 'active';
+  @field()
   topic: string = '';
+  @field()
   avatarUrl: string = '';
+  @field()
   isArchived: boolean = false;
+  @field()
   maxParticipants: number = 0;
+  @field()
   metadata: string = '{}';
+  @field()
   createdByProfileId: string = '';
+  @field()
   lastMessageAt: Date | null = null;
 
   constructor(options: ChatRoomOptions = {}) {

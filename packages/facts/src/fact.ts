@@ -35,20 +35,39 @@ export class Fact extends SmrtObject {
   @field({ required: true })
   textRefined: string = '';
 
+  @field()
   textRaw: string = '';
+
+  @field({ required: true })
   type: string = 'assertion';
+
+  @field({ required: true })
   status: string = 'pending';
+
+  @field()
   domain: string = '';
+
+  @field()
   parentId: string = '';
+
+  @field()
   evolutionType: string = 'original';
+
+  @field()
   sourceCount: number = 0;
+
+  @field()
   confidence: number = 0.0;
+
+  @field()
   metadata: string = '';
 
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field()
   createdAt: Date = new Date();
+  @field()
   updatedAt: Date = new Date();
 
   constructor(options: FactOptions = {}) {

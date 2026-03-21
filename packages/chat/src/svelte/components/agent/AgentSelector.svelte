@@ -129,6 +129,7 @@ const { agents, onselect }: Props = $props();
     color: var(--smrt-color-on-surface-variant, #43474e);
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

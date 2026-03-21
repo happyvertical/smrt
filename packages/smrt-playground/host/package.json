@@ -1,0 +1,20 @@
+{
+  "name": "smrt-playground-host",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "svelte-kit sync && vite dev",
+    "build": "svelte-kit sync && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
+    "@sveltejs/adapter-static": "^3.0.10",
+    "@sveltejs/kit": "^2.49.5",
+    "@sveltejs/vite-plugin-svelte": "^6.2.4",
+    "svelte": "^5.46.4",
+    "vite": "^7.3.1"
+  }
+}

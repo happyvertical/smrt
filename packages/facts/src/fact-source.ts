@@ -20,17 +20,25 @@ export class FactSource extends SmrtObject {
   @field({ required: true })
   factId: string = '';
 
+  @field()
   sourceType: string = '';
+  @field()
   sourceUrl: string = '';
+  @field()
   sourceTitle: string = '';
+  @field()
   credibility: number = 0.0;
+  @field()
   extractedAt: Date = new Date();
+  @field()
   metadata: string = '';
 
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field()
   createdAt: Date = new Date();
+  @field()
   updatedAt: Date = new Date();
 
   constructor(options: FactSourceOptions = {}) {

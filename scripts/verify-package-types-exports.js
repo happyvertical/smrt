@@ -6,8 +6,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 function fail(message) {
-  console.error(`❌ ${message}`);
-  process.exit(1);
+  throw new Error(message);
 }
 
 function run(command, args, options = {}) {
@@ -67,13 +66,62 @@ function collectTypePaths(packageJson) {
   return [...typePaths].map((filePath) => filePath.replace(/^\.\//, ''));
 }
 
+function collectRuntimePaths(packageJson) {
+  const runtimePaths = new Set();
+
+  const addPath = (filePath) => {
+    if (typeof filePath === 'string') {
+      runtimePaths.add(filePath.replace(/^\.\//, ''));
+    }
+  };
+
+  if (typeof packageJson.main === 'string') {
+    addPath(packageJson.main);
+  }
+
+  if (typeof packageJson.module === 'string') {
+    addPath(packageJson.module);
+  }
+
+  if (typeof packageJson.svelte === 'string') {
+    addPath(packageJson.svelte);
+  }
+
+  const visit = (value, currentKey) => {
+    if (!value || typeof value !== 'object') {
+      if (typeof value === 'string' && currentKey !== 'types') {
+        addPath(value);
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        visit(item, currentKey);
+      }
+      return;
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      visit(child, key);
+    }
+  };
+
+  visit(packageJson.exports);
+
+  return [...runtimePaths];
+}
+
 const packageDir = resolve(process.cwd(), process.argv[2] ?? '.');
 const packageJsonPath = join(packageDir, 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 const typePaths = collectTypePaths(packageJson);
+const runtimePaths = collectRuntimePaths(packageJson);
 
-if (typePaths.length === 0) {
-  console.log(`ℹ️ No exported type paths declared for ${packageJson.name}`);
+if (typePaths.length === 0 && runtimePaths.length === 0) {
+  console.log(
+    `ℹ️ No exported pack verification paths declared for ${packageJson.name}`,
+  );
   process.exit(0);
 }
 
@@ -105,17 +153,28 @@ try {
     (typePath) => !archiveEntries.has(`package/${typePath}`),
   );
 
-  if (missing.length > 0) {
+  const missingRuntime = runtimePaths.filter(
+    (runtimePath) => !archiveEntries.has(`package/${runtimePath}`),
+  );
+
+  if (missing.length > 0 || missingRuntime.length > 0) {
     fail(
-      `${packageJson.name} is missing declared type exports in the packed artifact:\n${missing
-        .map((typePath) => `- ${typePath}`)
-        .join('\n')}`,
+      `${packageJson.name} is missing declared exports in the packed artifact:\n${[
+        ...missing.map((typePath) => `- types: ${typePath}`),
+        ...missingRuntime.map((runtimePath) => `- runtime: ${runtimePath}`),
+      ].join('\n')}`,
     );
   }
 
   console.log(
-    `✅ Verified packed type exports for ${packageJson.name}: ${typePaths.join(', ')}`,
+    `✅ Verified packed exports for ${packageJson.name}: ${[
+      ...typePaths.map((typePath) => `types=${typePath}`),
+      ...runtimePaths.map((runtimePath) => `runtime=${runtimePath}`),
+    ].join(', ')}`,
   );
+} catch (error) {
+  console.error(`❌ ${error instanceof Error ? error.message : String(error)}`);
+  process.exitCode = 1;
 } finally {
   rmSync(tempDir, { recursive: true, force: true });
 }

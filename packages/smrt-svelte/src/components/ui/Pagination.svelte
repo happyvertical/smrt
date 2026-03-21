@@ -8,7 +8,7 @@
  * Accessibility:
  * - Proper ARIA labels on all controls
  * - aria-current marks current page
- * - Keyboard navigation supported
+ * - Native list semantics for numbered pages
  */
 
 /** Props for Pagination component */
@@ -93,25 +93,6 @@ function getPageNumbers(): (number | 'ellipsis')[] {
   return pages;
 }
 
-/**
- * Handle keyboard navigation
- */
-function handleKeydown(event: KeyboardEvent) {
-  if (event.key === 'ArrowLeft' && hasPrevPage) {
-    event.preventDefault();
-    onPageChange?.(currentPage - 1);
-  } else if (event.key === 'ArrowRight' && hasNextPage) {
-    event.preventDefault();
-    onPageChange?.(currentPage + 1);
-  } else if (event.key === 'Home' && !isFirstPage) {
-    event.preventDefault();
-    onPageChange?.(1);
-  } else if (event.key === 'End' && !isLastPage) {
-    event.preventDefault();
-    onPageChange?.(totalPages);
-  }
-}
-
 const pageNumbers = $derived(getPageNumbers());
 const hasPrevPage = $derived(currentPage > 1);
 const hasNextPage = $derived(currentPage < totalPages);
@@ -120,7 +101,7 @@ const isLastPage = $derived(currentPage === totalPages);
 </script>
 
 {#if totalPages > 1}
-  <nav class="pagination" aria-label={ariaLabel} onkeydown={handleKeydown}>
+  <nav class="pagination" aria-label={ariaLabel}>
     <!-- First page -->
     {#if showFirstLast}
       {#if onPageChange}
@@ -149,19 +130,27 @@ const isLastPage = $derived(currentPage === totalPages);
       <span class="page-link nav-link disabled" aria-hidden="true">&larr; Prev</span>
     {/if}
 
-    <div class="page-numbers" role="list">
+    <ul class="page-numbers">
       {#each pageNumbers as page}
         {#if page === 'ellipsis'}
-          <span class="ellipsis" aria-hidden="true">&hellip;</span>
+          <li class="page-numbers__item">
+            <span class="ellipsis" aria-hidden="true">&hellip;</span>
+          </li>
         {:else if page === currentPage}
-          <span class="page-link current" role="listitem" aria-current="page" aria-label="Page {page}, current">{page}</span>
+          <li class="page-numbers__item">
+            <span class="page-link current" aria-current="page" aria-label="Page {page}, current">{page}</span>
+          </li>
         {:else if onPageChange}
-          <button class="page-link" type="button" role="listitem" onclick={() => onPageChange(page as number)} aria-label="Go to page {page}">{page}</button>
+          <li class="page-numbers__item">
+            <button class="page-link" type="button" onclick={() => onPageChange(page as number)} aria-label="Go to page {page}">{page}</button>
+          </li>
         {:else}
-          <a href={getPageUrl(page)} class="page-link" role="listitem" aria-label="Go to page {page}">{page}</a>
+          <li class="page-numbers__item">
+            <a href={getPageUrl(page)} class="page-link" aria-label="Go to page {page}">{page}</a>
+          </li>
         {/if}
       {/each}
-    </div>
+    </ul>
 
     <!-- Next page -->
     {#if onPageChange}
@@ -205,9 +194,17 @@ const isLastPage = $derived(currentPage === totalPages);
   }
 
   .page-numbers {
+    list-style: none;
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
+    margin: 0;
+    padding: 0;
+  }
+
+  .page-numbers__item {
+    margin: 0;
+    padding: 0;
   }
 
   .page-link {

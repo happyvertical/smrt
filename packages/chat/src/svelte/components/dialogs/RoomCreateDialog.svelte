@@ -22,7 +22,7 @@ let { isOpen, onclose, oncreate }: Props = $props();
 let name = $state('');
 let roomType = $state('public');
 let description = $state('');
-let nameInput: HTMLInputElement;
+let nameInput = $state<HTMLInputElement | null>(null);
 
 const canCreate = $derived(name.trim().length > 0);
 
@@ -76,11 +76,20 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-function handleBackdropClick(event: MouseEvent) {
-  if (event.target === event.currentTarget) {
-    handleClose();
+$effect(() => {
+  if (!isOpen || typeof window === 'undefined') {
+    return;
   }
-}
+
+  const onWindowKeydown = (event: KeyboardEvent) => {
+    handleKeydown(event);
+  };
+
+  window.addEventListener('keydown', onWindowKeydown);
+  return () => {
+    window.removeEventListener('keydown', onWindowKeydown);
+  };
+});
 
 $effect(() => {
   if (isOpen && nameInput) {
@@ -90,15 +99,21 @@ $effect(() => {
 </script>
 
 {#if isOpen}
-  <div
-    class="dialog-backdrop"
-    role="dialog"
-    aria-modal="true"
-    aria-labelledby="create-room-title"
-    onclick={handleBackdropClick}
-    onkeydown={handleKeydown}
-  >
-    <div class="dialog" tabindex="-1">
+  <div class="dialog-backdrop">
+    <button
+      type="button"
+      class="dialog-backdrop__dismiss"
+      tabindex="-1"
+      aria-label="Close room creation dialog"
+      onclick={handleClose}
+    ></button>
+    <div
+      class="dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="create-room-title"
+      tabindex="-1"
+    >
       <h2 id="create-room-title" class="dialog__title">Create a Room</h2>
 
       <form
@@ -189,6 +204,15 @@ $effect(() => {
     justify-content: center;
     padding: 1rem;
     z-index: 1000;
+    position: relative;
+  }
+
+  .dialog-backdrop__dismiss {
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
   }
 
   .dialog {
@@ -200,6 +224,8 @@ $effect(() => {
     padding: 1.5rem;
     max-height: calc(100vh - 2rem);
     overflow-y: auto;
+    position: relative;
+    z-index: 1;
   }
 
   .dialog__title {

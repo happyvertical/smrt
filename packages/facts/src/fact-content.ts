@@ -23,13 +23,18 @@ export class FactContent extends SmrtObject {
   @field({ required: true })
   contentId: string = '';
 
+  @field({ required: true })
   relationship: string = 'extracted_from';
+
+  @field()
   metadata: string = '';
 
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field()
   createdAt: Date = new Date();
+  @field()
   updatedAt: Date = new Date();
 
   constructor(options: FactContentOptions = {}) {

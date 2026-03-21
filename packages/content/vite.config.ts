@@ -1,6 +1,9 @@
-import { resolve } from 'node:path';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import {
+  viteWorkspaceAliases,
+  workspaceAliasPackageNames,
+} from './workspace-aliases.js';
 
 export default defineConfig(async ({ mode }) => {
   // Library build mode (used by `pnpm run build`)
@@ -9,8 +12,9 @@ export default defineConfig(async ({ mode }) => {
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.
     const config = createPackageConfig('content', {
-      entries: ['ui'],
-      svelte: 'svelte'
+      entries: ['ui', 'mock-smrt-client', 'playground'],
+      svelte: 'svelte',
+      dtsExclude: ['src/routes/**/*', 'src/hooks.server.ts'],
     });
     // createPackageConfig returns a UserConfigExport; resolve it
     const resolved = typeof config === 'function' ? await (config as any)({ mode, command: 'build' }) : config;
@@ -18,24 +22,17 @@ export default defineConfig(async ({ mode }) => {
   }
 
   // SvelteKit dev mode (used by `pnpm run dev`)
-  const { smrtPlugin } = await import('@happyvertical/smrt-core/vite-plugin');
+  const { smrtPlugin } = await import('../core/src/vite-plugin/index.js');
 
   return {
     resolve: {
-      alias: {
-        '@happyvertical/smrt-facts': resolve(
-          __dirname,
-          '../facts/src/index.ts',
-        ),
-        '@happyvertical/smrt-messages': resolve(
-          __dirname,
-          '../messages/src/index.ts',
-        ),
-        '@happyvertical/smrt-profiles': resolve(
-          __dirname,
-          '../profiles/src/index.ts',
-        ),
-      },
+      alias: viteWorkspaceAliases,
+    },
+    optimizeDeps: {
+      exclude: workspaceAliasPackageNames,
+    },
+    ssr: {
+      noExternal: workspaceAliasPackageNames,
     },
     plugins: [
       sveltekit(),

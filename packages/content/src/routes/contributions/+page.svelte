@@ -1,305 +1,653 @@
 <script lang="ts">
+import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 import { onMount } from 'svelte';
 import {
   type ContentContributionData,
-  type ContentContributionTypeData,
+  type ContentContributionTypeConfigStateData,
   type ContentContributorData,
   createClient,
 } from '../../mock-smrt-client';
-import ContentContributionForm from '../../svelte/components/ContentContributionForm.svelte';
+import ContentContributionForm, {
+  type ContentContributionFormSubmitData,
+} from '../../svelte/components/ContentContributionForm.svelte';
 import ContentContributionInbox from '../../svelte/components/ContentContributionInbox.svelte';
+import ContentContributionPortal from '../../svelte/components/ContentContributionPortal.svelte';
 import ContentContributionTypeManager from '../../svelte/components/ContentContributionTypeManager.svelte';
 import ContentContributorManager from '../../svelte/components/ContentContributorManager.svelte';
 
 const client = createClient('/api/v1');
 
-type Tab = 'inbox' | 'submit' | 'contributors' | 'types';
-let activeTab = $state<Tab>('inbox');
-
-let contributions = $state<ContentContributionData[]>([]);
-let contributionTypes = $state<ContentContributionTypeData[]>([]);
+let contributionTypes = $state<ContentContributionTypeConfigStateData | null>(
+  null,
+);
 let contributors = $state<ContentContributorData[]>([]);
-let selectedContributionId = $state<string | null>(null);
+let inboxContributions = $state<ContentContributionData[]>([]);
+let portalContributions = $state<ContentContributionData[]>([]);
+let selectedInboxId = $state<string | null>(null);
+let selectedPortalId = $state<string | null>(null);
+let portalEmail = $state('');
 let loading = $state(true);
+let refreshingPortal = $state(false);
+let busyMessage = $state<string | null>(null);
 let error = $state<string | null>(null);
+let notice = $state<string | null>(null);
 
-const tabs: { key: Tab; label: string; icon: string }[] = [
-  { key: 'inbox', label: 'Inbox', icon: '📥' },
-  { key: 'submit', label: 'Submit', icon: '✍️' },
-  { key: 'contributors', label: 'Contributors', icon: '👥' },
-  { key: 'types', label: 'Types', icon: '⚙️' },
-];
+onMount(async () => {
+  await refreshContributionQA();
+});
 
-onMount(() => void loadAll());
+function pickPortalEmail(nextContributors: ContentContributorData[]) {
+  return (
+    portalEmail ||
+    nextContributors.find((item) => Boolean(item.email))?.email ||
+    ''
+  );
+}
 
-async function loadAll() {
+function mapFilesToAttachments(files: File[]) {
+  return files.map((file) => ({
+    filename: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    size: file.size || 0,
+    metadata: {
+      qaSurface: true,
+      source: 'dev-server',
+    },
+  }));
+}
+
+async function loadContributionTypes() {
+  const response = await client.contentContributions.getContributionTypes();
+  contributionTypes = response.data;
+}
+
+async function loadContributors() {
+  const response = await client.contentContributors.list();
+  contributors = response.data;
+
+  if (!portalEmail) {
+    portalEmail = pickPortalEmail(response.data);
+  }
+}
+
+async function loadInbox() {
+  const response = await client.contentContributions.listInbox();
+  inboxContributions = response.data;
+  selectedInboxId = response.data[0]?.id || null;
+}
+
+async function loadPortal() {
+  if (!portalEmail) {
+    portalContributions = [];
+    selectedPortalId = null;
+    return;
+  }
+
+  const response = await client.contentContributions.listForContributor({
+    contributorEmail: portalEmail,
+  });
+  portalContributions = response.data;
+  selectedPortalId = response.data[0]?.id || null;
+}
+
+async function refreshContributionQA() {
   loading = true;
   error = null;
+
   try {
-    const [inbox, types, contribs] = await Promise.all([
-      client.contentContributions.listInbox(),
-      client.contentContributions.getContributionTypes(),
-      client.contentContributors.list(),
+    await Promise.all([
+      loadContributionTypes(),
+      loadContributors(),
+      loadInbox(),
     ]);
-    contributions = inbox.data;
-    contributionTypes = types.data.effective ?? types.data.persisted ?? [];
-    contributors = contribs.data;
+    await loadPortal();
   } catch (err: any) {
-    error = err.message;
+    error = err.message || 'Failed to load contribution QA surface.';
   } finally {
     loading = false;
   }
 }
 
-async function handleApprove(
-  contribution: ContentContributionData,
-  options: { targetStatus: string; note: string },
-) {
-  if (!contribution.id) return;
+async function refreshPortalOnly() {
+  refreshingPortal = true;
   error = null;
+
   try {
-    await client.contentContributions.approve(contribution.id, {
-      editorNote: options.note,
-      targetStatus: options.targetStatus,
-    });
-    await loadAll();
+    await loadPortal();
   } catch (err: any) {
-    error = err?.message ?? 'Failed to approve contribution';
+    error = err.message || 'Failed to load contributor submissions.';
+  } finally {
+    refreshingPortal = false;
   }
 }
 
-async function handleReject(
-  contribution: ContentContributionData,
-  options: { note: string },
+async function runContributionAction(
+  message: string,
+  action: () => Promise<void>,
+  options: { refreshTypes?: boolean; refreshContributors?: boolean } = {},
 ) {
-  if (!contribution.id) return;
+  busyMessage = message;
   error = null;
+
   try {
-    await client.contentContributions.reject(contribution.id, {
-      editorNote: options.note,
-    });
-    await loadAll();
+    await action();
+    if (options.refreshTypes) {
+      await loadContributionTypes();
+    }
+    if (options.refreshContributors) {
+      await loadContributors();
+    }
+    await loadInbox();
+    await loadPortal();
   } catch (err: any) {
-    error = err?.message ?? 'Failed to reject contribution';
+    error = err.message || message;
+  } finally {
+    busyMessage = null;
   }
+}
+
+async function handleSubmitContribution(
+  payload: ContentContributionFormSubmitData,
+) {
+  await runContributionAction(
+    'Submitting contribution...',
+    async () => {
+      const response = await client.contentContributions.submitWebContribution({
+        typeKey: payload.typeKey,
+        contributorEmail: payload.contributorEmail,
+        contributorName: payload.contributorName,
+        title: payload.title || null,
+        description: payload.description || null,
+        body: payload.body || null,
+        attachments: mapFilesToAttachments(payload.files),
+        metadata: {
+          source: 'content-dev-server',
+        },
+      });
+
+      portalEmail = payload.contributorEmail || portalEmail;
+      const contribution =
+        response.data?.contribution ||
+        response.data?.data?.contribution ||
+        response.data;
+      selectedPortalId = contribution?.id || null;
+      notice = `Submitted "${payload.title || payload.typeKey}" for ${portalEmail}.`;
+    },
+    { refreshContributors: true },
+  );
+}
+
+async function handleWithdraw(contribution: ContentContributionData) {
+  await runContributionAction('Withdrawing contribution...', async () => {
+    await client.contentContributions.withdraw(contribution.id || '', {
+      reason: 'Withdrawn from contribution QA surface.',
+    });
+    notice = `Withdrew "${contribution.title || contribution.id}".`;
+  });
+}
+
+async function handleApprove(
+  contribution: ContentContributionData,
+  options: { targetStatus: 'draft' | 'review'; note: string },
+) {
+  await runContributionAction('Approving contribution...', async () => {
+    await client.contentContributions.approve(contribution.id || '', {
+      editorNote: options.note,
+      targetStatus: options.targetStatus,
+    });
+    notice = `Approved "${contribution.title || contribution.id}" into ${options.targetStatus}.`;
+  });
 }
 
 async function handleRequestChanges(
   contribution: ContentContributionData,
   options: { note: string },
 ) {
-  if (!contribution.id) return;
-  error = null;
-  try {
-    await client.contentContributions.requestChanges(contribution.id, {
+  await runContributionAction('Requesting changes...', async () => {
+    await client.contentContributions.requestChanges(contribution.id || '', {
       editorNote: options.note,
     });
-    await loadAll();
-  } catch (err: any) {
-    error = err?.message ?? 'Failed to request changes';
-  }
+    notice = `Requested changes for "${contribution.title || contribution.id}".`;
+  });
 }
 
-async function handleSubmit(payload: any) {
-  error = null;
-  try {
-    // Convert File objects to attachment metadata for the API
-    const attachments = (payload.files ?? []).map((file: File) => ({
-      filename: file.name,
-      mimeType: file.type,
-      size: file.size,
-    }));
-    const { files: _files, ...rest } = payload;
-    await client.contentContributions.submitWebContribution({
-      ...rest,
-      attachments,
-      channel: 'web',
+async function handleReject(
+  contribution: ContentContributionData,
+  options: { note: string },
+) {
+  await runContributionAction('Rejecting contribution...', async () => {
+    await client.contentContributions.reject(contribution.id || '', {
+      editorNote: options.note,
     });
-    activeTab = 'inbox';
-    await loadAll();
-  } catch (err: any) {
-    error = err?.message ?? 'Failed to submit contribution';
-  }
+    notice = `Rejected "${contribution.title || contribution.id}".`;
+  });
 }
 
-async function handleSaveContributor(data: Partial<ContentContributorData>) {
-  if (data.id) {
-    await client.contentContributors.update(data.id, data);
-  } else {
-    await client.contentContributors.create(data);
-  }
-  await loadAll();
+async function handleSaveType(data: Record<string, any>) {
+  await runContributionAction(
+    'Saving contribution type...',
+    async () => {
+      if (data.id) {
+        await client.contentContributionTypes.update(data.id, data);
+      } else {
+        await client.contentContributionTypes.create(data);
+      }
+      notice = `Saved contribution type "${data.label || data.key}".`;
+    },
+    { refreshTypes: true },
+  );
 }
 
-async function handleDeleteContributor(contributor: ContentContributorData) {
-  if (contributor.id) {
-    await client.contentContributors.delete(contributor.id);
-    await loadAll();
-  }
+async function handleDeleteType(data: Record<string, any>) {
+  await runContributionAction(
+    'Deleting contribution type...',
+    async () => {
+      await client.contentContributionTypes.delete(data.id || '');
+      notice = `Deleted contribution type "${data.label || data.key}".`;
+    },
+    { refreshTypes: true },
+  );
 }
 
-async function handleSaveType(data: Partial<ContentContributionTypeData>) {
-  if (data.id) {
-    await client.contentContributionTypes.update(data.id, data);
-  } else {
-    await client.contentContributionTypes.create(data);
-  }
-  await loadAll();
+async function handleSaveContributor(data: Record<string, any>) {
+  await runContributionAction(
+    'Saving contributor...',
+    async () => {
+      if (data.id) {
+        await client.contentContributors.update(data.id, data);
+      } else {
+        await client.contentContributors.create(data);
+      }
+      portalEmail = data.email || portalEmail;
+      notice = `Saved contributor "${data.name || data.email}".`;
+    },
+    { refreshContributors: true },
+  );
 }
 
-async function handleDeleteType(type: ContentContributionTypeData) {
-  if (type.id) {
-    await client.contentContributionTypes.delete(type.id);
-    await loadAll();
-  }
+async function handleDeleteContributor(data: Record<string, any>) {
+  await runContributionAction(
+    'Deleting contributor...',
+    async () => {
+      await client.contentContributors.delete(data.id || '');
+      if (portalEmail === data.email) {
+        portalEmail = '';
+      }
+      notice = `Deleted contributor "${data.name || data.email}".`;
+    },
+    { refreshContributors: true },
+  );
 }
 </script>
 
-<div class="page">
-  <div class="page-header">
-    <h1>📬 Contributions</h1>
-    <p>Manage incoming content contributions, review submissions, and configure contribution types.</p>
-  </div>
+<ThemeProvider colorScheme="system" persist={true}>
+  <div class="page">
+    <header class="page-header">
+      <div class="container">
+        <div class="page-header__copy">
+          <div class="eyebrow">QA Surface</div>
+          <h1>Contribution Intake and Review</h1>
+          <p>
+            Exercise the held-submission workflow end to end: submit web
+            contributions, inspect the contributor portal, work the editorial
+            inbox, and tune contribution types and trust levels.
+          </p>
+        </div>
 
-  <div class="sub-tabs">
-    {#each tabs as tab}
-      <button
-        class="sub-tab"
-        class:active={activeTab === tab.key}
-        onclick={() => (activeTab = tab.key)}
-      >
-        <span>{tab.icon}</span> {tab.label}
-      </button>
-    {/each}
-  </div>
-
-  <div class="page-card">
-    {#if loading}
-      <p class="loading">Loading contributions data...</p>
-    {:else if error}
-      <div class="error-box">
-        <p>{error}</p>
-        <button onclick={() => void loadAll()}>Retry</button>
+        <nav class="page-nav" aria-label="Content QA navigation">
+          <a href="/workspace">Workspace</a>
+          <a href="/governance">Governance QA</a>
+          <a aria-current="page" href="/contributions">Contribution QA</a>
+        </nav>
       </div>
-    {:else if activeTab === 'inbox'}
-      <ContentContributionInbox
-        {contributions}
-        selectedId={selectedContributionId}
-        onSelect={(c) => (selectedContributionId = c.id ?? null)}
-        onApprove={handleApprove}
-        onReject={handleReject}
-        onRequestChanges={handleRequestChanges}
-      />
-    {:else if activeTab === 'submit'}
-      <ContentContributionForm
-        types={contributionTypes}
-        onSubmit={handleSubmit}
-        onCancel={() => (activeTab = 'inbox')}
-      />
-    {:else if activeTab === 'contributors'}
-      <ContentContributorManager
-        {contributors}
-        onSave={handleSaveContributor}
-        onDelete={handleDeleteContributor}
-      />
-    {:else if activeTab === 'types'}
-      <ContentContributionTypeManager
-        types={contributionTypes}
-        onSave={handleSaveType}
-        onDelete={handleDeleteType}
-      />
-    {/if}
+    </header>
+
+    <main class="container page-main">
+      <section class="callout">
+        <strong>What you can verify here</strong>
+        <ul>
+          <li>Web submission creates held contributions and attachment metadata.</li>
+          <li>Portal and inbox actions drive the generated contribution workflow APIs.</li>
+          <li>Type and contributor managers exercise persisted admin overrides.</li>
+          <li>
+            Email ingestion remains API-driven and can be tested via
+            <code>/api/v1/contentcontributions/ingest-email</code> when message
+            records exist.
+          </li>
+        </ul>
+      </section>
+
+      {#if loading}
+        <section class="panel">
+          <p>Loading contribution QA surface...</p>
+        </section>
+      {:else}
+        {#if error}
+          <section class="panel panel--error">
+            <strong>Error</strong>
+            <p>{error}</p>
+          </section>
+        {/if}
+
+        {#if notice}
+          <section class="panel panel--notice">
+            <strong>Latest action</strong>
+            <p>{notice}</p>
+          </section>
+        {/if}
+
+        {#if busyMessage}
+          <section class="panel">
+            <p>{busyMessage}</p>
+          </section>
+        {/if}
+
+        <div class="qa-grid">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <h2>Contributor submission</h2>
+                <p>
+                  Submit a held contribution through the same generated action
+                  your app would call.
+                </p>
+              </div>
+            </div>
+
+            <ContentContributionForm
+              types={contributionTypes?.effective || []}
+              submitLabel="Submit to holding queue"
+              onSubmit={handleSubmitContribution}
+            />
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <h2>Contributor portal</h2>
+                <p>
+                  Load a contributor by email to inspect their submissions and
+                  withdraw eligible items.
+                </p>
+              </div>
+              <form
+                class="inline-form"
+                onsubmit={(event) => {
+                  event.preventDefault();
+                  void refreshPortalOnly();
+                }}
+              >
+                <input
+                  type="email"
+                  bind:value={portalEmail}
+                  placeholder="contributor@example.com"
+                />
+                <button
+                  type="submit"
+                  class="secondary"
+                  disabled={refreshingPortal}
+                >
+                  {refreshingPortal ? 'Loading...' : 'Load'}
+                </button>
+              </form>
+            </div>
+
+            <ContentContributionPortal
+              contributions={portalContributions}
+              selectedId={selectedPortalId}
+              emptyMessage="No submissions found for that contributor yet."
+              onSelect={(contribution) => {
+                selectedPortalId = contribution.id || null;
+              }}
+              onWithdraw={handleWithdraw}
+            />
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <h2>Editorial inbox</h2>
+              <p>
+                Review held or quarantined submissions and promote them into
+                draft or review content.
+              </p>
+            </div>
+          </div>
+
+          <ContentContributionInbox
+            contributions={inboxContributions}
+            selectedId={selectedInboxId}
+            onSelect={(contribution) => {
+              selectedInboxId = contribution.id || null;
+            }}
+            onApprove={handleApprove}
+            onRequestChanges={handleRequestChanges}
+            onReject={handleReject}
+          />
+        </section>
+
+        <div class="qa-grid">
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <h2>Contribution types</h2>
+                <p>
+                  Adjust intake rules, allowed channels, and promotion behavior.
+                </p>
+              </div>
+              <span class="pill">{contributionTypes?.effective.length || 0}</span>
+            </div>
+
+            <ContentContributionTypeManager
+              types={contributionTypes?.effective || []}
+              onSave={handleSaveType}
+              onDelete={handleDeleteType}
+            />
+          </section>
+
+          <section class="panel">
+            <div class="section-heading">
+              <div>
+                <h2>Contributor trust</h2>
+                <p>
+                  Set contributor trust levels for moderation and auto-promotion
+                  paths.
+                </p>
+              </div>
+              <span class="pill">{contributors.length}</span>
+            </div>
+
+            <ContentContributorManager
+              contributors={contributors}
+              onSave={handleSaveContributor}
+              onDelete={handleDeleteContributor}
+            />
+          </section>
+        </div>
+      {/if}
+    </main>
   </div>
-</div>
+</ThemeProvider>
 
 <style>
+  :global(body) {
+    margin: 0;
+    font-family:
+      var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont,
+      'Segoe UI', Roboto, sans-serif);
+    background:
+      radial-gradient(
+        circle at top,
+        color-mix(in srgb, var(--smrt-color-primary) 10%, transparent),
+        transparent 36%
+      ),
+      var(--smrt-color-background);
+    color: var(--smrt-color-on-background);
+    min-height: 100vh;
+  }
+
   .page {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
+    min-height: 100vh;
+    padding: 2rem 1.25rem 3rem;
+  }
+
+  .container {
+    max-width: 1400px;
+    margin: 0 auto;
   }
 
   .page-header {
-    text-align: center;
-    padding: 1rem 0;
+    margin-bottom: 1.5rem;
   }
 
-  .page-header h1 {
-    margin: 0 0 0.5rem 0;
-    font-size: 2rem;
-    font-weight: 800;
-    color: var(--smrt-color-on-background, #1a1c1e);
-  }
-
-  .page-header p {
-    margin: 0 auto;
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 1.05rem;
-    max-width: 600px;
-  }
-
-  .sub-tabs {
+  .page-header .container {
     display: flex;
-    gap: 0.35rem;
-    justify-content: center;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
     flex-wrap: wrap;
   }
 
-  .sub-tab {
+  .page-header__copy {
+    max-width: 56rem;
+  }
+
+  .eyebrow {
+    color: var(--smrt-color-on-surface-variant);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.78rem;
+    font-weight: 700;
+  }
+
+  .page-header h1 {
+    margin: 0.35rem 0 0.65rem;
+    font-size: clamp(2rem, 5vw, 3rem);
+    line-height: 1.05;
+  }
+
+  .page-header p {
+    margin: 0;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 1rem;
+    max-width: 50rem;
+  }
+
+  .page-nav {
     display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.3rem;
-    padding: 0.45rem 0.9rem;
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+  }
+
+  .page-nav a {
+    color: var(--smrt-color-on-surface);
+    text-decoration: none;
+    font-weight: 600;
+    opacity: 0.85;
+  }
+
+  .page-nav a[aria-current='page'] {
+    opacity: 1;
+    color: var(--smrt-color-primary);
+  }
+
+  .page-main {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .qa-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .panel,
+  .callout {
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-surface) 95%,
+      transparent
+    );
+    box-shadow: var(--smrt-elevation-1, 0 8px 24px rgba(15, 23, 42, 0.05));
+    border-radius: 1rem;
+    padding: 1.25rem;
+  }
+
+  .panel--error {
+    border-color: color-mix(in srgb, var(--smrt-color-error) 45%, transparent);
+  }
+
+  .panel--notice {
+    border-color: color-mix(in srgb, var(--smrt-color-primary) 35%, transparent);
+  }
+
+  .callout {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .callout ul {
+    margin: 0;
+    padding-left: 1.25rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+
+  .section-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+
+  .section-heading h2 {
+    margin: 0 0 0.35rem;
+    font-size: 1.25rem;
+  }
+
+  .section-heading p,
+  .panel p {
+    margin: 0;
+    color: var(--smrt-color-on-surface-variant);
+  }
+
+  .inline-form {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .inline-form input {
+    min-width: min(24rem, 100%);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.75rem;
+    padding: 0.2rem 0.55rem;
     border-radius: 999px;
-    background: var(--smrt-color-surface, #fff);
-    color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .sub-tab:hover {
-    background: var(--smrt-color-surface-variant, #e1e2ec);
-  }
-
-  .sub-tab.active {
-    background: var(--smrt-color-primary-container, #d8e2ff);
-    color: var(--smrt-color-on-primary-container, #001a41);
-    border-color: var(--smrt-color-primary-container, #d8e2ff);
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-primary);
     font-weight: 600;
   }
 
-  .page-card {
-    background: var(--smrt-color-surface, #fff);
-    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: 1rem;
-    padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+  code {
+    font-family:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono',
+      'Courier New', monospace;
   }
 
-  .loading {
-    text-align: center;
-    padding: 2rem;
-    color: var(--smrt-color-on-surface-variant, #74777f);
-  }
-
-  .error-box {
-    text-align: center;
-    padding: 1.5rem;
-    background: var(--smrt-color-error-container, #ffdad6);
-    border-radius: 0.75rem;
-    color: var(--smrt-color-on-error-container, #410002);
-  }
-
-  .error-box button {
-    margin-top: 0.75rem;
-    padding: 0.4rem 1rem;
-    border: 1px solid currentColor;
-    border-radius: 0.375rem;
-    background: transparent;
-    cursor: pointer;
-    font-weight: 500;
+  @media (max-width: 960px) {
+    .qa-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

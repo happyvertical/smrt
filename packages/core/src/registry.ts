@@ -28,7 +28,6 @@
  * ```
  */
 
-import { readFileSync } from 'node:fs';
 import { SmrtCollection } from './collection';
 import type {
   ClassEmbeddingConfig,
@@ -39,6 +38,7 @@ import {
   discoverManifestEntry,
   discoverManifestSync,
   loadExternalManifestSync,
+  loadManifestFromPathSync,
 } from './manifest/manifest-loader.js';
 import type { SmrtObject } from './object';
 import {
@@ -841,11 +841,9 @@ export class ObjectRegistry {
       // Explicit paths — used by integration tests
       for (const manifestPath of options.manifestPaths) {
         try {
-          const raw = readFileSync(manifestPath, 'utf-8');
-          const manifest = JSON.parse(raw);
+          const manifest = loadManifestFromPathSync(manifestPath);
+          if (!manifest?.objects) continue;
           const packageName = manifest.packageName as string | undefined;
-
-          if (!manifest.objects) continue;
 
           for (const [_key, objectDef] of Object.entries(manifest.objects)) {
             const def = objectDef as any;

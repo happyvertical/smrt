@@ -202,9 +202,9 @@ export class SmrtServer {
     res.statusCode = webResponse.status;
 
     // Set headers
-    for (const [key, value] of webResponse.headers.entries()) {
+    webResponse.headers.forEach((value, key) => {
       res.setHeader(key, value);
-    }
+    });
 
     // Send body
     if (webResponse.body) {
