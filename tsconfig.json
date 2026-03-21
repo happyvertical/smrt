@@ -70,6 +70,7 @@
     { "path": "./packages/tenancy" },
     { "path": "./packages/users" },
     { "path": "./packages/smrt-svelte" },
+    { "path": "./packages/smrt-playground" },
 
     // MCP Servers
     { "path": "./packages/smrt-dev-mcp" },

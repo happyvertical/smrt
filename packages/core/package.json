@@ -64,7 +64,7 @@
     "test": "(command -v smrt >/dev/null 2>&1 && smrt test) || (node scripts/generate-test-manifest.js && npx vitest run)",
     "test:integration": "TEST_INTEGRATION=1 npx vitest run src/__tests__/full-registry-integration.test.ts src/__tests__/manifest-no-leak.test.ts",
     "test:watch": "smrt test && npx vitest",
-    "build": "vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json",
+    "build": "node scripts/generate-manifest.js && vite build && cp -r src/vite-plugin/templates dist/vite-plugin/ && cp -r scripts dist/ && cp src/manifest/static-manifest.json dist/manifest.json",
     "build:watch": "vite build --watch",
     "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",
     "docs:watch": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules --watch",

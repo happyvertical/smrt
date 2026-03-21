@@ -3,9 +3,9 @@
  * Provides virtual modules for REST, MCP, and other services
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { Plugin, ViteDevServer } from 'vite';
 import type { SmartObjectManifest } from '../scanner/types';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
@@ -68,6 +68,40 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
   '@happyvertical/smrt-virt-cli': 'smrt:cli',
 };
+
+async function importScanner() {
+  const dynamicImport = new Function(
+    'specifier',
+    'return import(specifier)',
+  ) as (specifier: string) => Promise<any>;
+
+  try {
+    return await dynamicImport('@happyvertical/smrt-scanner');
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes('@happyvertical/smrt-scanner')
+    ) {
+      let current = process.cwd();
+
+      while (true) {
+        if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
+          const scannerDist = join(current, 'packages/scanner/dist/index.js');
+
+          return dynamicImport(pathToFileURL(scannerDist).href);
+        }
+
+        const parent = dirname(current);
+        if (parent === current) {
+          break;
+        }
+        current = parent;
+      }
+    }
+
+    throw error;
+  }
+}
 
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
@@ -544,9 +578,7 @@ export default testManifest;
 
     try {
       // Import the OXC scanner package
-      const { OxcScanner, ManifestAdapter } = await import(
-        '@happyvertical/smrt-scanner'
-      );
+      const { OxcScanner, ManifestAdapter } = await importScanner();
 
       console.log(`[smrt] Using experimental OXC scanner for faster builds`);
 

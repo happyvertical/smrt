@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "svelte"],
+    "lib": ["ES2023", "DOM"],
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "exclude": ["dist", "node_modules", "**/*.test.ts", "**/*.spec.ts"]
+}

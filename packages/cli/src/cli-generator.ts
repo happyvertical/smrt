@@ -48,6 +48,7 @@ let _initCommands: Record<string, Command> | null = null;
 let _utilityCommands: Record<string, Command> | null = null;
 let _dispatchCommands: Record<string, Command> | null = null;
 let _docsCommands: Record<string, Command> | null = null;
+let _playgroundCommands: Record<string, Command> | null = null;
 
 async function getGnodeCommands(): Promise<Record<string, Command>> {
   if (!_gnodeCommands) {
@@ -103,6 +104,14 @@ async function getDocsCommands(): Promise<Record<string, Command>> {
     _docsCommands = docsCommands;
   }
   return _docsCommands;
+}
+
+async function getPlaygroundCommands(): Promise<Record<string, Command>> {
+  if (!_playgroundCommands) {
+    const { playgroundCommands } = await import('./commands/index.js');
+    _playgroundCommands = playgroundCommands;
+  }
+  return _playgroundCommands;
 }
 
 export interface CLIConfig {
@@ -440,6 +449,17 @@ export class CLIGenerator {
 
     if (matchesCommand) {
       // Convert space-separated to colon-separated
+      return [combinedCommand, ...argv.slice(2)];
+    }
+
+    const knownBuiltInNamespaces = new Set([
+      'dispatch',
+      'docs',
+      'git',
+      'playground',
+    ]);
+
+    if (knownBuiltInNamespaces.has(firstArg)) {
       return [combinedCommand, ...argv.slice(2)];
     }
 
@@ -1050,6 +1070,7 @@ export class CLIGenerator {
       utilityCommands,
       dispatchCommands,
       docsCommands,
+      playgroundCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1058,6 +1079,7 @@ export class CLIGenerator {
       getUtilityCommands(),
       getDispatchCommands(),
       getDocsCommands(),
+      getPlaygroundCommands(),
     ]);
     const builtInCommands = {
       ...gnodeCommands,
@@ -1067,6 +1089,7 @@ export class CLIGenerator {
       ...utilityCommands,
       ...dispatchCommands,
       ...docsCommands,
+      ...playgroundCommands,
     };
 
     const builtInCommand = builtInCommands[parsed.command];
@@ -1404,6 +1427,7 @@ export class CLIGenerator {
       utilityCommands,
       dispatchCommands,
       docsCommands,
+      playgroundCommands,
     ] = await Promise.all([
       getGnodeCommands(),
       getGenerateCommands(),
@@ -1412,10 +1436,17 @@ export class CLIGenerator {
       getUtilityCommands(),
       getDispatchCommands(),
       getDocsCommands(),
+      getPlaygroundCommands(),
     ]);
 
     console.log('Project Setup:');
     for (const command of Object.values(initCommands)) {
+      this.showCommandHelp(command);
+    }
+    console.log();
+
+    console.log('Playground:');
+    for (const command of Object.values(playgroundCommands)) {
       this.showCommandHelp(command);
     }
     console.log();

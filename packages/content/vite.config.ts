@@ -9,7 +9,7 @@ export default defineConfig(async ({ mode }) => {
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.
     const config = createPackageConfig('content', {
-      entries: ['ui'],
+      entries: ['ui', 'mock-smrt-client', 'playground'],
       svelte: 'svelte'
     });
     // createPackageConfig returns a UserConfigExport; resolve it
@@ -18,7 +18,7 @@ export default defineConfig(async ({ mode }) => {
   }
 
   // SvelteKit dev mode (used by `pnpm run dev`)
-  const { smrtPlugin } = await import('@happyvertical/smrt-core/vite-plugin');
+  const { smrtPlugin } = await import('../core/src/vite-plugin/index.js');
 
   return {
     resolve: {

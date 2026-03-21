@@ -4,12 +4,47 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import fg from 'fast-glob';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { discoverSmrtPackages } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
+
+async function importScanner() {
+  const dynamicImport = new Function(
+    'specifier',
+    'return import(specifier)',
+  ) as (specifier: string) => Promise<any>;
+
+  try {
+    return await dynamicImport('@happyvertical/smrt-scanner');
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes('@happyvertical/smrt-scanner')
+    ) {
+      let current = process.cwd();
+
+      while (true) {
+        if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
+          const scannerDist = join(current, 'packages/scanner/dist/index.js');
+
+          return dynamicImport(pathToFileURL(scannerDist).href);
+        }
+
+        const parent = dirname(current);
+        if (parent === current) {
+          break;
+        }
+        current = parent;
+      }
+    }
+
+    throw error;
+  }
+}
 
 /**
  * Options for ManifestBuilder.generate()
@@ -188,9 +223,7 @@ export class ManifestBuilder {
     config: ScannerConfig,
     options: ManifestBuilderOptions,
   ): Promise<SmartObjectManifest> {
-    const { OxcScanner, ManifestAdapter } = await import(
-      '@happyvertical/smrt-scanner'
-    );
+    const { OxcScanner, ManifestAdapter } = await importScanner();
 
     const scanner = new OxcScanner({
       cwd: process.cwd(),

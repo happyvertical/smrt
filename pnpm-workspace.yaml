@@ -1,6 +1,6 @@
 packages:
   - 'packages/*'
-  - 'packages/smrt-svelte/playground'
+  - 'packages/smrt-playground/host'
 
 catalog:
   '@happyvertical/ai': ^0.70.0
