@@ -148,7 +148,7 @@ export function getCurrentTenant(): TenantContextData | undefined {
  */
 export function requireTenant(): TenantContextData {
   const ctx = tenantStorage.getStore();
-  if (!ctx) {
+  if (!ctx || ctx === SYSTEM_CONTEXT_MARKER) {
     throw new TenantContextError(
       'No tenant context available. ' +
         'Ensure request is wrapped in withTenant() or middleware is configured.',
@@ -413,7 +413,7 @@ export async function withSuperAdminBypass<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const current = tenantStorage.getStore();
-  if (!current) {
+  if (!current || current === SYSTEM_CONTEXT_MARKER) {
     throw new TenantContextError(
       'Cannot enable super admin bypass without a tenant context. ' +
         'Use withTenant() first or withSystemContext() instead.',

@@ -1,14 +1,16 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
 import { onMount } from 'svelte';
-import {
-  setThemeContext,
-  type ThemeContext,
-  type ThemeState as ThemeStateType,
-} from './context.svelte.js';
+import { setThemeContext, type ThemeContext } from './context.svelte.js';
 import { generateThemeVariables } from './css-generator.js';
 import { getTheme } from './registry.js';
-import type { ColorScheme, Theme, ThemeConfig, ThemePreset } from './types.js';
+import type {
+  ColorScheme,
+  Theme,
+  ThemeConfig,
+  ThemePreset,
+  ThemeState as ThemeStateType,
+} from './types.js';
 import { defaultThemeConfig } from './types.js';
 
 interface Props {

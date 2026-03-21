@@ -1,10 +1,4 @@
 import { CONTENT_MODULE_META } from '../ui.js';
-import ArticleCard from './components/ArticleCard.svelte';
-import ArticleList from './components/ArticleList.svelte';
-import ContentContributionInbox from './components/ContentContributionInbox.svelte';
-import ContentContributionPortal from './components/ContentContributionPortal.svelte';
-import ContentGovernanceManager from './components/ContentGovernanceManager.svelte';
-import Markdown from './components/Markdown.svelte';
 
 const DEFAULT_CONTENT_PLAYGROUND_API_BASE_URL = 'http://localhost:5173/api/v1';
 
@@ -91,6 +85,18 @@ This preview module lives in \`src/svelte/playground.ts\`.
 - The shared host simply discovers and renders them
 - Live entries can still point at the package's generated API routes`;
 
+// Keep the published playground module importable from Node so `smrt
+// playground list` can inspect entry metadata without needing a Svelte loader.
+const loadArticleCard = () => import('./components/ArticleCard.svelte');
+const loadArticleList = () => import('./components/ArticleList.svelte');
+const loadContentContributionInbox = () =>
+  import('./components/ContentContributionInbox.svelte');
+const loadContentContributionPortal = () =>
+  import('./components/ContentContributionPortal.svelte');
+const loadContentGovernanceManager = () =>
+  import('./components/ContentGovernanceManager.svelte');
+const loadMarkdown = () => import('./components/Markdown.svelte');
+
 export default {
   packageName: '@happyvertical/smrt-content',
   displayName: 'Content',
@@ -102,7 +108,7 @@ export default {
       slotId: 'article-card',
       title: 'Article Card',
       description: 'Editorial teaser card with tags and metadata.',
-      component: ArticleCard,
+      loadComponent: loadArticleCard,
       order: 1,
       props: {
         article: sampleArticles[0],
@@ -119,7 +125,7 @@ export default {
       slotId: 'article-list',
       title: 'Article List',
       description: 'Reference list/grid layout for published content.',
-      component: ArticleList,
+      loadComponent: loadArticleList,
       order: 2,
       props: {
         articles: sampleArticles,
@@ -136,7 +142,7 @@ export default {
       slotId: 'markdown',
       title: 'Markdown Renderer',
       description: 'Safe markdown rendering with a small editorial snippet.',
-      component: Markdown,
+      loadComponent: loadMarkdown,
       order: 3,
       props: {
         content: markdownExample,
@@ -151,7 +157,7 @@ export default {
       id: 'contribution-portal',
       title: 'Contribution Portal',
       description: 'Contributor-facing inbox and submission status view.',
-      component: ContentContributionPortal,
+      loadComponent: loadContentContributionPortal,
       order: 4,
       props: {
         contributions: sampleContributions,
@@ -167,7 +173,7 @@ export default {
       title: 'Contribution Inbox',
       description:
         'Editorial review queue for approving, rejecting, or requesting changes.',
-      component: ContentContributionInbox,
+      loadComponent: loadContentContributionInbox,
       order: 5,
       props: {
         contributions: sampleContributions,
@@ -183,7 +189,7 @@ export default {
       title: 'Governance Manager',
       description:
         'Live administrative view driven by the package-local generated API routes.',
-      component: ContentGovernanceManager,
+      loadComponent: loadContentGovernanceManager,
       order: 6,
       modes: {
         live: {

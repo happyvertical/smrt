@@ -1,4 +1,11 @@
 export type PlaygroundComponentType = (...args: any[]) => any;
+export type PlaygroundComponentModule =
+  | PlaygroundComponentType
+  | {
+      default: PlaygroundComponentType;
+    };
+export type PlaygroundComponentLoader =
+  () => Promise<PlaygroundComponentModule>;
 
 export interface PlaygroundModuleMeta {
   name: string;
@@ -21,7 +28,8 @@ export interface SmrtPlaygroundEntry {
   id: string;
   title: string;
   description?: string;
-  component: PlaygroundComponentType;
+  component?: PlaygroundComponentType;
+  loadComponent?: PlaygroundComponentLoader;
   slotId?: string;
   order?: number;
   props?: Record<string, unknown>;

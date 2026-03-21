@@ -3,6 +3,7 @@ import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 import type { Component } from 'svelte';
 import { mergePlaygroundModules } from '../runtime.js';
 import type {
+  PlaygroundComponentModule,
   ResolvedSmrtPlaygroundEntry,
   SmrtPlaygroundMode,
   SmrtPlaygroundModule,
@@ -97,9 +98,9 @@ const selectedEntry = $derived(
     null,
 );
 
-const PreviewComponent = $derived(
-  (selectedEntry?.component as Component<Record<string, unknown>>) || null,
-);
+let PreviewComponent = $state<Component<Record<string, unknown>> | null>(null);
+let previewLoadError = $state<string | null>(null);
+let previewIsLoading = $state(false);
 
 const selectedProps = $derived(
   selectedEntry
@@ -109,6 +110,74 @@ const selectedProps = $derived(
       }
     : {},
 );
+
+function resolvePreviewComponent(
+  loaded: PlaygroundComponentModule,
+): Component<Record<string, unknown>> {
+  if (
+    loaded &&
+    typeof loaded === 'object' &&
+    'default' in loaded &&
+    loaded.default
+  ) {
+    return loaded.default as Component<Record<string, unknown>>;
+  }
+
+  return loaded as Component<Record<string, unknown>>;
+}
+
+$effect(() => {
+  const entry = selectedEntry;
+  let cancelled = false;
+
+  previewLoadError = null;
+
+  if (!entry) {
+    PreviewComponent = null;
+    previewIsLoading = false;
+    return;
+  }
+
+  if (entry.component) {
+    PreviewComponent = entry.component as Component<Record<string, unknown>>;
+    previewIsLoading = false;
+    return;
+  }
+
+  if (!entry.loadComponent) {
+    PreviewComponent = null;
+    previewIsLoading = false;
+    previewLoadError = 'This preview does not declare a renderable component.';
+    return;
+  }
+
+  PreviewComponent = null;
+  previewIsLoading = true;
+
+  void entry
+    .loadComponent()
+    .then((loaded) => {
+      if (cancelled) {
+        return;
+      }
+
+      PreviewComponent = resolvePreviewComponent(loaded);
+      previewIsLoading = false;
+    })
+    .catch((error) => {
+      if (cancelled) {
+        return;
+      }
+
+      previewLoadError =
+        error instanceof Error ? error.message : 'Failed to load preview.';
+      previewIsLoading = false;
+    });
+
+  return () => {
+    cancelled = true;
+  };
+});
 
 function selectModule(packageName: string) {
   selectedModuleName = packageName;
@@ -218,6 +287,16 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 
               <div class="preview-stage">
                 <PreviewComponent {...selectedProps} />
+              </div>
+            {:else if selectedEntry && previewIsLoading}
+              <div class="empty-card">
+                <strong>Loading preview...</strong>
+                <p>{selectedEntry.title} is being loaded for the selected mode.</p>
+              </div>
+            {:else if selectedEntry && previewLoadError}
+              <div class="empty-card">
+                <strong>Preview failed to load</strong>
+                <p>{previewLoadError}</p>
               </div>
             {:else}
               <div class="empty-card">

@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import type { SmrtPlaygroundModule } from '@happyvertical/smrt-playground';
 import {
   createAppPlaygroundRouteTemplate,
   createAppPlaygroundTemplate,
@@ -150,16 +151,34 @@ async function listDiscoveredPlaygrounds(projectRoot: string) {
     console.log(`• ${target.packageName || 'local app'} (${target.source})`);
     console.log(`  Source: ${describePlaygroundSource(target, projectRoot)}`);
 
-    const loadTarget =
-      target.importSpecifier || target.runtimePath || target.sourcePath;
+    const loadTargets =
+      target.source === 'workspace'
+        ? [target.sourcePath, target.runtimePath]
+        : [target.importSpecifier, target.runtimePath, target.sourcePath];
+    const candidateTargets = loadTargets.filter((value): value is string =>
+      Boolean(value),
+    );
 
-    if (!loadTarget) {
+    if (candidateTargets.length === 0) {
       console.log('  Entries: unavailable\n');
       continue;
     }
 
     try {
-      const modules = await importPlaygroundModule(loadTarget);
+      let modules: SmrtPlaygroundModule[] = [];
+
+      for (const candidateTarget of candidateTargets) {
+        try {
+          modules = await importPlaygroundModule(candidateTarget);
+          if (modules.length > 0) {
+            break;
+          }
+        } catch {
+          // Try the next source. Workspace usage often prefers the source
+          // module, while installed-package usage may need the runtime build.
+        }
+      }
+
       if (modules.length === 0) {
         console.log('  Entries: unavailable\n');
         continue;
