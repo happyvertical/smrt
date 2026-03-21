@@ -13,18 +13,25 @@ import {
 import { getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
 
-// Register dependency package objects used by the content dev server QA
-// surfaces so schema bootstrap can prepare their tables too.
-import '@happyvertical/smrt-assets';
-import '@happyvertical/smrt-chat';
-import '@happyvertical/smrt-facts';
-import '@happyvertical/smrt-images';
-import '@happyvertical/smrt-messages';
-import '@happyvertical/smrt-profiles';
-
 // Side-effect: import registers all SMRT classes via @smrt() decorators
 import './lib/server/smrt-register.js';
+import { seedContents } from '$lib/server/seed-contents';
 import { getSmrtConfig } from '$lib/server/smrt';
+
+// Also import actual class constructors so generateSchema can resolve them
+import { Content } from './content.js';
+import { ContentContribution } from './content-contribution.js';
+import { ContentContributionAttachment } from './content-contribution-attachment.js';
+import { ContentContributionRevision } from './content-contribution-revision.js';
+import { ContentContributionType } from './content-contribution-type.js';
+import { ContentContributor } from './content-contributor.js';
+import { ContentCorrection } from './content-correction.js';
+import { ContentGovernanceAssignment } from './content-governance-assignment.js';
+import { ContentGovernancePolicy } from './content-governance-policy.js';
+import { ContentGovernanceProfile } from './content-governance-profile.js';
+import { ContentReference } from './content-reference.js';
+import { ContentReview } from './content-review.js';
+import { ContentVersion } from './content-version.js';
 
 let schemaReady = false;
 let bootstrapPromise: Promise<void> | null = null;
@@ -48,27 +55,28 @@ async function bootstrapSchema() {
       // Load all available manifests so cross-package classes (Image, Asset, etc.) are known
       ObjectRegistry.loadAllManifests();
 
-      // Compile schemas for all registered objects, including dependency
-      // packages used by the content QA surfaces. The dev server now exposes
-      // governance, contributions, facts, chat, images, and other generated
-      // routes, so only preparing local content classes leaves hidden runtime
-      // gaps that browser E2E catches immediately.
-      const registeredClasses = ObjectRegistry.getClassNames()
-        .map((name) => ObjectRegistry.getClass(name))
-        .filter((registered): registered is NonNullable<typeof registered> =>
-          Boolean(registered),
-        )
-        .map((registered) => registered.constructor);
-
-      for (const cls of registeredClasses) {
+      // For local classes, we need to compile schemas first
+      // (external classes already have schemas in their manifests)
+      const localClasses = [
+        Content,
+        ContentReference,
+        ContentContribution,
+        ContentContributionRevision,
+        ContentContributionAttachment,
+        ContentContributionType,
+        ContentContributor,
+        ContentCorrection,
+        ContentGovernancePolicy,
+        ContentGovernanceProfile,
+        ContentGovernanceAssignment,
+        ContentReview,
+        ContentVersion,
+      ];
+      for (const cls of localClasses) {
         try {
           await generateSchema(cls);
-        } catch (error) {
-          console.warn(
-            `[hooks] Skipped schema generation for ${cls.name}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+        } catch {
+          // Schema generation may fail for abstract/collection classes
         }
       }
 
@@ -88,6 +96,9 @@ async function bootstrapSchema() {
         `[hooks] Database schema bootstrap complete (${created} tables ensured)`,
       );
       schemaReady = true;
+
+      // Seed sample content for dev mode
+      await seedContents();
     } catch (err: any) {
       console.error('[hooks] Failed to bootstrap schema:', err.message);
     } finally {

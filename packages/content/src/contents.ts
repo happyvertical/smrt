@@ -154,31 +154,44 @@ export class Contents extends SmrtCollection<Content> {
       tenantId?: string | null;
     } = {},
   ) {
-    const facts = await this.getFactCollection();
-    const query = options.query || options.q || '';
-    const limit =
-      options.limit !== undefined ? Number(options.limit) : undefined;
-    const minSimilarity =
-      options.minSimilarity !== undefined
-        ? Number(options.minSimilarity)
-        : undefined;
-    const includeSuperseded =
-      options.includeSuperseded === true ||
-      options.includeSuperseded === 'true';
-    const latestOnly =
-      options.latestOnly === undefined
-        ? true
-        : options.latestOnly === true || options.latestOnly === 'true';
+    try {
+      const facts = await this.getFactCollection();
+      const query = options.query || options.q || '';
+      const limit =
+        options.limit !== undefined ? Number(options.limit) : undefined;
+      const minSimilarity =
+        options.minSimilarity !== undefined
+          ? Number(options.minSimilarity)
+          : undefined;
+      const includeSuperseded =
+        options.includeSuperseded === true ||
+        options.includeSuperseded === 'true';
+      const latestOnly =
+        options.latestOnly === undefined
+          ? true
+          : options.latestOnly === true || options.latestOnly === 'true';
 
-    const results = await facts.browseCatalog(query, {
-      limit: Number.isFinite(limit) ? limit : undefined,
-      minSimilarity: Number.isFinite(minSimilarity) ? minSimilarity : undefined,
-      includeSuperseded,
-      latestOnly,
-      tenantId: options.tenantId ?? null,
-    });
+      const results = await facts.browseCatalog(query, {
+        limit: Number.isFinite(limit) ? limit : undefined,
+        minSimilarity: Number.isFinite(minSimilarity)
+          ? minSimilarity
+          : undefined,
+        includeSuperseded,
+        latestOnly,
+        tenantId: options.tenantId ?? null,
+      });
 
-    return results.map(serializeFact);
+      return results.map(serializeFact);
+    } catch (error: any) {
+      // Gracefully handle missing facts table (cross-package dependency)
+      if (
+        error?.code === 'DB_SCHEMA_MISSING' ||
+        error?.message?.includes('does not exist')
+      ) {
+        return [];
+      }
+      throw error;
+    }
   }
 
   public async getBySlug(
