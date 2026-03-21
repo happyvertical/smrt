@@ -4,6 +4,16 @@ import { defineConfig } from 'vite';
 import { smrtPlaygroundVitePlugin } from '@happyvertical/smrt-playground/vite';
 
 export default defineConfig({
+  esbuild: {
+    // Workspace playground modules should not depend on each child package's
+    // local `.svelte-kit` state just to transpile TypeScript metadata files.
+    tsconfigRaw: JSON.stringify({
+      compilerOptions: {
+        experimentalDecorators: true,
+        useDefineForClassFields: false,
+      },
+    }),
+  },
   resolve: {
     alias: [
       {
