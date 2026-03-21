@@ -1,6 +1,6 @@
 import { CONTENT_MODULE_META } from '../ui.js';
 
-const DEFAULT_CONTENT_PLAYGROUND_API_BASE_URL = 'http://localhost:5173/api/v1';
+const DEFAULT_CONTENT_PLAYGROUND_API_BASE_URL = '/api/v1';
 
 type ContentPlaygroundGlobal = typeof globalThis & {
   __SMRT_CONTENT_PLAYGROUND_API_BASE_URL__?: string;

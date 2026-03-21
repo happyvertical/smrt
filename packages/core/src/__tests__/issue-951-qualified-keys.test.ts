@@ -123,6 +123,44 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     expect(entry?.constructor).toBe(QualifiedTestC);
   });
 
+  it('should resolve a qualified lookup to an existing simple-key registration when unambiguous', () => {
+    class QualifiedTestCSource extends SmrtObject {}
+
+    ObjectRegistry.register(QualifiedTestCSource, {
+      name: 'QualifiedTestCSource',
+    });
+
+    let initialKey: string | undefined;
+    let entry: any;
+    // @ts-expect-error - accessing private property for verification
+    for (const [key, val] of ObjectRegistry.classes) {
+      if (val.name === 'QualifiedTestCSource') {
+        initialKey = key;
+        entry = val;
+        break;
+      }
+    }
+
+    expect(initialKey).toBeDefined();
+
+    // Simulate a workspace source import that has not yet been promoted to a
+    // package-qualified key.
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.delete(initialKey!);
+    entry.packageName = undefined;
+    entry.qualifiedName = undefined;
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.set('QualifiedTestCSource', entry);
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classNameMap.set('qualifiedtestcsource', [
+      'QualifiedTestCSource',
+    ]);
+
+    const resolved = ObjectRegistry.getClass('@test/pkg:QualifiedTestCSource');
+    expect(resolved).toBeDefined();
+    expect(resolved?.constructor).toBe(QualifiedTestCSource);
+  });
+
   it('should return simple names from getClassNames()', () => {
     @smrt()
     class QualifiedTestD extends SmrtObject {}

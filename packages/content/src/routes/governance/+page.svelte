@@ -18,7 +18,7 @@ import ContentGovernanceManager from '../../svelte/components/ContentGovernanceM
         </div>
 
         <nav class="page-nav" aria-label="Content QA navigation">
-          <a href="/">Workspace</a>
+          <a href="/workspace">Workspace</a>
           <a aria-current="page" href="/governance">Governance QA</a>
           <a href="/contributions">Contribution QA</a>
         </nav>
@@ -32,7 +32,7 @@ import ContentGovernanceManager from '../../svelte/components/ContentGovernanceM
           <li>Create and edit governance policies, profiles, and type assignments.</li>
           <li>Confirm persisted overrides behave separately from package defaults.</li>
           <li>
-            Return to the <a href="/">workspace editor</a> to test governed
+            Return to the <a href="/workspace">workspace editor</a> to test governed
             article authoring with the updated definitions.
           </li>
         </ul>

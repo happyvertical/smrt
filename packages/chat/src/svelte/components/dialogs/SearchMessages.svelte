@@ -21,7 +21,7 @@ export interface Props {
 let { isOpen, onclose, onsearch, results, onselectresult }: Props = $props();
 
 let query = $state('');
-let searchInput: HTMLInputElement;
+let searchInput = $state<HTMLInputElement | null>(null);
 
 const hasResults = $derived(results.length > 0);
 const hasQuery = $derived(query.trim().length > 0);
@@ -75,6 +75,21 @@ function highlightMatch(text: string, search: string): string {
 }
 
 $effect(() => {
+  if (!isOpen || typeof window === 'undefined') {
+    return;
+  }
+
+  const onWindowKeydown = (event: KeyboardEvent) => {
+    handleKeydown(event);
+  };
+
+  window.addEventListener('keydown', onWindowKeydown);
+  return () => {
+    window.removeEventListener('keydown', onWindowKeydown);
+  };
+});
+
+$effect(() => {
   if (isOpen && searchInput) {
     searchInput.focus();
   }
@@ -86,7 +101,6 @@ $effect(() => {
     class="search-panel"
     role="search"
     aria-label="Search messages"
-    onkeydown={handleKeydown}
   >
     <div class="search-panel__header">
       <h2 class="search-panel__title">Search Messages</h2>
@@ -137,40 +151,43 @@ $effect(() => {
       </div>
     </form>
 
-    <div class="search-results" role="list" aria-label="Search results">
+    <div class="search-results" aria-label="Search results">
       {#if hasResults}
         <p class="results-count">
           {results.length} result{results.length !== 1 ? 's' : ''} found
         </p>
-        {#each results as message (message.id)}
-          <button
-            class="result-item"
-            type="button"
-            role="listitem"
-            onclick={() => onselectresult?.(message.id)}
-          >
-            <div class="result-item__header">
-              {#if message.senderAvatarUrl}
-                <img class="result-item__avatar" src={message.senderAvatarUrl} alt="" />
-              {:else}
-                <span class="result-item__avatar-placeholder">
-                  {message.senderName.charAt(0).toUpperCase()}
-                </span>
-              {/if}
-              <span class="result-item__sender">{message.senderName}</span>
-              <span class="result-item__date">{formatDate(message.createdAt)}</span>
-            </div>
-            <p class="result-item__content">
-              <!-- eslint-disable-next-line svelte/no-at-html-tags -->
-              {@html highlightMatch(
-                message.content.length > 200
-                  ? message.content.slice(0, 200) + '...'
-                  : message.content,
-                query
-              )}
-            </p>
-          </button>
-        {/each}
+        <ul class="results-list" aria-label="Search results">
+          {#each results as message (message.id)}
+            <li class="results-list__item">
+              <button
+                class="result-item"
+                type="button"
+                onclick={() => onselectresult?.(message.id)}
+              >
+                <div class="result-item__header">
+                  {#if message.senderAvatarUrl}
+                    <img class="result-item__avatar" src={message.senderAvatarUrl} alt="" />
+                  {:else}
+                    <span class="result-item__avatar-placeholder">
+                      {message.senderName.charAt(0).toUpperCase()}
+                    </span>
+                  {/if}
+                  <span class="result-item__sender">{message.senderName}</span>
+                  <span class="result-item__date">{formatDate(message.createdAt)}</span>
+                </div>
+                <p class="result-item__content">
+                  <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+                  {@html highlightMatch(
+                    message.content.length > 200
+                      ? message.content.slice(0, 200) + '...'
+                      : message.content,
+                    query
+                  )}
+                </p>
+              </button>
+            </li>
+          {/each}
+        </ul>
       {:else if hasQuery}
         <div class="search-empty" role="status">
           <p class="search-empty__text">No messages found for "{query}"</p>
@@ -308,6 +325,17 @@ $effect(() => {
     padding: 0.5rem 0;
   }
 
+  .results-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .results-list__item {
+    margin: 0;
+    padding: 0;
+  }
+
   .results-count {
     margin: 0;
     padding: 0.375rem 1rem;
@@ -382,6 +410,7 @@ $effect(() => {
     overflow: hidden;
     display: -webkit-box;
     -webkit-line-clamp: 3;
+    line-clamp: 3;
     -webkit-box-orient: vertical;
   }
 

@@ -1,6 +1,7 @@
 <script lang="ts">
 import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 import type { Component } from 'svelte';
+import { onMount } from 'svelte';
 import { mergePlaygroundModules } from '../runtime.js';
 import type {
   PlaygroundComponentModule,
@@ -44,6 +45,11 @@ let selectedModuleName = $state<string | null>(null);
 let selectedEntryId = $state<string | null>(null);
 let selectedMode = $state<SmrtPlaygroundMode>('mock');
 let searchTerm = $state('');
+let isHydrated = $state(false);
+
+onMount(() => {
+  isHydrated = true;
+});
 
 $effect(() => {
   const firstModule = filteredModules[0] ?? normalizedModules[0] ?? null;
@@ -99,6 +105,7 @@ const selectedEntry = $derived(
 );
 
 let PreviewComponent = $state<Component<Record<string, unknown>> | null>(null);
+let previewComponentEntryId = $state<string | null>(null);
 let previewLoadError = $state<string | null>(null);
 let previewIsLoading = $state(false);
 
@@ -109,6 +116,10 @@ const selectedProps = $derived(
         ...(selectedEntry.modes[selectedMode]?.props || {}),
       }
     : {},
+);
+
+const selectedModeConfig = $derived(
+  selectedEntry ? (selectedEntry.modes[selectedMode] ?? null) : null,
 );
 
 function resolvePreviewComponent(
@@ -134,24 +145,28 @@ $effect(() => {
 
   if (!entry) {
     PreviewComponent = null;
+    previewComponentEntryId = null;
     previewIsLoading = false;
     return;
   }
 
   if (entry.component) {
     PreviewComponent = entry.component as Component<Record<string, unknown>>;
+    previewComponentEntryId = entry.qualifiedId;
     previewIsLoading = false;
     return;
   }
 
   if (!entry.loadComponent) {
     PreviewComponent = null;
+    previewComponentEntryId = null;
     previewIsLoading = false;
     previewLoadError = 'This preview does not declare a renderable component.';
     return;
   }
 
   PreviewComponent = null;
+  previewComponentEntryId = null;
   previewIsLoading = true;
 
   void entry
@@ -162,6 +177,7 @@ $effect(() => {
       }
 
       PreviewComponent = resolvePreviewComponent(loaded);
+      previewComponentEntryId = entry.qualifiedId;
       previewIsLoading = false;
     })
     .catch((error) => {
@@ -169,6 +185,8 @@ $effect(() => {
         return;
       }
 
+      PreviewComponent = null;
+      previewComponentEntryId = null;
       previewLoadError =
         error instanceof Error ? error.message : 'Failed to load preview.';
       previewIsLoading = false;
@@ -192,7 +210,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
 </script>
 
 <ThemeProvider colorScheme="system" persist={true}>
-  <div class="playground-shell">
+  <div class="playground-shell" data-hydrated={isHydrated ? 'true' : 'false'}>
     <aside class="sidebar">
       <div class="sidebar__header">
         <p class="eyebrow">Shared Host</p>
@@ -244,6 +262,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
               <button
                 type="button"
                 class:selected={entry.qualifiedId === selectedEntry?.qualifiedId}
+                aria-pressed={entry.qualifiedId === selectedEntry?.qualifiedId}
                 onclick={() => selectEntry(entry)}
               >
                 <div>
@@ -260,12 +279,15 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
           </section>
 
           <section class="preview-panel">
-            {#if selectedEntry && PreviewComponent}
+            {#if selectedEntry && PreviewComponent && previewComponentEntryId === selectedEntry.qualifiedId}
               <div class="preview-panel__meta">
                 <div>
                   <h3>{selectedEntry.title}</h3>
                   {#if selectedEntry.description}
                     <p>{selectedEntry.description}</p>
+                  {/if}
+                  {#if selectedModeConfig?.description}
+                    <p class="mode-description">{selectedModeConfig.description}</p>
                   {/if}
                 </div>
 

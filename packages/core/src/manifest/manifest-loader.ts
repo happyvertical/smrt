@@ -828,6 +828,40 @@ export async function loadExternalManifest(
 }
 
 /**
+ * Load a manifest directly from a known file path and cache it by package name.
+ *
+ * This is used by workspace/dev flows where sibling packages may not be
+ * installed into node_modules yet, but their generated manifests are still
+ * available on disk.
+ */
+export function loadManifestFromPathSync(
+  manifestPath: string,
+): Manifest | null {
+  try {
+    const manifestJson = readFileSync(manifestPath, 'utf-8');
+    const manifest: Manifest = parse(manifestJson);
+
+    if (!manifest.objects || typeof manifest.objects !== 'object') {
+      console.warn(`Invalid manifest structure at ${manifestPath}`);
+      return null;
+    }
+
+    const cacheKey = manifest.packageName || manifestPath;
+    getManifestCacheMap().set(cacheKey, manifest);
+    debugLog(
+      `[manifest-loader] ✅ Loaded manifest from path ${manifestPath} (${Object.keys(manifest.objects).length} objects)`,
+    );
+
+    return manifest;
+  } catch (error) {
+    console.warn(
+      `Failed to load manifest from path ${manifestPath}: ${error instanceof Error ? error.message : error}`,
+    );
+    return null;
+  }
+}
+
+/**
  * Discover manifest entry synchronously (checks only loaded manifests)
  *
  * Search order:
@@ -1125,6 +1159,27 @@ export async function discoverManifestEntry(
     ) {
       // Parse package name from qualified name (format: "@package/name:ClassName")
       const { packageName } = parseQualifiedName(registered.qualifiedName);
+
+      const cachedManifest = getManifestCacheMap().get(packageName);
+      if (cachedManifest) {
+        const cachedEntry = lookupInManifest(
+          cachedManifest,
+          registered.qualifiedName,
+        );
+        if (cachedEntry) {
+          return !cachedEntry.packageName && cachedManifest.packageName
+            ? { ...cachedEntry, packageName: cachedManifest.packageName }
+            : cachedEntry;
+        }
+      }
+
+      // Source-registered classes with explicit field metadata do not need a
+      // second manifest probe from node_modules. This keeps workspace/dev
+      // runtimes from spamming missing-dist-manifest warnings for packages that
+      // are already fully usable from source.
+      if (registered.fields.size > 0) {
+        return undefined;
+      }
 
       // Load the manifest for this specific package
       const manifest = await loadExternalManifest(packageName);

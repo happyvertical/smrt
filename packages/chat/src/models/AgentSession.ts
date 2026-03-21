@@ -1,4 +1,4 @@
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AgentSessionOptions, AgentSessionStatus } from '../types.js';
 
@@ -13,28 +13,44 @@ export class AgentSession extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field({ required: true })
   agentId: string = '';
+
+  @field({ required: true })
   participantProfileId: string = '';
+
+  @field()
   chatRoomId: string | null = null;
 
+  @field({ required: true })
   status: AgentSessionStatus = 'active';
 
   /** JSON array of tool names the consuming app has allowed for this session */
+  @field()
   allowedTools: string = '[]';
 
   /** Conversation context/memory for multi-turn state (JSON string) */
+  @field()
   sessionContext: string = '{}';
 
   /** System prompt override for this session */
+  @field()
   systemPrompt: string = '';
 
+  @field()
   messageCount: number = 0;
+  @field()
   totalTokensUsed: number = 0;
+  @field()
   maxTokens: number = 0;
+  @field()
   maxMessages: number = 0;
 
+  @field()
   lastMessageAt: Date | null = null;
+  @field()
   expiresAt: Date | null = null;
+  @field()
   closedAt: Date | null = null;
 
   constructor(options: AgentSessionOptions = {}) {

@@ -1,6 +1,9 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
-import { viteWorkspaceAliases } from './workspace-aliases.js';
+import {
+  viteWorkspaceAliases,
+  workspaceAliasPackageNames,
+} from './workspace-aliases.js';
 
 export default defineConfig(async ({ mode }) => {
   // Library build mode (used by `pnpm run build`)
@@ -24,6 +27,12 @@ export default defineConfig(async ({ mode }) => {
   return {
     resolve: {
       alias: viteWorkspaceAliases,
+    },
+    optimizeDeps: {
+      exclude: workspaceAliasPackageNames,
+    },
+    ssr: {
+      noExternal: workspaceAliasPackageNames,
     },
     plugins: [
       sveltekit(),

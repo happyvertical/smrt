@@ -5,6 +5,11 @@
  */
 
 import {
+  hasCustomTheme,
+  registerCustomTheme,
+  themes as registeredThemes,
+} from './registry.js';
+import {
   borderRadiusScale,
   durationScale,
   materialEasing,
@@ -390,9 +395,7 @@ function getBaseThemeSync(preset: ThemePreset): Theme | null {
  */
 export async function preloadThemeRegistry(): Promise<void> {
   if (themeRegistryCache) return;
-
-  const { themes } = await import('./registry.js');
-  themeRegistryCache = themes;
+  themeRegistryCache = registeredThemes;
 }
 
 /**
@@ -424,16 +427,7 @@ function materialElevation(): ElevationScale {
  * ```
  */
 export function registerTheme(theme: Theme): void {
-  // Import dynamically to avoid circular dependencies
-  // Using dynamic import for ESM compatibility
-  import('./registry.js')
-    .then(({ registerCustomTheme }) => {
-      registerCustomTheme(theme);
-    })
-    .catch(() => {
-      // Fallback: theme won't be registered if registry fails to load
-      // This should not happen in normal usage
-    });
+  registerCustomTheme(theme);
 }
 
 /**
@@ -450,7 +444,6 @@ export function getRegisteredTheme(_id: string): Theme | undefined {
  * Note: This is async due to ESM dynamic import requirements
  */
 export async function isThemeRegistered(id: string): Promise<boolean> {
-  const { hasCustomTheme } = await import('./registry.js');
   return hasCustomTheme(id);
 }
 

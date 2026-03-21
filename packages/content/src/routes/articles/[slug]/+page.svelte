@@ -30,7 +30,7 @@ function formatTimestamp(value: string | null | undefined) {
   <div class="article-page">
     <header class="article-hero">
       <div class="article-hero__inner">
-        <a href="/" class="back-link">Back to content workspace</a>
+        <a href="/workspace" class="back-link">Back to content workspace</a>
         <div class="eyebrow">Published article</div>
         <h1>{data.content.title || 'Untitled article'}</h1>
         {#if data.content.description}

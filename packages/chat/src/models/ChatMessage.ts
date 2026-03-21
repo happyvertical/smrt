@@ -1,4 +1,4 @@
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ChatMessageOptions,
@@ -17,22 +17,36 @@ export class ChatMessage extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
+  @field({ required: true })
   roomId: string = '';
+  @field()
   threadId: string | null = null;
+  @field({ required: true })
   senderProfileId: string = '';
+  @field()
   agentSessionId: string | null = null;
 
+  @field()
   content: string = '';
+  @field({ required: true })
   messageType: ChatMessageType = 'text';
+  @field({ required: true })
   role: ChatMessageRole = 'user';
 
+  @field()
   isEdited: boolean = false;
+  @field()
   editedAt: Date | null = null;
+  @field()
   isDeleted: boolean = false;
+  @field()
   replyToMessageId: string | null = null;
 
+  @field()
   metadata: string = '{}';
+  @field()
   toolCallData: string | null = null;
+  @field()
   attachments: string = '[]';
 
   constructor(options: ChatMessageOptions = {}) {

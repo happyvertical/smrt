@@ -16,6 +16,7 @@ export {
   findManifestEntryByQualifiedName,
   loadExternalManifestSync,
   loadLocalTestManifestSync,
+  loadManifestFromPathSync,
 } from './manifest-loader';
 export {
   staticManifest as manifest,

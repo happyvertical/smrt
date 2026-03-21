@@ -12,13 +12,39 @@ function trackPageErrors(page: Page) {
   return errors;
 }
 
+test('root playground route renders the shared content previews', async ({
+  page,
+}) => {
+  const pageErrors = trackPageErrors(page);
+
+  await page.goto('/');
+
+  await expect(
+    page.getByRole('heading', { name: 'Content Playground' }),
+  ).toBeVisible();
+  await expect(page.getByText('Reference package previews for')).toBeVisible();
+  await expect(page.getByRole('button', { name: /Article Card/ })).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: /Governance Manager/ }),
+  ).toBeVisible();
+  await expect(page.locator('[data-hydrated="true"]')).toBeVisible();
+
+  await page.getByRole('button', { name: /Governance Manager/ }).click();
+  await expect(
+    page.getByRole('heading', { name: 'Governance Manager' }),
+  ).toBeVisible();
+  await expect(page.getByText('Requires the content package dev server')).toBeVisible();
+
+  expect(pageErrors).toEqual([]);
+});
+
 test('workspace route supports governed editing and published article viewing', async ({
   page,
 }) => {
   const pageErrors = trackPageErrors(page);
   const articleTitle = `Governed browser article ${uniqueSlug('workspace')}`;
 
-  await page.goto('/');
+  await page.goto('/workspace');
 
   await expect(
     page.getByRole('heading', { name: 'Contents', exact: true }),
@@ -278,7 +304,7 @@ test('contribution QA route supports submission, moderation, promotion, and work
       .getByText(/^promoted$/),
   ).toBeVisible();
 
-  await page.goto('/');
+  await page.goto('/workspace');
   await page.getByPlaceholder('Search contents...').fill(promotedTitle);
   await expect(page.getByText(promotedTitle)).toBeVisible();
 

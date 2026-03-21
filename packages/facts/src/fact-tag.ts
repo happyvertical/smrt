@@ -23,12 +23,15 @@ export class FactTag extends SmrtObject {
   @field({ required: true })
   tagSlug: string = '';
 
+  @field()
   metadata: string = '';
 
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field()
   createdAt: Date = new Date();
+  @field()
   updatedAt: Date = new Date();
 
   constructor(options: FactTagOptions = {}) {

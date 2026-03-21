@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -9,6 +9,9 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-assets', '../assets/src/index.ts'],
   ['@happyvertical/smrt-chat', '../chat/src/index.ts'],
   ['@happyvertical/smrt-chat/svelte', '../chat/src/svelte/index.ts'],
+  ['@happyvertical/smrt-core/scanner', '../core/src/scanner/index.ts'],
+  ['@happyvertical/smrt-core/schema/utils', '../core/src/schema/utils.ts'],
+  ['@happyvertical/smrt-core', '../core/src/index.ts'],
   ['@happyvertical/smrt-facts', '../facts/src/index.ts'],
   ['@happyvertical/smrt-images', '../images/src/index.ts'],
   ['@happyvertical/smrt-images/svelte', '../images/src/svelte/index.ts'],
@@ -32,13 +35,44 @@ const workspaceAliasEntries = [
   ],
 ];
 
-export const svelteKitWorkspaceAliases = Object.fromEntries(
-  workspaceAliasEntries,
+function getSortedWorkspaceAliasEntries() {
+  return [...workspaceAliasEntries].sort(
+    ([left], [right]) => right.length - left.length,
+  );
+}
+
+function resolveWorkspacePackageRoot(relativePath) {
+  const absolutePath = resolve(__dirname, relativePath);
+  const srcSegment = `${sep}src${sep}`;
+  const srcIndex = absolutePath.lastIndexOf(srcSegment);
+
+  if (srcIndex >= 0) {
+    return absolutePath.slice(0, srcIndex);
+  }
+
+  return dirname(absolutePath);
+}
+
+export const workspaceAliasPackageNames = workspaceAliasEntries.map(
+  ([packageName]) => packageName,
 );
 
-export const viteWorkspaceAliases = Object.fromEntries(
-  workspaceAliasEntries.map(([packageName, relativePath]) => [
-    packageName,
-    resolve(__dirname, relativePath),
-  ]),
+export const workspacePackageRoots = Object.fromEntries(
+  workspaceAliasEntries
+    .filter(([packageName]) => packageName.split('/').length === 2)
+    .map(([packageName, relativePath]) => [
+      packageName,
+      resolveWorkspacePackageRoot(relativePath),
+    ]),
+);
+
+export const svelteKitWorkspaceAliases = Object.fromEntries(
+  getSortedWorkspaceAliasEntries(),
+);
+
+export const viteWorkspaceAliases = getSortedWorkspaceAliasEntries().map(
+  ([packageName, relativePath]) => ({
+    find: packageName,
+    replacement: resolve(__dirname, relativePath),
+  }),
 );

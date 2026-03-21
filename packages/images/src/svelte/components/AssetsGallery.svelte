@@ -143,22 +143,32 @@ function handleSelect(image: Image) {
   
   <div class="gallery-grid">
     {#each images as image (image.id)}
-      <div 
-        class="gallery-item" 
-        class:selectable={!!onSelect}
-        onclick={() => handleSelect(image)}
-        onkeydown={(e) => e.key === 'Enter' && handleSelect(image)}
-        role={onSelect ? "button" : "img"}
-        tabindex={onSelect ? 0 : undefined}
-      >
-        <div class="img-container">
-          <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
+      {#if onSelect}
+        <button
+          type="button"
+          class="gallery-item"
+          class:selectable={true}
+          onclick={() => handleSelect(image)}
+        >
+          <div class="img-container">
+            <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
+          </div>
+          <div class="item-info">
+            <span class="item-name" title={image.name}>{image.name}</span>
+            <span class="item-meta">{image.width}x{image.height} • {image.mimeType}</span>
+          </div>
+        </button>
+      {:else}
+        <div class="gallery-item">
+          <div class="img-container">
+            <img src={image.sourceUri || image.url} alt={image.alt || image.name} loading="lazy" />
+          </div>
+          <div class="item-info">
+            <span class="item-name" title={image.name}>{image.name}</span>
+            <span class="item-meta">{image.width}x{image.height} • {image.mimeType}</span>
+          </div>
         </div>
-        <div class="item-info">
-          <span class="item-name" title={image.name}>{image.name}</span>
-          <span class="item-meta">{image.width}x{image.height} • {image.mimeType}</span>
-        </div>
-      </div>
+      {/if}
     {/each}
     
     {#if images.length === 0 && !isLoading}
@@ -280,11 +290,15 @@ function handleSelect(image: Image) {
   .gallery-item {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    padding: 0;
     background: var(--smrt-color-surface-container, #1a1a1a);
     border-radius: var(--smrt-radius-lg, 8px);
     border: 1px solid var(--smrt-color-surface-container-high, #2a2a2a);
     box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
     overflow: hidden;
+    color: inherit;
+    text-align: left;
     transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   }
 

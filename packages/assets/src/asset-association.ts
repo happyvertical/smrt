@@ -5,7 +5,7 @@
  * (e.g., Article, Profile, Event) with role-based categorization.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetAssociationOptions } from './types';
 
 @smrt({
@@ -16,18 +16,23 @@ import type { AssetAssociationOptions } from './types';
 })
 export class AssetAssociation extends SmrtObject {
   /** FK to Asset.id */
+  @field({ required: true })
   assetId = '';
 
   /** Target class name (e.g., 'Article', 'Profile') */
+  @field({ required: true })
   metaType = '';
 
   /** Target object ID */
+  @field({ required: true })
   metaId = '';
 
   /** Role of this association (e.g., 'hero', 'thumbnail', 'attachment') */
+  @field({ required: true })
   role = 'default';
 
   /** Sort order for ordering assets within a role */
+  @field()
   sortOrder: number = 0;
 
   constructor(options: AssetAssociationOptions = {}) {

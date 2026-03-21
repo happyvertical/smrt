@@ -1,4 +1,4 @@
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ChatThreadOptions } from '../types.js';
 
@@ -13,12 +13,19 @@ export class ChatThread extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
+  @field({ required: true })
   roomId: string = '';
+  @field()
   rootMessageId: string = '';
+  @field()
   title: string = '';
+  @field()
   isResolved: boolean = false;
+  @field()
   messageCount: number = 0;
+  @field()
   lastMessageAt: Date | null = null;
+  @field()
   participantCount: number = 0;
 
   constructor(options: ChatThreadOptions = {}) {

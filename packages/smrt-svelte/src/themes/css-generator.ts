@@ -5,6 +5,7 @@
  * Generates CSS variables for colors, typography, spacing, elevation, etc.
  */
 
+import { themes } from './registry.js';
 import type {
   BorderRadiusScale,
   ColorPalette,
@@ -262,8 +263,6 @@ export function generateThemeCSS(
  * @returns Complete CSS for all themes
  */
 export async function generateAllThemesCSS(): Promise<string> {
-  // Use dynamic import for ESM compatibility
-  const { themes } = await import('./registry.js');
   const cssParts: string[] = [];
 
   for (const theme of Object.values<Theme>(themes)) {

@@ -26,13 +26,17 @@ export class FactSubject extends SmrtObject {
   @field({ required: true })
   entityId: string = '';
 
+  @field()
   role: string = 'subject';
+  @field()
   metadata: string = '';
 
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @field()
   createdAt: Date = new Date();
+  @field()
   updatedAt: Date = new Date();
 
   constructor(options: FactSubjectOptions = {}) {

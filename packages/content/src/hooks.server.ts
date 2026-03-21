@@ -5,29 +5,130 @@
  * create tables on server startup before any routes can function.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+  ObjectRegistry,
+  SmrtCollection,
+  type SmrtObject,
+} from '@happyvertical/smrt-core';
 import {
   ensureSchema,
   generateSchema,
 } from '@happyvertical/smrt-core/schema/utils';
 import { getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
-
-// Register dependency package objects used by the content dev server QA
-// surfaces so schema bootstrap can prepare their tables too.
-import '@happyvertical/smrt-assets';
-import '@happyvertical/smrt-chat';
-import '@happyvertical/smrt-facts';
-import '@happyvertical/smrt-images';
-import '@happyvertical/smrt-messages';
-import '@happyvertical/smrt-profiles';
-
-// Side-effect: import registers all SMRT classes via @smrt() decorators
-import './lib/server/smrt-register.js';
 import { getSmrtConfig } from '$lib/server/smrt';
+import { workspacePackageRoots } from '../workspace-aliases.js';
 
 let schemaReady = false;
 let bootstrapPromise: Promise<void> | null = null;
+let runtimeRegistrationReady = false;
+let runtimeRegistrationPromise: Promise<void> | null = null;
+const currentPackageRoot = fileURLToPath(new URL('..', import.meta.url));
+
+const dependencyPackageLoaders = [
+  () => import('@happyvertical/smrt-assets'),
+  () => import('@happyvertical/smrt-chat'),
+  () => import('@happyvertical/smrt-facts'),
+  () => import('@happyvertical/smrt-images'),
+  () => import('@happyvertical/smrt-messages'),
+  () => import('@happyvertical/smrt-profiles'),
+] as const;
+
+function resolveWorkspaceManifestPaths(): string[] {
+  const packageRoots = [
+    currentPackageRoot,
+    ...Object.values(workspacePackageRoots),
+  ];
+
+  const candidates = packageRoots
+    .map((packageRoot) =>
+      [
+        resolve(packageRoot, '.smrt/manifest.json'),
+        resolve(packageRoot, 'dist/manifest.json'),
+        resolve(packageRoot, 'src/manifest/manifest.json'),
+        resolve(packageRoot, 'src/manifest/test-manifest.json'),
+      ].find((manifestPath) => existsSync(manifestPath)),
+    )
+    .filter((manifestPath): manifestPath is string => Boolean(manifestPath));
+
+  return [...new Set(candidates)];
+}
+
+async function registerContentWorkspaceRuntime() {
+  if (runtimeRegistrationReady) {
+    return;
+  }
+
+  if (runtimeRegistrationPromise) {
+    return runtimeRegistrationPromise;
+  }
+
+  runtimeRegistrationPromise = (async () => {
+    const externalManifestPaths = resolveWorkspaceManifestPaths();
+    if (externalManifestPaths.length > 0) {
+      ObjectRegistry.loadAllManifests({
+        manifestPaths: externalManifestPaths,
+      });
+    } else {
+      ObjectRegistry.loadAllManifests();
+    }
+
+    for (const loadDependencyPackage of dependencyPackageLoaders) {
+      await loadDependencyPackage();
+    }
+
+    // Register the content package after dependency manifests are cached so the
+    // generated routes and qualified lookups resolve against the same runtime
+    // metadata the package publishes.
+    await import('./lib/server/smrt-register.js');
+    runtimeRegistrationReady = true;
+  })();
+
+  return runtimeRegistrationPromise;
+}
+
+function getRegisteredObjectClasses(): Array<typeof SmrtObject> {
+  const constructors = new Set<typeof SmrtObject>();
+  const frameworkBaseClassNames = new Set([
+    'SmrtClass',
+    'SmrtCollection',
+    'SmrtObject',
+  ]);
+
+  for (const registered of ObjectRegistry.getAllClasses().values()) {
+    const ctor = registered.constructor;
+
+    if (!ctor) {
+      continue;
+    }
+
+    if (frameworkBaseClassNames.has(ctor.name)) {
+      continue;
+    }
+
+    if (ctor.prototype instanceof SmrtCollection) {
+      continue;
+    }
+
+    if (
+      registered.extends === 'SmrtCollection' ||
+      registered.inheritanceChain?.includes('SmrtCollection')
+    ) {
+      continue;
+    }
+
+    if ('_itemClass' in (ctor as object) || ctor.name.endsWith('Collection')) {
+      continue;
+    }
+
+    constructors.add(ctor as typeof SmrtObject);
+  }
+
+  return [...constructors];
+}
 
 async function bootstrapSchema() {
   if (schemaReady) {
@@ -40,29 +141,24 @@ async function bootstrapSchema() {
 
   bootstrapPromise = (async () => {
     try {
+      await registerContentWorkspaceRuntime();
+
       const config = getSmrtConfig('@happyvertical/smrt-content:Content');
       const dbUrl = (config.db as any)?.url || '.smrt/local.db';
       const dbType = (config.db as any)?.type || 'sqlite';
       const db = await getDatabase({ url: dbUrl, type: dbType });
 
-      // Load all available manifests so cross-package classes (Image, Asset, etc.) are known
-      ObjectRegistry.loadAllManifests();
+      // Only generate schema for persisted object classes. Collection classes
+      // and base framework types are registered too, but they should never hit
+      // schema generation.
+      const registeredClasses = getRegisteredObjectClasses();
 
-      // Compile schemas for all registered objects, including dependency
-      // packages used by the content QA surfaces. The dev server now exposes
-      // governance, contributions, facts, chat, images, and other generated
-      // routes, so only preparing local content classes leaves hidden runtime
-      // gaps that browser E2E catches immediately.
-      const registeredClasses = ObjectRegistry.getClassNames()
-        .map((name) => ObjectRegistry.getClass(name))
-        .filter((registered): registered is NonNullable<typeof registered> =>
-          Boolean(registered),
-        )
-        .map((registered) => registered.constructor);
+      const schemaReadyClassNames = new Set<string>();
 
       for (const cls of registeredClasses) {
         try {
           await generateSchema(cls);
+          schemaReadyClassNames.add(cls.name);
         } catch (error) {
           console.warn(
             `[hooks] Skipped schema generation for ${cls.name}: ${
@@ -73,14 +169,17 @@ async function bootstrapSchema() {
       }
 
       // Now ensure all schemas exist in the database
-      const classNames = ObjectRegistry.getClassNames();
       let created = 0;
-      for (const className of classNames) {
+      for (const className of schemaReadyClassNames) {
         try {
           await ensureSchema(db, className);
           created++;
-        } catch {
-          // Some classes (collection types, abstract) don't need tables — skip
+        } catch (error) {
+          console.warn(
+            `[hooks] Skipped schema ensure for ${className}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
         }
       }
 
@@ -100,7 +199,14 @@ async function bootstrapSchema() {
   return bootstrapPromise;
 }
 
+function requestNeedsSchemaBootstrap(pathname: string): boolean {
+  return pathname.startsWith('/api/');
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
-  await bootstrapSchema();
+  if (requestNeedsSchemaBootstrap(event.url.pathname)) {
+    await bootstrapSchema();
+  }
+
   return resolve(event);
 };

@@ -45,13 +45,13 @@ let {
 
 // Internal state
 let config = $state<ThemeConfig>({
-  preset,
-  colorScheme,
-  primaryColor,
-  borderRadius,
-  overrides,
-  persist,
-  storageKey,
+  preset: defaultThemeConfig.preset,
+  colorScheme: defaultThemeConfig.colorScheme,
+  primaryColor: undefined,
+  borderRadius: defaultThemeConfig.borderRadius,
+  overrides: {},
+  persist: defaultThemeConfig.persist,
+  storageKey: defaultThemeConfig.storageKey,
 });
 
 let systemPrefersDark = $state(false);
@@ -235,6 +235,14 @@ $effect(() => {
 // Sync overrides prop to state
 $effect(() => {
   config.overrides = overrides;
+});
+
+$effect(() => {
+  config.persist = persist;
+});
+
+$effect(() => {
+  config.storageKey = storageKey;
 });
 </script>
 

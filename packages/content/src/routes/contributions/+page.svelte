@@ -295,7 +295,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
         </div>
 
         <nav class="page-nav" aria-label="Content QA navigation">
-          <a href="/">Workspace</a>
+          <a href="/workspace">Workspace</a>
           <a href="/governance">Governance QA</a>
           <a aria-current="page" href="/contributions">Contribution QA</a>
         </nav>
