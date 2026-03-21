@@ -13,13 +13,8 @@ import { discoverSmrtPackages } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
 
 async function importScanner() {
-  const dynamicImport = new Function(
-    'specifier',
-    'return import(specifier)',
-  ) as (specifier: string) => Promise<any>;
-
   try {
-    return await dynamicImport('@happyvertical/smrt-scanner');
+    return await import('@happyvertical/smrt-scanner');
   } catch (error) {
     if (
       error instanceof Error &&
@@ -31,12 +26,12 @@ async function importScanner() {
         if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
           const scannerDist = join(current, 'packages/scanner/dist/index.js');
           if (existsSync(scannerDist)) {
-            return dynamicImport(pathToFileURL(scannerDist).href);
+            return import(pathToFileURL(scannerDist).href);
           }
 
           const scannerSrc = join(current, 'packages/scanner/src/index.ts');
           if (existsSync(scannerSrc)) {
-            return dynamicImport(pathToFileURL(scannerSrc).href);
+            return import(pathToFileURL(scannerSrc).href);
           }
 
           throw new Error(

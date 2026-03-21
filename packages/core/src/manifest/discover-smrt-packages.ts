@@ -4,7 +4,8 @@
  * Discovers all SMRT packages in node_modules by:
  * 1. Scanning node_modules directory for installed packages
  * 2. Following symlinks for workspace: dependencies
- * 3. Checking for dist/manifest.json with moduleType: "smrt"
+ * 3. Checking for a package manifest (`dist/manifest.json`,
+ *    `.smrt/manifest.json`, or `src/manifest/manifest.json`) with moduleType: "smrt"
  * 4. Caching results based on lockfile hash and manifest timestamps
  *
  * Cache Strategy:
@@ -73,9 +74,9 @@ function getManifestTimestampsHash(packages: string[]): string {
   for (const pkgName of packages) {
     try {
       const pkgPath = join(process.cwd(), 'node_modules', pkgName);
-      const manifestPath = join(pkgPath, 'dist', 'manifest.json');
+      const manifestPath = findManifestPath(pkgPath);
 
-      if (existsSync(manifestPath)) {
+      if (manifestPath && existsSync(manifestPath)) {
         const stats = statSync(manifestPath);
         timestamps.push(`${pkgName}:${stats.mtimeMs}`);
       }
@@ -92,6 +93,22 @@ interface DiscoveryCache {
   manifestsHash: string;
   timestamp: number;
   packages: string[];
+}
+
+function findManifestPath(pkgPath: string): string | null {
+  const candidates = [
+    join(pkgPath, 'dist', 'manifest.json'),
+    join(pkgPath, '.smrt', 'manifest.json'),
+    join(pkgPath, 'src', 'manifest', 'manifest.json'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -172,7 +189,7 @@ function saveCachedDiscovery(packages: string[], verbose: boolean): void {
 }
 
 /**
- * Check if a package exports a SMRT manifest
+ * Check if a package provides a SMRT manifest
  *
  * Supports both regular npm dependencies and workspace: symlinks
  */
@@ -193,10 +210,8 @@ function hasManifestExport(packageName: string): boolean {
       // If realpath fails, continue with original path
     }
 
-    // Check for dist/manifest.json directly (standard SMRT build output)
-    const manifestPath = join(pkgPath, 'dist', 'manifest.json');
-
-    if (!existsSync(manifestPath)) {
+    const manifestPath = findManifestPath(pkgPath);
+    if (!manifestPath) {
       return false;
     }
 
