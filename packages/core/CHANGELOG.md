@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.5
+
+### Patch Changes
+
+- ### Features
+
+  - add contribution intake and promotion workflows (#1037) (content)
+  - @happyvertical/smrt-scanner@0.21.5
+  - @happyvertical/smrt-config@0.21.5
+  - @happyvertical/smrt-types@0.21.5
+
 ## 0.21.4
 
 ### Patch Changes
