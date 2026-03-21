@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.7
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - support api base overrides and packed types (#1043) (content)
+  - @happyvertical/smrt-scanner@0.21.7
+  - @happyvertical/smrt-config@0.21.7
+  - @happyvertical/smrt-types@0.21.7
+
 ## 0.21.6
 
 ### Patch Changes
