@@ -43,13 +43,17 @@ async function handleSaveContent(formData: any) {
   try {
     const payload = formData;
 
-    if (editingContent) {
+    if (editingContent?.id) {
       // Update existing
       const response = await client.contents.update(editingContent.id, payload);
       const index = contents.findIndex((c) => c.id === editingContent.id);
-      contents[index] = response.data;
+      if (index >= 0) {
+        contents[index] = response.data;
+      } else {
+        contents = [...contents, response.data];
+      }
     } else {
-      // Create new
+      // Create new (including governed drafts without an id)
       const response = await client.contents.create(payload);
       contents = [...contents, response.data];
     }

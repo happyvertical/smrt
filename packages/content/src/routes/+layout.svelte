@@ -38,7 +38,7 @@ const navItems = [
   </main>
 
   <footer class="app-footer">
-    <p>SMRT Content Service &middot; PR #1037 Dev Preview</p>
+    <p>SMRT Content Service &middot; Development build</p>
   </footer>
 </div>
 </ThemeProvider>

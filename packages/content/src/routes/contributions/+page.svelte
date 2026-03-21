@@ -38,11 +38,11 @@ async function loadAll() {
   try {
     const [inbox, types, contribs] = await Promise.all([
       client.contentContributions.listInbox(),
-      client.contentContributionTypes.list(),
+      client.contentContributions.getContributionTypes(),
       client.contentContributors.list(),
     ]);
     contributions = inbox.data;
-    contributionTypes = types.data;
+    contributionTypes = types.data.effective ?? types.data.persisted ?? [];
     contributors = contribs.data;
   } catch (err: any) {
     error = err.message;
@@ -56,8 +56,16 @@ async function handleApprove(
   options: { targetStatus: string; note: string },
 ) {
   if (!contribution.id) return;
-  await client.contentContributions.approve(contribution.id, options);
-  await loadAll();
+  error = null;
+  try {
+    await client.contentContributions.approve(contribution.id, {
+      editorNote: options.note,
+      targetStatus: options.targetStatus,
+    });
+    await loadAll();
+  } catch (err: any) {
+    error = err?.message ?? 'Failed to approve contribution';
+  }
 }
 
 async function handleReject(
@@ -65,8 +73,15 @@ async function handleReject(
   options: { note: string },
 ) {
   if (!contribution.id) return;
-  await client.contentContributions.reject(contribution.id, options);
-  await loadAll();
+  error = null;
+  try {
+    await client.contentContributions.reject(contribution.id, {
+      editorNote: options.note,
+    });
+    await loadAll();
+  } catch (err: any) {
+    error = err?.message ?? 'Failed to reject contribution';
+  }
 }
 
 async function handleRequestChanges(
@@ -74,17 +89,37 @@ async function handleRequestChanges(
   options: { note: string },
 ) {
   if (!contribution.id) return;
-  await client.contentContributions.requestChanges(contribution.id, options);
-  await loadAll();
+  error = null;
+  try {
+    await client.contentContributions.requestChanges(contribution.id, {
+      editorNote: options.note,
+    });
+    await loadAll();
+  } catch (err: any) {
+    error = err?.message ?? 'Failed to request changes';
+  }
 }
 
 async function handleSubmit(payload: any) {
-  await client.contentContributions.submitWebContribution({
-    ...payload,
-    channel: 'web',
-  });
-  activeTab = 'inbox';
-  await loadAll();
+  error = null;
+  try {
+    // Convert File objects to attachment metadata for the API
+    const attachments = (payload.files ?? []).map((file: File) => ({
+      filename: file.name,
+      mimeType: file.type,
+      size: file.size,
+    }));
+    const { files: _files, ...rest } = payload;
+    await client.contentContributions.submitWebContribution({
+      ...rest,
+      attachments,
+      channel: 'web',
+    });
+    activeTab = 'inbox';
+    await loadAll();
+  } catch (err: any) {
+    error = err?.message ?? 'Failed to submit contribution';
+  }
 }
 
 async function handleSaveContributor(data: Partial<ContentContributorData>) {

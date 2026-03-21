@@ -184,10 +184,7 @@ export class Contents extends SmrtCollection<Content> {
       return results.map(serializeFact);
     } catch (error: any) {
       // Gracefully handle missing facts table (cross-package dependency)
-      if (
-        error?.code === 'DB_SCHEMA_MISSING' ||
-        error?.message?.includes('does not exist')
-      ) {
+      if (error?.code === 'DB_SCHEMA_MISSING') {
         return [];
       }
       throw error;

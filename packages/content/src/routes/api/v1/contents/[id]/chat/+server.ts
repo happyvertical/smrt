@@ -79,10 +79,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     });
   } catch (error: any) {
     // Gracefully handle missing chat tables (cross-package dependency)
-    if (
-      error?.code === 'DB_SCHEMA_MISSING' ||
-      error?.message?.includes('does not exist')
-    ) {
+    if (error?.code === 'DB_SCHEMA_MISSING') {
       return json({
         session: null,
         threads: [],
