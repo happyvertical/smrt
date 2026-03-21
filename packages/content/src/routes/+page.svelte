@@ -1,5 +1,4 @@
 <script lang="ts">
-import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 import { onMount } from 'svelte';
 import { createClient } from '../mock-smrt-client';
 import ContentEditor from '../svelte/components/ContentEditor.svelte';
@@ -51,10 +50,10 @@ async function handleSaveContent(formData: any) {
       if (index >= 0) {
         contents[index] = response.data;
       } else {
-        contents = [response.data, ...contents];
+        contents = [...contents, response.data];
       }
     } else {
-      // Create new
+      // Create new (including governed drafts without an id)
       const response = await client.contents.create(payload);
       contents = [...contents, response.data];
     }
@@ -124,266 +123,118 @@ function getPublishedHref(content: any) {
 }
 </script>
 
-<ThemeProvider colorScheme="system" persist={true}>
-<div class="app">
-  <header class="header">
-    <div class="container">
-      <div class="header-brand">
-        <h1>📝 Content Service</h1>
-        <div class="status">Online</div>
+<div class="page">
+  <div class="page-header">
+    <h1>📝 Contents</h1>
+    <p>Manage your content library with auto-generated CRUD operations, document processing, and AI-powered tools via MCP.</p>
+  </div>
+
+  <div class="content-section">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <h2>Content Catalog</h2>
+        <div class="stats">
+          <div class="stat">
+            <strong>{stats.total}</strong>
+            contents
+          </div>
+          <div class="stat">
+            <strong>{stats.published}</strong>
+            published
+          </div>
+          <div class="stat">
+            Total highlighted: <strong>{stats.highlighted}</strong>
+          </div>
+        </div>
       </div>
-      <nav class="header-nav" aria-label="Content QA navigation">
-        <a href="/">Workspace</a>
-        <a href="/governance">Governance QA</a>
-        <a href="/contributions">Contribution QA</a>
-      </nav>
     </div>
-  </header>
 
-  <main class="main">
-    <div class="container">
-      <div class="hero">
-        <h1>Contents</h1>
-        <p>Manage your content library with auto-generated CRUD operations, document processing, and AI-powered tools via MCP.</p>
-        <div class="hero-actions">
-          <a class="hero-link" href="/governance">Test governance admin</a>
-          <a class="hero-link" href="/contributions">Test contributions intake</a>
-        </div>
+    {#if loading}
+      <div class="loading-state">
+        <span class="spinner"></span> Loading contents...
       </div>
-
-      <div class="content-section">
-        <div class="stats-grid">
-          <div class="stat-card">
-            <h2>Content Catalog</h2>
-            <div class="stats">
-              <div class="stat">
-                <strong>{stats.total}</strong>
-                contents
-              </div>
-              <div class="stat">
-                <strong>{stats.published}</strong>
-                published
-              </div>
-              <div class="stat">
-                Total highlighted: <strong>{stats.highlighted}</strong>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {#if loading}
-          <div class="loading-state">
-            <span class="spinner"></span> Loading contents...
-          </div>
-        {:else if error}
-          <div class="error-state">
-            <p><strong>Error:</strong> {error}</p>
-            <button onclick={loadContents}>Try Again</button>
-          </div>
-        {:else}
-        
-          {#if showAddForm || editingContent}
-            <div class="editor-unified-container">
-              {#if editorMode === 'governed'}
-                <GovernedContentEditor
-                  content={editingContent}
-                  contentId={editingContent?.id || 'new'}
-                  onSave={handleSaveContent}
-                  onCancel={closeForms}
-                />
-              {:else}
-                <ContentEditor 
-                  content={editingContent}
-                  contentId={editingContent?.id || 'new'}
-                  onSave={handleSaveContent}
-                  onCancel={closeForms}
-                />
-              {/if}
-            </div>
+    {:else if error}
+      <div class="error-state">
+        <p><strong>Error:</strong> {error}</p>
+        <button onclick={loadContents}>Try Again</button>
+      </div>
+    {:else}
+    
+      {#if showAddForm || editingContent}
+        <div class="editor-unified-container">
+          {#if editorMode === 'governed'}
+            <GovernedContentEditor
+              content={editingContent}
+              contentId={editingContent?.id || 'new'}
+              onSave={handleSaveContent}
+              onCancel={closeForms}
+            />
           {:else}
-            <ContentList 
-              {contents}
-              getViewHref={getPublishedHref}
-              onEdit={handleEditContent}
-              onDelete={handleDeleteContent}
-              onAdd={handleAddContent}
-            >
-              <!-- Example of injecting custom controls via Svelte Snippet -->
-              {#snippet controls()}
-                <div class="custom-control">
-                  <button type="button" class="secondary-action" onclick={handleAddGovernedContent}>
-                    Add governed article
-                  </button>
-                  <span class="badge state-active">Published QA ready</span>
-                </div>
-              {/snippet}
-            </ContentList>
+            <ContentEditor 
+              content={editingContent}
+              contentId={editingContent?.id || 'new'}
+              onSave={handleSaveContent}
+              onCancel={closeForms}
+            />
           {/if}
-        {/if}
-      </div>
-
-      <div class="features-grid">
-        <div class="feature">
-          <h3>🔄 Auto-Generated</h3>
-          <p>REST API endpoints automatically created from @smrt() decorated Content class</p>
         </div>
-        <div class="feature">
-          <h3>🤖 AI Ready</h3>
-          <p>MCP tools available for Claude and other AI models to interact with content</p>
-        </div>
-        <div class="feature">
-          <h3>📄 Document Processing</h3>
-          <p>Automatic content extraction from PDFs, web pages, and other document types</p>
-        </div>
-        <div class="feature">
-          <h3>📚 Library</h3>
-          <p>Install as NPM package: npm install @have/content</p>
-        </div>
-      </div>
-    </div>
-  </main>
-
-  <footer class="footer">
-    <div class="container">
-      <p>© 2024 SMRT Content Service - Auto-generated with ❤️</p>
-    </div>
-  </footer>
+      {:else}
+        <ContentList 
+          {contents}
+          getViewHref={getPublishedHref}
+          onEdit={handleEditContent}
+          onDelete={handleDeleteContent}
+          onAdd={handleAddContent}
+        >
+          <!-- Example of injecting custom controls via Svelte Snippet -->
+          {#snippet controls()}
+            <div class="custom-control">
+              <button type="button" class="secondary-action" onclick={handleAddGovernedContent}>
+                Add governed article
+              </button>
+              <span class="badge state-active">Published QA ready</span>
+            </div>
+          {/snippet}
+        </ContentList>
+      {/if}
+    {/if}
+  </div>
 </div>
-</ThemeProvider>
 
 <style>
-  :global(body) {
-    margin: 0;
-    font-family: var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
-    background: var(--smrt-color-background);
-    color: var(--smrt-color-on-background);
-    min-height: 100vh;
-  }
-
-  .app {
-    min-height: 100vh;
+  .page {
     display: flex;
     flex-direction: column;
+    gap: 1.5rem;
   }
 
-  .container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 20px;
-  }
-
-  .header {
-    background: var(--smrt-color-surface);
-    border-bottom: 1px solid var(--smrt-color-outline-variant);
+  .page-header {
+    text-align: center;
     padding: 1rem 0;
   }
 
-  .header .container {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .header-brand {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .header-nav {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .header-nav a {
-    color: var(--smrt-color-on-surface);
-    text-decoration: none;
-    font-weight: 600;
-    opacity: 0.85;
-  }
-
-  .header-nav a:hover {
-    opacity: 1;
-    text-decoration: underline;
-  }
-
-  .header h1 {
-    margin: 0;
-    font-size: 1.5rem;
-    color: var(--smrt-color-on-surface);
-  }
-
-  .status {
-    background: var(--smrt-color-success, #10b981);
-    color: var(--smrt-color-on-success, white);
-    padding: 0.25rem 0.75rem;
-    border-radius: 1rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
-  .main {
-    flex: 1;
-    padding: 2rem 0;
-  }
-
-  .hero {
-    text-align: center;
-    margin-bottom: 3rem;
-    color: var(--smrt-color-on-background);
-  }
-
-  .hero h1 {
-    font-size: 3rem;
-    margin: 0 0 1rem 0;
+  .page-header h1 {
+    margin: 0 0 0.5rem 0;
+    font-size: 2rem;
     font-weight: 800;
+    color: var(--smrt-color-on-background, #1a1c1e);
   }
 
-  .hero p {
-    font-size: 1.25rem;
-    opacity: 0.8;
-    max-width: 600px;
+  .page-header p {
     margin: 0 auto;
-  }
-
-  .hero-actions {
-    display: flex;
-    justify-content: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-top: 1rem;
-  }
-
-  .hero-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.65rem 1rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
-    color: var(--smrt-color-primary);
-    text-decoration: none;
-    font-weight: 600;
-  }
-
-  .hero-link:hover {
-    background: color-mix(in srgb, var(--smrt-color-primary) 18%, transparent);
+    color: var(--smrt-color-on-surface-variant, #43474e);
+    font-size: 1.05rem;
+    max-width: 600px;
   }
 
   .content-section {
-    background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: 1rem;
     padding: 2rem;
-    margin-bottom: 2rem;
-    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     position: relative;
-    min-height: 500px;
+    min-height: 400px;
   }
 
   .stats-grid {
@@ -391,15 +242,15 @@ function getPublishedHref(content: any) {
   }
 
   .stat-card {
-    background: var(--smrt-color-surface-container-low);
+    background: var(--smrt-color-surface-container-low, #f7f7fb);
     border-radius: 0.75rem;
     padding: 1.5rem;
-    border: 1px solid var(--smrt-color-outline-variant);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
 
   .stat-card h2 {
     margin: 0 0 1rem 0;
-    color: var(--smrt-color-on-surface);
+    color: var(--smrt-color-on-surface, #1a1c1e);
     font-size: 1.5rem;
   }
 
@@ -410,12 +261,12 @@ function getPublishedHref(content: any) {
   }
 
   .stat {
-    color: var(--smrt-color-on-surface-variant);
+    color: var(--smrt-color-on-surface-variant, #43474e);
     font-size: 0.875rem;
   }
 
   .stat strong {
-    color: var(--smrt-color-on-surface);
+    color: var(--smrt-color-on-surface, #1a1c1e);
     font-size: 1.5rem;
     display: block;
   }
@@ -427,9 +278,9 @@ function getPublishedHref(content: any) {
   }
 
   .secondary-action {
-    border: 1px solid var(--smrt-color-outline-variant);
-    background: var(--smrt-color-surface);
-    color: var(--smrt-color-on-surface);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    background: var(--smrt-color-surface, #fff);
+    color: var(--smrt-color-on-surface, #1a1c1e);
     border-radius: 999px;
     padding: 0.55rem 0.95rem;
     font-weight: 600;
@@ -437,7 +288,7 @@ function getPublishedHref(content: any) {
   }
 
   .secondary-action:hover {
-    background: var(--smrt-color-surface-variant);
+    background: var(--smrt-color-surface-variant, #e1e2ec);
   }
   
   .badge {
@@ -449,54 +300,34 @@ function getPublishedHref(content: any) {
   }
   .state-active { background: var(--smrt-color-success-container, #dcfce7); color: var(--smrt-color-on-success-container, #166534); border: 1px solid var(--smrt-color-outline-variant); }
 
-  .features-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 1.5rem;
-    margin-top: 3rem;
-  }
-
-  .feature {
-    background: var(--smrt-color-surface-variant);
-    padding: 1.5rem;
-    border-radius: 1rem;
-    color: var(--smrt-color-on-surface-variant);
-    border: 1px solid var(--smrt-color-outline-variant);
-  }
-
-  .feature h3 {
-    margin: 0 0 0.5rem 0;
-    color: var(--smrt-color-on-surface);
-  }
-
-  .feature p {
-    margin: 0;
-    opacity: 0.9;
-    font-size: 0.875rem;
-    line-height: 1.5;
-  }
-
-  .footer {
-    text-align: center;
-    padding: 2rem 0;
-    color: var(--smrt-color-on-surface-variant);
-    opacity: 0.8;
-  }
-  
   .loading-state {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 1rem;
     padding: 4rem;
-    color: var(--smrt-color-on-surface-variant);
+    color: var(--smrt-color-on-surface-variant, #74777f);
     font-size: 1.25rem;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
+    border-top-color: var(--smrt-color-primary, #005ac1);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
   
   .error-state {
-    background: var(--smrt-color-error-container);
-    border: 1px solid var(--smrt-color-outline-variant);
-    color: var(--smrt-color-on-error-container);
+    background: var(--smrt-color-error-container, #ffdad6);
+    border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
+    color: var(--smrt-color-on-error-container, #410002);
     padding: 2rem;
     border-radius: 0.5rem;
     text-align: center;
@@ -504,20 +335,17 @@ function getPublishedHref(content: any) {
   
   .error-state button {
     margin-top: 1rem;
-    background: var(--smrt-color-surface);
-    border: 1px solid var(--smrt-color-outline);
+    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline, #74777f);
     padding: 0.5rem 1rem;
     border-radius: 0.375rem;
     cursor: pointer;
-    color: var(--smrt-color-error);
+    color: var(--smrt-color-error, #ba1a1a);
     font-weight: 500;
-  }
-  
-  .error-state button:hover {
-    background: var(--smrt-color-surface-variant);
   }
 
   .editor-unified-container {
     width: 100%;
   }
 </style>
+
