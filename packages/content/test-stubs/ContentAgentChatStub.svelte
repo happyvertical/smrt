@@ -1,5 +1,6 @@
 <script lang="ts">
 let {
+  apiBaseUrl = '/api/v1',
   contentId = '',
   currentEditorState = '',
   currentReferenceIds = [],
@@ -7,6 +8,7 @@ let {
   onapplyfields = undefined,
   onclose = undefined,
 } = $props<{
+  apiBaseUrl?: string;
   contentId?: string;
   currentEditorState?: string;
   currentReferenceIds?: string[];
@@ -18,6 +20,7 @@ let {
 
 <div
   data-testid="content-agent-chat-stub"
+  data-api-base-url={apiBaseUrl}
   data-content-id={contentId}
   data-body-length={currentEditorState.length}
   data-reference-count={currentReferenceIds.length}

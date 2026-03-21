@@ -13,10 +13,10 @@ import {
   type FactData,
   type ResolvedContentGovernanceData,
 } from '../../mock-smrt-client';
-
-const client = createClient('/api/v1');
+import { normalizeApiBaseUrl } from '../api';
 
 export interface Props {
+  apiBaseUrl?: string;
   contentId?: string;
   draftType?: string | null;
   draftVariant?: string | null;
@@ -41,6 +41,7 @@ interface ReviewAction {
 }
 
 let {
+  apiBaseUrl = '/api/v1',
   contentId = 'new',
   draftType = null,
   draftVariant = null,
@@ -54,6 +55,8 @@ let {
   onFactsChange = undefined,
   onGovernanceStateChange = undefined,
 }: Props = $props();
+
+const client = $derived(createClient(normalizeApiBaseUrl(apiBaseUrl)));
 
 let factQuery = $state('');
 let catalogFacts = $state<FactData[]>([]);

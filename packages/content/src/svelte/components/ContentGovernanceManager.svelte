@@ -7,19 +7,21 @@ import {
   type ContentReviewPolicyData,
   createClient,
 } from '../../mock-smrt-client';
+import { normalizeApiBaseUrl } from '../api';
 import ContentGovernanceAssignmentEditor from './ContentGovernanceAssignmentEditor.svelte';
 import ContentGovernancePolicyEditor from './ContentGovernancePolicyEditor.svelte';
 import ContentGovernanceProfileEditor from './ContentGovernanceProfileEditor.svelte';
 
-const client = createClient('/api/v1');
-
 type EditMode = 'policy' | 'profile' | 'assignment' | null;
 
 export interface Props {
+  apiBaseUrl?: string;
   onChange?: (definitions: ContentGovernanceDefinitionsData | null) => void;
 }
 
-let { onChange = undefined }: Props = $props();
+let { apiBaseUrl = '/api/v1', onChange = undefined }: Props = $props();
+
+const client = $derived(createClient(normalizeApiBaseUrl(apiBaseUrl)));
 
 let definitions = $state<ContentGovernanceDefinitionsData | null>(null);
 let loading = $state(true);
