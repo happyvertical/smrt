@@ -54,13 +54,18 @@ let showNewTopicInput = $state(false);
 // Active model selected
 let selectedModelId = $state(AI_MODELS[0].id);
 let loadedContentId = $state<string | null>(null);
+let loadedApiBaseUrl = $state<string | null>(null);
 
 $effect(() => {
-  if (!contentId || contentId === loadedContentId) {
+  if (
+    !contentId ||
+    (contentId === loadedContentId && apiBaseUrl === loadedApiBaseUrl)
+  ) {
     return;
   }
 
   loadedContentId = contentId;
+  loadedApiBaseUrl = apiBaseUrl;
   session = null;
   threads = [];
   activeThreadId = null;

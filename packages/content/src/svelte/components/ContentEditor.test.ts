@@ -73,10 +73,22 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   document.body.innerHTML = '';
+
+  // Restore original Element.prototype.animate
+  if (originalAnimate !== undefined) {
+    Object.defineProperty(Element.prototype, 'animate', {
+      configurable: true,
+      writable: true,
+      value: originalAnimate,
+    });
+  }
 });
+
+let originalAnimate: typeof Element.prototype.animate | undefined;
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn());
+  originalAnimate = Element.prototype.animate;
   Object.defineProperty(Element.prototype, 'animate', {
     configurable: true,
     writable: true,

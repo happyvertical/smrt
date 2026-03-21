@@ -2,7 +2,7 @@
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 import { slide } from 'svelte/transition';
-import { joinApiUrl } from '../api';
+import { joinApiUrl, normalizeApiBaseUrl } from '../api';
 import ContentAgentChat from './ContentAgentChat.svelte';
 
 let {
@@ -469,7 +469,7 @@ function removeAsset(id: string) {
                 {#if showImageUploader}
                   <div class="inline-uploader-container" transition:slide>
                     <ImageUploader 
-                      {apiBaseUrl}
+                      apiBaseUrl={normalizeApiBaseUrl(apiBaseUrl)}
                       allowedTabs={['gallery', 'upload', 'external']} 
                       onSelect={handleImageSelect} 
                       onCancel={() => showImageUploader = false} 
