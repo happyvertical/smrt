@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.6
+
+### Patch Changes
+
+- ### Features
+
+  - dev server navigation and UI pages (#1040) (content)
+  - @happyvertical/smrt-scanner@0.21.6
+  - @happyvertical/smrt-config@0.21.6
+  - @happyvertical/smrt-types@0.21.6
+
 ## 0.21.5
 
 ### Patch Changes
