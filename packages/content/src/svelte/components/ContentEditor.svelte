@@ -2,9 +2,11 @@
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 import { slide } from 'svelte/transition';
+import { joinApiUrl, normalizeApiBaseUrl } from '../api';
 import ContentAgentChat from './ContentAgentChat.svelte';
 
 let {
+  apiBaseUrl = '/api/v1',
   content = undefined,
   contentId = 'new',
   saveDisabled = false,
@@ -13,6 +15,7 @@ let {
   onSave,
   onCancel,
 } = $props<{
+  apiBaseUrl?: string;
   content?: any;
   contentId?: string;
   saveDisabled?: boolean;
@@ -199,7 +202,7 @@ async function handleRefDrop(e: DragEvent) {
   const files = Array.from(e.dataTransfer.files);
   for (const file of files) {
     try {
-      const resp = await fetch('/api/v1/contents', {
+      const resp = await fetch(joinApiUrl(apiBaseUrl, '/contents'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -278,7 +281,7 @@ function handleImageSelect(selected: Image | File | string) {
     reader.onload = async (e) => {
       const base64Url = e.target?.result as string;
       try {
-        const resp = await fetch('/api/v1/images', {
+        const resp = await fetch(joinApiUrl(apiBaseUrl, '/images'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -307,7 +310,7 @@ function handleImageSelect(selected: Image | File | string) {
     void (async () => {
       try {
         const parsedUrl = new URL(selected);
-        const resp = await fetch('/api/v1/images', {
+        const resp = await fetch(joinApiUrl(apiBaseUrl, '/images'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -466,6 +469,7 @@ function removeAsset(id: string) {
                 {#if showImageUploader}
                   <div class="inline-uploader-container" transition:slide>
                     <ImageUploader 
+                      apiBaseUrl={normalizeApiBaseUrl(apiBaseUrl)}
                       allowedTabs={['gallery', 'upload', 'external']} 
                       onSelect={handleImageSelect} 
                       onCancel={() => showImageUploader = false} 
@@ -591,6 +595,7 @@ function removeAsset(id: string) {
 
         <div class="chat-sidebar-section">
           <ContentAgentChat 
+            {apiBaseUrl}
             {contentId}
             {currentEditorState}
             {currentReferenceIds}

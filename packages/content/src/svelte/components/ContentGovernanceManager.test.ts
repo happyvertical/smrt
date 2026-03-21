@@ -9,6 +9,7 @@ import type {
 } from '../../mock-smrt-client';
 
 const clientMocks = vi.hoisted(() => ({
+  createClient: vi.fn(),
   getGovernanceDefinitions: vi.fn(),
   createPolicy: vi.fn(),
   updatePolicy: vi.fn(),
@@ -22,26 +23,7 @@ const clientMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../../mock-smrt-client', () => ({
-  createClient: () => ({
-    contents: {
-      getGovernanceDefinitions: clientMocks.getGovernanceDefinitions,
-    },
-    contentGovernancePolicies: {
-      create: clientMocks.createPolicy,
-      update: clientMocks.updatePolicy,
-      delete: clientMocks.deletePolicy,
-    },
-    contentGovernanceProfiles: {
-      create: clientMocks.createProfile,
-      update: clientMocks.updateProfile,
-      delete: clientMocks.deleteProfile,
-    },
-    contentGovernanceAssignments: {
-      create: clientMocks.createAssignment,
-      update: clientMocks.updateAssignment,
-      delete: clientMocks.deleteAssignment,
-    },
-  }),
+  createClient: clientMocks.createClient,
 }));
 
 import ContentGovernanceManager from './ContentGovernanceManager.svelte';
@@ -125,6 +107,7 @@ function createDefinitions(): ContentGovernanceDefinitionsData {
 
 function renderManager(
   props: {
+    apiBaseUrl?: string;
     onChange?: (definitions: ContentGovernanceDefinitionsData | null) => void;
   } = {},
 ) {
@@ -151,6 +134,26 @@ function setInputValue(
 }
 
 beforeEach(() => {
+  clientMocks.createClient.mockImplementation(() => ({
+    contents: {
+      getGovernanceDefinitions: clientMocks.getGovernanceDefinitions,
+    },
+    contentGovernancePolicies: {
+      create: clientMocks.createPolicy,
+      update: clientMocks.updatePolicy,
+      delete: clientMocks.deletePolicy,
+    },
+    contentGovernanceProfiles: {
+      create: clientMocks.createProfile,
+      update: clientMocks.updateProfile,
+      delete: clientMocks.deleteProfile,
+    },
+    contentGovernanceAssignments: {
+      create: clientMocks.createAssignment,
+      update: clientMocks.updateAssignment,
+      delete: clientMocks.deleteAssignment,
+    },
+  }));
   clientMocks.getGovernanceDefinitions.mockResolvedValue({
     data: createDefinitions(),
   });
@@ -210,6 +213,14 @@ describe('ContentGovernanceManager component', () => {
           ]),
         }),
       }),
+    );
+  });
+
+  it('accepts a custom apiBaseUrl for shared client calls', async () => {
+    renderManager({ apiBaseUrl: '/tenant/api/v2' });
+
+    await vi.waitFor(() =>
+      expect(clientMocks.createClient).toHaveBeenCalledWith('/tenant/api/v2'),
     );
   });
 

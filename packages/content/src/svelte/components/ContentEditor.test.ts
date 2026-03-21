@@ -19,6 +19,7 @@ const mountedComponents: Array<ReturnType<typeof mount>> = [];
 
 function renderEditor(
   props: {
+    apiBaseUrl?: string;
     content?: any;
     contentId?: string;
     onChange?: (data: any) => void;
@@ -32,6 +33,7 @@ function renderEditor(
   const component = mount(ContentEditor, {
     target,
     props: {
+      apiBaseUrl: props.apiBaseUrl,
       content: props.content,
       contentId: props.contentId ?? 'new',
       onChange: props.onChange ?? vi.fn(),
@@ -71,10 +73,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   document.body.innerHTML = '';
+
+  // Restore original Element.prototype.animate
+  if (originalAnimate !== undefined) {
+    Object.defineProperty(Element.prototype, 'animate', {
+      configurable: true,
+      writable: true,
+      value: originalAnimate,
+    });
+  }
 });
+
+let originalAnimate: typeof Element.prototype.animate | undefined;
 
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn());
+  originalAnimate = Element.prototype.animate;
+  Object.defineProperty(Element.prototype, 'animate', {
+    configurable: true,
+    writable: true,
+    value: () => ({
+      cancel: vi.fn(),
+      finished: Promise.resolve(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }),
+  });
 });
 
 describe('ContentEditor component', () => {
@@ -147,6 +171,61 @@ describe('ContentEditor component', () => {
       expect(image?.getAttribute('src')).toBe('https://example.com/image.jpg');
       expect(target.textContent).toContain('Thumbnail');
     });
+  });
+
+  it('uses a custom apiBaseUrl for uploads and nested shared components', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'image-tenant-123',
+        name: 'Dropped Image',
+        sourceUri: 'https://example.com/image.jpg',
+      }),
+    } as Response);
+
+    const target = renderEditor({
+      apiBaseUrl: '/tenant/api/v2',
+      content: {
+        title: 'Tenant Article',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+    });
+
+    const addImageButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.textContent?.includes('Add Image'),
+    );
+    addImageButton?.click();
+    flushSync();
+
+    const imageUploader = target.querySelector(
+      '[data-testid="image-uploader-stub"]',
+    ) as HTMLElement | null;
+    expect(imageUploader?.dataset.apiBaseUrl).toBe('/tenant/api/v2');
+
+    const chatStub = target.querySelector(
+      '[data-testid="content-agent-chat-stub"]',
+    ) as HTMLElement | null;
+    expect(chatStub?.dataset.apiBaseUrl).toBe('/tenant/api/v2');
+
+    const imageZone = target.querySelectorAll('.drop-zone')[0] as HTMLElement;
+
+    imageZone.dispatchEvent(
+      createDropEvent({
+        getData: (type) =>
+          type === 'text/plain' ? 'https://example.com/image.jpg' : '',
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/tenant/api/v2/images',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      ),
+    );
   });
 
   it('creates placeholder reference records for dropped files without storing data URLs', async () => {

@@ -6,6 +6,7 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
+import { joinApiUrl } from '../api';
 
 const AI_MODELS = [
   { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -17,6 +18,7 @@ const AI_MODELS = [
 ];
 
 let {
+  apiBaseUrl = '/api/v1',
   contentId,
   currentEditorState = '',
   currentReferenceIds = [],
@@ -24,6 +26,7 @@ let {
   onapplyfields = undefined,
   onclose = undefined,
 } = $props<{
+  apiBaseUrl?: string;
   contentId: string;
   currentEditorState?: string;
   currentReferenceIds?: string[];
@@ -51,13 +54,18 @@ let showNewTopicInput = $state(false);
 // Active model selected
 let selectedModelId = $state(AI_MODELS[0].id);
 let loadedContentId = $state<string | null>(null);
+let loadedApiBaseUrl = $state<string | null>(null);
 
 $effect(() => {
-  if (!contentId || contentId === loadedContentId) {
+  if (
+    !contentId ||
+    (contentId === loadedContentId && apiBaseUrl === loadedApiBaseUrl)
+  ) {
     return;
   }
 
   loadedContentId = contentId;
+  loadedApiBaseUrl = apiBaseUrl;
   session = null;
   threads = [];
   activeThreadId = null;
@@ -87,7 +95,9 @@ async function loadSession() {
   loadingSession = true;
   error = null;
   try {
-    const res = await fetch(`/api/v1/contents/${contentId}/chat`);
+    const res = await fetch(
+      joinApiUrl(apiBaseUrl, `/contents/${contentId}/chat`),
+    );
     if (!res.ok) throw new Error('Failed to load chat session.');
     const data = await res.json();
 
@@ -138,7 +148,7 @@ async function loadThread(threadId: string) {
 
   try {
     const res = await fetch(
-      `/api/v1/contents/${contentId}/chat/threads/${threadId}`,
+      joinApiUrl(apiBaseUrl, `/contents/${contentId}/chat/threads/${threadId}`),
     );
 
     if (!res.ok)
@@ -175,16 +185,19 @@ async function createNewTopic() {
 
   isCreatingTopic = true;
   try {
-    const res = await fetch(`/api/v1/contents/${contentId}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: title,
-        sessionId: session.id,
-        model: selectedModelId,
-        referenceIds: currentReferenceIds,
-      }),
-    });
+    const res = await fetch(
+      joinApiUrl(apiBaseUrl, `/contents/${contentId}/chat`),
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: title,
+          sessionId: session.id,
+          model: selectedModelId,
+          referenceIds: currentReferenceIds,
+        }),
+      },
+    );
 
     if (!res.ok) throw new Error('Failed to create topic.');
     const data = await res.json();
@@ -217,7 +230,10 @@ async function handleSendMessage(content: string) {
   sendingMessage = true;
   try {
     const res = await fetch(
-      `/api/v1/contents/${contentId}/chat/threads/${activeThreadId}`,
+      joinApiUrl(
+        apiBaseUrl,
+        `/contents/${contentId}/chat/threads/${activeThreadId}`,
+      ),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

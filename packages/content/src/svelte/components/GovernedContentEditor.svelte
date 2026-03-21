@@ -14,6 +14,7 @@ export type GovernedContentEditorSaveData = ContentData & {
 };
 
 export interface Props {
+  apiBaseUrl?: string;
   content?: ContentData;
   contentId?: string;
   defaultRelationship?: string;
@@ -27,6 +28,7 @@ export interface Props {
 }
 
 let {
+  apiBaseUrl = '/api/v1',
   content = undefined,
   contentId = 'new',
   defaultRelationship = 'supports',
@@ -156,6 +158,7 @@ function handleSave(data: ContentData) {
   {/if}
 
   <ContentEditor
+    {apiBaseUrl}
     content={governedContent}
     contentId={resolvedContentId}
     saveDisabled={publishSaveDisabled}
@@ -166,6 +169,7 @@ function handleSave(data: ContentData) {
   />
 
   <ContentGovernancePanel
+    {apiBaseUrl}
     contentId={resolvedContentId}
     draftType={draftContent?.type || content?.type}
     draftVariant={draftContent?.variant || content?.variant}

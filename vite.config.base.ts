@@ -201,6 +201,7 @@ export function createPackageConfig(
         // Generate TypeScript declarations
         dts({
           outDir: resolve(packageDir, 'dist'),
+          entryRoot: resolve(packageDir, 'src'),
           include: [resolve(packageDir, 'src/**/*.ts')],
           exclude: [
             // Test files
