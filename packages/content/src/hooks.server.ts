@@ -19,6 +19,7 @@ import {
 } from '@happyvertical/smrt-core/schema/utils';
 import { getDatabase } from '@happyvertical/sql';
 import type { Handle } from '@sveltejs/kit';
+import { seedContents } from '$lib/server/seed-contents';
 import { getSmrtConfig } from '$lib/server/smrt';
 import { workspacePackageRoots } from '../workspace-aliases.js';
 
@@ -152,7 +153,6 @@ async function bootstrapSchema() {
       // and base framework types are registered too, but they should never hit
       // schema generation.
       const registeredClasses = getRegisteredObjectClasses();
-
       const schemaReadyClassNames = new Set<string>();
 
       for (const cls of registeredClasses) {
@@ -168,7 +168,6 @@ async function bootstrapSchema() {
         }
       }
 
-      // Now ensure all schemas exist in the database
       let created = 0;
       for (const className of schemaReadyClassNames) {
         try {
@@ -186,6 +185,7 @@ async function bootstrapSchema() {
       console.log(
         `[hooks] Database schema bootstrap complete (${created} tables ensured)`,
       );
+      await seedContents();
       schemaReady = true;
     } catch (err: any) {
       console.error('[hooks] Failed to bootstrap schema:', err.message);

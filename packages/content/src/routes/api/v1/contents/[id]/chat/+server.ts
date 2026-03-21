@@ -78,6 +78,15 @@ export const GET: RequestHandler = async ({ params, locals }) => {
       threads,
     });
   } catch (error: any) {
+    // Gracefully handle missing chat tables (cross-package dependency)
+    if (error?.code === 'DB_SCHEMA_MISSING') {
+      return json({
+        session: null,
+        threads: [],
+        notice:
+          'Chat tables not yet provisioned. Run smrt db:migrate to enable.',
+      });
+    }
     console.error(`Error fetching chat for content ${id}:`, error);
     return json(
       { error: error.message || 'Failed to find or create chat session' },

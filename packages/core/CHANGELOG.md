@@ -1,5 +1,38 @@
 # @happyvertical/smrt-core
 
+## 0.21.7
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - support api base overrides and packed types (#1043) (content)
+  - @happyvertical/smrt-scanner@0.21.7
+  - @happyvertical/smrt-config@0.21.7
+  - @happyvertical/smrt-types@0.21.7
+
+## 0.21.6
+
+### Patch Changes
+
+- ### Features
+
+  - dev server navigation and UI pages (#1040) (content)
+  - @happyvertical/smrt-scanner@0.21.6
+  - @happyvertical/smrt-config@0.21.6
+  - @happyvertical/smrt-types@0.21.6
+
+## 0.21.5
+
+### Patch Changes
+
+- ### Features
+
+  - add contribution intake and promotion workflows (#1037) (content)
+  - @happyvertical/smrt-scanner@0.21.5
+  - @happyvertical/smrt-config@0.21.5
+  - @happyvertical/smrt-types@0.21.5
+
 ## 0.21.4
 
 ### Patch Changes

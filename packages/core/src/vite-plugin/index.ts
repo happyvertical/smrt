@@ -87,8 +87,20 @@ async function importScanner() {
       while (true) {
         if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
           const scannerDist = join(current, 'packages/scanner/dist/index.js');
+          if (existsSync(scannerDist)) {
+            return dynamicImport(pathToFileURL(scannerDist).href);
+          }
 
-          return dynamicImport(pathToFileURL(scannerDist).href);
+          const scannerSrc = join(current, 'packages/scanner/src/index.ts');
+          if (existsSync(scannerSrc)) {
+            return dynamicImport(pathToFileURL(scannerSrc).href);
+          }
+
+          throw new Error(
+            'Failed to load @happyvertical/smrt-scanner: could not find ' +
+              `${scannerDist} or ${scannerSrc}. ` +
+              'Please build @happyvertical/smrt-scanner before running Vite.',
+          );
         }
 
         const parent = dirname(current);

@@ -101,17 +101,21 @@ async function loadSession() {
     if (!res.ok) throw new Error('Failed to load chat session.');
     const data = await res.json();
 
-    if (data.session) {
-      if (typeof data.session.allowedTools === 'string') {
-        try {
-          data.session.allowedTools = JSON.parse(data.session.allowedTools);
-        } catch (e) {
-          data.session.allowedTools = [];
-        }
-      }
-      data.session.allowedTools = data.session.allowedTools || [];
-      data.session.agentName = data.session.agentName || 'AI Assistant';
+    if (!data.session) {
+      // Chat tables not yet provisioned — show a friendly message
+      error = data.notice || 'Chat is not yet available for this content.';
+      return;
     }
+
+    if (typeof data.session.allowedTools === 'string') {
+      try {
+        data.session.allowedTools = JSON.parse(data.session.allowedTools);
+      } catch (e) {
+        data.session.allowedTools = [];
+      }
+    }
+    data.session.allowedTools = data.session.allowedTools || [];
+    data.session.agentName = data.session.agentName || 'AI Assistant';
 
     session = data.session;
     threads = data.threads || [];

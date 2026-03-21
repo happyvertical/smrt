@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-agents",
-  "version": "0.21.4",
+  "version": "0.21.7",
   "type": "module",
   "description": "Agent framework for building autonomous actors in the SMRT ecosystem",
   "author": "HappyVertical",
