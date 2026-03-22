@@ -6,8 +6,11 @@ import {
 } from './workspace-aliases.js';
 
 export default defineConfig(async ({ mode }) => {
+  const isPackageBuild =
+    mode === 'library' || process.env.SMRT_PACKAGE_BUILD === '1';
+
   // Library build mode (used by `pnpm run build`)
-  if (mode === 'library') {
+  if (isPackageBuild) {
     const { createPackageConfig } = await import('../../vite.config.base.js');
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.

@@ -117,6 +117,8 @@ const packageJsonPath = join(packageDir, 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
 const typePaths = collectTypePaths(packageJson);
 const runtimePaths = collectRuntimePaths(packageJson);
+const npmConfigDryRunKey = 'npm_config_dry_run';
+const npmConfigDryRunUpperKey = 'NPM_CONFIG_DRY_RUN';
 
 if (typePaths.length === 0 && runtimePaths.length === 0) {
   console.log(
@@ -131,7 +133,14 @@ try {
   const packOutput = run(
     'npm',
     ['pack', '--json', '--ignore-scripts', '--pack-destination', tempDir],
-    { cwd: packageDir },
+    {
+      cwd: packageDir,
+      env: {
+        ...process.env,
+        [npmConfigDryRunKey]: 'false',
+        [npmConfigDryRunUpperKey]: 'false',
+      },
+    },
   );
   const packResult = JSON.parse(packOutput);
   const tarballName = packResult[0]?.filename;

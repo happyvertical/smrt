@@ -1,0 +1,117 @@
+name: Publish Dry Run
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  validate-publish:
+    name: Version And Pack Validation
+    runs-on: arc-happyvertical
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate release lifecycle without publishing
+        env:
+          CI: true
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "🧪 Running publish dry-run validation..."
+
+          BEFORE_VERSION=$(node -p "require('./packages/core/package.json').version")
+          echo "Version before release: $BEFORE_VERSION"
+
+          pnpm run changeset:auto
+          pnpm run changeset:version
+
+          CHANGESET_VERSION=$(node -p "require('./packages/core/package.json').version")
+          echo "Changeset produced version: $CHANGESET_VERSION"
+
+          CHANGESET_MAJOR=$(echo "$CHANGESET_VERSION" | cut -d. -f1)
+          if [ "$CHANGESET_MAJOR" -ge 1 ]; then
+            echo "⚠️  Changesets bumped to $CHANGESET_VERSION (1.0.0+)"
+            echo "🔒 Downgrading to minor bump instead..."
+
+            BEFORE_MINOR=$(echo "$BEFORE_VERSION" | cut -d. -f2)
+            NEW_MINOR=$((BEFORE_MINOR + 1))
+            CORRECTED_VERSION="0.${NEW_MINOR}.0"
+            echo "📝 Correcting version to: $CORRECTED_VERSION"
+
+            for pkgfile in package.json $(find packages -name package.json); do
+              if [ -f "$pkgfile" ]; then
+                current=$(node -p "require('./$pkgfile').version" 2>/dev/null || echo "")
+                major=$(echo "$current" | cut -d. -f1)
+                if [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -ge 1 ]; then
+                  echo "  Fixing: $pkgfile ($current -> $CORRECTED_VERSION)"
+                  export PKGFILE="$pkgfile" NEW_VERSION="$CORRECTED_VERSION"
+                  node -e 'const fs=require("fs"), f=process.env.PKGFILE;
+                    const p=JSON.parse(fs.readFileSync(f));
+                    p.version=process.env.NEW_VERSION;
+                    fs.writeFileSync(f,JSON.stringify(p,null,2)+"\n")'
+                fi
+              fi
+            done
+
+            AFTER_VERSION="$CORRECTED_VERSION"
+          else
+            AFTER_VERSION="$CHANGESET_VERSION"
+          fi
+
+          ROOT_VERSION=$(node -p "require('./package.json').version")
+          if [ "$AFTER_VERSION" != "$ROOT_VERSION" ]; then
+            echo "📝 Syncing root package version: $AFTER_VERSION"
+            export NEW_VERSION="$AFTER_VERSION"
+            node -e 'const fs=require("fs");
+              const p=JSON.parse(fs.readFileSync("./package.json"));
+              p.version=process.env.NEW_VERSION;
+              fs.writeFileSync("./package.json",JSON.stringify(p,null,2)+"\n")'
+          fi
+
+          echo "Version after versioning: $AFTER_VERSION"
+
+          FINAL_MAJOR=$(echo "$AFTER_VERSION" | cut -d. -f1)
+          if [ "$FINAL_MAJOR" -ge 1 ]; then
+            echo "❌ CRITICAL: Version correction failed. Still at $AFTER_VERSION"
+            exit 1
+          fi
+
+          if [ "$BEFORE_VERSION" = "$AFTER_VERSION" ]; then
+            echo "ℹ️  No version changes - no publish validation needed"
+            exit 0
+          fi
+
+          echo "🔨 Running clean build (bypassing turbo cache)..."
+          rm -rf .turbo
+          TURBO_FORCE=true pnpm run build
+
+          echo "🧹 Running release safety checks..."
+          pnpm run format-check
+
+          echo "🔍 Validating workflow files before push..."
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            yamllint "$file"
+            if command -v actionlint >/dev/null 2>&1; then
+              actionlint "$file"
+            fi
+          done
+
+          node scripts/validate-publish-packages.js

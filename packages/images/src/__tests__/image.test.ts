@@ -11,40 +11,32 @@
  * in @happyvertical/smrt-core via @smrt({ embeddings: { fields: ['alt', 'description'] } })
  */
 
-import { randomUUID } from 'node:crypto';
-import { existsSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { Asset, AssetCollection } from '@happyvertical/smrt-assets';
+import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Image } from '../image';
 import { ImageCollection } from '../images';
 
 describe('Image', () => {
-  let dbPath: string;
+  let db: DatabaseInterface;
+  let images: ImageCollection;
+  let assets: AssetCollection;
 
-  beforeEach(() => {
-    // Use randomUUID instead of Date.now() to ensure unique db paths
-    // when tests run in parallel (Date.now() can return same value)
-    dbPath = join(tmpdir(), `smrt-image-test-${randomUUID()}.db`);
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    images = await ImageCollection.create({ db });
+    assets = await AssetCollection.create({ db });
   });
 
-  afterEach(() => {
-    if (existsSync(dbPath)) {
-      try {
-        rmSync(dbPath, { force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      await db.close();
     }
   });
 
   describe('Basic CRUD Operations', () => {
     it('should create an image with dimensions', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'hero-image.jpg',
         sourceUri: 'file:///images/hero-image.jpg',
@@ -61,10 +53,6 @@ describe('Image', () => {
     });
 
     it('should preserve dimensions through save/load cycle', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'test-image.png',
         sourceUri: 'file:///images/test.png',
@@ -81,10 +69,6 @@ describe('Image', () => {
     });
 
     it('should update image properties', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'updatable.jpg',
         width: 640,
@@ -104,10 +88,6 @@ describe('Image', () => {
     });
 
     it('should delete an image', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'deletable.jpg',
         width: 100,
@@ -124,10 +104,6 @@ describe('Image', () => {
 
   describe('STI Polymorphic Queries', () => {
     it('should return Image instances from AssetCollection', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'poly-test.jpg',
         sourceUri: 'file:///images/poly.jpg',
@@ -136,11 +112,6 @@ describe('Image', () => {
         height: 768,
       });
       await image.save();
-
-      // Query via base AssetCollection
-      const assets = await AssetCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
 
       const allAssets = await assets.list({});
       expect(allAssets.length).toBeGreaterThanOrEqual(1);
@@ -151,14 +122,6 @@ describe('Image', () => {
     });
 
     it('should filter by _meta_type for Images only', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-      const assets = await AssetCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      // Create an Image
       await (
         await images.create({
           name: 'image-asset.jpg',
@@ -169,7 +132,6 @@ describe('Image', () => {
         })
       ).save();
 
-      // Create a regular Asset
       await (
         await assets.create({
           name: 'document.pdf',
@@ -178,7 +140,6 @@ describe('Image', () => {
         })
       ).save();
 
-      // Filter by type
       const onlyImages = await assets.list({
         where: { _meta_type: 'Image' },
       });
@@ -188,14 +149,6 @@ describe('Image', () => {
     });
 
     it('should handle mixed asset types in single query', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-      const assets = await AssetCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      // Create mixed assets
       await (
         await images.create({
           name: 'photo.jpg',
@@ -236,10 +189,6 @@ describe('Image', () => {
 
   describe('Computed Properties', () => {
     it('should calculate aspect ratio correctly', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'widescreen.jpg',
         width: 1920,
@@ -250,10 +199,6 @@ describe('Image', () => {
     });
 
     it('should handle zero height for aspect ratio', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'zero-height.jpg',
         width: 100,
@@ -264,10 +209,6 @@ describe('Image', () => {
     });
 
     it('should identify landscape/portrait/square correctly', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const landscape = await images.create({
         name: 'land.jpg',
         width: 1920,
@@ -298,10 +239,6 @@ describe('Image', () => {
     });
 
     it('should validate image MIME types', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const jpeg = await images.create({
         name: 'test.jpg',
         mimeType: 'image/jpeg',
@@ -326,10 +263,6 @@ describe('Image', () => {
     });
 
     it('should detect high resolution images', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const uhd = await images.create({
         name: '4k.jpg',
         width: 3840,
@@ -354,10 +287,6 @@ describe('Image', () => {
 
   describe('ImageCollection Query Methods', () => {
     it('should get images by minimum dimensions', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       await (
         await images.create({ name: 'small.jpg', width: 640, height: 480 })
       ).save();
@@ -377,10 +306,6 @@ describe('Image', () => {
     });
 
     it('should get images by maximum dimensions', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       await (
         await images.create({ name: 'small.jpg', width: 640, height: 480 })
       ).save();
@@ -397,10 +322,6 @@ describe('Image', () => {
     });
 
     it('should get landscape images', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       await (
         await images.create({ name: 'land.jpg', width: 1920, height: 1080 })
       ).save();
@@ -417,10 +338,6 @@ describe('Image', () => {
     });
 
     it('should get portrait images', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       await (
         await images.create({ name: 'land.jpg', width: 1920, height: 1080 })
       ).save();
@@ -434,10 +351,6 @@ describe('Image', () => {
     });
 
     it('should get images missing alt text', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       await (
         await images.create({ name: 'with-alt.jpg', alt: 'Description' })
       ).save();
@@ -449,10 +362,6 @@ describe('Image', () => {
     });
 
     it('should get high resolution images', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       await (
         await images.create({ name: '4k.jpg', width: 3840, height: 2160 })
       ).save();
@@ -466,19 +375,12 @@ describe('Image', () => {
     });
 
     it('should get images by aspect ratio range', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
-      // 16:9 = 1.78
       await (
         await images.create({ name: 'wide.jpg', width: 1920, height: 1080 })
       ).save();
-      // 4:3 = 1.33
       await (
         await images.create({ name: 'standard.jpg', width: 1600, height: 1200 })
       ).save();
-      // 1:1 = 1.0
       await (
         await images.create({ name: 'square.jpg', width: 1000, height: 1000 })
       ).save();
@@ -494,10 +396,6 @@ describe('Image', () => {
 
   describe('Inherited Asset Functionality', () => {
     it('should inherit name and sourceUri from Asset', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'inherited-test.jpg',
         sourceUri: 's3://bucket/inherited-test.jpg',
@@ -516,10 +414,6 @@ describe('Image', () => {
     });
 
     it('should inherit version tracking from Asset', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'versioned.jpg',
         width: 800,
@@ -530,7 +424,6 @@ describe('Image', () => {
 
       expect(image.version).toBe(1);
 
-      // Simulate version update
       image.version = 2;
       await image.save();
 
@@ -539,10 +432,6 @@ describe('Image', () => {
     });
 
     it('should inherit slug generation from SmrtObject', async () => {
-      const images = await ImageCollection.create({
-        db: { type: 'sqlite', url: dbPath },
-      });
-
       const image = await images.create({
         name: 'My Test Image',
         width: 800,

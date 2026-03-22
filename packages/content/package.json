@@ -45,7 +45,7 @@
     "test:watch": "svelte-kit sync && npx vitest",
     "test:e2e": "pnpm exec playwright test -c playwright.config.ts",
     "test:e2e:headed": "pnpm exec playwright test -c playwright.config.ts --headed",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
