@@ -11,9 +11,25 @@ function fail(message) {
 
 const repoRoot = process.cwd();
 const packagesDir = resolve(repoRoot, 'packages');
+const changesetConfigPath = resolve(repoRoot, '.changeset/config.json');
 
 if (!existsSync(packagesDir)) {
   fail(`Packages directory not found: ${packagesDir}`);
+}
+
+if (!existsSync(changesetConfigPath)) {
+  fail(`Changeset config not found: ${changesetConfigPath}`);
+}
+
+const changesetConfig = JSON.parse(readFileSync(changesetConfigPath, 'utf8'));
+const releasePackageNames = new Set(
+  (changesetConfig.fixed ?? []).flatMap((group) =>
+    Array.isArray(group) ? group : [],
+  ),
+);
+
+if (releasePackageNames.size === 0) {
+  fail('No fixed release package names found in .changeset/config.json');
 }
 
 const publishablePackages = readdirSync(packagesDir, { withFileTypes: true })
@@ -27,16 +43,39 @@ const publishablePackages = readdirSync(packagesDir, { withFileTypes: true })
     }
 
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
-    if (!packageJson.publishConfig) {
+    const packageName = packageJson.name ?? entry.name;
+    const isReleasePackage = releasePackageNames.has(packageName);
+    const isExplicitlyPublishable = Boolean(packageJson.publishConfig);
+
+    if (
+      packageJson.private === true ||
+      (!isReleasePackage && !isExplicitlyPublishable)
+    ) {
       return null;
     }
 
     return {
       dir: packageDir,
-      name: packageJson.name ?? entry.name,
+      name: packageName,
     };
   })
-  .filter(Boolean);
+  .filter(Boolean)
+  .sort((left, right) => left.name.localeCompare(right.name));
+
+const discoveredPackageNames = new Set(
+  publishablePackages.map((pkg) => pkg.name),
+);
+const missingReleasePackages = [...releasePackageNames].filter(
+  (packageName) => !discoveredPackageNames.has(packageName),
+);
+
+if (missingReleasePackages.length > 0) {
+  fail(
+    `Release packages declared in .changeset/config.json were not found in the workspace:\n${missingReleasePackages
+      .map((packageName) => `- ${packageName}`)
+      .join('\n')}`,
+  );
+}
 
 if (publishablePackages.length === 0) {
   console.log('ℹ️ No publishable packages found');
