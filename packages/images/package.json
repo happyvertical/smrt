@@ -31,7 +31,7 @@
     "prepack": "npm run build && npm run verify:pack",
     "test": "npx vitest run --passWithNoTests",
     "test:watch": "npx vitest",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
