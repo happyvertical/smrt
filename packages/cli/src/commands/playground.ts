@@ -7,47 +7,41 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { importWorkspaceModule } from '@happyvertical/smrt-core/utils/import-workspace-module';
 import type { SmrtPlaygroundModule } from '@happyvertical/smrt-playground';
-import {
-  createAppPlaygroundRouteTemplate,
-  createAppPlaygroundTemplate,
-  createPackagePlaygroundTemplate,
-  describePlaygroundSource,
-  detectPlaygroundMode,
-  discoverPlaygroundTargets,
-  findSmrtWorkspaceRoot,
-  importPlaygroundModule,
-} from '@happyvertical/smrt-playground';
 import type { CLICommand } from '../cli-generator.js';
 
 type PlaygroundTarget = 'package' | 'app';
-const commandDir = dirname(fileURLToPath(import.meta.url));
-const cliPackageRoot = resolve(commandDir, '../..');
+
+type SmrtPlaygroundRuntime = Pick<
+  typeof import('@happyvertical/smrt-playground'),
+  | 'createAppPlaygroundRouteTemplate'
+  | 'createAppPlaygroundTemplate'
+  | 'createPackagePlaygroundTemplate'
+  | 'describePlaygroundSource'
+  | 'detectPlaygroundMode'
+  | 'discoverPlaygroundTargets'
+  | 'findSmrtWorkspaceRoot'
+  | 'importPlaygroundModule'
+>;
+
+let playgroundRuntimePromise: Promise<SmrtPlaygroundRuntime> | null = null;
+
+function loadPlaygroundRuntime(): Promise<SmrtPlaygroundRuntime> {
+  if (!playgroundRuntimePromise) {
+    playgroundRuntimePromise = importWorkspaceModule<SmrtPlaygroundRuntime>({
+      packageName: '@happyvertical/smrt-playground',
+      sourceEntry: 'packages/smrt-playground/src/index.ts',
+      distEntry: 'packages/smrt-playground/dist/index.js',
+      purpose: 'SMRT playground CLI commands',
+    });
+  }
+
+  return playgroundRuntimePromise;
+}
 
 function readJson(path: string): any {
   return JSON.parse(readFileSync(path, 'utf-8'));
-}
-
-function resolveProjectRootFromInvocation(): string {
-  const currentWorkingDirectory = resolve(process.cwd());
-  const initWorkingDirectory = process.env.INIT_CWD
-    ? resolve(process.env.INIT_CWD)
-    : null;
-
-  // `pnpm --filter @happyvertical/smrt-cli cli ...` executes the CLI script from
-  // the CLI package directory, but `INIT_CWD` still points at the package the
-  // developer invoked the command from. Prefer that caller directory so
-  // playground commands scaffold and inspect the intended project.
-  if (
-    currentWorkingDirectory === cliPackageRoot &&
-    initWorkingDirectory &&
-    initWorkingDirectory !== cliPackageRoot
-  ) {
-    return initWorkingDirectory;
-  }
-
-  return currentWorkingDirectory;
 }
 
 function writeFileIfAllowed(
@@ -86,11 +80,12 @@ function detectPackageManager(projectRoot: string): 'pnpm' | 'yarn' | 'npm' {
   return 'npm';
 }
 
-function addPlaygroundDependency(projectRoot: string) {
+async function addPlaygroundDependency(projectRoot: string) {
   const packageJsonPath = resolve(projectRoot, 'package.json');
   const packageJson = readJson(packageJsonPath);
+  const { findSmrtWorkspaceRoot } = await loadPlaygroundRuntime();
   const workspaceRoot = findSmrtWorkspaceRoot(projectRoot);
-  const cliPackageJsonPath = resolve(commandDir, '../../package.json');
+  const cliPackageJsonPath = resolve(__dirname, '../../package.json');
   const cliVersion = readJson(cliPackageJsonPath).version;
   const version =
     workspaceRoot && projectRoot.startsWith(workspaceRoot)
@@ -160,6 +155,12 @@ function runCommand(
 }
 
 async function listDiscoveredPlaygrounds(projectRoot: string) {
+  const {
+    describePlaygroundSource,
+    detectPlaygroundMode,
+    discoverPlaygroundTargets,
+    importPlaygroundModule,
+  } = await loadPlaygroundRuntime();
   const targets = await discoverPlaygroundTargets(projectRoot, 'auto');
   if (targets.length === 0) {
     console.log('No playground modules discovered.');
@@ -251,7 +252,7 @@ export const playgroundCommands: Record<string, CLICommand> = {
       },
     },
     handler: async (_args: string[], options: any) => {
-      const projectRoot = resolveProjectRootFromInvocation();
+      const projectRoot = process.cwd();
       const packageJsonPath = resolve(projectRoot, 'package.json');
 
       if (!existsSync(packageJsonPath)) {
@@ -278,7 +279,9 @@ export const playgroundCommands: Record<string, CLICommand> = {
 
         const packageResult = writeFileIfAllowed(
           packagePlaygroundPath,
-          createPackagePlaygroundTemplate(packageJson.name),
+          (await loadPlaygroundRuntime()).createPackagePlaygroundTemplate(
+            packageJson.name,
+          ),
           force,
         );
         const bridgeResult = writeFileIfAllowed(
@@ -307,7 +310,7 @@ export const playgroundCommands: Record<string, CLICommand> = {
         return;
       }
 
-      addPlaygroundDependency(projectRoot);
+      await addPlaygroundDependency(projectRoot);
 
       const localPlaygroundPath = resolve(projectRoot, 'src/playground.ts');
       const routePath = resolve(
@@ -321,12 +324,14 @@ export const playgroundCommands: Record<string, CLICommand> = {
 
       const localResult = writeFileIfAllowed(
         localPlaygroundPath,
-        createAppPlaygroundTemplate(packageJson.name || 'local-app'),
+        (await loadPlaygroundRuntime()).createAppPlaygroundTemplate(
+          packageJson.name || 'local-app',
+        ),
         force,
       );
       const routeResult = writeFileIfAllowed(
         routePath,
-        createAppPlaygroundRouteTemplate(),
+        (await loadPlaygroundRuntime()).createAppPlaygroundRouteTemplate(),
         force,
       );
 
@@ -373,7 +378,7 @@ export const playgroundCommands: Record<string, CLICommand> = {
     args: [],
     options: {},
     handler: async () => {
-      await listDiscoveredPlaygrounds(resolveProjectRootFromInvocation());
+      await listDiscoveredPlaygrounds(process.cwd());
     },
   },
 
@@ -383,7 +388,9 @@ export const playgroundCommands: Record<string, CLICommand> = {
     args: [],
     options: {},
     handler: async () => {
-      const projectRoot = resolveProjectRootFromInvocation();
+      const projectRoot = process.cwd();
+      const { detectPlaygroundMode, findSmrtWorkspaceRoot } =
+        await loadPlaygroundRuntime();
       const mode = detectPlaygroundMode(projectRoot);
 
       if (mode === 'workspace') {

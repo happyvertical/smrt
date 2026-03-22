@@ -1,85 +1,74 @@
+import { ASSETS_ROUTE_META } from './routes/shared.js';
+
+function createPreviewAssetUri(label: string, accent: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800">
+    <defs>
+      <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+        <stop offset="0%" stop-color="${accent}" />
+        <stop offset="100%" stop-color="#0f172a" />
+      </linearGradient>
+    </defs>
+    <rect width="1200" height="800" fill="url(#bg)" rx="48" />
+    <circle cx="260" cy="220" r="110" fill="rgba(255,255,255,0.16)" />
+    <path d="M120 620L430 330l210 190 150-120 290 220H120z" fill="rgba(255,255,255,0.22)" />
+    <text x="96" y="126" fill="#e2e8f0" font-size="64" font-family="Arial, sans-serif" font-weight="700">${label}</text>
+    <text x="96" y="690" fill="#cbd5e1" font-size="34" font-family="Arial, sans-serif">SMRT Assets preview</text>
+  </svg>`;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
 const sampleAssets = [
   {
-    id: 'asset-aurora-hero',
-    slug: 'aurora-hero',
-    name: 'Aurora Hero',
-    sourceUri:
-      'data:image/svg+xml;utf8,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221280%22 height=%22720%22 viewBox=%220 0 1280 720%22%3E%3Crect width=%221280%22 height=%22720%22 fill=%22%230f766e%22/%3E%3Ccircle cx=%22980%22 cy=%22140%22 r=%2272%22 fill=%22%23facc15%22/%3E%3Ctext x=%2296%22 y=%22300%22 fill=%22white%22 font-size=%2276%22 font-family=%22Arial%22%3EAurora Hero%3C/text%3E%3Ctext x=%2296%22 y=%22372%22 fill=%22%23ccfbf1%22 font-size=%2238%22 font-family=%22Arial%22%3EReference image asset for editorial coverage%3C/text%3E%3C/svg%3E',
-    mimeType: 'image/svg+xml',
-    description: 'Reference hero artwork used in the shared assets previews.',
-    version: 3,
-    typeSlug: 'image',
-    statusSlug: 'published',
-    sourceType: 'playground',
-    externalId: '',
-    createdAt: '2026-03-12T10:30:00.000Z',
-    updatedAt: '2026-03-20T16:05:00.000Z',
-    alt: 'Teal aurora gradient hero art with a yellow sun.',
+    id: 'asset-harbor-map',
+    name: 'Harbor Map',
+    description: 'Annotated port operations map for logistics planning.',
+    sourceUri: createPreviewAssetUri('Harbor Map', '#0891b2'),
+    mimeType: 'image/png',
+    createdAt: '2026-03-11T09:15:00.000Z',
+    updatedAt: '2026-03-18T15:44:00.000Z',
+    statusSlug: 'active',
+    alt: 'Stylized harbor map with highlighted shipping lanes.',
   },
   {
-    id: 'asset-governance-pdf',
-    slug: 'governance-checklist',
-    name: 'Governance Checklist',
-    sourceUri: 'https://example.com/governance-checklist.pdf',
-    mimeType: 'application/pdf',
-    description:
-      'Editorial review checklist shared with contributors and editors.',
-    version: 1,
-    typeSlug: 'document',
-    statusSlug: 'approved',
-    sourceType: 'playground',
-    externalId: '',
-    createdAt: '2026-03-10T08:00:00.000Z',
-    updatedAt: '2026-03-19T13:45:00.000Z',
-  },
-  {
-    id: 'asset-field-audio',
-    slug: 'field-interview',
-    name: 'Field Interview Clip',
-    sourceUri: 'https://example.com/field-interview.mp3',
-    mimeType: 'audio/mpeg',
-    description: 'Audio clip attached to a logistics field report.',
-    version: 2,
-    typeSlug: 'audio',
+    id: 'asset-spring-lookbook',
+    name: 'Spring Lookbook',
+    description: 'Photography sheet prepared for the seasonal launch.',
+    sourceUri: createPreviewAssetUri('Lookbook', '#7c3aed'),
+    mimeType: 'image/jpeg',
+    createdAt: '2026-03-07T13:22:00.000Z',
+    updatedAt: '2026-03-19T08:05:00.000Z',
     statusSlug: 'draft',
-    sourceType: 'playground',
-    externalId: '',
-    createdAt: '2026-03-15T14:20:00.000Z',
-    updatedAt: '2026-03-18T11:10:00.000Z',
+    alt: '',
+  },
+  {
+    id: 'asset-style-guide',
+    name: 'Brand Style Guide',
+    description: 'Reference PDF for typography, voice, and image treatment.',
+    sourceUri: '',
+    mimeType: 'application/pdf',
+    createdAt: '2026-03-01T18:00:00.000Z',
+    updatedAt: '2026-03-10T18:45:00.000Z',
+    statusSlug: 'published',
   },
 ];
 
-const noop = () => {};
-const loadAssetManager = () => import('./AssetManager.svelte');
-const loadAssetDetailPreview = () =>
-  import('./playground/AssetDetailPreview.svelte');
-const loadCreateAssetModalPreview = () =>
-  import('./playground/CreateAssetModalPreview.svelte');
+const loadAssetGrid = () => import('./AssetGrid.svelte');
+const loadAssetManagerRoute = () => import('./routes/AssetManagerRoute.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-assets',
   displayName: 'Assets',
-  description:
-    'Asset management components for selecting, reviewing, and annotating media.',
+  description: ASSETS_ROUTE_META.manager.description,
   entries: [
     {
-      id: 'asset-manager',
-      title: 'Asset Manager',
+      id: 'asset-manager-route',
+      title: 'Asset Manager Route',
       description:
-        'Manage assets with selection, filters, and the embedded detail drawer.',
-      loadComponent: loadAssetManager,
+        'Package-owned route surface for browsing, selecting, and reviewing assets.',
+      loadComponent: loadAssetManagerRoute,
       order: 1,
-      props: {
-        accept: 'image/*',
-        customActions: [
-          {
-            label: 'Mark Featured',
-            action: noop,
-          },
-        ],
-        initialAssets: sampleAssets,
-        mode: 'manage',
-      },
+      tags: ['route', 'assets', 'admin'],
       modes: {
         mock: {
           label: 'Mock',
@@ -87,57 +76,19 @@ export default {
       },
     },
     {
-      id: 'asset-picker',
-      title: 'Asset Picker',
+      id: 'asset-grid',
+      title: 'Asset Grid',
       description:
-        'Selection-first asset browser for downstream content and commerce flows.',
-      loadComponent: loadAssetManager,
+        'Thumbnail grid preview showing selection state and missing-alt warnings.',
+      loadComponent: loadAssetGrid,
       order: 2,
+      tags: ['grid', 'assets', 'media'],
       props: {
-        accept: 'image/*',
-        initialAssets: sampleAssets,
-        mode: 'pick',
-        onselect: noop,
-        onconfirm: noop,
-      },
-      modes: {
-        mock: {
-          label: 'Mock',
-        },
-      },
-    },
-    {
-      id: 'asset-detail',
-      title: 'Asset Detail',
-      description:
-        'Metadata, accessibility, and preview surface for a single asset.',
-      loadComponent: loadAssetDetailPreview,
-      order: 3,
-      props: {
-        asset: sampleAssets[0],
-        onclose: noop,
-        ondelete: noop,
-        onedit: noop,
-        onsave: noop,
-        open: true,
-      },
-      modes: {
-        mock: {
-          label: 'Mock',
-        },
-      },
-    },
-    {
-      id: 'create-asset-modal',
-      title: 'Create Asset Modal',
-      description:
-        'Upload-first asset creation flow with metadata and accessibility fields.',
-      loadComponent: loadCreateAssetModalPreview,
-      order: 4,
-      props: {
-        onclose: noop,
-        oncreate: noop,
-        open: true,
+        assets: sampleAssets,
+        selectedIds: new Set(['asset-spring-lookbook']),
+        loading: false,
+        onSelectionChange: () => undefined,
+        onAssetClick: () => undefined,
       },
       modes: {
         mock: {

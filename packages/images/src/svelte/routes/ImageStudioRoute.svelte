@@ -2,6 +2,8 @@
 import type { Image } from '../../image';
 import { AssetsGallery, ImageEditor, ImageUploader } from '../index.js';
 
+let { apiBaseUrl = '/api/v1' }: { apiBaseUrl?: string } = $props();
+
 let selectedImage = $state<Image | null>(null);
 let uploaderStatus = $state('No image selected from the uploader yet.');
 
@@ -64,7 +66,7 @@ function handleEditorSave(image: Image) {
     </div>
 
     <div class="images-route__card">
-      <ImageUploader apiBaseUrl="/api/v1" onSelect={handleUploaderSelect} />
+      <ImageUploader {apiBaseUrl} onSelect={handleUploaderSelect} />
     </div>
   </section>
 
@@ -79,12 +81,12 @@ function handleEditorSave(image: Image) {
 
     <div class="images-route__workspace-grid">
       <div class="images-route__card images-route__gallery">
-        <AssetsGallery apiBaseUrl="/api/v1" onSelect={handleGallerySelect} />
+        <AssetsGallery {apiBaseUrl} onSelect={handleGallerySelect} />
       </div>
 
       <div class="images-route__card images-route__editor">
         <ImageEditor
-          apiBaseUrl="/api/v1"
+          {apiBaseUrl}
           image={selectedImage}
           onSave={handleEditorSave}
         />

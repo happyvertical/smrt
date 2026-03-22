@@ -1,205 +1,81 @@
-import type { ImageEditorClient, ImagesGalleryClient } from './image-clients';
+import { IMAGES_ROUTE_META } from './routes/shared.js';
 
-function createSvgImage(label: string, background: string, accent: string) {
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720">
-    <rect width="1280" height="720" fill="${background}" />
-    <circle cx="1020" cy="160" r="96" fill="${accent}" opacity="0.9" />
-    <text x="96" y="312" fill="white" font-size="78" font-family="Arial">SMRT Images</text>
-    <text x="96" y="392" fill="#e2e8f0" font-size="40" font-family="Arial">${label}</text>
-  </svg>`;
+const DEFAULT_IMAGES_PLAYGROUND_API_BASE_URL = '/api/v1';
 
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
+type ImagesPlaygroundGlobal = typeof globalThis & {
+  __SMRT_IMAGES_PLAYGROUND_API_BASE_URL__?: string;
+};
 
-const sampleImages = [
-  {
-    id: 'image-aurora',
-    slug: 'aurora-preview',
-    name: 'Aurora Preview',
-    sourceUri: createSvgImage('Aurora Preview', '#0f766e', '#facc15'),
-    url: createSvgImage('Aurora Preview', '#0f766e', '#facc15'),
-    mimeType: 'image/svg+xml',
-    description: 'Reference preview used in the image gallery and editor.',
-    width: 1280,
-    height: 720,
-    alt: 'Teal aurora art with a yellow sun.',
-  },
-  {
-    id: 'image-night-market',
-    slug: 'night-market-preview',
-    name: 'Night Market',
-    sourceUri: createSvgImage('Night Market', '#1d4ed8', '#f97316'),
-    url: createSvgImage('Night Market', '#1d4ed8', '#f97316'),
-    mimeType: 'image/svg+xml',
-    description: 'Blue market scene used to exercise the gallery filters.',
-    width: 1200,
-    height: 1200,
-    alt: 'Blue market scene with an orange accent circle.',
-  },
-  {
-    id: 'image-field-report',
-    slug: 'field-report-preview',
-    name: 'Field Report',
-    sourceUri: createSvgImage('Field Report', '#4338ca', '#22c55e'),
-    url: createSvgImage('Field Report', '#4338ca', '#22c55e'),
-    mimeType: 'image/svg+xml',
-    description: 'Portrait-oriented reference image for editor operations.',
-    width: 900,
-    height: 1280,
-    alt: 'Indigo field report art with a green accent.',
-  },
-];
-
-const noop = () => {};
-
-function cloneValue<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
-}
-
-function determineOrientation(image: {
-  width: number;
-  height: number;
-}): 'landscape' | 'portrait' | 'square' {
-  if (image.width === image.height) {
-    return 'square';
+function resolveImagesPlaygroundApiBaseUrl(): string {
+  const configuredViaGlobal = (globalThis as ImagesPlaygroundGlobal)
+    .__SMRT_IMAGES_PLAYGROUND_API_BASE_URL__;
+  if (configuredViaGlobal) {
+    return configuredViaGlobal;
   }
 
-  return image.width > image.height ? 'landscape' : 'portrait';
-}
+  if (typeof globalThis.location !== 'undefined') {
+    const configuredViaQuery = new URLSearchParams(
+      globalThis.location.search,
+    ).get('smrtImagesApiBaseUrl');
 
-function createImagePlaygroundClients(seed = sampleImages): {
-  galleryClient: ImagesGalleryClient;
-  editorClient: ImageEditorClient;
-} {
-  let images = cloneValue(seed);
-
-  const findImage = (id: string) => {
-    const image = images.find((item) => item.id === id);
-    if (!image) {
-      throw new Error(`Unknown image: ${id}`);
+    if (configuredViaQuery) {
+      return configuredViaQuery;
     }
-    return image;
-  };
+  }
 
-  const replaceImage = (id: string, nextImage: Record<string, unknown>) => {
-    images = images.map((image) =>
-      image.id === id ? { ...image, ...nextImage } : image,
-    );
-    return cloneValue(findImage(id));
-  };
-
-  return {
-    galleryClient: {
-      list: async (query) => {
-        const filtered = images.filter((image) => {
-          if (
-            query.q &&
-            !`${image.name} ${image.description} ${image.alt}`
-              .toLowerCase()
-              .includes(query.q.toLowerCase())
-          ) {
-            return false;
-          }
-
-          if (
-            query.orientation &&
-            determineOrientation(image) !== query.orientation
-          ) {
-            return false;
-          }
-
-          if (
-            typeof query.minWidth === 'number' &&
-            image.width < query.minWidth
-          ) {
-            return false;
-          }
-
-          if (
-            typeof query.minHeight === 'number' &&
-            image.height < query.minHeight
-          ) {
-            return false;
-          }
-
-          return true;
-        });
-
-        return {
-          items: cloneValue(
-            filtered.slice(query.offset, query.offset + query.limit),
-          ),
-        };
-      },
-    },
-    editorClient: {
-      resize: async (id, payload) => ({
-        image: replaceImage(id, {
-          height: payload.height,
-          width: payload.width,
-        }),
-      }),
-      crop: async (id, payload) => ({
-        image: replaceImage(id, {
-          height: payload.h,
-          width: payload.w,
-        }),
-      }),
-      convert: async (id, payload) => ({
-        image: replaceImage(id, {
-          mimeType: `image/${payload.format}`,
-          name: `${findImage(id).name} (${payload.format.toUpperCase()})`,
-        }),
-      }),
-      edit: async (id, payload) => ({
-        image: replaceImage(id, {
-          alt: `${findImage(id).alt} Edited: ${payload.prompt}.`,
-          description: `Edited with prompt: ${payload.prompt}`,
-          name: `${findImage(id).name} Remix`,
-        }),
-      }),
-    },
-  };
+  return DEFAULT_IMAGES_PLAYGROUND_API_BASE_URL;
 }
 
-const { editorClient, galleryClient } = createImagePlaygroundClients();
-const loadAssetsGallery = () => import('./components/AssetsGallery.svelte');
+function createPreviewImageUri(label: string, accent: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720">
+    <defs>
+      <linearGradient id="bg" x1="0%" x2="100%" y1="0%" y2="100%">
+        <stop offset="0%" stop-color="${accent}" />
+        <stop offset="100%" stop-color="#111827" />
+      </linearGradient>
+    </defs>
+    <rect width="1280" height="720" fill="url(#bg)" rx="40" />
+    <circle cx="1040" cy="170" r="92" fill="rgba(255,255,255,0.18)" />
+    <path d="M110 590L360 320l182 170 146-104 210 204H110z" fill="rgba(255,255,255,0.22)" />
+    <text x="92" y="118" fill="#f8fafc" font-size="60" font-family="Arial, sans-serif" font-weight="700">${label}</text>
+    <text x="92" y="662" fill="#dbeafe" font-size="30" font-family="Arial, sans-serif">SMRT Images preview</text>
+  </svg>`;
+
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+const sampleImage = {
+  id: 'image-harbor-dusk',
+  name: 'Harbor Dusk',
+  description: 'Wide editorial frame used for feature headers.',
+  sourceUri: createPreviewImageUri('Harbor Dusk', '#2563eb'),
+  url: createPreviewImageUri('Harbor Dusk', '#2563eb'),
+  mimeType: 'image/jpeg',
+  width: 1280,
+  height: 720,
+  alt: 'Cargo cranes and harbor lights reflected at dusk.',
+};
+
 const loadImageEditor = () => import('./components/ImageEditor.svelte');
+const loadImageStudioRoute = () => import('./routes/ImageStudioRoute.svelte');
 const loadImageUploader = () => import('./components/ImageUploader.svelte');
 
 export default {
   packageName: '@happyvertical/smrt-images',
   displayName: 'Images',
-  description:
-    'Image-focused components for browsing, selecting, and editing visual assets.',
+  description: IMAGES_ROUTE_META.studio.description,
   entries: [
-    {
-      id: 'assets-gallery',
-      title: 'Assets Gallery',
-      description:
-        'Filterable gallery backed by a package-owned image client for reliable previews.',
-      loadComponent: loadAssetsGallery,
-      order: 1,
-      props: {
-        client: galleryClient,
-      },
-      modes: {
-        mock: {
-          label: 'Mock',
-        },
-      },
-    },
     {
       id: 'image-uploader',
       title: 'Image Uploader',
       description:
-        'Multi-tab uploader with gallery, camera, external URL, and variation generation flows.',
+        'Mock-safe uploader preview for local files and external image URLs.',
       loadComponent: loadImageUploader,
-      order: 2,
+      order: 1,
+      tags: ['uploader', 'images', 'media'],
       props: {
-        editorClient,
-        galleryClient,
-        onSelect: noop,
+        allowedTabs: ['upload', 'external'],
+        onSelect: () => undefined,
       },
       modes: {
         mock: {
@@ -211,18 +87,36 @@ export default {
       id: 'image-editor',
       title: 'Image Editor',
       description:
-        'Resize, crop, convert, and AI edit workflows against a package-owned editor client.',
+        'Editor controls for resizing, cropping, and AI-assisted image edits.',
       loadComponent: loadImageEditor,
-      order: 3,
+      order: 2,
+      tags: ['editor', 'images', 'media'],
       props: {
-        client: editorClient,
-        image: sampleImages[0],
-        onCancel: noop,
-        onSave: noop,
+        image: sampleImage,
+        onSave: () => undefined,
       },
       modes: {
         mock: {
           label: 'Mock',
+        },
+      },
+    },
+    {
+      id: 'image-studio-route',
+      title: 'Image Studio Route',
+      description:
+        'Package-owned acquisition and editing flow backed by the generated images API.',
+      loadComponent: loadImageStudioRoute,
+      order: 3,
+      tags: ['route', 'images', 'admin'],
+      modes: {
+        live: {
+          label: 'Live',
+          description:
+            'Requires the images package dev server and generated routes. Override the base URL with ?smrtImagesApiBaseUrl=... or window.__SMRT_IMAGES_PLAYGROUND_API_BASE_URL__ when needed.',
+          props: {
+            apiBaseUrl: resolveImagesPlaygroundApiBaseUrl(),
+          },
         },
       },
     },
