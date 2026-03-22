@@ -6,7 +6,10 @@ const config = {
 	preprocess: vitePreprocess(),
 	kit: {
 		outDir: '.svelte-kit',
-		alias: svelteKitWorkspaceAliases
+		alias:
+			process.env.SMRT_PACKAGE_BUILD === '1'
+				? {}
+				: svelteKitWorkspaceAliases
 	}
 };
 

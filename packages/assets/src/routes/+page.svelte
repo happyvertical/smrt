@@ -1,12 +1,7 @@
 <script lang="ts">
-import { PlaygroundHost } from '@happyvertical/smrt-playground/svelte';
-import assetsPlayground from '../playground.js';
+import { ASSETS_ROUTE_MODULE } from '../route-module.js';
 
-const modules = [assetsPlayground];
+const AssetRoute = ASSETS_ROUTE_MODULE.routes.manager.component;
 </script>
 
-<PlaygroundHost
-  title="Assets Playground"
-  subtitle="Reference package previews for @happyvertical/smrt-assets, using package-owned mock data and the shared host shell."
-  {modules}
-/>
+<AssetRoute />

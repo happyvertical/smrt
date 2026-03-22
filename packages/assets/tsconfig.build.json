@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "types": ["node", "svelte"],
+    "paths": {
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"],
+      "$app/types": ["./.svelte-kit/types/index.d.ts"],
+      "@happyvertical/smrt-*": ["../*/src/index.ts"],
+      "@happyvertical/smrt-*/*": ["../*/src/*.ts", "../*/src/*/index.ts"],
+      "@happyvertical/smrt-*/*/*": [
+        "../*/src/*/*.ts",
+        "../*/src/*/*/index.ts"
+      ]
+    }
+  }
+}

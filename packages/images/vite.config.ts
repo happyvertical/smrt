@@ -28,7 +28,7 @@ export default defineConfig(async ({ mode }) => {
   }
 
   // SvelteKit dev mode (used by `pnpm run dev`)
-  const { smrtPlugin } = await import('../core/src/vite-plugin/index.js');
+  const { smrtPlugin } = await import('@happyvertical/smrt-core/vite-plugin');
 
   return {
     resolve: {

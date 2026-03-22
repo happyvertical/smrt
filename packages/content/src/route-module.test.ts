@@ -28,8 +28,8 @@ describe('content route module', () => {
   it('builds navigation with overrideable mount paths', () => {
     expect(CONTENT_DEFAULT_ROUTE_NAVIGATION.map((item) => item.label)).toEqual([
       'Workspace',
-      'Governance',
-      'Contributions',
+      'Governance QA',
+      'Contribution QA',
     ]);
 
     const navigation = createContentRouteNavigation({

@@ -7,13 +7,7 @@ import {
 import { viteWorkspaceAliases } from './workspace-aliases.js';
 
 export default defineConfig({
-  plugins: [
-    svelte(),
-    smrtVitestPlugin({
-      setupFile: smrtVitestSetupPath,
-      verbose: true,
-    }),
-  ],
+  plugins: [svelte(), smrtVitestPlugin({ setupFile: smrtVitestSetupPath })],
   resolve: {
     alias: viteWorkspaceAliases,
     conditions: ['browser'],

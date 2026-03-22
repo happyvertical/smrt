@@ -7,40 +7,33 @@
  * opens with the file pre-loaded.
  */
 
+import type { Snippet } from 'svelte';
+
 export interface CreateAssetModalProps {
   /** Whether the modal is open */
   open: boolean;
   /** Pre-loaded file (from paste or drag) */
   initialFile?: File | null;
   /** Callback when creation is complete */
-  onCreate?: (data: {
-    file: File;
-    name: string;
-    description: string;
-    altText: string;
-  }) => void;
-  oncreate?: (data: {
+  oncreate: (data: {
     file: File;
     name: string;
     description: string;
     altText: string;
   }) => void;
   /** Callback when modal is closed */
-  onClose?: () => void;
-  onclose?: () => void;
+  onclose: () => void;
 }
 
 let {
   open,
   initialFile = null,
-  onCreate,
   oncreate,
-  onClose,
   onclose,
 }: CreateAssetModalProps = $props();
 
 let dialogEl: HTMLDialogElement | null = $state(null);
-let file: File | null = $state(null);
+let file = $state<File | null>(null);
 let name = $state('');
 let description = $state('');
 let altText = $state('');
@@ -111,13 +104,13 @@ function handleFileSelect(e: Event) {
 
 function handleSubmit() {
   if (!file) return;
-  (oncreate ?? onCreate)?.({ file, name, description, altText });
+  oncreate({ file, name, description, altText });
   resetForm();
 }
 
 function handleClose() {
   resetForm();
-  (onclose ?? onClose)?.();
+  onclose();
 }
 
 function resetForm() {
@@ -145,13 +138,8 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function isImageFile(candidate: File | null): boolean {
-  return candidate?.type.startsWith('image/') ?? false;
-}
-
-function isLargeFile(candidate: File | null): boolean {
-  return (candidate?.size ?? 0) > 2 * 1024 * 1024;
-}
+const isImage = $derived(file?.type?.startsWith('image/') ?? false);
+const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -214,9 +202,9 @@ function isLargeFile(candidate: File | null): boolean {
           <div class="file-preview__meta">
             <span class="file-preview__filename">{file.name}</span>
             <span class="file-preview__size">{formatSize(file.size)}</span>
-          {#if isLargeFile(file)}
-            <span class="file-preview__warning">⚠️ Large file — may slow page loads</span>
-          {/if}
+            {#if isLargeFile}
+              <span class="file-preview__warning">⚠️ Large file — may slow page loads</span>
+            {/if}
           </div>
           <button type="button" class="file-preview__remove" onclick={() => { file = null; }} aria-label="Remove file">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -234,7 +222,7 @@ function isLargeFile(candidate: File | null): boolean {
             <textarea id="asset-desc" class="form-textarea" bind:value={description} placeholder="Optional description" rows="2"></textarea>
           </div>
 
-          {#if isImageFile(file)}
+          {#if isImage}
             <div class="form-field">
               <label for="asset-alt" class="form-label">
                 Alt Text

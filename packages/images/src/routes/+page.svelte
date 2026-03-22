@@ -1,12 +1,7 @@
 <script lang="ts">
-import { PlaygroundHost } from '@happyvertical/smrt-playground/svelte';
-import imagesPlayground from '../playground.js';
+import { IMAGES_ROUTE_MODULE } from '../route-module.js';
 
-const modules = [imagesPlayground];
+const ImageRoute = IMAGES_ROUTE_MODULE.routes.studio.component;
 </script>
 
-<PlaygroundHost
-  title="Images Playground"
-  subtitle="Reference package previews for @happyvertical/smrt-images, using package-owned mock clients and the shared host shell."
-  {modules}
-/>
+<ImageRoute />

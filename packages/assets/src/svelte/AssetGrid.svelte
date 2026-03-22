@@ -11,11 +11,8 @@ import type { AssetGridProps, PersistedAsset } from './types';
 let {
   assets,
   selectedIds,
-  onselectionchange,
   onSelectionChange,
-  onassetclick,
   onAssetClick,
-  onassetdblclick,
   onAssetDblClick,
   loading = false,
 }: AssetGridProps = $props();
@@ -28,21 +25,21 @@ function toggleSelection(asset: PersistedAsset, event: Event) {
   } else {
     next.add(asset.id);
   }
-  (onselectionchange ?? onSelectionChange)(next);
+  onSelectionChange(next);
 }
 
 function handleClick(asset: PersistedAsset) {
-  (onassetclick ?? onAssetClick)(asset);
+  onAssetClick(asset);
 }
 
 function handleDblClick(asset: PersistedAsset) {
-  (onassetdblclick ?? onAssetDblClick)?.(asset);
+  onAssetDblClick?.(asset);
 }
 
 function handleKeydown(asset: PersistedAsset, event: KeyboardEvent) {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    (onassetclick ?? onAssetClick)(asset);
+    onAssetClick(asset);
   }
 }
 
@@ -60,7 +57,7 @@ function isAudio(asset: PersistedAsset): boolean {
 
 /** True if it's an image-like asset missing alt text */
 function isMissingAlt(asset: PersistedAsset): boolean {
-  return isImage(asset) && !asset.alt;
+  return isImage(asset) && !getAltText(asset);
 }
 
 function getTypeIcon(asset: PersistedAsset): string {
@@ -69,6 +66,10 @@ function getTypeIcon(asset: PersistedAsset): string {
   if (asset.mimeType?.includes('pdf')) return '📄';
   if (asset.mimeType?.startsWith('text/')) return '📝';
   return '📎';
+}
+
+function getAltText(asset: PersistedAsset): string {
+  return 'alt' in asset && typeof asset.alt === 'string' ? asset.alt : '';
 }
 </script>
 
@@ -119,7 +120,7 @@ function getTypeIcon(asset: PersistedAsset): string {
             {#if isImage(asset) && asset.sourceUri}
               <img
                 src={asset.sourceUri}
-                alt={asset.alt || asset.name}
+                alt={getAltText(asset) || asset.name}
                 class="asset-card__image"
                 loading="lazy"
               />
@@ -303,41 +304,6 @@ function getTypeIcon(asset: PersistedAsset): string {
 
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  /* Empty */
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: var(--smrt-spacing-12, 3rem) var(--smrt-spacing-4, 1rem);
-    text-align: center;
-  }
-
-  .empty-state__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 80px;
-    height: 80px;
-    margin-bottom: var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-secondary-container, #e0e7ef);
-    color: var(--smrt-color-on-secondary-container, #1a1c2e);
-    border-radius: 24px;
-    padding: 16px;
-  }
-
-  .empty-state__title {
-    margin: 0 0 var(--smrt-spacing-2, 0.5rem);
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
-    font-weight: 500;
-    color: var(--smrt-color-on-surface, #111827);
-  }
-
-  .empty-state__desc {
-    margin: 0;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   @media (max-width: 640px) {

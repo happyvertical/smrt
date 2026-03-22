@@ -1,13 +1,12 @@
-import adapter from '@sveltejs/adapter-auto';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 import { svelteKitWorkspaceAliases } from './workspace-aliases.js';
 
 const config = {
   preprocess: vitePreprocess(),
   kit: {
-    adapter: adapter(),
     outDir: '.svelte-kit',
-    alias: svelteKitWorkspaceAliases,
+    alias:
+      process.env.SMRT_PACKAGE_BUILD === '1' ? {} : svelteKitWorkspaceAliases,
   },
   compilerOptions: {
     runes: true,
