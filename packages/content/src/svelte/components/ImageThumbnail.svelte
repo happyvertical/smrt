@@ -10,6 +10,19 @@ let { assetId, apiBaseUrl = '/api/v1' }: ImageThumbnailProps = $props();
 
 let imageUrl: string | null = $state(null);
 
+function isAbortError(error: unknown, signal: AbortSignal): boolean {
+  if (signal.aborted) {
+    return true;
+  }
+
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'AbortError'
+  );
+}
+
 $effect(() => {
   if (!assetId) {
     imageUrl = null;
@@ -28,10 +41,7 @@ $effect(() => {
       imageUrl = data?.sourceUri || data?.url || null;
     })
     .catch((error: unknown) => {
-      if (
-        error instanceof Error &&
-        (error.name === 'AbortError' || error.message === 'AbortError')
-      ) {
+      if (isAbortError(error, abortController.signal)) {
         return;
       }
 
