@@ -122,6 +122,7 @@ jobs:
     needs: test
     if: always() && needs.test.result == 'success'
     uses: ./.github/workflows/publish.yml
+    secrets: inherit
     with:
       dry-run: true
     permissions:
