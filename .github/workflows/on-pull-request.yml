@@ -119,8 +119,6 @@ jobs:
 
   publish-dry-run:
     name: Publish Dry Run
-    needs: test
-    if: always() && needs.test.result == 'success'
     uses: ./.github/workflows/publish-dry-run.yml
     permissions:
       contents: read
