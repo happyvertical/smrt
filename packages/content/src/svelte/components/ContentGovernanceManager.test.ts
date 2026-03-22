@@ -108,6 +108,7 @@ function createDefinitions(): ContentGovernanceDefinitionsData {
 function renderManager(
   props: {
     apiBaseUrl?: string;
+    client?: ReturnType<typeof clientMocks.createClient>;
     onChange?: (definitions: ContentGovernanceDefinitionsData | null) => void;
   } = {},
 ) {
@@ -222,6 +223,40 @@ describe('ContentGovernanceManager component', () => {
     await vi.waitFor(() =>
       expect(clientMocks.createClient).toHaveBeenCalledWith('/tenant/api/v2'),
     );
+  });
+
+  it('uses an injected client when provided', async () => {
+    const injectedClient = {
+      contents: {
+        getGovernanceDefinitions: vi.fn().mockResolvedValue({
+          data: createDefinitions(),
+        }),
+      },
+      contentGovernancePolicies: {
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      contentGovernanceProfiles: {
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+      contentGovernanceAssignments: {
+        create: vi.fn(),
+        update: vi.fn(),
+        delete: vi.fn(),
+      },
+    };
+
+    const target = renderManager({ client: injectedClient });
+
+    await vi.waitFor(() =>
+      expect(target.textContent).toContain('Facts review'),
+    );
+
+    expect(clientMocks.createClient).not.toHaveBeenCalled();
+    expect(injectedClient.contents.getGovernanceDefinitions).toHaveBeenCalled();
   });
 
   it('creates a new policy from the manager editor flow', async () => {

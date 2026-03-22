@@ -255,12 +255,12 @@ function handleCountryChange(e: Event) {
 }
 </script>
 
-<div class="smrt-address">
+<fieldset class="smrt-address">
   {#if label}
-    <label class="smrt-label">
+    <legend class="smrt-label">
       {label}
       {#if required}<span class="required">*</span>{/if}
-    </label>
+    </legend>
   {/if}
 
   <div class="address-fields" class:smrt-mode={isSmrt}>
@@ -367,19 +367,24 @@ function handleCountryChange(e: Event) {
   {#if error}
     <div class="validation-error">{error}</div>
   {/if}
-</div>
+</fieldset>
 
 <style>
   .smrt-address {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    min-inline-size: 0;
   }
 
   .smrt-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface, #374151);
+    padding: 0;
   }
 
   .smrt-label .required {

@@ -19,6 +19,7 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { COMMERCE_MODULE_META } from '../ui.js';
 
 // Import components
@@ -30,18 +31,18 @@ import InvoiceTotals from './components/InvoiceTotals.svelte';
 import UnbilledItems from './components/UnbilledItems.svelte';
 
 // Export component Props types
-export type { Props as InvoiceActionsProps } from './components/InvoiceActions.svelte';
+export type InvoiceActionsProps = ComponentProps<typeof InvoiceActions>;
 // Export components
 export { default as InvoiceActions } from './components/InvoiceActions.svelte';
-export type { Props as InvoiceCardProps } from './components/InvoiceCard.svelte';
+export type InvoiceCardProps = ComponentProps<typeof InvoiceCard>;
 export { default as InvoiceCard } from './components/InvoiceCard.svelte';
-export type { Props as InvoiceHeaderProps } from './components/InvoiceHeader.svelte';
+export type InvoiceHeaderProps = ComponentProps<typeof InvoiceHeader>;
 export { default as InvoiceHeader } from './components/InvoiceHeader.svelte';
-export type { Props as InvoiceLineItemsProps } from './components/InvoiceLineItems.svelte';
+export type InvoiceLineItemsProps = ComponentProps<typeof InvoiceLineItems>;
 export { default as InvoiceLineItems } from './components/InvoiceLineItems.svelte';
-export type { Props as InvoiceTotalsProps } from './components/InvoiceTotals.svelte';
+export type InvoiceTotalsProps = ComponentProps<typeof InvoiceTotals>;
 export { default as InvoiceTotals } from './components/InvoiceTotals.svelte';
-export type { Props as UnbilledItemsProps } from './components/UnbilledItems.svelte';
+export type UnbilledItemsProps = ComponentProps<typeof UnbilledItems>;
 export { default as UnbilledItems } from './components/UnbilledItems.svelte';
 // Export types
 export type {

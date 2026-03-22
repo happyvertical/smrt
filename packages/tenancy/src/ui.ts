@@ -31,7 +31,7 @@ export const TENANCY_UI_SLOTS: Record<string, ModuleUISlot> = {
     label: 'Tenant Switcher',
     description: 'Dropdown for switching between tenants',
     icon: 'switch',
-    category: 'navigation',
+    category: 'form',
     order: 2,
     propsInterface: 'TenantSwitcherProps',
   },

@@ -8,6 +8,7 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { AGENTS_MODULE_META } from '../ui.js';
 
 // Import components
@@ -27,11 +28,13 @@ export {
 };
 
 // Export component prop types
-export type { Props as AgentDashboardProps } from './components/AgentDashboard.svelte';
-export type { Props as AgentRunHistoryProps } from './components/AgentRunHistory.svelte';
-export type { Props as AgentScheduleFormProps } from './components/AgentScheduleForm.svelte';
-export type { Props as AgentScheduleListProps } from './components/AgentScheduleList.svelte';
-export type { Props as ScheduleStatusBadgeProps } from './components/ScheduleStatusBadge.svelte';
+export type AgentDashboardProps = ComponentProps<typeof AgentDashboard>;
+export type AgentRunHistoryProps = ComponentProps<typeof AgentRunHistory>;
+export type AgentScheduleFormProps = ComponentProps<typeof AgentScheduleForm>;
+export type AgentScheduleListProps = ComponentProps<typeof AgentScheduleList>;
+export type ScheduleStatusBadgeProps = ComponentProps<
+  typeof ScheduleStatusBadge
+>;
 
 // Export types and utilities
 export type {

@@ -292,6 +292,7 @@ function handleInput(e: Event) {
   }
 
   .smrt-input[type=number] {
+    appearance: textfield;
     -moz-appearance: textfield;
   }
 

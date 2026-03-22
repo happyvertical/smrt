@@ -19,6 +19,7 @@ import ContentContributionInbox from './components/ContentContributionInbox.svel
 import ContentContributionPortal from './components/ContentContributionPortal.svelte';
 import ContentContributionTypeManager from './components/ContentContributionTypeManager.svelte';
 import ContentContributorManager from './components/ContentContributorManager.svelte';
+import ContentEditor from './components/ContentEditor.svelte';
 import ContentGovernanceAssignmentEditor from './components/ContentGovernanceAssignmentEditor.svelte';
 import ContentGovernanceManager from './components/ContentGovernanceManager.svelte';
 import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
@@ -37,6 +38,7 @@ export {
   ContentContributionPortal,
   ContentContributionTypeManager,
   ContentContributorManager,
+  ContentEditor,
   ContentGovernanceAssignmentEditor,
   ContentGovernanceManager,
   ContentGovernancePanel,
@@ -65,6 +67,7 @@ export type ContentContributionTypeManagerProps = ComponentProps<
 export type ContentContributorManagerProps = ComponentProps<
   typeof ContentContributorManager
 >;
+export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
 export type ContentTransparencyReportProps = ComponentProps<
   typeof ContentTransparencyReport
 >;

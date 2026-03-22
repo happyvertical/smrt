@@ -5,12 +5,12 @@
 
 import { Badge } from '@happyvertical/smrt-svelte/ui';
 import type { Snippet } from 'svelte';
-import type { AgentRunHistoryEntry } from './types.js';
+import type { AgentRunHistoryEntry } from '../types.js';
 import {
   formatDuration,
   formatRelativeTime,
   getRunStatusVariant,
-} from './types.js';
+} from '../types.js';
 
 export interface Props {
   /** Run history entries */

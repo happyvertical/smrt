@@ -1,5 +1,5 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "../../tsconfig.ui-package.json",
   "compilerOptions": {
     "composite": true,
     "outDir": "./dist",
@@ -9,6 +9,6 @@
     "declarationMap": true,
     "emitDeclarationOnly": false
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

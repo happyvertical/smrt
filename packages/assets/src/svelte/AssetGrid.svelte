@@ -6,14 +6,16 @@
  * type-based thumbnails, and missing alt-text warnings for images.
  */
 
-import type { Asset } from '../asset';
 import type { AssetGridProps, PersistedAsset } from './types';
 
 let {
   assets,
   selectedIds,
+  onselectionchange,
   onSelectionChange,
+  onassetclick,
   onAssetClick,
+  onassetdblclick,
   onAssetDblClick,
   loading = false,
 }: AssetGridProps = $props();
@@ -26,21 +28,21 @@ function toggleSelection(asset: PersistedAsset, event: Event) {
   } else {
     next.add(asset.id);
   }
-  onSelectionChange(next);
+  (onselectionchange ?? onSelectionChange)(next);
 }
 
 function handleClick(asset: PersistedAsset) {
-  onAssetClick(asset);
+  (onassetclick ?? onAssetClick)(asset);
 }
 
 function handleDblClick(asset: PersistedAsset) {
-  onAssetDblClick?.(asset);
+  (onassetdblclick ?? onAssetDblClick)?.(asset);
 }
 
 function handleKeydown(asset: PersistedAsset, event: KeyboardEvent) {
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    onAssetClick(asset);
+    (onassetclick ?? onAssetClick)(asset);
   }
 }
 
@@ -304,7 +306,7 @@ function getTypeIcon(asset: PersistedAsset): string {
   }
 
   /* Empty */
-  .asset-grid__empty {
+  .empty-state {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -312,7 +314,7 @@ function getTypeIcon(asset: PersistedAsset): string {
     text-align: center;
   }
 
-  .empty-icon {
+  .empty-state__icon {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -325,14 +327,14 @@ function getTypeIcon(asset: PersistedAsset): string {
     padding: 16px;
   }
 
-  .empty-title {
+  .empty-state__title {
     margin: 0 0 var(--smrt-spacing-2, 0.5rem);
     font-size: var(--smrt-typography-title-medium-size, 1rem);
     font-weight: 500;
     color: var(--smrt-color-on-surface, #111827);
   }
 
-  .empty-description {
+  .empty-state__desc {
     margin: 0;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);

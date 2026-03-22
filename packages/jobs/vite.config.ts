@@ -14,6 +14,7 @@ export default defineConfig(async () => {
           index: resolve(packageDir, 'src/index.ts'),
           runner: resolve(packageDir, 'src/runner.ts'),
           ui: resolve(packageDir, 'src/ui.ts'),
+          playground: resolve(packageDir, 'src/playground.ts'),
         },
         formats: ['es'],
       },
@@ -41,6 +42,10 @@ export default defineConfig(async () => {
 
           // Internal SMRT packages
           /^@smrt\//,
+          /\.svelte$/,
+          'svelte',
+          'svelte/internal',
+          'svelte/store',
         ],
       },
       minify: false,

@@ -8,6 +8,7 @@ import {
   createClient,
 } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
+import type { ContentGovernanceManagerClient } from '../governance-manager-client';
 import ContentGovernanceAssignmentEditor from './ContentGovernanceAssignmentEditor.svelte';
 import ContentGovernancePolicyEditor from './ContentGovernancePolicyEditor.svelte';
 import ContentGovernanceProfileEditor from './ContentGovernanceProfileEditor.svelte';
@@ -16,12 +17,19 @@ type EditMode = 'policy' | 'profile' | 'assignment' | null;
 
 export interface Props {
   apiBaseUrl?: string;
+  client?: ContentGovernanceManagerClient;
   onChange?: (definitions: ContentGovernanceDefinitionsData | null) => void;
 }
 
-let { apiBaseUrl = '/api/v1', onChange = undefined }: Props = $props();
+let {
+  apiBaseUrl = '/api/v1',
+  client = undefined,
+  onChange = undefined,
+}: Props = $props();
 
-const client = $derived(createClient(normalizeApiBaseUrl(apiBaseUrl)));
+const governanceClient = $derived(
+  client ?? createClient(normalizeApiBaseUrl(apiBaseUrl)),
+);
 
 let definitions = $state<ContentGovernanceDefinitionsData | null>(null);
 let loading = $state(true);
@@ -40,7 +48,7 @@ async function loadDefinitions() {
   error = null;
 
   try {
-    const response = await client.contents.getGovernanceDefinitions();
+    const response = await governanceClient.contents.getGovernanceDefinitions();
     definitions = response.data;
     onChange?.(response.data);
   } catch (err: any) {
@@ -52,9 +60,12 @@ async function loadDefinitions() {
 
 async function savePolicy(policy: Partial<ContentReviewPolicyData>) {
   if (editingPolicy?.id) {
-    await client.contentGovernancePolicies.update(editingPolicy.id, policy);
+    await governanceClient.contentGovernancePolicies.update(
+      editingPolicy.id,
+      policy,
+    );
   } else {
-    await client.contentGovernancePolicies.create(policy);
+    await governanceClient.contentGovernancePolicies.create(policy);
   }
 
   editMode = null;
@@ -64,9 +75,12 @@ async function savePolicy(policy: Partial<ContentReviewPolicyData>) {
 
 async function saveProfile(profile: Partial<ContentGovernanceProfileData>) {
   if (editingProfile?.id) {
-    await client.contentGovernanceProfiles.update(editingProfile.id, profile);
+    await governanceClient.contentGovernanceProfiles.update(
+      editingProfile.id,
+      profile,
+    );
   } else {
-    await client.contentGovernanceProfiles.create(profile);
+    await governanceClient.contentGovernanceProfiles.create(profile);
   }
 
   editMode = null;
@@ -78,12 +92,12 @@ async function saveAssignment(
   assignment: Partial<ContentGovernanceAssignmentData>,
 ) {
   if (editingAssignment?.id) {
-    await client.contentGovernanceAssignments.update(
+    await governanceClient.contentGovernanceAssignments.update(
       editingAssignment.id,
       assignment,
     );
   } else {
-    await client.contentGovernanceAssignments.create(assignment);
+    await governanceClient.contentGovernanceAssignments.create(assignment);
   }
 
   editMode = null;
@@ -93,19 +107,19 @@ async function saveAssignment(
 
 async function deletePolicy(id?: string) {
   if (!id) return;
-  await client.contentGovernancePolicies.delete(id);
+  await governanceClient.contentGovernancePolicies.delete(id);
   await loadDefinitions();
 }
 
 async function deleteProfile(id?: string) {
   if (!id) return;
-  await client.contentGovernanceProfiles.delete(id);
+  await governanceClient.contentGovernanceProfiles.delete(id);
   await loadDefinitions();
 }
 
 async function deleteAssignment(id?: string) {
   if (!id) return;
-  await client.contentGovernanceAssignments.delete(id);
+  await governanceClient.contentGovernanceAssignments.delete(id);
   await loadDefinitions();
 }
 

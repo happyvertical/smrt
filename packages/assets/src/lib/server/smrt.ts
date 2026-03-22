@@ -81,12 +81,13 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
   const override = objectOverrides[className];
 
   if (override) {
-    // Deep merge: override specific properties while keeping defaults
     return {
       ...defaults,
       ...override,
       // Ensure nested objects are merged properly
-      db: override.db ? { ...defaults.db, ...override.db } : defaults.db,
+      db: override.db
+        ? { ...(defaults.db as any), ...(override.db as any) }
+        : defaults.db,
       ai: override.ai !== undefined ? override.ai : defaults.ai,
     };
   }
@@ -98,9 +99,17 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
  * Helper to get a collection with centralized configuration
  * Automatically applies project defaults or object-specific overrides
  */
-export async function getCollection<T>(className: string) {
-  return await ObjectRegistry.getCollection<T>(
-    className,
-    getSmrtConfig(className),
-  );
+export async function getCollection<
+  T extends import('@happyvertical/smrt-core').SmrtObject,
+>(className: string, overrides: Partial<SmrtClassOptions> = {}) {
+  const config = getSmrtConfig(className);
+
+  return await ObjectRegistry.getCollection<T>(className, {
+    ...config,
+    ...overrides,
+    db: overrides.db
+      ? { ...(config.db as any), ...(overrides.db as any) }
+      : config.db,
+    ai: overrides.ai !== undefined ? overrides.ai : config.ai,
+  });
 }

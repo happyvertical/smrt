@@ -1,6 +1,6 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
 export default createPackageConfig('chat', {
-  entries: ['ui'],
+  entries: ['ui', 'playground'],
   svelte: 'svelte',
 });

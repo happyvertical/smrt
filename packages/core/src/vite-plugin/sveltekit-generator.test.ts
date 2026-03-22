@@ -27,6 +27,13 @@ vi.mock('node:fs', () => ({
 // Import after mocking
 import { generateSvelteKitRoutes } from './sveltekit-generator';
 
+function expectGetCollectionCall(content: string, objectName: string): void {
+  const escapedObjectName = objectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  expect(content).toMatch(
+    new RegExp(`getCollection(?:<any>)?\\(\\s*'${escapedObjectName}',?\\s*\\)`),
+  );
+}
+
 describe('SvelteKit Route Generator', () => {
   const projectRoot = '/test/project';
 
@@ -370,9 +377,7 @@ describe('SvelteKit Route Generator', () => {
 
       // Should include GET handler for list
       expect(content).toContain('export const GET: RequestHandler');
-      expect(content).toContain(
-        "const collection = await getCollection('Product')",
-      );
+      expectGetCollectionCall(content, 'Product');
       expect(content).toContain('await collection.list');
 
       // Should include POST handler for create
@@ -424,7 +429,7 @@ describe('SvelteKit Route Generator', () => {
       );
 
       // Should use getCollection<any> to avoid SSR type-stripping issues
-      expect(content).toContain("getCollection<any>('Product')");
+      expectGetCollectionCall(content, 'Product');
       expect(content).not.toContain('import type { Product }');
 
       // Should include GET handler
@@ -491,7 +496,7 @@ describe('SvelteKit Route Generator', () => {
       );
 
       // Should use getCollection<any> to avoid SSR type-stripping issues
-      expect(analyzeContent).toContain("getCollection<any>('Document')");
+      expectGetCollectionCall(analyzeContent, 'Document');
       expect(analyzeContent).not.toContain('import type { Document }');
 
       expect(analyzeContent).toContain('export const POST: RequestHandler');
@@ -559,8 +564,8 @@ describe('SvelteKit Route Generator', () => {
         "import { ObjectRegistry } from '@happyvertical/smrt-core'",
       );
       expect(content).toContain('export const GET: RequestHandler');
-      expect(content).toContain(
-        'Object.fromEntries(new URL(request.url).searchParams.entries())',
+      expect(content).toMatch(
+        /Object\.fromEntries\(\s*new URL\(request\.url\)\.searchParams\.entries\(\),?\s*\)/,
       );
       expect(content).toContain("ObjectRegistry.getClass('Document')");
       expect(content).toContain('await ClassRef.browseFacts(options)');
@@ -679,8 +684,8 @@ describe('SvelteKit Route Generator', () => {
       const content = restoreRoute?.[1] as string;
 
       expect(content).toContain('const options = await request.json();');
-      expect(content).toContain(
-        'await collection.restoreIntoContent(options["contentId"], options["versionNumber"])',
+      expect(content).toMatch(
+        /await (?:typedCollection|collection)\.restoreIntoContent\(options(?:\["contentId"\]|\.contentId), options(?:\["versionNumber"\]|\.versionNumber)\)/,
       );
     });
 
@@ -897,7 +902,7 @@ describe('SvelteKit Route Generator', () => {
 
       expect(itemRoute).toBeDefined();
       const itemContent = itemRoute?.[1] as string;
-      expect(itemContent).toContain("getCollection<any>('Meeting')");
+      expectGetCollectionCall(itemContent, 'Meeting');
       expect(itemContent).not.toContain('import type { Meeting }');
 
       // Action route should also import from package
@@ -909,7 +914,7 @@ describe('SvelteKit Route Generator', () => {
 
       expect(actionRoute).toBeDefined();
       const actionContent = actionRoute?.[1] as string;
-      expect(actionContent).toContain("getCollection<any>('Meeting')");
+      expectGetCollectionCall(actionContent, 'Meeting');
       expect(actionContent).not.toContain('import type { Meeting }');
     });
 
@@ -962,9 +967,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).not.toContain("from '@myapp/dashboard'");
 
       // Should still use getCollection<any> with qualified registry key
-      expect(content).toContain(
-        "getCollection<any>('@myapp/dashboard:Invitation')",
-      );
+      expectGetCollectionCall(content, '@myapp/dashboard:Invitation');
       expect(content).toContain(
         'export const POST: RequestHandler = async ({ params }) => {',
       );
@@ -1021,9 +1024,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('getCollection<any>');
 
       // Should still use the full qualified name as the registry key
-      expect(content).toContain(
-        "getCollection<any>('@blindmanpress/dashboard:Invitation')",
-      );
+      expectGetCollectionCall(content, '@blindmanpress/dashboard:Invitation');
     });
 
     it('should handle api config exclude list', async () => {
@@ -1511,11 +1512,9 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(findByTokenRoute).toBeDefined();
       const findByTokenContent = findByTokenRoute?.[1] as string;
-      expect(findByTokenContent).toContain(
-        "const collection = await getCollection<any>('Invitation')",
-      );
-      expect(findByTokenContent).toContain(
-        'await collection.findByToken(options["token"])',
+      expectGetCollectionCall(findByTokenContent, 'Invitation');
+      expect(findByTokenContent).toMatch(
+        /await (?:typedCollection|collection)\.findByToken\(options(?:\["token"\]|\.token)\)/,
       );
 
       consoleSpy.mockRestore();

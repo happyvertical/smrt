@@ -25,6 +25,10 @@
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
+    "./playground": {
+      "import": "./dist/playground.js",
+      "types": "./dist/playground.d.ts"
+    },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
@@ -44,7 +48,8 @@
     }
   },
   "scripts": {
-    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "npx vitest run"
   },
   "dependencies": {

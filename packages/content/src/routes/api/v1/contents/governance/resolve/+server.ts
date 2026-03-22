@@ -7,9 +7,10 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: resolveGovernanceAction
 export const GET: RequestHandler = async ({ request }) => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:Content',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
@@ -19,7 +20,7 @@ export const GET: RequestHandler = async ({ request }) => {
   const options = Object.fromEntries(
     new URL(request.url).searchParams.entries(),
   );
-  const result = await collection.resolveGovernanceAction(options);
+  const result = await typedCollection.resolveGovernanceAction(options);
 
   return json({ action: 'resolveGovernanceAction', result });
 };

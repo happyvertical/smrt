@@ -68,6 +68,26 @@ export interface AccountData {
 }
 
 /**
+ * Email account data for account manager workflows
+ */
+export interface EmailAccountData {
+  id: string;
+  name: string;
+  email: string;
+  providerType: 'imap' | 'gmail' | 'outlook' | 'exchange';
+  isActive: boolean;
+  imapHost?: string;
+  imapPort?: number;
+  imapSecurity?: 'ssl' | 'starttls' | 'none';
+  smtpHost?: string;
+  smtpPort?: number;
+  smtpSecurity?: 'ssl' | 'starttls' | 'none';
+  username?: string;
+  password?: string;
+  lastSyncAt?: string | Date | null;
+}
+
+/**
  * Folder data for navigation
  */
 export interface FolderData {
@@ -165,4 +185,26 @@ export interface DraftData {
   body: string;
   channelId?: string;
   inReplyToMessageId?: string;
+}
+
+/**
+ * Whitelist entry for email filtering
+ */
+export interface WhitelistEntry {
+  id: string;
+  pattern: string;
+  type: 'email' | 'domain' | 'regex';
+  category?: string | null;
+  description?: string;
+}
+
+/**
+ * Blacklist entry for email filtering
+ */
+export interface BlacklistEntry {
+  id: string;
+  pattern: string;
+  type: 'email' | 'domain' | 'regex';
+  reason?: string;
+  autoArchive?: boolean;
 }

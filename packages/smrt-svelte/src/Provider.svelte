@@ -85,18 +85,22 @@ const {
   children,
 }: Props = $props();
 
+const initialMode = untrack(() => mode);
+const initialAutoEnableSmrt = untrack(() => autoEnableSmrt);
+const initialAIConfig = untrack(() => ai);
+
 // Determine if we should show the loading overlay
 const showLoadingOverlay = $derived(ai?.showLoadingOverlay ?? true);
 
 // Create app state
 const appState = createAppState({
-  initialMode: mode,
+  initialMode,
   session: {
     preferences: {
-      autoEnableSmrt,
+      autoEnableSmrt: initialAutoEnableSmrt,
     },
   },
-  ai,
+  ai: initialAIConfig,
   onCapabilitiesDetected: () => {
     onReady?.();
   },
@@ -110,6 +114,21 @@ const appState = createAppState({
 
 // Provide context
 setAppStateContext(appState);
+
+$effect(() => {
+  appState.updateSession({
+    preferences: {
+      ...appState.state.session.preferences,
+      autoEnableSmrt,
+    },
+  });
+});
+
+$effect(() => {
+  if (mode) {
+    appState.setMode(mode, 'explicit');
+  }
+});
 
 // Initialize on mount (untrack to prevent infinite loop)
 // Skip during SSR - browser-ai APIs require browser environment

@@ -73,12 +73,25 @@ function handleKeydown(e: KeyboardEvent) {
     handleClose();
   }
 }
+
+function handleBackdropKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    handleClose();
+  }
+}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-  <div class="modal-backdrop" onclick={handleBackdrop} role="dialog" aria-modal="true">
+  <div
+    class="modal-backdrop"
+    onclick={handleBackdrop}
+    onkeydown={handleBackdropKeydown}
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+  >
     <div class="modal">
       <div class="header">
         <h2>Invite User to {tenant.name}</h2>

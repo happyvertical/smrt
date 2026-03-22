@@ -29,41 +29,55 @@ export interface Props {
     ondiscard,
   }: Props = $props();
 
-  let state = $state<ComposeState>({
-    accountId: initialState?.accountId || accounts[0]?.id || '',
-    to: initialState?.to || [],
-    cc: initialState?.cc || [],
-    bcc: initialState?.bcc || [],
-    subject: initialState?.subject || '',
-    body: initialState?.body || '',
-    attachments: initialState?.attachments || [],
-    channelId: initialState?.channelId || '',
-    isDirty: false,
-    isSending: false,
+  function createComposeState(
+    seed: Partial<ComposeState> | undefined,
+    availableAccounts: AccountData[],
+  ): ComposeState {
+    return {
+      accountId: seed?.accountId || availableAccounts[0]?.id || '',
+      to: [...(seed?.to || [])],
+      cc: [...(seed?.cc || [])],
+      bcc: [...(seed?.bcc || [])],
+      subject: seed?.subject || '',
+      body: seed?.body || '',
+      attachments: [...(seed?.attachments || [])],
+      channelId: seed?.channelId || '',
+      isDirty: false,
+      isSending: false,
+    };
+  }
+
+  let composeState = $state<ComposeState>(createComposeState(undefined, []));
+  let showCc = $state(false);
+  let showBcc = $state(false);
+  let lastInitialState: Partial<ComposeState> | undefined = undefined;
+  let lastAccounts: AccountData[] | undefined = undefined;
+
+  $effect(() => {
+    if (initialState !== lastInitialState || accounts !== lastAccounts) {
+      lastInitialState = initialState;
+      lastAccounts = accounts;
+      composeState = createComposeState(initialState, accounts);
+      showCc = Boolean(initialState?.cc?.length);
+      showBcc = Boolean(initialState?.bcc?.length);
+    }
   });
 
-  let showCc = $state(
-    (initialState?.cc && initialState.cc.length > 0) || false,
-  );
-  let showBcc = $state(
-    (initialState?.bcc && initialState.bcc.length > 0) || false,
-  );
-
-  const charCount = $derived(state.body.length);
+  const charCount = $derived(composeState.body.length);
   const isOverLimit = $derived(type === 'tweet' && charCount > 280);
 
   function markDirty() {
-    state.isDirty = true;
+    composeState.isDirty = true;
   }
 
   function handleSend() {
-    if (state.isSending) return;
-    state.isSending = true;
-    onsend?.(state);
+    if (composeState.isSending) return;
+    composeState.isSending = true;
+    onsend?.(composeState);
   }
 
   function handleSaveDraft() {
-    onsavedraft?.(state);
+    onsavedraft?.(composeState);
   }
 </script>
 
@@ -74,7 +88,7 @@ export interface Props {
       <select
         id="compose-account"
         class="select"
-        bind:value={state.accountId}
+        bind:value={composeState.accountId}
         onchange={markDirty}
       >
         {#each accounts as account}
@@ -89,23 +103,23 @@ export interface Props {
   {#if type === 'email'}
     <RecipientInput
       label="To"
-      recipients={state.to}
-      onchange={(r) => { state.to = r; markDirty(); }}
+      recipients={composeState.to}
+      onchange={(r) => { composeState.to = r; markDirty(); }}
     />
 
     {#if showCc}
       <RecipientInput
         label="Cc"
-        recipients={state.cc}
-        onchange={(r) => { state.cc = r; markDirty(); }}
+        recipients={composeState.cc}
+        onchange={(r) => { composeState.cc = r; markDirty(); }}
       />
     {/if}
 
     {#if showBcc}
       <RecipientInput
         label="Bcc"
-        recipients={state.bcc}
-        onchange={(r) => { state.bcc = r; markDirty(); }}
+        recipients={composeState.bcc}
+        onchange={(r) => { composeState.bcc = r; markDirty(); }}
       />
     {/if}
 
@@ -126,7 +140,7 @@ export interface Props {
         id="compose-subject"
         type="text"
         class="text-input"
-        bind:value={state.subject}
+        bind:value={composeState.subject}
         oninput={markDirty}
         placeholder="Subject"
       />
@@ -138,7 +152,7 @@ export interface Props {
         id="compose-channel"
         type="text"
         class="text-input"
-        bind:value={state.channelId}
+        bind:value={composeState.channelId}
         oninput={markDirty}
         placeholder="Channel ID"
       />
@@ -148,7 +162,7 @@ export interface Props {
   <div class="body-field">
     <textarea
       class="body-input"
-      bind:value={state.body}
+      bind:value={composeState.body}
       oninput={markDirty}
       placeholder={type === 'tweet' ? "What's happening?" : 'Write your message...'}
       rows={type === 'tweet' ? 4 : 10}
@@ -162,7 +176,7 @@ export interface Props {
 
   {#if type === 'email'}
     <AttachmentUpload
-      attachments={state.attachments}
+      attachments={composeState.attachments}
       onattach={(files) => {
         const newAttachments: AttachmentData[] = files.map((f) => ({
           id: crypto.randomUUID(),
@@ -170,11 +184,16 @@ export interface Props {
           contentType: f.type,
           size: f.size,
         }));
-        state.attachments = [...state.attachments, ...newAttachments];
+        composeState.attachments = [
+          ...composeState.attachments,
+          ...newAttachments,
+        ];
         markDirty();
       }}
       onremove={(i) => {
-        state.attachments = state.attachments.filter((_, idx) => idx !== i);
+        composeState.attachments = composeState.attachments.filter(
+          (_attachment, idx) => idx !== i,
+        );
         markDirty();
       }}
     />
@@ -184,9 +203,9 @@ export interface Props {
     <button
       type="submit"
       class="btn-primary"
-      disabled={state.isSending || isOverLimit}
+      disabled={composeState.isSending || isOverLimit}
     >
-      {state.isSending ? 'Sending...' : 'Send'}
+      {composeState.isSending ? 'Sending...' : 'Send'}
     </button>
     <button type="button" class="btn-secondary" onclick={handleSaveDraft}>
       Save Draft

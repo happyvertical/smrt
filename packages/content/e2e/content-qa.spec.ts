@@ -24,16 +24,23 @@ test('root playground route renders the shared content previews', async ({
   ).toBeVisible();
   await expect(page.getByText('Reference package previews for')).toBeVisible();
   await expect(page.getByRole('button', { name: /Article Card/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Content Editor/ })).toBeVisible();
   await expect(
     page.getByRole('button', { name: /Governance Manager/ }),
   ).toBeVisible();
   await expect(page.locator('[data-hydrated="true"]')).toBeVisible();
 
+  await page.getByRole('button', { name: /Content Editor/ }).click();
+  await expect(page.getByRole('heading', { name: 'Content Editor' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Edit Content' })).toBeVisible();
+
   await page.getByRole('button', { name: /Governance Manager/ }).click();
   await expect(
     page.getByRole('heading', { name: 'Governance Manager' }),
   ).toBeVisible();
-  await expect(page.getByText('Requires the content package dev server')).toBeVisible();
+  await expect(page.getByText('Uses an in-memory governance client')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Content Governance' })).toBeVisible();
+  await expect(page.getByText('Facts review')).toBeVisible();
 
   expect(pageErrors).toEqual([]);
 });

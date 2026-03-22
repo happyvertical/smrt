@@ -6,6 +6,7 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+import { importOptional } from '../../utils/import-optional.js';
 
 export interface Props {
   /** Field name */
@@ -134,7 +135,7 @@ async function parseNaturalLanguage(text: string): Promise<string> {
   // Dynamically import chrono-node only when needed
   let chrono: typeof import('chrono-node');
   try {
-    chrono = await import('chrono-node');
+    chrono = await importOptional<typeof import('chrono-node')>('chrono-node');
   } catch {
     throw new Error(
       'Natural-language date parsing requires the optional dependency "chrono-node". Install it with: pnpm add chrono-node',

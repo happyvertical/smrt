@@ -5,7 +5,6 @@ import { error, json } from '@sveltejs/kit';
 import { serializeContent as serializeItemResponse } from '$lib/server/content-api-serializers';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
-
 // Get single content
 export const GET: RequestHandler = async ({ params }) => {
   const collection = await getCollection<any>(

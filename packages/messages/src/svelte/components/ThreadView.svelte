@@ -21,7 +21,22 @@ const {
   onreply,
 }: Props = $props();
 
-let collapsed: Set<string> = $state(new Set(initialCollapsed));
+let collapsed: Set<string> = $state(new Set<string>());
+
+$effect(() => {
+  collapsed = new Set(initialCollapsed ?? []);
+});
+
+function activateMessage(message: MessageData) {
+  onmessageclick?.(message);
+}
+
+function handleMessageKeydown(event: KeyboardEvent, message: MessageData) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    activateMessage(message);
+  }
+}
 
 function toggleCollapse(messageId: string) {
   if (collapsed.has(messageId)) {
@@ -86,13 +101,26 @@ const _sortedMessages = $derived(
               ▼
             </button>
           {/if}
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div onclick={() => onmessageclick?.(message)}>
-            <MessageDetail
-              {message}
-              onreply={onreply}
-            />
-          </div>
+          {#if onmessageclick}
+            <div
+              role="button"
+              tabindex="0"
+              onclick={() => activateMessage(message)}
+              onkeydown={(event) => handleMessageKeydown(event, message)}
+            >
+              <MessageDetail
+                {message}
+                onreply={onreply}
+              />
+            </div>
+          {:else}
+            <div>
+              <MessageDetail
+                {message}
+                onreply={onreply}
+              />
+            </div>
+          {/if}
         </div>
       {/if}
 

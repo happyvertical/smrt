@@ -43,8 +43,7 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
 </script>
 
 {#if Component}
-  <svelte:component
-    this={Component}
+  <Component
     {data}
     {config}
     {onChange}

@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Image } from '@happyvertical/smrt-images';
+import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 import { slide } from 'svelte/transition';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
@@ -11,6 +11,8 @@ let {
   contentId = 'new',
   saveDisabled = false,
   saveNotice = null,
+  agentChatEnabled = true,
+  agentChatNotice = null,
   onChange = undefined,
   onSave,
   onCancel,
@@ -20,6 +22,8 @@ let {
   contentId?: string;
   saveDisabled?: boolean;
   saveNotice?: string | null;
+  agentChatEnabled?: boolean;
+  agentChatNotice?: string | null;
   onChange?: (data: any) => void;
   onSave: (data: any) => void;
   onCancel: () => void;
@@ -269,7 +273,7 @@ function parseTagsInput(value: string) {
     .filter(Boolean);
 }
 
-function handleImageSelect(selected: Image | File | string) {
+function handleImageSelect(selected: ImageLike | File | string) {
   if (selected && typeof selected === 'object' && 'id' in selected) {
     // Gallery Image Object
     addSelectedAsset(selected);
@@ -594,15 +598,28 @@ function removeAsset(id: string) {
     <div class="editor-sidebar-col">
 
         <div class="chat-sidebar-section">
-          <ContentAgentChat 
-            {apiBaseUrl}
-            {contentId}
-            {currentEditorState}
-            {currentReferenceIds}
-            formFields={{ title: formData.title, description: formData.description, type: formData.type, status: formData.status, state: formData.state, body: formData.body }}
-            onapplyfields={applyFieldUpdates}
-            onclose={() => { /* optional close handler */ }}
-          />
+          {#if agentChatEnabled}
+            <ContentAgentChat
+              {apiBaseUrl}
+              {contentId}
+              {currentEditorState}
+              {currentReferenceIds}
+              formFields={{ title: formData.title, description: formData.description, type: formData.type, status: formData.status, state: formData.state, body: formData.body }}
+              onapplyfields={applyFieldUpdates}
+              onclose={() => { /* optional close handler */ }}
+            />
+          {:else}
+            <div
+              class="chat-sidebar-empty-state"
+              data-testid="content-editor-agent-chat-disabled"
+            >
+              <h3>Agent chat unavailable</h3>
+              <p>
+                {agentChatNotice ||
+                  'Run the content package dev server to use the agent chat sidebar for this editor.'}
+              </p>
+            </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -697,6 +714,22 @@ function removeAsset(id: string) {
     border-radius: 1rem;
     border: 1px solid var(--smrt-color-outline-variant);
     overflow: hidden;
+  }
+
+  .chat-sidebar-empty-state {
+    display: grid;
+    gap: 0.75rem;
+    align-content: start;
+    padding: 1.25rem;
+    height: 100%;
+    box-sizing: border-box;
+    background: var(--smrt-color-surface-container-low, #f8fafc);
+    color: var(--smrt-color-on-surface, #1f2937);
+  }
+
+  .chat-sidebar-empty-state h3,
+  .chat-sidebar-empty-state p {
+    margin: 0;
   }
 
   .form-container h3 {

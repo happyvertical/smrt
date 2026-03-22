@@ -1,5 +1,9 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import {
+  viteWorkspaceAliases,
+  workspaceAliasPackageNames,
+} from './workspace-aliases.js';
 
 /**
  * Dual-mode Vite config for smrt-assets
@@ -13,16 +17,29 @@ export default defineConfig(async ({ mode }) => {
     const { createPackageConfig } = await import('../../vite.config.base.js');
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.
-    const config = createPackageConfig('assets', { svelte: 'svelte' });
+    const config = createPackageConfig('assets', {
+      entries: ['playground'],
+      svelte: 'svelte',
+      dtsExclude: ['src/routes/**/*'],
+    });
     // createPackageConfig returns a UserConfigExport; resolve it
     const resolved = typeof config === 'function' ? await (config as any)({ mode, command: 'build' }) : config;
     return resolved;
   }
 
   // SvelteKit dev mode (used by `pnpm run dev`)
-  const { smrtPlugin } = await import('@happyvertical/smrt-core/vite-plugin');
+  const { smrtPlugin } = await import('../core/src/vite-plugin/index.js');
 
   return {
+    resolve: {
+      alias: viteWorkspaceAliases,
+    },
+    optimizeDeps: {
+      exclude: workspaceAliasPackageNames,
+    },
+    ssr: {
+      noExternal: workspaceAliasPackageNames,
+    },
     plugins: [
       sveltekit(),
       smrtPlugin({

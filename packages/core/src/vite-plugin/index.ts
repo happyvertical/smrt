@@ -3,10 +3,11 @@
  * Provides virtual modules for REST, MCP, and other services
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import type { Plugin, ViteDevServer } from 'vite';
+import { importScanner } from '../scanner/import-scanner.js';
 import type { SmartObjectManifest } from '../scanner/types';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
@@ -68,47 +69,6 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
   '@happyvertical/smrt-virt-cli': 'smrt:cli',
 };
-
-async function importScanner() {
-  try {
-    return await import('@happyvertical/smrt-scanner');
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes('@happyvertical/smrt-scanner')
-    ) {
-      let current = process.cwd();
-
-      while (true) {
-        if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
-          const scannerDist = join(current, 'packages/scanner/dist/index.js');
-          if (existsSync(scannerDist)) {
-            return import(pathToFileURL(scannerDist).href);
-          }
-
-          const scannerSrc = join(current, 'packages/scanner/src/index.ts');
-          if (existsSync(scannerSrc)) {
-            return import(pathToFileURL(scannerSrc).href);
-          }
-
-          throw new Error(
-            'Failed to load @happyvertical/smrt-scanner: could not find ' +
-              `${scannerDist} or ${scannerSrc}. ` +
-              'Please build @happyvertical/smrt-scanner before running Vite.',
-          );
-        }
-
-        const parent = dirname(current);
-        if (parent === current) {
-          break;
-        }
-        current = parent;
-      }
-    }
-
-    throw error;
-  }
-}
 
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
@@ -585,7 +545,10 @@ export default testManifest;
 
     try {
       // Import the OXC scanner package
-      const { OxcScanner, ManifestAdapter } = await importScanner();
+      const { OxcScanner, ManifestAdapter } = await importScanner({
+        missingBuildInstruction:
+          'Please build @happyvertical/smrt-scanner before running Vite.',
+      });
 
       console.log(`[smrt] Using experimental OXC scanner for faster builds`);
 

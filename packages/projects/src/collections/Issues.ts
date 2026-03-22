@@ -28,6 +28,12 @@ export class IssueCollection extends SmrtCollection<Issue> {
     filters?: SearchFilters;
   }): Promise<Issue[]> {
     const { repository, filters } = options;
+    const repositoryId = repository.id;
+
+    if (!repositoryId) {
+      throw new Error('Repository must be saved before discovering issues');
+    }
+
     const repoClient = await repository.getClient();
 
     // Fetch issues from provider
@@ -39,7 +45,7 @@ export class IssueCollection extends SmrtCollection<Issue> {
       // Find existing issue by repository + number
       let issue = await this.findOne({
         where: {
-          repositoryId: repository.id,
+          repositoryId,
           number: remote.number,
         },
       });
@@ -47,7 +53,7 @@ export class IssueCollection extends SmrtCollection<Issue> {
       if (!issue) {
         // Create new issue
         issue = await this.create({
-          repositoryId: repository.id,
+          repositoryId,
           number: remote.number,
           nodeId: remote.id,
           title: remote.title,

@@ -4,8 +4,8 @@
  */
 
 import { Badge } from '@happyvertical/smrt-svelte/ui';
-import type { ScheduleStatus } from './types.js';
-import { getScheduleStatusVariant } from './types.js';
+import type { ScheduleStatus } from '../types.js';
+import { getScheduleStatusVariant } from '../types.js';
 
 export interface Props {
   status: ScheduleStatus;

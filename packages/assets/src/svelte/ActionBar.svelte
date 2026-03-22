@@ -11,7 +11,9 @@ import type { ActionBarProps } from './types';
 let {
   selectedAssets,
   customActions = [],
+  onclearselection,
   onClearSelection,
+  ondelete,
   onDelete,
 }: ActionBarProps = $props();
 
@@ -25,7 +27,7 @@ function handleDelete() {
 async function confirmDelete() {
   isDeleting = true;
   try {
-    await onDelete(selectedAssets);
+    await (ondelete ?? onDelete)(selectedAssets);
   } finally {
     isDeleting = false;
     showDeleteConfirm = false;
@@ -49,7 +51,11 @@ const count = $derived(selectedAssets.length);
   <div class="action-bar">
     <div class="action-bar__left">
       <span class="action-bar__count">{count} selected</span>
-      <button type="button" class="action-bar__clear" onclick={onClearSelection}>
+      <button
+        type="button"
+        class="action-bar__clear"
+        onclick={() => (onclearselection ?? onClearSelection)()}
+      >
         Clear
       </button>
     </div>

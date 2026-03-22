@@ -7,16 +7,17 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: getGovernanceDefinitionsAction
 export const GET: RequestHandler = async () => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:Content',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
       '@happyvertical/smrt-content:Content collection is not registered',
     );
 
-  const result = await collection.getGovernanceDefinitionsAction();
+  const result = await typedCollection.getGovernanceDefinitionsAction();
 
   return json({ action: 'getGovernanceDefinitionsAction', result });
 };

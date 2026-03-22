@@ -4,9 +4,9 @@
  */
 
 import { Button, Card } from '@happyvertical/smrt-svelte/ui';
+import type { AgentRunHistoryEntry, AgentScheduleData } from '../types.js';
 import AgentRunHistory from './AgentRunHistory.svelte';
 import AgentScheduleList from './AgentScheduleList.svelte';
-import type { AgentRunHistoryEntry, AgentScheduleData } from './types.js';
 
 export interface Props {
   /** All schedules */

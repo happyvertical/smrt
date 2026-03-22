@@ -4,7 +4,6 @@
 import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
-
 // Get single contentgovernanceassignment
 export const GET: RequestHandler = async ({ params }) => {
   const collection = await getCollection<any>(

@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "svelte-kit sync && vite dev",
     "build": "svelte-kit sync && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:e2e": "pnpm exec playwright test -c playwright.config.ts",
+    "test:e2e:headed": "pnpm exec playwright test -c playwright.config.ts --headed"
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",

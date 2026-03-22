@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
-import { onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import {
   setThemeContext,
   type ThemeContext,
@@ -40,16 +40,34 @@ let {
   children,
 }: Props = $props();
 
-// Internal state
-let config = $state<ThemeConfig>({
+const initialConfig = untrack<ThemeConfig>(() => ({
   colorScheme,
   primaryColor: primaryColor ?? defaultThemeConfig.primaryColor,
   borderRadius,
   overrides,
-});
+}));
+
+// Internal state
+let config = $state<ThemeConfig>(initialConfig);
 
 let systemPrefersDark = $state(false);
 let mounted = $state(false);
+
+$effect(() => {
+  config.colorScheme = colorScheme;
+});
+
+$effect(() => {
+  config.primaryColor = primaryColor ?? defaultThemeConfig.primaryColor;
+});
+
+$effect(() => {
+  config.borderRadius = borderRadius;
+});
+
+$effect(() => {
+  config.overrides = overrides;
+});
 
 // Resolved scheme (never 'system')
 const resolvedScheme = $derived<'light' | 'dark'>(

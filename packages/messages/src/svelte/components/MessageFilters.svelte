@@ -27,7 +27,11 @@ const {
   onsearch,
 }: Props = $props();
 
-let searchValue = $state(filters.search || '');
+let searchValue = $state('');
+
+$effect(() => {
+  searchValue = filters.search || '';
+});
 
 function updateFilter(key: keyof MessageFilterState, value: any) {
   const updated = { ...filters, [key]: value || undefined };

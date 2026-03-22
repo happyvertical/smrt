@@ -7,16 +7,17 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: getContributionTypesAction
 export const GET: RequestHandler = async () => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:ContentContribution',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
       '@happyvertical/smrt-content:ContentContribution collection is not registered',
     );
 
-  const result = await collection.getContributionTypesAction();
+  const result = await typedCollection.getContributionTypesAction();
 
   return json({ action: 'getContributionTypesAction', result });
 };
