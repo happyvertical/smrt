@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
-import { onMount } from 'svelte';
+import { onMount, untrack } from 'svelte';
 import {
   setThemeContext,
   type ThemeContext,
@@ -40,13 +40,15 @@ let {
   children,
 }: Props = $props();
 
+const initialConfig = untrack<ThemeConfig>(() => ({
+  colorScheme,
+  primaryColor: primaryColor ?? defaultThemeConfig.primaryColor,
+  borderRadius,
+  overrides,
+}));
+
 // Internal state
-let config = $state<ThemeConfig>({
-  colorScheme: 'system',
-  primaryColor: defaultThemeConfig.primaryColor,
-  borderRadius: 'md',
-  overrides: {},
-});
+let config = $state<ThemeConfig>(initialConfig);
 
 let systemPrefersDark = $state(false);
 let mounted = $state(false);
