@@ -23,7 +23,7 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
     filters?: SearchFilters;
   }): Promise<PullRequest[]> {
     const { repository, filters } = options;
-    const repositoryId = repository.id;
+    const repositoryId = repository.id ?? undefined;
 
     if (!repositoryId) {
       throw new Error(

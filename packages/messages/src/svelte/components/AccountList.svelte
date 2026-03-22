@@ -21,6 +21,21 @@ const {
   onsync,
   onremove,
 }: Props = $props();
+
+function handleAccountClick(account: AccountData) {
+  onaccountclick?.(account);
+}
+
+function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
+  if (event.target !== event.currentTarget) {
+    return;
+  }
+
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    handleAccountClick(account);
+  }
+}
 </script>
 
 <div class="account-list" role="list" aria-label="Accounts">
@@ -36,21 +51,20 @@ const {
     <Grid columns="auto" role="list" aria-label="Accounts">
       {#each accounts as account (account.id)}
         <div role="listitem">
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
-          <div
-            role={onaccountclick ? 'button' : undefined}
-            tabindex={onaccountclick ? 0 : undefined}
-            onclick={() => onaccountclick?.(account)}
-            onkeydown={(event) => {
-              if (!onaccountclick) return;
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                onaccountclick(account);
-              }
-            }}
-          >
-            <AccountCard {account} {onsync} {onremove} />
-          </div>
+          {#if onaccountclick}
+            <div
+              role="button"
+              tabindex="0"
+              onclick={() => handleAccountClick(account)}
+              onkeydown={(event) => handleAccountKeydown(event, account)}
+            >
+              <AccountCard {account} {onsync} {onremove} />
+            </div>
+          {:else}
+            <div>
+              <AccountCard {account} {onsync} {onremove} />
+            </div>
+          {/if}
         </div>
       {/each}
     </Grid>

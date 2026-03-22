@@ -30,54 +30,95 @@ export interface Props {
   }: Props = $props();
 
   function createComposeState(
-    seed: Partial<ComposeState> | undefined,
-    availableAccounts: AccountData[],
+    nextInitialState: Partial<ComposeState> | undefined,
+    nextAccounts: AccountData[],
   ): ComposeState {
     return {
-      accountId: seed?.accountId || availableAccounts[0]?.id || '',
-      to: [...(seed?.to || [])],
-      cc: [...(seed?.cc || [])],
-      bcc: [...(seed?.bcc || [])],
-      subject: seed?.subject || '',
-      body: seed?.body || '',
-      attachments: [...(seed?.attachments || [])],
-      channelId: seed?.channelId || '',
+      accountId: nextInitialState?.accountId ?? nextAccounts[0]?.id ?? '',
+      to: nextInitialState?.to ?? [],
+      cc: nextInitialState?.cc ?? [],
+      bcc: nextInitialState?.bcc ?? [],
+      subject: nextInitialState?.subject ?? '',
+      body: nextInitialState?.body ?? '',
+      attachments: nextInitialState?.attachments ?? [],
+      channelId: nextInitialState?.channelId ?? '',
       isDirty: false,
       isSending: false,
     };
   }
 
-  let composeState = $state<ComposeState>(createComposeState(undefined, []));
+  let accountId = $state('');
+  let toRecipients = $state([] as RecipientEntry[]);
+  let ccRecipients = $state([] as RecipientEntry[]);
+  let bccRecipients = $state([] as RecipientEntry[]);
+  let subject = $state('');
+  let body = $state('');
+  let attachments = $state([] as AttachmentData[]);
+  let channelId = $state('');
+  let isDirty = $state(false);
+  let isSending = $state(false);
   let showCc = $state(false);
   let showBcc = $state(false);
-  let lastInitialState: Partial<ComposeState> | undefined = undefined;
-  let lastAccounts: AccountData[] | undefined = undefined;
+  let appliedInitialState: Partial<ComposeState> | undefined;
+  let appliedAccounts: AccountData[] | undefined;
 
   $effect(() => {
-    if (initialState !== lastInitialState || accounts !== lastAccounts) {
-      lastInitialState = initialState;
-      lastAccounts = accounts;
-      composeState = createComposeState(initialState, accounts);
-      showCc = Boolean(initialState?.cc?.length);
-      showBcc = Boolean(initialState?.bcc?.length);
+    if (
+      appliedInitialState === initialState &&
+      appliedAccounts === accounts
+    ) {
+      return;
     }
+
+    appliedInitialState = initialState;
+    appliedAccounts = accounts;
+    const nextState = createComposeState(initialState, accounts);
+
+    accountId = nextState.accountId;
+    toRecipients = nextState.to;
+    ccRecipients = nextState.cc;
+    bccRecipients = nextState.bcc;
+    subject = nextState.subject;
+    body = nextState.body;
+    attachments = nextState.attachments;
+    channelId = nextState.channelId ?? '';
+    isDirty = nextState.isDirty;
+    isSending = nextState.isSending;
+    showCc = ccRecipients.length > 0;
+    showBcc = bccRecipients.length > 0;
   });
 
-  const charCount = $derived(composeState.body.length);
+  function getCurrentState(): ComposeState {
+    return {
+      accountId,
+      to: toRecipients,
+      cc: ccRecipients,
+      bcc: bccRecipients,
+      subject,
+      body,
+      attachments,
+      channelId,
+      isDirty,
+      isSending,
+    };
+  }
+
+  const charCount = $derived(body.length);
   const isOverLimit = $derived(type === 'tweet' && charCount > 280);
 
   function markDirty() {
-    composeState.isDirty = true;
+    isDirty = true;
   }
 
   function handleSend() {
-    if (composeState.isSending) return;
-    composeState.isSending = true;
-    onsend?.(composeState);
+    if (isSending) return;
+
+    isSending = true;
+    onsend?.(getCurrentState());
   }
 
   function handleSaveDraft() {
-    onsavedraft?.(composeState);
+    onsavedraft?.(getCurrentState());
   }
 </script>
 
@@ -88,7 +129,7 @@ export interface Props {
       <select
         id="compose-account"
         class="select"
-        bind:value={composeState.accountId}
+        bind:value={accountId}
         onchange={markDirty}
       >
         {#each accounts as account}
@@ -103,23 +144,23 @@ export interface Props {
   {#if type === 'email'}
     <RecipientInput
       label="To"
-      recipients={composeState.to}
-      onchange={(r) => { composeState.to = r; markDirty(); }}
+      recipients={toRecipients}
+      onchange={(r) => { toRecipients = r; markDirty(); }}
     />
 
     {#if showCc}
       <RecipientInput
         label="Cc"
-        recipients={composeState.cc}
-        onchange={(r) => { composeState.cc = r; markDirty(); }}
+        recipients={ccRecipients}
+        onchange={(r) => { ccRecipients = r; markDirty(); }}
       />
     {/if}
 
     {#if showBcc}
       <RecipientInput
         label="Bcc"
-        recipients={composeState.bcc}
-        onchange={(r) => { composeState.bcc = r; markDirty(); }}
+        recipients={bccRecipients}
+        onchange={(r) => { bccRecipients = r; markDirty(); }}
       />
     {/if}
 
@@ -140,7 +181,7 @@ export interface Props {
         id="compose-subject"
         type="text"
         class="text-input"
-        bind:value={composeState.subject}
+        bind:value={subject}
         oninput={markDirty}
         placeholder="Subject"
       />
@@ -152,7 +193,7 @@ export interface Props {
         id="compose-channel"
         type="text"
         class="text-input"
-        bind:value={composeState.channelId}
+        bind:value={channelId}
         oninput={markDirty}
         placeholder="Channel ID"
       />
@@ -162,7 +203,7 @@ export interface Props {
   <div class="body-field">
     <textarea
       class="body-input"
-      bind:value={composeState.body}
+      bind:value={body}
       oninput={markDirty}
       placeholder={type === 'tweet' ? "What's happening?" : 'Write your message...'}
       rows={type === 'tweet' ? 4 : 10}
@@ -176,23 +217,20 @@ export interface Props {
 
   {#if type === 'email'}
     <AttachmentUpload
-      attachments={composeState.attachments}
-      onattach={(files) => {
+      {attachments}
+      onattach={(files: File[]) => {
         const newAttachments: AttachmentData[] = files.map((f) => ({
           id: crypto.randomUUID(),
           filename: f.name,
           contentType: f.type,
           size: f.size,
         }));
-        composeState.attachments = [
-          ...composeState.attachments,
-          ...newAttachments,
-        ];
+        attachments = [...attachments, ...newAttachments];
         markDirty();
       }}
-      onremove={(i) => {
-        composeState.attachments = composeState.attachments.filter(
-          (_attachment, idx) => idx !== i,
+      onremove={(i: number) => {
+        attachments = attachments.filter(
+          (_attachment, attachmentIndex: number) => attachmentIndex !== i,
         );
         markDirty();
       }}
@@ -203,9 +241,9 @@ export interface Props {
     <button
       type="submit"
       class="btn-primary"
-      disabled={composeState.isSending || isOverLimit}
+      disabled={isSending || isOverLimit}
     >
-      {composeState.isSending ? 'Sending...' : 'Send'}
+      {isSending ? 'Sending...' : 'Send'}
     </button>
     <button type="button" class="btn-secondary" onclick={handleSaveDraft}>
       Save Draft

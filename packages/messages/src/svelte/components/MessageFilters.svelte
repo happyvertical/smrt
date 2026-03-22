@@ -27,10 +27,24 @@ const {
   onsearch,
 }: Props = $props();
 
-let searchValue = $state('');
+function getInitialFilterState() {
+  return {
+    searchValue: filters.search ?? '',
+    filters,
+  };
+}
+
+const initialFilterState = getInitialFilterState();
+let searchValue = $state(initialFilterState.searchValue);
+let appliedFilters: MessageFilterState | undefined = initialFilterState.filters;
 
 $effect(() => {
-  searchValue = filters.search || '';
+  if (appliedFilters === filters) {
+    return;
+  }
+
+  appliedFilters = filters;
+  searchValue = filters.search ?? '';
 });
 
 function updateFilter(key: keyof MessageFilterState, value: any) {

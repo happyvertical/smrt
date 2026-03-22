@@ -1,25 +1,6 @@
-export interface SmrtGlobalConfig {
-  inheritance?: {
-    onMissingAncestor?: 'error' | 'warn';
-    cacheSize?: number;
-  };
-  embeddings?: {
-    dimensions?: number;
-    provider?: 'local' | 'ai' | 'auto';
-    localModel?: string;
-    aiModel?: string;
-    fallbackToAI?: boolean;
-    storage?: 'json' | 'native';
-  };
-  [key: string]: unknown;
-}
+import type { SmrtConfig } from '@happyvertical/smrt-config';
 
-interface SmrtConfig {
-  smrt?: SmrtGlobalConfig;
-  modules?: Record<string, Record<string, unknown>>;
-  packages?: Record<string, Record<string, unknown>>;
-  [key: string]: unknown;
-}
+export type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -62,8 +43,8 @@ export function getSmrtModuleConfig<T extends Record<string, unknown>>(
   moduleName: string,
   defaults?: T,
 ): T {
-  const fileConfig = globalThis.__smrtConfigCache || {};
-  const runtimeConfig = globalThis.__smrtRuntimeConfig || {};
+  const fileConfig = globalThis.__smrtConfigCache ?? {};
+  const runtimeConfig = globalThis.__smrtRuntimeConfig ?? {};
 
   const globalConfig = (fileConfig.smrt || {}) as Partial<T>;
   const moduleConfig = (fileConfig.modules?.[moduleName] || {}) as Partial<T>;

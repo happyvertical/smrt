@@ -6,7 +6,6 @@ import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-import { importOptional } from '../../utils/import-optional.js';
 import type { DateRangeValue } from './types.js';
 
 export interface Props {
@@ -115,7 +114,7 @@ async function parseNaturalLanguageRange(
   // Dynamically import chrono-node only when needed
   let chrono: typeof import('chrono-node');
   try {
-    chrono = await importOptional<typeof import('chrono-node')>('chrono-node');
+    chrono = await import('chrono-node');
   } catch {
     throw new Error(
       'Natural-language date parsing requires the optional dependency "chrono-node". Install it with: pnpm add chrono-node',
@@ -305,14 +304,16 @@ function handleTouchStart(e: TouchEvent) {
 function handleTouchEnd() {
   stopRecording();
 }
+
+const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 </script>
 
-<fieldset class="smrt-daterange" class:listening={isRecording} class:parsing={isParsing}>
+<div class="smrt-daterange" class:listening={isRecording} class:parsing={isParsing}>
   {#if label}
-    <legend class="smrt-label">
+    <label class="smrt-label" for={primaryControlId}>
       {label}
       {#if required}<span class="required">*</span>{/if}
-    </legend>
+    </label>
   {/if}
 
   <div class="range-wrapper" class:smrt-mode={isSmrt} class:invalid={showInvalid}>
@@ -334,6 +335,7 @@ function handleTouchEnd() {
         </div>
 
         <button
+          id={primaryControlId}
           type="button"
           class="mic-btn"
           class:active={isRecording}
@@ -413,24 +415,19 @@ function handleTouchEnd() {
   {:else if !isValidRange}
     <div class="error-indicator">End date must be after start date</div>
   {/if}
-</fieldset>
+</div>
 
 <style>
   .smrt-daterange {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    min-inline-size: 0;
   }
 
   .smrt-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface, #374151);
-    padding: 0;
   }
 
   .smrt-label .required {

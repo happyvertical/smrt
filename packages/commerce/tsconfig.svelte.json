@@ -1,14 +1,5 @@
 {
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "outDir": "./dist/svelte",
-    "rootDir": "./src/svelte",
-    "composite": true,
-    "declaration": true,
-    "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["svelte"],
-    "verbatimModuleSyntax": true
-  },
-  "include": ["src/svelte/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+  "extends": "../../tsconfig.package-svelte.json",
+  "include": ["ambient.d.ts", "src/**/*.ts", "src/**/*.svelte"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
 }

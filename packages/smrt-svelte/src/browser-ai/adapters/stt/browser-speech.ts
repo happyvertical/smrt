@@ -1,3 +1,5 @@
+/// <reference path="../../../../web-speech.d.ts" />
+
 /**
  * Browser Speech Recognition API adapter
  *

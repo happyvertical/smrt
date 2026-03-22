@@ -162,7 +162,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
                   <Button
                     variant="secondary"
                     size="sm"
-                    onclick={(e) => handleToggle(schedule, e)}
+                    onclick={(event: MouseEvent) => handleToggle(schedule, event)}
                   >
                     {schedule.enabled ? 'Disable' : 'Enable'}
                   </Button>
@@ -170,7 +170,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
                     <Button
                       variant="secondary"
                       size="sm"
-                      onclick={(e) => handleRunNow(schedule, e)}
+                      onclick={(event: MouseEvent) => handleRunNow(schedule, event)}
                     >
                       Run Now
                     </Button>

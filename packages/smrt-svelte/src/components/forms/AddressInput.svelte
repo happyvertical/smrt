@@ -176,6 +176,17 @@ const fieldLabels: Record<AddressField, string> = {
   country: 'Country',
 };
 
+const primaryFieldId = $derived.by(() => {
+  const firstField = fields[0] ?? 'street';
+
+  switch (firstField) {
+    case 'postalCode':
+      return `${name}_postal`;
+    default:
+      return `${name}_${firstField}`;
+  }
+});
+
 // Register with form context
 onMount(() => {
   if (formContext) {
@@ -255,12 +266,12 @@ function handleCountryChange(e: Event) {
 }
 </script>
 
-<fieldset class="smrt-address">
+  <div class="smrt-address">
   {#if label}
-    <legend class="smrt-label">
+    <label class="smrt-label" for={primaryFieldId}>
       {label}
       {#if required}<span class="required">*</span>{/if}
-    </legend>
+    </label>
   {/if}
 
   <div class="address-fields" class:smrt-mode={isSmrt}>
@@ -367,24 +378,19 @@ function handleCountryChange(e: Event) {
   {#if error}
     <div class="validation-error">{error}</div>
   {/if}
-</fieldset>
+</div>
 
 <style>
   .smrt-address {
     display: flex;
     flex-direction: column;
     gap: 8px;
-    margin: 0;
-    padding: 0;
-    border: 0;
-    min-inline-size: 0;
   }
 
   .smrt-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: var(--smrt-typography-body-medium-weight, 500);
     color: var(--smrt-color-on-surface, #374151);
-    padding: 0;
   }
 
   .smrt-label .required {

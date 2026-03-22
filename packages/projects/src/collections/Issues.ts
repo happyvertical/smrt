@@ -28,7 +28,7 @@ export class IssueCollection extends SmrtCollection<Issue> {
     filters?: SearchFilters;
   }): Promise<Issue[]> {
     const { repository, filters } = options;
-    const repositoryId = repository.id;
+    const repositoryId = repository.id ?? undefined;
 
     if (!repositoryId) {
       throw new Error('Repository must be saved before discovering issues');

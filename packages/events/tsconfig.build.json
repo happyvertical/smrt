@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.package-build.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "lib": ["ES2023"]
+  },
+  "exclude": ["src/**/*.test.ts", "src/**/*.spec.ts", "node_modules", "dist", "src/svelte/**/*"]
+}

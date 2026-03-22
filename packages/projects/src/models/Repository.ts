@@ -241,6 +241,11 @@ export class Repository extends SmrtObject {
    * @returns Created Issue (SMRT model)
    */
   async createIssue(data: CreateIssueInput): Promise<Issue> {
+    const repositoryId = this.id ?? undefined;
+    if (!repositoryId) {
+      throw new Error('Repository must be saved before creating issues');
+    }
+
     const client = await this.getClient();
     const created = await client.createIssue(data);
 
@@ -248,7 +253,7 @@ export class Repository extends SmrtObject {
     const { Issue } = await import('./Issue');
     const issue = new Issue({
       ...this.options,
-      repositoryId: this.id ?? undefined,
+      repositoryId,
       number: created.number,
       nodeId: created.id,
       title: created.title,
@@ -272,6 +277,11 @@ export class Repository extends SmrtObject {
    * @returns Created PullRequest (SMRT model)
    */
   async createPullRequest(data: CreatePRInput): Promise<PullRequest> {
+    const repositoryId = this.id ?? undefined;
+    if (!repositoryId) {
+      throw new Error('Repository must be saved before creating pull requests');
+    }
+
     const client = await this.getClient();
     const created = await client.createPullRequest(data);
 
@@ -279,7 +289,7 @@ export class Repository extends SmrtObject {
     const { PullRequest } = await import('./PullRequest');
     const pr = new PullRequest({
       ...this.options,
-      repositoryId: this.id ?? undefined,
+      repositoryId,
       number: created.number,
       nodeId: created.id,
       title: created.title,

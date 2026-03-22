@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.package-build.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "exclude": ["src/svelte/**/*", "src/**/*.test.ts", "src/**/*.spec.ts", "node_modules", "dist"]
+}

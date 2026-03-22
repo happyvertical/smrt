@@ -16,25 +16,44 @@ export interface Props {
 const {
   messages,
   activeMessageId,
-  initialCollapsed,
+  initialCollapsed = new Set<string>(),
   onmessageclick,
   onreply,
 }: Props = $props();
 
-let collapsed: Set<string> = $state(new Set<string>());
+function getInitialThreadState() {
+  return {
+    collapsed: new Set(initialCollapsed),
+    initialCollapsed,
+  };
+}
+
+const initialThreadState = getInitialThreadState();
+let collapsed: Set<string> = $state(initialThreadState.collapsed);
+let appliedInitialCollapsed: Set<string> | undefined =
+  initialThreadState.initialCollapsed;
 
 $effect(() => {
-  collapsed = new Set(initialCollapsed ?? []);
+  if (appliedInitialCollapsed === initialCollapsed) {
+    return;
+  }
+
+  appliedInitialCollapsed = initialCollapsed;
+  collapsed = new Set(initialCollapsed);
 });
 
-function activateMessage(message: MessageData) {
+function handleMessageClick(message: MessageData) {
   onmessageclick?.(message);
 }
 
 function handleMessageKeydown(event: KeyboardEvent, message: MessageData) {
+  if (event.target !== event.currentTarget) {
+    return;
+  }
+
   if (event.key === 'Enter' || event.key === ' ') {
     event.preventDefault();
-    activateMessage(message);
+    handleMessageClick(message);
   }
 }
 
@@ -105,7 +124,7 @@ const _sortedMessages = $derived(
             <div
               role="button"
               tabindex="0"
-              onclick={() => activateMessage(message)}
+              onclick={() => handleMessageClick(message)}
               onkeydown={(event) => handleMessageKeydown(event, message)}
             >
               <MessageDetail

@@ -19,60 +19,50 @@ const {
   loading = false,
 }: Props = $props();
 
-function createFormState(
-  currentUser: User | null,
-  currentProfile: Profile | null,
-) {
+function getInitialFormState() {
   return {
-    name: currentProfile?.name ?? '',
-    email: currentUser?.email ?? '',
-    status: currentUser?.status ?? UserStatus.ACTIVE,
+    name: profile?.name ?? '',
+    email: user?.email ?? '',
+    status: user?.status ?? UserStatus.ACTIVE,
+    user,
+    profile,
   };
 }
 
-let form = $state(createFormState(null, null));
-let lastUser: User | null | undefined;
-let lastProfile: Profile | null | undefined;
+const initialFormState = getInitialFormState();
+let name = $state(initialFormState.name);
+let email = $state(initialFormState.email);
+let status = $state(initialFormState.status);
+let appliedUser: User | null = initialFormState.user;
+let appliedProfile: Profile | null = initialFormState.profile;
 
 $effect(() => {
-  if (user !== lastUser || profile !== lastProfile) {
-    lastUser = user;
-    lastProfile = profile;
-    form = createFormState(user, profile);
+  if (appliedUser === user && appliedProfile === profile) {
+    return;
   }
+
+  appliedUser = user;
+  appliedProfile = profile;
+  name = profile?.name ?? '';
+  email = user?.email ?? '';
+  status = user?.status ?? UserStatus.ACTIVE;
 });
 
 function handleSubmit(e: Event) {
   e.preventDefault();
-  onsubmit({
-    name: form.name,
-    email: form.email,
-    status: form.status,
-  });
+  onsubmit({ name, email, status });
 }
 </script>
 
 <form class="user-form" onsubmit={handleSubmit}>
   <div class="field">
     <label for="name">Name</label>
-    <input
-      id="name"
-      type="text"
-      bind:value={form.name}
-      required
-      disabled={loading}
-    />
+    <input id="name" type="text" bind:value={name} required disabled={loading} />
   </div>
 
   <div class="field">
     <label for="email">Email</label>
-    <input
-      id="email"
-      type="email"
-      bind:value={form.email}
-      required
-      disabled={loading || !!user}
-    />
+    <input id="email" type="email" bind:value={email} required disabled={loading || !!user} />
     {#if user}
       <span class="hint">Email cannot be changed after creation</span>
     {/if}
@@ -80,7 +70,7 @@ function handleSubmit(e: Event) {
 
   <div class="field">
     <label for="status">Status</label>
-    <select id="status" bind:value={form.status} disabled={loading}>
+    <select id="status" bind:value={status} disabled={loading}>
       <option value="active">Active</option>
       <option value="pending">Pending</option>
       <option value="suspended">Suspended</option>

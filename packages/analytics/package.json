@@ -28,11 +28,14 @@
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "clean": "rm -rf dist",
     "dev": "vite dev",
+    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "prepack": "npm run build && npm run verify:pack",
     "test": "npx vitest run --passWithNoTests",
     "test:sqlite": "TEST_DB_ADAPTER=sqlite npx vitest run --project sqlite --passWithNoTests",
     "test:postgres": "TEST_DB_ADAPTER=postgres npx vitest run --project postgres --passWithNoTests",
     "test:json": "TEST_DB_ADAPTER=json npx vitest run --project json --passWithNoTests",
-    "test:watch": "npx vitest"
+    "test:watch": "npx vitest",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*"
@@ -51,6 +54,7 @@
     "@sveltejs/package": "^2.5.7",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
+    "svelte-check": "^4.3.5",
     "svelte": "^5.0.0",
     "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",

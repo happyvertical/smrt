@@ -46,12 +46,13 @@ export interface CardProps
   footer?: Snippet;
 }
 
+// Calendar types
 export interface DayEventDetail {
-  type: 'game' | 'meeting' | 'event' | (string & {});
+  type: string;
   name: string;
+  slug: string;
   startTime: string;
   venue?: string;
-  slug?: string;
   councilSlug?: string;
 }
 
