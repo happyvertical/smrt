@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - respect ImageThumbnail api base (#1052) (content)
+  - @happyvertical/smrt-scanner@0.21.9
+  - @happyvertical/smrt-config@0.21.9
+  - @happyvertical/smrt-types@0.21.9
+
 ## 0.21.8
 
 ### Patch Changes
