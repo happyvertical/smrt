@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "lib": ["ES2023"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

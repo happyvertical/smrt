@@ -246,7 +246,7 @@ export interface CollectionInterceptor {
  */
 declare global {
   // eslint-disable-next-line no-var
-  var __smrtInterceptors: CollectionInterceptor[] | undefined;
+  var __smrtInterceptors: unknown[] | undefined;
 }
 
 /**
@@ -264,7 +264,7 @@ export class GlobalInterceptors {
     if (!globalThis.__smrtInterceptors) {
       globalThis.__smrtInterceptors = [];
     }
-    return globalThis.__smrtInterceptors;
+    return globalThis.__smrtInterceptors as CollectionInterceptor[];
   }
 
   /**
