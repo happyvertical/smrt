@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
-import { onMount, untrack } from 'svelte';
+import { onMount } from 'svelte';
 import {
   setThemeContext,
   type ThemeContext,
@@ -40,34 +40,43 @@ let {
   children,
 }: Props = $props();
 
-const initialConfig = untrack<ThemeConfig>(() => ({
-  colorScheme,
-  primaryColor: primaryColor ?? defaultThemeConfig.primaryColor,
-  borderRadius,
-  overrides,
-}));
-
 // Internal state
-let config = $state<ThemeConfig>(initialConfig);
+let config = $state<ThemeConfig>({
+  colorScheme: 'system',
+  primaryColor: defaultThemeConfig.primaryColor,
+  borderRadius: 'md',
+  overrides: {},
+});
+let appliedColorScheme: ColorScheme | undefined;
+let appliedPrimaryColor: string | undefined;
+let appliedBorderRadius: ThemeConfig['borderRadius'] | undefined;
+let appliedOverrides: Record<string, string> | undefined;
+
+$effect(() => {
+  if (
+    appliedColorScheme === colorScheme &&
+    appliedPrimaryColor === primaryColor &&
+    appliedBorderRadius === borderRadius &&
+    appliedOverrides === overrides
+  ) {
+    return;
+  }
+
+  appliedColorScheme = colorScheme;
+  appliedPrimaryColor = primaryColor;
+  appliedBorderRadius = borderRadius;
+  appliedOverrides = overrides;
+
+  config = {
+    colorScheme,
+    primaryColor: primaryColor ?? defaultThemeConfig.primaryColor,
+    borderRadius,
+    overrides,
+  };
+});
 
 let systemPrefersDark = $state(false);
 let mounted = $state(false);
-
-$effect(() => {
-  config.colorScheme = colorScheme;
-});
-
-$effect(() => {
-  config.primaryColor = primaryColor ?? defaultThemeConfig.primaryColor;
-});
-
-$effect(() => {
-  config.borderRadius = borderRadius;
-});
-
-$effect(() => {
-  config.overrides = overrides;
-});
 
 // Resolved scheme (never 'system')
 const resolvedScheme = $derived<'light' | 'dark'>(

@@ -186,9 +186,20 @@ Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`
 
 ## Documentation
 
+- [UI Surfaces](./docs/ui-surfaces.md) -- when to use `./svelte`, `./playground`, and optional `./routes`
 - [Architecture Guide](./CLAUDE.md) -- Development guide and patterns
 - [Core Framework Docs](./packages/core/CLAUDE.md) -- Detailed framework documentation
 - [API Reference](./packages/core/README.md) -- Complete API reference
+
+## UI Surface Conventions
+
+SMRT packages can expose UI at three levels:
+
+- `./svelte` for reusable components
+- `./playground` for preview metadata consumed by `smrt playground`
+- package-local page shells under `src/svelte/routes` and `src/routes` when needed for package dev
+
+For this release, the public UI package standard is `./svelte` plus `./playground`. We are not standardizing a public `./routes` export until downstream apps demonstrate a clear need for reusable package-owned page contracts.
 
 ## Related Projects
 

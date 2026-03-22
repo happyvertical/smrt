@@ -18,7 +18,9 @@ export interface Props {
   }: Props = $props();
 
   let inputValue = $state('');
-  const inputId = $props.id();
+  const inputId = $derived(
+    `recipient-input-${label.toLowerCase().replace(/[^a-z0-9]+/gi, '-')}`,
+  );
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

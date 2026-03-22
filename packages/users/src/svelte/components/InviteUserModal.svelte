@@ -73,26 +73,19 @@ function handleKeydown(e: KeyboardEvent) {
     handleClose();
   }
 }
-
-function handleBackdropKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    handleClose();
-  }
-}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
 {#if open}
-  <div
-    class="modal-backdrop"
-    onclick={handleBackdrop}
-    onkeydown={handleBackdropKeydown}
-    role="dialog"
-    aria-modal="true"
-    tabindex="-1"
-  >
-    <div class="modal">
+  <div class="modal-backdrop">
+    <button
+      type="button"
+      class="modal-overlay"
+      aria-label="Close invite dialog"
+      onclick={handleClose}
+    ></button>
+    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="header">
         <h2>Invite User to {tenant.name}</h2>
         <button type="button" class="close-btn" onclick={handleClose} aria-label="Close">
@@ -124,7 +117,13 @@ function handleBackdropKeydown(e: KeyboardEvent) {
 
           <div class="field">
             <label for="invite-role">Role</label>
-            <RoleSelector {roles} value={roleId} onchange={(id) => (roleId = id)} disabled={loading} showDescription />
+            <RoleSelector
+              {roles}
+              value={roleId}
+              onchange={(id: string) => (roleId = id)}
+              disabled={loading}
+              showDescription
+            />
           </div>
 
           <div class="checkbox-field">
@@ -160,7 +159,6 @@ function handleBackdropKeydown(e: KeyboardEvent) {
   .modal-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -168,7 +166,16 @@ function handleBackdropKeydown(e: KeyboardEvent) {
     z-index: 100;
   }
 
+  .modal-overlay {
+    position: absolute;
+    inset: 0;
+    border: none;
+    background: rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+  }
+
   .modal {
+    position: relative;
     background: var(--smrt-color-surface, white);
     border-radius: var(--smrt-radius-large, 0.5rem);
     box-shadow: var(--smrt-elevation-level3, 0 20px 25px -5px rgba(0, 0, 0, 0.1));
@@ -176,6 +183,7 @@ function handleBackdropKeydown(e: KeyboardEvent) {
     max-width: 28rem;
     max-height: 90vh;
     overflow: hidden;
+    z-index: 1;
   }
 
   .header {

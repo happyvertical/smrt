@@ -95,6 +95,14 @@ export interface SmrtVitestPluginOptions {
    * @default ['**\/*.d.ts', '**\/node_modules/**', '**\/dist/**']
    */
   exclude?: string[];
+
+  /**
+   * Override the setup file injected into Vitest projects.
+   *
+   * Defaults to the published package entry. Workspace packages can point this
+   * at a local source file while still using the same plugin API.
+   */
+  setupFile?: string;
 }
 
 /**
@@ -212,6 +220,55 @@ function findPackageRoot(packageName: string): string | null {
   return null;
 }
 
+async function importSmrtCoreModule(): Promise<
+  typeof import('@happyvertical/smrt-core')
+> {
+  const specifier = '@happyvertical/smrt-core';
+
+  try {
+    return await import(specifier);
+  } catch {
+    const { tsImport } = await import('tsx/esm/api');
+    const fallbackHref = new URL('../../core/src/index.ts', import.meta.url)
+      .href;
+    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+  }
+}
+
+async function importSmrtCoreManifestModule(): Promise<
+  typeof import('@happyvertical/smrt-core/manifest')
+> {
+  const specifier = '@happyvertical/smrt-core/manifest';
+
+  try {
+    return await import(specifier);
+  } catch {
+    const { tsImport } = await import('tsx/esm/api');
+    const fallbackHref = new URL(
+      '../../core/src/manifest/index.ts',
+      import.meta.url,
+    ).href;
+    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+  }
+}
+
+async function importDiscoverBaseClassesModule(): Promise<
+  typeof import('@happyvertical/smrt-core/manifest/discover-base-classes')
+> {
+  const specifier = '@happyvertical/smrt-core/manifest/discover-base-classes';
+
+  try {
+    return await import(specifier);
+  } catch {
+    const { tsImport } = await import('tsx/esm/api');
+    const fallbackHref = new URL(
+      '../../core/src/manifest/discover-base-classes.ts',
+      import.meta.url,
+    ).href;
+    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+  }
+}
+
 /**
  * Load manifest from a package using ManifestManager
  *
@@ -224,10 +281,8 @@ async function loadAndRegisterManifest(
   verbose: boolean,
 ): Promise<boolean> {
   try {
-    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
-    const { ManifestManager } = await import(
-      '@happyvertical/smrt-core/manifest'
-    );
+    const { ObjectRegistry } = await importSmrtCoreModule();
+    const { ManifestManager } = await importSmrtCoreManifestModule();
 
     // Find the package root directory
     const packageRoot = findPackageRoot(packageName);
@@ -308,10 +363,8 @@ async function loadAndRegisterLocalManifest(
   verbose: boolean,
 ): Promise<boolean> {
   try {
-    const { ObjectRegistry } = await import('@happyvertical/smrt-core');
-    const { ManifestManager } = await import(
-      '@happyvertical/smrt-core/manifest'
-    );
+    const { ObjectRegistry } = await importSmrtCoreModule();
+    const { ManifestManager } = await importSmrtCoreManifestModule();
 
     const manager = new ManifestManager(root);
     const manifest = manager.loadLocal();
@@ -358,12 +411,8 @@ async function generateLocalManifest(
   try {
     console.log('[smrt-vitest] Generating test manifest...');
 
-    const { ManifestBuilder } = await import(
-      '@happyvertical/smrt-core/manifest'
-    );
-    const { discoverBaseClasses } = await import(
-      '@happyvertical/smrt-core/manifest/discover-base-classes'
-    );
+    const { ManifestBuilder } = await importSmrtCoreManifestModule();
+    const { discoverBaseClasses } = await importDiscoverBaseClassesModule();
 
     // Discover base classes from external SMRT packages
     const baseClasses = await discoverBaseClasses();
@@ -468,10 +517,11 @@ export function smrtVitestPlugin(
     verbose = false,
     root = process.cwd(),
     generateManifest = true,
+    setupFile = '@happyvertical/smrt-vitest/setup',
   } = options;
 
   let manifestsLoaded = false;
-  const setupFileId = '@happyvertical/smrt-vitest/setup';
+  const setupFileId = setupFile;
 
   const ensureSetupFiles = (value: string | string[] | undefined): string[] => {
     const setupFiles = Array.isArray(value) ? [...value] : value ? [value] : [];
@@ -556,9 +606,7 @@ export function smrtVitestPlugin(
 
       // Step 4: Validate local manifest is loaded
       try {
-        const { ManifestManager } = await import(
-          '@happyvertical/smrt-core/manifest'
-        );
+        const { ManifestManager } = await importSmrtCoreManifestModule();
         const manager = new ManifestManager(root);
         const localManifest = manager.loadLocal();
 

@@ -42,9 +42,12 @@
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
+    "dev": "npm run build:watch",
+    "prepack": "npm run build && npm run verify:pack",
     "test": "npx vitest run",
     "test:watch": "npx vitest",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",

@@ -6,6 +6,7 @@
  * type badges, and metadata columns.
  */
 
+import type { Asset } from '../asset';
 import type {
   AssetListProps,
   AssetSort,
@@ -21,11 +22,8 @@ let {
   assets,
   selectedIds,
   sort,
-  onselectionchange,
   onSelectionChange,
-  onassetclick,
   onAssetClick,
-  onsortchange,
   onSortChange,
   loading = false,
 }: AssetListProps = $props();
@@ -38,25 +36,25 @@ function toggleSelection(asset: ListAsset, event: Event) {
   } else {
     next.add(asset.id);
   }
-  (onselectionchange ?? onSelectionChange)(next);
+  onSelectionChange(next);
 }
 
 function toggleSelectAll() {
   if (allSelected) {
-    (onselectionchange ?? onSelectionChange)(new Set());
+    onSelectionChange(new Set());
   } else {
-    (onselectionchange ?? onSelectionChange)(new Set(assets.map((a) => a.id)));
+    onSelectionChange(new Set(assets.map((a) => a.id)));
   }
 }
 
 function handleSort(field: AssetSortField) {
   if (sort.field === field) {
-    (onsortchange ?? onSortChange)({
+    onSortChange({
       field,
       direction: sort.direction === 'asc' ? 'desc' : 'asc',
     });
   } else {
-    (onsortchange ?? onSortChange)({ field, direction: 'asc' });
+    onSortChange({ field, direction: 'asc' });
   }
 }
 
@@ -167,13 +165,13 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           <tr
             class="list-table__row"
             class:list-table__row--selected={selected}
-            onclick={() => (onassetclick ?? onAssetClick)(asset)}
+            onclick={() => onAssetClick(asset)}
             role="button"
             tabindex="0"
             onkeydown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
-                (onassetclick ?? onAssetClick)(asset);
+                onAssetClick(asset);
               }
             }}
           >
@@ -407,38 +405,6 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   @keyframes spin {
     to { transform: rotate(360deg); }
-  }
-
-  .empty-state {
-    padding: var(--smrt-spacing-8, 2rem);
-    text-align: center;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-  }
-
-  .empty-state__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 80px;
-    height: 80px;
-    margin: 0 auto var(--smrt-spacing-4, 1rem);
-    background: var(--smrt-color-secondary-container, #e0e7ef);
-    color: var(--smrt-color-on-secondary-container, #1a1c2e);
-    border-radius: 24px;
-    padding: 16px;
-  }
-
-  .empty-state__title {
-    margin: 0 0 var(--smrt-spacing-2, 0.5rem);
-    font-size: var(--smrt-typography-title-medium-size, 1rem);
-    font-weight: 500;
-    color: var(--smrt-color-on-surface, #111827);
-  }
-
-  .empty-state__desc {
-    margin: 0;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .list-table__row:focus-visible {

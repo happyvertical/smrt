@@ -12,18 +12,19 @@
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
-    "./svelte": {
-      "types": "./dist/svelte/index.d.ts",
-      "svelte": "./dist/svelte/index.js",
-      "import": "./dist/svelte/index.js"
-    },
     "./playground": {
       "types": "./dist/playground.d.ts",
       "import": "./dist/playground.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
+      "svelte": "./dist/svelte/index.js",
+      "import": "./dist/svelte/index.js",
+      "default": "./dist/svelte/index.js"
     }
   },
   "scripts": {
-    "build": "svelte-kit sync && vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "SMRT_PACKAGE_BUILD=1 svelte-kit sync && SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
@@ -39,20 +40,15 @@
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
     "svelte": "^4.0.0 || ^5.0.0"
   },
-  "peerDependenciesMeta": {
-    "svelte": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
-    "@sveltejs/adapter-auto": "^7.0.1",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/kit": "^2.5.7",
     "@sveltejs/package": "^2.5.7",

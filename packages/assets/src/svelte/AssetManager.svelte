@@ -19,6 +19,7 @@
  * ```
  */
 
+import type { Asset } from '../asset';
 import ActionBar from './ActionBar.svelte';
 import AssetDetail from './AssetDetail.svelte';
 import AssetGrid from './AssetGrid.svelte';
@@ -26,8 +27,6 @@ import AssetList from './AssetList.svelte';
 import AssetToolbar from './AssetToolbar.svelte';
 import CreateAssetModal from './CreateAssetModal.svelte';
 import type {
-  AssetAction,
-  AssetDbFilters,
   AssetFilters,
   AssetManagerProps,
   AssetSort,
@@ -39,7 +38,6 @@ let {
   tenantId,
   dbFilters = {},
   mode = 'manage',
-  initialAssets = [],
   accept,
   customActions = [],
   uploader,
@@ -51,88 +49,48 @@ let {
   showFolders = false,
 }: AssetManagerProps = $props();
 
-function cloneAssets(items: PersistedAsset[]): PersistedAsset[] {
-  return items.map((asset) => ({ ...asset }));
-}
-
-function createInitialFilters(acceptValue?: string): AssetFilters {
+function getInitialManagerState() {
   return {
-    search: '',
-    types: [],
-    tags: [],
-    mimePatterns: acceptValue ? [acceptValue] : [],
+    view: initialView,
   };
 }
 
-function areStringArraysEqual(left: string[], right: string[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
-}
-
-// ─── State ──────────────────────────────────────────────────────────────
-
-let view: AssetViewMode = $state('grid');
-let selectedIds: Set<string> = $state(new Set());
-let assets: PersistedAsset[] = $state([]);
+const initialManagerState = getInitialManagerState();
+let view = $state<AssetViewMode>(initialManagerState.view);
+let selectedIds = $state<Set<string>>(new Set());
+let assets = $state<PersistedAsset[]>([]);
 let loading = $state(false);
 let showCreateModal = $state(false);
 let showDetail = $state(false);
-let detailAsset: PersistedAsset | null = $state(null);
-let pastedFile: File | null = $state(null);
-
-let filters: AssetFilters = $state(createInitialFilters());
-
-let sort: AssetSort = $state({
+let detailAsset = $state<PersistedAsset | null>(null);
+let pastedFile = $state<File | null>(null);
+let filters = $state<AssetFilters>({
+  search: '',
+  types: [],
+  tags: [],
+  mimePatterns: [],
+});
+let sort = $state<AssetSort>({
   field: 'createdAt',
   direction: 'desc',
 });
-
-let lastInitialView: AssetViewMode | null = null;
-let lastInitialAssets: PersistedAsset[] | null = null;
-let lastAccept: string | undefined;
+let managerDragOver = $state(false);
 
 $effect(() => {
-  if (initialView !== lastInitialView) {
-    lastInitialView = initialView;
-    view = initialView;
+  const nextMimePatterns = accept ? [accept] : [];
+  if (
+    filters.mimePatterns.length !== nextMimePatterns.length ||
+    filters.mimePatterns.some(
+      (pattern, index) => pattern !== nextMimePatterns[index],
+    )
+  ) {
+    filters = { ...filters, mimePatterns: nextMimePatterns };
   }
 });
 
-$effect(() => {
-  if (initialAssets !== lastInitialAssets) {
-    lastInitialAssets = initialAssets;
-    assets = cloneAssets(initialAssets);
-    selectedIds = new Set(
-      [...selectedIds].filter((id) =>
-        initialAssets.some((asset) => asset.id === id),
-      ),
-    );
-  }
-});
-
-$effect(() => {
-  if (accept !== lastAccept) {
-    lastAccept = accept;
-    const nextMimePatterns = accept ? [accept] : [];
-
-    if (!areStringArraysEqual(filters.mimePatterns, nextMimePatterns)) {
-      filters = {
-        ...filters,
-        mimePatterns: nextMimePatterns,
-      };
-    }
-  }
-});
-
-// ─── Derived ────────────────────────────────────────────────────────────
-
-const selectedAssets = $derived(assets.filter((a) => selectedIds.has(a.id!)));
-
-const hasSelection = $derived(selectedIds.size > 0);
-
-// ─── Handlers ───────────────────────────────────────────────────────────
+const selectedAssets = $derived(
+  assets.filter((asset) => selectedIds.has(asset.id)),
+);
 
 function handleViewChange(newView: AssetViewMode) {
   view = newView;
@@ -140,29 +98,23 @@ function handleViewChange(newView: AssetViewMode) {
 
 function handleFilterChange(newFilters: AssetFilters) {
   filters = newFilters;
-  // TODO: Trigger data fetch with new filters
 }
 
 function handleSortChange(newSort: AssetSort) {
   sort = newSort;
-  // TODO: Trigger data re-sort or re-fetch
 }
 
 function handleSelectionChange(ids: Set<string>) {
   selectedIds = ids;
-  const selected = assets.filter((asset) =>
-    ids.has(asset.id!),
-  ) as PersistedAsset[];
-  (onselect ?? onSelect)?.(selected);
+  (onSelect ?? onselect)?.(assets.filter((asset) => ids.has(asset.id)));
 }
 
 function handleClearSelection() {
   selectedIds = new Set();
-  (onselect ?? onSelect)?.([]);
+  (onSelect ?? onselect)?.([]);
 }
 
 function handleAssetClick(asset: PersistedAsset) {
-  // In pick mode, toggle selection on click
   if (mode === 'pick') {
     const next = new Set(selectedIds);
     if (next.has(asset.id)) {
@@ -171,11 +123,11 @@ function handleAssetClick(asset: PersistedAsset) {
       next.add(asset.id);
     }
     handleSelectionChange(next);
-  } else {
-    // In manage mode, open detail view
-    detailAsset = asset;
-    showDetail = true;
+    return;
   }
+
+  detailAsset = asset;
+  showDetail = true;
 }
 
 function handleDetailClose() {
@@ -183,16 +135,29 @@ function handleDetailClose() {
   detailAsset = null;
 }
 
-async function handleDetailSave(asset: PersistedAsset, updates: any) {
-  // TODO: Save via collection
+async function handleDetailSave(
+  asset: Asset,
+  updates: {
+    name?: string;
+    description?: string;
+    alt?: string;
+    title?: string;
+    caption?: string;
+  },
+) {
   Object.assign(asset, updates);
   console.log('Save asset:', asset.id, updates);
 }
 
 function handleAssetDblClick(asset: PersistedAsset) {
   if (mode === 'pick') {
-    (onconfirm ?? onConfirm)?.([asset]);
+    (onConfirm ?? onconfirm)?.([asset]);
   }
+}
+
+function handleUploaderClose() {
+  showCreateModal = false;
+  pastedFile = null;
 }
 
 function handleUpload() {
@@ -206,61 +171,54 @@ function handleCreate(data: {
   description: string;
   altText: string;
 }) {
-  // TODO: Upload via AssetStore + create record
   showCreateModal = false;
   console.log('Create asset:', data);
 }
 
 function handleDelete(toDelete: PersistedAsset[]) {
-  // TODO: Delete via AssetStore + remove records
-  assets = assets.filter((a) => !toDelete.some((d) => d.id === a.id));
+  assets = assets.filter(
+    (asset) => !toDelete.some((item) => item.id === asset.id),
+  );
   selectedIds = new Set();
   console.log(
     'Delete assets:',
-    toDelete.map((a) => a.id),
+    toDelete.map((asset) => asset.id),
   );
 }
 
-// ─── Paste handler ──────────────────────────────────────────────────────
-
-function handlePaste(e: ClipboardEvent) {
-  const items = e.clipboardData?.items;
+function handlePaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items;
   if (!items) return;
 
   for (const item of Array.from(items)) {
-    if (item.type.startsWith('image/')) {
-      const file = item.getAsFile();
-      if (file) {
-        e.preventDefault();
-        pastedFile = file;
-        showCreateModal = true;
-        break;
-      }
-    }
+    if (!item.type.startsWith('image/')) continue;
+
+    const file = item.getAsFile();
+    if (!file) continue;
+
+    event.preventDefault();
+    pastedFile = file;
+    showCreateModal = true;
+    break;
   }
 }
 
-// ─── Drag over the whole manager (delegating to create modal) ───────────
-
-let managerDragOver = $state(false);
-
-function handleManagerDragOver(e: DragEvent) {
-  e.preventDefault();
+function handleManagerDragOver(event: DragEvent) {
+  event.preventDefault();
   managerDragOver = true;
 }
 
-function handleManagerDragLeave(e: DragEvent) {
-  // Only leave if truly exiting the manager container
-  const relatedTarget = e.relatedTarget as Node | null;
-  const currentTarget = e.currentTarget as Node;
+function handleManagerDragLeave(event: DragEvent) {
+  const relatedTarget = event.relatedTarget as Node | null;
+  const currentTarget = event.currentTarget as Node;
   if (relatedTarget && currentTarget.contains(relatedTarget)) return;
   managerDragOver = false;
 }
 
-function handleManagerDrop(e: DragEvent) {
-  e.preventDefault();
+function handleManagerDrop(event: DragEvent) {
+  event.preventDefault();
   managerDragOver = false;
-  const file = e.dataTransfer?.files?.[0];
+  const file = event.dataTransfer?.files?.[0];
   if (file) {
     pastedFile = file;
     showCreateModal = true;
@@ -324,9 +282,12 @@ function handleManagerDrop(e: DragEvent) {
   <AssetDetail
     asset={detailAsset}
     open={showDetail}
-    onClose={handleDetailClose}
-    onSave={handleDetailSave}
-    onDelete={(a) => { handleDelete([a]); handleDetailClose(); }}
+    onclose={handleDetailClose}
+    onsave={handleDetailSave}
+    ondelete={(asset) => {
+      handleDelete([asset as PersistedAsset]);
+      handleDetailClose();
+    }}
   />
 
   <!-- Drag overlay indicator -->
@@ -348,8 +309,8 @@ function handleManagerDrop(e: DragEvent) {
     {@render uploader({
       open: showCreateModal,
       initialFile: pastedFile,
-      onClose: () => { showCreateModal = false; pastedFile = null; },
-      onclose: () => { showCreateModal = false; pastedFile = null; },
+      onClose: handleUploaderClose,
+      onclose: handleUploaderClose,
       onCreate: handleCreate,
       oncreate: handleCreate
     })}
@@ -357,8 +318,8 @@ function handleManagerDrop(e: DragEvent) {
     <CreateAssetModal
       open={showCreateModal}
       initialFile={pastedFile}
-      onCreate={handleCreate}
-      onClose={() => { showCreateModal = false; pastedFile = null; }}
+      oncreate={handleCreate}
+      onclose={handleUploaderClose}
     />
   {/if}
 </div>

@@ -49,8 +49,14 @@
   },
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "npx vitest run"
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "prepack": "npm run build && npm run verify:pack",
+    "test": "npx vitest run",
+    "test:watch": "npx vitest",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
     "@happyvertical/jobs": "catalog:",
@@ -71,7 +77,6 @@
     "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
-    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.0.17"
   },
   "publishConfig": {

@@ -27,10 +27,14 @@
   ],
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
-    "dev": "tsc --watch",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "npm run build:watch",
+    "prepack": "npm run build && npm run verify:pack",
     "test": "npx vitest run",
     "typecheck": "tsc --noEmit",
-    "check": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "keywords": [
     "smrt",
@@ -83,7 +87,6 @@
     "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
-    "vite-plugin-dts": "^4.5.4",
     "vitest": "^4.0.17"
   }
 }

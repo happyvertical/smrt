@@ -69,6 +69,8 @@ export interface AgentUISlot {
   icon?: string;
   /** Display order (lower numbers first) */
   order?: number;
+  /** Whether the slot is currently unavailable in the admin UI */
+  disabled?: boolean;
 }
 
 /**

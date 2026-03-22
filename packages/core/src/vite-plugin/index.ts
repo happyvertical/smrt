@@ -7,8 +7,9 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Plugin, ViteDevServer } from 'vite';
-import { importScanner } from '../scanner/import-scanner.js';
 import type { SmartObjectManifest } from '../scanner/types';
+import { importWorkspaceModule } from '../utils/import-workspace-module.js';
+import type { ScannerModule } from '../utils/scanner-module.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 export type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -69,6 +70,15 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
   '@happyvertical/smrt-virt-cli': 'smrt:cli',
 };
+
+async function importScanner() {
+  return importWorkspaceModule<ScannerModule>({
+    packageName: '@happyvertical/smrt-scanner',
+    distEntry: 'packages/scanner/dist/index.js',
+    sourceEntry: 'packages/scanner/src/index.ts',
+    purpose: 'Vite manifest scanning',
+  });
+}
 
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
@@ -507,7 +517,7 @@ export default testManifest;
     rootDir: string,
   ): Promise<SmartObjectManifest> {
     // NOTE: We do NOT use the framework's static manifest here
-    // The static manifest at packages/core/src/manifest/static-manifest.ts
+    // The static manifest JSON that core emits at build time
     // contains framework objects (like 'pleb') which should not be included
     // when scanning user code in consuming applications.
     //
@@ -545,10 +555,7 @@ export default testManifest;
 
     try {
       // Import the OXC scanner package
-      const { OxcScanner, ManifestAdapter } = await importScanner({
-        missingBuildInstruction:
-          'Please build @happyvertical/smrt-scanner before running Vite.',
-      });
+      const { OxcScanner, ManifestAdapter } = await importScanner();
 
       console.log(`[smrt] Using experimental OXC scanner for faster builds`);
 

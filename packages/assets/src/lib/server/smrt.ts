@@ -9,8 +9,10 @@
 // Import SMRT objects to register them via @smrt() decorators
 import './smrt-register.js';
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type { SmrtClassOptions, SmrtObject } from '@happyvertical/smrt-core';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+
+type SmrtDbConfig = NonNullable<SmrtClassOptions['db']>;
 
 /**
  * Per-object configuration overrides
@@ -81,12 +83,17 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
   const override = objectOverrides[className];
 
   if (override) {
+    // Deep merge: override specific properties while keeping defaults
     return {
       ...defaults,
       ...override,
       // Ensure nested objects are merged properly
       db: override.db
-        ? { ...(defaults.db as any), ...(override.db as any) }
+        ? (Object.assign(
+            {},
+            (defaults.db ?? {}) as Record<string, unknown>,
+            (override.db ?? {}) as Record<string, unknown>,
+          ) as SmrtDbConfig)
         : defaults.db,
       ai: override.ai !== undefined ? override.ai : defaults.ai,
     };
@@ -99,17 +106,9 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
  * Helper to get a collection with centralized configuration
  * Automatically applies project defaults or object-specific overrides
  */
-export async function getCollection<
-  T extends import('@happyvertical/smrt-core').SmrtObject,
->(className: string, overrides: Partial<SmrtClassOptions> = {}) {
-  const config = getSmrtConfig(className);
-
-  return await ObjectRegistry.getCollection<T>(className, {
-    ...config,
-    ...overrides,
-    db: overrides.db
-      ? { ...(config.db as any), ...(overrides.db as any) }
-      : config.db,
-    ai: overrides.ai !== undefined ? overrides.ai : config.ai,
-  });
+export async function getCollection<T extends SmrtObject>(className: string) {
+  return await ObjectRegistry.getCollection<T>(
+    className,
+    getSmrtConfig(className),
+  );
 }

@@ -76,7 +76,7 @@ function getColor(name: string): string {
   role={onclick ? 'button' : undefined}
   tabindex={onclick ? 0 : undefined}
   onclick={onclick}
-  onkeydown={(e) => e.key === 'Enter' && onclick?.()}
+  onkeydown={(event: KeyboardEvent) => event.key === 'Enter' && onclick?.()}
   use:ripple
 >
   <div class="avatar" style:background-color={getColor(tenant.name ?? '')}>
@@ -106,7 +106,7 @@ function getColor(name: string): string {
         <button 
           type="button" 
           class="action-btn" 
-          onclick={(e) => { e.stopPropagation(); onedit?.(); }}
+          onclick={(event: MouseEvent) => { event.stopPropagation(); onedit?.(); }}
           use:ripple
           aria-label="Edit"
         >
@@ -117,7 +117,7 @@ function getColor(name: string): string {
         <button 
           type="button" 
           class="action-btn danger" 
-          onclick={(e) => { e.stopPropagation(); ondelete?.(); }}
+          onclick={(event: MouseEvent) => { event.stopPropagation(); ondelete?.(); }}
           use:ripple
           aria-label="Delete"
         >

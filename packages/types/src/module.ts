@@ -62,7 +62,15 @@ export interface ModuleUISlot {
   /** Display order (lower first) */
   order?: number;
   /** Component category for grouping */
-  category?: 'display' | 'form' | 'admin' | 'list' | 'detail' | 'action';
+  category?:
+    | 'display'
+    | 'form'
+    | 'admin'
+    | 'list'
+    | 'detail'
+    | 'action'
+    | 'dashboard'
+    | 'navigation';
   /** Required props interface name (for documentation) */
   propsInterface?: string;
 }

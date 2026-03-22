@@ -32,7 +32,7 @@ let {
 }: Props = $props();
 
 let reason = $state('');
-let textarea: HTMLTextAreaElement | null = $state(null);
+let textarea: HTMLTextAreaElement | undefined = $state(undefined);
 
 const canConfirm = $derived(!required || reason.trim().length > 0);
 
@@ -54,6 +54,12 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
+function handleBackdropClick(event: MouseEvent) {
+  if (event.target === event.currentTarget) {
+    handleCancel();
+  }
+}
+
 $effect(() => {
   if (open && textarea) {
     textarea.focus();
@@ -65,8 +71,8 @@ $effect(() => {
   <div class="dialog-backdrop">
     <button
       type="button"
-      class="backdrop-dismiss"
-      aria-label="Dismiss dialog"
+      class="dialog-overlay"
+      aria-label="Close dialog"
       onclick={handleCancel}
     ></button>
     <div
@@ -127,18 +133,16 @@ $effect(() => {
     z-index: 1000;
   }
 
-  .backdrop-dismiss {
+  .dialog-overlay {
     position: absolute;
     inset: 0;
     border: none;
-    padding: 0;
     background: rgba(0, 0, 0, 0.32);
     cursor: pointer;
   }
 
   .dialog {
     position: relative;
-    z-index: 1;
     background: var(--smrt-color-surface);
     border-radius: var(--smrt-radius-extra-large, 28px);
     box-shadow: var(--smrt-elevation-level3);

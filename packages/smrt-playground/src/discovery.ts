@@ -1,5 +1,13 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import {
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from 'node:path';
 import { pathToFileURL } from 'node:url';
 import fg from 'fast-glob';
 import { coercePlaygroundModules } from './runtime.js';
@@ -9,6 +17,9 @@ import type {
   DiscoveredWorkspacePlayground,
   SmrtPlaygroundModule,
 } from './types.js';
+
+const require = createRequire(import.meta.url);
+const TS_SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.mts', '.cts']);
 
 export function findWorkspaceRoot(startDir = process.cwd()): string | null {
   let current = resolve(startDir);
@@ -194,13 +205,34 @@ export async function importPlaygroundModule(
 ): Promise<SmrtPlaygroundModule[]> {
   const imported =
     isAbsolute(input) || input.startsWith('.')
-      ? await import(pathToFileURL(resolve(input)).href)
+      ? await importPathModule(resolve(input))
       : await import(input);
 
   const module = imported.default ?? imported.playground ?? imported;
   return module && typeof module === 'object'
     ? coercePlaygroundModules(module as SmrtPlaygroundModule)
     : [];
+}
+
+async function importPathModule(inputPath: string): Promise<unknown> {
+  if (!TS_SOURCE_EXTENSIONS.has(extname(inputPath))) {
+    return import(pathToFileURL(inputPath).href);
+  }
+
+  let tsxApiPath: string;
+  try {
+    tsxApiPath = require.resolve('tsx/esm/api');
+  } catch (tsxError) {
+    throw new Error(
+      `Failed to load playground module from ${inputPath}: source playground discovery requires the "tsx" package.`,
+      { cause: tsxError },
+    );
+  }
+
+  const { tsImport } = await import(pathToFileURL(tsxApiPath).href);
+  return tsImport(pathToFileURL(inputPath).href, {
+    parentURL: import.meta.url,
+  });
 }
 
 export function describePlaygroundSource(

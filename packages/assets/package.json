@@ -11,24 +11,26 @@
       "types": "./dist/index.d.ts"
     },
     "./svelte": {
+      "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js",
-      "types": "./dist/svelte/index.d.ts"
+      "default": "./dist/svelte/index.js"
     },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json",
     "./playground": {
-      "import": "./dist/playground.js",
-      "types": "./dist/playground.d.ts"
-    },
-    "./manifest": "./dist/manifest.json"
+      "types": "./dist/playground.d.ts",
+      "import": "./dist/playground.js"
+    }
   },
   "scripts": {
-    "build": "svelte-kit sync && vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "SMRT_PACKAGE_BUILD=1 svelte-kit sync && SMRT_PACKAGE_BUILD=1 vite build --mode library && SMRT_PACKAGE_BUILD=1 svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "prepack": "npm run build && npm run verify:pack",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "test": "npx vitest run --passWithNoTests",
     "test:watch": "npx vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
@@ -40,11 +42,16 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tags": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:"
   },
+  "peerDependencies": {
+    "svelte": "^4.0.0 || ^5.0.0"
+  },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/adapter-auto": "^7.0.1",
     "@sveltejs/kit": "^2.55.0",
     "@sveltejs/package": "^2.5.7",
@@ -56,14 +63,6 @@
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"
-  },
-  "peerDependencies": {
-    "svelte": "^4.0.0 || ^5.0.0"
-  },
-  "peerDependenciesMeta": {
-    "svelte": {
-      "optional": true
-    }
   },
   "keywords": [
     "ai",

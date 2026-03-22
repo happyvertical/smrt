@@ -4,7 +4,6 @@
  * Month view calendar with event indicators and day navigation
  */
 
-import { untrack } from 'svelte';
 import type { DayEventDetail, DayEventsData } from '../../types-generic';
 
 export interface Props {
@@ -34,17 +33,30 @@ const {
   onTodayClick,
 }: Props = $props();
 
-const initialCurrentYear = untrack(() => initialYear);
-const initialCurrentMonth = untrack(() => initialMonth);
+function getInitialCalendarState() {
+  return {
+    year: initialYear,
+    month: initialMonth,
+  };
+}
 
-let currentYear = $state(initialCurrentYear);
-let currentMonth = $state(initialCurrentMonth);
+const initialCalendarState = getInitialCalendarState();
+let currentYear = $state(initialCalendarState.year);
+let currentMonth = $state(initialCalendarState.month);
+let appliedInitialYear: number | undefined = initialCalendarState.year;
+let appliedInitialMonth: number | undefined = initialCalendarState.month;
 
 $effect(() => {
+  if (
+    appliedInitialYear === initialYear &&
+    appliedInitialMonth === initialMonth
+  ) {
+    return;
+  }
+
+  appliedInitialYear = initialYear;
+  appliedInitialMonth = initialMonth;
   currentYear = initialYear;
-});
-
-$effect(() => {
   currentMonth = initialMonth;
 });
 

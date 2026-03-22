@@ -237,7 +237,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
       // Metadata
       externalId: location.id,
       source: location.raw?.provider || 'unknown',
-      metadata: { raw: location.raw },
+      metadata: JSON.stringify({ raw: location.raw ?? null }),
     });
   }
 

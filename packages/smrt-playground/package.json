@@ -29,18 +29,24 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
-    "test": "npx vitest run --passWithNoTests"
+    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "prepack": "npm run build && npm run verify:pack",
+    "test": "npx vitest run --passWithNoTests",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
-    "fast-glob": "3.3.3"
+    "fast-glob": "3.3.3",
+    "tsx": "^4.21.0"
   },
   "peerDependencies": {
     "svelte": "^5.18.0",
     "vite": "^7.0.0"
   },
   "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    },
     "vite": {
       "optional": true
     }

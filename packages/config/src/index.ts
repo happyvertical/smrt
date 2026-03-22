@@ -15,6 +15,7 @@ export {
   parseExportedConfig,
   sanitizeConfig,
 } from './export.js';
+export { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
 
 // Re-export types
 export type {
@@ -53,6 +54,8 @@ export type {
 declare global {
   // eslint-disable-next-line no-var
   var __smrtConfigCache: SmrtConfig | null | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRuntimeConfig: Partial<SmrtConfig> | undefined;
 }
 
 // Use globalThis for cross-module config sharing

@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.package-svelte.json",
+  "include": ["ambient.d.ts", "src/**/*.ts", "src/**/*.svelte", "web-speech.d.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

@@ -43,9 +43,21 @@
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "prepack": "npm run build && npm run verify:pack",
     "test": "npx vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",
@@ -53,16 +65,7 @@
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
-    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/utils": "catalog:"
-  },
-  "peerDependencies": {
-    "svelte": "^5.18.0"
-  },
-  "peerDependenciesMeta": {
-    "svelte": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@happyvertical/logger": "catalog:",
@@ -72,8 +75,8 @@
     "@sveltejs/package": "^2.5.7",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
-    "svelte": "^5.18.0",
     "svelte-check": "^4.3.5",
+    "svelte": "^5.18.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"

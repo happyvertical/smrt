@@ -14,7 +14,8 @@ const config = {
     // See https://kit.svelte.dev/docs/adapters for more information about adapters.
     adapter: adapter(),
     outDir: '.svelte-kit',
-    alias: svelteKitWorkspaceAliases,
+    alias:
+      process.env.SMRT_PACKAGE_BUILD === '1' ? {} : svelteKitWorkspaceAliases,
   },
   compilerOptions: {
     runes: true,

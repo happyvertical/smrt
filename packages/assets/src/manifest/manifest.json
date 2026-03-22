@@ -1,30 +1,803 @@
 {
   "version": "1.0.0",
-  "timestamp": 1767322693643,
+  "timestamp": 1774147477660,
+  "packageName": "@happyvertical/smrt-assets",
+  "packageVersion": "0.21.7",
   "objects": {
-    "assetmetafield": {
+    "@happyvertical/smrt-assets:AssetAssociation": {
+      "name": "assetassociation",
+      "className": "AssetAssociation",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetAssociation",
+      "collection": "assetassociations",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-association.ts",
+      "packageName": "@happyvertical/smrt-assets",
+      "fields": {
+        "assetId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "metaType": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "metaId": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "role": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "sortOrder": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "conflictColumns": [
+          "asset_id",
+          "meta_type",
+          "meta_id",
+          "role"
+        ],
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AssetAssociation",
+      "collectionExportName": "AssetAssociationCollection",
+      "validationRules": [
+        {
+          "field": "assetId",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "metaType",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "metaId",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "role",
+          "rule": "required",
+          "fieldType": "text"
+        }
+      ],
+      "schema": {
+        "tableName": "asset_associations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_associations\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"asset_id\" TEXT NOT NULL,\n  \"meta_type\" TEXT NOT NULL,\n  \"meta_id\" TEXT NOT NULL,\n  \"role\" TEXT NOT NULL,\n  \"sort_order\" INTEGER DEFAULT 0\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "asset_id": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "meta_type": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "meta_id": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "role": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "sort_order": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false,
+            "default": 0
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_associations_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_associations_asset_id_meta_type_idx",
+            "columns": [
+              "asset_id",
+              "meta_type",
+              "meta_id",
+              "role"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "ca8497f5"
+      }
+    },
+    "@happyvertical/smrt-assets:AssetAssociationCollection": {
+      "name": "assetassociationcollection",
+      "className": "AssetAssociationCollection",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetAssociationCollection",
+      "collection": "assetassociations",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-associations.ts",
+      "packageName": "@happyvertical/smrt-assets",
+      "fields": {},
+      "methods": {
+        "getForObject": {
+          "name": "getForObject",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metaType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AssetAssociation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getForObjectByRole": {
+          "name": "getForObjectByRole",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metaType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "role",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AssetAssociation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getForAsset": {
+          "name": "getForAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<AssetAssociation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "associate": {
+          "name": "associate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "role",
+              "type": "any",
+              "optional": true,
+              "default": "default"
+            },
+            {
+              "name": "sortOrder",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<AssetAssociation>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "dissociate": {
+          "name": "dissociate",
+          "async": true,
+          "parameters": [
+            {
+              "name": "assetId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "role",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {},
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AssetAssociation",
+      "exportName": "AssetAssociationCollection",
+      "collectionExportName": "AssetAssociationCollectionCollection",
+      "schema": {
+        "tableName": "asset_association_collections",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_association_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "asset_association_collections_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "asset_association_collections_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "4cd9ab63"
+      }
+    },
+    "@happyvertical/smrt-assets:AssetMetafield": {
       "name": "assetmetafield",
       "className": "AssetMetafield",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetMetafield",
       "collection": "assetmetafields",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-metafield.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-metafield.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {
+        "created_at": {
+          "type": "json",
+          "required": false
+        },
+        "updated_at": {
+          "type": "json",
+          "required": false
+        },
         "name": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "validation": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         }
       },
       "methods": {
+        "getAiUsageSnapshot": {
+          "name": "getAiUsageSnapshot",
+          "async": false,
+          "parameters": [],
+          "returnType": "AiUsageSnapshot | undefined",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetAiUsage": {
+          "name": "resetAiUsage",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listAiUsage": {
+          "name": "listAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageListOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<SmrtAiUsageRecord[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeAiUsage": {
+          "name": "summarizeAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageSummaryOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Record<string, AiUsageStats>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "destroy": {
+          "name": "destroy",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadDataFromDb": {
+          "name": "loadDataFromDb",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toJSON": {
+          "name": "toJSON",
+          "async": false,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPlainObject": {
+          "name": "toPlainObject",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getId": {
+          "name": "getId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSavedId": {
+          "name": "getSavedId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSaved": {
+          "name": "isSaved",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromId": {
+          "name": "loadFromId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromSlug": {
+          "name": "loadFromSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "is": {
+          "name": "is",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "do": {
+          "name": "do",
+          "async": true,
+          "parameters": [
+            {
+              "name": "instructions",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "describe": {
+          "name": "describe",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "delete": {
+          "name": "delete",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRelatedLoaded": {
+          "name": "isRelatedLoaded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelated": {
+          "name": "loadRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelatedMany": {
+          "name": "loadRelatedMany",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelated": {
+          "name": "getRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAvailableTools": {
+          "name": "getAvailableTools",
+          "async": false,
+          "parameters": [],
+          "returnType": "AITool[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "executeToolCall": {
+          "name": "executeToolCall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toolCall",
+              "type": "ToolCall",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ToolCallResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "remember": {
+          "name": "remember",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recall": {
+          "name": "recall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recallAll": {
+          "name": "recallAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forget": {
+          "name": "forget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forgetScope": {
+          "name": "forgetScope",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateEmbeddings": {
+          "name": "generateEmbeddings",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "GenerateEmbeddingsOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmbedding": {
+          "name": "getEmbedding",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number[] | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStaleEmbeddings": {
+          "name": "hasStaleEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearEmbeddings": {
+          "name": "clearEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getValidation": {
           "name": "getValidation",
           "async": false,
           "parameters": [],
-          "returnType": "Record<string, unknown>",
+          "returnType": "Record<string>",
           "isStatic": false,
           "isPublic": true
         },
@@ -34,7 +807,7 @@
           "parameters": [
             {
               "name": "rules",
-              "type": "Record<string, unknown>",
+              "type": "Record<string>",
               "optional": false
             }
           ],
@@ -82,7 +855,7 @@
       "collectionExportName": "AssetMetafieldCollection",
       "schema": {
         "tableName": "asset_metafields",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafields\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"validation\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafields\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"validation\" TEXT\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -118,13 +891,11 @@
           },
           "name": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "validation": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           }
         },
         "indexes": [
@@ -150,14 +921,16 @@
             ]
           }
         ],
-        "version": "a0450430"
+        "version": "6463e0dd"
       }
     },
-    "assetmetafieldcollection": {
+    "@happyvertical/smrt-assets:AssetMetafieldCollection": {
       "name": "assetmetafieldcollection",
       "className": "AssetMetafieldCollection",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetMetafieldCollection",
       "collection": "assetmetafields",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-metafields.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-metafields.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
         "getOrCreate": {
@@ -176,7 +949,7 @@
             },
             {
               "name": "validation",
-              "type": "string | Record<string, unknown>",
+              "type": "string | Record<string>",
               "optional": true
             }
           ],
@@ -243,27 +1016,446 @@
             "unique": true
           }
         ],
-        "version": "d4538b87"
+        "version": "edbf819d"
       }
     },
-    "assetstatus": {
+    "@happyvertical/smrt-assets:AssetStatus": {
       "name": "assetstatus",
       "className": "AssetStatus",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetStatus",
       "collection": "assetstatuses",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-status.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-status.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {
+        "created_at": {
+          "type": "json",
+          "required": false
+        },
+        "updated_at": {
+          "type": "json",
+          "required": false
+        },
         "name": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "description": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         }
       },
       "methods": {
+        "getAiUsageSnapshot": {
+          "name": "getAiUsageSnapshot",
+          "async": false,
+          "parameters": [],
+          "returnType": "AiUsageSnapshot | undefined",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetAiUsage": {
+          "name": "resetAiUsage",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listAiUsage": {
+          "name": "listAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageListOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<SmrtAiUsageRecord[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeAiUsage": {
+          "name": "summarizeAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageSummaryOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Record<string, AiUsageStats>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "destroy": {
+          "name": "destroy",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadDataFromDb": {
+          "name": "loadDataFromDb",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toJSON": {
+          "name": "toJSON",
+          "async": false,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPlainObject": {
+          "name": "toPlainObject",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getId": {
+          "name": "getId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSavedId": {
+          "name": "getSavedId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSaved": {
+          "name": "isSaved",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromId": {
+          "name": "loadFromId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromSlug": {
+          "name": "loadFromSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "is": {
+          "name": "is",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "do": {
+          "name": "do",
+          "async": true,
+          "parameters": [
+            {
+              "name": "instructions",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "describe": {
+          "name": "describe",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "delete": {
+          "name": "delete",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRelatedLoaded": {
+          "name": "isRelatedLoaded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelated": {
+          "name": "loadRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelatedMany": {
+          "name": "loadRelatedMany",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelated": {
+          "name": "getRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAvailableTools": {
+          "name": "getAvailableTools",
+          "async": false,
+          "parameters": [],
+          "returnType": "AITool[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "executeToolCall": {
+          "name": "executeToolCall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toolCall",
+              "type": "ToolCall",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ToolCallResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "remember": {
+          "name": "remember",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recall": {
+          "name": "recall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recallAll": {
+          "name": "recallAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forget": {
+          "name": "forget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forgetScope": {
+          "name": "forgetScope",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateEmbeddings": {
+          "name": "generateEmbeddings",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "GenerateEmbeddingsOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmbedding": {
+          "name": "getEmbedding",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number[] | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStaleEmbeddings": {
+          "name": "hasStaleEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearEmbeddings": {
+          "name": "clearEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getBySlug": {
           "name": "getBySlug",
           "async": true,
@@ -303,8 +1495,8 @@
       "exportName": "AssetStatus",
       "collectionExportName": "AssetStatusCollection",
       "schema": {
-        "tableName": "asset_status",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_status\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT ''\n);",
+        "tableName": "asset_statuses",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_statuses\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -340,24 +1532,22 @@
           },
           "name": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "description": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           }
         },
         "indexes": [
           {
-            "name": "asset_status_id_idx",
+            "name": "asset_statuses_id_idx",
             "columns": [
               "id"
             ]
           },
           {
-            "name": "asset_status_slug_context_meta_type_idx",
+            "name": "asset_statuses_slug_context_meta_type_idx",
             "columns": [
               "slug",
               "context",
@@ -366,20 +1556,22 @@
             "unique": true
           },
           {
-            "name": "asset_status_meta_type_idx",
+            "name": "asset_statuses_meta_type_idx",
             "columns": [
               "_meta_type"
             ]
           }
         ],
-        "version": "464617a1"
+        "version": "0893c2a1"
       }
     },
-    "assetstatuscollection": {
+    "@happyvertical/smrt-assets:AssetStatusCollection": {
       "name": "assetstatuscollection",
       "className": "AssetStatusCollection",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetStatusCollection",
       "collection": "assetstatuses",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-statuses.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-statuses.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
         "getOrCreate": {
@@ -465,27 +1657,446 @@
             "unique": true
           }
         ],
-        "version": "589b4e08"
+        "version": "331f0ad8"
       }
     },
-    "assettype": {
+    "@happyvertical/smrt-assets:AssetType": {
       "name": "assettype",
       "className": "AssetType",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetType",
       "collection": "assettypes",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-type.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-type.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {
+        "created_at": {
+          "type": "json",
+          "required": false
+        },
+        "updated_at": {
+          "type": "json",
+          "required": false
+        },
         "name": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "description": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         }
       },
       "methods": {
+        "getAiUsageSnapshot": {
+          "name": "getAiUsageSnapshot",
+          "async": false,
+          "parameters": [],
+          "returnType": "AiUsageSnapshot | undefined",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetAiUsage": {
+          "name": "resetAiUsage",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listAiUsage": {
+          "name": "listAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageListOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<SmrtAiUsageRecord[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeAiUsage": {
+          "name": "summarizeAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageSummaryOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Record<string, AiUsageStats>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "destroy": {
+          "name": "destroy",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadDataFromDb": {
+          "name": "loadDataFromDb",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toJSON": {
+          "name": "toJSON",
+          "async": false,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPlainObject": {
+          "name": "toPlainObject",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getId": {
+          "name": "getId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSavedId": {
+          "name": "getSavedId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSaved": {
+          "name": "isSaved",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromId": {
+          "name": "loadFromId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromSlug": {
+          "name": "loadFromSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "is": {
+          "name": "is",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "do": {
+          "name": "do",
+          "async": true,
+          "parameters": [
+            {
+              "name": "instructions",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "describe": {
+          "name": "describe",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "delete": {
+          "name": "delete",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRelatedLoaded": {
+          "name": "isRelatedLoaded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelated": {
+          "name": "loadRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelatedMany": {
+          "name": "loadRelatedMany",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelated": {
+          "name": "getRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAvailableTools": {
+          "name": "getAvailableTools",
+          "async": false,
+          "parameters": [],
+          "returnType": "AITool[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "executeToolCall": {
+          "name": "executeToolCall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toolCall",
+              "type": "ToolCall",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ToolCallResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "remember": {
+          "name": "remember",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recall": {
+          "name": "recall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recallAll": {
+          "name": "recallAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forget": {
+          "name": "forget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forgetScope": {
+          "name": "forgetScope",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateEmbeddings": {
+          "name": "generateEmbeddings",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "GenerateEmbeddingsOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmbedding": {
+          "name": "getEmbedding",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number[] | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStaleEmbeddings": {
+          "name": "hasStaleEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearEmbeddings": {
+          "name": "clearEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getBySlug": {
           "name": "getBySlug",
           "async": true,
@@ -526,7 +2137,7 @@
       "collectionExportName": "AssetTypeCollection",
       "schema": {
         "tableName": "asset_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_types\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_types\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -562,13 +2173,11 @@
           },
           "name": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "description": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           }
         },
         "indexes": [
@@ -594,14 +2203,16 @@
             ]
           }
         ],
-        "version": "5f243f09"
+        "version": "d46f0f07"
       }
     },
-    "assettypecollection": {
+    "@happyvertical/smrt-assets:AssetTypeCollection": {
       "name": "assettypecollection",
       "className": "AssetTypeCollection",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetTypeCollection",
       "collection": "assettypes",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset-types.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset-types.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
         "getOrCreate": {
@@ -687,75 +2298,503 @@
             "unique": true
           }
         ],
-        "version": "0f069611"
+        "version": "57e0ddcd"
       }
     },
-    "asset": {
+    "@happyvertical/smrt-assets:Asset": {
       "name": "asset",
       "className": "Asset",
+      "qualifiedName": "@happyvertical/smrt-assets:Asset",
       "collection": "assets",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/asset.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/asset.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {
+        "created_at": {
+          "type": "json",
+          "required": false
+        },
+        "updated_at": {
+          "type": "json",
+          "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false
+        },
         "name": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "sourceUri": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "mimeType": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "description": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "version": {
           "type": "integer",
-          "required": false,
+          "required": true,
           "default": 1
         },
         "primaryVersionId": {
           "type": "text",
-          "required": false,
-          "default": null
+          "required": false
         },
         "typeSlug": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "statusSlug": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "ownerProfileId": {
           "type": "text",
-          "required": false,
-          "default": null
+          "required": false
         },
         "parentId": {
           "type": "text",
-          "required": false,
-          "default": null
+          "required": false
+        },
+        "folderId": {
+          "type": "text",
+          "required": false
+        },
+        "sourceType": {
+          "type": "text",
+          "required": false
+        },
+        "externalId": {
+          "type": "text",
+          "required": false
         },
         "createdAt": {
-          "type": "datetime",
+          "type": "text",
           "required": false
         },
         "updatedAt": {
-          "type": "datetime",
+          "type": "text",
           "required": false
         }
       },
       "methods": {
+        "getAiUsageSnapshot": {
+          "name": "getAiUsageSnapshot",
+          "async": false,
+          "parameters": [],
+          "returnType": "AiUsageSnapshot | undefined",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetAiUsage": {
+          "name": "resetAiUsage",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listAiUsage": {
+          "name": "listAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageListOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<SmrtAiUsageRecord[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeAiUsage": {
+          "name": "summarizeAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageSummaryOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Record<string, AiUsageStats>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "destroy": {
+          "name": "destroy",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadDataFromDb": {
+          "name": "loadDataFromDb",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toJSON": {
+          "name": "toJSON",
+          "async": false,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPlainObject": {
+          "name": "toPlainObject",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getId": {
+          "name": "getId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSavedId": {
+          "name": "getSavedId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSaved": {
+          "name": "isSaved",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromId": {
+          "name": "loadFromId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromSlug": {
+          "name": "loadFromSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "is": {
+          "name": "is",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "do": {
+          "name": "do",
+          "async": true,
+          "parameters": [
+            {
+              "name": "instructions",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "describe": {
+          "name": "describe",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "delete": {
+          "name": "delete",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRelatedLoaded": {
+          "name": "isRelatedLoaded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelated": {
+          "name": "loadRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelatedMany": {
+          "name": "loadRelatedMany",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelated": {
+          "name": "getRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAvailableTools": {
+          "name": "getAvailableTools",
+          "async": false,
+          "parameters": [],
+          "returnType": "AITool[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "executeToolCall": {
+          "name": "executeToolCall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toolCall",
+              "type": "ToolCall",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ToolCallResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "remember": {
+          "name": "remember",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recall": {
+          "name": "recall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recallAll": {
+          "name": "recallAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forget": {
+          "name": "forget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forgetScope": {
+          "name": "forgetScope",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateEmbeddings": {
+          "name": "generateEmbeddings",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "GenerateEmbeddingsOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmbedding": {
+          "name": "getEmbedding",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number[] | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStaleEmbeddings": {
+          "name": "hasStaleEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearEmbeddings": {
+          "name": "clearEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getTags": {
           "name": "getTags",
           "async": true,
@@ -810,6 +2849,39 @@
           "isStatic": false,
           "isPublic": true
         },
+        "getAssociations": {
+          "name": "getAssociations",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AssetAssociation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "associateWith": {
+          "name": "associateWith",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metaType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "role",
+              "type": "any",
+              "optional": true,
+              "default": "default"
+            }
+          ],
+          "returnType": "Promise<AssetAssociation>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getBySlug": {
           "name": "getBySlug",
           "async": true,
@@ -849,9 +2921,16 @@
       "extends": "SmrtObject",
       "exportName": "Asset",
       "collectionExportName": "AssetCollection",
+      "validationRules": [
+        {
+          "field": "version",
+          "rule": "required",
+          "fieldType": "integer"
+        }
+      ],
       "schema": {
         "tableName": "assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"source_uri\" TEXT DEFAULT '',\n  \"mime_type\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" TEXT DEFAULT 'null',\n  \"type_slug\" TEXT DEFAULT '',\n  \"status_slug\" TEXT DEFAULT '',\n  \"owner_profile_id\" TEXT DEFAULT 'null',\n  \"parent_id\" TEXT DEFAULT 'null',\n  \"width\" INTEGER DEFAULT 0,\n  \"height\" INTEGER DEFAULT 0,\n  \"alt\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"source_uri\" TEXT,\n  \"mime_type\" TEXT,\n  \"description\" TEXT,\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" TEXT,\n  \"type_slug\" TEXT,\n  \"status_slug\" TEXT,\n  \"owner_profile_id\" TEXT,\n  \"parent_id\" TEXT,\n  \"folder_id\" TEXT,\n  \"source_type\" TEXT,\n  \"external_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -885,25 +2964,25 @@
             "notNull": true,
             "default": "current_timestamp"
           },
+          "tenant_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
           "name": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "source_uri": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "mime_type": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "description": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "version": {
             "type": "INTEGER",
@@ -912,43 +2991,35 @@
           },
           "primary_version_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": null
+            "notNull": false
           },
           "type_slug": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "status_slug": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "owner_profile_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": null
+            "notNull": false
           },
           "parent_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": null
+            "notNull": false
           },
-          "width": {
-            "type": "INTEGER",
-            "notNull": false,
-            "default": 0
-          },
-          "height": {
-            "type": "INTEGER",
-            "notNull": false,
-            "default": 0
-          },
-          "alt": {
+          "folder_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
+          },
+          "source_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false
           }
         },
         "indexes": [
@@ -974,16 +3045,54 @@
             ]
           }
         ],
-        "version": "523d27c7"
+        "version": "01ee1300"
       }
     },
-    "assetcollection": {
+    "@happyvertical/smrt-assets:AssetCollection": {
       "name": "assetcollection",
       "className": "AssetCollection",
+      "qualifiedName": "@happyvertical/smrt-assets:AssetCollection",
       "collection": "assets",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/assets.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/assets.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
+        "findByTenant": {
+          "name": "findByTenant",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findGlobal": {
+          "name": "findGlobal",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findWithGlobals": {
+          "name": "findWithGlobals",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "addTag": {
           "name": "addTag",
           "async": true,
@@ -1095,8 +3204,7 @@
             {
               "name": "updates",
               "type": "Partial<Asset>",
-              "optional": false,
-              "default": {}
+              "optional": true
             }
           ],
           "returnType": "Promise<Asset>",
@@ -1158,6 +3266,39 @@
           "returnType": "Promise<Asset[]>",
           "isStatic": false,
           "isPublic": true
+        },
+        "rollbackToVersion": {
+          "name": "rollbackToVersion",
+          "async": true,
+          "parameters": [
+            {
+              "name": "primaryVersionId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "targetVersion",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getByFolder": {
+          "name": "getByFolder",
+          "async": true,
+          "parameters": [
+            {
+              "name": "folderId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
         }
       },
       "decoratorConfig": {},
@@ -1210,90 +3351,503 @@
             "unique": true
           }
         ],
-        "version": "fbe7f4cf"
+        "version": "a0906bc4"
       }
     },
-    "image": {
-      "name": "image",
-      "className": "Image",
+    "@happyvertical/smrt-assets:Folder": {
+      "name": "folder",
+      "className": "Folder",
+      "qualifiedName": "@happyvertical/smrt-assets:Folder",
       "collection": "assets",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/image.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/folder.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {
+        "created_at": {
+          "type": "json",
+          "required": false
+        },
+        "updated_at": {
+          "type": "json",
+          "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "required": false
+        },
         "name": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "sourceUri": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "mimeType": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "description": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "version": {
           "type": "integer",
-          "required": false,
+          "required": true,
           "default": 1
         },
         "primaryVersionId": {
           "type": "text",
-          "required": false,
-          "default": null
+          "required": false
         },
         "typeSlug": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "statusSlug": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "ownerProfileId": {
           "type": "text",
-          "required": false,
-          "default": null
+          "required": false
         },
         "parentId": {
           "type": "text",
-          "required": false,
-          "default": null
+          "required": false
+        },
+        "folderId": {
+          "type": "text",
+          "required": false
+        },
+        "sourceType": {
+          "type": "text",
+          "required": false
+        },
+        "externalId": {
+          "type": "text",
+          "required": false
         },
         "createdAt": {
-          "type": "datetime",
+          "type": "text",
           "required": false
         },
         "updatedAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "width": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "height": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "alt": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         }
       },
       "methods": {
+        "getAiUsageSnapshot": {
+          "name": "getAiUsageSnapshot",
+          "async": false,
+          "parameters": [],
+          "returnType": "AiUsageSnapshot | undefined",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetAiUsage": {
+          "name": "resetAiUsage",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "listAiUsage": {
+          "name": "listAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageListOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<SmrtAiUsageRecord[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "summarizeAiUsage": {
+          "name": "summarizeAiUsage",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "AiUsageSummaryOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Record<string, AiUsageStats>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "destroy": {
+          "name": "destroy",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "initialize": {
+          "name": "initialize",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadDataFromDb": {
+          "name": "loadDataFromDb",
+          "async": true,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "any",
+              "optional": false
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getFields": {
+          "name": "getFields",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toJSON": {
+          "name": "toJSON",
+          "async": false,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toPlainObject": {
+          "name": "toPlainObject",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getId": {
+          "name": "getId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSlug": {
+          "name": "getSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getSavedId": {
+          "name": "getSavedId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isSaved": {
+          "name": "isSaved",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromId": {
+          "name": "loadFromId",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadFromSlug": {
+          "name": "loadFromSlug",
+          "async": true,
+          "parameters": [],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "is": {
+          "name": "is",
+          "async": true,
+          "parameters": [
+            {
+              "name": "criteria",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "do": {
+          "name": "do",
+          "async": true,
+          "parameters": [
+            {
+              "name": "instructions",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "describe": {
+          "name": "describe",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "delete": {
+          "name": "delete",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isRelatedLoaded": {
+          "name": "isRelatedLoaded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelated": {
+          "name": "loadRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "loadRelatedMany": {
+          "name": "loadRelatedMany",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getRelated": {
+          "name": "getRelated",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getAvailableTools": {
+          "name": "getAvailableTools",
+          "async": false,
+          "parameters": [],
+          "returnType": "AITool[]",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "executeToolCall": {
+          "name": "executeToolCall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "toolCall",
+              "type": "ToolCall",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ToolCallResult>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "remember": {
+          "name": "remember",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recall": {
+          "name": "recall",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<any | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "recallAll": {
+          "name": "recallAll",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<Map<string, any>>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forget": {
+          "name": "forget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "forgetScope": {
+          "name": "forgetScope",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "object",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<number>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "generateEmbeddings": {
+          "name": "generateEmbeddings",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "GenerateEmbeddingsOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getEmbedding": {
+          "name": "getEmbedding",
+          "async": true,
+          "parameters": [
+            {
+              "name": "fieldName",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "model",
+              "type": "string",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<number[] | null>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasStaleEmbeddings": {
+          "name": "hasStaleEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "clearEmbeddings": {
+          "name": "clearEmbeddings",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getTags": {
           "name": "getTags",
           "async": true,
@@ -1348,6 +3902,39 @@
           "isStatic": false,
           "isPublic": true
         },
+        "getAssociations": {
+          "name": "getAssociations",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AssetAssociation[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "associateWith": {
+          "name": "associateWith",
+          "async": true,
+          "parameters": [
+            {
+              "name": "metaType",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "metaId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "role",
+              "type": "any",
+              "optional": true,
+              "default": "default"
+            }
+          ],
+          "returnType": "Promise<AssetAssociation>",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getBySlug": {
           "name": "getBySlug",
           "async": true,
@@ -1360,30 +3947,6 @@
           ],
           "returnType": "Promise<Asset | null>",
           "isStatic": true,
-          "isPublic": true
-        },
-        "isValidImageFormat": {
-          "name": "isValidImageFormat",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isHighResolution": {
-          "name": "isHighResolution",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateAltText": {
-          "name": "generateAltText",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<string>",
-          "isStatic": false,
           "isPublic": true
         }
       },
@@ -1402,8 +3965,7 @@
             "list",
             "get",
             "create",
-            "update",
-            "generateAltText"
+            "update"
           ]
         },
         "cli": true,
@@ -1411,11 +3973,18 @@
         "tableStrategy": "sti"
       },
       "extends": "Asset",
-      "exportName": "Image",
-      "collectionExportName": "ImageCollection",
+      "exportName": "Folder",
+      "collectionExportName": "FolderCollection",
+      "validationRules": [
+        {
+          "field": "version",
+          "rule": "required",
+          "fieldType": "integer"
+        }
+      ],
       "schema": {
         "tableName": "assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"source_uri\" TEXT DEFAULT '',\n  \"mime_type\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" TEXT DEFAULT 'null',\n  \"type_slug\" TEXT DEFAULT '',\n  \"status_slug\" TEXT DEFAULT '',\n  \"owner_profile_id\" TEXT DEFAULT 'null',\n  \"parent_id\" TEXT DEFAULT 'null',\n  \"width\" INTEGER DEFAULT 0,\n  \"height\" INTEGER DEFAULT 0,\n  \"alt\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"source_uri\" TEXT,\n  \"mime_type\" TEXT,\n  \"description\" TEXT,\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" TEXT,\n  \"type_slug\" TEXT,\n  \"status_slug\" TEXT,\n  \"owner_profile_id\" TEXT,\n  \"parent_id\" TEXT,\n  \"folder_id\" TEXT,\n  \"source_type\" TEXT,\n  \"external_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -1449,25 +4018,25 @@
             "notNull": true,
             "default": "current_timestamp"
           },
+          "tenant_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
           "name": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "source_uri": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "mime_type": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "description": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "version": {
             "type": "INTEGER",
@@ -1476,43 +4045,35 @@
           },
           "primary_version_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": null
+            "notNull": false
           },
           "type_slug": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "status_slug": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "owner_profile_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": null
+            "notNull": false
           },
           "parent_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": null
+            "notNull": false
           },
-          "width": {
-            "type": "INTEGER",
-            "notNull": false,
-            "default": 0
-          },
-          "height": {
-            "type": "INTEGER",
-            "notNull": false,
-            "default": 0
-          },
-          "alt": {
+          "folder_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
+          },
+          "source_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false
           }
         },
         "indexes": [
@@ -1538,110 +4099,81 @@
             ]
           }
         ],
-        "version": "23e04c30"
+        "version": "d39f9217"
       }
     },
-    "imagecollection": {
-      "name": "imagecollection",
-      "className": "ImageCollection",
+    "@happyvertical/smrt-assets:FolderCollection": {
+      "name": "foldercollection",
+      "className": "FolderCollection",
+      "qualifiedName": "@happyvertical/smrt-assets:FolderCollection",
       "collection": "assets",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/assets/src/images.ts",
+      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/assets/src/folders.ts",
+      "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
-        "getByMinDimensions": {
-          "name": "getByMinDimensions",
+        "getTree": {
+          "name": "getTree",
           "async": true,
           "parameters": [
             {
-              "name": "minWidth",
-              "type": "number",
-              "optional": false
-            },
-            {
-              "name": "minHeight",
-              "type": "number",
-              "optional": false
+              "name": "rootId",
+              "type": "string",
+              "optional": true
             }
           ],
-          "returnType": "Promise<Image[]>",
+          "returnType": "Promise<Folder[]>",
           "isStatic": false,
           "isPublic": true
         },
-        "getByMaxDimensions": {
-          "name": "getByMaxDimensions",
+        "getPath": {
+          "name": "getPath",
           "async": true,
           "parameters": [
             {
-              "name": "maxWidth",
-              "type": "number",
-              "optional": false
-            },
-            {
-              "name": "maxHeight",
-              "type": "number",
+              "name": "folderId",
+              "type": "string",
               "optional": false
             }
           ],
-          "returnType": "Promise<Image[]>",
+          "returnType": "Promise<Folder[]>",
           "isStatic": false,
           "isPublic": true
         },
-        "getLandscape": {
-          "name": "getLandscape",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<Image[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getPortrait": {
-          "name": "getPortrait",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<Image[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSquare": {
-          "name": "getSquare",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<Image[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getMissingAltText": {
-          "name": "getMissingAltText",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<Image[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getHighResolution": {
-          "name": "getHighResolution",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<Image[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getByAspectRatio": {
-          "name": "getByAspectRatio",
+        "getContents": {
+          "name": "getContents",
           "async": true,
           "parameters": [
             {
-              "name": "minRatio",
-              "type": "number",
+              "name": "folderId",
+              "type": "string",
               "optional": false
             },
             {
-              "name": "maxRatio",
-              "type": "number",
+              "name": "assetCollection",
+              "type": "AssetCollection",
               "optional": false
             }
           ],
-          "returnType": "Promise<Image[]>",
+          "returnType": "Promise<Asset[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "moveAsset": {
+          "name": "moveAsset",
+          "async": true,
+          "parameters": [
+            {
+              "name": "asset",
+              "type": "Asset",
+              "optional": false
+            },
+            {
+              "name": "folderId",
+              "type": "string | null",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<void>",
           "isStatic": false,
           "isPublic": true
         }
@@ -1650,9 +4182,9 @@
         "tableName": "assets"
       },
       "extends": "SmrtCollection",
-      "extendsTypeArg": "Image",
-      "exportName": "ImageCollection",
-      "collectionExportName": "ImageCollectionCollection",
+      "extendsTypeArg": "Folder",
+      "exportName": "FolderCollection",
+      "collectionExportName": "FolderCollectionCollection",
       "schema": {
         "tableName": "assets",
         "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
@@ -1698,10 +4230,13 @@
             "unique": true
           }
         ],
-        "version": "411d565d"
+        "version": "9df61270"
       }
     }
   },
   "moduleType": "smrt",
-  "packageName": "@happyvertical/smrt-assets"
+  "smrtDependencies": [
+    "@happyvertical/smrt-core",
+    "@happyvertical/smrt-tags"
+  ]
 }

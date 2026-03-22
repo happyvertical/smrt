@@ -6,11 +6,21 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import fg from 'fast-glob';
-import { importScanner } from '../scanner/import-scanner.js';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { importWorkspaceModule } from '../utils/import-workspace-module.js';
+import type { ScannerModule } from '../utils/scanner-module.js';
 import { discoverSmrtPackages } from './discover-smrt-packages.js';
 import { ManifestManager } from './manager.js';
+
+async function importScanner() {
+  return importWorkspaceModule<ScannerModule>({
+    packageName: '@happyvertical/smrt-scanner',
+    distEntry: 'packages/scanner/dist/index.js',
+    sourceEntry: 'packages/scanner/src/index.ts',
+    purpose: 'manifest generation',
+  });
+}
 
 /**
  * Options for ManifestBuilder.generate()
@@ -189,10 +199,7 @@ export class ManifestBuilder {
     config: ScannerConfig,
     options: ManifestBuilderOptions,
   ): Promise<SmartObjectManifest> {
-    const { OxcScanner, ManifestAdapter } = await importScanner({
-      missingBuildInstruction:
-        'Please build @happyvertical/smrt-scanner before generating manifests.',
-    });
+    const { OxcScanner, ManifestAdapter } = await importScanner();
 
     const scanner = new OxcScanner({
       cwd: process.cwd(),

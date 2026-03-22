@@ -1,7 +1,12 @@
 import type { SmrtConfig } from './types.js';
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtRuntimeConfig: Partial<SmrtConfig> | undefined;
+}
+
 // Runtime config overrides
-let runtimeConfig: Partial<SmrtConfig> = {};
+globalThis.__smrtRuntimeConfig ??= {};
 
 /**
  * Deep-merge two plain objects, with `source` values taking precedence over
@@ -62,7 +67,10 @@ function deepMerge<T extends Record<string, any>>(
  * @see {@link getRuntimeConfig}
  */
 export function setConfig(config: Partial<SmrtConfig>): void {
-  runtimeConfig = deepMerge(runtimeConfig, config);
+  globalThis.__smrtRuntimeConfig = deepMerge(
+    globalThis.__smrtRuntimeConfig || {},
+    config,
+  );
 }
 
 /**
@@ -75,7 +83,7 @@ export function setConfig(config: Partial<SmrtConfig>): void {
  * @returns The accumulated runtime config partial.
  */
 export function getRuntimeConfig(): Partial<SmrtConfig> {
-  return runtimeConfig;
+  return globalThis.__smrtRuntimeConfig || {};
 }
 
 /**
@@ -87,7 +95,7 @@ export function getRuntimeConfig(): Partial<SmrtConfig> {
  * @see {@link setConfig}
  */
 export function clearRuntimeConfig(): void {
-  runtimeConfig = {};
+  globalThis.__smrtRuntimeConfig = {};
 }
 
 /**
