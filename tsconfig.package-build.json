@@ -21,7 +21,6 @@
         "packages/*/src/svelte/playground.ts",
         "packages/*/src/playground.ts"
       ],
-      "@happyvertical/smrt-*/routes": ["packages/*/src/route-module.ts"],
       "@happyvertical/smrt-*/manifest": ["packages/*/src/manifest/manifest.json"],
       "@happyvertical/smrt-*/manifest.json": [
         "packages/*/src/manifest/manifest.json"

@@ -1,24 +1,21 @@
 /**
- * Content route module
+ * Internal content route module
  *
- * Export route components and loader helpers for consuming apps while keeping
- * physical route files app-owned.
+ * Keeps the package's own page shells and loader helpers aligned without
+ * publishing a public `./routes` package contract.
  *
- * @example Downstream SvelteKit wrapper
+ * @example Package-local SvelteKit wrapper
  * ```ts
- * // src/routes/[siteSlug]/content/articles/[slug]/+page.ts
+ * // src/routes/articles/[slug]/+page.ts
  * import { error } from '@sveltejs/kit';
- * import {
- *   CONTENT_ROUTE_MODULE,
- *   isContentRouteLoadError,
- * } from '@happyvertical/smrt-content/routes';
+ * import { CONTENT_ROUTE_MODULE, isContentRouteLoadError } from '../route-module.js';
  *
  * export async function load(event) {
  *   try {
  *     return await CONTENT_ROUTE_MODULE.routes.article.load?.({
  *       fetch: event.fetch,
  *       slug: event.params.slug,
- *       apiBasePath: `/api/sites/${event.params.siteSlug}/content`,
+ *       apiBasePath: '/api/v1',
  *     });
  *   } catch (cause) {
  *     if (isContentRouteLoadError(cause)) {

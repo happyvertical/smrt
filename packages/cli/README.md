@@ -73,6 +73,9 @@ pnpm add -D @happyvertical/smrt-cli
 |---------|------------|
 | `smrt gnode create <name>` | Create new gnode from template |
 | `smrt gnode list-templates` | Show available templates |
+| `smrt playground init` | Scaffold package or app playground modules |
+| `smrt playground dev` | Run the shared or local playground host |
+| `smrt playground list` | List discovered playground entries and modes |
 
 ### Playground
 
@@ -117,7 +120,22 @@ smrt agent:research abc123 --query "AI safety"
 
 # Generate CLAUDE.md for downstream projects
 smrt docs:claude
+
+# Inspect discovered package playground modules
+smrt playground list
 ```
+
+## UI Surfaces
+
+The CLI treats UI surfaces as three separate contracts:
+
+- `./svelte` for reusable components
+- `./playground` for preview metadata consumed by `smrt playground`
+- package-local page shells when a package needs its own dev pages
+
+For this release, packages only need `./svelte` and `./playground` as public UI contracts. Package-local page shells can exist for dev workflows without becoming a published package standard.
+
+See [docs/ui-surfaces.md](../../docs/ui-surfaces.md) for the full convention.
 
 ## Configuration
 

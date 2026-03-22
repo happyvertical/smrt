@@ -16,7 +16,6 @@ export default defineConfig(async ({ mode }) => {
         'ui',
         'mock-smrt-client',
         'playground',
-        'routes',
       ],
       svelte: 'svelte',
       dtsExclude: ['src/routes/**/*', 'src/hooks.server.ts'],

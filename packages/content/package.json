@@ -32,10 +32,6 @@
     "./playground": {
       "types": "./dist/playground.d.ts",
       "import": "./dist/playground.js"
-    },
-    "./routes": {
-      "types": "./dist/routes.d.ts",
-      "import": "./dist/routes.js"
     }
   },
   "scripts": {
