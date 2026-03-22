@@ -198,6 +198,7 @@ function closeForms() {
       <section class="panel">
         {#if editorMode === 'governed'}
           <GovernedContentEditor
+            {apiBaseUrl}
             content={editingContent || undefined}
             contentId={editingContent?.id || 'new'}
             onSave={handleSaveContent}
@@ -205,6 +206,7 @@ function closeForms() {
           />
         {:else}
           <ContentEditor
+            {apiBaseUrl}
             content={editingContent || undefined}
             contentId={editingContent?.id || 'new'}
             onSave={handleSaveContent}
@@ -215,6 +217,7 @@ function closeForms() {
     {:else}
       <section class="panel">
         <ContentList
+          {apiBaseUrl}
           {contents}
           getViewHref={getPublishedHref}
           onEdit={handleEditContent}

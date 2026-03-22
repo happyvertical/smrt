@@ -9,10 +9,12 @@ import {
 
 interface ContentGovernanceRouteProps {
   navigation?: ContentRouteNavigationItem[];
+  apiBaseUrl?: string;
 }
 
 let {
   navigation = CONTENT_DEFAULT_ROUTE_NAVIGATION,
+  apiBaseUrl = '/api/v1',
 }: ContentGovernanceRouteProps = $props();
 
 const workspaceHref = $derived(
@@ -61,7 +63,7 @@ const workspaceHref = $derived(
     </section>
 
     <section class="panel">
-      <ContentGovernanceManager />
+      <ContentGovernanceManager {apiBaseUrl} />
     </section>
   </main>
 </div>
