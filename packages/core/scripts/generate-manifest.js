@@ -42,7 +42,8 @@ await builder.generate({
   // === OUTPUT CONFIGURATION ===
   outputDir: 'src/manifest',
   outputName: 'static-manifest.json',
-  generateTypeStub: false,
+  generateTypeStub: true,
+  stubName: 'static-manifest.ts',
 
   // === METADATA ===
   injectPackageInfo: true,

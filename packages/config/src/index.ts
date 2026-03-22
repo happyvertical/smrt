@@ -15,6 +15,7 @@ export {
   parseExportedConfig,
   sanitizeConfig,
 } from './export.js';
+export { clearRuntimeConfig, getRuntimeConfig, mergeConfigs } from './merge.js';
 
 // Re-export types
 export type {

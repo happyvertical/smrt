@@ -36,7 +36,8 @@
   },
   "dependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
-    "fast-glob": "3.3.3"
+    "fast-glob": "3.3.3",
+    "tsx": "^4.21.0"
   },
   "peerDependencies": {
     "svelte": "^5.18.0",

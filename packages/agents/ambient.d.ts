@@ -1,9 +1,6 @@
 declare module '*.svelte' {
-  import { SvelteComponentTyped } from 'svelte';
+  import type { Component } from 'svelte';
 
-  export default class SvelteComponent extends SvelteComponentTyped<
-    Record<string, any>,
-    Record<string, any>,
-    Record<string, any>
-  > {}
+  const component: Component<Record<string, any>>;
+  export default component;
 }

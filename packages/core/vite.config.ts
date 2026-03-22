@@ -44,6 +44,16 @@ function getCoreEntries() {
 
   // Also add browser entry point
   entries['browser'] = resolve(__dirname, 'src/browser.ts');
+  // These runtime manifest stubs are required by manifest-loader but are not
+  // public package exports, so we include them explicitly in the build graph.
+  entries['manifest/static-manifest'] = resolve(
+    __dirname,
+    'src/manifest/static-manifest.ts',
+  );
+  entries['manifest/test-manifest-stub'] = resolve(
+    __dirname,
+    'src/manifest/test-manifest-stub.ts',
+  );
 
   return entries;
 }

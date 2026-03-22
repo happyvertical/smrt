@@ -1,4 +1,8 @@
 import type {
+  ContentData,
+  ContentTransparencyData,
+} from './mock-smrt-client.js';
+import type {
   LoadPublishedArticleRouteInput,
   PublishedContentArticleRouteData,
 } from './svelte/routes/shared.js';
@@ -66,7 +70,7 @@ export async function loadPublishedArticleRouteData({
   }
 
   const contentPayload = await contentResponse.json();
-  const content = getItemData<any | null>(contentPayload);
+  const content = getItemData<ContentData | null>(contentPayload);
 
   if (!content?.id) {
     throw createContentRouteLoadError(
@@ -89,7 +93,9 @@ export async function loadPublishedArticleRouteData({
   }
 
   const transparencyPayload = await transparencyResponse.json();
-  const transparency = getItemData<any | null>(transparencyPayload);
+  const transparency = getItemData<ContentTransparencyData | null>(
+    transparencyPayload,
+  );
 
   return {
     content,

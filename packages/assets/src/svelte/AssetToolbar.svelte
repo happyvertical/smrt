@@ -29,10 +29,24 @@ let {
   onUpload,
 }: AssetToolbarProps = $props();
 
-let searchValue = $state('');
+function getInitialToolbarState() {
+  return {
+    searchValue: filters.search,
+    filters,
+  };
+}
+
+const initialToolbarState = getInitialToolbarState();
+let searchValue = $state(initialToolbarState.searchValue);
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let appliedFilters: AssetFilters | undefined = initialToolbarState.filters;
 
 $effect(() => {
+  if (appliedFilters === filters) {
+    return;
+  }
+
+  appliedFilters = filters;
   searchValue = filters.search;
 });
 
