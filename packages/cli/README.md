@@ -74,6 +74,14 @@ pnpm add -D @happyvertical/smrt-cli
 | `smrt gnode create <name>` | Create new gnode from template |
 | `smrt gnode list-templates` | Show available templates |
 
+### Playground
+
+| Command | Description |
+|---------|------------|
+| `smrt playground init` | Scaffold package or app playground files |
+| `smrt playground dev` | Run the shared workspace host or local app playground |
+| `smrt playground list` | Show discovered playground modules and preview entries |
+
 ### Auto-Generated Object Commands
 
 For each registered SMRT object, the CLI generates:
@@ -97,6 +105,12 @@ smrt introspect
 
 # Generate an MCP server
 smrt generate:mcp
+
+# Scaffold a package playground definition
+smrt playground init
+
+# Inspect discovered playground entries
+smrt playground list
 
 # Run a custom method on an object
 smrt agent:research abc123 --query "AI safety"

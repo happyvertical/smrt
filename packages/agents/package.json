@@ -22,10 +22,14 @@
     },
     "./server": {
       "import": "./dist/server.js",
-      "types": "./dist/server.d.ts"
+      "types": "./dist/server/index.d.ts"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
+    "./playground": {
+      "import": "./dist/playground.js",
+      "types": "./dist/playground.d.ts"
+    },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
@@ -37,8 +41,9 @@
     "CLAUDE.md"
   ],
   "scripts": {
-    "build": "vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
-    "build:watch": "vite build --watch",
+    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build:watch": "vite build --mode library --watch",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "npx vitest run",
     "test:watch": "vitest"
   },
@@ -48,7 +53,16 @@
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/utils": "catalog:"
+  },
+  "peerDependencies": {
+    "svelte": "^5.18.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@happyvertical/logger": "catalog:",
@@ -59,6 +73,7 @@
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
     "svelte": "^5.18.0",
+    "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"

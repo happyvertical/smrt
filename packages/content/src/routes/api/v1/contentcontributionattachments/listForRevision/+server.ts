@@ -7,9 +7,10 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: listForRevision
 export const POST: RequestHandler = async ({ request }) => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:ContentContributionAttachment',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
@@ -17,7 +18,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.listForRevision(options.revisionId);
+  const result = await typedCollection.listForRevision(options.revisionId);
 
   return json({ action: 'listForRevision', result });
 };

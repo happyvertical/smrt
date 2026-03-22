@@ -42,14 +42,30 @@ let {
 
 // Internal state
 let config = $state<ThemeConfig>({
-  colorScheme,
-  primaryColor: primaryColor ?? defaultThemeConfig.primaryColor,
-  borderRadius,
-  overrides,
+  colorScheme: 'system',
+  primaryColor: defaultThemeConfig.primaryColor,
+  borderRadius: 'md',
+  overrides: {},
 });
 
 let systemPrefersDark = $state(false);
 let mounted = $state(false);
+
+$effect(() => {
+  config.colorScheme = colorScheme;
+});
+
+$effect(() => {
+  config.primaryColor = primaryColor ?? defaultThemeConfig.primaryColor;
+});
+
+$effect(() => {
+  config.borderRadius = borderRadius;
+});
+
+$effect(() => {
+  config.overrides = overrides;
+});
 
 // Resolved scheme (never 'system')
 const resolvedScheme = $derived<'light' | 'dark'>(

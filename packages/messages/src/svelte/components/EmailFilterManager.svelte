@@ -5,22 +5,7 @@
  * Reusable component for managing email allow/block lists.
  * Works with any backend via callback props.
  */
-
-export interface WhitelistEntry {
-  id: string;
-  pattern: string;
-  type: 'email' | 'domain' | 'regex';
-  category?: string | null;
-  description?: string;
-}
-
-export interface BlacklistEntry {
-  id: string;
-  pattern: string;
-  type: 'email' | 'domain' | 'regex';
-  reason?: string;
-  autoArchive?: boolean;
-}
+import type { BlacklistEntry, WhitelistEntry } from '../types.js';
 
 export interface Props {
   whitelist: WhitelistEntry[];

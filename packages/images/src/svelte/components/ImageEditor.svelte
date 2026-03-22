@@ -1,15 +1,23 @@
 <script lang="ts">
-import type { Image } from '../../image';
+import type {
+  ImageConvertRequest,
+  ImageCropRequest,
+  ImageEditorClient,
+  ImageLike,
+  ImageResizeRequest,
+} from '../image-clients';
 
 let {
   image = null,
   apiBaseUrl = '/api/v1',
+  client = undefined,
   onSave = undefined,
   onCancel = undefined,
 }: {
-  image?: Image | null;
+  image?: ImageLike | null;
   apiBaseUrl?: string;
-  onSave?: (image: Image) => void;
+  client?: ImageEditorClient;
+  onSave?: (image: ImageLike) => void;
   onCancel?: () => void;
 } = $props();
 
@@ -37,6 +45,26 @@ let isProcessing = $state(false);
 let error: string | null = $state(null);
 let successMessage: string | null = $state(null);
 
+async function postEditorRequest<TPayload extends object>(
+  endpoint: string,
+  payload: TPayload,
+) {
+  const res = await fetch(`${apiBaseUrl}/images/${image?.id}/${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    let errText = await res.text();
+    if (errText.trim().startsWith('<'))
+      errText = `Server returned ${res.status} ${res.statusText}`;
+    throw new Error(errText);
+  }
+
+  return (await res.json()) as { image: ImageLike };
+}
+
 $effect(() => {
   // Only reset dimensions if the actual image selection changes
   if (image?.id && image.id !== lastImageId) {
@@ -62,19 +90,10 @@ async function handleResize() {
   successMessage = null;
 
   try {
-    const res = await fetch(`${apiBaseUrl}/images/${image.id}/resize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ width, height }),
-    });
-
-    if (!res.ok) {
-      let errText = await res.text();
-      if (errText.trim().startsWith('<'))
-        errText = `Server returned ${res.status} ${res.statusText}`;
-      throw new Error(errText);
-    }
-    const data = await res.json();
+    const payload: ImageResizeRequest = { width, height };
+    const data = client
+      ? await client.resize(image.id, payload)
+      : await postEditorRequest('resize', payload);
 
     successMessage = 'Image resized successfully (new derivative created).';
     if (onSave) onSave(data.image);
@@ -92,14 +111,15 @@ async function handleCrop() {
   successMessage = null;
 
   try {
-    const res = await fetch(`${apiBaseUrl}/images/${image.id}/crop`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ x: cropX, y: cropY, w: cropW, h: cropH }),
-    });
-
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
+    const payload: ImageCropRequest = {
+      x: cropX,
+      y: cropY,
+      w: cropW,
+      h: cropH,
+    };
+    const data = client
+      ? await client.crop(image.id, payload)
+      : await postEditorRequest('crop', payload);
 
     successMessage = 'Image cropped successfully (new derivative created).';
     if (onSave) onSave(data.image);
@@ -117,14 +137,10 @@ async function handleConvert() {
   successMessage = null;
 
   try {
-    const res = await fetch(`${apiBaseUrl}/images/${image.id}/convert`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ format }),
-    });
-
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
+    const payload: ImageConvertRequest = { format };
+    const data = client
+      ? await client.convert(image.id, payload)
+      : await postEditorRequest('convert', payload);
 
     successMessage = `Image converted to ${format} successfully (new derivative created).`;
     if (onSave) onSave(data.image);
@@ -142,14 +158,9 @@ async function handleAIEdit() {
   successMessage = null;
 
   try {
-    const res = await fetch(`${apiBaseUrl}/images/${image.id}/edit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
-    });
-
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
+    const data = client
+      ? await client.edit(image.id, { prompt })
+      : await postEditorRequest('edit', { prompt });
 
     successMessage = 'AI edit complete (new derivative created).';
     if (onSave) onSave(data.image);

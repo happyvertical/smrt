@@ -335,6 +335,10 @@ export abstract class Agent extends SmrtObject {
     // Get file-based config from module config
     const fileConfig = (this.config as Record<string, any>)?.[slotId] ?? {};
 
+    if (!this.id) {
+      return fileConfig;
+    }
+
     // Get db-persisted config
     const dbConfig = await AgentConfig.forSlot(this.id, slotId, this.options);
 

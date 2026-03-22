@@ -19,25 +19,60 @@ const {
   loading = false,
 }: Props = $props();
 
-let name = $state(profile?.name ?? '');
-let email = $state(user?.email ?? '');
-let status: UserStatus = $state(user?.status ?? UserStatus.ACTIVE);
+function createFormState(
+  currentUser: User | null,
+  currentProfile: Profile | null,
+) {
+  return {
+    name: currentProfile?.name ?? '',
+    email: currentUser?.email ?? '',
+    status: currentUser?.status ?? UserStatus.ACTIVE,
+  };
+}
+
+let form = $state(createFormState(null, null));
+let lastUser: User | null | undefined;
+let lastProfile: Profile | null | undefined;
+
+$effect(() => {
+  if (user !== lastUser || profile !== lastProfile) {
+    lastUser = user;
+    lastProfile = profile;
+    form = createFormState(user, profile);
+  }
+});
 
 function handleSubmit(e: Event) {
   e.preventDefault();
-  onsubmit({ name, email, status });
+  onsubmit({
+    name: form.name,
+    email: form.email,
+    status: form.status,
+  });
 }
 </script>
 
 <form class="user-form" onsubmit={handleSubmit}>
   <div class="field">
     <label for="name">Name</label>
-    <input id="name" type="text" bind:value={name} required disabled={loading} />
+    <input
+      id="name"
+      type="text"
+      bind:value={form.name}
+      required
+      disabled={loading}
+    />
   </div>
 
   <div class="field">
     <label for="email">Email</label>
-    <input id="email" type="email" bind:value={email} required disabled={loading || !!user} />
+    <input
+      id="email"
+      type="email"
+      bind:value={form.email}
+      required
+      disabled={loading || !!user}
+    />
     {#if user}
       <span class="hint">Email cannot be changed after creation</span>
     {/if}
@@ -45,7 +80,7 @@ function handleSubmit(e: Event) {
 
   <div class="field">
     <label for="status">Status</label>
-    <select id="status" bind:value={status} disabled={loading}>
+    <select id="status" bind:value={form.status} disabled={loading}>
       <option value="active">Active</option>
       <option value="pending">Pending</option>
       <option value="suspended">Suspended</option>

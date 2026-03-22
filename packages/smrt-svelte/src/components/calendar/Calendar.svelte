@@ -33,8 +33,16 @@ const {
   onTodayClick,
 }: Props = $props();
 
-let currentYear = $state(initialYear);
-let currentMonth = $state(initialMonth);
+let currentYear = $state(new Date().getFullYear());
+let currentMonth = $state(new Date().getMonth());
+
+$effect(() => {
+  currentYear = initialYear;
+});
+
+$effect(() => {
+  currentMonth = initialMonth;
+});
 
 const MONTHS = [
   'January',

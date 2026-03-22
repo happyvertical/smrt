@@ -1,17 +1,25 @@
 <script lang="ts">
 import { onDestroy } from 'svelte';
-import type { Image } from '../../image';
+import type {
+  ImageEditorClient,
+  ImageLike,
+  ImagesGalleryClient,
+} from '../image-clients';
 import AssetsGallery from './AssetsGallery.svelte';
 
 let {
   apiBaseUrl = '/api/v1',
+  editorClient = undefined,
+  galleryClient = undefined,
   onSelect,
   onCancel = undefined,
   allowedTabs = ['gallery', 'upload', 'camera', 'external'],
 }: {
   apiBaseUrl?: string;
+  editorClient?: ImageEditorClient;
+  galleryClient?: ImagesGalleryClient;
   /** @required Callback when an image is selected */
-  onSelect: (image: Image | File | string) => void;
+  onSelect: (image: ImageLike | File | string) => void;
   onCancel?: () => void;
   allowedTabs?: ('gallery' | 'upload' | 'camera' | 'external')[];
 } = $props();
@@ -168,13 +176,13 @@ function handleExternalSubmit() {
 
 // --- Gallery Confirmation + Variation ---
 
-let selectedImage: Image | null = $state(null);
+let selectedImage: ImageLike | null = $state(null);
 let showVariation = $state(false);
 let variationPrompt = $state('');
 let isGenerating = $state(false);
 let variationError: string | null = $state(null);
 
-function handleGalleryPick(image: Image) {
+function handleGalleryPick(image: ImageLike) {
   selectedImage = image;
   showVariation = false;
   variationPrompt = '';
@@ -200,20 +208,29 @@ async function handleGenerateVariation() {
   variationError = null;
 
   try {
-    const res = await fetch(`${apiBaseUrl}/images/${selectedImage.id}/edit`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: variationPrompt }),
-    });
+    const data = editorClient
+      ? await editorClient.edit(selectedImage.id, {
+          prompt: variationPrompt,
+        })
+      : await (async () => {
+          const res = await fetch(
+            `${apiBaseUrl}/images/${selectedImage.id}/edit`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prompt: variationPrompt }),
+            },
+          );
 
-    if (!res.ok) {
-      let errText = await res.text();
-      if (errText.trim().startsWith('<'))
-        errText = `Server returned ${res.status} ${res.statusText}`;
-      throw new Error(errText);
-    }
+          if (!res.ok) {
+            let errText = await res.text();
+            if (errText.trim().startsWith('<'))
+              errText = `Server returned ${res.status} ${res.statusText}`;
+            throw new Error(errText);
+          }
 
-    const data = await res.json();
+          return (await res.json()) as { image: ImageLike };
+        })();
     onSelect(data.image);
     selectedImage = null;
   } catch (e: any) {
@@ -328,7 +345,11 @@ onDestroy(() => {
       
       {#if activeTab === 'gallery'}
         <div class="gallery-wrapper">
-          <AssetsGallery {apiBaseUrl} onSelect={handleGalleryPick} />
+          <AssetsGallery
+            {apiBaseUrl}
+            client={galleryClient}
+            onSelect={handleGalleryPick}
+          />
         </div>
         
       {:else if activeTab === 'upload'}

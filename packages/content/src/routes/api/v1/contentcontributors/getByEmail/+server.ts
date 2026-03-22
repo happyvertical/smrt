@@ -7,9 +7,10 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: getByEmail
 export const POST: RequestHandler = async ({ request }) => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:ContentContributor',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
@@ -17,7 +18,7 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getByEmail(options.email);
+  const result = await typedCollection.getByEmail(options.email);
 
   return json({ action: 'getByEmail', result });
 };

@@ -5,6 +5,7 @@
  * More stable than transformers.js implementation.
  */
 
+import { importOptional } from '../../../utils/import-optional.js';
 import {
   CapabilityNotAvailableError,
   InitializationError,
@@ -178,7 +179,7 @@ export class WhisperCppSTTAdapter implements STTAdapter {
 
   private async importWhisperWeb(): Promise<any> {
     try {
-      return await import('@remotion/whisper-web');
+      return await importOptional('@remotion/whisper-web');
     } catch {
       throw new InitializationError(
         'whisper-cpp',

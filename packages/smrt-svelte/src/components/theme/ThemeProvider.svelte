@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import {
   elevationTokens,
   typographyTokens,
@@ -13,7 +14,10 @@ interface Props {
 
 const { seed = '#6750A4', mode = 'system', children }: Props = $props();
 
-const themeState = setThemeContext(seed, mode);
+const initialSeed = untrack(() => seed);
+const initialMode = untrack(() => mode);
+
+const themeState = setThemeContext(initialSeed, initialMode);
 
 // Sync props to state if they change
 $effect(() => {

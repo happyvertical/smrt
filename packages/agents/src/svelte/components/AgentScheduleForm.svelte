@@ -4,7 +4,7 @@
  */
 
 import { Button, Card } from '@happyvertical/smrt-svelte/ui';
-import type { ScheduleFormData } from './types.js';
+import type { ScheduleFormData } from '../types.js';
 
 export interface Props {
   /** Initial form data (for editing) */
@@ -30,15 +30,28 @@ let {
   editMode = false,
 }: Props = $props();
 
-// Form state
-let agentType = $state(initialData.agentType ?? '');
-let agentId = $state(initialData.agentId ?? '');
-let cron = $state(initialData.cron ?? '');
-let timezone = $state(initialData.timezone ?? 'UTC');
-let enabled = $state(initialData.enabled ?? true);
-let maxConcurrent = $state(initialData.maxConcurrent ?? 1);
-let timeout = $state(initialData.timeout ?? 3600000);
-let method = $state(initialData.method ?? 'run');
+function createFormState(data: Partial<ScheduleFormData>) {
+  return {
+    agentType: data.agentType ?? '',
+    agentId: data.agentId ?? '',
+    cron: data.cron ?? '',
+    timezone: data.timezone ?? 'UTC',
+    enabled: data.enabled ?? true,
+    maxConcurrent: data.maxConcurrent ?? 1,
+    timeout: data.timeout ?? 3600000,
+    method: data.method ?? 'run',
+  };
+}
+
+let form = $state(createFormState({}));
+let lastInitialData: Partial<ScheduleFormData> | undefined;
+
+$effect(() => {
+  if (initialData !== lastInitialData) {
+    lastInitialData = initialData;
+    form = createFormState(initialData);
+  }
+});
 
 // Common cron presets
 const cronPresets = [
@@ -64,31 +77,33 @@ const timezones = [
 ];
 
 // Validation
-const isValid = $derived(agentType.trim() !== '' && cron.trim() !== '');
+const isValid = $derived(
+  form.agentType.trim() !== '' && form.cron.trim() !== '',
+);
 
 function handleSubmit(event: Event) {
   event.preventDefault();
   if (!isValid || loading) return;
 
   const data: ScheduleFormData = {
-    agentType: agentType.trim(),
-    cron: cron.trim(),
-    timezone,
-    enabled,
-    maxConcurrent,
-    timeout,
-    method: method.trim() || 'run',
+    agentType: form.agentType.trim(),
+    cron: form.cron.trim(),
+    timezone: form.timezone,
+    enabled: form.enabled,
+    maxConcurrent: form.maxConcurrent,
+    timeout: form.timeout,
+    method: form.method.trim() || 'run',
   };
 
-  if (agentId.trim()) {
-    data.agentId = agentId.trim();
+  if (form.agentId.trim()) {
+    data.agentId = form.agentId.trim();
   }
 
   onSubmit?.(data);
 }
 
 function handleCronPreset(preset: string) {
-  cron = preset;
+  form.cron = preset;
 }
 </script>
 
@@ -103,7 +118,12 @@ function handleCronPreset(preset: string) {
       <div class="form-field">
         <label for="agentType">Agent Type *</label>
         {#if agentTypes.length > 0}
-          <select id="agentType" bind:value={agentType} required disabled={loading}>
+          <select
+            id="agentType"
+            bind:value={form.agentType}
+            required
+            disabled={loading}
+          >
             <option value="">Select agent type...</option>
             {#each agentTypes as type}
               <option value={type}>{type}</option>
@@ -113,7 +133,7 @@ function handleCronPreset(preset: string) {
           <input
             type="text"
             id="agentType"
-            bind:value={agentType}
+            bind:value={form.agentType}
             placeholder="e.g., Praeco, Scraper"
             required
             disabled={loading}
@@ -127,7 +147,7 @@ function handleCronPreset(preset: string) {
         <input
           type="text"
           id="agentId"
-          bind:value={agentId}
+          bind:value={form.agentId}
           placeholder="Specific instance ID"
           disabled={loading}
         />
@@ -140,7 +160,7 @@ function handleCronPreset(preset: string) {
         <input
           type="text"
           id="method"
-          bind:value={method}
+          bind:value={form.method}
           placeholder="run"
           disabled={loading}
         />
@@ -153,7 +173,7 @@ function handleCronPreset(preset: string) {
         <input
           type="text"
           id="cron"
-          bind:value={cron}
+          bind:value={form.cron}
           placeholder="0 2 * * *"
           required
           disabled={loading}
@@ -176,7 +196,7 @@ function handleCronPreset(preset: string) {
       <!-- Timezone -->
       <div class="form-field">
         <label for="timezone">Timezone</label>
-        <select id="timezone" bind:value={timezone} disabled={loading}>
+        <select id="timezone" bind:value={form.timezone} disabled={loading}>
           {#each timezones as tz}
             <option value={tz}>{tz}</option>
           {/each}
@@ -189,7 +209,7 @@ function handleCronPreset(preset: string) {
         <input
           type="number"
           id="maxConcurrent"
-          bind:value={maxConcurrent}
+          bind:value={form.maxConcurrent}
           min="1"
           max="10"
           disabled={loading}
@@ -203,18 +223,22 @@ function handleCronPreset(preset: string) {
         <input
           type="number"
           id="timeout"
-          bind:value={timeout}
+          bind:value={form.timeout}
           min="60000"
           step="60000"
           disabled={loading}
         />
-        <small>{(timeout / 60000).toFixed(0)} minutes</small>
+        <small>{(form.timeout / 60000).toFixed(0)} minutes</small>
       </div>
 
       <!-- Enabled -->
       <div class="form-field form-field--checkbox">
         <label>
-          <input type="checkbox" bind:checked={enabled} disabled={loading} />
+          <input
+            type="checkbox"
+            bind:checked={form.enabled}
+            disabled={loading}
+          />
           Enable schedule immediately
         </label>
       </div>

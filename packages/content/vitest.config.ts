@@ -2,25 +2,18 @@ import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
+import { viteWorkspaceAliases } from './workspace-aliases.js';
 
 export default defineConfig({
   plugins: [svelte(), smrtVitestPlugin()],
   resolve: {
-    alias: {
-      $lib: resolve(__dirname, 'src/lib'),
-      '@happyvertical/smrt-facts': resolve(
-        __dirname,
-        '../facts/src/index.ts',
-      ),
-      '@happyvertical/smrt-messages': resolve(
-        __dirname,
-        '../messages/src/index.ts',
-      ),
-      '@happyvertical/smrt-profiles': resolve(
-        __dirname,
-        '../profiles/src/index.ts',
-      ),
-    },
+    alias: [
+      {
+        find: '$lib',
+        replacement: resolve(__dirname, 'src/lib'),
+      },
+      ...viteWorkspaceAliases,
+    ],
     conditions: ['browser'],
   },
   test: {

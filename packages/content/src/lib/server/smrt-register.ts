@@ -9,32 +9,32 @@
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
-import { ContentContributionAttachment } from '../../content-contribution-attachment';
-import '../../content-contribution-attachments';
-import { ContentContributionRevision } from '../../content-contribution-revision';
-import '../../content-contribution-revisions';
-import { ContentContributionType } from '../../content-contribution-type';
-import '../../content-contribution-types';
+import { Content } from '../../content';
 import { ContentContribution } from '../../content-contribution';
-import '../../content-contributions';
+import { ContentContributionAttachment } from '../../content-contribution-attachment';
+import { ContentContributionRevision } from '../../content-contribution-revision';
+import { ContentContributionType } from '../../content-contribution-type';
 import { ContentContributor } from '../../content-contributor';
-import '../../content-contributors';
 import { ContentCorrection } from '../../content-correction';
-import '../../content-corrections';
 import { ContentGovernanceAssignment } from '../../content-governance-assignment';
-import '../../content-governance-assignments';
-import '../../content-governance-policies';
 import { ContentGovernancePolicy } from '../../content-governance-policy';
 import { ContentGovernanceProfile } from '../../content-governance-profile';
-import '../../content-governance-profiles';
 import { ContentReference } from '../../content-reference';
-import '../../content-references';
 import { ContentReview } from '../../content-review';
-import '../../content-reviews';
 import { Article, ContentDocument, Mirror } from '../../content-types';
 import { ContentVersion } from '../../content-version';
+import '../../content-contribution-attachments';
+import '../../content-contribution-revisions';
+import '../../content-contribution-types';
+import '../../content-contributions';
+import '../../content-contributors';
+import '../../content-corrections';
+import '../../content-governance-assignments';
+import '../../content-governance-policies';
+import '../../content-governance-profiles';
+import '../../content-references';
+import '../../content-reviews';
 import '../../content-versions';
-import { Content } from '../../content';
 import '../../contents';
 
 // Re-register imported objects with explicit package names for bundled runtimes

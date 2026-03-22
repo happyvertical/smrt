@@ -45,3 +45,23 @@ export interface CardProps
   header?: Snippet;
   footer?: Snippet;
 }
+
+export interface DayEventDetail {
+  type: 'game' | 'meeting' | 'event' | (string & {});
+  name: string;
+  startTime: string;
+  venue?: string;
+  slug?: string;
+  councilSlug?: string;
+}
+
+export interface DayEventsData {
+  date: string;
+  events: DayEventDetail[];
+}
+
+export interface DayForecast {
+  icon: string;
+  high: number;
+  low: number;
+}

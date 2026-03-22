@@ -23,6 +23,14 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
     filters?: SearchFilters;
   }): Promise<PullRequest[]> {
     const { repository, filters } = options;
+    const repositoryId = repository.id;
+
+    if (!repositoryId) {
+      throw new Error(
+        'Repository must be saved before discovering pull requests',
+      );
+    }
+
     const repoClient = await repository.getClient();
 
     // Note: searchIssues with type filter would get PRs in GitHub
@@ -48,7 +56,7 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
       // Find existing PR by repository + number
       let pr = await this.findOne({
         where: {
-          repositoryId: repository.id,
+          repositoryId,
           number: remote.number,
         },
       });
@@ -56,7 +64,7 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
       if (!pr) {
         // Create new PR
         pr = await this.create({
-          repositoryId: repository.id,
+          repositoryId,
           number: prData.number,
           nodeId: prData.id,
           title: prData.title,

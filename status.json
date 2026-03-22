@@ -253,13 +253,6 @@
       "newVersion": "0.20.55"
     },
     {
-      "name": "smrt-svelte-playground",
-      "type": "none",
-      "oldVersion": "0.0.0",
-      "changesets": [],
-      "newVersion": "0.0.0"
-    },
-    {
       "name": "@happyvertical/smrt-config",
       "type": "patch",
       "oldVersion": "0.20.54",

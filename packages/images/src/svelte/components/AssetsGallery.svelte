@@ -1,16 +1,22 @@
 <script lang="ts">
 import { onMount } from 'svelte';
-import type { Image } from '../../image';
+import type {
+  ImageLike,
+  ImagesGalleryClient,
+  ImagesGalleryQuery,
+} from '../image-clients';
 
 let {
   apiBaseUrl = '/api/v1',
+  client = undefined,
   onSelect = undefined,
 }: {
   apiBaseUrl?: string;
-  onSelect?: (image: Image) => void;
+  client?: ImagesGalleryClient;
+  onSelect?: (image: ImageLike) => void;
 } = $props();
 
-let images: Image[] = $state([]);
+let images: ImageLike[] = $state([]);
 let isLoading = $state(false);
 let error: string | null = $state(null);
 
@@ -25,6 +31,32 @@ let minHeight = $state('');
 let limit = 24;
 let offset = $state(0);
 let hasMore = $state(true);
+
+async function loadImagesFromApi(query: ImagesGalleryQuery) {
+  const params = new URLSearchParams({
+    limit: query.limit.toString(),
+    offset: query.offset.toString(),
+  });
+
+  if (query.q) params.append('q', query.q);
+  if (query.orientation) params.append('orientation', query.orientation);
+  if (typeof query.minWidth === 'number') {
+    params.append('minWidth', query.minWidth.toString());
+  }
+  if (typeof query.minHeight === 'number') {
+    params.append('minHeight', query.minHeight.toString());
+  }
+
+  const res = await fetch(`${apiBaseUrl}/images?${params.toString()}`);
+  if (!res.ok) {
+    let errText = await res.text();
+    if (errText.trim().startsWith('<'))
+      errText = `Server returned ${res.status} ${res.statusText}`;
+    throw new Error(errText);
+  }
+
+  return (await res.json()) as { items: ImageLike[] };
+}
 
 async function loadImages(reset = false) {
   if (isLoading) return;
@@ -41,27 +73,19 @@ async function loadImages(reset = false) {
   error = null;
 
   try {
-    // Build query string
-    const params = new URLSearchParams({
-      limit: limit.toString(),
-      offset: offset.toString(),
-    });
-
-    if (searchQuery) params.append('q', searchQuery);
-    if (orientationFilter !== 'all')
-      params.append('orientation', orientationFilter);
-    if (minWidth) params.append('minWidth', minWidth);
-    if (minHeight) params.append('minHeight', minHeight);
-
-    const res = await fetch(`${apiBaseUrl}/images?${params.toString()}`);
-    if (!res.ok) {
-      let errText = await res.text();
-      if (errText.trim().startsWith('<'))
-        errText = `Server returned ${res.status} ${res.statusText}`;
-      throw new Error(errText);
-    }
-
-    const data = await res.json();
+    const query: ImagesGalleryQuery = {
+      limit,
+      offset,
+      ...(searchQuery ? { q: searchQuery } : {}),
+      ...(orientationFilter !== 'all'
+        ? { orientation: orientationFilter }
+        : {}),
+      ...(minWidth ? { minWidth: Number(minWidth) } : {}),
+      ...(minHeight ? { minHeight: Number(minHeight) } : {}),
+    };
+    const data = client
+      ? await client.list(query)
+      : await loadImagesFromApi(query);
 
     if (data.items.length < limit) {
       hasMore = false;
@@ -93,7 +117,7 @@ $effect(() => {
   };
 });
 
-function handleSelect(image: Image) {
+function handleSelect(image: ImageLike) {
   if (onSelect) {
     onSelect(image);
   }

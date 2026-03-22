@@ -6,6 +6,7 @@
  * Requires downloading model files (~40MB-150MB depending on model size).
  */
 
+import { importOptional } from '../../../utils/import-optional.js';
 import {
   CapabilityNotAvailableError,
   InitializationError,
@@ -163,13 +164,15 @@ export class WhisperWasmSTTAdapter implements STTAdapter {
   private async importTransformers(): Promise<any> {
     try {
       // Try v2 (@xenova/transformers) first
-      this.transformersModule = await import('@xenova/transformers');
+      this.transformersModule = await importOptional('@xenova/transformers');
       this.configureTransformersEnv(this.transformersModule);
       return this.transformersModule;
     } catch {
       try {
         // Fall back to v3 (@huggingface/transformers)
-        this.transformersModule = await import('@huggingface/transformers');
+        this.transformersModule = await importOptional(
+          '@huggingface/transformers',
+        );
         this.configureTransformersEnv(this.transformersModule);
         return this.transformersModule;
       } catch {

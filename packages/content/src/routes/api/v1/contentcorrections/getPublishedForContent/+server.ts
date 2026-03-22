@@ -7,9 +7,10 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: getPublishedForContent
 export const POST: RequestHandler = async ({ request }) => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:ContentCorrection',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
@@ -17,7 +18,9 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.getPublishedForContent(options.contentId);
+  const result = await typedCollection.getPublishedForContent(
+    options.contentId,
+  );
 
   return json({ action: 'getPublishedForContent', result });
 };

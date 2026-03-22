@@ -436,7 +436,7 @@ export const AGENTS_UI_SLOTS: Record<string, ModuleUISlot> = {
     label: 'Agent Dashboard',
     description: 'Combined overview panel for agent schedules',
     icon: 'activity',
-    category: 'dashboard',
+    category: 'admin',
     order: 1,
     propsInterface: 'AgentDashboardProps',
   },

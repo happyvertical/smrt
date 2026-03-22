@@ -29,33 +29,64 @@ let runtimeRegistrationReady = false;
 let runtimeRegistrationPromise: Promise<void> | null = null;
 const currentPackageRoot = fileURLToPath(new URL('..', import.meta.url));
 
-const dependencyPackageLoaders = [
-  () => import('@happyvertical/smrt-assets'),
-  () => import('@happyvertical/smrt-chat'),
-  () => import('@happyvertical/smrt-facts'),
-  () => import('@happyvertical/smrt-images'),
-  () => import('@happyvertical/smrt-messages'),
-  () => import('@happyvertical/smrt-profiles'),
+const dependencyPackages = [
+  {
+    packageName: '@happyvertical/smrt-assets',
+    load: () => import('@happyvertical/smrt-assets'),
+  },
+  {
+    packageName: '@happyvertical/smrt-chat',
+    load: () => import('@happyvertical/smrt-chat'),
+  },
+  {
+    packageName: '@happyvertical/smrt-facts',
+    load: () => import('@happyvertical/smrt-facts'),
+  },
+  {
+    packageName: '@happyvertical/smrt-images',
+    load: () => import('@happyvertical/smrt-images'),
+  },
+  {
+    packageName: '@happyvertical/smrt-messages',
+    load: () => import('@happyvertical/smrt-messages'),
+  },
+  {
+    packageName: '@happyvertical/smrt-profiles',
+    load: () => import('@happyvertical/smrt-profiles'),
+  },
 ] as const;
 
-function resolveWorkspaceManifestPaths(): string[] {
-  const packageRoots = [
-    currentPackageRoot,
-    ...Object.values(workspacePackageRoots),
+function resolveManifestPath(
+  packageRoot: string,
+  allowLocalManifestFallback: boolean,
+): string | undefined {
+  const candidates = [
+    resolve(packageRoot, 'dist/manifest.json'),
+    resolve(packageRoot, 'src/manifest/manifest.json'),
   ];
 
-  const candidates = packageRoots
-    .map((packageRoot) =>
-      [
-        resolve(packageRoot, '.smrt/manifest.json'),
-        resolve(packageRoot, 'dist/manifest.json'),
-        resolve(packageRoot, 'src/manifest/manifest.json'),
-        resolve(packageRoot, 'src/manifest/test-manifest.json'),
-      ].find((manifestPath) => existsSync(manifestPath)),
-    )
+  if (allowLocalManifestFallback) {
+    candidates.unshift(resolve(packageRoot, '.smrt/manifest.json'));
+  }
+
+  return candidates.find((manifestPath) => existsSync(manifestPath));
+}
+
+function resolveWorkspaceManifestPaths(): string[] {
+  const currentPackageManifest = resolveManifestPath(currentPackageRoot, true);
+  const dependencyManifests = dependencyPackages
+    .map(({ packageName }) => workspacePackageRoots[packageName])
+    .filter((packageRoot): packageRoot is string => Boolean(packageRoot))
+    .map((packageRoot) => resolveManifestPath(packageRoot, true))
     .filter((manifestPath): manifestPath is string => Boolean(manifestPath));
 
-  return [...new Set(candidates)];
+  return [
+    ...new Set(
+      [currentPackageManifest, ...dependencyManifests].filter(
+        (manifestPath): manifestPath is string => Boolean(manifestPath),
+      ),
+    ),
+  ];
 }
 
 async function registerContentWorkspaceRuntime() {
@@ -77,8 +108,8 @@ async function registerContentWorkspaceRuntime() {
       ObjectRegistry.loadAllManifests();
     }
 
-    for (const loadDependencyPackage of dependencyPackageLoaders) {
-      await loadDependencyPackage();
+    for (const { load } of dependencyPackages) {
+      await load();
     }
 
     // Register the content package after dependency manifests are cached so the

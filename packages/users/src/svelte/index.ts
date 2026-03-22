@@ -8,6 +8,7 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { USERS_MODULE_META } from '../ui.js';
 
 // Import components
@@ -22,12 +23,12 @@ import UserMenu from './components/UserMenu.svelte';
 export { InviteUserModal, UserAvatar, UserCard, UserForm, UserList, UserMenu };
 
 // Export component prop types
-export type { Props as InviteUserModalProps } from './components/InviteUserModal.svelte';
-export type { Props as UserAvatarProps } from './components/UserAvatar.svelte';
-export type { Props as UserCardProps } from './components/UserCard.svelte';
-export type { Props as UserFormProps } from './components/UserForm.svelte';
-export type { Props as UserListProps } from './components/UserList.svelte';
-export type { Props as UserMenuProps } from './components/UserMenu.svelte';
+export type InviteUserModalProps = ComponentProps<typeof InviteUserModal>;
+export type UserAvatarProps = ComponentProps<typeof UserAvatar>;
+export type UserCardProps = ComponentProps<typeof UserCard>;
+export type UserFormProps = ComponentProps<typeof UserForm>;
+export type UserListProps = ComponentProps<typeof UserList>;
+export type UserMenuProps = ComponentProps<typeof UserMenu>;
 
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(USERS_MODULE_META);

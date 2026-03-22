@@ -5,9 +5,11 @@ import dts from 'vite-plugin-dts';
 interface PackageConfigOptions {
   /**
    * Svelte component subdirectory (relative to src/).
-   * When set, vite externalizes .svelte imports and skips that directory
-   * for dts generation. Use `svelte-package` in a secondary build step
-   * to generate proper .svelte.d.ts type declarations.
+   * When set, vite externalizes .svelte imports. TypeScript modules inside
+   * that directory still participate in declaration generation so package
+   * entrypoints like `src/playground.ts` can safely re-export
+   * `src/svelte/playground.ts`. Use `svelte-package` in a secondary build
+   * step to generate the final `.svelte.d.ts` type declarations.
    *
    * Example build script: `vite build --mode library && svelte-package -i src/svelte -o dist/svelte -p`
    */
@@ -17,6 +19,13 @@ interface PackageConfigOptions {
    * Each entry is emitted as a separate file in dist/ (e.g., `ui` → `dist/ui.js`).
    */
   entries?: string[];
+  /**
+   * Additional entry points with explicit output names and source paths.
+   *
+   * Keys become the emitted file names (for example, `adapters/index` emits
+   * `dist/adapters/index.js`) and values are paths relative to the package root.
+   */
+  entryPoints?: Record<string, string>;
   /**
    * Additional declaration-file exclude globs, relative to the package root.
    * Use this for package-local app/dev surfaces that should not ship as
@@ -58,19 +67,24 @@ export function createPackageConfig(
     }
 
     // Build entry points map
-    const entryPoints: Record<string, string> = {
+    const buildEntries: Record<string, string> = {
       index: resolve(packageDir, 'src/index.ts'),
     };
     if (options.entries) {
       for (const name of options.entries) {
-        entryPoints[name] = resolve(packageDir, `src/${name}.ts`);
+        buildEntries[name] = resolve(packageDir, `src/${name}.ts`);
+      }
+    }
+    if (options.entryPoints) {
+      for (const [name, entryPath] of Object.entries(options.entryPoints)) {
+        buildEntries[name] = resolve(packageDir, entryPath);
       }
     }
 
     return {
       build: {
         lib: {
-          entry: entryPoints,
+          entry: buildEntries,
           formats: ['es'] as const,
         },
         rollupOptions: {
@@ -219,8 +233,6 @@ export function createPackageConfig(
             '**/*.config.js',
             // Declaration files
             '**/*.d.ts',
-            // Svelte dir is handled by svelte-package
-            ...(options.svelte ? [`**/${options.svelte}/**`] : []),
             ...(options.dtsExclude ?? []),
           ],
           insertTypesEntry: false, // We handle this in package.json

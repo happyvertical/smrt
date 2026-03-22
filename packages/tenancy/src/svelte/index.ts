@@ -8,6 +8,7 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { TENANCY_MODULE_META } from '../ui.js';
 
 // Import components
@@ -18,8 +19,8 @@ import TenantSwitcher from './components/TenantSwitcher.svelte';
 export { TenantCard, TenantSwitcher };
 
 // Export component prop types
-export type { Props as TenantCardProps } from './components/TenantCard.svelte';
-export type { Props as TenantSwitcherProps } from './components/TenantSwitcher.svelte';
+export type TenantCardProps = ComponentProps<typeof TenantCard>;
+export type TenantSwitcherProps = ComponentProps<typeof TenantSwitcher>;
 
 // Auto-register with ModuleUIRegistry
 ModuleUIRegistry.registerModule(TENANCY_MODULE_META);

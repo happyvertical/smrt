@@ -138,8 +138,22 @@ function getTypeLabel(type: string): string {
                   </div>
                   <span class="event-arrow">→</span>
                 </a>
+              {:else if onEventClick}
+                <button
+                  type="button"
+                  class="event-card event-card--button"
+                  onclick={() => onEventClick(event.type, event.name)}
+                >
+                  <div class="event-time">{event.startTime}</div>
+                  <div class="event-details">
+                    <span class="event-name">{event.name}</span>
+                    {#if event.venue}
+                      <span class="event-venue">{event.venue}</span>
+                    {/if}
+                  </div>
+                </button>
               {:else}
-                <div class="event-card" onclick={() => onEventClick?.(event.type, event.name)}>
+                <div class="event-card">
                   <div class="event-time">{event.startTime}</div>
                   <div class="event-details">
                     <span class="event-name">{event.name}</span>
@@ -303,6 +317,14 @@ function getTypeLabel(type: string): string {
     text-decoration: none;
     color: var(--smrt-color-on-surface, #333);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
+  }
+
+  .event-card--button {
+    width: 100%;
+    border: 0;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
   }
 
   .event-card--link:hover {

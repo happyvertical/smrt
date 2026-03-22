@@ -5,13 +5,13 @@
 
 import { Button } from '@happyvertical/smrt-svelte/ui';
 import type { Snippet } from 'svelte';
-import ScheduleStatusBadge from './ScheduleStatusBadge.svelte';
-import type { AgentScheduleData } from './types.js';
+import type { AgentScheduleData } from '../types.js';
 import {
   calculateSuccessRate,
   formatCronExpression,
   formatRelativeTime,
-} from './types.js';
+} from '../types.js';
+import ScheduleStatusBadge from './ScheduleStatusBadge.svelte';
 
 export interface Props {
   /** Schedules to display */

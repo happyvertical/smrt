@@ -36,8 +36,19 @@ const {
     <Grid columns="auto" role="list" aria-label="Accounts">
       {#each accounts as account (account.id)}
         <div role="listitem">
-          <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-          <div onclick={() => onaccountclick?.(account)}>
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+          <div
+            role={onaccountclick ? 'button' : undefined}
+            tabindex={onaccountclick ? 0 : undefined}
+            onclick={() => onaccountclick?.(account)}
+            onkeydown={(event) => {
+              if (!onaccountclick) return;
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onaccountclick(account);
+              }
+            }}
+          >
             <AccountCard {account} {onsync} {onremove} />
           </div>
         </div>

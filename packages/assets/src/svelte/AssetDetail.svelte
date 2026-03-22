@@ -7,21 +7,31 @@
  */
 
 import type { Snippet } from 'svelte';
-import type { Asset } from '../asset';
+import type { PersistedAsset } from './types';
 
 export interface AssetDetailProps {
   /** The asset to display */
-  asset: Asset | null;
+  asset: PersistedAsset | null;
   /** Whether the detail view is open */
   open: boolean;
   /** Callback when detail is closed */
-  onclose: () => void;
+  onClose?: () => void;
+  onclose?: () => void;
   /** Callback when asset is updated (save metadata) */
-  onsave: (asset: Asset, updates: AssetDetailUpdates) => void | Promise<void>;
+  onSave?: (
+    asset: PersistedAsset,
+    updates: AssetDetailUpdates,
+  ) => void | Promise<void>;
+  onsave?: (
+    asset: PersistedAsset,
+    updates: AssetDetailUpdates,
+  ) => void | Promise<void>;
   /** Callback when asset is deleted */
-  ondelete: (asset: Asset) => void;
+  onDelete?: (asset: PersistedAsset) => void;
+  ondelete?: (asset: PersistedAsset) => void;
   /** Callback to open the image editor */
-  onedit?: (asset: Asset) => void;
+  onEdit?: (asset: PersistedAsset) => void;
+  onedit?: (asset: PersistedAsset) => void;
   /** Content references snippet (injected by smrt-content) */
   contentReferences?: Snippet<[{ assetId: string }]>;
 }
@@ -37,9 +47,13 @@ export interface AssetDetailUpdates {
 let {
   asset,
   open,
+  onClose,
   onclose,
+  onSave,
   onsave,
+  onDelete,
   ondelete,
+  onEdit,
   onedit,
   contentReferences,
 }: AssetDetailProps = $props();
@@ -73,14 +87,14 @@ $effect(() => {
 });
 
 function handleClose() {
-  onclose();
+  (onclose ?? onClose)?.();
 }
 
 async function handleSave() {
   if (!asset) return;
   saving = true;
   try {
-    await onsave(asset, {
+    await (onsave ?? onSave)?.(asset, {
       name: editName,
       description: editDescription,
       alt: editAlt,
@@ -92,12 +106,12 @@ async function handleSave() {
 
 function handleDelete() {
   if (!asset) return;
-  ondelete(asset);
+  (ondelete ?? onDelete)?.(asset);
 }
 
 function handleEdit() {
   if (!asset) return;
-  onedit?.(asset);
+  (onedit ?? onEdit)?.(asset);
 }
 
 async function copyToClipboard(text: string, label: string) {
@@ -171,7 +185,13 @@ function formatDate(date: Date | string | undefined): string {
   aria-label="Asset details"
 >
   {#if asset}
-    <div class="detail-modal__container" onclick={(e) => e.stopPropagation()}>
+    <div
+      class="detail-modal__container"
+      role="presentation"
+      tabindex="-1"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
+    >
       <!-- Header -->
       <header class="detail__header">
         <h2 class="detail__title">{asset.name || 'Untitled Asset'}</h2>

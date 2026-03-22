@@ -8,6 +8,7 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { JOBS_MODULE_META } from '../ui.js';
 
 // Import components
@@ -29,12 +30,12 @@ export {
 };
 
 // Export component prop types
-export type { Props as JobActionsProps } from './components/JobActions.svelte';
-export type { Props as JobDashboardProps } from './components/JobDashboard.svelte';
-export type { Props as JobDetailProps } from './components/JobDetail.svelte';
-export type { Props as JobListProps } from './components/JobList.svelte';
-export type { Props as JobStatsProps } from './components/JobStats.svelte';
-export type { Props as JobStatusBadgeProps } from './components/JobStatusBadge.svelte';
+export type JobActionsProps = ComponentProps<typeof JobActions>;
+export type JobDashboardProps = ComponentProps<typeof JobDashboard>;
+export type JobDetailProps = ComponentProps<typeof JobDetail>;
+export type JobListProps = ComponentProps<typeof JobList>;
+export type JobStatsProps = ComponentProps<typeof JobStats>;
+export type JobStatusBadgeProps = ComponentProps<typeof JobStatusBadge>;
 
 // Export types and utilities
 export type {

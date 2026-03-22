@@ -5,6 +5,7 @@
  * Requires downloading model files (100MB - 4GB+ depending on model).
  */
 
+import { importOptional } from '../../../utils/import-optional.js';
 import {
   CapabilityNotAvailableError,
   InitializationError,
@@ -146,7 +147,7 @@ export class WebLLMAdapter implements LLMAdapter {
 
   private async importWebLLM(): Promise<any> {
     try {
-      return await import('@mlc-ai/web-llm');
+      return await importOptional('@mlc-ai/web-llm');
     } catch {
       throw new InitializationError(
         'webllm',

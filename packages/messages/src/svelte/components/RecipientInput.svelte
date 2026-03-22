@@ -18,6 +18,7 @@ export interface Props {
   }: Props = $props();
 
   let inputValue = $state('');
+  const inputId = $props.id();
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -53,7 +54,7 @@ export interface Props {
 </script>
 
 <div class="recipient-input">
-  <label class="label">{label}</label>
+  <label class="label" for={inputId}>{label}</label>
   <div class="chips-container">
     {#each recipients as recipient, i}
       <span class="chip" class:invalid={!recipient.isValid}>
@@ -66,6 +67,7 @@ export interface Props {
       </span>
     {/each}
     <input
+      id={inputId}
       type="text"
       class="input"
       bind:value={inputValue}

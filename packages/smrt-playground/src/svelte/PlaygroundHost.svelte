@@ -223,7 +223,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
         <input bind:value={searchTerm} placeholder="Search packages or entries" />
       </label>
 
-      <div class="module-list">
+      <div class="module-list" data-testid="playground-modules">
         {#if filteredModules.length === 0}
           <div class="empty-card">
             <strong>No previews found</strong>
@@ -234,6 +234,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
             <button
               type="button"
               class:selected={module.packageName === selectedModule?.packageName}
+              data-playground-module={module.packageName}
               onclick={() => selectModule(module.packageName)}
             >
               <strong>{module.displayName}</strong>
@@ -248,8 +249,8 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
       {#if selectedModule}
         <header class="content__header">
           <div>
-            <p class="eyebrow">{selectedModule.packageName}</p>
-            <h2>{selectedModule.displayName}</h2>
+            <p class="eyebrow" data-testid="playground-selected-package">{selectedModule.packageName}</p>
+            <h2 data-testid="playground-selected-module">{selectedModule.displayName}</h2>
             {#if selectedModule.description}
               <p>{selectedModule.description}</p>
             {/if}
@@ -257,12 +258,13 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
         </header>
 
         <div class="content__body">
-          <section class="entry-list">
+          <section class="entry-list" data-testid="playground-entries">
             {#each selectedModule.entries as entry (entry.qualifiedId)}
               <button
                 type="button"
                 class:selected={entry.qualifiedId === selectedEntry?.qualifiedId}
                 aria-pressed={entry.qualifiedId === selectedEntry?.qualifiedId}
+                data-playground-entry={entry.qualifiedId}
                 onclick={() => selectEntry(entry)}
               >
                 <div>
@@ -278,11 +280,11 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
             {/each}
           </section>
 
-          <section class="preview-panel">
+          <section class="preview-panel" data-testid="playground-preview-panel">
             {#if selectedEntry && PreviewComponent && previewComponentEntryId === selectedEntry.qualifiedId}
               <div class="preview-panel__meta">
                 <div>
-                  <h3>{selectedEntry.title}</h3>
+                  <h3 data-testid="playground-preview-title">{selectedEntry.title}</h3>
                   {#if selectedEntry.description}
                     <p>{selectedEntry.description}</p>
                   {/if}
@@ -298,6 +300,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
                         type="button"
                         class:active={mode === selectedMode}
                         aria-pressed={mode === selectedMode}
+                        data-playground-mode={mode}
                         onclick={() => (selectedMode = mode)}
                       >
                         {mode}
@@ -307,7 +310,7 @@ function selectEntry(entry: ResolvedSmrtPlaygroundEntry) {
                 {/if}
               </div>
 
-              <div class="preview-stage">
+              <div class="preview-stage" data-testid="playground-preview-stage">
                 <PreviewComponent {...selectedProps} />
               </div>
             {:else if selectedEntry && previewIsLoading}

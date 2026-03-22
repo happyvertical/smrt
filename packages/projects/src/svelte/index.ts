@@ -8,6 +8,7 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { PROJECTS_MODULE_META } from '../ui.js';
 
 // Import components
@@ -31,13 +32,13 @@ export {
 };
 
 // Export component prop types
-export type { Props as ApprovalActionsProps } from './components/ApprovalActions.svelte';
-export type { Props as BulkActionsProps } from './components/BulkActions.svelte';
-export type { Props as DurationDisplayProps } from './components/DurationDisplay.svelte';
-export type { Props as RejectDialogProps } from './components/RejectDialog.svelte';
-export type { Props as TimeEntryCardProps } from './components/TimeEntryCard.svelte';
-export type { Props as TimeEntryListProps } from './components/TimeEntryList.svelte';
-export type { Props as TimeSummaryProps } from './components/TimeSummary.svelte';
+export type ApprovalActionsProps = ComponentProps<typeof ApprovalActions>;
+export type BulkActionsProps = ComponentProps<typeof BulkActions>;
+export type DurationDisplayProps = ComponentProps<typeof DurationDisplay>;
+export type RejectDialogProps = ComponentProps<typeof RejectDialog>;
+export type TimeEntryCardProps = ComponentProps<typeof TimeEntryCard>;
+export type TimeEntryListProps = ComponentProps<typeof TimeEntryList>;
+export type TimeSummaryProps = ComponentProps<typeof TimeSummary>;
 
 // Export types and utilities
 export {

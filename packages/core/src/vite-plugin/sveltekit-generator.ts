@@ -243,22 +243,53 @@ ${pathParamNames
   }`;
 }
 
-function buildActionInvocationArgs(actionDef: any): string {
+function buildActionInvocationArgs(actionDef: any): string[] {
   const parameters = Array.isArray(actionDef.parameters)
     ? actionDef.parameters
     : [];
 
   if (parameters.length === 0) {
-    return '';
+    return [];
   }
 
   if (parameters.length === 1 && parameters[0]?.name === 'options') {
-    return 'options';
+    return ['options'];
   }
 
-  return parameters
-    .map((parameter: any) => `options[${JSON.stringify(parameter.name)}]`)
-    .join(', ');
+  return parameters.map((parameter: any) =>
+    buildOptionsPropertyAccess(parameter.name),
+  );
+}
+
+function buildOptionsPropertyAccess(propertyName: string): string {
+  if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(propertyName)) {
+    return `options.${propertyName}`;
+  }
+
+  const escapedPropertyName = propertyName
+    .replaceAll('\\', '\\\\')
+    .replaceAll("'", "\\'");
+
+  return `options['${escapedPropertyName}']`;
+}
+
+function buildActionInvocationExpression(
+  receiverExpression: string,
+  actionName: string,
+  invocationArgs: string[],
+): string {
+  const singleLineInvocation = `await ${receiverExpression}.${actionName}(${invocationArgs.join(', ')})`;
+  const singleLineResultAssignment = `  const result = ${singleLineInvocation};`;
+
+  if (singleLineResultAssignment.length <= 100) {
+    return singleLineInvocation;
+  }
+
+  return [
+    `await ${receiverExpression}.${actionName}(`,
+    ...invocationArgs.map((argument) => `    ${argument},`),
+    '  )',
+  ].join('\n');
 }
 
 function findItemClassRegistryKey(
@@ -436,42 +467,57 @@ async function generateRegistrationFile(
 
   // Generate imports for local objects
   // Issue #870: Extract simple class names from qualified names
-  const localImports = localObjects
-    .map(([className, objectDef]) => {
-      const simpleClassName = extractSimpleClassName(className);
+  const localNamedImports = new Map<string, string[]>();
+  const localSideEffectImports = new Set<string>();
 
-      // Calculate direct relative path from the configDir where smrt-register.ts lives
-      // to the actual source file of the object.
-      let importPath = '';
-      if (objectDef.filePath) {
-        const relativeToConfig = relative(configDir, objectDef.filePath);
-        const normalized = relativeToConfig
-          .replace(/\\/g, '/')
-          .replace(/\.(ts|js|tsx|jsx)$/, '');
-        importPath = normalized.startsWith('.')
-          ? normalized
-          : `./${normalized}`;
-      } else {
-        // Fallback for missing file paths
-        importPath = getSvelteKitImportPath(
-          projectRoot,
-          undefined,
-          options.objectsDir,
-          simpleClassName,
-        );
-      }
+  for (const [className, objectDef] of localObjects) {
+    const simpleClassName = extractSimpleClassName(className);
 
-      if (isCollectionClass(objectDef)) {
-        return `import '${importPath}';`;
-      }
+    // Calculate direct relative path from the configDir where smrt-register.ts lives
+    // to the actual source file of the object.
+    let importPath = '';
+    if (objectDef.filePath) {
+      const relativeToConfig = relative(configDir, objectDef.filePath);
+      const normalized = relativeToConfig
+        .replace(/\\/g, '/')
+        .replace(/\.(ts|js|tsx|jsx)$/, '');
+      importPath = normalized.startsWith('.') ? normalized : `./${normalized}`;
+    } else {
+      // Fallback for missing file paths
+      importPath = getSvelteKitImportPath(
+        projectRoot,
+        undefined,
+        options.objectsDir,
+        simpleClassName,
+      );
+    }
 
-      return `import { ${simpleClassName} } from '${importPath}';`;
-    })
-    .join('\n');
+    if (isCollectionClass(objectDef)) {
+      localSideEffectImports.add(importPath);
+      continue;
+    }
+
+    const existing = localNamedImports.get(importPath) ?? [];
+    existing.push(simpleClassName);
+    localNamedImports.set(importPath, existing);
+  }
+
+  const localImports = [
+    ...Array.from(localNamedImports.entries())
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([importPath, simpleNames]) => {
+        const sortedNames = simpleNames.sort((a, b) => a.localeCompare(b));
+        return `import { ${sortedNames.join(', ')} } from '${importPath}';`;
+      }),
+    ...Array.from(localSideEffectImports.values())
+      .sort((a, b) => a.localeCompare(b))
+      .map((importPath) => `import '${importPath}';`),
+  ].join('\n');
 
   // Generate imports for external packages
   // Issue #870: Extract simple class names from qualified names
   const packageImports = Array.from(packageObjects.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
     .flatMap(([packageName, packageEntry]) => {
       const imports: string[] = [];
 
@@ -481,7 +527,9 @@ async function generateRegistrationFile(
 
       if (packageEntry.classNames.length > 0) {
         // Extract simple class names for valid import syntax
-        const simpleNames = packageEntry.classNames.map(extractSimpleClassName);
+        const simpleNames = packageEntry.classNames
+          .map(extractSimpleClassName)
+          .sort((a, b) => a.localeCompare(b));
         imports.push(
           `import { ${simpleNames.join(', ')} } from '${packageName}';`,
         );
@@ -1029,11 +1077,11 @@ function generateCollectionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { getCollection } from '$lib/server/smrt';
 ${
   serializerImports ? `${serializerImports}\n` : ''
-}// Note: ${className} is auto-registered by the Vite plugin scanner
+}import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';
+// Note: ${className} is auto-registered by the Vite plugin scanner
 `;
 
   const getHandler = hasGet
@@ -1043,7 +1091,7 @@ export const GET: RequestHandler = async ({ url }) => {
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
-  const collection = await getCollection('${className}');
+${generateCollectionLoad(className)}
   const items = await collection.list({ limit, offset });
   const count = await collection.count();
 ${
@@ -1067,7 +1115,7 @@ ${
 export const POST: RequestHandler = async ({ request }) => {
   const data = await request.json();
 
-  const collection = await getCollection('${className}');
+${generateCollectionLoad(className)}
   const item = await collection.create(data);
   await item.save();
 ${
@@ -1084,6 +1132,55 @@ ${
     : '';
 
   return imports + getHandler + postHandler;
+}
+
+function generateCollectionLoad(
+  className: string,
+  options: { generic?: boolean } = {},
+): string {
+  const genericSuffix = options.generic ? '<any>' : '';
+
+  return [
+    `  const collection = await getCollection${genericSuffix}(`,
+    `    '${className}',`,
+    '  );',
+  ].join('\n');
+}
+
+function generateNotFoundError(className: string): string {
+  const singleLineNotFoundError = `  if (!item) throw error(404, '${className} not found');`;
+
+  if (singleLineNotFoundError.length <= 100) {
+    return singleLineNotFoundError;
+  }
+
+  return [
+    '  if (!item)',
+    '    throw error(',
+    '      404,',
+    `      '${className} not found',`,
+    '    );',
+  ].join('\n');
+}
+
+function generateCollectionNotRegisteredError(className: string): string {
+  return [
+    '  if (!collection)',
+    '    throw error(',
+    '      500,',
+    `      '${className} collection is not registered',`,
+    '    );',
+  ].join('\n');
+}
+
+function generateClassNotRegisteredError(className: string): string {
+  return [
+    '  if (!registered)',
+    '    throw error(',
+    '      500,',
+    `      '${className} is not registered',`,
+    '    );',
+  ].join('\n');
 }
 
 /**
@@ -1108,18 +1205,17 @@ function generateItemRouteTemplate(
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
-import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { getCollection } from '$lib/server/smrt';
-${serializerImports ? `${serializerImports}\n` : ''}`;
+import { error, json } from '@sveltejs/kit';
+${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';`;
 
   const getHandler = hasGet
     ? `
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<any>('${className}');
+${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
-  if (!item) throw error(404, '${className} not found');
+${generateNotFoundError(className)}
 ${
   serializers.itemSerializerName
     ? `
@@ -1137,9 +1233,9 @@ ${
     ? `
 // Update ${simpleClassName.toLowerCase()}
 export const PUT: RequestHandler = async ({ params, request }) => {
-  const collection = await getCollection<any>('${className}');
+${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
-  if (!item) throw error(404, '${className} not found');
+${generateNotFoundError(className)}
 
   const data = await request.json();
   Object.assign(item, data);
@@ -1161,9 +1257,9 @@ ${
     ? `
 // Delete ${simpleClassName.toLowerCase()}
 export const DELETE: RequestHandler = async ({ params }) => {
-  const collection = await getCollection<any>('${className}');
+${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
-  if (!item) throw error(404, '${className} not found');
+${generateNotFoundError(className)}
 
   await item.delete();
   return json({ success: true });
@@ -1206,16 +1302,16 @@ function generateActionRouteTemplate(
 
   const importBlock =
     hostType === 'collection'
-      ? `import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { getCollection } from '$lib/server/smrt';`
+      ? `import { error, json } from '@sveltejs/kit';
+import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';`
       : routeConfig.scope === 'collection'
-        ? `import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { ObjectRegistry } from '@happyvertical/smrt-core';`
-        : `import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { getCollection } from '$lib/server/smrt';`;
+        ? `import { error, json } from '@sveltejs/kit';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+import type { RequestHandler } from './$types';`
+        : `import { error, json } from '@sveltejs/kit';
+import { getCollection } from '$lib/server/smrt';
+import type { RequestHandler } from './$types';`;
 
   const handlers = routeSpecs
     .map((spec) =>
@@ -1263,7 +1359,12 @@ function generateActionRouteHandler(
             '  };',
             '',
           ].join('\n')
-        : '  const options = Object.fromEntries(new URL(request.url).searchParams.entries());\n'
+        : [
+            '  const options = Object.fromEntries(',
+            '    new URL(request.url).searchParams.entries(),',
+            '  );',
+            '',
+          ].join('\n')
       : hasInput
         ? hasPathParams
           ? [
@@ -1285,14 +1386,17 @@ function generateActionRouteHandler(
   if (hostType === 'collection') {
     return `// Custom collection method: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
-  const collection = await getCollection<any>('${lookupClassName}') as any;
-  if (!collection) throw error(500, '${lookupClassName} collection is not registered');
+${generateCollectionLoad(lookupClassName, { generic: true })}
+  const typedCollection = collection as any;
+${generateCollectionNotRegisteredError(lookupClassName)}
 
-${optionsLoad}  const result = ${
+${optionsLoad}  const result = ${buildActionInvocationExpression(
       actionDef.isStatic
-        ? `await (collection.constructor as any).${actionName}(${invocationArgs})`
-        : `await collection.${actionName}(${invocationArgs})`
-    }
+        ? '(typedCollection.constructor as any)'
+        : 'typedCollection',
+      actionName,
+      invocationArgs,
+    )};
 
   return json({ action: '${actionName}', result });
 };
@@ -1303,10 +1407,14 @@ ${optionsLoad}  const result = ${
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
   const registered = ObjectRegistry.getClass('${lookupClassName}');
-  if (!registered) throw error(500, '${lookupClassName} is not registered');
+${generateClassNotRegisteredError(lookupClassName)}
 
 ${optionsLoad}  const ClassRef = registered.constructor as any;
-  const result = await ClassRef.${actionName}(${invocationArgs});
+  const result = ${buildActionInvocationExpression(
+    'ClassRef',
+    actionName,
+    invocationArgs,
+  )};
 
   return json({ action: '${actionName}', result });
 };
@@ -1315,11 +1423,15 @@ ${optionsLoad}  const ClassRef = registered.constructor as any;
 
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
-  const collection = await getCollection<any>('${lookupClassName}');
+${generateCollectionLoad(lookupClassName, { generic: true })}
   const item = await collection.get(params.id);
-  if (!item) throw error(404, '${lookupClassName} not found');
+${generateNotFoundError(lookupClassName)}
 
-${optionsLoad}  const result = await item.${actionName}(${invocationArgs});
+${optionsLoad}  const result = ${buildActionInvocationExpression(
+    'item',
+    actionName,
+    invocationArgs,
+  )};
 
   return json({ action: '${actionName}', result });
 };

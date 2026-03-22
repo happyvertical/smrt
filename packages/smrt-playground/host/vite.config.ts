@@ -1,7 +1,57 @@
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { smrtPlaygroundVitePlugin } from '@happyvertical/smrt-playground/vite';
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function createWorkspacePackageAliases() {
+  const packagesDir = resolve(__dirname, '../..');
+  const aliases: { find: RegExp; replacement: string }[] = [];
+
+  for (const packageDirName of readdirSync(packagesDir)) {
+    const packageDir = join(packagesDir, packageDirName);
+    const packageJsonPath = join(packageDir, 'package.json');
+
+    if (!existsSync(packageJsonPath)) {
+      continue;
+    }
+
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+    const packageName = packageJson.name;
+    if (
+      typeof packageName !== 'string' ||
+      !packageName.startsWith('@happyvertical/smrt-')
+    ) {
+      continue;
+    }
+
+    const srcIndexPath = join(packageDir, 'src', 'index.ts');
+    if (existsSync(srcIndexPath)) {
+      aliases.push({
+        find: new RegExp(`^${escapeRegex(packageName)}$`),
+        replacement: srcIndexPath,
+      });
+    }
+
+    const svelteIndexPath = join(packageDir, 'src', 'svelte', 'index.ts');
+    if (existsSync(svelteIndexPath)) {
+      aliases.push({
+        find: new RegExp(`^${escapeRegex(packageName)}/svelte$`),
+        replacement: svelteIndexPath,
+      });
+    }
+  }
+
+  return aliases.sort(
+    (left, right) => right.find.source.length - left.find.source.length,
+  );
+}
+
+const workspacePackageAliases = createWorkspacePackageAliases();
 
 export default defineConfig({
   esbuild: {
@@ -16,6 +66,7 @@ export default defineConfig({
   },
   resolve: {
     alias: [
+      ...workspacePackageAliases,
       {
         find: /^@happyvertical\/smrt-playground\/svelte$/,
         replacement: resolve(__dirname, '../src/svelte/index.ts'),

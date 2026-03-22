@@ -7,6 +7,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { SmrtPlaygroundModule } from '@happyvertical/smrt-playground';
 import {
   createAppPlaygroundRouteTemplate,
@@ -21,9 +22,32 @@ import {
 import type { CLICommand } from '../cli-generator.js';
 
 type PlaygroundTarget = 'package' | 'app';
+const commandDir = dirname(fileURLToPath(import.meta.url));
+const cliPackageRoot = resolve(commandDir, '../..');
 
 function readJson(path: string): any {
   return JSON.parse(readFileSync(path, 'utf-8'));
+}
+
+function resolveProjectRootFromInvocation(): string {
+  const currentWorkingDirectory = resolve(process.cwd());
+  const initWorkingDirectory = process.env.INIT_CWD
+    ? resolve(process.env.INIT_CWD)
+    : null;
+
+  // `pnpm --filter @happyvertical/smrt-cli cli ...` executes the CLI script from
+  // the CLI package directory, but `INIT_CWD` still points at the package the
+  // developer invoked the command from. Prefer that caller directory so
+  // playground commands scaffold and inspect the intended project.
+  if (
+    currentWorkingDirectory === cliPackageRoot &&
+    initWorkingDirectory &&
+    initWorkingDirectory !== cliPackageRoot
+  ) {
+    return initWorkingDirectory;
+  }
+
+  return currentWorkingDirectory;
 }
 
 function writeFileIfAllowed(
@@ -66,7 +90,7 @@ function addPlaygroundDependency(projectRoot: string) {
   const packageJsonPath = resolve(projectRoot, 'package.json');
   const packageJson = readJson(packageJsonPath);
   const workspaceRoot = findSmrtWorkspaceRoot(projectRoot);
-  const cliPackageJsonPath = resolve(__dirname, '../../package.json');
+  const cliPackageJsonPath = resolve(commandDir, '../../package.json');
   const cliVersion = readJson(cliPackageJsonPath).version;
   const version =
     workspaceRoot && projectRoot.startsWith(workspaceRoot)
@@ -227,7 +251,7 @@ export const playgroundCommands: Record<string, CLICommand> = {
       },
     },
     handler: async (_args: string[], options: any) => {
-      const projectRoot = process.cwd();
+      const projectRoot = resolveProjectRootFromInvocation();
       const packageJsonPath = resolve(projectRoot, 'package.json');
 
       if (!existsSync(packageJsonPath)) {
@@ -349,7 +373,7 @@ export const playgroundCommands: Record<string, CLICommand> = {
     args: [],
     options: {},
     handler: async () => {
-      await listDiscoveredPlaygrounds(process.cwd());
+      await listDiscoveredPlaygrounds(resolveProjectRootFromInvocation());
     },
   },
 
@@ -359,7 +383,7 @@ export const playgroundCommands: Record<string, CLICommand> = {
     args: [],
     options: {},
     handler: async () => {
-      const projectRoot = process.cwd();
+      const projectRoot = resolveProjectRootFromInvocation();
       const mode = detectPlaygroundMode(projectRoot);
 
       if (mode === 'workspace') {

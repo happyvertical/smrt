@@ -63,7 +63,7 @@ function handleSlotClick(slotId: string) {
  * Handle keyboard navigation for accessibility
  */
 function handleKeydown(event: KeyboardEvent, currentSlotId: string) {
-  const enabledSlots = sortedSlots.filter(([, slot]) => !slot.disabled);
+  const enabledSlots = sortedSlots;
   const currentIndex = enabledSlots.findIndex(([id]) => id === currentSlotId);
 
   if (currentIndex === -1) return;
@@ -124,7 +124,6 @@ async function handleSave(config: unknown) {
 				tabindex={activeSlotId === slotId ? 0 : -1}
 				onclick={() => handleSlotClick(slotId)}
 				onkeydown={(e) => handleKeydown(e, slotId)}
-				disabled={slot.disabled}
 			>
 				{#if slot.icon}
 					<span class="tab-icon" aria-hidden="true">{slot.icon}</span>

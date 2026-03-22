@@ -16,16 +16,22 @@
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
       "import": "./dist/svelte/index.js"
+    },
+    "./playground": {
+      "types": "./dist/playground.d.ts",
+      "import": "./dist/playground.js"
     }
   },
   "scripts": {
-    "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build": "svelte-kit sync && vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
+    "prepack": "npm run build && npm run verify:pack",
     "test": "npx vitest run --passWithNoTests",
     "test:watch": "npx vitest",
-    "check": "svelte-check --tsconfig ./tsconfig.svelte.json"
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",
@@ -38,8 +44,15 @@
   "peerDependencies": {
     "svelte": "^4.0.0 || ^5.0.0"
   },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
+    "@sveltejs/adapter-auto": "^7.0.1",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/kit": "^2.5.7",
     "@sveltejs/package": "^2.5.7",

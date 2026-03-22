@@ -19,13 +19,17 @@ let {
   view,
   filters,
   sort,
+  onviewchange,
   onViewChange,
+  onfilterchange,
   onFilterChange,
+  onsortchange,
   onSortChange,
+  onupload,
   onUpload,
 }: AssetToolbarProps = $props();
 
-let searchValue = $state(filters.search);
+let searchValue = $state('');
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 $effect(() => {
@@ -42,13 +46,13 @@ function handleSearch(e: Event) {
 
   if (debounceTimer) clearTimeout(debounceTimer);
   debounceTimer = setTimeout(() => {
-    onFilterChange({ ...filters, search: searchValue });
+    (onfilterchange ?? onFilterChange)({ ...filters, search: searchValue });
   }, 300);
 }
 
 function handleClearSearch() {
   searchValue = '';
-  onFilterChange({ ...filters, search: '' });
+  (onfilterchange ?? onFilterChange)({ ...filters, search: '' });
 }
 
 function handleSortChange(e: Event) {
@@ -57,13 +61,13 @@ function handleSortChange(e: Event) {
     AssetSortField,
     'asc' | 'desc',
   ];
-  onSortChange({ field, direction });
+  (onsortchange ?? onSortChange)({ field, direction });
 }
 
 function handleTypeFilter(e: Event) {
   const target = e.target as HTMLSelectElement;
   const types = target.value ? [target.value] : [];
-  onFilterChange({ ...filters, types });
+  (onfilterchange ?? onFilterChange)({ ...filters, types });
 }
 
 const sortValue = $derived(`${sort.field}:${sort.direction}`);
@@ -130,7 +134,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
           type="button"
           class="view-toggle__btn"
           class:view-toggle__btn--active={view === v.key}
-          onclick={() => onViewChange(v.key)}
+          onclick={() => (onviewchange ?? onViewChange)(v.key)}
           aria-label="{v.label} view"
           aria-pressed={view === v.key}
         >
@@ -156,7 +160,11 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </div>
 
     <!-- Upload Button -->
-    <button type="button" class="upload-btn" onclick={onUpload}>
+    <button
+      type="button"
+      class="upload-btn"
+      onclick={() => (onupload ?? onUpload)()}
+    >
       <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"></path>
         <polyline points="17 8 12 3 7 8"></polyline>

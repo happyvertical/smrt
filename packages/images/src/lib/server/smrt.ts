@@ -101,9 +101,15 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
  */
 export async function getCollection<
   T extends import('@happyvertical/smrt-core').SmrtObject,
->(className: string) {
-  return await ObjectRegistry.getCollection<T>(
-    className,
-    getSmrtConfig(className),
-  );
+>(className: string, overrides: Partial<SmrtClassOptions> = {}) {
+  const config = getSmrtConfig(className);
+
+  return await ObjectRegistry.getCollection<T>(className, {
+    ...config,
+    ...overrides,
+    db: overrides.db
+      ? { ...(config.db as any), ...(overrides.db as any) }
+      : config.db,
+    ai: overrides.ai !== undefined ? overrides.ai : config.ai,
+  });
 }

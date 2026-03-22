@@ -16,6 +16,10 @@
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
+    "./playground": {
+      "import": "./dist/playground.js",
+      "types": "./dist/playground.d.ts"
+    },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",
@@ -37,6 +41,14 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "jose": "^6.1.3"
+  },
+  "peerDependencies": {
+    "svelte": "^5.46.4"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@happyvertical/smrt-profiles": "workspace:*",

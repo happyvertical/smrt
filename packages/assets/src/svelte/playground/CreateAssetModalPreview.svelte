@@ -1,0 +1,150 @@
+<script lang="ts">
+import CreateAssetModal from '../CreateAssetModal.svelte';
+
+interface CreatedAssetSummary {
+  name: string;
+  description: string;
+  altText: string;
+  fileName: string;
+}
+
+let isOpen = $state(false);
+let statusMessage = $state<string | null>(null);
+let lastCreated = $state<CreatedAssetSummary | null>(null);
+
+function openPreview() {
+  statusMessage = null;
+  isOpen = true;
+}
+
+function closePreview() {
+  isOpen = false;
+}
+
+function handleCreate(data: {
+  file: File;
+  name: string;
+  description: string;
+  altText: string;
+}) {
+  lastCreated = {
+    name: data.name,
+    description: data.description,
+    altText: data.altText,
+    fileName: data.file.name,
+  };
+  statusMessage = 'Captured a create request in the preview harness.';
+  isOpen = false;
+}
+</script>
+
+<div class="preview-shell">
+  <div class="preview-card">
+    <p class="eyebrow">Modal Preview</p>
+    <h4>Create Asset Modal</h4>
+    <p>
+      Open the upload dialog from inside the preview stage to exercise the real
+      modal flow without covering the host navigation.
+    </p>
+    <button type="button" onclick={openPreview}>Open Upload Modal</button>
+
+    {#if statusMessage}
+      <p class="status">{statusMessage}</p>
+    {/if}
+
+    {#if lastCreated}
+      <dl class="summary">
+        <div>
+          <dt>File</dt>
+          <dd>{lastCreated.fileName}</dd>
+        </div>
+        <div>
+          <dt>Name</dt>
+          <dd>{lastCreated.name || 'Untitled'}</dd>
+        </div>
+        <div>
+          <dt>Description</dt>
+          <dd>{lastCreated.description || '—'}</dd>
+        </div>
+        <div>
+          <dt>Alt Text</dt>
+          <dd>{lastCreated.altText || '—'}</dd>
+        </div>
+      </dl>
+    {/if}
+  </div>
+
+  <CreateAssetModal open={isOpen} onclose={closePreview} oncreate={handleCreate} />
+</div>
+
+<style>
+  .preview-shell {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .preview-card {
+    display: grid;
+    gap: 0.75rem;
+    max-width: 32rem;
+    padding: 1.25rem;
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(15, 23, 34, 0.08);
+    box-shadow: 0 18px 38px rgba(15, 23, 34, 0.08);
+  }
+
+  .preview-card h4,
+  .preview-card p,
+  .summary,
+  .summary dt,
+  .summary dd {
+    margin: 0;
+  }
+
+  .eyebrow {
+    font-size: 0.75rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #0f766e;
+  }
+
+  button {
+    justify-self: start;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.75rem 1rem;
+    font: inherit;
+    font-weight: 600;
+    background: #0f766e;
+    color: white;
+    cursor: pointer;
+  }
+
+  .status {
+    color: #0f766e;
+    font-size: 0.95rem;
+  }
+
+  .summary {
+    display: grid;
+    gap: 0.5rem;
+    padding-top: 0.5rem;
+  }
+
+  .summary div {
+    display: grid;
+    gap: 0.1rem;
+  }
+
+  .summary dt {
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #5b6574;
+  }
+
+  .summary dd {
+    color: #172033;
+  }
+</style>

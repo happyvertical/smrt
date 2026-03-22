@@ -7,9 +7,10 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: listForContribution
 export const POST: RequestHandler = async ({ request }) => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:ContentContributionAttachment',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
@@ -17,7 +18,9 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.listForContribution(options.contributionId);
+  const result = await typedCollection.listForContribution(
+    options.contributionId,
+  );
 
   return json({ action: 'listForContribution', result });
 };

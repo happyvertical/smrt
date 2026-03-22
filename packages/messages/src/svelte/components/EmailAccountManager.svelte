@@ -5,23 +5,7 @@
  * Reusable component for adding, editing, testing, and removing
  * email accounts. Works with any backend via callback props.
  */
-
-export interface EmailAccountData {
-  id: string;
-  name: string;
-  email: string;
-  providerType: 'imap' | 'gmail' | 'outlook' | 'exchange';
-  isActive: boolean;
-  imapHost?: string;
-  imapPort?: number;
-  imapSecurity?: 'ssl' | 'starttls' | 'none';
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpSecurity?: 'ssl' | 'starttls' | 'none';
-  username?: string;
-  password?: string;
-  lastSyncAt?: string | Date | null;
-}
+import type { EmailAccountData } from '../types.js';
 
 export interface Props {
   accounts: EmailAccountData[];

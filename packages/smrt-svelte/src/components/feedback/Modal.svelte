@@ -118,7 +118,7 @@ const sizeClasses = {
   aria-label={ariaLabel ?? title}
   aria-describedby={ariaDescribedBy}
 >
-  <div class="modal__container" onclick={(e) => e.stopPropagation()}>
+  <div class="modal__container">
     {#if header}
       <header class="modal__header modal__header--custom">
         {@render header()}

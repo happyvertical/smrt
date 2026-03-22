@@ -8,6 +8,7 @@
  */
 
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import type { ComponentProps } from 'svelte';
 import { MESSAGES_MODULE_META } from '../ui.js';
 
 // Import components
@@ -59,42 +60,41 @@ export {
 };
 
 // Export component prop types
-export type { Props as AccountAvatarProps } from './components/AccountAvatar.svelte';
-export type { Props as AccountCardProps } from './components/AccountCard.svelte';
-export type { Props as AccountListProps } from './components/AccountList.svelte';
-export type { Props as AttachmentChipProps } from './components/AttachmentChip.svelte';
-export type { Props as AttachmentUploadProps } from './components/AttachmentUpload.svelte';
-export type { Props as ComposeFormProps } from './components/ComposeForm.svelte';
-export type {
-  EmailAccountData,
-  Props as EmailAccountManagerProps,
-} from './components/EmailAccountManager.svelte';
-export type {
-  BlacklistEntry,
-  Props as EmailFilterManagerProps,
-  WhitelistEntry,
-} from './components/EmailFilterManager.svelte';
-export type { Props as FolderNavProps } from './components/FolderNav.svelte';
-export type { Props as ForwardFormProps } from './components/ForwardForm.svelte';
-export type { Props as MessageCardProps } from './components/MessageCard.svelte';
-export type { Props as MessageDetailProps } from './components/MessageDetail.svelte';
-export type { Props as MessageFiltersProps } from './components/MessageFilters.svelte';
-export type { Props as MessageListProps } from './components/MessageList.svelte';
-export type { Props as MessageStatusIndicatorProps } from './components/MessageStatusIndicator.svelte';
-export type { Props as MessageToolbarProps } from './components/MessageToolbar.svelte';
-export type { Props as MessageTypeBadgeProps } from './components/MessageTypeBadge.svelte';
-export type { Props as RecipientInputProps } from './components/RecipientInput.svelte';
-export type { Props as ReplyFormProps } from './components/ReplyForm.svelte';
-export type { Props as SendStatusBadgeProps } from './components/SendStatusBadge.svelte';
-export type { Props as ThreadViewProps } from './components/ThreadView.svelte';
+export type AccountAvatarProps = ComponentProps<typeof AccountAvatar>;
+export type AccountCardProps = ComponentProps<typeof AccountCard>;
+export type AccountListProps = ComponentProps<typeof AccountList>;
+export type AttachmentChipProps = ComponentProps<typeof AttachmentChip>;
+export type AttachmentUploadProps = ComponentProps<typeof AttachmentUpload>;
+export type ComposeFormProps = ComponentProps<typeof ComposeForm>;
+export type EmailAccountManagerProps = ComponentProps<
+  typeof EmailAccountManager
+>;
+export type EmailFilterManagerProps = ComponentProps<typeof EmailFilterManager>;
+export type FolderNavProps = ComponentProps<typeof FolderNav>;
+export type ForwardFormProps = ComponentProps<typeof ForwardForm>;
+export type MessageCardProps = ComponentProps<typeof MessageCard>;
+export type MessageDetailProps = ComponentProps<typeof MessageDetail>;
+export type MessageFiltersProps = ComponentProps<typeof MessageFilters>;
+export type MessageListProps = ComponentProps<typeof MessageList>;
+export type MessageStatusIndicatorProps = ComponentProps<
+  typeof MessageStatusIndicator
+>;
+export type MessageToolbarProps = ComponentProps<typeof MessageToolbar>;
+export type MessageTypeBadgeProps = ComponentProps<typeof MessageTypeBadge>;
+export type RecipientInputProps = ComponentProps<typeof RecipientInput>;
+export type ReplyFormProps = ComponentProps<typeof ReplyForm>;
+export type SendStatusBadgeProps = ComponentProps<typeof SendStatusBadge>;
+export type ThreadViewProps = ComponentProps<typeof ThreadView>;
 
 // Export shared types
 export type {
   AccountData,
   AttachmentData,
+  BlacklistEntry,
   BulkAction,
   ComposeState,
   DraftData,
+  EmailAccountData,
   FolderData,
   MessageData,
   MessageFilterState,
@@ -102,6 +102,7 @@ export type {
   MessageType,
   RecipientEntry,
   SendStatusDisplay,
+  WhitelistEntry,
 } from './types.js';
 
 // Auto-register with ModuleUIRegistry

@@ -7,9 +7,10 @@ import type { RequestHandler } from './$types';
 
 // Custom collection method: unlink
 export const POST: RequestHandler = async ({ request }) => {
-  const collection = (await getCollection<any>(
+  const collection = await getCollection<any>(
     '@happyvertical/smrt-content:ContentReference',
-  )) as any;
+  );
+  const typedCollection = collection as any;
   if (!collection)
     throw error(
       500,
@@ -17,7 +18,10 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await collection.unlink(options.sourceId, options.targetId);
+  const result = await typedCollection.unlink(
+    options.sourceId,
+    options.targetId,
+  );
 
   return json({ action: 'unlink', result });
 };

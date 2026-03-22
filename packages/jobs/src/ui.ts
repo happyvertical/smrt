@@ -16,7 +16,7 @@ export const JOBS_UI_SLOTS: Record<string, ModuleUISlot> = {
     label: 'Job Dashboard',
     description: 'Combined overview panel for background jobs',
     icon: 'briefcase',
-    category: 'dashboard',
+    category: 'admin',
     order: 1,
     propsInterface: 'JobDashboardProps',
   },

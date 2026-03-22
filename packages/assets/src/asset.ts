@@ -6,11 +6,12 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import type { Tag } from '@happyvertical/smrt-tags';
+import { Tag } from '@happyvertical/smrt-tags';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociation } from './asset-association';
-import type { AssetStatus } from './asset-status';
-import type { AssetType } from './asset-type';
+import { AssetAssociationCollection } from './asset-associations';
+import { AssetStatus } from './asset-status';
+import { AssetType } from './asset-type';
 import type { AssetOptions } from './types';
 
 @TenantScoped({ mode: 'optional' })
@@ -84,8 +85,6 @@ export class Asset extends SmrtObject {
       where: { asset_id: this.id },
     });
 
-    // Import Tag dynamically to avoid circular dependencies
-    const { Tag } = await import('@happyvertical/smrt-tags');
     const tags: Tag[] = [];
 
     for (const row of rows as { tag_slug: string }[]) {
@@ -153,7 +152,6 @@ export class Asset extends SmrtObject {
   async getType(): Promise<AssetType | null> {
     if (!this.typeSlug) return null;
 
-    const { AssetType } = await import('./asset-type');
     return await AssetType.getBySlug(this.typeSlug);
   }
 
@@ -165,7 +163,6 @@ export class Asset extends SmrtObject {
   async getStatus(): Promise<AssetStatus | null> {
     if (!this.statusSlug) return null;
 
-    const { AssetStatus } = await import('./asset-status');
     return await AssetStatus.getBySlug(this.statusSlug);
   }
 
@@ -175,7 +172,6 @@ export class Asset extends SmrtObject {
    * @returns Array of AssetAssociation instances
    */
   async getAssociations(): Promise<AssetAssociation[]> {
-    const { AssetAssociationCollection } = await import('./asset-associations');
     const associations = await AssetAssociationCollection.create({
       db: this.db,
     });
@@ -195,7 +191,6 @@ export class Asset extends SmrtObject {
     metaId: string,
     role = 'default',
   ): Promise<AssetAssociation> {
-    const { AssetAssociationCollection } = await import('./asset-associations');
     const associations = await AssetAssociationCollection.create({
       db: this.db,
     });
