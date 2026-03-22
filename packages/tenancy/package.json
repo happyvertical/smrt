@@ -49,14 +49,6 @@
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
-  "peerDependencies": {
-    "svelte": "^5.18.0"
-  },
-  "peerDependenciesMeta": {
-    "svelte": {
-      "optional": true
-    }
-  },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
