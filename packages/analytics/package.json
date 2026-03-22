@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-analytics",
-  "version": "0.21.7",
+  "version": "0.21.8",
   "description": "Analytics integration models for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,10 +25,9 @@
   "scripts": {
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "npm run build && npm run verify:pack",
     "test": "npx vitest run --passWithNoTests",
     "test:sqlite": "TEST_DB_ADAPTER=sqlite npx vitest run --project sqlite --passWithNoTests",
@@ -56,7 +55,6 @@
     "fast-glob": "3.3.3",
     "svelte-check": "^4.3.5",
     "svelte": "^5.0.0",
-    "svelte-check": "^4.3.5",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
     "vitest": "^4.0.17"

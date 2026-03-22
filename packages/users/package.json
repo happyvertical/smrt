@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-users",
-  "version": "0.21.7",
+  "version": "0.21.8",
   "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,7 +42,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "peerDependencies": {
-    "svelte": "^5.18.0"
+    "svelte": "^5.46.4"
   },
   "peerDependenciesMeta": {
     "svelte": {
@@ -53,14 +53,6 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "jose": "^6.1.3"
-  },
-  "peerDependencies": {
-    "svelte": "^5.46.4"
-  },
-  "peerDependenciesMeta": {
-    "svelte": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@happyvertical/smrt-profiles": "workspace:*",

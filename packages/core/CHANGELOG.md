@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.21.8
+
+### Patch Changes
+
+- ### Features
+
+  - roll out package preview modules (#1050) (playground)
+  - standardize package playground modules (#1049) (playground)
+
+  ### Bug Fixes
+
+  - validate publish prepack before merge (#1051) (ci)
+  - @happyvertical/smrt-scanner@0.21.8
+  - @happyvertical/smrt-config@0.21.8
+  - @happyvertical/smrt-types@0.21.8
+
 ## 0.21.7
 
 ### Patch Changes
