@@ -116,3 +116,14 @@ jobs:
     permissions:
       contents: read
       packages: read
+
+  publish-dry-run:
+    name: Publish Dry Run
+    needs: test
+    if: always() && needs.test.result == 'success'
+    uses: ./.github/workflows/publish.yml
+    with:
+      dry-run: true
+    permissions:
+      contents: read
+      packages: read

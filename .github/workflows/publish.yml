@@ -12,7 +12,19 @@ name: Publish
 
 on:
   workflow_call:  # Called by standard workflows
+    inputs:
+      dry-run:
+        description: 'Simulate the release workflow without publishing'
+        required: false
+        type: boolean
+        default: false
   workflow_dispatch:  # Allow manual triggering
+    inputs:
+      dry-run:
+        description: 'Simulate the release workflow without publishing'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -34,16 +46,24 @@ jobs:
     steps:
       - name: Generate token from GitHub App
         id: generate_token
+        if: ${{ !inputs.dry-run }}
         uses: tibdex/github-app-token@v2
         with:
           app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
           private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
 
       - name: Checkout repository
+        if: ${{ !inputs.dry-run }}
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Checkout repository
+        if: ${{ inputs.dry-run }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
@@ -63,11 +83,20 @@ jobs:
         id: changesets_release
         env:
           CI: true
-          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          RELEASE_GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          DRY_RUN_GITHUB_TOKEN: ${{ github.token }}
         run: |
           echo "🚀 Running Changesets release..."
+
+          if [ "$DRY_RUN" = "true" ]; then
+            export GITHUB_TOKEN="$DRY_RUN_GITHUB_TOKEN"
+            echo "🧪 Publish workflow is running in dry-run mode"
+          else
+            export GITHUB_TOKEN="$RELEASE_GITHUB_TOKEN"
+          fi
 
           # Use packages/core as source of truth for version
           BEFORE_VERSION=$(node -p "require('./packages/core/package.json').version")
@@ -138,8 +167,10 @@ jobs:
           if [ "$BEFORE_VERSION" != "$AFTER_VERSION" ]; then
             echo "📦 Version changed from $BEFORE_VERSION to $AFTER_VERSION"
 
-            git add .
-            git commit -m "chore(release): v$AFTER_VERSION [skip ci]"
+            if [ "$DRY_RUN" != "true" ]; then
+              git add .
+              git commit -m "chore(release): v$AFTER_VERSION [skip ci]"
+            fi
 
             # Force clean rebuild to avoid stale turbo cache
             # This ensures all packages are rebuilt with latest source code
@@ -159,32 +190,41 @@ jobs:
               fi
             done
 
-            pnpm run changeset:publish
+            if [ "$DRY_RUN" = "true" ]; then
+              node scripts/validate-publish-packages.js
+              echo "published=false" >> "$GITHUB_OUTPUT"
+            else
+              pnpm run changeset:publish
 
-            git tag -f "v$AFTER_VERSION"
-            # Skip developer hooks in CI. Release builds can generate source
-            # artifacts, and those hooks should not block the automation push
-            # after the equivalent safety checks have already run above.
-            git push --no-verify -f origin "v$AFTER_VERSION"
-            git push --no-verify origin main
+              git tag -f "v$AFTER_VERSION"
+              # Skip developer hooks in CI. Release builds can generate source
+              # artifacts, and those hooks should not block the automation push
+              # after the equivalent safety checks have already run above.
+              git push --no-verify -f origin "v$AFTER_VERSION"
+              git push --no-verify origin main
 
-            RELEASE_NOTES="## Published Packages"$'\n\n'
-            RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
-            RELEASE_NOTES="${RELEASE_NOTES} GitHub Packages"
-            RELEASE_NOTES="${RELEASE_NOTES} at version $AFTER_VERSION."
-            RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
-            RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
-            RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
-            RELEASE_NOTES="${RELEASE_NOTES}v$BEFORE_VERSION...v$AFTER_VERSION"
+              RELEASE_NOTES="## Published Packages"$'\n\n'
+              RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
+              RELEASE_NOTES="${RELEASE_NOTES} GitHub Packages"
+              RELEASE_NOTES="${RELEASE_NOTES} at version $AFTER_VERSION."
+              RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
+              RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
+              RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
+              RELEASE_NOTES="${RELEASE_NOTES}v$BEFORE_VERSION...v$AFTER_VERSION"
 
-            gh release create "v$AFTER_VERSION" \
-              --title "v$AFTER_VERSION" \
-              --notes "$RELEASE_NOTES" \
-              --latest
+              gh release create "v$AFTER_VERSION" \
+                --title "v$AFTER_VERSION" \
+                --notes "$RELEASE_NOTES" \
+                --latest
 
-            echo "published=true" >> "$GITHUB_OUTPUT"
+              echo "published=true" >> "$GITHUB_OUTPUT"
+            fi
             echo "version=$AFTER_VERSION" >> "$GITHUB_OUTPUT"
-            echo "✅ Published version: v$AFTER_VERSION"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "✅ Publish dry-run passed for version: v$AFTER_VERSION"
+            else
+              echo "✅ Published version: v$AFTER_VERSION"
+            fi
           else
             echo "ℹ️  No version changes - no release needed"
             echo "published=false" >> "$GITHUB_OUTPUT"
@@ -218,6 +258,7 @@ jobs:
 
   deploy-docs:
     name: Deploy Documentation
+    if: ${{ !inputs.dry-run }}
     runs-on: arc-happyvertical
     timeout-minutes: 15
     permissions:
