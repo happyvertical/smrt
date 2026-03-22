@@ -3,6 +3,11 @@
  * Uses pre-generated manifest from build time instead of runtime scanning
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { SmartObjectManifest } from '../scanner/types';
+
 // Re-export utility functions that work with static manifest
 export { ManifestGenerator } from '../scanner/manifest-generator';
 export type {
@@ -18,16 +23,45 @@ export {
   loadLocalTestManifestSync,
   loadManifestFromPathSync,
 } from './manifest-loader';
-export {
-  staticManifest as manifest,
-  staticManifest as default,
-} from './static-manifest';
+
+const EMPTY_STATIC_MANIFEST: SmartObjectManifest = {
+  version: '1.0.0',
+  timestamp: 0,
+  objects: {},
+  packageName: '@happyvertical/smrt-core',
+};
+
+function loadStaticManifest(): SmartObjectManifest {
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  const manifestCandidates = [
+    join(currentDir, 'static-manifest.json'),
+    join(currentDir, '..', 'manifest.json'),
+    join(currentDir, '..', '..', 'dist', 'manifest.json'),
+  ];
+
+  for (const manifestPath of manifestCandidates) {
+    if (!existsSync(manifestPath)) {
+      continue;
+    }
+
+    try {
+      return JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    } catch {
+      // Fall through to the next candidate or the empty manifest.
+    }
+  }
+
+  return EMPTY_STATIC_MANIFEST;
+}
+
+export const manifest = loadStaticManifest();
+export const staticManifest = manifest;
+export default manifest;
 
 /**
  * Get manifest data (static at runtime)
- * No longer requires TypeScript compiler or file scanning
+ * No longer requires TypeScript compiler or file scanning.
  */
 export function getManifest() {
-  // Import static manifest (generated at build time)
-  return import('./static-manifest').then((m) => m.staticManifest);
+  return Promise.resolve(manifest);
 }

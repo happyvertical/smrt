@@ -9,9 +9,11 @@
  * @see https://github.com/happyvertical/smrt/issues/543
  */
 
-import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
-import { getModuleConfig } from '@happyvertical/smrt-config';
 import type { SmrtCollection } from '../collection';
+import {
+  getSmrtModuleConfig,
+  type SmrtGlobalConfig,
+} from '../config/global-config.js';
 import { LRUCache } from '../utils/lru-cache';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
@@ -77,7 +79,7 @@ export function verboseLog(...args: unknown[]): void {
  * Uses the config package's sync accessor which returns already-loaded config.
  */
 export function getInheritanceConfig() {
-  const config = getModuleConfig<SmrtGlobalConfig>('smrt', {});
+  const config = getSmrtModuleConfig<SmrtGlobalConfig>('smrt', {});
   return {
     cacheSize: config.inheritance?.cacheSize ?? 200,
     onMissingAncestor:

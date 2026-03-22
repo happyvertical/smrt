@@ -9,6 +9,7 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-assets', '../assets/src/index.ts'],
   ['@happyvertical/smrt-chat', '../chat/src/index.ts'],
   ['@happyvertical/smrt-chat/svelte', '../chat/src/svelte/index.ts'],
+  ['@happyvertical/smrt-config', '../config/src/index.ts'],
   ['@happyvertical/smrt-core/scanner', '../core/src/scanner/index.ts'],
   ['@happyvertical/smrt-core/schema/utils', '../core/src/schema/utils.ts'],
   ['@happyvertical/smrt-core', '../core/src/index.ts'],
@@ -21,10 +22,19 @@ const workspaceAliasEntries = [
     '@happyvertical/smrt-playground/svelte',
     '../smrt-playground/src/svelte/index.ts',
   ],
+  ['@happyvertical/smrt-scanner', '../scanner/src/index.ts'],
   ['@happyvertical/smrt-profiles', '../profiles/src/index.ts'],
   ['@happyvertical/smrt-secrets', '../secrets/src/index.ts'],
   ['@happyvertical/smrt-tags', '../tags/src/index.ts'],
   ['@happyvertical/smrt-tenancy', '../tenancy/src/index.ts'],
+  [
+    '@happyvertical/smrt-svelte/layout',
+    '../smrt-svelte/src/components/layout/index.ts',
+  ],
+  [
+    '@happyvertical/smrt-svelte/ui',
+    '../smrt-svelte/src/components/ui/index.ts',
+  ],
   [
     '@happyvertical/smrt-svelte/registry',
     '../smrt-svelte/src/registry/index.ts',

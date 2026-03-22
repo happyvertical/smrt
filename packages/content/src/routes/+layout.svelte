@@ -1,13 +1,27 @@
 <script lang="ts">
 import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 import { page } from '$app/stores';
+import { CONTENT_DEFAULT_ROUTE_NAVIGATION } from '../svelte/routes/shared.js';
 
 let { children } = $props();
 
 const navItems = [
-  { href: '/', label: 'Contents', icon: '📝' },
-  { href: '/governance', label: 'Governance', icon: '🛡️' },
-  { href: '/contributions', label: 'Contributions', icon: '📬' },
+  { href: '/', label: 'Playground', icon: '🎛️' },
+  ...CONTENT_DEFAULT_ROUTE_NAVIGATION.map((item) => ({
+    href: item.href,
+    label:
+      item.routeId === 'content.governance'
+        ? 'Governance'
+        : item.routeId === 'content.contributions'
+          ? 'Contributions'
+          : item.label,
+    icon:
+      item.routeId === 'content.workspace'
+        ? '📝'
+        : item.routeId === 'content.governance'
+          ? '🛡️'
+          : '📬',
+  })),
   { href: '/api-explorer', label: 'API Explorer', icon: '🔌' },
 ];
 </script>

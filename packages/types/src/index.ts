@@ -24,6 +24,13 @@ export type {
   ModuleUISlot,
   SmrtModuleMeta,
 } from './module.js';
+export type {
+  SmrtRouteDefinition,
+  SmrtRouteLoadKind,
+  SmrtRouteModule,
+  SmrtRouteNavigationItem,
+  SmrtRouteNavigationMeta,
+} from './routes.js';
 export type { Signal, SignalAdapter, SignalType } from './signals.js';
 
 // User status enums (browser-safe, no server dependencies)

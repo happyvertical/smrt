@@ -58,11 +58,10 @@ function getSchemaPreparationKey(
 }
 
 async function loadSmrtCoreModule(): Promise<any> {
+  const specifier = '@happyvertical/smrt-core';
+
   try {
-    const module = (await import('@happyvertical/smrt-core')) as Record<
-      string,
-      any
-    >;
+    const module = (await import(specifier)) as Record<string, any>;
     if (
       module.ObjectRegistry &&
       module.detectEngine &&
@@ -77,7 +76,8 @@ async function loadSmrtCoreModule(): Promise<any> {
   try {
     const fallbackHref = new URL('../../core/src/index.ts', import.meta.url)
       .href;
-    return await import(/* @vite-ignore */ fallbackHref);
+    const { tsImport } = await import('tsx/esm/api');
+    return await tsImport(fallbackHref, { parentURL: import.meta.url });
   } catch {
     throw new Error('Unable to load smrt-core schema helpers');
   }

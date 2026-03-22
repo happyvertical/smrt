@@ -48,7 +48,6 @@ export default defineConfig({
       exclude: [
         'src/**/*.{test,spec}.{js,ts}',
         'src/**/*.d.ts',
-        'src/manifest/static-manifest.ts', // Generated file
         'src/manifest/test-manifest-stub.ts', // Generated file
       ],
     },

@@ -11,6 +11,7 @@ export type ContentTransparencyData = ContentTransparencyShape;
 
 export interface ContentData {
   id?: string;
+  slug?: any;
   references?: any;
   type?: any;
   variant?: any;

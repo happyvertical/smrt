@@ -7,8 +7,10 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
-import type { SmrtGlobalConfig } from '@happyvertical/smrt-config';
-import { getModuleConfig } from '@happyvertical/smrt-config';
+import {
+  getSmrtModuleConfig,
+  type SmrtGlobalConfig,
+} from '../config/global-config.js';
 import type {
   ClassEmbeddingConfig,
   ProjectEmbeddingConfig,
@@ -56,7 +58,7 @@ export function getEmbeddingClasses(): string[] {
  * Get project-level embedding configuration with defaults applied.
  */
 export function getProjectEmbeddingConfig(): ProjectEmbeddingConfig {
-  const globalConfig = getModuleConfig<SmrtGlobalConfig>('smrt', {});
+  const globalConfig = getSmrtModuleConfig<SmrtGlobalConfig>('smrt', {});
   const embeddingConfig = globalConfig?.embeddings;
 
   return {

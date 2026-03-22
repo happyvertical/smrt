@@ -1,11 +1,14 @@
 import { resolve } from 'node:path';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
-import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
+import {
+  smrtVitestPlugin,
+  smrtVitestSetupPath,
+} from '../../vitest.workspace.js';
 import { viteWorkspaceAliases } from './workspace-aliases.js';
 
 export default defineConfig({
-  plugins: [svelte(), smrtVitestPlugin()],
+  plugins: [svelte(), smrtVitestPlugin({ setupFile: smrtVitestSetupPath })],
   resolve: {
     alias: [
       {
@@ -20,7 +23,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
-    setupFiles: ['@happyvertical/smrt-vitest/setup'],
+    setupFiles: [smrtVitestSetupPath],
     testTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',

@@ -53,6 +53,8 @@ export type {
 declare global {
   // eslint-disable-next-line no-var
   var __smrtConfigCache: SmrtConfig | null | undefined;
+  // eslint-disable-next-line no-var
+  var __smrtRuntimeConfig: Partial<SmrtConfig> | undefined;
 }
 
 // Use globalThis for cross-module config sharing

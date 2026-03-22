@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { UserConfig, UserConfigFnPromise } from 'vite';
 import dts from 'vite-plugin-dts';
@@ -5,11 +6,9 @@ import dts from 'vite-plugin-dts';
 interface PackageConfigOptions {
   /**
    * Svelte component subdirectory (relative to src/).
-   * When set, vite externalizes .svelte imports. TypeScript modules inside
-   * that directory still participate in declaration generation so package
-   * entrypoints like `src/playground.ts` can safely re-export
-   * `src/svelte/playground.ts`. Use `svelte-package` in a secondary build
-   * step to generate the final `.svelte.d.ts` type declarations.
+   * When set, vite externalizes .svelte imports and skips that directory
+   * for dts generation. Use `svelte-package` in a secondary build step
+   * to generate proper .svelte.d.ts type declarations.
    *
    * Example build script: `vite build --mode library && svelte-package -i src/svelte -o dist/svelte -p`
    */
@@ -17,15 +16,18 @@ interface PackageConfigOptions {
   /**
    * Additional entry points beyond the default `index.ts`.
    * Each entry is emitted as a separate file in dist/ (e.g., `ui` → `dist/ui.js`).
-   */
-  entries?: string[];
-  /**
-   * Additional entry points with explicit output names and source paths.
    *
-   * Keys become the emitted file names (for example, `adapters/index` emits
-   * `dist/adapters/index.js`) and values are paths relative to the package root.
+   * A string entry resolves to `src/<name>.ts`.
+   * An object entry allows custom source files when the emitted name should stay
+   * stable but the source path needs to differ.
    */
-  entryPoints?: Record<string, string>;
+  entries?: Array<
+    | string
+    | {
+        name: string;
+        source: string;
+      }
+  >;
   /**
    * Additional declaration-file exclude globs, relative to the package root.
    * Use this for package-local app/dev surfaces that should not ship as
@@ -50,9 +52,13 @@ export function createPackageConfig(
   options: PackageConfigOptions = {},
 ): UserConfigFnPromise {
   const packageDir = resolve(__dirname, 'packages', packageName);
+  const buildTsconfigPath = resolve(packageDir, 'tsconfig.build.json');
+  const tsconfigPath = existsSync(buildTsconfigPath)
+    ? buildTsconfigPath
+    : resolve(packageDir, 'tsconfig.json');
 
   // Packages that should NOT use smrtPlugin (framework infrastructure)
-  const skipSmrtPlugin = ['core', 'types', 'config'];
+  const skipSmrtPlugin = ['core', 'types', 'config', 'smrt-playground'];
 
   return async () => {
     // Dynamically import smrtPlugin only if needed
@@ -67,24 +73,24 @@ export function createPackageConfig(
     }
 
     // Build entry points map
-    const buildEntries: Record<string, string> = {
+    const entryPoints: Record<string, string> = {
       index: resolve(packageDir, 'src/index.ts'),
     };
     if (options.entries) {
-      for (const name of options.entries) {
-        buildEntries[name] = resolve(packageDir, `src/${name}.ts`);
-      }
-    }
-    if (options.entryPoints) {
-      for (const [name, entryPath] of Object.entries(options.entryPoints)) {
-        buildEntries[name] = resolve(packageDir, entryPath);
+      for (const entry of options.entries) {
+        if (typeof entry === 'string') {
+          entryPoints[entry] = resolve(packageDir, `src/${entry}.ts`);
+          continue;
+        }
+
+        entryPoints[entry.name] = resolve(packageDir, entry.source);
       }
     }
 
     return {
       build: {
         lib: {
-          entry: buildEntries,
+          entry: entryPoints,
           formats: ['es'] as const,
         },
         rollupOptions: {
@@ -168,6 +174,8 @@ export function createPackageConfig(
             'cors',
             'dotenv',
             'typescript',
+            'vite',
+            /^vite\//,
             '@googlemaps/google-maps-services-js',
             '@google-cloud/translate',
             'deepl-node',
@@ -181,6 +189,7 @@ export function createPackageConfig(
             '@gutenye/ocr-node',
             'cosmiconfig',
             '@libsql/client',
+            'fast-glob',
 
             // Internal SMRT packages - externalize to avoid cross-package bundling
             /^@happyvertical\//,
@@ -233,13 +242,16 @@ export function createPackageConfig(
             '**/*.config.js',
             // Declaration files
             '**/*.d.ts',
+            // Svelte dir is handled by svelte-package
+            ...(options.svelte ? [`**/${options.svelte}/**`] : []),
             ...(options.dtsExclude ?? []),
           ],
           insertTypesEntry: false, // We handle this in package.json
           // Don't rollup types when svelte subdir exists (separate entry points)
           rollupTypes: !options.svelte,
-          // Use package-specific tsconfig
-          tsconfigPath: resolve(packageDir, 'tsconfig.json'),
+          // Prefer a package-specific build tsconfig when present so workspace
+          // source resolution stays clean without requiring sibling dist output.
+          tsconfigPath,
         }),
       ],
     } satisfies UserConfig;

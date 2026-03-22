@@ -45,7 +45,8 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "catalog:"
+    "@happyvertical/sql": "catalog:",
+    "tsx": "^4.21.0"
   },
   "peerDependencies": {
     "vitest": ">=2.0.0"

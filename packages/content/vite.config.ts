@@ -12,7 +12,12 @@ export default defineConfig(async ({ mode }) => {
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.
     const config = createPackageConfig('content', {
-      entries: ['ui', 'mock-smrt-client', 'playground'],
+      entries: [
+        'ui',
+        'mock-smrt-client',
+        'playground',
+        'routes',
+      ],
       svelte: 'svelte',
       dtsExclude: ['src/routes/**/*', 'src/hooks.server.ts'],
     });
