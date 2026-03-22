@@ -1,19 +1,46 @@
 <script lang="ts">
-let { assetId }: { assetId: string } = $props();
+import { joinApiUrl } from '../api';
+
+interface ImageThumbnailProps {
+  assetId: string;
+  apiBaseUrl?: string;
+}
+
+let { assetId, apiBaseUrl = '/api/v1' }: ImageThumbnailProps = $props();
 
 let imageUrl: string | null = $state(null);
 
 $effect(() => {
-  if (assetId) {
-    fetch(`/api/v1/images/${assetId}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data) {
-          imageUrl = data.sourceUri || data.url;
-        }
-      })
-      .catch(() => {});
+  if (!assetId) {
+    imageUrl = null;
+    return;
   }
+
+  imageUrl = null;
+
+  const abortController = new AbortController();
+
+  fetch(joinApiUrl(apiBaseUrl, `/images/${assetId}`), {
+    signal: abortController.signal,
+  })
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      imageUrl = data?.sourceUri || data?.url || null;
+    })
+    .catch((error: unknown) => {
+      if (
+        error instanceof Error &&
+        (error.name === 'AbortError' || error.message === 'AbortError')
+      ) {
+        return;
+      }
+
+      imageUrl = null;
+    });
+
+  return () => {
+    abortController.abort();
+  };
 });
 </script>
 

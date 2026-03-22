@@ -3,6 +3,7 @@ import type { Snippet } from 'svelte';
 import ImageThumbnail from './ImageThumbnail.svelte';
 
 let {
+  apiBaseUrl = '/api/v1',
   contents,
   type = undefined,
   onEdit,
@@ -11,6 +12,7 @@ let {
   controls,
   getViewHref = undefined,
 } = $props<{
+  apiBaseUrl?: string;
   contents: any[];
   type?: string;
   onEdit: (content: any) => void;
@@ -221,7 +223,10 @@ function handleDeleteContent(content: any) {
         <div class="content-card">
           {#if content.thumbnailAssetId}
             <div class="card-thumbnail">
-              <ImageThumbnail assetId={content.thumbnailAssetId} />
+              <ImageThumbnail
+                apiBaseUrl={apiBaseUrl}
+                assetId={content.thumbnailAssetId}
+              />
             </div>
           {/if}
           <div class="content-header">
