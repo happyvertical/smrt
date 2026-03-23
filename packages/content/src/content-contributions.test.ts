@@ -104,6 +104,22 @@ CREATE TABLE IF NOT EXISTS content_references (
 CREATE UNIQUE INDEX IF NOT EXISTS content_references_source_id_target_id_idx ON content_references (source_id, target_id);
 `;
 
+const CONTENT_ASSETS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_assets (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  content_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  relationship TEXT DEFAULT 'attachment',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS content_assets_unique_idx ON content_assets (content_id, asset_id, relationship);
+`;
+
 const ASSET_TYPES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS asset_types (
   id TEXT PRIMARY KEY NOT NULL,
@@ -157,22 +173,6 @@ CREATE TABLE IF NOT EXISTS assets (
   external_id TEXT DEFAULT ''
 );
 CREATE UNIQUE INDEX IF NOT EXISTS assets_slug_context_idx ON assets (slug, context);
-`;
-
-const ASSET_ASSOCIATIONS_SCHEMA = `
-CREATE TABLE IF NOT EXISTS asset_associations (
-  id TEXT PRIMARY KEY NOT NULL,
-  slug TEXT NOT NULL,
-  context TEXT NOT NULL DEFAULT '',
-  created_at DATETIME NOT NULL,
-  updated_at DATETIME NOT NULL,
-  asset_id TEXT,
-  meta_type TEXT,
-  meta_id TEXT,
-  role TEXT DEFAULT 'default',
-  sort_order INTEGER NOT NULL DEFAULT 0
-);
-CREATE UNIQUE INDEX IF NOT EXISTS asset_associations_unique_idx ON asset_associations (asset_id, meta_type, meta_id, role);
 `;
 
 const CONTENT_CONTRIBUTION_TYPES_SCHEMA = `
@@ -371,10 +371,10 @@ describe('content contributions', () => {
         PROFILES_SCHEMA,
         CONTENTS_SCHEMA,
         CONTENT_REFERENCES_SCHEMA,
+        CONTENT_ASSETS_SCHEMA,
         ASSET_TYPES_SCHEMA,
         ASSET_STATUSES_SCHEMA,
         ASSETS_SCHEMA,
-        ASSET_ASSOCIATIONS_SCHEMA,
         CONTENT_CONTRIBUTION_TYPES_SCHEMA,
         CONTENT_CONTRIBUTORS_SCHEMA,
         CONTENT_CONTRIBUTIONS_SCHEMA,
@@ -558,6 +558,54 @@ describe('content contributions', () => {
     expect(type?.label).toBe('Letters & opinions');
   });
 
+  it('deletes an unused custom contribution type cleanly', async () => {
+    const types = await ContentContributionTypeCollection.create({ db });
+    const record = await types.create({
+      key: 'qa-delete',
+      label: 'QA delete',
+      allowedChannels: ['web'],
+      allowText: true,
+      allowFiles: false,
+      allowEmptyText: true,
+      promotion: {
+        targetContentType: 'article',
+      },
+    });
+    await record.save();
+
+    await expect(record.delete()).resolves.toBeUndefined();
+    await expect(types.get({ id: record.id })).resolves.toBeNull();
+  });
+
+  it('blocks deleting a custom contribution type that is already referenced', async () => {
+    const types = await ContentContributionTypeCollection.create({ db });
+    const record = await types.create({
+      key: 'qa-delete-blocked',
+      label: 'QA delete blocked',
+      allowedChannels: ['web'],
+      allowText: true,
+      allowFiles: false,
+      allowEmptyText: true,
+      promotion: {
+        targetContentType: 'article',
+      },
+    });
+    await record.save();
+
+    const contribution = await contributions.create({
+      contributorId: 'contributor-1',
+      contributionTypeKey: record.key,
+      status: 'submitted',
+      intakeDecision: 'accepted',
+      channel: 'web',
+    });
+    await contribution.save();
+
+    await expect(record.delete()).rejects.toThrow(
+      'contributions already reference it',
+    );
+  });
+
   it('auto-promotes trusted contributors when the type allows it', async () => {
     const contributors = await ContentContributorCollection.create({ db });
     const trusted = await contributors.findOrCreateByEmail({
@@ -595,7 +643,7 @@ describe('content contributions', () => {
     );
   });
 
-  it('approves a held contribution into draft content and draft assets with provenance', async () => {
+  it('approves a held contribution into draft content and draft assets via content_assets', async () => {
     const submitted = await contributions.submitWebContribution({
       typeKey: 'letter',
       contributorEmail: 'editorial@example.com',
@@ -616,6 +664,7 @@ describe('content contributions', () => {
     const contribution = await contributions.get({
       id: submitted.contribution.id,
     });
+
     const promoted = await contribution?.approveAction({
       editorNote: 'Looks good.',
     });
@@ -628,6 +677,7 @@ describe('content contributions', () => {
     expect(savedContent?.metadata?.contribution?.contributionId).toBe(
       contribution?.id,
     );
+    expect(await savedContent?.getAssets('attachment')).toHaveLength(1);
     expect(await savedContent?.isGoverned()).toBe(true);
   });
 

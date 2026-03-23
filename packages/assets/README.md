@@ -1,6 +1,10 @@
 # @happyvertical/smrt-assets
 
-Provider-agnostic asset management with versioning, type classification, metadata fields, and polymorphic associations.
+Provider-agnostic asset management with versioning, type classification, metadata fields, and generic/provenance associations.
+
+`AssetAssociation` is the generic exception path for linking assets to arbitrary
+objects when there is not a model-owned noun join table. Base/domain-owned
+relationships should use dedicated joins such as `content_assets`.
 
 ## Installation
 
@@ -53,12 +57,12 @@ const thumb = new Asset({
 });
 await thumb.save();
 
-// Polymorphic association -- link asset to any SmrtObject
+// Generic/provenance association -- link asset to an arbitrary object
 const assoc = new AssetAssociation({
   assetId: photo.id,
-  metaType: '@happyvertical/smrt-content:Article',
-  metaId: 'article-123',
-  role: 'hero',
+  metaType: 'Image',
+  metaId: 'derived-image-123',
+  role: 'derivation-source',
   sortOrder: 0,
 });
 await assoc.save();
@@ -79,7 +83,7 @@ await store.store({ buffer, mimeType: 'image/png', name: 'screenshot' });
 | Export | Description |
 |--------|------------|
 | `Asset` | Core asset with versioning (`primaryVersionId`, `version`), hierarchy (`parentId`), `sourceUri`, `mimeType`, `typeSlug`, `statusSlug`, `ownerProfileId` |
-| `AssetAssociation` | Polymorphic join: `assetId` + `metaType` + `metaId` + `role` + `sortOrder` |
+| `AssetAssociation` | Generic/provenance polymorphic join: `assetId` + `metaType` + `metaId` + `role` + `sortOrder` |
 | `AssetType` | Lookup table for asset type classification |
 | `AssetStatus` | Lookup table for lifecycle status |
 | `AssetMetafield` | Custom metadata field definitions with JSON validation rules |

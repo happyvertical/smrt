@@ -5,6 +5,7 @@ import { faker } from '@faker-js/faker';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { makeSlug } from '@happyvertical/utils';
 import { expect, it } from 'vitest';
+import { ContentAssetCollection } from './content-assets';
 import { Contents } from './contents';
 
 const TMP_DIR = path.resolve(`${os.tmpdir()}/.have-sdk-tests/contents`);
@@ -304,7 +305,7 @@ it('should return an empty asset list on a fresh database before any asset write
   expect(assets).toEqual([]);
 });
 
-it('should persist content assets via AssetAssociation', async () => {
+it('should persist content assets via content_assets', async () => {
   const dbUrl = getTestDbUrl('persisted-assets');
   const contents = await Contents.create({
     db: {
@@ -338,9 +339,19 @@ it('should persist content assets via AssetAssociation', async () => {
       url: dbUrl,
     },
   });
+  const contentAssets = await ContentAssetCollection.create({
+    db: {
+      url: dbUrl,
+    },
+  });
   const reloaded = await reloadedContents.get({ id: content.id });
+  const links = await contentAssets.getForContent(content.id as string);
 
   expect(reloaded).toBeTruthy();
+  expect(links).toHaveLength(1);
+  expect(links[0]?.assetId).toBe(image.id);
+  expect(links[0]?.relationship).toBe('thumbnail');
+  expect(links[0]?.sortOrder).toBe(3);
 
   const assets = await reloaded?.getAssets('thumbnail');
   expect(assets).toHaveLength(1);

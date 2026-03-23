@@ -52,6 +52,7 @@ export {
 // Export component prop types
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
+export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
 export type ContentContributionFormProps = ComponentProps<
   typeof ContentContributionForm
 >;
@@ -67,7 +68,6 @@ export type ContentContributionTypeManagerProps = ComponentProps<
 export type ContentContributorManagerProps = ComponentProps<
   typeof ContentContributorManager
 >;
-export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
 export type ContentTransparencyReportProps = ComponentProps<
   typeof ContentTransparencyReport
 >;

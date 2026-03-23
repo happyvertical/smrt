@@ -1,8 +1,4 @@
-import {
-  type Asset,
-  AssetAssociationCollection,
-  AssetCollection,
-} from '@happyvertical/smrt-assets';
+import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import {
   field,
@@ -14,6 +10,7 @@ import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { ContentAssetCollection } from './content-assets';
 import {
   buildContentGovernanceAssignmentKey,
   buildContentReviewPrompt,
@@ -35,6 +32,7 @@ import {
 import { ContentReferences } from './content-references';
 import type { ContentReview } from './content-review';
 import { normalizeContentTransparency } from './content-transparency';
+import { isMissingTableError } from './database-utils';
 import {
   serializeContent,
   serializeContentCorrection,
@@ -1102,12 +1100,55 @@ ${correctedText}
     return AssetCollection.create({ db: this.db });
   }
 
-  private async getAssetAssociationCollection() {
-    return AssetAssociationCollection.create({ db: this.db });
+  private async getContentAssetCollection() {
+    return ContentAssetCollection.create({ db: this.db });
   }
 
-  private getAssetAssociationMetaType(): string {
-    return (this as any)._meta_type || this.constructor.name;
+  private async getContentAssetLinks(
+    relationship?: string,
+  ): Promise<Array<{ assetId: string; sortOrder: number }>> {
+    if (!this.id) {
+      return [];
+    }
+
+    try {
+      const contentAssets = await this.getContentAssetCollection();
+      const links = await contentAssets.getForContent(this.id, relationship);
+
+      return links
+        .filter((link) => link.assetId)
+        .map((link) => ({
+          assetId: link.assetId,
+          sortOrder: link.sortOrder ?? 0,
+        }));
+    } catch (error) {
+      if (isMissingTableError(error, 'content_assets')) {
+        return [];
+      }
+
+      throw error;
+    }
+  }
+
+  private async resolveAssetsForLinks(
+    links: Array<{ assetId: string; sortOrder: number }>,
+  ): Promise<Asset[]> {
+    if (links.length === 0) {
+      return [];
+    }
+
+    const assetIds = [...new Set(links.map((link) => link.assetId))];
+    const assets = await this.getAssetCollection();
+    const resolved = await assets.listByIds(assetIds);
+    const assetsById = new Map(
+      resolved
+        .filter((asset) => asset.id)
+        .map((asset) => [asset.id as string, asset]),
+    );
+
+    return links
+      .map((link) => assetsById.get(link.assetId))
+      .filter(Boolean) as Asset[];
   }
 
   private async resolveReferenceTarget(content: Content | string) {
@@ -2109,34 +2150,9 @@ ${correctedText}
       return [];
     }
 
-    const associations = await this.getAssetAssociationCollection();
-    const linkedAssets = relationship
-      ? await associations.getForObjectByRole(
-          this.getAssetAssociationMetaType(),
-          this.id,
-          relationship,
-        )
-      : await associations.getForObject(
-          this.getAssetAssociationMetaType(),
-          this.id,
-        );
-    const assetIds = linkedAssets.map((association) => association.assetId);
-
-    if (assetIds.length === 0) {
-      return [];
-    }
-
-    const assets = await this.getAssetCollection();
-    const resolved = await assets.listByIds(assetIds);
-    const assetsById = new Map(
-      resolved
-        .filter((asset) => asset.id)
-        .map((asset) => [asset.id as string, asset]),
+    return this.resolveAssetsForLinks(
+      await this.getContentAssetLinks(relationship),
     );
-
-    return assetIds
-      .map((assetId) => assetsById.get(assetId))
-      .filter(Boolean) as Asset[];
   }
 
   /**
@@ -2172,13 +2188,13 @@ ${correctedText}
       );
     }
 
-    const associations = await this.getAssetAssociationCollection();
-    await associations.associate(
-      asset.id,
-      this.getAssetAssociationMetaType(),
+    const contentAssets = await this.getContentAssetCollection();
+    await contentAssets.attach(
       this.id,
+      asset.id,
       relationship,
       sortOrder,
+      this.tenantId,
     );
   }
 
@@ -2192,13 +2208,14 @@ ${correctedText}
       return;
     }
 
-    const associations = await this.getAssetAssociationCollection();
-    await associations.dissociate(
-      assetId,
-      this.getAssetAssociationMetaType(),
-      this.id,
-      relationship,
-    );
+    try {
+      const contentAssets = await this.getContentAssetCollection();
+      await contentAssets.detach(this.id, assetId, relationship);
+    } catch (error) {
+      if (!isMissingTableError(error, 'content_assets')) {
+        throw error;
+      }
+    }
   }
 
   // ============================================

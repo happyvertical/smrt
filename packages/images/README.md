@@ -73,7 +73,7 @@ const variations = await editor.generateVariation(image, 'winter theme', { count
 | Export | Description |
 |--------|------------|
 | `ImageCategorizer` | AI vision analysis returning tags, description, confidence, subjects. `autoTag()` applies results to the image. |
-| `ImageDeriver` | Derive new images from sources + AI prompts with provenance via AssetAssociation |
+| `ImageDeriver` | Derive new images from sources + AI prompts with generic provenance links via `AssetAssociation` |
 | `ImageEditor` | Resize, crop, convert, thumbnail (via `@happyvertical/images`) + AI editing. Creates derivative Image records linked via `parentId`. |
 | `ImageMetadataExtractor` | Extract dimensions, format, EXIF from image buffers |
 | `ImageSearch` | Text search across name/description/alt with orientation filters |

@@ -5,7 +5,6 @@ import type { RequestHandler } from './$types';
 // Mock AI Variation
 export const POST: RequestHandler = async ({ params, request }) => {
   await getCollection<any>('@happyvertical/smrt-assets:Asset');
-  await getCollection<any>('@happyvertical/smrt-assets:AssetAssociation');
   const collection = await getCollection<any>(
     '@happyvertical/smrt-images:Image',
   );

@@ -7,7 +7,6 @@ import type { RequestHandler } from './$types';
 
 async function ensureImageBaseTables() {
   await getCollection<any>('@happyvertical/smrt-assets:Asset');
-  await getCollection<any>('@happyvertical/smrt-assets:AssetAssociation');
 }
 
 export const GET: RequestHandler = async () => {

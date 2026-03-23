@@ -8,6 +8,7 @@ import {
   type ContentContributionTypeDefinition,
   hasStaticContentContributionType,
 } from './content-contribution-config';
+import { getQueryRows, isMissingTableError } from './database-utils';
 
 export interface ContentContributionTypeOptions extends SmrtObjectOptions {
   key?: string;
@@ -200,15 +201,28 @@ export class ContentContributionType extends SmrtObject {
     const hasFallback = hasStaticContentContributionType(this.key);
 
     if (!hasFallback) {
-      const existing = await this.db.list('content_contributions', {
-        where: { contribution_type_key: this.key },
-        limit: 1,
-      });
-
-      if (existing.length > 0) {
-        throw new Error(
-          `Cannot delete contribution type "${this.key}" because contributions already reference it.`,
+      try {
+        const existing = await this.db.query(
+          'SELECT id FROM content_contributions WHERE contribution_type_key = ? LIMIT 1',
+          this.key,
         );
+        const rows = getQueryRows(existing);
+
+        if (rows.length > 0) {
+          throw new Error(
+            `Cannot delete contribution type "${this.key}" because contributions already reference it.`,
+          );
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('already reference it')
+        ) {
+          throw error;
+        }
+        if (!isMissingTableError(error, 'content_contributions')) {
+          throw error;
+        }
       }
     }
 

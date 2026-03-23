@@ -10,6 +10,7 @@
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 import { Content } from '../../content';
+import { ContentAsset } from '../../content-asset';
 import { ContentContribution } from '../../content-contribution';
 import { ContentContributionAttachment } from '../../content-contribution-attachment';
 import { ContentContributionRevision } from '../../content-contribution-revision';
@@ -23,6 +24,7 @@ import { ContentReference } from '../../content-reference';
 import { ContentReview } from '../../content-review';
 import { Article, ContentDocument, Mirror } from '../../content-types';
 import { ContentVersion } from '../../content-version';
+import '../../content-assets';
 import '../../content-contribution-attachments';
 import '../../content-contribution-revisions';
 import '../../content-contribution-types';
@@ -38,6 +40,9 @@ import '../../content-versions';
 import '../../contents';
 
 // Re-register imported objects with explicit package names for bundled runtimes
+ObjectRegistry.register(ContentAsset, {
+  packageName: '@happyvertical/smrt-content',
+});
 ObjectRegistry.register(ContentContributionAttachment, {
   packageName: '@happyvertical/smrt-content',
 });
