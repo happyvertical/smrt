@@ -11,7 +11,7 @@ export default defineConfig(async () => {
 		'../../packages/core/src/vite-plugin/index.js'
 	);
 
-	return {
+		return {
 		build: {
 			lib: {
 				entry: resolve(packageDir, 'src/index.ts'),
@@ -20,7 +20,7 @@ export default defineConfig(async () => {
 			},
 			rollupOptions: {
 				output: {
-					dir: resolve(packageDir, 'dist'),
+					dir: resolve(packageDir, 'dist/lib'),
 					format: 'es' as const,
 					preserveModules: false,
 					entryFileNames: '[name].js',
@@ -73,7 +73,7 @@ export default defineConfig(async () => {
 			}),
 			// TypeScript declarations
 			dts({
-				outDir: resolve(packageDir, 'dist'),
+				outDir: resolve(packageDir, 'dist/lib'),
 				include: [resolve(packageDir, 'src/**/*.ts')],
 				exclude: ['**/*.test.ts', '**/*.spec.ts', '**/*.config.ts', '**/*.d.ts'],
 				insertTypesEntry: false,

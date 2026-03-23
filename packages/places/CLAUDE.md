@@ -5,6 +5,7 @@ Hierarchical geographic database with organic growth via geocoding integration.
 ## Models
 
 - **Place** (STI): hierarchical via `parentId`. Optional geo fields (all nullable — supports abstract places like game zones). `externalId`/`source` from geocoder. Metadata JSON.
+- **PlaceAsset**: dedicated owned-asset join in `place_assets` with `relationship` and `sortOrder`.
 - **PlaceType**: slug-based classification (country, city, building, zone, room, region).
 
 ## Key Collection Methods
@@ -16,6 +17,7 @@ Hierarchical geographic database with organic growth via geocoding integration.
 | `searchByProximity(lat, lng, radiusKm)` | Haversine distance, sorted by proximity |
 | `findWithGlobals(tenantId)` | Tenant + global (tenantId=null) places |
 | `getRootPlaces()`, `getByType(slug)` | Hierarchy + type queries |
+| `getAssets()` / `addAsset()` / `removeAsset()` | Owned asset helpers on both `Place` and `PlaceCollection`, backed by `place_assets` |
 
 Hierarchy traversal: `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getHierarchy()`.
 

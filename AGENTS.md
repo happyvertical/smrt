@@ -23,7 +23,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | agents | Agent lifecycle, DispatchBus inter-agent messaging, interests-based discovery, scheduling |
 | jobs | Background execution: TaskRunner, ScheduleRunner, fluent JobBuilder, `withBackgroundJobs()` |
 | users | Auth/RBAC: 4-level permission cascade, hierarchical tenants, sessions, SvelteKit hooks |
-| profiles | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships, audit logging |
+| profiles | Identity: multi-auth (Nostr/OIDC/API keys/magic links), relationships, audit logging, owned asset joins via `profile_assets` |
 
 ### Content & Media
 | Package | Purpose |
@@ -40,7 +40,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | Package | Purpose |
 |---------|---------|
 | commerce | Customer/Vendor, Contract (5 STI types), Invoice with ledger integration, Fulfillment |
-| products | Product catalog — reference template for triple-consumption (npm/federation/standalone) |
+| products | Product catalog — reference template for triple-consumption (npm/federation/standalone) with owned asset joins via `product_assets` |
 | ads | Ad delivery: priority waterfall, weighted A/B variations, immutable event tracking |
 | affiliates | Revenue sharing: multi-type partners, multi-tier commissions, payout processing |
 | ledgers | Double-entry accounting, balance enforcement (EPSILON=0.01), journal lifecycle |
@@ -49,8 +49,8 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Domain
 | Package | Purpose |
 |---------|---------|
-| events | Infinite-nesting event hierarchy, series, participant roles/placements |
-| places | Hierarchical places, geocoding via `lookupOrCreate()`, Haversine proximity search |
+| events | Infinite-nesting event hierarchy, series, participant roles/placements, owned asset joins via `event_assets` |
+| places | Hierarchical places, geocoding via `lookupOrCreate()`, Haversine proximity search, owned asset joins via `place_assets` |
 | facts | Knowledge base: semantic dedup (3-zone reconciliation), evolution chains, confidence |
 | sites | Site lifecycle management, agent bindings with priority ordering |
 | properties | Digital properties with hierarchical zones for content/ad placement |
@@ -85,7 +85,7 @@ npm run format                  # Biome
 - **Cross-package FKs**: plain string IDs, not `@foreignKey()` (avoids circular deps)
 - **System tables**: prefixed `_smrt_` (jobs, dispatch, schedules, migrations)
 - **Conflict columns**: set `conflictColumns` in `@smrt()` for junction/upsert tables
-- **Asset ownership joins**: base/domain-owned asset relationships belong on noun join tables like `content_assets`; use `asset_associations` only for generic/provenance links
+- **Asset ownership joins**: base/domain-owned asset relationships belong on noun join tables like `content_assets`, `profile_assets`, `event_assets`, `place_assets`, and `product_assets`; use `asset_associations` only for generic/provenance links
 - **STI discriminator**: qualified names — `@happyvertical/smrt-content:Article`
 - **Tenant scoping**: most domain models use `@TenantScoped({ mode: 'optional' })` + nullable tenantId
 - **JSON fields**: store as string, provide `getX()`/`setX()` helpers with graceful parse error handling

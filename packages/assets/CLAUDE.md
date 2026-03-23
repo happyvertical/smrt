@@ -8,14 +8,14 @@ Provider-agnostic asset management with versioning, type classification, and gen
 - **AssetType** / **AssetStatus**: lookup tables for classification and lifecycle.
 - **AssetMetafield**: custom metadata field definitions with JSON validation rules.
 - **Folder**: STI subclass (typeSlug='folder') for hierarchical organization.
-- **AssetAssociation**: generic/provenance polymorphic join — `assetId` + `metaType` + `metaId` + `role` + `sortOrder`. Use it when a relationship is not owned by a base/domain model join table.
+- **AssetAssociation**: generic/provenance polymorphic join — `assetId` + `metaType` + `metaId` + `role` + `sortOrder`. Use it when a relationship is not owned by a base/domain model join table like `content_assets`, `profile_assets`, `event_assets`, `place_assets`, or `product_assets`.
 
 ## Key Patterns
 
 - **Versioning**: `createNewVersion()` increments version, chains via `primaryVersionId`. `findVersions()` to retrieve history.
 - **Tag integration**: `addTag()`/`removeTag()` use raw `db.upsert()` on `asset_tags` join table (not a SMRT model).
 - **AssetStore**: abstraction for provider-agnostic file I/O (S3, local, etc.).
-- **Ownership rule**: base/domain-owned asset relationships should live on noun join tables such as `content_assets`; keep `AssetAssociation` for generic/provenance links like image derivation.
+- **Ownership rule**: base/domain-owned asset relationships should live on noun join tables such as `content_assets`, `profile_assets`, `event_assets`, `place_assets`, and `product_assets`; keep `AssetAssociation` for generic/provenance links like image derivation.
 
 ## Gotchas
 

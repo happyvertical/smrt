@@ -4,6 +4,7 @@
  * Provides hierarchy traversal, filtering, and search capabilities.
  */
 
+import type { Asset } from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Event } from '../models/Event';
 import type { EventSearchFilters, EventStatus } from '../types';
@@ -118,6 +119,40 @@ export class EventCollection extends SmrtCollection<Event> {
     if (!event) return null;
 
     return await event.getHierarchy().then((h) => h.current);
+  }
+
+  async getAssets(eventId: string, relationship?: string): Promise<Asset[]> {
+    const event = await this.get({ id: eventId });
+    if (!event) return [];
+
+    return event.getAssets(relationship);
+  }
+
+  async addAsset(
+    eventId: string,
+    asset: Asset,
+    relationship = 'attachment',
+    sortOrder = 0,
+  ): Promise<void> {
+    const event = await this.get({ id: eventId });
+    if (!event) {
+      throw new Error(`Event '${eventId}' not found`);
+    }
+
+    await event.addAsset(asset, relationship, sortOrder);
+  }
+
+  async removeAsset(
+    eventId: string,
+    assetId: string,
+    relationship?: string,
+  ): Promise<void> {
+    const event = await this.get({ id: eventId });
+    if (!event) {
+      throw new Error(`Event '${eventId}' not found`);
+    }
+
+    await event.removeAsset(assetId, relationship);
   }
 
   /**

@@ -4,7 +4,8 @@ Provider-agnostic asset management with versioning, type classification, metadat
 
 `AssetAssociation` is the generic exception path for linking assets to arbitrary
 objects when there is not a model-owned noun join table. Base/domain-owned
-relationships should use dedicated joins such as `content_assets`.
+relationships should use dedicated joins such as `content_assets`,
+`profile_assets`, `event_assets`, `place_assets`, and `product_assets`.
 
 ## Installation
 
@@ -67,6 +68,9 @@ const assoc = new AssetAssociation({
 });
 await assoc.save();
 
+// Base/domain-owned asset relationships should use dedicated noun joins instead:
+// content_assets, profile_assets, event_assets, place_assets, product_assets
+
 // Folder organization (STI subclass of Asset with typeSlug='folder')
 const folder = new Folder({ name: 'Product Images', slug: 'product-images' });
 await folder.save();
@@ -83,7 +87,7 @@ await store.store({ buffer, mimeType: 'image/png', name: 'screenshot' });
 | Export | Description |
 |--------|------------|
 | `Asset` | Core asset with versioning (`primaryVersionId`, `version`), hierarchy (`parentId`), `sourceUri`, `mimeType`, `typeSlug`, `statusSlug`, `ownerProfileId` |
-| `AssetAssociation` | Generic/provenance polymorphic join: `assetId` + `metaType` + `metaId` + `role` + `sortOrder` |
+| `AssetAssociation` | Generic/provenance polymorphic join: `assetId` + `metaType` + `metaId` + `role` + `sortOrder`; not for base/domain-owned joins that already have noun tables |
 | `AssetType` | Lookup table for asset type classification |
 | `AssetStatus` | Lookup table for lifecycle status |
 | `AssetMetafield` | Custom metadata field definitions with JSON validation rules |

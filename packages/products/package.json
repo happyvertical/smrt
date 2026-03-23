@@ -18,24 +18,28 @@
       "default": "./dist/lib/index.js"
     },
     "./models": {
-      "types": "./dist/lib/models/index.d.ts",
-      "default": "./dist/lib/models/index.js"
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
     },
     "./components": {
-      "types": "./dist/lib/components/index.d.ts",
-      "default": "./dist/lib/components/index.js"
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
     },
     "./stores": {
-      "types": "./dist/lib/stores/index.d.ts",
-      "default": "./dist/lib/stores/index.js"
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
     },
     "./generated": {
-      "types": "./dist/lib/generated/index.d.ts",
-      "default": "./dist/lib/generated/index.js"
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
     },
     "./utils": {
-      "types": "./dist/lib/utils/index.d.ts",
-      "default": "./dist/lib/utils/index.js"
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
+    },
+    "./collections": {
+      "types": "./dist/lib/index.d.ts",
+      "default": "./dist/lib/index.js"
     },
     "./manifest": "./dist/lib/manifest.json"
   },
@@ -43,6 +47,7 @@
     "@happyvertical/ai": "catalog:",
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:"
@@ -52,6 +57,7 @@
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/cors": "2.8.19",
     "@types/node": "25.0.9",
+    "@happyvertical/smrt-vitest": "workspace:*",
     "concurrently": "^9.2.1",
     "svelte": "^5.46.4",
     "vite": "^7.3.1",
@@ -64,7 +70,7 @@
     "dev:federation": "vite dev --mode federation --port 3002",
     "dev:library": "vite build --mode library --watch",
     "generate": "node scripts/generate-smrt-types.js",
-    "build": "echo '⏭️  Skipping products build (package not fully developed yet)'",
+    "build": "npm run build:lib",
     "build:all": "npm run clean && npm run generate && npm run build:lib && npm run build:app && npm run build:federation",
     "build:lib": "vite build --mode library",
     "build:app": "vite build --mode standalone",
@@ -75,8 +81,10 @@
     "start:standalone": "node dist/app/main.js",
     "start:federation": "node dist/federation/main.js",
     "preview": "vite preview",
+    "prepack": "npm run build && npm run verify:pack",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
     "clean": "rm -rf dist src/lib/types/smrt-generated",
     "prepare": "test -f ../smrt/dist/vite-plugin/index.js && npm run build:lib || echo 'Skipping products build:lib (smrt vite-plugin not available yet)'"
   },

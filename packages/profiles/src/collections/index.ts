@@ -11,6 +11,7 @@ export {
   NostrIdentityCollection,
 } from './NostrIdentityCollection';
 export { OidcIdentityCollection } from './OidcIdentityCollection';
+export { ProfileAssetCollection } from './ProfileAssetCollection';
 export { ProfileCollection } from './ProfileCollection';
 export { ProfileMetadataCollection } from './ProfileMetadataCollection';
 export { ProfileMetafieldCollection } from './ProfileMetafieldCollection';

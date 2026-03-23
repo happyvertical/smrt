@@ -1,4 +1,6 @@
+import { resolve } from 'node:path';
 import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';
+import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import { defineConfig } from 'vitest/config';
 
@@ -18,13 +20,14 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   plugins: [
     svelte(),
+    smrtVitestPlugin({ verbose: true }),
     smrtPlugin({
       include: ['src/**/*.ts'],
       exclude: ['**/*.test.ts', '**/*.spec.ts'],
       baseClasses: ['SmrtObject', 'SmrtCollection'],
       generateTypes: true,
-      watch: true,
-      hmr: true,
+      watch: false,
+      hmr: false,
       mode: 'server', // Enable file scanning for auto-generation
       typeDeclarationsPath: 'src/types',
     }),
@@ -64,16 +67,7 @@ export default defineConfig({
 
   resolve: {
     alias: {
-      $lib: '/workspaces/sdk/smrt/products/src',
-      // Map workspace packages for development
-      // These would be npm packages in a standalone repo
-      '@happyvertical/smrt-core': '/workspaces/sdk/packages/smrt/src',
-      '@happyvertical/pdf': '/workspaces/sdk/packages/pdf/src',
-      '@happyvertical/spider': '/workspaces/sdk/packages/spider/src',
-      '@happyvertical/files': '/workspaces/sdk/packages/files/src',
-      '@happyvertical/utils': '/workspaces/sdk/packages/utils/src',
-      '@happyvertical/sql': '/workspaces/sdk/packages/sql/src',
-      '@happyvertical/ai': '/workspaces/sdk/packages/ai/src',
+      $lib: resolve(__dirname, 'src/lib'),
     },
   },
 

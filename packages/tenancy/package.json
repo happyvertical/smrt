@@ -56,16 +56,19 @@
     "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
+    "@happyvertical/smrt-users": "workspace:*",
     "svelte": "^5.46.4"
   },
   "peerDependenciesMeta": {
+    "@happyvertical/smrt-users": {
+      "optional": true
+    },
     "svelte": {
       "optional": true
     }
   },
   "devDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
-    "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",

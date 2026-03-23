@@ -58,6 +58,7 @@ export {
   NostrIdentityCollection,
 } from './collections/NostrIdentityCollection';
 export { OidcIdentityCollection } from './collections/OidcIdentityCollection';
+export { ProfileAssetCollection } from './collections/ProfileAssetCollection';
 // Export collections
 export { ProfileCollection } from './collections/ProfileCollection';
 export { ProfileMetadataCollection } from './collections/ProfileMetadataCollection';
@@ -82,8 +83,10 @@ export type { OidcIdentityOptions } from './models/OidcIdentity';
 export { OidcIdentity } from './models/OidcIdentity';
 // Export model option types
 export type { ProfileOptions } from './models/Profile';
-// Export models
 export { Profile } from './models/Profile';
+// Export models
+export type { ProfileAssetOptions } from './models/ProfileAsset';
+export { ProfileAsset } from './models/ProfileAsset';
 export type { ProfileMetadataOptions } from './models/ProfileMetadata';
 export { ProfileMetadata } from './models/ProfileMetadata';
 export type { ProfileMetafieldOptions } from './models/ProfileMetafield';

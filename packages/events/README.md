@@ -55,6 +55,25 @@ await series.create({
 });
 ```
 
+### Owned assets
+
+```typescript
+import { AssetCollection } from '@happyvertical/smrt-assets';
+
+const assets = await AssetCollection.create();
+const hero = await assets.create({
+  name: 'launch-poster.jpg',
+  sourceUri: 'file:///tmp/launch-poster.jpg',
+  mimeType: 'image/jpeg',
+});
+
+await game.addAsset(hero, 'hero');
+await events.addAsset(game.id!, hero, 'gallery', 1);
+
+const heroAssets = await game.getAssets('hero');
+const galleryAssets = await events.getAssets(game.id!, 'gallery');
+```
+
 ## API
 
 ### Models
@@ -65,12 +84,14 @@ await series.create({
 | `EventSeries` | Recurring event group with recurrence patterns (daily/weekly/monthly/yearly) |
 | `EventType` | Classification with JSON schema for custom fields per type |
 | `EventParticipant` | Junction linking profiles to events with role, placement, and groupId |
+| `EventAsset` | Dedicated owned-asset join stored in `event_assets` with `relationship` and `sortOrder` |
 
 ### Collections
 
 | Export | Description |
 |--------|------------|
 | `EventCollection` | CRUD + hierarchy traversal for events |
+| `EventAssetCollection` | Direct access to `event_assets` rows plus asset helper wrappers |
 | `EventSeriesCollection` | CRUD for event series |
 | `EventTypeCollection` | CRUD for event types |
 | `EventParticipantCollection` | CRUD for participants (conflictColumns: event_id, profile_id, role) |
@@ -112,6 +133,10 @@ await series.create({
 ### Instance Methods (Event)
 
 `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getRootEvent()`, `getHierarchy()` -- hierarchy traversal on any Event instance.
+
+Owned asset helpers are available on both `Event` and `EventCollection` via
+`getAssets()`, `addAsset()`, and `removeAsset()`. Common relationships include
+`hero`, `gallery`, `attachment`, and `thumbnail`.
 
 ## Dependencies
 

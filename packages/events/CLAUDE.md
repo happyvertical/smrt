@@ -5,6 +5,7 @@ Infinite-nesting event hierarchy with series, types, participants, and role/plac
 ## Models
 
 - **Event** (STI): self-referencing parent-child via `parentEventId`. Links to `seriesId`, `typeId`, `placeId`. Status: scheduled/in_progress/completed/cancelled/postponed. Hierarchy traversal: `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getRootEvent()`, `getHierarchy()`.
+- **EventAsset**: dedicated owned-asset join in `event_assets` with `relationship` and `sortOrder`.
 - **EventType**: classification with JSON schema for custom fields per type.
 - **EventSeries**: recurrence patterns (daily/weekly/monthly/yearly).
 - **EventParticipant**: junction with `role` (home/away/speaker/panelist/etc.), `placement` (numeric — team ordering and rankings), `groupId` (team grouping within event). `conflictColumns: ['event_id', 'profile_id', 'role']`.
@@ -16,3 +17,4 @@ Infinite-nesting event hierarchy with series, types, participants, and role/plac
 - **GroupId not enforced at DB level**: for logical grouping only (e.g., team members in a game)
 - **Optional tenancy** with nullable tenantId
 - **Metadata stored as JSON string** with get/set/update helpers
+- **Owned asset helpers**: use `Event.getAssets()` / `addAsset()` / `removeAsset()` or the matching `EventCollection` wrappers instead of generic `AssetAssociation`

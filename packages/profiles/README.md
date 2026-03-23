@@ -61,6 +61,27 @@ await profile.addRelationship(bob, 'friend');
 const friends = await profile.getRelationships({ direction: 'from' });
 ```
 
+### Owned assets
+
+```typescript
+import { AssetCollection } from '@happyvertical/smrt-assets';
+
+const profiles = await ProfileCollection.create();
+const assets = await AssetCollection.create();
+
+const headshot = await assets.create({
+  name: 'alice-headshot.jpg',
+  sourceUri: 'file:///tmp/alice-headshot.jpg',
+  mimeType: 'image/jpeg',
+});
+
+await profile.addAsset(headshot, 'avatar');
+await profiles.addAsset(profile.id!, headshot, 'gallery', 1);
+
+const avatarAssets = await profile.getAssets('avatar');
+const galleryAssets = await profiles.getAssets(profile.id!, 'gallery');
+```
+
 ## API
 
 ### Models
@@ -77,6 +98,7 @@ const friends = await profile.getRelationships({ direction: 'from' });
 | `ProfileRelationship` | Directional link between two profiles |
 | `ProfileRelationshipType` | Relationship classification with reciprocal flag |
 | `ProfileRelationshipTerm` | Time-bounded relationship periods |
+| `ProfileAsset` | Dedicated owned-asset join stored in `profile_assets` with `relationship` and `sortOrder` |
 
 ### Auth Models
 
@@ -93,6 +115,7 @@ const friends = await profile.getRelationships({ direction: 'from' });
 | Export | Description |
 |--------|------------|
 | `ProfileCollection` | CRUD and query for profiles |
+| `ProfileAssetCollection` | Direct access to `profile_assets` rows plus asset helper wrappers |
 | `ProfileTypeCollection` | Profile type management |
 | `ProfileMetadataCollection` | Metadata value operations |
 | `ProfileMetafieldCollection` | Metafield vocabulary management |
@@ -104,6 +127,10 @@ const friends = await profile.getRelationships({ direction: 'from' });
 | `MagicLinkTokenCollection` | Magic link token operations |
 | `NostrIdentityCollection` | Nostr identity lookup (includes NIP-05) |
 | `OidcIdentityCollection` | OIDC identity lookup |
+
+`Profile` and `ProfileCollection` both expose `getAssets()`, `addAsset()`, and
+`removeAsset()` helpers backed by `profile_assets`. Typical relationships are
+`avatar`, `gallery`, and `attachment`.
 
 ### Auth Functions
 

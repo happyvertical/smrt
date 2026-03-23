@@ -7,10 +7,13 @@
  */
 
 // Export collections
+export { PlaceAssetCollection } from './collections/PlaceAssetCollection';
 export { PlaceCollection } from './collections/PlaceCollection';
 export { PlaceTypeCollection } from './collections/PlaceTypeCollection';
-// Export models
 export { Place } from './models/Place';
+// Export models
+export type { PlaceAssetOptions } from './models/PlaceAsset';
+export { PlaceAsset } from './models/PlaceAsset';
 export { PlaceType } from './models/PlaceType';
 
 // Export types
