@@ -19,7 +19,6 @@
  * ```
  */
 
-import type { Asset } from '../asset';
 import ActionBar from './ActionBar.svelte';
 import AssetDetail from './AssetDetail.svelte';
 import AssetGrid from './AssetGrid.svelte';
@@ -136,7 +135,7 @@ function handleDetailClose() {
 }
 
 async function handleDetailSave(
-  asset: Asset,
+  asset: PersistedAsset,
   updates: {
     name?: string;
     description?: string;

@@ -4,6 +4,9 @@ const DEFAULT_IMAGES_PLAYGROUND_API_BASE_URL = '/api/v1';
 
 type ImagesPlaygroundGlobal = typeof globalThis & {
   __SMRT_IMAGES_PLAYGROUND_API_BASE_URL__?: string;
+  location?: {
+    search: string;
+  };
 };
 
 function resolveImagesPlaygroundApiBaseUrl(): string {
@@ -13,10 +16,11 @@ function resolveImagesPlaygroundApiBaseUrl(): string {
     return configuredViaGlobal;
   }
 
-  if (typeof globalThis.location !== 'undefined') {
-    const configuredViaQuery = new URLSearchParams(
-      globalThis.location.search,
-    ).get('smrtImagesApiBaseUrl');
+  const browserLocation = (globalThis as ImagesPlaygroundGlobal).location;
+  if (browserLocation) {
+    const configuredViaQuery = new URLSearchParams(browserLocation.search).get(
+      'smrtImagesApiBaseUrl',
+    );
 
     if (configuredViaQuery) {
       return configuredViaQuery;
