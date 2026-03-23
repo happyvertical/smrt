@@ -1,7 +1,15 @@
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  createOwnedAssetLink,
+  deleteOwnedAssetLinks,
+  getOwnedAssetsFromCollection,
+  listOwnedAssetLinks,
+} from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { EventAsset } from '../models/EventAsset';
+import type { EventCollection } from './EventCollection';
 
 export interface EventAssetCollectionOptions extends SmrtCollectionOptions {}
 
@@ -12,24 +20,26 @@ export interface EventAssetCollectionOptions extends SmrtCollectionOptions {}
 })
 export class EventAssetCollection extends SmrtCollection<EventAsset> {
   static readonly _itemClass = EventAsset;
+  private eventCollectionPromise: Promise<EventCollection> | null = null;
+
+  private async getEventCollection(): Promise<EventCollection> {
+    if (!this.eventCollectionPromise) {
+      const { EventCollection } = await import('./EventCollection');
+      this.eventCollectionPromise = EventCollection.create({ db: this.db });
+    }
+
+    return this.eventCollectionPromise;
+  }
 
   async getForEvent(
     eventId: string,
     relationship?: string,
   ): Promise<EventAsset[]> {
-    const where = relationship ? { eventId, relationship } : { eventId };
-
-    return (await this.list({
-      where,
-      orderBy: 'sort_order ASC',
-    })) as EventAsset[];
+    return listOwnedAssetLinks(this, 'eventId', eventId, relationship);
   }
 
   async getForAsset(assetId: string): Promise<EventAsset[]> {
-    return (await this.list({
-      where: { assetId },
-      orderBy: 'sort_order ASC',
-    })) as EventAsset[];
+    return listOwnedAssetLinks(this, 'assetId', assetId);
   }
 
   async attach(
@@ -39,13 +49,13 @@ export class EventAssetCollection extends SmrtCollection<EventAsset> {
     sortOrder = 0,
     tenantId: string | null = null,
   ): Promise<EventAsset> {
-    return (await this.create({
+    return createOwnedAssetLink(this, {
       eventId,
       assetId,
       relationship,
       sortOrder,
       tenantId,
-    })) as EventAsset;
+    });
   }
 
   async detach(
@@ -53,21 +63,21 @@ export class EventAssetCollection extends SmrtCollection<EventAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const where: Record<string, string> = { eventId, assetId };
-    if (relationship) {
-      where.relationship = relationship;
-    }
-
-    const links = (await this.list({ where })) as EventAsset[];
-    for (const link of links) {
-      await link.delete();
-    }
+    await deleteOwnedAssetLinks(
+      this,
+      'eventId',
+      eventId,
+      assetId,
+      relationship,
+    );
   }
 
   async getAssets(eventId: string, relationship?: string): Promise<Asset[]> {
-    const { EventCollection } = await import('./EventCollection');
-    const events = await EventCollection.create({ db: this.db });
-    return events.getAssets(eventId, relationship);
+    return getOwnedAssetsFromCollection(
+      await this.getEventCollection(),
+      eventId,
+      relationship,
+    );
   }
 
   async addAsset(
@@ -76,9 +86,14 @@ export class EventAssetCollection extends SmrtCollection<EventAsset> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const { EventCollection } = await import('./EventCollection');
-    const events = await EventCollection.create({ db: this.db });
-    await events.addAsset(eventId, asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      await this.getEventCollection(),
+      'Event',
+      eventId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -86,8 +101,7 @@ export class EventAssetCollection extends SmrtCollection<EventAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const { EventCollection } = await import('./EventCollection');
-    const events = await EventCollection.create({ db: this.db });
+    const events = await this.getEventCollection();
     await events.removeAsset(eventId, assetId, relationship);
   }
 }

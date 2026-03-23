@@ -1,7 +1,15 @@
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  createOwnedAssetLink,
+  deleteOwnedAssetLinks,
+  getOwnedAssetsFromCollection,
+  listOwnedAssetLinks,
+} from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { PlaceAsset } from '../models/PlaceAsset';
+import type { PlaceCollection } from './PlaceCollection';
 
 export interface PlaceAssetCollectionOptions extends SmrtCollectionOptions {}
 
@@ -12,24 +20,26 @@ export interface PlaceAssetCollectionOptions extends SmrtCollectionOptions {}
 })
 export class PlaceAssetCollection extends SmrtCollection<PlaceAsset> {
   static readonly _itemClass = PlaceAsset;
+  private placeCollectionPromise: Promise<PlaceCollection> | null = null;
+
+  private async getPlaceCollection(): Promise<PlaceCollection> {
+    if (!this.placeCollectionPromise) {
+      const { PlaceCollection } = await import('./PlaceCollection');
+      this.placeCollectionPromise = PlaceCollection.create({ db: this.db });
+    }
+
+    return this.placeCollectionPromise;
+  }
 
   async getForPlace(
     placeId: string,
     relationship?: string,
   ): Promise<PlaceAsset[]> {
-    const where = relationship ? { placeId, relationship } : { placeId };
-
-    return (await this.list({
-      where,
-      orderBy: 'sort_order ASC',
-    })) as PlaceAsset[];
+    return listOwnedAssetLinks(this, 'placeId', placeId, relationship);
   }
 
   async getForAsset(assetId: string): Promise<PlaceAsset[]> {
-    return (await this.list({
-      where: { assetId },
-      orderBy: 'sort_order ASC',
-    })) as PlaceAsset[];
+    return listOwnedAssetLinks(this, 'assetId', assetId);
   }
 
   async attach(
@@ -39,13 +49,13 @@ export class PlaceAssetCollection extends SmrtCollection<PlaceAsset> {
     sortOrder = 0,
     tenantId: string | null = null,
   ): Promise<PlaceAsset> {
-    return (await this.create({
+    return createOwnedAssetLink(this, {
       placeId,
       assetId,
       relationship,
       sortOrder,
       tenantId,
-    })) as PlaceAsset;
+    });
   }
 
   async detach(
@@ -53,21 +63,21 @@ export class PlaceAssetCollection extends SmrtCollection<PlaceAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const where: Record<string, string> = { placeId, assetId };
-    if (relationship) {
-      where.relationship = relationship;
-    }
-
-    const links = (await this.list({ where })) as PlaceAsset[];
-    for (const link of links) {
-      await link.delete();
-    }
+    await deleteOwnedAssetLinks(
+      this,
+      'placeId',
+      placeId,
+      assetId,
+      relationship,
+    );
   }
 
   async getAssets(placeId: string, relationship?: string): Promise<Asset[]> {
-    const { PlaceCollection } = await import('./PlaceCollection');
-    const places = await PlaceCollection.create({ db: this.db });
-    return places.getAssets(placeId, relationship);
+    return getOwnedAssetsFromCollection(
+      await this.getPlaceCollection(),
+      placeId,
+      relationship,
+    );
   }
 
   async addAsset(
@@ -76,9 +86,14 @@ export class PlaceAssetCollection extends SmrtCollection<PlaceAsset> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const { PlaceCollection } = await import('./PlaceCollection');
-    const places = await PlaceCollection.create({ db: this.db });
-    await places.addAsset(placeId, asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      await this.getPlaceCollection(),
+      'Place',
+      placeId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -86,8 +101,7 @@ export class PlaceAssetCollection extends SmrtCollection<PlaceAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const { PlaceCollection } = await import('./PlaceCollection');
-    const places = await PlaceCollection.create({ db: this.db });
+    const places = await this.getPlaceCollection();
     await places.removeAsset(placeId, assetId, relationship);
   }
 }

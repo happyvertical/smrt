@@ -27,6 +27,20 @@ export { AssetTypeCollection } from './asset-types';
 export { AssetCollection } from './assets';
 export { Folder } from './folder';
 export { FolderCollection } from './folders';
+export {
+  type AssetOwnerCollection,
+  type AssetOwnerRecord,
+  addOwnedAssetFromCollection,
+  assertValidOwnedAssetRelationship,
+  assertValidOwnedAssetSortOrder,
+  createOwnedAssetLink,
+  deleteOwnedAssetLinks,
+  getOwnedAssetsFromCollection,
+  listOwnedAssetLinks,
+  OWNED_ASSET_RELATIONSHIP_PATTERN,
+  removeOwnedAssetFromCollection,
+  resolveOwnedAssetsById,
+} from './owned-asset-helpers';
 
 // Export types
 export type {

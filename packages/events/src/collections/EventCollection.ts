@@ -5,6 +5,11 @@
  */
 
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  getOwnedAssetsFromCollection,
+  removeOwnedAssetFromCollection,
+} from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Event } from '../models/Event';
 import type { EventSearchFilters, EventStatus } from '../types';
@@ -122,10 +127,7 @@ export class EventCollection extends SmrtCollection<Event> {
   }
 
   async getAssets(eventId: string, relationship?: string): Promise<Asset[]> {
-    const event = await this.get({ id: eventId });
-    if (!event) return [];
-
-    return event.getAssets(relationship);
+    return getOwnedAssetsFromCollection(this, eventId, relationship);
   }
 
   async addAsset(
@@ -134,12 +136,14 @@ export class EventCollection extends SmrtCollection<Event> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const event = await this.get({ id: eventId });
-    if (!event) {
-      throw new Error(`Event '${eventId}' not found`);
-    }
-
-    await event.addAsset(asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      this,
+      'Event',
+      eventId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -147,12 +151,13 @@ export class EventCollection extends SmrtCollection<Event> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const event = await this.get({ id: eventId });
-    if (!event) {
-      throw new Error(`Event '${eventId}' not found`);
-    }
-
-    await event.removeAsset(assetId, relationship);
+    await removeOwnedAssetFromCollection(
+      this,
+      'Event',
+      eventId,
+      assetId,
+      relationship,
+    );
   }
 
   /**

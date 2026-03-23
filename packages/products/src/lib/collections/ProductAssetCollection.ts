@@ -1,7 +1,15 @@
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  createOwnedAssetLink,
+  deleteOwnedAssetLinks,
+  getOwnedAssetsFromCollection,
+  listOwnedAssetLinks,
+} from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { ProductAsset } from '../models/ProductAsset';
+import type { ProductCollection } from './ProductCollection';
 
 export interface ProductAssetCollectionOptions extends SmrtCollectionOptions {}
 
@@ -12,24 +20,26 @@ export interface ProductAssetCollectionOptions extends SmrtCollectionOptions {}
 })
 export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
   static readonly _itemClass = ProductAsset;
+  private productCollectionPromise: Promise<ProductCollection> | null = null;
+
+  private async getProductCollection(): Promise<ProductCollection> {
+    if (!this.productCollectionPromise) {
+      const { ProductCollection } = await import('./ProductCollection');
+      this.productCollectionPromise = ProductCollection.create({ db: this.db });
+    }
+
+    return this.productCollectionPromise;
+  }
 
   async getForProduct(
     productId: string,
     relationship?: string,
   ): Promise<ProductAsset[]> {
-    const where = relationship ? { productId, relationship } : { productId };
-
-    return (await this.list({
-      where,
-      orderBy: 'sort_order ASC',
-    })) as ProductAsset[];
+    return listOwnedAssetLinks(this, 'productId', productId, relationship);
   }
 
   async getForAsset(assetId: string): Promise<ProductAsset[]> {
-    return (await this.list({
-      where: { assetId },
-      orderBy: 'sort_order ASC',
-    })) as ProductAsset[];
+    return listOwnedAssetLinks(this, 'assetId', assetId);
   }
 
   async attach(
@@ -38,12 +48,12 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<ProductAsset> {
-    return (await this.create({
+    return createOwnedAssetLink(this, {
       productId,
       assetId,
       relationship,
       sortOrder,
-    })) as ProductAsset;
+    });
   }
 
   async detach(
@@ -51,21 +61,21 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const where: Record<string, string> = { productId, assetId };
-    if (relationship) {
-      where.relationship = relationship;
-    }
-
-    const links = (await this.list({ where })) as ProductAsset[];
-    for (const link of links) {
-      await link.delete();
-    }
+    await deleteOwnedAssetLinks(
+      this,
+      'productId',
+      productId,
+      assetId,
+      relationship,
+    );
   }
 
   async getAssets(productId: string, relationship?: string): Promise<Asset[]> {
-    const { ProductCollection } = await import('./ProductCollection');
-    const products = await ProductCollection.create({ db: this.db });
-    return products.getAssets(productId, relationship);
+    return getOwnedAssetsFromCollection(
+      await this.getProductCollection(),
+      productId,
+      relationship,
+    );
   }
 
   async addAsset(
@@ -74,9 +84,14 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const { ProductCollection } = await import('./ProductCollection');
-    const products = await ProductCollection.create({ db: this.db });
-    await products.addAsset(productId, asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      await this.getProductCollection(),
+      'Product',
+      productId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -84,8 +99,7 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const { ProductCollection } = await import('./ProductCollection');
-    const products = await ProductCollection.create({ db: this.db });
+    const products = await this.getProductCollection();
     await products.removeAsset(productId, assetId, relationship);
   }
 }

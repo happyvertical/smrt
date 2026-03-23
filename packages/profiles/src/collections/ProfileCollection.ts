@@ -5,6 +5,11 @@
  */
 
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  getOwnedAssetsFromCollection,
+  removeOwnedAssetFromCollection,
+} from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Profile } from '../models/Profile';
 
@@ -103,10 +108,7 @@ export class ProfileCollection extends SmrtCollection<Profile> {
   }
 
   async getAssets(profileId: string, relationship?: string): Promise<Asset[]> {
-    const profile = await this.get({ id: profileId });
-    if (!profile) return [];
-
-    return profile.getAssets(relationship);
+    return getOwnedAssetsFromCollection(this, profileId, relationship);
   }
 
   async addAsset(
@@ -115,12 +117,14 @@ export class ProfileCollection extends SmrtCollection<Profile> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const profile = await this.get({ id: profileId });
-    if (!profile) {
-      throw new Error(`Profile '${profileId}' not found`);
-    }
-
-    await profile.addAsset(asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      this,
+      'Profile',
+      profileId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -128,12 +132,13 @@ export class ProfileCollection extends SmrtCollection<Profile> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const profile = await this.get({ id: profileId });
-    if (!profile) {
-      throw new Error(`Profile '${profileId}' not found`);
-    }
-
-    await profile.removeAsset(assetId, relationship);
+    await removeOwnedAssetFromCollection(
+      this,
+      'Profile',
+      profileId,
+      assetId,
+      relationship,
+    );
   }
 
   /**
