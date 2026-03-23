@@ -29,6 +29,7 @@ import type {
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
 import { SignalBus } from './signals/bus.js';
+import { ensureLegacySystemTableCompatibility } from './system/compatibility.js';
 import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
 interface ResolvedAiUsageConfig {
@@ -631,6 +632,11 @@ export class SmrtClass {
       } catch {
         // _smrt_migrations doesn't exist yet — fall through to create everything
       }
+
+      // Older installs can have a subset of system columns already created.
+      // Upgrade those tables before replaying idempotent DDL so index creation
+      // does not fail on missing legacy columns.
+      await ensureLegacySystemTableCompatibility(this._db);
 
       // Create all system tables
       // Split multi-statement SQL into individual statements to avoid race conditions

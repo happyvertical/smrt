@@ -36,7 +36,7 @@
   },
   "scripts": {
     "build": "SMRT_PACKAGE_BUILD=1 npm run build:package",
-    "build:package": "svelte-kit sync && vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
+    "build:package": "svelte-kit sync && vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json && node ../../scripts/prune-svelte-package-artifacts.js dist/svelte",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",

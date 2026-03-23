@@ -1,9 +1,16 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 
 function fail(message) {
   throw new Error(message);
@@ -112,6 +119,83 @@ function collectRuntimePaths(packageJson) {
   return [...runtimePaths];
 }
 
+function walkFiles(rootDir) {
+  const pending = [rootDir];
+  const files = [];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (!current) {
+      continue;
+    }
+
+    for (const entry of readdirSync(current)) {
+      const entryPath = join(current, entry);
+      const stats = statSync(entryPath);
+
+      if (stats.isDirectory()) {
+        pending.push(entryPath);
+        continue;
+      }
+
+      files.push(entryPath);
+    }
+  }
+
+  return files;
+}
+
+function collectMissingRelativeRuntimeImports(packageRoot) {
+  const missing = [];
+  const runtimeFiles = walkFiles(packageRoot).filter((filePath) =>
+    /\.(?:[cm]?js|svelte)$/.test(filePath),
+  );
+  const importPattern =
+    /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|import\(['"]([^'"]+)['"]\)/g;
+
+  const resolveCandidates = (basePath) => [
+    basePath,
+    `${basePath}.js`,
+    `${basePath}.mjs`,
+    `${basePath}.cjs`,
+    `${basePath}.svelte`,
+    join(basePath, 'index.js'),
+    join(basePath, 'index.mjs'),
+    join(basePath, 'index.cjs'),
+    join(basePath, 'index.svelte'),
+  ];
+
+  for (const filePath of runtimeFiles) {
+    const source = readFileSync(filePath, 'utf8');
+    const seenSpecifiers = new Set();
+
+    for (const match of source.matchAll(importPattern)) {
+      const specifier = match[1] || match[2];
+      if (!specifier || !specifier.startsWith('.')) {
+        continue;
+      }
+
+      if (seenSpecifiers.has(specifier)) {
+        continue;
+      }
+      seenSpecifiers.add(specifier);
+
+      const basePath = resolve(dirname(filePath), specifier);
+      const hasTarget = resolveCandidates(basePath).some((candidate) =>
+        existsSync(candidate),
+      );
+
+      if (!hasTarget) {
+        missing.push(
+          `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
+        );
+      }
+    }
+  }
+
+  return missing;
+}
+
 const packageDir = resolve(process.cwd(), process.argv[2] ?? '.');
 const packageJsonPath = join(packageDir, 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
@@ -166,11 +250,23 @@ try {
     (runtimePath) => !archiveEntries.has(`package/${runtimePath}`),
   );
 
-  if (missing.length > 0 || missingRuntime.length > 0) {
+  run('tar', ['-xf', tarballPath, '-C', tempDir]);
+  const packageRoot = join(tempDir, 'package');
+  const missingRelativeRuntimeImports =
+    collectMissingRelativeRuntimeImports(packageRoot);
+
+  if (
+    missing.length > 0 ||
+    missingRuntime.length > 0 ||
+    missingRelativeRuntimeImports.length > 0
+  ) {
     fail(
-      `${packageJson.name} is missing declared exports in the packed artifact:\n${[
+      `${packageJson.name} is missing required package artifacts in the packed artifact:\n${[
         ...missing.map((typePath) => `- types: ${typePath}`),
         ...missingRuntime.map((runtimePath) => `- runtime: ${runtimePath}`),
+        ...missingRelativeRuntimeImports.map(
+          (entry) => `- relative import target: ${entry}`,
+        ),
       ].join('\n')}`,
     );
   }

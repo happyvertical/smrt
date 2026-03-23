@@ -27,6 +27,10 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import {
+  ensureDispatchSubscriptionsSystemTableCompatibility,
+  ensureDispatchSystemTableCompatibility,
+} from '../system/compatibility.js';
+import {
   CREATE_SMRT_DISPATCH_SUBSCRIPTIONS_TABLE,
   CREATE_SMRT_DISPATCH_TABLE,
 } from '../system/schema.js';
@@ -126,20 +130,7 @@ export class DispatchBus {
         await this.db.query(stmt);
       }
     } else {
-      // Migrate existing tables: add target_subscriber column (v1.2.0)
-      await this.addColumnIfMissing(
-        '_smrt_dispatch',
-        'target_subscriber',
-        'TEXT',
-      );
-      // Migrate existing tables: add correlation_id column (v1.4.0)
-      await this.addColumnIfMissing('_smrt_dispatch', 'correlation_id', 'TEXT');
-      // Ensure index exists for correlation_id lookups
-      await this.addIndexIfMissing(
-        'idx_smrt_dispatch_correlation',
-        '_smrt_dispatch',
-        'correlation_id',
-      );
+      await ensureDispatchSystemTableCompatibility(this.db);
     }
 
     const subsExists = await DispatchSubscriptionCollection.tableExists(
@@ -153,47 +144,10 @@ export class DispatchBus {
         await this.db.query(stmt);
       }
     } else {
-      // Migrate existing tables: add delivery column (v1.2.0)
-      await this.addColumnIfMissing(
-        '_smrt_dispatch_subscriptions',
-        'delivery',
-        "TEXT NOT NULL DEFAULT 'compete'",
-      );
+      await ensureDispatchSubscriptionsSystemTableCompatibility(this.db);
     }
 
     this.initialized = true;
-  }
-
-  /**
-   * Add a column to an existing table if it doesn't already exist.
-   * Uses a safe try/catch approach since SQLite doesn't support IF NOT EXISTS for ALTER.
-   */
-  private async addColumnIfMissing(
-    table: string,
-    column: string,
-    definition: string,
-  ): Promise<void> {
-    try {
-      await this.db.query(
-        `ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`,
-      );
-    } catch {
-      // Column already exists — safe to ignore
-    }
-  }
-
-  /**
-   * Create an index if it doesn't already exist.
-   * Uses CREATE INDEX IF NOT EXISTS which is safe for both SQLite and Postgres.
-   */
-  private async addIndexIfMissing(
-    indexName: string,
-    table: string,
-    column: string,
-  ): Promise<void> {
-    await this.db.query(
-      `CREATE INDEX IF NOT EXISTS ${indexName} ON ${table}(${column})`,
-    );
   }
 
   /**

@@ -20,6 +20,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
 import { SchemaGenerator } from '../schema/generator.js';
+import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
 import { ALL_SYSTEM_TABLES } from '../system/schema.js';
 
 type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
@@ -213,6 +214,8 @@ export async function getTestDatabase(
  * @param db - Database interface to initialize
  */
 async function initializeSystemTables(db: DatabaseInterface): Promise<void> {
+  await ensureLegacySystemTableCompatibility(db);
+
   // Split multi-statement SQL into individual statements
   const allStatements: string[] = [];
   for (const multiStatementSQL of ALL_SYSTEM_TABLES) {
