@@ -411,6 +411,7 @@ startup and seeds sample content (3 items) for immediate testing.
 | Export | Description |
 |--------|------------|
 | `Content` | STI base model. Fields: `type`, `variant`, `status`, `state`, `category`, `tags`, `metadata`, `thumbnailAssetId` |
+| `ContentAsset` | Junction model for canonical content-to-asset ownership in `content_assets` |
 | `Article` | STI subclass for editorial content |
 | `ContentDocument` | STI subclass for structured documents |
 | `Mirror` | STI subclass for mirrored/cached external content |
@@ -457,6 +458,14 @@ startup and seeds sample content (3 items) for immediate testing.
 | `generateThumbnail(options)` | Generate a thumbnail |
 | `addReference(content)` | Link to another content |
 | `getReferences()` | Get content references |
+
+### Asset Migration
+
+`smrt-content` now treats `content_assets` as the only live content-to-asset
+join. If you have older content-owned rows in `asset_associations`, use
+`backfillContentAssetsFromAssetAssociations({ db })` after schema prep to copy
+them into `content_assets`. Pass `{ deleteLegacy: true }` only when you are
+ready to remove the old rows after verification.
 
 ### Types
 

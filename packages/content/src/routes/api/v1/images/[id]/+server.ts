@@ -18,7 +18,6 @@ const MUTABLE_IMAGE_FIELDS = new Set([
 
 async function ensureImageBaseTables() {
   await getCollection<any>('@happyvertical/smrt-assets:Asset');
-  await getCollection<any>('@happyvertical/smrt-assets:AssetAssociation');
 }
 
 function pickMutableImageFields(data: Record<string, unknown>) {

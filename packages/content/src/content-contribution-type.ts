@@ -46,6 +46,18 @@ function parseJSON<T>(raw: unknown, fallback: T): T {
   }
 }
 
+function isMissingContributionsTableError(error: unknown): boolean {
+  const message = String(
+    (error as Error)?.message || error || '',
+  ).toLowerCase();
+  return (
+    message.includes('content_contributions') &&
+    (message.includes('no such table') ||
+      message.includes('does not exist') ||
+      message.includes('relation'))
+  );
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'content_contribution_types',
@@ -200,15 +212,30 @@ export class ContentContributionType extends SmrtObject {
     const hasFallback = hasStaticContentContributionType(this.key);
 
     if (!hasFallback) {
-      const existing = await this.db.list('content_contributions', {
-        where: { contribution_type_key: this.key },
-        limit: 1,
-      });
-
-      if (existing.length > 0) {
-        throw new Error(
-          `Cannot delete contribution type "${this.key}" because contributions already reference it.`,
+      try {
+        const existing = await this.db.query(
+          'SELECT id FROM content_contributions WHERE contribution_type_key = ? LIMIT 1',
+          [this.key],
         );
+        const rows = Array.isArray((existing as any)?.rows)
+          ? (existing as any).rows
+          : [];
+
+        if (rows.length > 0) {
+          throw new Error(
+            `Cannot delete contribution type "${this.key}" because contributions already reference it.`,
+          );
+        }
+      } catch (error) {
+        if (
+          error instanceof Error &&
+          error.message.includes('already reference it')
+        ) {
+          throw error;
+        }
+        if (!isMissingContributionsTableError(error)) {
+          throw error;
+        }
       }
     }
 

@@ -28,10 +28,10 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Content & Media
 | Package | Purpose |
 |---------|---------|
-| content | STI content types (Article/Document/Mirror), thumbnails (3 strategies), asset associations |
+| content | STI content types (Article/Document/Mirror), thumbnails (3 strategies), content-owned asset joins via `content_assets` |
 | messages | Multi-channel messaging: Email/Twitter/Slack as STI hierarchy, credential encryption |
 | chat | Chat rooms (public/private/DM/agent), threads, agent sessions with tool whitelisting |
-| assets | Provider-agnostic asset management, versioning, polymorphic AssetAssociation |
+| assets | Provider-agnostic asset management, versioning, generic/provenance `AssetAssociation` links |
 | images | Image ops: AI categorization, editing, cross-package STI extending Asset |
 | video | Video production: Character/Performer/Scene, ComfyUI workflows, frame-based durations |
 | voice | TTS voice profiles, cloning from samples, word timings for lip-sync |
@@ -85,6 +85,7 @@ npm run format                  # Biome
 - **Cross-package FKs**: plain string IDs, not `@foreignKey()` (avoids circular deps)
 - **System tables**: prefixed `_smrt_` (jobs, dispatch, schedules, migrations)
 - **Conflict columns**: set `conflictColumns` in `@smrt()` for junction/upsert tables
+- **Asset ownership joins**: base/domain-owned asset relationships belong on noun join tables like `content_assets`; use `asset_associations` only for generic/provenance links
 - **STI discriminator**: qualified names — `@happyvertical/smrt-content:Article`
 - **Tenant scoping**: most domain models use `@TenantScoped({ mode: 'optional' })` + nullable tenantId
 - **JSON fields**: store as string, provide `getX()`/`setX()` helpers with graceful parse error handling

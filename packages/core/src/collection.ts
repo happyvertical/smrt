@@ -747,18 +747,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     const fields = await this.getFields();
-    const formattedData = formatDataJs(rows[0], fields);
-
-    let instance: ModelType;
-    if (isSTI && formattedData._meta_type) {
-      instance = await this.createPolymorphic(
-        formattedData._meta_type,
-        formattedData,
-      );
-    } else {
-      // CTI: Use collection's item class
-      instance = await this.create(formattedData as SmrtCreateInput<ModelType>);
-    }
+    const instance = await this.hydrateResultRow(rows[0], fields, isSTI);
 
     // Execute afterGet interceptors (e.g., tenant validation)
     return await GlobalInterceptors.executeAfterGet(
@@ -924,20 +913,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // STI: Hydrate instances polymorphically based on _meta_type
     // Reuse tableStrategy and isSTI from earlier in the function
     const instances = await Promise.all(
-      result.rows.map(async (item: any) => {
-        const formattedData = formatDataJs(item, fields);
-
-        // STI: Use _meta_type to determine correct class to instantiate
-        if (isSTI && formattedData._meta_type) {
-          return await this.createPolymorphic(
-            formattedData._meta_type,
-            formattedData,
-          );
-        }
-
-        // CTI: Use collection's item class
-        return this.create(formattedData as SmrtCreateInput<ModelType>);
-      }),
+      result.rows.map((item: any) =>
+        this.hydrateResultRow(item, fields, isSTI),
+      ),
     );
 
     // Eager load specified relationships
@@ -1638,37 +1616,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const isSTI = tableStrategy === 'sti';
 
     const instances = await Promise.all(
-      result.rows.map(async (row: any) => {
-        const formattedData = formatDataJs(row, fields);
-
-        // STI: Use _meta_type to determine correct class to instantiate
-        if (isSTI && formattedData._meta_type) {
-          return await this.createPolymorphic(
-            formattedData._meta_type,
-            formattedData,
-          );
-        }
-
-        // CTI or STI base: Use collection's item class
-        const instanceParams = {
-          ai: this.options.ai,
-          db: this.db,
-          _skipLoad: true,
-          ...formattedData,
-        };
-
-        const instance = new this._itemClass(instanceParams);
-        await instance.initialize();
-
-        // For STI collections, set _meta_type to the qualified class name (namespace isolation - issue #713)
-        if (isSTI) {
-          const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
-          (instance as any)._meta_type =
-            registeredClass?.qualifiedName || this._itemClass.name;
-        }
-
-        return instance;
-      }),
+      result.rows.map((row: any) => this.hydrateResultRow(row, fields, isSTI)),
     );
 
     // Execute afterQuery interceptors
@@ -1677,6 +1625,42 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       instances,
       interceptorContext,
     );
+  }
+
+  private async hydrateResultRow(
+    row: Record<string, any>,
+    fields: Record<string, any>,
+    isSTI: boolean,
+  ): Promise<ModelType> {
+    const formattedData = formatDataJs(row, fields);
+
+    if (isSTI && formattedData._meta_type) {
+      const instance = await this.createPolymorphic(
+        formattedData._meta_type,
+        formattedData,
+      );
+      await instance.loadDataFromDb(row);
+      return instance;
+    }
+
+    const instanceParams = {
+      ai: this.options.ai,
+      db: this.db,
+      _skipLoad: true,
+      ...formattedData,
+    };
+
+    const instance = new this._itemClass(instanceParams);
+    await instance.initialize();
+    await instance.loadDataFromDb(row);
+
+    if (isSTI) {
+      const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
+      (instance as any)._meta_type =
+        registeredClass?.qualifiedName || this._itemClass.name;
+    }
+
+    return instance;
   }
 
   /**

@@ -107,7 +107,11 @@ missing chat tables (returns `session: null` with notice).
 ## Relationship Models
 
 - **ContentReference**: SMRT junction model backing `content_references` for content-to-content links
-- **AssetAssociation**: shared polymorphic SMRT junction model used by content for asset links
+- **ContentAsset**: dedicated SMRT junction model backing `content_assets` for content-owned asset links
+
+Legacy `asset_associations` rows should be migrated with
+`backfillContentAssetsFromAssetAssociations()` and are not part of the live
+content relationship path anymore.
 
 ```typescript
 await content.addAsset(image, 'thumbnail', 0);  // relationship, sortOrder

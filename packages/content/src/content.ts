@@ -1,8 +1,4 @@
-import {
-  type Asset,
-  AssetAssociationCollection,
-  AssetCollection,
-} from '@happyvertical/smrt-assets';
+import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import {
   field,
@@ -1122,14 +1118,6 @@ ${correctedText}
     return ContentAssetCollection.create({ db: this.db });
   }
 
-  private async getAssetAssociationCollection() {
-    return AssetAssociationCollection.create({ db: this.db });
-  }
-
-  private getAssetAssociationMetaType(): string {
-    return (this as any)._meta_type || this.constructor.name;
-  }
-
   private async getContentAssetLinks(
     relationship?: string,
   ): Promise<Array<{ assetId: string; sortOrder: number }>> {
@@ -1154,81 +1142,6 @@ ${correctedText}
 
       throw error;
     }
-  }
-
-  // Transitional bridge for rows written while content assets lived in the
-  // generic asset_associations table. New writes should go to content_assets.
-  private async getLegacyAssetLinks(
-    relationship?: string,
-  ): Promise<Array<{ assetId: string; sortOrder: number }>> {
-    if (!this.id) {
-      return [];
-    }
-
-    try {
-      const associations = await this.getAssetAssociationCollection();
-      const links = relationship
-        ? await associations.getForObjectByRole(
-            this.getAssetAssociationMetaType(),
-            this.id,
-            relationship,
-          )
-        : await associations.getForObject(
-            this.getAssetAssociationMetaType(),
-            this.id,
-          );
-
-      return links
-        .filter((link) => link.assetId)
-        .map((link) => ({
-          assetId: link.assetId,
-          sortOrder: link.sortOrder ?? 0,
-        }));
-    } catch (error) {
-      if (isMissingTableError(error, 'asset_associations')) {
-        return [];
-      }
-
-      throw error;
-    }
-  }
-
-  private mergeAssetLinks(
-    contentLinks: Array<{ assetId: string; sortOrder: number }>,
-    legacyLinks: Array<{ assetId: string; sortOrder: number }>,
-  ): Array<{ assetId: string; sortOrder: number }> {
-    const merged = new Map<
-      string,
-      { assetId: string; sortOrder: number; sourcePriority: number }
-    >();
-
-    for (const link of contentLinks) {
-      merged.set(link.assetId, {
-        assetId: link.assetId,
-        sortOrder: link.sortOrder,
-        sourcePriority: 0,
-      });
-    }
-
-    for (const link of legacyLinks) {
-      if (merged.has(link.assetId)) {
-        continue;
-      }
-
-      merged.set(link.assetId, {
-        assetId: link.assetId,
-        sortOrder: link.sortOrder,
-        sourcePriority: 1,
-      });
-    }
-
-    return [...merged.values()]
-      .sort(
-        (left, right) =>
-          left.sortOrder - right.sortOrder ||
-          left.sourcePriority - right.sourcePriority,
-      )
-      .map(({ assetId, sortOrder }) => ({ assetId, sortOrder }));
   }
 
   private async resolveAssetsForLinks(
@@ -2251,13 +2164,8 @@ ${correctedText}
       return [];
     }
 
-    const [contentLinks, legacyLinks] = await Promise.all([
-      this.getContentAssetLinks(relationship),
-      this.getLegacyAssetLinks(relationship),
-    ]);
-
     return this.resolveAssetsForLinks(
-      this.mergeAssetLinks(contentLinks, legacyLinks),
+      await this.getContentAssetLinks(relationship),
     );
   }
 
@@ -2319,20 +2227,6 @@ ${correctedText}
       await contentAssets.detach(this.id, assetId, relationship);
     } catch (error) {
       if (!isMissingTableError(error, 'content_assets')) {
-        throw error;
-      }
-    }
-
-    try {
-      const associations = await this.getAssetAssociationCollection();
-      await associations.dissociate(
-        assetId,
-        this.getAssetAssociationMetaType(),
-        this.id,
-        relationship,
-      );
-    } catch (error) {
-      if (!isMissingTableError(error, 'asset_associations')) {
         throw error;
       }
     }
