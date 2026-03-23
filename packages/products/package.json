@@ -18,28 +18,28 @@
       "default": "./dist/lib/index.js"
     },
     "./models": {
-      "types": "./dist/lib/index.d.ts",
-      "default": "./dist/lib/index.js"
+      "types": "./dist/lib/models.d.ts",
+      "default": "./dist/lib/models.js"
     },
     "./components": {
-      "types": "./dist/lib/index.d.ts",
-      "default": "./dist/lib/index.js"
+      "types": "./dist/lib/components.d.ts",
+      "default": "./dist/lib/components.js"
     },
     "./stores": {
-      "types": "./dist/lib/index.d.ts",
-      "default": "./dist/lib/index.js"
+      "types": "./dist/lib/stores.d.ts",
+      "default": "./dist/lib/stores.js"
     },
     "./generated": {
-      "types": "./dist/lib/index.d.ts",
-      "default": "./dist/lib/index.js"
+      "types": "./dist/lib/generated.d.ts",
+      "default": "./dist/lib/generated.js"
     },
     "./utils": {
-      "types": "./dist/lib/index.d.ts",
-      "default": "./dist/lib/index.js"
+      "types": "./dist/lib/utils.d.ts",
+      "default": "./dist/lib/utils.js"
     },
     "./collections": {
-      "types": "./dist/lib/index.d.ts",
-      "default": "./dist/lib/index.js"
+      "types": "./dist/lib/collections.d.ts",
+      "default": "./dist/lib/collections.js"
     },
     "./manifest": "./dist/lib/manifest.json"
   },

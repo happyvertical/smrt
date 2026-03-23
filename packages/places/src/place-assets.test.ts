@@ -113,4 +113,23 @@ describe('Place owned assets', () => {
       [],
     );
   });
+
+  it('includes global assets when resolving tenant-owned place links', async () => {
+    const dbUrl = getTestDbUrl('place-assets-global');
+    const { place, assets } = await createPlaceFixture(dbUrl);
+
+    const globalAsset = await assets.create({
+      name: 'global-floorplan.png',
+      sourceUri: 'file:///tmp/global-floorplan.png',
+      mimeType: 'image/png',
+      tenantId: null,
+    });
+    await globalAsset.save();
+
+    await place.addAsset(globalAsset, 'floorplan', 0);
+
+    expect(
+      (await place.getAssets('floorplan')).map((asset) => asset.id),
+    ).toEqual([globalAsset.id]);
+  });
 });

@@ -6,7 +6,11 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  TenantScoped,
+  tenantId,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
 import type { EventOptions, EventStatus } from '../types';
 
 const ASSET_RELATIONSHIP_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
@@ -312,9 +316,17 @@ export class Event extends SmrtObject {
     }
 
     const assets = await this.getAssetCollection();
-    const resolved = await assets.listByIds(assetIds);
+    const resolved = this.tenantId
+      ? await withSystemContext(async () => assets.listByIds(assetIds))
+      : await assets.listByIds(assetIds);
+    const visibleAssets = this.tenantId
+      ? resolved.filter(
+          (asset) =>
+            asset.tenantId === this.tenantId || asset.tenantId === null,
+        )
+      : resolved;
     const assetsById = new Map(
-      resolved
+      visibleAssets
         .filter((asset) => asset.id)
         .map((asset) => [asset.id as string, asset]),
     );

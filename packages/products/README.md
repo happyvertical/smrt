@@ -60,7 +60,7 @@ await products.addAsset(product.id!, hero, 'gallery', 1);
 |--------|------------|
 | `Product` | STI-enabled product with specs and tags |
 | `Category` | Hierarchical category (parentId, level, productCount), STI enabled |
-| `ProductAsset` | Dedicated owned-asset join stored in `product_assets` with `relationship` and `sortOrder` |
+| `ProductAsset` | Dedicated owned-asset join stored in `product_assets` with `relationship` and `sortOrder`; intentionally not tenant-scoped because `Product` is not tenant-scoped |
 
 ### Collections (from `lib/collections`)
 

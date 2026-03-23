@@ -5,7 +5,7 @@ Product catalog — reference template for triple-consumption: npm package libra
 ## Models
 
 - **Product**: STI enabled. Knowledge base product with specs, tags.
-- **ProductAsset**: dedicated owned-asset join in `product_assets` with `relationship` and `sortOrder`.
+- **ProductAsset**: dedicated owned-asset join in `product_assets` with `relationship` and `sortOrder`. Intentionally not tenant-scoped because `Product` is not tenant-scoped in this package.
 - **Category**: hierarchical (parentId, level, productCount). STI enabled.
 
 ## Collections

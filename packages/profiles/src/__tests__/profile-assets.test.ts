@@ -130,4 +130,23 @@ describe('Profile owned assets', () => {
       await profiles.getAssets(profile.id as string, 'attachment'),
     ).toEqual([]);
   });
+
+  it('includes global assets when resolving tenant-owned profile links', async () => {
+    const dbUrl = getTestDbUrl('profile-assets-global');
+    const { profile, assets } = await createProfileFixture(dbUrl);
+
+    const globalAsset = await assets.create({
+      name: 'global-avatar.png',
+      sourceUri: 'file:///tmp/global-avatar.png',
+      mimeType: 'image/png',
+      tenantId: null,
+    });
+    await globalAsset.save();
+
+    await profile.addAsset(globalAsset, 'avatar', 0);
+
+    expect(
+      (await profile.getAssets('avatar')).map((asset) => asset.id),
+    ).toEqual([globalAsset.id]);
+  });
 });

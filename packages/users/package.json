@@ -46,9 +46,6 @@
     "svelte": "^5.46.4"
   },
   "peerDependenciesMeta": {
-    "@happyvertical/smrt-profiles": {
-      "optional": true
-    },
     "svelte": {
       "optional": true
     }

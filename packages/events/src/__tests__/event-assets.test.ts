@@ -116,4 +116,23 @@ describe('Event owned assets', () => {
       [],
     );
   });
+
+  it('includes global assets when resolving tenant-owned event links', async () => {
+    const dbUrl = getTestDbUrl('event-assets-global');
+    const { event, assets } = await createEventFixture(dbUrl);
+
+    const globalAsset = await assets.create({
+      name: 'global-hero.jpg',
+      sourceUri: 'file:///tmp/global-hero.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: null,
+    });
+    await globalAsset.save();
+
+    await event.addAsset(globalAsset, 'hero', 0);
+
+    expect((await event.getAssets('hero')).map((asset) => asset.id)).toEqual([
+      globalAsset.id,
+    ]);
+  });
 });

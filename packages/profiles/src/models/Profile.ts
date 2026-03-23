@@ -15,7 +15,11 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  TenantScoped,
+  tenantId,
+  withSystemContext,
+} from '@happyvertical/smrt-tenancy';
 import type { ProfileRelationship } from './ProfileRelationship';
 import { ProfileType } from './ProfileType';
 
@@ -246,9 +250,17 @@ export class Profile extends SmrtObject {
     }
 
     const assets = await this.getAssetCollection();
-    const resolved = await assets.listByIds(assetIds);
+    const resolved = this.tenantId
+      ? await withSystemContext(async () => assets.listByIds(assetIds))
+      : await assets.listByIds(assetIds);
+    const visibleAssets = this.tenantId
+      ? resolved.filter(
+          (asset) =>
+            asset.tenantId === this.tenantId || asset.tenantId === null,
+        )
+      : resolved;
     const assetsById = new Map(
-      resolved
+      visibleAssets
         .filter((asset) => asset.id)
         .map((asset) => [asset.id as string, asset]),
     );
