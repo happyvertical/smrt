@@ -1,13 +1,15 @@
 <script lang="ts">
-import type { Image } from '../../image';
+import type { ImageLike } from '../image-clients.js';
 import { AssetsGallery, ImageEditor, ImageUploader } from '../index.js';
 
 let { apiBaseUrl = '/api/v1' }: { apiBaseUrl?: string } = $props();
 
-let selectedImage = $state<Image | null>(null);
+type StudioImage = ImageLike;
+
+let selectedImage = $state<StudioImage | null>(null);
 let uploaderStatus = $state('No image selected from the uploader yet.');
 
-function isPersistedImage(value: unknown): value is Image {
+function isPersistedImage(value: unknown): value is StudioImage {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -16,7 +18,7 @@ function isPersistedImage(value: unknown): value is Image {
   );
 }
 
-function handleUploaderSelect(value: Image | File | string) {
+function handleUploaderSelect(value: StudioImage | File | string) {
   if (isPersistedImage(value)) {
     selectedImage = value;
     uploaderStatus = `Ready to edit “${value.name}”.`;
@@ -31,12 +33,12 @@ function handleUploaderSelect(value: Image | File | string) {
   uploaderStatus = `Selected external image source: ${value}`;
 }
 
-function handleGallerySelect(image: Image) {
+function handleGallerySelect(image: StudioImage) {
   selectedImage = image;
   uploaderStatus = `Loaded “${image.name}” from the gallery.`;
 }
 
-function handleEditorSave(image: Image) {
+function handleEditorSave(image: StudioImage) {
   selectedImage = image;
   uploaderStatus = `Saved a new derivative for “${image.name}”.`;
 }

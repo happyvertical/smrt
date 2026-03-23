@@ -12,6 +12,9 @@ const DEFAULT_CONTENT_PLAYGROUND_API_BASE_URL = '/api/v1';
 
 type ContentPlaygroundGlobal = typeof globalThis & {
   __SMRT_CONTENT_PLAYGROUND_API_BASE_URL__?: string;
+  location?: {
+    search: string;
+  };
 };
 
 function resolveContentPlaygroundApiBaseUrl(): string {
@@ -21,10 +24,11 @@ function resolveContentPlaygroundApiBaseUrl(): string {
     return configuredViaGlobal;
   }
 
-  if (typeof globalThis.location !== 'undefined') {
-    const configuredViaQuery = new URLSearchParams(
-      globalThis.location.search,
-    ).get('smrtContentApiBaseUrl');
+  const browserLocation = (globalThis as ContentPlaygroundGlobal).location;
+  if (browserLocation) {
+    const configuredViaQuery = new URLSearchParams(browserLocation.search).get(
+      'smrtContentApiBaseUrl',
+    );
 
     if (configuredViaQuery) {
       return configuredViaQuery;

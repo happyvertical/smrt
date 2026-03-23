@@ -10,7 +10,7 @@ import {
   statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 
 function fail(message) {
   throw new Error(message);
@@ -164,6 +164,15 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
     join(basePath, 'index.cjs'),
     join(basePath, 'index.svelte'),
   ];
+  const isWithinPackageRoot = (targetPath) => {
+    const relativePath = relative(packageRoot, targetPath);
+    return (
+      targetPath === packageRoot ||
+      (relativePath !== '..' &&
+        !relativePath.startsWith(`..${sep}`) &&
+        relativePath !== '')
+    );
+  };
 
   for (const filePath of runtimeFiles) {
     const source = readFileSync(filePath, 'utf8');
@@ -181,8 +190,14 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
       seenSpecifiers.add(specifier);
 
       const basePath = resolve(dirname(filePath), specifier);
-      const hasTarget = resolveCandidates(basePath).some((candidate) =>
-        existsSync(candidate),
+      if (!isWithinPackageRoot(basePath)) {
+        missing.push(
+          `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
+        );
+        continue;
+      }
+      const hasTarget = resolveCandidates(basePath).some(
+        (candidate) => isWithinPackageRoot(candidate) && existsSync(candidate),
       );
 
       if (!hasTarget) {

@@ -6,7 +6,6 @@
  * type badges, and metadata columns.
  */
 
-import type { Asset } from '../asset';
 import type {
   AssetListProps,
   AssetSort,

@@ -1,6 +1,12 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { detectEngine } from '../schema/ddl/index.js';
 
+type DatabaseWithConfig = DatabaseInterface & {
+  config?: {
+    url?: string;
+  };
+};
+
 function getQueryRows(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) {
     return result as Record<string, unknown>[];
@@ -34,7 +40,7 @@ async function columnExists(
   columnName: string,
 ): Promise<boolean> {
   try {
-    const engine = detectEngine(db.url || '');
+    const engine = detectEngine(getDatabaseUrl(db));
     if (engine === 'postgres') {
       const result = await db.query(
         'SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 LIMIT 1',
@@ -51,19 +57,53 @@ async function columnExists(
   }
 }
 
+function getDatabaseUrl(db: DatabaseInterface): string {
+  const dbWithConfig = db as DatabaseWithConfig;
+  return db.url || dbWithConfig.config?.url || '';
+}
+
+function isDuplicateColumnError(error: unknown): boolean {
+  const message =
+    error && typeof error === 'object'
+      ? String((error as { message?: unknown }).message || error)
+      : String(error);
+
+  return (
+    /column .*already exists/i.test(message) ||
+    /duplicate column name/i.test(message)
+  );
+}
+
 async function addColumnIfMissing(
   db: DatabaseInterface,
   tableName: string,
   columnName: string,
   definition: string,
 ): Promise<void> {
+  const engine = detectEngine(getDatabaseUrl(db));
+
+  if (engine === 'postgres') {
+    await db.query(
+      `ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS ${columnName} ${definition}`,
+    );
+    return;
+  }
+
   if (await columnExists(db, tableName, columnName)) {
     return;
   }
 
-  await db.query(
-    `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`,
-  );
+  try {
+    await db.query(
+      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`,
+    );
+  } catch (error) {
+    if (isDuplicateColumnError(error)) {
+      return;
+    }
+
+    throw error;
+  }
 }
 
 async function addIndexIfMissing(

@@ -372,12 +372,22 @@ function getListData<T>(payload: unknown): T[] {
   return [];
 }
 
-function getItemData<T>(payload: T | { data?: T }): T {
-  if (payload && typeof payload === 'object' && 'result' in payload) {
+function getItemData<T>(payload: unknown): T {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    'result' in payload
+  ) {
     return (payload as { result: T }).result;
   }
 
-  if (payload && typeof payload === 'object' && 'data' in payload) {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    'data' in payload
+  ) {
     return payload.data as T;
   }
 

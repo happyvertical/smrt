@@ -2,13 +2,13 @@
 import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
-import { mergePlaygroundModules } from '../runtime.js';
+import { mergePlaygroundModules } from './runtime.js';
 import type {
   PlaygroundComponentModule,
   ResolvedSmrtPlaygroundEntry,
   SmrtPlaygroundMode,
   SmrtPlaygroundModule,
-} from '../types.js';
+} from './types.js';
 
 export interface Props {
   modules?: SmrtPlaygroundModule[];
