@@ -45,6 +45,7 @@ let loadingMessages = $state(false);
 let sendingMessage = $state(false);
 let error = $state<string | null>(null);
 let currentProfileId = $state('user123');
+const canRetrySessionLoad = $derived(Boolean(contentId && contentId !== 'new'));
 
 // New Topic State
 let isCreatingTopic = $state(false);
@@ -57,10 +58,23 @@ let loadedContentId = $state<string | null>(null);
 let loadedApiBaseUrl = $state<string | null>(null);
 
 $effect(() => {
-  if (
-    !contentId ||
-    (contentId === loadedContentId && apiBaseUrl === loadedApiBaseUrl)
-  ) {
+  if (!contentId) {
+    return;
+  }
+
+  if (contentId === 'new') {
+    loadedContentId = contentId;
+    loadedApiBaseUrl = apiBaseUrl;
+    session = null;
+    threads = [];
+    activeThreadId = null;
+    messages = [];
+    loadingSession = false;
+    error = 'Save this draft first to start editorial chat.';
+    return;
+  }
+
+  if (contentId === loadedContentId && apiBaseUrl === loadedApiBaseUrl) {
     return;
   }
 
@@ -292,7 +306,9 @@ async function handleSendMessage(content: string) {
   {:else if error && !session}
     <div class="error-state">
       <p>{error}</p>
-      <button onclick={loadSession}>Retry</button>
+      {#if canRetrySessionLoad}
+        <button onclick={loadSession}>Retry</button>
+      {/if}
     </div>
   {:else if session}
     <div class="model-bar">

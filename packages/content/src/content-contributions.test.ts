@@ -104,6 +104,22 @@ CREATE TABLE IF NOT EXISTS content_references (
 CREATE UNIQUE INDEX IF NOT EXISTS content_references_source_id_target_id_idx ON content_references (source_id, target_id);
 `;
 
+const CONTENT_ASSETS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_assets (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  content_id TEXT NOT NULL,
+  asset_id TEXT NOT NULL,
+  relationship TEXT DEFAULT 'attachment',
+  sort_order INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS content_assets_unique_idx ON content_assets (content_id, asset_id, relationship);
+`;
+
 const ASSET_TYPES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS asset_types (
   id TEXT PRIMARY KEY NOT NULL,
@@ -371,6 +387,7 @@ describe('content contributions', () => {
         PROFILES_SCHEMA,
         CONTENTS_SCHEMA,
         CONTENT_REFERENCES_SCHEMA,
+        CONTENT_ASSETS_SCHEMA,
         ASSET_TYPES_SCHEMA,
         ASSET_STATUSES_SCHEMA,
         ASSETS_SCHEMA,
@@ -595,7 +612,7 @@ describe('content contributions', () => {
     );
   });
 
-  it('approves a held contribution into draft content and draft assets with provenance', async () => {
+  it('approves a held contribution into draft content and draft assets via content_assets', async () => {
     const submitted = await contributions.submitWebContribution({
       typeKey: 'letter',
       contributorEmail: 'editorial@example.com',
@@ -616,6 +633,8 @@ describe('content contributions', () => {
     const contribution = await contributions.get({
       id: submitted.contribution.id,
     });
+    await db.query('DROP TABLE asset_associations');
+
     const promoted = await contribution?.approveAction({
       editorNote: 'Looks good.',
     });
@@ -628,6 +647,7 @@ describe('content contributions', () => {
     expect(savedContent?.metadata?.contribution?.contributionId).toBe(
       contribution?.id,
     );
+    expect(await savedContent?.getAssets('attachment')).toHaveLength(1);
     expect(await savedContent?.isGoverned()).toBe(true);
   });
 

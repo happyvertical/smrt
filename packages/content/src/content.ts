@@ -14,6 +14,7 @@ import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { ContentAssetCollection } from './content-assets';
 import {
   buildContentGovernanceAssignmentKey,
   buildContentReviewPrompt,
@@ -87,6 +88,21 @@ function hashFingerprint(input: string): string {
 
 function createFingerprint(value: unknown): string {
   return hashFingerprint(JSON.stringify(normalizeFingerprintValue(value)));
+}
+
+function isMissingTableError(error: unknown, tableName: string): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes(`no such table: ${tableName}`) ||
+    message.includes(`table '${tableName}' does not exist`) ||
+    message.includes(`table "${tableName}" does not exist`) ||
+    message.includes(`relation "${tableName}" does not exist`) ||
+    message.includes(`relation '${tableName}' does not exist`)
+  );
 }
 
 function getPublicPrompt(metadata: Record<string, any>): string | null {
@@ -1102,12 +1118,138 @@ ${correctedText}
     return AssetCollection.create({ db: this.db });
   }
 
+  private async getContentAssetCollection() {
+    return ContentAssetCollection.create({ db: this.db });
+  }
+
   private async getAssetAssociationCollection() {
     return AssetAssociationCollection.create({ db: this.db });
   }
 
   private getAssetAssociationMetaType(): string {
     return (this as any)._meta_type || this.constructor.name;
+  }
+
+  private async getContentAssetLinks(
+    relationship?: string,
+  ): Promise<Array<{ assetId: string; sortOrder: number }>> {
+    if (!this.id) {
+      return [];
+    }
+
+    try {
+      const contentAssets = await this.getContentAssetCollection();
+      const links = await contentAssets.getForContent(this.id, relationship);
+
+      return links
+        .filter((link) => link.assetId)
+        .map((link) => ({
+          assetId: link.assetId,
+          sortOrder: link.sortOrder ?? 0,
+        }));
+    } catch (error) {
+      if (isMissingTableError(error, 'content_assets')) {
+        return [];
+      }
+
+      throw error;
+    }
+  }
+
+  // Transitional bridge for rows written while content assets lived in the
+  // generic asset_associations table. New writes should go to content_assets.
+  private async getLegacyAssetLinks(
+    relationship?: string,
+  ): Promise<Array<{ assetId: string; sortOrder: number }>> {
+    if (!this.id) {
+      return [];
+    }
+
+    try {
+      const associations = await this.getAssetAssociationCollection();
+      const links = relationship
+        ? await associations.getForObjectByRole(
+            this.getAssetAssociationMetaType(),
+            this.id,
+            relationship,
+          )
+        : await associations.getForObject(
+            this.getAssetAssociationMetaType(),
+            this.id,
+          );
+
+      return links
+        .filter((link) => link.assetId)
+        .map((link) => ({
+          assetId: link.assetId,
+          sortOrder: link.sortOrder ?? 0,
+        }));
+    } catch (error) {
+      if (isMissingTableError(error, 'asset_associations')) {
+        return [];
+      }
+
+      throw error;
+    }
+  }
+
+  private mergeAssetLinks(
+    contentLinks: Array<{ assetId: string; sortOrder: number }>,
+    legacyLinks: Array<{ assetId: string; sortOrder: number }>,
+  ): Array<{ assetId: string; sortOrder: number }> {
+    const merged = new Map<
+      string,
+      { assetId: string; sortOrder: number; sourcePriority: number }
+    >();
+
+    for (const link of contentLinks) {
+      merged.set(link.assetId, {
+        assetId: link.assetId,
+        sortOrder: link.sortOrder,
+        sourcePriority: 0,
+      });
+    }
+
+    for (const link of legacyLinks) {
+      if (merged.has(link.assetId)) {
+        continue;
+      }
+
+      merged.set(link.assetId, {
+        assetId: link.assetId,
+        sortOrder: link.sortOrder,
+        sourcePriority: 1,
+      });
+    }
+
+    return [...merged.values()]
+      .sort(
+        (left, right) =>
+          left.sortOrder - right.sortOrder ||
+          left.sourcePriority - right.sourcePriority,
+      )
+      .map(({ assetId, sortOrder }) => ({ assetId, sortOrder }));
+  }
+
+  private async resolveAssetsForLinks(
+    links: Array<{ assetId: string; sortOrder: number }>,
+  ): Promise<Asset[]> {
+    if (links.length === 0) {
+      return [];
+    }
+
+    const assetIds = [...new Set(links.map((link) => link.assetId))];
+    const assets = await this.getAssetCollection();
+    const resolved = await assets.listByIds(assetIds);
+    const assetsById = new Map(
+      resolved
+        .filter((asset) => asset.id)
+        .map((asset) => [asset.id as string, asset]),
+    );
+
+    return links
+      .map((link) => assetsById.get(link.assetId))
+      .filter(Boolean) as Asset[];
   }
 
   private async resolveReferenceTarget(content: Content | string) {
@@ -2109,34 +2251,14 @@ ${correctedText}
       return [];
     }
 
-    const associations = await this.getAssetAssociationCollection();
-    const linkedAssets = relationship
-      ? await associations.getForObjectByRole(
-          this.getAssetAssociationMetaType(),
-          this.id,
-          relationship,
-        )
-      : await associations.getForObject(
-          this.getAssetAssociationMetaType(),
-          this.id,
-        );
-    const assetIds = linkedAssets.map((association) => association.assetId);
+    const [contentLinks, legacyLinks] = await Promise.all([
+      this.getContentAssetLinks(relationship),
+      this.getLegacyAssetLinks(relationship),
+    ]);
 
-    if (assetIds.length === 0) {
-      return [];
-    }
-
-    const assets = await this.getAssetCollection();
-    const resolved = await assets.listByIds(assetIds);
-    const assetsById = new Map(
-      resolved
-        .filter((asset) => asset.id)
-        .map((asset) => [asset.id as string, asset]),
+    return this.resolveAssetsForLinks(
+      this.mergeAssetLinks(contentLinks, legacyLinks),
     );
-
-    return assetIds
-      .map((assetId) => assetsById.get(assetId))
-      .filter(Boolean) as Asset[];
   }
 
   /**
@@ -2172,13 +2294,13 @@ ${correctedText}
       );
     }
 
-    const associations = await this.getAssetAssociationCollection();
-    await associations.associate(
-      asset.id,
-      this.getAssetAssociationMetaType(),
+    const contentAssets = await this.getContentAssetCollection();
+    await contentAssets.attach(
       this.id,
+      asset.id,
       relationship,
       sortOrder,
+      this.tenantId,
     );
   }
 
@@ -2192,13 +2314,28 @@ ${correctedText}
       return;
     }
 
-    const associations = await this.getAssetAssociationCollection();
-    await associations.dissociate(
-      assetId,
-      this.getAssetAssociationMetaType(),
-      this.id,
-      relationship,
-    );
+    try {
+      const contentAssets = await this.getContentAssetCollection();
+      await contentAssets.detach(this.id, assetId, relationship);
+    } catch (error) {
+      if (!isMissingTableError(error, 'content_assets')) {
+        throw error;
+      }
+    }
+
+    try {
+      const associations = await this.getAssetAssociationCollection();
+      await associations.dissociate(
+        assetId,
+        this.getAssetAssociationMetaType(),
+        this.id,
+        relationship,
+      );
+    } catch (error) {
+      if (!isMissingTableError(error, 'asset_associations')) {
+        throw error;
+      }
+    }
   }
 
   // ============================================

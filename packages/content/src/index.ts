@@ -1,11 +1,15 @@
 /**
  * @packageDocumentation
  * STI content types (Article, ContentDocument, Mirror) with thumbnail generation
- * strategies, asset associations, and markdown serialization utilities.
+ * strategies, content-owned asset relationships, and markdown serialization
+ * utilities.
  */
 
 export type { ContentOptions } from './content';
 export { Content } from './content';
+export type { ContentAssetOptions } from './content-asset';
+export { ContentAsset } from './content-asset';
+export { ContentAssetCollection } from './content-assets';
 export type {
   AppendContentContributionRevisionOptions,
   ApproveContentContributionOptions,
