@@ -32,6 +32,7 @@ import {
 import { ContentReferences } from './content-references';
 import type { ContentReview } from './content-review';
 import { normalizeContentTransparency } from './content-transparency';
+import { isMissingTableError } from './database-utils';
 import {
   serializeContent,
   serializeContentCorrection,
@@ -84,21 +85,6 @@ function hashFingerprint(input: string): string {
 
 function createFingerprint(value: unknown): string {
   return hashFingerprint(JSON.stringify(normalizeFingerprintValue(value)));
-}
-
-function isMissingTableError(error: unknown, tableName: string): boolean {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const message = error.message.toLowerCase();
-  return (
-    message.includes(`no such table: ${tableName}`) ||
-    message.includes(`table '${tableName}' does not exist`) ||
-    message.includes(`table "${tableName}" does not exist`) ||
-    message.includes(`relation "${tableName}" does not exist`) ||
-    message.includes(`relation '${tableName}' does not exist`)
-  );
 }
 
 function getPublicPrompt(metadata: Record<string, any>): string | null {

@@ -8,6 +8,7 @@ import {
   type ContentContributionTypeDefinition,
   hasStaticContentContributionType,
 } from './content-contribution-config';
+import { getQueryRows, isMissingTableError } from './database-utils';
 
 export interface ContentContributionTypeOptions extends SmrtObjectOptions {
   key?: string;
@@ -44,18 +45,6 @@ function parseJSON<T>(raw: unknown, fallback: T): T {
   } catch {
     return fallback;
   }
-}
-
-function isMissingContributionsTableError(error: unknown): boolean {
-  const message = String(
-    (error as Error)?.message || error || '',
-  ).toLowerCase();
-  return (
-    message.includes('content_contributions') &&
-    (message.includes('no such table') ||
-      message.includes('does not exist') ||
-      message.includes('relation'))
-  );
 }
 
 @TenantScoped({ mode: 'optional' })
@@ -215,11 +204,9 @@ export class ContentContributionType extends SmrtObject {
       try {
         const existing = await this.db.query(
           'SELECT id FROM content_contributions WHERE contribution_type_key = ? LIMIT 1',
-          [this.key],
+          this.key,
         );
-        const rows = Array.isArray((existing as any)?.rows)
-          ? (existing as any).rows
-          : [];
+        const rows = getQueryRows(existing);
 
         if (rows.length > 0) {
           throw new Error(
@@ -233,7 +220,7 @@ export class ContentContributionType extends SmrtObject {
         ) {
           throw error;
         }
-        if (!isMissingContributionsTableError(error)) {
+        if (!isMissingTableError(error, 'content_contributions')) {
           throw error;
         }
       }

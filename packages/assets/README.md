@@ -60,7 +60,7 @@ await thumb.save();
 // Generic/provenance association -- link asset to an arbitrary object
 const assoc = new AssetAssociation({
   assetId: photo.id,
-  metaType: '@happyvertical/smrt-images:Image',
+  metaType: 'Image',
   metaId: 'derived-image-123',
   role: 'derivation-source',
   sortOrder: 0,

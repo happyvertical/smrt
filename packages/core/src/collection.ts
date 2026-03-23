@@ -1635,12 +1635,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const formattedData = formatDataJs(row, fields);
 
     if (isSTI && formattedData._meta_type) {
-      const instance = await this.createPolymorphic(
+      return await this.createPolymorphic(
         formattedData._meta_type,
         formattedData,
       );
-      await instance.loadDataFromDb(row);
-      return instance;
     }
 
     const instanceParams = {
@@ -1652,7 +1650,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     const instance = new this._itemClass(instanceParams);
     await instance.initialize();
-    await instance.loadDataFromDb(row);
 
     if (isSTI) {
       const registeredClass = ObjectRegistry.getClass(this._itemClass.name);

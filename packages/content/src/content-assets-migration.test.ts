@@ -195,4 +195,51 @@ describe('content asset backfill', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.relationship).toBe('attachment');
   });
+
+  it('reports planned work without mutating data during dry runs', async () => {
+    const db = await createDb();
+    const contents = await Contents.create({ db });
+    const assets = await AssetCollection.create({ db });
+
+    const content = await contents.create({
+      name: 'legacy-dry-run',
+      title: 'Legacy dry run',
+      body: 'Legacy dry run body',
+      status: 'draft',
+      tenantId: 'tenant-1',
+    });
+    const asset = await assets.create({
+      name: 'legacy-dry-run.jpg',
+      sourceUri: 'file:///tmp/legacy-dry-run.jpg',
+      mimeType: 'image/jpeg',
+      tenantId: 'tenant-1',
+    });
+
+    await db.insert('asset_associations', {
+      id: 'assoc-dry-run',
+      slug: 'assoc-dry-run',
+      context: '',
+      created_at: new Date(),
+      updated_at: new Date(),
+      asset_id: asset.id,
+      meta_type: 'Content',
+      meta_id: content.id,
+      role: 'thumbnail',
+      sort_order: 1,
+    });
+
+    const result = await backfillContentAssetsFromAssetAssociations({
+      db,
+      deleteLegacy: true,
+      dryRun: true,
+    });
+
+    expect(result).toMatchObject({
+      scanned: 1,
+      migrated: 1,
+      deletedLegacy: 1,
+    });
+    expect(await db.list('asset_associations', {})).toHaveLength(1);
+    expect(await db.list('content_assets', {})).toEqual([]);
+  });
 });

@@ -14,7 +14,7 @@ export class AssetAssociationCollection extends SmrtCollection<AssetAssociation>
   /**
    * Get all associations for a given object
    *
-   * @param metaType - Target class name (e.g., 'Article')
+   * @param metaType - Target class name or qualified name (e.g., 'Article' or '@pkg:Article')
    * @param metaId - Target object ID
    * @returns Associations ordered by sortOrder
    */
@@ -31,7 +31,7 @@ export class AssetAssociationCollection extends SmrtCollection<AssetAssociation>
   /**
    * Get associations for an object filtered by role
    *
-   * @param metaType - Target class name
+   * @param metaType - Target class name or qualified name
    * @param metaId - Target object ID
    * @param role - Association role (e.g., 'hero', 'thumbnail')
    * @returns Matching associations ordered by sortOrder
@@ -63,7 +63,7 @@ export class AssetAssociationCollection extends SmrtCollection<AssetAssociation>
    * Create an association between an asset and an object
    *
    * @param assetId - The asset ID
-   * @param metaType - Target class name
+   * @param metaType - Target class name or qualified name
    * @param metaId - Target object ID
    * @param role - Association role (default: 'default')
    * @param sortOrder - Sort order (default: 0)
@@ -89,7 +89,7 @@ export class AssetAssociationCollection extends SmrtCollection<AssetAssociation>
    * Remove association(s) between an asset and an object
    *
    * @param assetId - The asset ID
-   * @param metaType - Target class name
+   * @param metaType - Target class name or qualified name
    * @param metaId - Target object ID
    * @param role - Optional role filter; if omitted, removes all roles
    */

@@ -181,7 +181,7 @@ export class Asset extends SmrtObject {
   /**
    * Associate this asset with a target object
    *
-   * @param metaType - Target class name (e.g., 'Article')
+   * @param metaType - Target class name or qualified name (e.g., 'Article' or '@pkg:Article')
    * @param metaId - Target object ID
    * @param role - Association role (default: 'default')
    * @returns The created AssetAssociation

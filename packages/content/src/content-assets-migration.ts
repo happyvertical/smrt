@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { ContentAssetCollection } from './content-assets';
+import './content-asset';
+import { getQueryRows, isMissingTableError } from './database-utils';
 
 const DEFAULT_CONTENT_META_TYPES = [
   'Content',
@@ -12,18 +13,6 @@ const DEFAULT_CONTENT_META_TYPES = [
   '@happyvertical/smrt-content:ContentDocument',
   '@happyvertical/smrt-content:Mirror',
 ];
-
-function isMissingTableError(error: unknown, tableName: string): boolean {
-  const message = String(
-    (error as Error)?.message || error || '',
-  ).toLowerCase();
-  return (
-    message.includes(tableName.toLowerCase()) &&
-    (message.includes('no such table') ||
-      message.includes('does not exist') ||
-      message.includes('relation'))
-  );
-}
 
 function normalizeLegacyRelationship(value: unknown): string {
   const relationship = String(value || '').trim();
@@ -53,6 +42,10 @@ export interface BackfillContentAssetsResult {
   deletedLegacy: number;
 }
 
+function buildPlaceholders(count: number): string {
+  return Array.from({ length: count }, () => '?').join(', ');
+}
+
 export async function backfillContentAssetsFromAssetAssociations(
   options: BackfillContentAssetsOptions,
 ): Promise<BackfillContentAssetsResult> {
@@ -71,9 +64,47 @@ export async function backfillContentAssetsFromAssetAssociations(
   );
   await ensureSchema(db, 'ContentAsset');
 
-  let legacyRows: any[];
+  let contentsRows: Record<string, unknown>[];
   try {
-    legacyRows = await db.list('asset_associations', {});
+    contentsRows = getQueryRows(
+      await db.query('SELECT id, tenant_id, _meta_type FROM contents'),
+    );
+  } catch (error) {
+    if (isMissingTableError(error, 'contents')) {
+      return result;
+    }
+    throw error;
+  }
+
+  const validMetaTypes = new Set(DEFAULT_CONTENT_META_TYPES);
+  const contentsById = new Map<string, Record<string, unknown>>();
+
+  for (const row of contentsRows) {
+    const id = row?.id ? String(row.id) : '';
+    if (id) {
+      contentsById.set(id, row);
+    }
+
+    const metaType = row?._meta_type || row?.meta_type;
+    if (metaType) {
+      validMetaTypes.add(String(metaType));
+    }
+  }
+
+  let legacyRows: Record<string, unknown>[];
+  try {
+    const legacyMetaTypes = Array.from(validMetaTypes);
+    legacyRows =
+      legacyMetaTypes.length === 0
+        ? []
+        : getQueryRows(
+            await db.query(
+              `SELECT id, asset_id, meta_type, meta_id, role, sort_order
+               FROM asset_associations
+               WHERE meta_type IN (${buildPlaceholders(legacyMetaTypes.length)})`,
+              ...legacyMetaTypes,
+            ),
+          );
   } catch (error) {
     if (isMissingTableError(error, 'asset_associations')) {
       return result;
@@ -81,28 +112,37 @@ export async function backfillContentAssetsFromAssetAssociations(
     throw error;
   }
 
-  const contentsRows = await db.list('contents', {});
-  const contentsById = new Map(
-    contentsRows
-      .filter((row: any) => row?.id)
-      .map((row: any) => [String(row.id), row]),
-  );
-  const validMetaTypes = new Set(DEFAULT_CONTENT_META_TYPES);
-
-  for (const row of contentsRows) {
-    const metaType = row?._meta_type || row?.meta_type;
-    if (metaType) {
-      validMetaTypes.add(String(metaType));
-    }
-  }
-
-  const contentAssets = await ContentAssetCollection.create({ db });
-  const existingLinks = await contentAssets.list();
-  const existingLinkKeys = new Set(
-    existingLinks.map(
-      (link) => `${link.contentId}:${link.assetId}:${link.relationship}`,
+  const relevantContentIds = Array.from(
+    new Set(
+      legacyRows
+        .map((row) => String(row?.meta_id || row?.metaId || ''))
+        .filter(Boolean),
     ),
   );
+
+  const existingLinkKeys = new Set<string>();
+  if (relevantContentIds.length > 0) {
+    try {
+      const existingLinks = getQueryRows(
+        await db.query(
+          `SELECT content_id, asset_id, relationship
+           FROM content_assets
+           WHERE content_id IN (${buildPlaceholders(relevantContentIds.length)})`,
+          ...relevantContentIds,
+        ),
+      );
+
+      for (const row of existingLinks) {
+        existingLinkKeys.add(
+          `${row.content_id}:${row.asset_id}:${row.relationship}`,
+        );
+      }
+    } catch (error) {
+      if (!isMissingTableError(error, 'content_assets')) {
+        throw error;
+      }
+    }
+  }
 
   for (const row of legacyRows) {
     const metaType = String(row?.metaType || row?.meta_type || '');

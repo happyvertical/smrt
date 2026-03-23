@@ -462,10 +462,12 @@ startup and seeds sample content (3 items) for immediate testing.
 ### Asset Migration
 
 `smrt-content` now treats `content_assets` as the only live content-to-asset
-join. If you have older content-owned rows in `asset_associations`, use
-`backfillContentAssetsFromAssetAssociations({ db })` after schema prep to copy
-them into `content_assets`. Pass `{ deleteLegacy: true }` only when you are
-ready to remove the old rows after verification.
+join. `smrt db:migrate` will backfill older content-owned rows from
+`asset_associations` into `content_assets` automatically when
+`@happyvertical/smrt-content` is present in the loaded manifests. The exported
+`backfillContentAssetsFromAssetAssociations({ db })` helper remains available
+for explicit reruns or operational cleanup. Pass `{ deleteLegacy: true }` only
+when you are ready to remove the old rows after verification.
 
 ### Types
 

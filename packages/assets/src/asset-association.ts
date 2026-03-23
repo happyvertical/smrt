@@ -19,7 +19,7 @@ export class AssetAssociation extends SmrtObject {
   @field({ required: true })
   assetId = '';
 
-  /** Target class name (e.g., 'Article', 'Profile') */
+  /** Target class name or qualified name (e.g., 'Article' or '@pkg:Article') */
   @field({ required: true })
   metaType = '';
 
