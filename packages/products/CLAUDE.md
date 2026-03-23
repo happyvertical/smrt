@@ -5,7 +5,13 @@ Product catalog — reference template for triple-consumption: npm package libra
 ## Models
 
 - **Product**: STI enabled. Knowledge base product with specs, tags.
+- **ProductAsset**: dedicated owned-asset join in `product_assets` with `relationship` and `sortOrder`. Intentionally not tenant-scoped because `Product` is not tenant-scoped in this package.
 - **Category**: hierarchical (parentId, level, productCount). STI enabled.
+
+## Collections
+
+- **ProductCollection**: CRUD plus `findByManufacturer()`, `findInStock()`, and `getAssets()` / `addAsset()` / `removeAsset()`.
+- **ProductAssetCollection**: direct access to `product_assets` rows and product asset helper wrappers.
 
 ## Triple-Consumption Pattern
 
@@ -22,6 +28,7 @@ Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). Separate `product-s
 
 ## Gotchas
 
-- **`npm run prebuild` required** before building — generates type declarations in `src/lib/types/smrt-generated/`
+- **`npm run build` now emits the published library surface directly**: package consumers read model, collection, and helper exports from `dist/lib`
+- **Use `npm run build:all` only when you need standalone or federation bundles** in addition to the library output
 - **Constructor must explicitly assign all properties**: `Object.assign` doesn't work reliably with decorators
 - **Module Federation marked experimental**: may change

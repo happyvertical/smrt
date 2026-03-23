@@ -13,17 +13,28 @@ pnpm add @happyvertical/smrt-products
 ### Import as npm library
 
 ```typescript
-import { Product, Category } from '@happyvertical/smrt-products';
+import { Product, ProductCollection, Category } from '@happyvertical/smrt-products';
 import { startServer } from '@happyvertical/smrt-products';
 import { generateMCPServer } from '@happyvertical/smrt-products';
+import { AssetCollection } from '@happyvertical/smrt-assets';
 
 // Start standalone REST API server
 const { shutdown } = await startServer();
 
-// Or use models directly
-const product = new Product();
-product.name = 'Demo Product';
-product.price = 29.99;
+const products = await ProductCollection.create();
+const assets = await AssetCollection.create();
+const product = await products.create({
+  name: 'Demo Product',
+  price: 29.99,
+});
+const hero = await assets.create({
+  name: 'demo-product-hero.jpg',
+  sourceUri: 'file:///tmp/demo-product-hero.jpg',
+  mimeType: 'image/jpeg',
+});
+
+await product.addAsset(hero, 'hero');
+await products.addAsset(product.id!, hero, 'gallery', 1);
 ```
 
 ### Three consumption modes
@@ -49,6 +60,14 @@ product.price = 29.99;
 |--------|------------|
 | `Product` | STI-enabled product with specs and tags |
 | `Category` | Hierarchical category (parentId, level, productCount), STI enabled |
+| `ProductAsset` | Dedicated owned-asset join stored in `product_assets` with `relationship` and `sortOrder`; intentionally not tenant-scoped because `Product` is not tenant-scoped |
+
+### Collections (from `lib/collections`)
+
+| Export | Description |
+|--------|------------|
+| `ProductCollection` | CRUD plus `findByManufacturer()`, `findInStock()`, and owned asset wrappers |
+| `ProductAssetCollection` | Direct access to `product_assets` rows plus asset helper wrappers |
 
 ### Components (from `lib/components`)
 
@@ -82,10 +101,15 @@ product.price = 29.99;
 | `createMCPServer` | Auto-generated MCP server |
 | `manifest` | SMRT object metadata |
 
+Owned asset helpers are available on both `Product` and `ProductCollection` via
+`getAssets()`, `addAsset()`, and `removeAsset()`. Common relationships include
+`hero`, `gallery`, `attachment`, and `thumbnail`.
+
 ## Dependencies
 
 | Package | Purpose |
 |---------|---------|
 | `@happyvertical/smrt-core` | SmrtObject/SmrtCollection base classes, REST server, MCP generator |
+| `@happyvertical/smrt-assets` | Shared Asset / AssetCollection types used by product-owned asset helpers |
 | `@happyvertical/sql` | Database operations |
 | `@happyvertical/ai` | AI integration |

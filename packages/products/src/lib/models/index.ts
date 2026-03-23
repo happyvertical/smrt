@@ -11,3 +11,5 @@
 
 export { Category } from './Category';
 export { Product } from './Product';
+export type { ProductAssetOptions } from './ProductAsset';
+export { ProductAsset } from './ProductAsset';

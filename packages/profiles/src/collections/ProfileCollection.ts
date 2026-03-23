@@ -4,6 +4,7 @@
  * Provides advanced querying and batch operations for Profile entities.
  */
 
+import type { Asset } from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Profile } from '../models/Profile';
 
@@ -101,6 +102,40 @@ export class ProfileCollection extends SmrtCollection<Profile> {
     return await profile.getRelatedProfiles(relationshipSlug);
   }
 
+  async getAssets(profileId: string, relationship?: string): Promise<Asset[]> {
+    const profile = await this.get({ id: profileId });
+    if (!profile) return [];
+
+    return profile.getAssets(relationship);
+  }
+
+  async addAsset(
+    profileId: string,
+    asset: Asset,
+    relationship = 'attachment',
+    sortOrder = 0,
+  ): Promise<void> {
+    const profile = await this.get({ id: profileId });
+    if (!profile) {
+      throw new Error(`Profile '${profileId}' not found`);
+    }
+
+    await profile.addAsset(asset, relationship, sortOrder);
+  }
+
+  async removeAsset(
+    profileId: string,
+    assetId: string,
+    relationship?: string,
+  ): Promise<void> {
+    const profile = await this.get({ id: profileId });
+    if (!profile) {
+      throw new Error(`Profile '${profileId}' not found`);
+    }
+
+    await profile.removeAsset(assetId, relationship);
+  }
+
   /**
    * Get the relationship network for a profile up to a maximum depth
    *
@@ -120,7 +155,10 @@ export class ProfileCollection extends SmrtCollection<Profile> {
     ];
 
     while (queue.length > 0) {
-      const current = queue.shift()!;
+      const current = queue.shift();
+      if (!current) {
+        break;
+      }
 
       if (visited.has(current.id) || current.depth > maxDepth) {
         continue;

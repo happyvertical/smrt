@@ -7,6 +7,7 @@
 
 import type { Location } from '@happyvertical/geo';
 import { getGeoAdapter } from '@happyvertical/geo';
+import type { Asset } from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Place } from '../models/Place';
 import type { LookupOrCreateOptions } from '../types';
@@ -295,6 +296,40 @@ export class PlaceCollection extends SmrtCollection<Place> {
     if (!place) throw new Error(`Place '${placeId}' not found`);
 
     return await place.getHierarchy();
+  }
+
+  async getAssets(placeId: string, relationship?: string): Promise<Asset[]> {
+    const place = await this.get({ id: placeId });
+    if (!place) return [];
+
+    return place.getAssets(relationship);
+  }
+
+  async addAsset(
+    placeId: string,
+    asset: Asset,
+    relationship = 'attachment',
+    sortOrder = 0,
+  ): Promise<void> {
+    const place = await this.get({ id: placeId });
+    if (!place) {
+      throw new Error(`Place '${placeId}' not found`);
+    }
+
+    await place.addAsset(asset, relationship, sortOrder);
+  }
+
+  async removeAsset(
+    placeId: string,
+    assetId: string,
+    relationship?: string,
+  ): Promise<void> {
+    const place = await this.get({ id: placeId });
+    if (!place) {
+      throw new Error(`Place '${placeId}' not found`);
+    }
+
+    await place.removeAsset(assetId, relationship);
   }
 
   /**

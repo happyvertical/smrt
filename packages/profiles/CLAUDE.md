@@ -5,6 +5,7 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 ## Models
 
 - **Profile** (STI base → Bot, Organization, Person): email (globally unique), `typeId` FK to ProfileType, `metadata`
+- **ProfileAsset**: dedicated owned-asset join in `profile_assets` with `relationship` and `sortOrder`.
 - **ProfileRelationship**: bidirectional — creating one auto-creates reciprocal inverse. `contextProfileId` for tertiary relationships. `ProfileRelationshipTerm` tracks start/end dates.
 - **ProfileMetafield**: controlled vocabulary with `validationSchema`. **ProfileMetadata**: per-profile values linked to metafields.
 - **AuditLog**: action, resourceType/Id, `source` (web/cli/ci/webhook/mcp), `onBehalfOfId` for CI pass-through identity. `allowSuperAdminBypass: true`.
@@ -21,6 +22,7 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 ## Key Collection Methods
 
 - `UserCollection.getOrCreateFromOidc(claims, provider)` — creates Profile + OidcIdentity + User in one flow
+- `Profile.getAssets()` / `addAsset()` / `removeAsset()` and the matching `ProfileCollection` wrappers — canonical owned asset helpers backed by `profile_assets`
 - `ProfileCollection.addMetadata()`/`getMetadata()` — validates against metafield schema
 - `Profile.getRelationships({ direction: 'from'|'to'|'all' })` — direction matters
 - AI: `generateBio()` (do), `matches(criteria)` (is)

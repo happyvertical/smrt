@@ -6,12 +6,15 @@
  * @packageDocumentation
  */
 
+export { EventAssetCollection } from './collections/EventAssetCollection';
 export { EventCollection } from './collections/EventCollection';
 export { EventParticipantCollection } from './collections/EventParticipantCollection';
 export { EventSeriesCollection } from './collections/EventSeriesCollection';
 // Export collections
 export { EventTypeCollection } from './collections/EventTypeCollection';
 export { Event } from './models/Event';
+export type { EventAssetOptions } from './models/EventAsset';
+export { EventAsset } from './models/EventAsset';
 export { EventParticipant } from './models/EventParticipant';
 export { EventSeries } from './models/EventSeries';
 // Export models

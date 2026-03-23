@@ -34,12 +34,14 @@
     "@happyvertical/files": "catalog:",
     "@happyvertical/geo": "catalog:",
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
+    "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
     "typescript": "^5.9.3",

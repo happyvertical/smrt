@@ -4,6 +4,15 @@ import dts from 'vite-plugin-dts';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 
 const packageDir = resolve(__dirname, '.');
+const libEntries = {
+	index: resolve(packageDir, 'src/index.ts'),
+	models: resolve(packageDir, 'src/models.ts'),
+	components: resolve(packageDir, 'src/components.ts'),
+	stores: resolve(packageDir, 'src/stores.ts'),
+	generated: resolve(packageDir, 'src/generated.ts'),
+	utils: resolve(packageDir, 'src/utils.ts'),
+	collections: resolve(packageDir, 'src/collections.ts'),
+} as const;
 
 export default defineConfig(async () => {
 	// Import smrtPlugin for SMRT object scanning
@@ -14,13 +23,13 @@ export default defineConfig(async () => {
 	return {
 		build: {
 			lib: {
-				entry: resolve(packageDir, 'src/index.ts'),
+				entry: libEntries,
 				formats: ['es'] as const,
-				fileName: () => 'index.js',
+				fileName: (_format, entryName) => `${entryName}.js`,
 			},
 			rollupOptions: {
 				output: {
-					dir: resolve(packageDir, 'dist'),
+					dir: resolve(packageDir, 'dist/lib'),
 					format: 'es' as const,
 					preserveModules: false,
 					entryFileNames: '[name].js',
@@ -73,11 +82,12 @@ export default defineConfig(async () => {
 			}),
 			// TypeScript declarations
 			dts({
-				outDir: resolve(packageDir, 'dist'),
+				outDir: resolve(packageDir, 'dist/lib'),
 				include: [resolve(packageDir, 'src/**/*.ts')],
 				exclude: ['**/*.test.ts', '**/*.spec.ts', '**/*.config.ts', '**/*.d.ts'],
 				insertTypesEntry: false,
 				rollupTypes: false,
+				entryRoot: resolve(packageDir, 'src'),
 				tsconfigPath: resolve(packageDir, 'tsconfig.json'),
 				aliasesExclude: [
 					'@smrt/routes',

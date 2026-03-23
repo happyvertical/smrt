@@ -49,6 +49,25 @@ console.log(hierarchy.ancestors.map(p => p.name)); // ['United States']
 const nearby = await places.searchByProximity(37.7749, -122.4194, 10); // 10km radius
 ```
 
+### Owned assets
+
+```typescript
+import { AssetCollection } from '@happyvertical/smrt-assets';
+
+const assets = await AssetCollection.create();
+const floorplan = await assets.create({
+  name: 'main-hall-floorplan.png',
+  sourceUri: 'file:///tmp/main-hall-floorplan.png',
+  mimeType: 'image/png',
+});
+
+await place.addAsset(floorplan, 'floorplan');
+await places.addAsset(place.id!, floorplan, 'gallery', 1);
+
+const floorplans = await place.getAssets('floorplan');
+const galleryAssets = await places.getAssets(place.id!, 'gallery');
+```
+
 ## API
 
 ### Models
@@ -57,12 +76,14 @@ const nearby = await places.searchByProximity(37.7749, -122.4194, 10); // 10km r
 |--------|------------|
 | `Place` | Hierarchical place with optional geo fields, STI enabled |
 | `PlaceType` | Slug-based classification (country, city, building, zone, room) |
+| `PlaceAsset` | Dedicated owned-asset join stored in `place_assets` with `relationship` and `sortOrder` |
 
 ### Collections
 
 | Export | Description |
 |--------|------------|
 | `PlaceCollection` | CRUD + `lookupOrCreate()`, `searchByProximity()`, `findByCoordinates()`, `getRootPlaces()`, `getByType()`, `findWithGlobals()` |
+| `PlaceAssetCollection` | Direct access to `place_assets` rows plus asset helper wrappers |
 | `PlaceTypeCollection` | CRUD + `getOrCreate()` for idempotent type creation |
 
 ### Types
@@ -92,6 +113,10 @@ const nearby = await places.searchByProximity(37.7749, -122.4194, 10); // 10km r
 ### Instance Methods (Place)
 
 `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getHierarchy()` -- hierarchy traversal on any Place instance.
+
+Owned asset helpers are available on both `Place` and `PlaceCollection` via
+`getAssets()`, `addAsset()`, and `removeAsset()`. Common relationships include
+`hero`, `floorplan`, `gallery`, and `attachment`.
 
 ## Dependencies
 
