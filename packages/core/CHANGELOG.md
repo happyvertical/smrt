@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.11
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - finish release-ready content asset rollback (#1062) (content)
+  - @happyvertical/smrt-scanner@0.21.11
+  - @happyvertical/smrt-config@0.21.11
+  - @happyvertical/smrt-types@0.21.11
+
 ## 0.21.10
 
 ### Patch Changes
