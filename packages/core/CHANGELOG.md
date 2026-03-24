@@ -1,5 +1,22 @@
 # @happyvertical/smrt-core
 
+## 0.21.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - support squash merge titles (#1073) (release)
+
+  ### Merged Changes
+
+  - normalize video owned asset models
+  - Follow up smrt#1063 owned asset helper refactor
+  - add owned asset joins for profiles, events, places, and products
+  - @happyvertical/smrt-scanner@0.21.12
+  - @happyvertical/smrt-config@0.21.12
+  - @happyvertical/smrt-types@0.21.12
+
 ## 0.21.11
 
 ### Patch Changes
