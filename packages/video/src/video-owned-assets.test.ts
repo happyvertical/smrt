@@ -113,9 +113,9 @@ describe('Video owned assets', () => {
     expect((await character.getAssetByRole('seed-image'))?.id).toBe(
       seedImage.id,
     );
-    expect((await character.getAssets('logo')).map((asset) => asset.id)).toEqual(
-      [logo.id],
-    );
+    expect(
+      (await character.getAssets('logo')).map((asset) => asset.id),
+    ).toEqual([logo.id]);
 
     const links = await CharacterOwnedAssetCollection.create({ db: dbConfig });
     expect(

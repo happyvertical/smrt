@@ -293,7 +293,10 @@ export class Character extends SmrtObject {
       changed = true;
     }
 
-    if ((!role || role === 'base-motion') && this.baseMotionAssetId === assetId) {
+    if (
+      (!role || role === 'base-motion') &&
+      this.baseMotionAssetId === assetId
+    ) {
       this.baseMotionAssetId = null;
       changed = true;
     }

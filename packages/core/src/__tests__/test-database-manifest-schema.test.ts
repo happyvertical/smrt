@@ -1,40 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectRegistry } from '../registry.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 
-function getRows(result: any): any[] {
-  if (Array.isArray(result)) return result;
-  return result?.rows ?? [];
-}
-
 describe('getTestDatabase manifest schemas', () => {
-  let originalClasses: Map<string, any>;
+  let restoreRegistry: () => void;
 
   beforeEach(() => {
-    originalClasses = new Map(ObjectRegistry.getAllClasses());
+    restoreRegistry = snapshotObjectRegistryState();
   });
 
   afterEach(() => {
-    for (const [name] of ObjectRegistry.getAllClasses()) {
-      if (!originalClasses.has(name)) {
-        // @ts-expect-error test cleanup
-        ObjectRegistry.classes.delete(name);
-      }
-    }
-
-    // @ts-expect-error test cleanup
-    for (const [key, entries] of ObjectRegistry.classNameMap) {
-      // @ts-expect-error test cleanup
-      ObjectRegistry.classNameMap.set(
-        key,
-        entries.filter((entry: string) => originalClasses.has(entry)),
-      );
-      // @ts-expect-error test cleanup
-      if (ObjectRegistry.classNameMap.get(key)?.length === 0) {
-        // @ts-expect-error test cleanup
-        ObjectRegistry.classNameMap.delete(key);
-      }
-    }
+    restoreRegistry();
   });
 
   it('preserves manifest-defined unique conflict indexes for test databases', async () => {
@@ -105,30 +82,36 @@ describe('getTestDatabase manifest schemas', () => {
       classes: ['ManifestIndexedJoin'],
     });
 
-    const result = await db.query(
-      `SELECT name, sql
-       FROM sqlite_master
-       WHERE type = 'index' AND tbl_name = 'manifest_indexed_joins'
-       ORDER BY name`,
+    const indexListResult = await db.query(
+      `PRAGMA index_list('manifest_indexed_joins')`,
     );
-    const rows = getRows(result);
+    const indexList = Array.isArray(indexListResult)
+      ? indexListResult
+      : indexListResult.rows;
+    const conflictIndex = indexList.find(
+      (row: { name: string }) =>
+        row.name === 'manifest_indexed_joins_fact_id_content_id_idx',
+    );
 
+    expect(conflictIndex).toBeDefined();
+    expect(Boolean(conflictIndex?.unique)).toBe(true);
     expect(
-      rows.some(
-        (row) => row.name === 'manifest_indexed_joins_fact_id_content_id_idx',
-      ),
-    ).toBe(true);
-    expect(
-      rows.some(
-        (row) =>
-          row.sql ===
-          'CREATE UNIQUE INDEX "manifest_indexed_joins_fact_id_content_id_idx" ON "manifest_indexed_joins" ("fact_id", "content_id", "relationship")',
-      ),
-    ).toBe(true);
-    expect(
-      rows.some(
+      indexList.some(
         (row) => row.name === 'manifest_indexed_joins_slug_context_idx',
       ),
     ).toBe(false);
+
+    const indexInfoResult = await db.query(
+      `PRAGMA index_info('manifest_indexed_joins_fact_id_content_id_idx')`,
+    );
+    const indexInfo = Array.isArray(indexInfoResult)
+      ? indexInfoResult
+      : indexInfoResult.rows;
+
+    expect(indexInfo.map((row: { name: string }) => row.name)).toEqual([
+      'fact_id',
+      'content_id',
+      'relationship',
+    ]);
   });
 });

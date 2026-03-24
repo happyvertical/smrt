@@ -9,7 +9,6 @@ import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { SceneAssetRole } from './scene-asset.js';
 import {
   assertValidVideoAssetRole,
   assertValidVideoAssetSortOrder,
@@ -19,6 +18,7 @@ import {
   mergeOwnedAssetIds,
   resolveOwnedAssets,
 } from './owned-asset-utils.js';
+import type { SceneAssetRole } from './scene-asset.js';
 
 /**
  * Viewpoint extracted from 360° scene
@@ -392,13 +392,7 @@ export class Scene extends SmrtObject {
     assertValidVideoAssetSortOrder(sortOrder);
 
     const sceneAssets = await this.getSceneAssetCollection();
-    await sceneAssets.attach(
-      this.id,
-      asset.id,
-      role,
-      sortOrder,
-      this.tenantId,
-    );
+    await sceneAssets.attach(this.id, asset.id, role, sortOrder, this.tenantId);
 
     if (this.setLegacyFieldAssetId(role, asset.id)) {
       await this.save();

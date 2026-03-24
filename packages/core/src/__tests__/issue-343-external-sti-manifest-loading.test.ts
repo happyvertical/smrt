@@ -40,6 +40,7 @@ import {
   loadExternalManifest,
 } from '../manifest/manifest-loader.js';
 import { ObjectRegistry } from '../registry.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 
 // Clear manifest cache before and after each test to ensure test isolation
 // This prevents ESM module caching issues where cached manifests from one test
@@ -86,9 +87,13 @@ function findObjectInManifest(
 }
 
 describe('Issue #343: External Package STI Classes Manifest Loading', () => {
+  let restoreRegistry: () => void;
+
   // Register Person from manifest before running tests
   // (In production, auto-loading works, but in monorepo tests we need explicit registration)
   beforeAll(async () => {
+    restoreRegistry = snapshotObjectRegistryState();
+
     const manifest = await loadExternalManifest('@happyvertical/smrt-profiles');
     console.log('[test setup] Loaded manifest:', manifest ? 'Yes' : 'No');
 
@@ -127,6 +132,11 @@ describe('Issue #343: External Package STI Classes Manifest Loading', () => {
         Object.keys(manifest?.objects || {}),
       );
     }
+  });
+
+  afterAll(() => {
+    restoreRegistry();
+    clearManifestCache();
   });
 
   it('should verify external package manifest exists and is loadable', async () => {
