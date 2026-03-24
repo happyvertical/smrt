@@ -155,6 +155,9 @@ export async function getTestDatabase(
 
     const fields = await ObjectRegistry.getAllFields(className);
     const strategy = ObjectRegistry.getTableStrategy(className);
+    const runtimeSchemaConfig = {
+      conflictColumns: ObjectRegistry.getConflictColumns(className),
+    };
 
     // Generate schema using SchemaGenerator (same as migrations)
     const schema =
@@ -168,6 +171,7 @@ export async function getTestDatabase(
             className,
             tableName,
             fields,
+            runtimeSchemaConfig,
           );
 
     // Generate DDL using generateSQL() - the single source of truth
