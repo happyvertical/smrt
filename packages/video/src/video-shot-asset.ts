@@ -1,5 +1,8 @@
 /**
- * VideoShotAsset - STI asset subclass for VideoShot-owned assets
+ * VideoShotAsset - legacy STI asset subclass for VideoShot-owned assets
+ *
+ * @deprecated VideoShot now uses inherited Content asset helpers backed by
+ * `content_assets`. This legacy subtype remains readable during migration.
  */
 
 import { Asset, type AssetOptions } from '@happyvertical/smrt-assets';

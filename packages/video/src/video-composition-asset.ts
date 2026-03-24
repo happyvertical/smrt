@@ -1,5 +1,8 @@
 /**
- * VideoCompositionAsset - STI asset subclass for VideoComposition-owned assets
+ * VideoCompositionAsset - legacy STI asset subclass for VideoComposition-owned assets
+ *
+ * @deprecated VideoComposition now uses inherited Content asset helpers backed
+ * by `content_assets`. This legacy subtype remains readable during migration.
  */
 
 import { Asset, type AssetOptions } from '@happyvertical/smrt-assets';

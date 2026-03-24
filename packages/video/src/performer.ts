@@ -6,10 +6,21 @@
  * Ensures face consistency via IP-Adapter FaceID.
  */
 
+import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { Profile } from '@happyvertical/smrt-profiles';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type { PerformerAssetRole } from './performer-asset.js';
+import {
+  assertValidVideoAssetRole,
+  assertValidVideoAssetSortOrder,
+  legacyVideoAssetMetaTypes,
+  listCanonicalOwnedAssetIds,
+  listLegacyOwnedAssetIds,
+  mergeOwnedAssetIds,
+  resolveOwnedAssets,
+} from './owned-asset-utils.js';
 
 /**
  * Performer DNA for IP-Adapter FaceID consistency
@@ -164,6 +175,151 @@ export class Performer extends SmrtObject {
     if (options.status !== undefined) this.status = options.status;
     if (options.profileId !== undefined) this.profileId = options.profileId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+  }
+
+  private async getPerformerAssetCollection() {
+    const { PerformerOwnedAssetCollection } = await import(
+      './performer-assets.js'
+    );
+    return PerformerOwnedAssetCollection.create({ db: this.db });
+  }
+
+  private getLegacyFieldAssetIds(role?: PerformerAssetRole): string[] {
+    if (role === 'reference') {
+      return this.referenceAssetIds;
+    }
+
+    if (role === 'seed') {
+      return this.seedImageAssetId ? [this.seedImageAssetId] : [];
+    }
+
+    return [
+      ...this.referenceAssetIds,
+      this.seedImageAssetId,
+    ].filter((assetId): assetId is string => Boolean(assetId));
+  }
+
+  private setLegacyFieldAssetId(
+    role: PerformerAssetRole,
+    assetId: string,
+  ): boolean {
+    if (role === 'seed') {
+      if (this.seedImageAssetId === assetId) {
+        return false;
+      }
+
+      this.seedImageAssetId = assetId;
+      return true;
+    }
+
+    if (this.referenceAssetIds.includes(assetId)) {
+      return false;
+    }
+
+    this.referenceAssetIds = [...this.referenceAssetIds, assetId];
+    return true;
+  }
+
+  private clearLegacyFieldAssetId(
+    assetId: string,
+    role?: PerformerAssetRole,
+  ): boolean {
+    let changed = false;
+
+    if ((!role || role === 'seed') && this.seedImageAssetId === assetId) {
+      this.seedImageAssetId = null;
+      changed = true;
+    }
+
+    if (!role || role === 'reference') {
+      const remaining = this.referenceAssetIds.filter(
+        (referenceAssetId) => referenceAssetId !== assetId,
+      );
+
+      if (remaining.length !== this.referenceAssetIds.length) {
+        this.referenceAssetIds = remaining;
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  async getAssets(role?: PerformerAssetRole): Promise<Asset[]> {
+    const canonicalAssetIds = this.id
+      ? await listCanonicalOwnedAssetIds({
+          tableName: 'performer_assets',
+          loadLinks: async () =>
+            (await this.getPerformerAssetCollection()).getForPerformer(
+              this.id as string,
+              role,
+            ),
+        })
+      : [];
+    const legacyFieldAssetIds = this.getLegacyFieldAssetIds(role);
+    const legacyOwnedAssetIds = this.id
+      ? await listLegacyOwnedAssetIds({
+          db: this.db,
+          ownerColumn: 'performer_id',
+          ownerId: this.id,
+          role,
+          metaTypes: legacyVideoAssetMetaTypes('PerformerAsset'),
+        })
+      : [];
+
+    return resolveOwnedAssets(
+      this.db,
+      this.tenantId,
+      mergeOwnedAssetIds(
+        canonicalAssetIds,
+        legacyFieldAssetIds,
+        legacyOwnedAssetIds,
+      ),
+    );
+  }
+
+  async getAssetByRole(role: PerformerAssetRole): Promise<Asset | null> {
+    const assets = await this.getAssets(role);
+    return assets[0] || null;
+  }
+
+  async addAsset(
+    asset: Asset,
+    role: PerformerAssetRole = 'reference',
+    sortOrder = 0,
+  ): Promise<void> {
+    if (!this.id || !asset.id) {
+      throw new Error('Cannot associate unsaved performer or asset');
+    }
+
+    assertValidVideoAssetRole(role);
+    assertValidVideoAssetSortOrder(sortOrder);
+
+    const performerAssets = await this.getPerformerAssetCollection();
+    await performerAssets.attach(
+      this.id,
+      asset.id,
+      role,
+      sortOrder,
+      this.tenantId,
+    );
+
+    if (this.setLegacyFieldAssetId(role, asset.id)) {
+      await this.save();
+    }
+  }
+
+  async removeAsset(assetId: string, role?: PerformerAssetRole): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const performerAssets = await this.getPerformerAssetCollection();
+    await performerAssets.detach(this.id, assetId, role);
+
+    if (this.clearLegacyFieldAssetId(assetId, role)) {
+      await this.save();
+    }
   }
 
   /** Check if the performer has reference images */

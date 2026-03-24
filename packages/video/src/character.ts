@@ -9,11 +9,22 @@
  * "A Performer plays Characters."
  */
 
+import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { Profile } from '@happyvertical/smrt-profiles';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VoiceProfile } from '@happyvertical/smrt-voice';
+import type { CharacterAssetRole } from './character-asset.js';
+import {
+  assertValidVideoAssetRole,
+  assertValidVideoAssetSortOrder,
+  legacyVideoAssetMetaTypes,
+  listCanonicalOwnedAssetIds,
+  listLegacyOwnedAssetIds,
+  mergeOwnedAssetIds,
+  resolveOwnedAssets,
+} from './owned-asset-utils.js';
 import { Performer } from './performer.js';
 import { Scene } from './scene.js';
 
@@ -209,6 +220,173 @@ export class Character extends SmrtObject {
       this.sceneConfigs = options.sceneConfigs;
     if (options.profileId !== undefined) this.profileId = options.profileId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+  }
+
+  private async getCharacterAssetCollection() {
+    const { CharacterOwnedAssetCollection } = await import(
+      './character-assets.js'
+    );
+    return CharacterOwnedAssetCollection.create({ db: this.db });
+  }
+
+  private getLegacyFieldAssetIds(role?: CharacterAssetRole): string[] {
+    if (role === 'seed-image') {
+      return this.imageAssetId ? [this.imageAssetId] : [];
+    }
+
+    if (role === 'base-motion') {
+      return this.baseMotionAssetId ? [this.baseMotionAssetId] : [];
+    }
+
+    if (role === 'logo') {
+      return this.brandingKit.logoAssetId ? [this.brandingKit.logoAssetId] : [];
+    }
+
+    return [
+      this.imageAssetId,
+      this.baseMotionAssetId,
+      this.brandingKit.logoAssetId || null,
+    ].filter((assetId): assetId is string => Boolean(assetId));
+  }
+
+  private setLegacyFieldAssetId(
+    role: CharacterAssetRole,
+    assetId: string | null,
+  ): boolean {
+    if (role === 'seed-image') {
+      if (this.imageAssetId === assetId) {
+        return false;
+      }
+
+      this.imageAssetId = assetId;
+      return true;
+    }
+
+    if (role === 'base-motion') {
+      if (this.baseMotionAssetId === assetId) {
+        return false;
+      }
+
+      this.baseMotionAssetId = assetId;
+      return true;
+    }
+
+    if ((this.brandingKit.logoAssetId || null) === assetId) {
+      return false;
+    }
+
+    this.brandingKit = {
+      ...this.brandingKit,
+      logoAssetId: assetId,
+    };
+    return true;
+  }
+
+  private clearLegacyFieldAssetId(
+    assetId: string,
+    role?: CharacterAssetRole,
+  ): boolean {
+    let changed = false;
+
+    if ((!role || role === 'seed-image') && this.imageAssetId === assetId) {
+      this.imageAssetId = null;
+      changed = true;
+    }
+
+    if ((!role || role === 'base-motion') && this.baseMotionAssetId === assetId) {
+      this.baseMotionAssetId = null;
+      changed = true;
+    }
+
+    if (
+      (!role || role === 'logo') &&
+      this.brandingKit.logoAssetId === assetId
+    ) {
+      this.brandingKit = {
+        ...this.brandingKit,
+        logoAssetId: null,
+      };
+      changed = true;
+    }
+
+    return changed;
+  }
+
+  async getAssets(role?: CharacterAssetRole): Promise<Asset[]> {
+    const canonicalAssetIds = this.id
+      ? await listCanonicalOwnedAssetIds({
+          tableName: 'character_assets',
+          loadLinks: async () =>
+            (await this.getCharacterAssetCollection()).getForCharacter(
+              this.id as string,
+              role,
+            ),
+        })
+      : [];
+    const legacyFieldAssetIds = this.getLegacyFieldAssetIds(role);
+    const legacyOwnedAssetIds = this.id
+      ? await listLegacyOwnedAssetIds({
+          db: this.db,
+          ownerColumn: 'character_id',
+          ownerId: this.id,
+          role,
+          metaTypes: legacyVideoAssetMetaTypes('CharacterAsset'),
+        })
+      : [];
+
+    return resolveOwnedAssets(
+      this.db,
+      this.tenantId,
+      mergeOwnedAssetIds(
+        canonicalAssetIds,
+        legacyFieldAssetIds,
+        legacyOwnedAssetIds,
+      ),
+    );
+  }
+
+  async getAssetByRole(role: CharacterAssetRole): Promise<Asset | null> {
+    const assets = await this.getAssets(role);
+    return assets[0] || null;
+  }
+
+  async addAsset(
+    asset: Asset,
+    role: CharacterAssetRole = 'seed-image',
+    sortOrder = 0,
+  ): Promise<void> {
+    if (!this.id || !asset.id) {
+      throw new Error('Cannot associate unsaved character or asset');
+    }
+
+    assertValidVideoAssetRole(role);
+    assertValidVideoAssetSortOrder(sortOrder);
+
+    const characterAssets = await this.getCharacterAssetCollection();
+    await characterAssets.attach(
+      this.id,
+      asset.id,
+      role,
+      sortOrder,
+      this.tenantId,
+    );
+
+    if (this.setLegacyFieldAssetId(role, asset.id)) {
+      await this.save();
+    }
+  }
+
+  async removeAsset(assetId: string, role?: CharacterAssetRole): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const characterAssets = await this.getCharacterAssetCollection();
+    await characterAssets.detach(this.id, assetId, role);
+
+    if (this.clearLegacyFieldAssetId(assetId, role)) {
+      await this.save();
+    }
   }
 
   /**

@@ -5,9 +5,20 @@
  * Supports 360° panoramas, standard images, and video backgrounds.
  */
 
+import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import type { SceneAssetRole } from './scene-asset.js';
+import {
+  assertValidVideoAssetRole,
+  assertValidVideoAssetSortOrder,
+  legacyVideoAssetMetaTypes,
+  listCanonicalOwnedAssetIds,
+  listLegacyOwnedAssetIds,
+  mergeOwnedAssetIds,
+  resolveOwnedAssets,
+} from './owned-asset-utils.js';
 
 /**
  * Viewpoint extracted from 360° scene
@@ -226,6 +237,185 @@ export class Scene extends SmrtObject {
       this.anchorPoints = options.anchorPoints;
     if (options.status !== undefined) this.status = options.status;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+  }
+
+  private async getSceneAssetCollection() {
+    const { SceneOwnedAssetCollection } = await import('./scene-assets.js');
+    return SceneOwnedAssetCollection.create({ db: this.db });
+  }
+
+  private getLegacyFieldAssetIds(role?: SceneAssetRole): string[] {
+    if (role === 'source') {
+      return this.sourceAssetId ? [this.sourceAssetId] : [];
+    }
+
+    if (role === 'env-map') {
+      return this.lightingProfile?.envMapAssetId
+        ? [this.lightingProfile.envMapAssetId]
+        : [];
+    }
+
+    if (role === 'viewpoint-extract') {
+      return this.viewpoints
+        .map((viewpoint) => viewpoint.extractedAssetId || null)
+        .filter((assetId): assetId is string => Boolean(assetId));
+    }
+
+    return [
+      this.sourceAssetId,
+      this.lightingProfile?.envMapAssetId || null,
+      ...this.viewpoints.map((viewpoint) => viewpoint.extractedAssetId || null),
+    ].filter((assetId): assetId is string => Boolean(assetId));
+  }
+
+  private setLegacyFieldAssetId(
+    role: SceneAssetRole,
+    assetId: string,
+  ): boolean {
+    if (role === 'source') {
+      if (this.sourceAssetId === assetId) {
+        return false;
+      }
+
+      this.sourceAssetId = assetId;
+      return true;
+    }
+
+    if (role === 'env-map') {
+      if ((this.lightingProfile?.envMapAssetId || null) === assetId) {
+        return false;
+      }
+
+      this.lightingProfile = {
+        ...(this.lightingProfile || {}),
+        envMapAssetId: assetId,
+      };
+      return true;
+    }
+
+    return false;
+  }
+
+  private clearLegacyFieldAssetId(
+    assetId: string,
+    role?: SceneAssetRole,
+  ): boolean {
+    let changed = false;
+
+    if ((!role || role === 'source') && this.sourceAssetId === assetId) {
+      this.sourceAssetId = null;
+      changed = true;
+    }
+
+    if (
+      (!role || role === 'env-map') &&
+      this.lightingProfile?.envMapAssetId === assetId
+    ) {
+      this.lightingProfile = {
+        ...(this.lightingProfile || {}),
+        envMapAssetId: undefined,
+      };
+      changed = true;
+    }
+
+    if (!role || role === 'viewpoint-extract') {
+      let viewpointChanged = false;
+      const nextViewpoints = this.viewpoints.map((viewpoint) => {
+        if (viewpoint.extractedAssetId !== assetId) {
+          return viewpoint;
+        }
+
+        viewpointChanged = true;
+        return {
+          ...viewpoint,
+          extractedAssetId: undefined,
+        };
+      });
+
+      if (viewpointChanged) {
+        this.viewpoints = nextViewpoints;
+        changed = true;
+      }
+    }
+
+    return changed;
+  }
+
+  async getAssets(role?: SceneAssetRole): Promise<Asset[]> {
+    const canonicalAssetIds = this.id
+      ? await listCanonicalOwnedAssetIds({
+          tableName: 'scene_assets',
+          loadLinks: async () =>
+            (await this.getSceneAssetCollection()).getForScene(
+              this.id as string,
+              role,
+            ),
+        })
+      : [];
+    const legacyFieldAssetIds = this.getLegacyFieldAssetIds(role);
+    const legacyOwnedAssetIds = this.id
+      ? await listLegacyOwnedAssetIds({
+          db: this.db,
+          ownerColumn: 'scene_id',
+          ownerId: this.id,
+          role,
+          metaTypes: legacyVideoAssetMetaTypes('SceneAsset'),
+        })
+      : [];
+
+    return resolveOwnedAssets(
+      this.db,
+      this.tenantId,
+      mergeOwnedAssetIds(
+        canonicalAssetIds,
+        legacyFieldAssetIds,
+        legacyOwnedAssetIds,
+      ),
+    );
+  }
+
+  async getAssetByRole(role: SceneAssetRole): Promise<Asset | null> {
+    const assets = await this.getAssets(role);
+    return assets[0] || null;
+  }
+
+  async addAsset(
+    asset: Asset,
+    role: SceneAssetRole = 'source',
+    sortOrder = 0,
+  ): Promise<void> {
+    if (!this.id || !asset.id) {
+      throw new Error('Cannot associate unsaved scene or asset');
+    }
+
+    assertValidVideoAssetRole(role);
+    assertValidVideoAssetSortOrder(sortOrder);
+
+    const sceneAssets = await this.getSceneAssetCollection();
+    await sceneAssets.attach(
+      this.id,
+      asset.id,
+      role,
+      sortOrder,
+      this.tenantId,
+    );
+
+    if (this.setLegacyFieldAssetId(role, asset.id)) {
+      await this.save();
+    }
+  }
+
+  async removeAsset(assetId: string, role?: SceneAssetRole): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const sceneAssets = await this.getSceneAssetCollection();
+    await sceneAssets.detach(this.id, assetId, role);
+
+    if (this.clearLegacyFieldAssetId(assetId, role)) {
+      await this.save();
+    }
   }
 
   /** Check if this is a 360° panorama */

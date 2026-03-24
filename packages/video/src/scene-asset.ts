@@ -1,5 +1,9 @@
 /**
- * SceneAsset - STI asset subclass for Scene-owned assets
+ * SceneAsset - legacy STI asset subclass for Scene-owned assets
+ *
+ * @deprecated Scene owned assets are now modeled canonically through
+ * `SceneOwnedAsset` join rows in `scene_assets`. This legacy subtype remains
+ * readable during migration.
  */
 
 import { Asset, type AssetOptions } from '@happyvertical/smrt-assets';
