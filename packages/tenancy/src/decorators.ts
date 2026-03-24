@@ -29,6 +29,29 @@ import {
   type TenantScopedConfig,
 } from './registry.js';
 
+type LegacyPropertyDecoratorTarget = {
+  constructor?: {
+    name?: string;
+  };
+};
+
+interface CompatiblePropertyDecorator<This = any, Value = any> {
+  (target: object, propertyKey: string | symbol): void;
+  (value: undefined, context: ClassFieldDecoratorContext<This, Value>): void;
+}
+
+function resolveDecoratorClassName(target: unknown): string | undefined {
+  if (typeof target === 'function') {
+    return target.name;
+  }
+
+  if (target && typeof target === 'object') {
+    return (target as LegacyPropertyDecoratorTarget).constructor?.name;
+  }
+
+  return undefined;
+}
+
 /**
  * Options accepted by the `@TenantScoped()` class decorator.
  *
@@ -191,19 +214,44 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
     ...options,
   };
 
-  return (target: any, propertyKey: string) => {
-    const className = target.constructor.name;
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext:
+      | string
+      | symbol
+      | ClassFieldDecoratorContext<any, any>,
+  ) => {
+    const registerTenantId = (className: string, propertyKey: string) => {
+      ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+        type: 'foreignKey',
+        related: 'Tenant',
+        sqlType: 'TEXT',
+        required: opts.required,
+        nullable: opts.nullable,
+        __tenancy: {
+          ...opts,
+          isTenantIdField: true,
+        },
+      });
+    };
 
-    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-      type: 'foreignKey',
-      related: 'Tenant',
-      sqlType: 'TEXT',
-      required: opts.required,
-      nullable: opts.nullable,
-      __tenancy: {
-        ...opts,
-        isTenantIdField: true,
-      },
+    if (
+      typeof propertyKeyOrContext === 'string' ||
+      typeof propertyKeyOrContext === 'symbol'
+    ) {
+      const className = resolveDecoratorClassName(targetOrValue);
+      if (className) {
+        registerTenantId(className, String(propertyKeyOrContext));
+      }
+      return;
+    }
+
+    const context = propertyKeyOrContext;
+    context.addInitializer?.(function registerTenantIdDecorator() {
+      const className = resolveDecoratorClassName(this);
+      if (className) {
+        registerTenantId(className, String(context.name));
+      }
     });
-  };
+  }) as CompatiblePropertyDecorator;
 }

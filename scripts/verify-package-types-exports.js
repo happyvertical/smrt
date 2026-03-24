@@ -211,6 +211,82 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
   return missing;
 }
 
+function collectMissingTypeImports(packageRoot) {
+  const missing = [];
+  const typeFiles = walkFiles(packageRoot).filter((filePath) =>
+    /\.d\.(?:cts|mts|ts)$/.test(filePath),
+  );
+  const importPattern =
+    /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|import\(['"]([^'"]+)['"]\)/g;
+
+  const resolveCandidates = (basePath) => [
+    basePath,
+    `${basePath}.d.ts`,
+    `${basePath}.d.mts`,
+    `${basePath}.d.cts`,
+    `${basePath}.ts`,
+    `${basePath}.mts`,
+    `${basePath}.cts`,
+    `${basePath}.js`,
+    `${basePath}.mjs`,
+    `${basePath}.cjs`,
+    join(basePath, 'index.d.ts'),
+    join(basePath, 'index.d.mts'),
+    join(basePath, 'index.d.cts'),
+    join(basePath, 'index.ts'),
+    join(basePath, 'index.mts'),
+    join(basePath, 'index.cts'),
+    join(basePath, 'index.js'),
+    join(basePath, 'index.mjs'),
+    join(basePath, 'index.cjs'),
+  ];
+  const isWithinPackageRoot = (targetPath) => {
+    const relativePath = relative(packageRoot, targetPath);
+    return (
+      targetPath === packageRoot ||
+      (relativePath !== '..' &&
+        !relativePath.startsWith(`..${sep}`) &&
+        relativePath !== '')
+    );
+  };
+
+  for (const filePath of typeFiles) {
+    const source = readFileSync(filePath, 'utf8');
+    const seenSpecifiers = new Set();
+
+    for (const match of source.matchAll(importPattern)) {
+      const specifier = match[1] || match[2];
+      if (!specifier || !specifier.startsWith('.')) {
+        continue;
+      }
+
+      if (seenSpecifiers.has(specifier)) {
+        continue;
+      }
+      seenSpecifiers.add(specifier);
+
+      const basePath = resolve(dirname(filePath), specifier);
+      if (!isWithinPackageRoot(basePath)) {
+        missing.push(
+          `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
+        );
+        continue;
+      }
+      const hasTarget = resolveCandidates(basePath).some(
+        (candidate) => isWithinPackageRoot(candidate) && existsSync(candidate),
+      );
+
+      if (!hasTarget) {
+        missing.push(
+          `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
+        );
+      }
+    }
+  }
+
+  return missing;
+}
+
 const packageDir = resolve(process.cwd(), process.argv[2] ?? '.');
 const packageJsonPath = join(packageDir, 'package.json');
 const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
@@ -269,11 +345,13 @@ try {
   const packageRoot = join(tempDir, 'package');
   const missingRelativeRuntimeImports =
     collectMissingRelativeRuntimeImports(packageRoot);
+  const missingTypeImports = collectMissingTypeImports(packageRoot);
 
   if (
     missing.length > 0 ||
     missingRuntime.length > 0 ||
-    missingRelativeRuntimeImports.length > 0
+    missingRelativeRuntimeImports.length > 0 ||
+    missingTypeImports.length > 0
   ) {
     fail(
       `${packageJson.name} is missing required package artifacts in the packed artifact:\n${[
@@ -282,6 +360,7 @@ try {
         ...missingRelativeRuntimeImports.map(
           (entry) => `- relative import target: ${entry}`,
         ),
+        ...missingTypeImports.map((entry) => `- type import target: ${entry}`),
       ].join('\n')}`,
     );
   }

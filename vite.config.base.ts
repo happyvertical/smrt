@@ -1,5 +1,5 @@
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { dirname, relative, resolve, sep } from 'node:path';
 import type { UserConfig, UserConfigFnPromise } from 'vite';
 import dts from 'vite-plugin-dts';
 
@@ -36,6 +36,102 @@ interface PackageConfigOptions {
   dtsExclude?: string[];
 }
 
+interface WorkspacePackageInfo {
+  dir: string;
+  name: string;
+}
+
+function collectWorkspacePackages(rootDir: string): WorkspacePackageInfo[] {
+  return readdirSync(rootDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const dir = resolve(rootDir, entry.name);
+      const packageJson = JSON.parse(
+        readFileSync(resolve(dir, 'package.json'), 'utf8'),
+      );
+
+      return {
+        dir,
+        name: packageJson.name as string,
+      };
+    });
+}
+
+function normalizePath(pathValue: string): string {
+  return pathValue.replace(/\\/g, '/');
+}
+
+function isPathInside(parentDir: string, targetPath: string): boolean {
+  const relativePath = relative(parentDir, targetPath);
+  return (
+    relativePath === '' ||
+    (!relativePath.startsWith(`..${sep}`) && relativePath !== '..')
+  );
+}
+
+function rewriteWorkspaceDeclarationImports(
+  filePath: string,
+  content: string,
+  packageDir: string,
+  workspacePackages: WorkspacePackageInfo[],
+): string {
+  const currentDir = dirname(filePath);
+  const rewriteSpecifier = (specifier: string): string => {
+    if (!specifier.startsWith('.')) {
+      return specifier;
+    }
+
+    const resolvedSpecifier = resolve(currentDir, specifier);
+    const targetPackage = workspacePackages.find(
+      (workspacePackage) =>
+        workspacePackage.dir !== packageDir &&
+        isPathInside(workspacePackage.dir, resolvedSpecifier),
+    );
+
+    if (!targetPackage) {
+      return specifier;
+    }
+
+    const relativeToPackage = normalizePath(
+      relative(targetPackage.dir, resolvedSpecifier),
+    );
+    if (
+      !relativeToPackage.startsWith('src/') &&
+      !relativeToPackage.startsWith('dist/')
+    ) {
+      return specifier;
+    }
+
+    let subpath = relativeToPackage.replace(/^(src|dist)\//, '');
+    subpath = subpath
+      .replace(/\.d\.ts$/, '')
+      .replace(/\.[mc]?ts$/, '')
+      .replace(/\.js$/, '');
+
+    if (subpath === 'index') {
+      return targetPackage.name;
+    }
+
+    if (subpath.endsWith('/index')) {
+      subpath = subpath.slice(0, -'/index'.length);
+    }
+
+    return `${targetPackage.name}/${subpath}`;
+  };
+
+  return content
+    .replace(
+      /(from\s+['"])([^'"]+)(['"])/g,
+      (_match, prefix: string, specifier: string, suffix: string) =>
+        `${prefix}${rewriteSpecifier(specifier)}${suffix}`,
+    )
+    .replace(
+      /(import\(\s*['"])([^'"]+)(['"]\s*\))/g,
+      (_match, prefix: string, specifier: string, suffix: string) =>
+        `${prefix}${rewriteSpecifier(specifier)}${suffix}`,
+    );
+}
+
 /**
  * Shared Vite configuration factory for all SMRT packages
  *
@@ -51,6 +147,9 @@ export function createPackageConfig(
   packageName: string,
   options: PackageConfigOptions = {},
 ): UserConfigFnPromise {
+  const workspacePackages = collectWorkspacePackages(
+    resolve(__dirname, 'packages'),
+  );
   const packageDir = resolve(__dirname, 'packages', packageName);
   const buildTsconfigPath = resolve(packageDir, 'tsconfig.build.json');
   const tsconfigPath = existsSync(buildTsconfigPath)
@@ -85,6 +184,13 @@ export function createPackageConfig(
 
         entryPoints[entry.name] = resolve(packageDir, entry.source);
       }
+    }
+
+    // Preserve local type-only helper modules in dist when packages expose
+    // declarations that reference `./types`.
+    const typesEntryPath = resolve(packageDir, 'src/types.ts');
+    if (existsSync(typesEntryPath) && !('types' in entryPoints)) {
+      entryPoints.types = typesEntryPath;
     }
 
     return {
@@ -252,6 +358,15 @@ export function createPackageConfig(
           // Prefer a package-specific build tsconfig when present so workspace
           // source resolution stays clean without requiring sibling dist output.
           tsconfigPath,
+          beforeWriteFile: (filePath, content) => ({
+            filePath,
+            content: rewriteWorkspaceDeclarationImports(
+              filePath,
+              content,
+              packageDir,
+              workspacePackages,
+            ),
+          }),
         }),
       ],
     } satisfies UserConfig;
