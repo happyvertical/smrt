@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.14
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - export content svelte routes (#1075) (content)
+  - @happyvertical/smrt-scanner@0.21.14
+  - @happyvertical/smrt-config@0.21.14
+  - @happyvertical/smrt-types@0.21.14
+
 ## 0.21.13
 
 ### Patch Changes
