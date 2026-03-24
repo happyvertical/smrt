@@ -8,7 +8,7 @@ This project uses [Changesets](https://github.com/changesets/changesets) for ver
 
 No selective commit types, no manual changeset creation needed. The workflow is:
 
-1. Create PR with conventional commits
+1. Create PR with conventional commits when possible
 2. Tests pass, merge to main
 3. Version bumps automatically (patch, or minor for breaking changes)
 4. Packages published to GitHub Packages
@@ -37,7 +37,7 @@ BREAKING CHANGE: method signature changed"
 
 ## Commit Format
 
-Use conventional commits:
+Use conventional commits when possible:
 
 ```
 type(scope): description
@@ -58,6 +58,10 @@ feat(core)!: breaking change
 - `svelte`, `tags`, `dev-mcp`, `docs-mcp`
 
 **No scope** = affects all packages
+
+Squash-merge PR titles like `smrt#1069: normalize video owned asset models (#1071)`
+or `Follow up smrt#1063 owned asset helper refactor (#1072)` also trigger a
+patch release when they land on `main`.
 
 ## What Happens When You Merge?
 
@@ -100,9 +104,10 @@ node scripts/check-version-limit.js
 
 ### "No conventional commits found"
 
-The auto-changeset script requires at least one commit following conventional format.
-
-**Fix**: Ensure commits use format `type(scope): description`
+The auto-changeset script prefers conventional commits, but squash-merge PR
+titles also count as releasable patch changes. If a merge still doesn't
+release, check that the commit subject isn't empty and that it landed after
+the latest release tag.
 
 ### Version check fails
 

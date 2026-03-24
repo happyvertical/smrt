@@ -22,6 +22,7 @@ interface ParsedCommit {
   message: string;
   body?: string;
   hash: string;
+  source: 'conventional' | 'fallback';
 }
 
 function exec(command: string): string {
@@ -72,8 +73,18 @@ function parseConventionalCommit(commitLine: string): ParsedCommit | null {
   const match = subject.match(/^(\w+)(?:\(([^)]+)\))?(!)?:\s*(.+)$/);
 
   if (!match) {
-    console.log(`Skipping non-conventional commit: ${subject}`);
-    return null;
+    const message = normalizeFallbackMessage(subject);
+    console.log(
+      `Treating non-conventional commit as patch release input: ${subject}`,
+    );
+    return {
+      type: 'fallback',
+      breaking: false,
+      message,
+      body,
+      hash: hash.substring(0, 7),
+      source: 'fallback',
+    };
   }
 
   const [, type, scope, breaking, message] = match;
@@ -88,7 +99,15 @@ function parseConventionalCommit(commitLine: string): ParsedCommit | null {
     message: message.trim(),
     body,
     hash: hash.substring(0, 7),
+    source: 'conventional',
   };
+}
+
+function normalizeFallbackMessage(subject: string): string {
+  return subject
+    .replace(/\s+\(#\d+\)\s*$/, '')
+    .replace(/^[a-z0-9_-]+#\d+:\s*/i, '')
+    .trim();
 }
 
 function determineVersionBump(
@@ -111,8 +130,13 @@ function generateChangesetContent(
   const features = commits.filter((c) => c.type === 'feat' && !c.breaking);
   const fixes = commits.filter((c) => c.type === 'fix' && !c.breaking);
   const other = commits.filter(
-    (c) => !c.breaking && c.type !== 'feat' && c.type !== 'fix',
+    (c) =>
+      !c.breaking &&
+      c.type !== 'feat' &&
+      c.type !== 'fix' &&
+      c.type !== 'fallback',
   );
+  const fallback = commits.filter((c) => c.type === 'fallback');
 
   let content = `---\n`;
   // Use @happyvertical/smrt-core as representative package (all packages in fixed group will bump together)
@@ -147,6 +171,14 @@ function generateChangesetContent(
     content += `### Other Changes\n\n`;
     other.forEach((c) => {
       content += `- ${c.type}: ${c.message}${c.scope ? ` (${c.scope})` : ''}\n`;
+    });
+    content += `\n`;
+  }
+
+  if (fallback.length > 0) {
+    content += `### Merged Changes\n\n`;
+    fallback.forEach((c) => {
+      content += `- ${c.message}\n`;
     });
   }
 
@@ -186,17 +218,19 @@ function main() {
     .filter((c): c is ParsedCommit => c !== null);
 
   if (parsedCommits.length === 0) {
-    console.log('ℹ️  No conventional commits found');
+    console.log('ℹ️  No releasable commits found');
     return;
   }
 
   const bump = determineVersionBump(parsedCommits);
+  const fallbackCommits = parsedCommits.filter((c) => c.source === 'fallback');
 
   console.log(`📦 Version bump: ${bump}`);
-  console.log(`   - ${parsedCommits.length} conventional commits`);
+  console.log(`   - ${parsedCommits.length} releasable commits`);
   console.log(
     `   - ${parsedCommits.filter((c) => c.breaking).length} breaking changes`,
   );
+  console.log(`   - ${fallbackCommits.length} fallback patch commits`);
 
   // Generate changeset
   const changesetId = randomBytes(8).toString('hex');
