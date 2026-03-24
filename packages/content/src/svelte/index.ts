@@ -25,9 +25,14 @@ import ContentGovernanceManager from './components/ContentGovernanceManager.svel
 import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
 import ContentGovernancePolicyEditor from './components/ContentGovernancePolicyEditor.svelte';
 import ContentGovernanceProfileEditor from './components/ContentGovernanceProfileEditor.svelte';
+import ContentList from './components/ContentList.svelte';
 import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
 import GovernedContentEditor from './components/GovernedContentEditor.svelte';
 import Markdown from './components/Markdown.svelte';
+import ContentContributionsRoute from './routes/ContentContributionsRoute.svelte';
+import ContentGovernanceRoute from './routes/ContentGovernanceRoute.svelte';
+import ContentWorkspaceRoute from './routes/ContentWorkspaceRoute.svelte';
+import PublishedArticleRoute from './routes/PublishedArticleRoute.svelte';
 
 // Export components
 export {
@@ -44,15 +49,21 @@ export {
   ContentGovernancePanel,
   ContentGovernancePolicyEditor,
   ContentGovernanceProfileEditor,
+  ContentList,
   ContentTransparencyReport,
+  ContentContributionsRoute,
+  ContentGovernanceRoute,
+  ContentWorkspaceRoute,
   GovernedContentEditor,
   Markdown,
+  PublishedArticleRoute,
 };
 
 // Export component prop types
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
 export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
+export type ContentListProps = ComponentProps<typeof ContentList>;
 export type ContentContributionFormProps = ComponentProps<
   typeof ContentContributionForm
 >;
@@ -90,6 +101,18 @@ export type GovernedContentEditorProps = ComponentProps<
   typeof GovernedContentEditor
 >;
 export type MarkdownProps = ComponentProps<typeof Markdown>;
+export type ContentContributionsRouteProps = ComponentProps<
+  typeof ContentContributionsRoute
+>;
+export type ContentGovernanceRouteProps = ComponentProps<
+  typeof ContentGovernanceRoute
+>;
+export type ContentWorkspaceRouteProps = ComponentProps<
+  typeof ContentWorkspaceRoute
+>;
+export type PublishedArticleRouteProps = ComponentProps<
+  typeof PublishedArticleRoute
+>;
 
 // Export types
 export type {
@@ -110,5 +133,10 @@ ModuleUIRegistry.register(
   '@happyvertical/smrt-content',
   'article-list',
   ArticleList,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-content',
+  'content-list',
+  ContentList,
 );
 ModuleUIRegistry.register('@happyvertical/smrt-content', 'markdown', Markdown);
