@@ -5,6 +5,7 @@ import {
   deleteOwnedAssetLinks,
   getOwnedAssetsFromCollection,
   listOwnedAssetLinks,
+  removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
@@ -101,7 +102,12 @@ export class EventAssetCollection extends SmrtCollection<EventAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const events = await this.getEventCollection();
-    await events.removeAsset(eventId, assetId, relationship);
+    await removeOwnedAssetFromCollection(
+      await this.getEventCollection(),
+      'Event',
+      eventId,
+      assetId,
+      relationship,
+    );
   }
 }

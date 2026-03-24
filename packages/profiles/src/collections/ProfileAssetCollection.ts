@@ -5,6 +5,7 @@ import {
   deleteOwnedAssetLinks,
   getOwnedAssetsFromCollection,
   listOwnedAssetLinks,
+  removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
@@ -101,7 +102,12 @@ export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const profiles = await this.getProfileCollection();
-    await profiles.removeAsset(profileId, assetId, relationship);
+    await removeOwnedAssetFromCollection(
+      await this.getProfileCollection(),
+      'Profile',
+      profileId,
+      assetId,
+      relationship,
+    );
   }
 }

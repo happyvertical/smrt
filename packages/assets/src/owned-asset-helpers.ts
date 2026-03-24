@@ -154,7 +154,7 @@ export async function listOwnedAssetLinks<
   })) as LinkType[];
 }
 
-export async function createOwnedAssetLink<LinkType extends SmrtObject>(
+export async function createOwnedAssetLink<LinkType>(
   collection: OwnedAssetLinkCreateCollection<LinkType>,
   data: Record<string, unknown>,
 ): Promise<LinkType> {
@@ -179,7 +179,5 @@ export async function deleteOwnedAssetLinks<
   }
 
   const links = (await collection.list({ where })) as LinkType[];
-  for (const link of links) {
-    await link.delete();
-  }
+  await Promise.all(links.map((link) => link.delete()));
 }
