@@ -23,25 +23,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 
 describe('Issue #531: Case-Insensitive Manifest Stub Replacement', () => {
-  // Store original registry state
-  let originalClasses: Map<string, any>;
+  let restoreRegistry: () => void;
 
   beforeEach(() => {
-    // Save registry state before each test
-    originalClasses = new Map(ObjectRegistry.getAllClasses());
+    restoreRegistry = snapshotObjectRegistryState();
   });
 
   afterEach(() => {
-    // Restore registry state after each test
-    // First clear all added classes
-    for (const [name] of ObjectRegistry.getAllClasses()) {
-      if (!originalClasses.has(name)) {
-        // @ts-expect-error - accessing private property for test cleanup
-        ObjectRegistry.classes.delete(name);
-      }
-    }
+    restoreRegistry();
   });
 
   it('should replace lowercase manifest stub with PascalCase real class', () => {

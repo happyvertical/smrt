@@ -6,6 +6,81 @@
  */
 
 import { vi } from 'vitest';
+import { ObjectRegistry } from './registry.js';
+
+type RegistryTestState = {
+  classNameMap: Map<string, string[]>;
+  classes: Map<string, any>;
+  collectionTableNames: Map<string, string>;
+  collections: Map<string, any>;
+  fieldDecorators: Map<string, Map<string, any>>;
+  nextDbId: number;
+  stiSiblingsLoaded: Set<string>;
+};
+
+function cloneMapOfArrays(
+  source: Map<string, string[]>,
+): Map<string, string[]> {
+  return new Map(Array.from(source, ([key, value]) => [key, [...value]]));
+}
+
+function cloneNestedMap(
+  source: Map<string, Map<string, any>>,
+): Map<string, Map<string, any>> {
+  return new Map(Array.from(source, ([key, value]) => [key, new Map(value)]));
+}
+
+function getRegistryForTests() {
+  return ObjectRegistry as any;
+}
+
+/**
+ * Snapshot ObjectRegistry state and return a restore function for manifest-heavy
+ * tests that mutate registry internals at runtime.
+ */
+export function snapshotObjectRegistryState(): () => void {
+  const registry = getRegistryForTests();
+  const snapshot: RegistryTestState = {
+    classNameMap: cloneMapOfArrays(registry.classNameMap),
+    classes: new Map(registry.classes),
+    collectionTableNames: new Map(registry.collectionTableNames),
+    collections: new Map(registry.collections),
+    fieldDecorators: cloneNestedMap(registry.fieldDecorators),
+    nextDbId: registry.nextDbId,
+    stiSiblingsLoaded: new Set(registry.stiSiblingsLoaded),
+  };
+
+  return () => {
+    registry.clear();
+
+    for (const [key, value] of snapshot.classes) {
+      registry.classes.set(key, value);
+    }
+
+    for (const [key, value] of snapshot.collections) {
+      registry.collections.set(key, value);
+    }
+
+    for (const [key, value] of snapshot.collectionTableNames) {
+      registry.collectionTableNames.set(key, value);
+    }
+
+    for (const [key, value] of snapshot.classNameMap) {
+      registry.classNameMap.set(key, [...value]);
+    }
+
+    for (const [key, value] of snapshot.fieldDecorators) {
+      registry.fieldDecorators.set(key, new Map(value));
+    }
+
+    for (const value of snapshot.stiSiblingsLoaded) {
+      registry.stiSiblingsLoaded.add(value);
+    }
+
+    registry.nextDbId = snapshot.nextDbId;
+    ObjectRegistry.invalidateAllInheritanceCaches();
+  };
+}
 
 /**
  * Mock object instance with all required lifecycle methods

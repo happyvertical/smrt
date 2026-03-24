@@ -16,17 +16,16 @@
  * Related: https://github.com/happyvertical/smrt/issues/703
  */
 
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectRegistry } from '../registry';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 
 describe('Issue #703: STI with null tableName from external manifest', () => {
-  // Store original registry state to restore after tests
-  const originalClasses = new Map(ObjectRegistry.classes);
-  const originalClassNameMap = new Map(
-    (ObjectRegistry as any).classNameMap || new Map(),
-  );
+  let restoreRegistry: () => void;
 
-  beforeAll(() => {
+  beforeEach(() => {
+    restoreRegistry = snapshotObjectRegistryState();
+
     // Register STI base class with explicit tableStrategy and tableName
     ObjectRegistry.registerFromManifest(
       'Issue703Event',
@@ -97,19 +96,8 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
     );
   });
 
-  afterAll(() => {
-    // Restore original registry state
-    ObjectRegistry.classes.clear();
-    for (const [key, value] of originalClasses) {
-      ObjectRegistry.classes.set(key, value);
-    }
-    const classNameMap = (ObjectRegistry as any).classNameMap;
-    if (classNameMap) {
-      classNameMap.clear();
-      for (const [key, value] of originalClassNameMap) {
-        classNameMap.set(key, value);
-      }
-    }
+  afterEach(() => {
+    restoreRegistry();
   });
 
   describe('getSTIBase()', () => {

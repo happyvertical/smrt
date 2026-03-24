@@ -11,12 +11,12 @@ import type { Asset } from '@happyvertical/smrt-assets';
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
 import { foreignKey, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
-import type { VideoSequenceAssetRole } from './video-sequence-asset.js';
 import {
   legacyVideoAssetMetaTypes,
   listLegacyOwnedAssetIds,
   resolveOwnedAssets,
 } from './owned-asset-utils.js';
+import type { VideoSequenceAssetRole } from './video-sequence-asset.js';
 
 /**
  * Transition type to the next sequence

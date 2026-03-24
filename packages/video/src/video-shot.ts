@@ -12,7 +12,6 @@ import { Content, type ContentOptions } from '@happyvertical/smrt-content';
 import { foreignKey, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import type { WordTiming } from '@happyvertical/smrt-voice';
-import type { VideoShotAssetRole } from './video-shot-asset.js';
 import {
   legacyVideoAssetMetaTypes,
   listLegacyOwnedAssetIds,
@@ -20,6 +19,7 @@ import {
 } from './owned-asset-utils.js';
 import { Scene } from './scene.js';
 import { VideoSequence } from './video-sequence.js';
+import type { VideoShotAssetRole } from './video-shot-asset.js';
 
 /**
  * Video shot status

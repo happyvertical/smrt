@@ -11,7 +11,6 @@ import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { Profile } from '@happyvertical/smrt-profiles';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { PerformerAssetRole } from './performer-asset.js';
 import {
   assertValidVideoAssetRole,
   assertValidVideoAssetSortOrder,
@@ -21,6 +20,7 @@ import {
   mergeOwnedAssetIds,
   resolveOwnedAssets,
 } from './owned-asset-utils.js';
+import type { PerformerAssetRole } from './performer-asset.js';
 
 /**
  * Performer DNA for IP-Adapter FaceID consistency
@@ -193,10 +193,9 @@ export class Performer extends SmrtObject {
       return this.seedImageAssetId ? [this.seedImageAssetId] : [];
     }
 
-    return [
-      ...this.referenceAssetIds,
-      this.seedImageAssetId,
-    ].filter((assetId): assetId is string => Boolean(assetId));
+    return [...this.referenceAssetIds, this.seedImageAssetId].filter(
+      (assetId): assetId is string => Boolean(assetId),
+    );
   }
 
   private setLegacyFieldAssetId(

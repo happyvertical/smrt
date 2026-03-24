@@ -12,12 +12,12 @@ import type { Asset } from '@happyvertical/smrt-assets';
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
 import { smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
-import type { VideoCompositionAssetRole } from './video-composition-asset.js';
 import {
   legacyVideoAssetMetaTypes,
   listLegacyOwnedAssetIds,
   resolveOwnedAssets,
 } from './owned-asset-utils.js';
+import type { VideoCompositionAssetRole } from './video-composition-asset.js';
 
 /**
  * Render status for the composition
@@ -162,9 +162,7 @@ export class VideoComposition extends Content {
     ];
   }
 
-  async getAssetByRole(
-    role: VideoCompositionAssetRole,
-  ): Promise<Asset | null> {
+  async getAssetByRole(role: VideoCompositionAssetRole): Promise<Asset | null> {
     const assets = await this.getAssets(role);
     return assets[0] || null;
   }

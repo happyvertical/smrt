@@ -25,36 +25,17 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ObjectRegistry } from '../registry.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 
 describe('Issue #950: Manifest STI Collision Handling', () => {
-  let originalClasses: Map<string, any>;
+  let restoreRegistry: () => void;
 
   beforeEach(() => {
-    originalClasses = new Map(ObjectRegistry.getAllClasses());
+    restoreRegistry = snapshotObjectRegistryState();
   });
 
   afterEach(() => {
-    for (const [name] of ObjectRegistry.getAllClasses()) {
-      if (!originalClasses.has(name)) {
-        // @ts-expect-error - accessing private property for test cleanup
-        ObjectRegistry.classes.delete(name);
-      }
-    }
-    // Clean up classNameMap entries we added
-    // @ts-expect-error - accessing private property for test cleanup
-    const classNameMap = ObjectRegistry.classNameMap;
-    for (const [key] of classNameMap) {
-      if (
-        key.includes('testevent') ||
-        key.includes('testbase') ||
-        key.includes('testchild') ||
-        key.includes('testwidget950') ||
-        key.includes('testgadget950') ||
-        key.includes('@test/')
-      ) {
-        classNameMap.delete(key);
-      }
-    }
+    restoreRegistry();
   });
 
   describe('registerFromManifest - STI child-wins', () => {

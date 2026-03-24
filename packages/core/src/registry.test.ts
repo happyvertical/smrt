@@ -11,6 +11,7 @@ import { ConfigurationError } from './errors';
 import { SmrtObject } from './object';
 import { ObjectRegistry, smrt } from './registry';
 import type { FieldDefinition } from './scanner/types.js';
+import { snapshotObjectRegistryState } from './test-utils.js';
 import { tableNameFromClass } from './utils';
 
 // Helper class to create field definitions for manual registration
@@ -1305,38 +1306,14 @@ describe('ObjectRegistry', () => {
   });
 
   describe('Qualified Extends and findClassStrict (Issues #1004, #1005)', () => {
-    // Save registered classes so we can clean up after tests
-    let savedClassKeys: string[];
+    let restoreRegistry: () => void;
 
     beforeEach(() => {
-      savedClassKeys = Array.from(
-        (ObjectRegistry as any).classes?.keys?.() || [],
-      );
+      restoreRegistry = snapshotObjectRegistryState();
     });
 
     afterEach(() => {
-      // Remove only the classes we added during the test
-      const currentKeys = Array.from(
-        (ObjectRegistry as any).classes?.keys?.() || [],
-      ) as string[];
-      for (const key of currentKeys) {
-        if (!savedClassKeys.includes(key)) {
-          (ObjectRegistry as any).classes.delete(key);
-          // Also clean up classNameMap
-          for (const [mapKey, mapValue] of (
-            ObjectRegistry as any
-          ).classNameMap.entries()) {
-            const filtered = (mapValue as string[]).filter((v) => v !== key);
-            if (filtered.length === 0) {
-              (ObjectRegistry as any).classNameMap.delete(mapKey);
-            } else {
-              (ObjectRegistry as any).classNameMap.set(mapKey, filtered);
-            }
-          }
-        }
-      }
-      // Clear inheritance cache so recomputation happens
-      (ObjectRegistry as any).getInheritanceCache().clear();
+      restoreRegistry();
     });
 
     it('should resolve cross-package same-named class via qualified extends (#1004)', () => {

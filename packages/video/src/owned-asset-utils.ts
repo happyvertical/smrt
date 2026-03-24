@@ -1,4 +1,4 @@
-import { AssetCollection, type Asset } from '@happyvertical/smrt-assets';
+import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 
 // Video roles intentionally allow hyphens for legacy compatibility
@@ -27,12 +27,11 @@ function getQueryRows(result: any): Record<string, unknown>[] {
   return [];
 }
 
-function isMissingSchemaError(
-  error: unknown,
-  target?: string,
-): boolean {
+function isMissingSchemaError(error: unknown, target?: string): boolean {
   const message =
-    error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
 
   const isMissing =
     message.includes('no such table') ||
@@ -51,7 +50,9 @@ function buildPlaceholders(count: number): string {
   return Array.from({ length: count }, () => '?').join(', ');
 }
 
-function uniqueAssetIds(assetIds: Iterable<string | null | undefined>): string[] {
+function uniqueAssetIds(
+  assetIds: Iterable<string | null | undefined>,
+): string[] {
   const seen = new Set<string>();
   const result: string[] = [];
 
@@ -143,14 +144,16 @@ export async function resolveOwnedAssets(
     .filter(Boolean) as Asset[];
 }
 
-export async function listCanonicalOwnedAssetIds<T extends { assetId: string }>(
-  options: {
-    tableName: string;
-    loadLinks: () => Promise<T[]>;
-  },
-): Promise<string[]> {
+export async function listCanonicalOwnedAssetIds<
+  T extends { assetId: string },
+>(options: {
+  tableName: string;
+  loadLinks: () => Promise<T[]>;
+}): Promise<string[]> {
   try {
-    return uniqueAssetIds((await options.loadLinks()).map((link) => link.assetId));
+    return uniqueAssetIds(
+      (await options.loadLinks()).map((link) => link.assetId),
+    );
   } catch (error) {
     if (isMissingSchemaError(error, options.tableName)) {
       return [];

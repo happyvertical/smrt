@@ -28,36 +28,17 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ConfigurationError } from '../errors.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 
 describe('Issue #951: Qualified Names as Primary Keys', () => {
-  let originalClasses: Map<string, any>;
+  let restoreRegistry: () => void;
 
   beforeEach(() => {
-    originalClasses = new Map(ObjectRegistry.getAllClasses());
+    restoreRegistry = snapshotObjectRegistryState();
   });
 
   afterEach(() => {
-    // Restore registry state
-    for (const [name] of ObjectRegistry.getAllClasses()) {
-      if (!originalClasses.has(name)) {
-        // @ts-expect-error - accessing private property for test cleanup
-        ObjectRegistry.classes.delete(name);
-      }
-    }
-    // Also clean classNameMap entries
-    // @ts-expect-error - accessing private property for test cleanup
-    for (const [key, entries] of ObjectRegistry.classNameMap) {
-      // @ts-expect-error
-      ObjectRegistry.classNameMap.set(
-        key,
-        entries.filter((e: string) => originalClasses.has(e)),
-      );
-      // @ts-expect-error
-      if (ObjectRegistry.classNameMap.get(key)?.length === 0) {
-        // @ts-expect-error
-        ObjectRegistry.classNameMap.delete(key);
-      }
-    }
+    restoreRegistry();
   });
 
   it('should store real classes under a qualified key when packageName is available', () => {

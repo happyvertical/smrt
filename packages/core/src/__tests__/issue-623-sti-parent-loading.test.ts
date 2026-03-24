@@ -15,24 +15,18 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ObjectRegistry } from '../registry';
+import { snapshotObjectRegistryState } from '../test-utils.js';
 
 describe('Issue #623: STI parent class loading in ensureSchema()', () => {
-  // Store original registry state
-  let originalClasses: Map<string, any>;
+  let restoreRegistry: () => void;
 
   beforeEach(() => {
-    // Backup registry state
-    originalClasses = new Map(ObjectRegistry.classes);
-    // Clear mocks
+    restoreRegistry = snapshotObjectRegistryState();
     vi.clearAllMocks();
   });
 
   afterEach(() => {
-    // Restore registry state
-    ObjectRegistry.classes.clear();
-    for (const [key, value] of originalClasses) {
-      ObjectRegistry.classes.set(key, value);
-    }
+    restoreRegistry();
   });
 
   it('should detect unregistered parent class from extends field', () => {
