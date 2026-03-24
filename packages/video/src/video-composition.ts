@@ -8,9 +8,16 @@
  * Design principle: store frames, compute seconds. seconds = frames / fps.
  */
 
+import type { Asset } from '@happyvertical/smrt-assets';
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
 import { smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
+import type { VideoCompositionAssetRole } from './video-composition-asset.js';
+import {
+  legacyVideoAssetMetaTypes,
+  listLegacyOwnedAssetIds,
+  resolveOwnedAssets,
+} from './owned-asset-utils.js';
 
 /**
  * Render status for the composition
@@ -120,5 +127,45 @@ export class VideoComposition extends Content {
   /** Check if the composition is currently rendering */
   get isRendering(): boolean {
     return this.renderStatus === 'rendering';
+  }
+
+  async getAssets(relationship?: string): Promise<Asset[]>;
+  async getAssets(role?: VideoCompositionAssetRole): Promise<Asset[]>;
+  async getAssets(relationship?: string): Promise<Asset[]> {
+    const canonicalAssets = await super.getAssets(relationship);
+    if (!this.id) {
+      return canonicalAssets;
+    }
+
+    const role = relationship as VideoCompositionAssetRole | undefined;
+    const legacyAssets = await resolveOwnedAssets(
+      this.db,
+      this.tenantId,
+      await listLegacyOwnedAssetIds({
+        db: this.db,
+        ownerColumn: 'video_composition_id',
+        ownerId: this.id,
+        role,
+        metaTypes: legacyVideoAssetMetaTypes('VideoCompositionAsset'),
+      }),
+    );
+
+    return [
+      ...canonicalAssets,
+      ...legacyAssets.filter(
+        (asset) =>
+          asset.id &&
+          !canonicalAssets.some(
+            (canonicalAsset) => canonicalAsset.id === asset.id,
+          ),
+      ),
+    ];
+  }
+
+  async getAssetByRole(
+    role: VideoCompositionAssetRole,
+  ): Promise<Asset | null> {
+    const assets = await this.getAssets(role);
+    return assets[0] || null;
   }
 }

@@ -1,5 +1,9 @@
 /**
- * PerformerAsset - STI asset subclass for Performer-owned assets
+ * PerformerAsset - legacy STI asset subclass for Performer-owned assets
+ *
+ * @deprecated Performer owned assets are now modeled canonically through
+ * `PerformerOwnedAsset` join rows in `performer_assets`. This legacy subtype
+ * remains readable during migration.
  */
 
 import { Asset, type AssetOptions } from '@happyvertical/smrt-assets';

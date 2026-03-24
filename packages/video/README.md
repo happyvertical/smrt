@@ -12,24 +12,31 @@ pnpm add @happyvertical/smrt-video
 
 ```typescript
 import {
-  Character, Performer, Scene,
-  VideoShot, VideoSequence, VideoComposition,
-  VideoShotCharacter, VideoWorkflow,
+  Character,
+  Performer,
+  Scene,
+  VideoShot,
+  VideoSequence,
+  VideoComposition,
+  VideoShotCharacter,
+  VideoWorkflow,
 } from '@happyvertical/smrt-video';
+import { Asset } from '@happyvertical/smrt-assets';
 
 // Character = role being played (outfit, voice, branding)
 const anchor = new Character({
   name: 'Bentley News Anchor',
-  imageAssetId: 'seed-img-001',
   voiceProfileId: 'voice-123',
-  brandingKit: {
-    logoAssetId: 'logo-asset',
-    primaryColor: '#1a73e8',
-    lowerThirdTemplate: 'news-standard',
-    tickerEnabled: true,
-  },
 });
 await anchor.save();
+
+const seedImage = new Asset({
+  name: 'Anchor Seed',
+  sourceUri: 'file:///tmp/anchor-seed.png',
+  mimeType: 'image/png',
+});
+await seedImage.save();
+await anchor.addAsset(seedImage, 'seed-image');
 
 // Performer = physical likeness for IP-Adapter face consistency
 const performer = new Performer({ name: 'Alex', ipAdapterWeight: 0.85 });
@@ -57,6 +64,7 @@ const shot = new VideoShot({
 await shot.save();
 // Estimated speech duration: scriptWordCount / 2.7 words per second
 shot.estimatedDuration; // ~2.2 seconds
+await shot.addAsset(seedImage, 'thumbnail');
 
 // ComfyUI workflow with dynamic parameter injection
 const workflow = new VideoWorkflow({
@@ -93,7 +101,14 @@ const injected = workflow.injectParameters({
 
 Collections: `CharacterCollection`, `VideoCompositionCollection`, `VideoSequenceCollection`, `VideoShotCollection`, `VideoShotCharacterCollection`.
 
-STI asset subclasses: `CharacterAsset`, `PerformerAsset`, `SceneAsset`, `VideoCompositionAsset`, `VideoSequenceAsset`, `VideoShotAsset` -- each links an asset to its parent model with role typing.
+Canonical owned asset joins:
+- `CharacterOwnedAsset` -> `character_assets`
+- `PerformerOwnedAsset` -> `performer_assets`
+- `SceneOwnedAsset` -> `scene_assets`
+- `VideoShot`, `VideoSequence`, and `VideoComposition` inherit `Content` asset helpers backed by `content_assets`
+
+Legacy STI asset subclasses `CharacterAsset`, `PerformerAsset`, `SceneAsset`, `VideoCompositionAsset`, `VideoSequenceAsset`, and `VideoShotAsset` remain readable during migration, but new writes should go through the model helpers.
+Provision the new join tables with `smrt db:migrate` before relying on canonical writes. Reads still fall back to legacy fields / STI rows when the new tables are not present yet.
 
 ### Key Types
 
@@ -113,6 +128,12 @@ STI asset subclasses: `CharacterAsset`, `PerformerAsset`, `SceneAsset`, `VideoCo
 ### Design Principle
 
 Store frames, compute seconds. All duration fields use `durationInFrames`; convert with `frames / fps`. Speech duration estimated at 2.7 words/second (+/- 15% tolerance).
+
+### Asset Ownership
+
+`Character`, `Performer`, and `Scene` expose `getAssets()`, `getAssetByRole()`, `addAsset()`, and `removeAsset()` on canonical noun-join tables. They continue to read legacy scalar slots and legacy STI asset rows during migration.
+
+`VideoShot`, `VideoSequence`, and `VideoComposition` inherit the same helpers from `Content`, so their canonical ownership table is `content_assets` rather than a video-specific join table.
 
 ## Dependencies
 

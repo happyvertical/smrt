@@ -7,10 +7,17 @@
  * Design principle: store frames, compute seconds. seconds = frames / fps.
  */
 
+import type { Asset } from '@happyvertical/smrt-assets';
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
 import { foreignKey, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import type { WordTiming } from '@happyvertical/smrt-voice';
+import type { VideoShotAssetRole } from './video-shot-asset.js';
+import {
+  legacyVideoAssetMetaTypes,
+  listLegacyOwnedAssetIds,
+  resolveOwnedAssets,
+} from './owned-asset-utils.js';
 import { Scene } from './scene.js';
 import { VideoSequence } from './video-sequence.js';
 
@@ -254,6 +261,44 @@ export class VideoShot extends Content {
   /** Check if video is ready for publishing */
   get isReady(): boolean {
     return this.shotStatus === 'ready';
+  }
+
+  async getAssets(relationship?: string): Promise<Asset[]>;
+  async getAssets(role?: VideoShotAssetRole): Promise<Asset[]>;
+  async getAssets(relationship?: string): Promise<Asset[]> {
+    const canonicalAssets = await super.getAssets(relationship);
+    if (!this.id) {
+      return canonicalAssets;
+    }
+
+    const role = relationship as VideoShotAssetRole | undefined;
+    const legacyAssets = await resolveOwnedAssets(
+      this.db,
+      this.tenantId,
+      await listLegacyOwnedAssetIds({
+        db: this.db,
+        ownerColumn: 'video_shot_id',
+        ownerId: this.id,
+        role,
+        metaTypes: legacyVideoAssetMetaTypes('VideoShotAsset'),
+      }),
+    );
+
+    return [
+      ...canonicalAssets,
+      ...legacyAssets.filter(
+        (asset) =>
+          asset.id &&
+          !canonicalAssets.some(
+            (canonicalAsset) => canonicalAsset.id === asset.id,
+          ),
+      ),
+    ];
+  }
+
+  async getAssetByRole(role: VideoShotAssetRole): Promise<Asset | null> {
+    const assets = await this.getAssets(role);
+    return assets[0] || null;
   }
 
   /** Update script text and recalculate word count */

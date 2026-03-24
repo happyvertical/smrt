@@ -1,5 +1,9 @@
 /**
- * CharacterAsset - STI asset subclass for Character-owned assets
+ * CharacterAsset - legacy STI asset subclass for Character-owned assets
+ *
+ * @deprecated Character owned assets are now modeled canonically through
+ * `CharacterOwnedAsset` join rows in `character_assets`. This legacy subtype
+ * remains readable during migration.
  */
 
 import { Asset, type AssetOptions } from '@happyvertical/smrt-assets';

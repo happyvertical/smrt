@@ -1,5 +1,8 @@
 /**
- * VideoSequenceAsset - STI asset subclass for VideoSequence-owned assets
+ * VideoSequenceAsset - legacy STI asset subclass for VideoSequence-owned assets
+ *
+ * @deprecated VideoSequence now uses inherited Content asset helpers backed by
+ * `content_assets`. This legacy subtype remains readable during migration.
  */
 
 import { Asset, type AssetOptions } from '@happyvertical/smrt-assets';

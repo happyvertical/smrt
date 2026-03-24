@@ -87,23 +87,38 @@ export {
   type WorkflowType,
 } from './video-workflow.js';
 
-// ── STI Asset Subclasses ─────────────────────────────────────────────────────
+// ── Owned Asset Models ───────────────────────────────────────────────────────
 
+export {
+  CharacterOwnedAsset,
+  type CharacterOwnedAssetOptions,
+} from './character-owned-asset.js';
 export {
   CharacterAsset,
   type CharacterAssetOptions,
   type CharacterAssetRole,
 } from './character-asset.js';
+export { CharacterOwnedAssetCollection } from './character-assets.js';
+export {
+  PerformerOwnedAsset,
+  type PerformerOwnedAssetOptions,
+} from './performer-owned-asset.js';
 export {
   PerformerAsset,
   type PerformerAssetOptions,
   type PerformerAssetRole,
 } from './performer-asset.js';
+export { PerformerOwnedAssetCollection } from './performer-assets.js';
+export {
+  SceneOwnedAsset,
+  type SceneOwnedAssetOptions,
+} from './scene-owned-asset.js';
 export {
   SceneAsset,
   type SceneAssetOptions,
   type SceneAssetRole,
 } from './scene-asset.js';
+export { SceneOwnedAssetCollection } from './scene-assets.js';
 
 export {
   VideoCompositionAsset,
