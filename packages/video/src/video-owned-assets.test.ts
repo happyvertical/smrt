@@ -21,13 +21,40 @@ async function ensureLegacyColumn(
   columnName: string,
   columnType: string,
 ) {
+  const tableInfo = await db.query(`PRAGMA table_info(${tableName})`);
+  const rows = Array.isArray(tableInfo)
+    ? tableInfo
+    : Array.isArray(tableInfo?.rows)
+      ? tableInfo.rows
+      : [];
+
+  if (
+    rows.some(
+      (row: Record<string, unknown>) =>
+        row.name === columnName || row.column_name === columnName,
+    )
+  ) {
+    return;
+  }
+
   try {
     await db.query(
       `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`,
     );
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+    const message = [
+      error instanceof Error ? error.message : String(error),
+      error &&
+      typeof error === 'object' &&
+      'context' in error &&
+      typeof (error as { context?: { originalError?: unknown } }).context
+        ?.originalError === 'string'
+        ? (error as { context?: { originalError?: string } }).context
+            ?.originalError
+        : '',
+    ]
+      .join(' ')
+      .toLowerCase();
     if (
       !message.includes('duplicate column') &&
       !message.includes('already exists')
