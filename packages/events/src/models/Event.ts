@@ -5,31 +5,14 @@
  */
 
 import type { Asset } from '@happyvertical/smrt-assets';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import {
-  TenantScoped,
-  tenantId,
-  withSystemContext,
-} from '@happyvertical/smrt-tenancy';
+  assertValidOwnedAssetRelationship,
+  assertValidOwnedAssetSortOrder,
+  resolveOwnedAssetsById,
+} from '@happyvertical/smrt-assets';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventOptions, EventStatus } from '../types';
-
-const ASSET_RELATIONSHIP_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
-
-function assertValidAssetRelationship(relationship: string): void {
-  if (!ASSET_RELATIONSHIP_PATTERN.test(relationship)) {
-    throw new Error(
-      `Invalid relationship type "${relationship}"; must start with a letter or underscore and contain only letters, digits, and underscores`,
-    );
-  }
-}
-
-function assertValidAssetSortOrder(sortOrder: number): void {
-  if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 2147483647) {
-    throw new Error(
-      `Invalid sortOrder "${sortOrder}"; must be a non-negative integer`,
-    );
-  }
-}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -298,44 +281,12 @@ export class Event extends SmrtObject {
     return await collection.list({ where: { eventId: this.id } });
   }
 
-  private async getAssetCollection() {
-    const { AssetCollection } = await import('@happyvertical/smrt-assets');
-    return AssetCollection.create({ db: this.db });
-  }
-
   private async getEventAssetCollection() {
     const { EventAssetCollection } = await import(
       '../collections/EventAssetCollection'
     );
     return EventAssetCollection.create({ db: this.db });
   }
-
-  private async resolveAssets(assetIds: string[]): Promise<Asset[]> {
-    if (assetIds.length === 0) {
-      return [];
-    }
-
-    const assets = await this.getAssetCollection();
-    const resolved = this.tenantId
-      ? await withSystemContext(async () => assets.listByIds(assetIds))
-      : await assets.listByIds(assetIds);
-    const visibleAssets = this.tenantId
-      ? resolved.filter(
-          (asset) =>
-            asset.tenantId === this.tenantId || asset.tenantId === null,
-        )
-      : resolved;
-    const assetsById = new Map(
-      visibleAssets
-        .filter((asset) => asset.id)
-        .map((asset) => [asset.id as string, asset]),
-    );
-
-    return assetIds
-      .map((assetId) => assetsById.get(assetId))
-      .filter(Boolean) as Asset[];
-  }
-
   async getAssets(relationship?: string): Promise<Asset[]> {
     if (!this.id) {
       return [];
@@ -344,7 +295,11 @@ export class Event extends SmrtObject {
     const eventAssets = await this.getEventAssetCollection();
     const linkedAssets = await eventAssets.getForEvent(this.id, relationship);
 
-    return this.resolveAssets(linkedAssets.map((link) => link.assetId));
+    return resolveOwnedAssetsById(
+      this.db,
+      linkedAssets.map((link) => link.assetId),
+      this.tenantId,
+    );
   }
 
   async addAsset(
@@ -356,8 +311,8 @@ export class Event extends SmrtObject {
       throw new Error('Cannot associate unsaved event or asset');
     }
 
-    assertValidAssetRelationship(relationship);
-    assertValidAssetSortOrder(sortOrder);
+    assertValidOwnedAssetRelationship(relationship);
+    assertValidOwnedAssetSortOrder(sortOrder);
 
     const eventAssets = await this.getEventAssetCollection();
     await eventAssets.attach(

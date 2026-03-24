@@ -1,7 +1,16 @@
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  createOwnedAssetLink,
+  deleteOwnedAssetLinks,
+  getOwnedAssetsFromCollection,
+  listOwnedAssetLinks,
+  removeOwnedAssetFromCollection,
+} from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
 import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { ProfileAsset } from '../models/ProfileAsset';
+import type { ProfileCollection } from './ProfileCollection';
 
 export interface ProfileAssetCollectionOptions extends SmrtCollectionOptions {}
 
@@ -12,24 +21,26 @@ export interface ProfileAssetCollectionOptions extends SmrtCollectionOptions {}
 })
 export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
   static readonly _itemClass = ProfileAsset;
+  private profileCollectionPromise: Promise<ProfileCollection> | null = null;
+
+  private async getProfileCollection(): Promise<ProfileCollection> {
+    if (!this.profileCollectionPromise) {
+      const { ProfileCollection } = await import('./ProfileCollection');
+      this.profileCollectionPromise = ProfileCollection.create({ db: this.db });
+    }
+
+    return this.profileCollectionPromise;
+  }
 
   async getForProfile(
     profileId: string,
     relationship?: string,
   ): Promise<ProfileAsset[]> {
-    const where = relationship ? { profileId, relationship } : { profileId };
-
-    return (await this.list({
-      where,
-      orderBy: 'sort_order ASC',
-    })) as ProfileAsset[];
+    return listOwnedAssetLinks(this, 'profileId', profileId, relationship);
   }
 
   async getForAsset(assetId: string): Promise<ProfileAsset[]> {
-    return (await this.list({
-      where: { assetId },
-      orderBy: 'sort_order ASC',
-    })) as ProfileAsset[];
+    return listOwnedAssetLinks(this, 'assetId', assetId);
   }
 
   async attach(
@@ -39,13 +50,13 @@ export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
     sortOrder = 0,
     tenantId: string | null = null,
   ): Promise<ProfileAsset> {
-    return (await this.create({
+    return createOwnedAssetLink(this, {
       profileId,
       assetId,
       relationship,
       sortOrder,
       tenantId,
-    })) as ProfileAsset;
+    });
   }
 
   async detach(
@@ -53,21 +64,21 @@ export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const where: Record<string, string> = { profileId, assetId };
-    if (relationship) {
-      where.relationship = relationship;
-    }
-
-    const links = (await this.list({ where })) as ProfileAsset[];
-    for (const link of links) {
-      await link.delete();
-    }
+    await deleteOwnedAssetLinks(
+      this,
+      'profileId',
+      profileId,
+      assetId,
+      relationship,
+    );
   }
 
   async getAssets(profileId: string, relationship?: string): Promise<Asset[]> {
-    const { ProfileCollection } = await import('./ProfileCollection');
-    const profiles = await ProfileCollection.create({ db: this.db });
-    return profiles.getAssets(profileId, relationship);
+    return getOwnedAssetsFromCollection(
+      await this.getProfileCollection(),
+      profileId,
+      relationship,
+    );
   }
 
   async addAsset(
@@ -76,9 +87,14 @@ export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const { ProfileCollection } = await import('./ProfileCollection');
-    const profiles = await ProfileCollection.create({ db: this.db });
-    await profiles.addAsset(profileId, asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      await this.getProfileCollection(),
+      'Profile',
+      profileId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -86,8 +102,12 @@ export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const { ProfileCollection } = await import('./ProfileCollection');
-    const profiles = await ProfileCollection.create({ db: this.db });
-    await profiles.removeAsset(profileId, assetId, relationship);
+    await removeOwnedAssetFromCollection(
+      await this.getProfileCollection(),
+      'Profile',
+      profileId,
+      assetId,
+      relationship,
+    );
   }
 }

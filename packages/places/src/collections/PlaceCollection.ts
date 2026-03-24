@@ -8,6 +8,11 @@
 import type { Location } from '@happyvertical/geo';
 import { getGeoAdapter } from '@happyvertical/geo';
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  getOwnedAssetsFromCollection,
+  removeOwnedAssetFromCollection,
+} from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Place } from '../models/Place';
 import type { LookupOrCreateOptions } from '../types';
@@ -299,10 +304,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
   }
 
   async getAssets(placeId: string, relationship?: string): Promise<Asset[]> {
-    const place = await this.get({ id: placeId });
-    if (!place) return [];
-
-    return place.getAssets(relationship);
+    return getOwnedAssetsFromCollection(this, placeId, relationship);
   }
 
   async addAsset(
@@ -311,12 +313,14 @@ export class PlaceCollection extends SmrtCollection<Place> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const place = await this.get({ id: placeId });
-    if (!place) {
-      throw new Error(`Place '${placeId}' not found`);
-    }
-
-    await place.addAsset(asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      this,
+      'Place',
+      placeId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -324,12 +328,13 @@ export class PlaceCollection extends SmrtCollection<Place> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const place = await this.get({ id: placeId });
-    if (!place) {
-      throw new Error(`Place '${placeId}' not found`);
-    }
-
-    await place.removeAsset(assetId, relationship);
+    await removeOwnedAssetFromCollection(
+      this,
+      'Place',
+      placeId,
+      assetId,
+      relationship,
+    );
   }
 
   /**

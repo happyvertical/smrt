@@ -6,6 +6,11 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import {
+  assertValidOwnedAssetRelationship,
+  assertValidOwnedAssetSortOrder,
+  resolveOwnedAssetsById,
+} from '@happyvertical/smrt-assets';
+import {
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -24,24 +29,6 @@ export interface ProductOptions extends SmrtObjectOptions {
   inStock?: boolean;
   specifications?: Record<string, any>;
   tags?: string[];
-}
-
-const ASSET_RELATIONSHIP_PATTERN = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
-
-function assertValidAssetRelationship(relationship: string): void {
-  if (!ASSET_RELATIONSHIP_PATTERN.test(relationship)) {
-    throw new Error(
-      `Invalid relationship type "${relationship}"; must start with a letter or underscore and contain only letters, digits, and underscores`,
-    );
-  }
-}
-
-function assertValidAssetSortOrder(sortOrder: number): void {
-  if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 2147483647) {
-    throw new Error(
-      `Invalid sortOrder "${sortOrder}"; must be a non-negative integer`,
-    );
-  }
 }
 
 /**
@@ -89,36 +76,12 @@ export class Product extends SmrtObject {
     this.specifications[key] = value;
   }
 
-  private async getAssetCollection() {
-    const { AssetCollection } = await import('@happyvertical/smrt-assets');
-    return AssetCollection.create({ db: this.db });
-  }
-
   private async getProductAssetCollection() {
     const { ProductAssetCollection } = await import(
       '../collections/ProductAssetCollection'
     );
     return ProductAssetCollection.create({ db: this.db });
   }
-
-  private async resolveAssets(assetIds: string[]): Promise<Asset[]> {
-    if (assetIds.length === 0) {
-      return [];
-    }
-
-    const assets = await this.getAssetCollection();
-    const resolved = await assets.listByIds(assetIds);
-    const assetsById = new Map(
-      resolved
-        .filter((asset) => asset.id)
-        .map((asset) => [asset.id as string, asset]),
-    );
-
-    return assetIds
-      .map((assetId) => assetsById.get(assetId))
-      .filter(Boolean) as Asset[];
-  }
-
   async getAssets(relationship?: string): Promise<Asset[]> {
     if (!this.id) {
       return [];
@@ -130,7 +93,10 @@ export class Product extends SmrtObject {
       relationship,
     );
 
-    return this.resolveAssets(linkedAssets.map((link) => link.assetId));
+    return resolveOwnedAssetsById(
+      this.db,
+      linkedAssets.map((link) => link.assetId),
+    );
   }
 
   async addAsset(
@@ -142,8 +108,8 @@ export class Product extends SmrtObject {
       throw new Error('Cannot associate unsaved product or asset');
     }
 
-    assertValidAssetRelationship(relationship);
-    assertValidAssetSortOrder(sortOrder);
+    assertValidOwnedAssetRelationship(relationship);
+    assertValidOwnedAssetSortOrder(sortOrder);
 
     const productAssets = await this.getProductAssetCollection();
     await productAssets.attach(this.id, asset.id, relationship, sortOrder);

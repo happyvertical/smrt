@@ -1,4 +1,9 @@
 import type { Asset } from '@happyvertical/smrt-assets';
+import {
+  addOwnedAssetFromCollection,
+  getOwnedAssetsFromCollection,
+  removeOwnedAssetFromCollection,
+} from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Product } from '../models/Product';
 
@@ -14,10 +19,7 @@ export class ProductCollection extends SmrtCollection<Product> {
   }
 
   async getAssets(productId: string, relationship?: string): Promise<Asset[]> {
-    const product = await this.get({ id: productId });
-    if (!product) return [];
-
-    return product.getAssets(relationship);
+    return getOwnedAssetsFromCollection(this, productId, relationship);
   }
 
   async addAsset(
@@ -26,12 +28,14 @@ export class ProductCollection extends SmrtCollection<Product> {
     relationship = 'attachment',
     sortOrder = 0,
   ): Promise<void> {
-    const product = await this.get({ id: productId });
-    if (!product) {
-      throw new Error(`Product '${productId}' not found`);
-    }
-
-    await product.addAsset(asset, relationship, sortOrder);
+    await addOwnedAssetFromCollection(
+      this,
+      'Product',
+      productId,
+      asset,
+      relationship,
+      sortOrder,
+    );
   }
 
   async removeAsset(
@@ -39,11 +43,12 @@ export class ProductCollection extends SmrtCollection<Product> {
     assetId: string,
     relationship?: string,
   ): Promise<void> {
-    const product = await this.get({ id: productId });
-    if (!product) {
-      throw new Error(`Product '${productId}' not found`);
-    }
-
-    await product.removeAsset(assetId, relationship);
+    await removeOwnedAssetFromCollection(
+      this,
+      'Product',
+      productId,
+      assetId,
+      relationship,
+    );
   }
 }
