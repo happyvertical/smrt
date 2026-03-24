@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve CTI conflict columns in test dbs (#1074) (core)
+  - @happyvertical/smrt-scanner@0.21.13
+  - @happyvertical/smrt-config@0.21.13
+  - @happyvertical/smrt-types@0.21.13
+
 ## 0.21.12
 
 ### Patch Changes
