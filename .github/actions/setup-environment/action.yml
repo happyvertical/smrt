@@ -13,6 +13,11 @@ inputs:
     required: false
     default: 'true'
 
+  setup-playwright:
+    description: 'Whether to restore/install Playwright browser dependencies'
+    required: false
+    default: 'true'
+
   registry-url:
     description: 'npm registry URL (for publishing)'
     required: false
@@ -99,6 +104,7 @@ runs:
           ${{ runner.os }}-pnpm-store-
 
     - name: Cache Playwright browsers
+      if: inputs.setup-playwright == 'true'
       uses: actions/cache@v4
       id: playwright-cache
       with:
@@ -186,6 +192,6 @@ runs:
         NPM_TOKEN: ${{ inputs.auth-token }}
 
     - name: Install Playwright browsers
-      if: inputs.install-deps == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
+      if: inputs.install-deps == 'true' && inputs.setup-playwright == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
       shell: bash
       run: npx playwright install --with-deps chromium

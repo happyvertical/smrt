@@ -50,6 +50,7 @@ jobs:
         with:
           node-version: '24'
           install-deps: 'true'
+          setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -239,6 +240,7 @@ jobs:
         with:
           node-version: '24'
           install-deps: 'true'
+          setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
