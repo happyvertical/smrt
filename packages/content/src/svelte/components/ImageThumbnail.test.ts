@@ -88,4 +88,29 @@ describe('ImageThumbnail component', () => {
       ),
     );
   });
+
+  it('renders an unavailable state when the asset metadata request fails', async () => {
+    vi.mocked(fetch).mockResolvedValue({
+      ok: false,
+      json: async () => null,
+    } as Response);
+
+    const target = renderThumbnail({ assetId: 'missing-image' });
+
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/images/missing-image',
+        expect.objectContaining({
+          signal: expect.any(AbortSignal),
+        }),
+      ),
+    );
+
+    await vi.waitFor(() => {
+      const fallback = target.querySelector(
+        '.smrt-thumbnail-missing',
+      ) as HTMLElement | null;
+      expect(fallback?.textContent).toContain('Preview unavailable');
+    });
+  });
 });

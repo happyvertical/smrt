@@ -23,6 +23,10 @@ export interface Props {
   customReviewInstructions?: string;
   customReviewPolicyKey?: string;
   enforcePublishReadiness?: boolean;
+  saveDisabled?: boolean;
+  saveNotice?: string | null;
+  agentChatEnabled?: boolean;
+  agentChatNotice?: string | null;
   onSave: (data: GovernedContentEditorSaveData) => void;
   onCancel: () => void;
 }
@@ -37,6 +41,10 @@ let {
   customReviewInstructions = '',
   customReviewPolicyKey = 'custom',
   enforcePublishReadiness = false,
+  saveDisabled = false,
+  saveNotice = null,
+  agentChatEnabled = true,
+  agentChatNotice = null,
   onSave,
   onCancel,
 }: Props = $props();
@@ -106,8 +114,9 @@ const publishSaveNotice = $derived(
     : null,
 );
 const publishSaveDisabled = $derived(
-  Boolean(publishReadinessState?.disableSave),
+  Boolean(saveDisabled || publishReadinessState?.disableSave),
 );
+const resolvedSaveNotice = $derived(publishSaveNotice || saveNotice || null);
 
 function handleFactsChange(factIds: string[], facts: FactData[]) {
   selectedFactIds = factIds;
@@ -162,7 +171,9 @@ function handleSave(data: ContentData) {
     content={governedContent}
     contentId={resolvedContentId}
     saveDisabled={publishSaveDisabled}
-    saveNotice={publishSaveNotice}
+    saveNotice={resolvedSaveNotice}
+    {agentChatEnabled}
+    {agentChatNotice}
     onChange={handleEditorChange}
     onSave={handleSave}
     onCancel={onCancel}

@@ -6,7 +6,11 @@
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
+import {
+  isQualifiedName,
+  ObjectRegistry,
+  SchemaComparer,
+} from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { configExportCommand } from './config-export.js';
@@ -16,6 +20,7 @@ import { dbHistoryCommand } from './db-history.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { exportCommand } from './export.js';
+import { resolveStiDiscriminatorUpgrade } from './sti-upgrade.js';
 
 /**
  * Column definition type for migration comparison
@@ -1562,9 +1567,6 @@ export default testManifest;
             '\n🔄 Upgrading STI discriminators to qualified names...\n',
           );
 
-          // Import qualified name utilities
-          const { isQualifiedName } = await import('@happyvertical/smrt-core');
-
           // Get unique table names from initialization order
           const allTableNames = new Set<string>();
           for (const className of initOrder) {
@@ -1607,35 +1609,29 @@ export default testManifest;
               for (const row of result.rows) {
                 const metaType = row._meta_type as string;
 
-                // Skip if already qualified
-                if (isQualifiedName(metaType)) {
+                const resolution = resolveStiDiscriminatorUpgrade(metaType);
+
+                if (resolution.action === 'skip') {
                   if (options.verbose) {
+                    const detail =
+                      resolution.reason === 'already-current'
+                        ? 'already current'
+                        : resolution.reason === 'ambiguous'
+                          ? 'ambiguous class name'
+                          : resolution.reason === 'unregistered'
+                            ? isQualifiedName(metaType)
+                              ? 'qualified type not registered'
+                              : 'class not found in registry'
+                            : 'class has no qualified name';
                     console.log(
-                      `  ⊙ ${tableName}._meta_type="${metaType}" (already qualified)`,
+                      `  ⊙ ${tableName}._meta_type="${metaType}" (${detail})`,
                     );
                   }
                   stiSkippedCount++;
                   continue;
                 }
 
-                // Look up the class in the registry to get qualified name
-                const registeredClass = ObjectRegistry.getClass(metaType);
-                if (!registeredClass) {
-                  console.warn(
-                    `  ⚠️  ${tableName}._meta_type="${metaType}" - class not found in registry`,
-                  );
-                  stiSkippedCount++;
-                  continue;
-                }
-
-                const qualifiedName = registeredClass.qualifiedName;
-                if (!qualifiedName) {
-                  console.warn(
-                    `  ⚠️  ${tableName}._meta_type="${metaType}" - class has no qualified name`,
-                  );
-                  stiSkippedCount++;
-                  continue;
-                }
+                const qualifiedName = resolution.currentQualifiedName;
 
                 // Generate UPDATE statement (? placeholders are converted to $1, $2 by sql package)
                 const updateSql = `UPDATE ${quoteIdentifier(tableName)} SET ${quoteIdentifier('_meta_type')} = ? WHERE ${quoteIdentifier('_meta_type')} = ?`;

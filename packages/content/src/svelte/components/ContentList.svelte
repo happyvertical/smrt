@@ -6,6 +6,7 @@ let {
   apiBaseUrl = '/api/v1',
   contents,
   type = undefined,
+  defaultViewMode = 'grid',
   onEdit,
   onDelete,
   onAdd,
@@ -15,6 +16,7 @@ let {
   apiBaseUrl?: string;
   contents: any[];
   type?: string;
+  defaultViewMode?: 'grid' | 'detailed' | 'compact';
   onEdit: (content: any) => void;
   onDelete: (content: any) => void;
   onAdd: () => void;
@@ -25,19 +27,51 @@ let {
 let searchTerm = $state('');
 let selectedType = $state('All Types');
 let selectedStatus = $state('All Statuses');
-let viewMode = $state<'grid' | 'detailed' | 'compact'>('grid');
+let viewMode: 'grid' | 'detailed' | 'compact' = $state('grid');
+let hasSyncedDefaultView = false;
 
 $effect(() => {
   selectedType = type || 'All Types';
 });
 
+$effect(() => {
+  if (!hasSyncedDefaultView) {
+    viewMode = defaultViewMode;
+    hasSyncedDefaultView = true;
+  }
+});
+
+function getTextValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function getDisplayTitle(content: any): string {
+  return getTextValue(content.title) || 'Untitled content';
+}
+
+function getDisplayDescription(content: any): string {
+  return getTextValue(content.description);
+}
+
+function getDisplayAuthor(content: any): string {
+  return getTextValue(content.author);
+}
+
+function getNormalizedType(value: unknown): string {
+  return getTextValue(value).toLowerCase() || 'content';
+}
+
 const filteredContents = $derived(
   contents.filter((content: any) => {
+    const title = getDisplayTitle(content);
+    const description = getDisplayDescription(content);
+    const author = getDisplayAuthor(content);
+
     const matchesSearch =
       searchTerm === '' ||
-      content.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      content.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      content.author?.toLowerCase().includes(searchTerm.toLowerCase());
+      title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      author.toLowerCase().includes(searchTerm.toLowerCase());
 
     const isLockedType = !!type;
     const matchesType = isLockedType
@@ -55,21 +89,21 @@ const filteredContents = $derived(
   }),
 );
 
-function getTypeIcon(t: string) {
-  switch (t) {
+function getTypeLabel(value: unknown) {
+  switch (getNormalizedType(value)) {
     case 'article':
-      return '📄';
+      return 'Article';
     case 'mirror':
-      return '🌐';
+      return 'Mirror';
     case 'document':
-      return '📋';
+      return 'Document';
     default:
-      return '📝';
+      return 'Content';
   }
 }
 
-function getStatusBadge(s: string) {
-  switch (s) {
+function getStatusBadge(value: unknown) {
+  switch (getTextValue(value).toLowerCase()) {
     case 'published':
       return 'published';
     case 'draft':
@@ -81,8 +115,8 @@ function getStatusBadge(s: string) {
   }
 }
 
-function getStateBadge(s: string) {
-  switch (s) {
+function getStateBadge(value: unknown) {
+  switch (getTextValue(value).toLowerCase()) {
     case 'highlighted':
       return 'highlighted';
     case 'active':
@@ -95,7 +129,9 @@ function getStateBadge(s: string) {
 }
 
 function handleDeleteContent(content: any) {
-  if (confirm(`Are you sure you want to delete "${content.title}"?`)) {
+  if (
+    confirm(`Are you sure you want to delete "${getDisplayTitle(content)}"?`)
+  ) {
     onDelete(content);
   }
 }
@@ -131,6 +167,7 @@ function handleDeleteContent(content: any) {
     <div class="actions-group">
       <div class="view-toggles">
         <button 
+          type="button"
           class:active={viewMode === 'grid'} 
           onclick={() => viewMode = 'grid'}
           title="Grid View"
@@ -143,6 +180,7 @@ function handleDeleteContent(content: any) {
           </svg>
         </button>
         <button 
+          type="button"
           class:active={viewMode === 'detailed'} 
           onclick={() => viewMode = 'detailed'}
           title="Detailed List"
@@ -157,6 +195,7 @@ function handleDeleteContent(content: any) {
           </svg>
         </button>
         <button 
+          type="button"
           class:active={viewMode === 'compact'} 
           onclick={() => viewMode = 'compact'}
           title="Compact List"
@@ -199,25 +238,85 @@ function handleDeleteContent(content: any) {
         <tbody>
           {#each filteredContents as content (content.id)}
             <tr>
-              <td class="icon-cell" title={content.type}>{getTypeIcon(content.type)} {content.type}</td>
-              <td class="title-cell"><strong>{content.title}</strong></td>
-              <td>{content.author || '-'}</td>
+              <td class="type-cell">
+                <span class={`type-pill type-pill--${getNormalizedType(content.type)}`}>
+                  {getTypeLabel(content.type)}
+                </span>
+              </td>
+              <td class="title-cell"><strong>{getDisplayTitle(content)}</strong></td>
+              <td>{getDisplayAuthor(content) || '-'}</td>
               <td><span class="badge status-{getStatusBadge(content.status)}">{content.status}</span></td>
               <td><span class="badge state-{getStateBadge(content.state)}">{content.state}</span></td>
               <td class="actions-cell">
                 {#if getViewHref?.(content)}
                   <a class="icon-btn" href={getViewHref(content) || '#'} title="View published article">🔎</a>
                 {/if}
-                <button class="icon-btn" onclick={() => onEdit(content)} title="Edit">✏️</button>
-                <button class="icon-btn delete-icon" onclick={() => handleDeleteContent(content)} title="Delete">🗑️</button>
+                <button class="icon-btn" type="button" onclick={() => onEdit(content)} title="Edit">✏️</button>
+                <button class="icon-btn delete-icon" type="button" onclick={() => handleDeleteContent(content)} title="Delete">🗑️</button>
               </td>
             </tr>
           {/each}
         </tbody>
       </table>
     </div>
+  {:else if viewMode === 'detailed'}
+    <div class="content-detailed">
+      {#each filteredContents as content (content.id)}
+        <article class="content-row">
+          <div class="content-row__main">
+            <div class="content-row__eyebrow">
+              <span class={`type-pill type-pill--${getNormalizedType(content.type)}`}>
+                {getTypeLabel(content.type)}
+              </span>
+              {#if getDisplayAuthor(content)}
+                <span class="content-row__author">By {getDisplayAuthor(content)}</span>
+              {/if}
+            </div>
+
+            <h3>{getDisplayTitle(content)}</h3>
+
+            {#if getDisplayDescription(content)}
+              <p class="content-row__description">{getDisplayDescription(content)}</p>
+            {/if}
+
+            {#if content.url || content.fileKey}
+              <div class="content-row__links">
+                {#if content.url}
+                  <a href={content.url} target="_blank" rel="noreferrer">
+                    Source material
+                  </a>
+                {/if}
+                {#if content.fileKey}
+                  <span>{content.fileKey}</span>
+                {/if}
+              </div>
+            {/if}
+          </div>
+
+          <div class="content-row__meta">
+            <span class="meta-label">Status</span>
+            <span class="badge status-{getStatusBadge(content.status)}">{content.status}</span>
+            <span class="meta-label">State</span>
+            <span class="badge state-{getStateBadge(content.state)}">{content.state}</span>
+          </div>
+
+          <div class="content-row__actions">
+            {#if getViewHref?.(content)}
+              <a href={getViewHref(content) || '#'} class="quiet-action">View article</a>
+            {/if}
+            <button type="button" class="quiet-action" onclick={() => onEdit(content)}>Edit</button>
+            <button
+              type="button"
+              class="quiet-action quiet-action--danger"
+              onclick={() => handleDeleteContent(content)}
+            >
+              Delete
+            </button>
+          </div>
+        </article>
+      {/each}
+    </div>
   {:else}
-    <!-- Grid and Detailed List Modes -->
     <div class="content-{viewMode}">
       {#each filteredContents as content (content.id)}
         <div class="content-card">
@@ -230,19 +329,26 @@ function handleDeleteContent(content: any) {
             </div>
           {/if}
           <div class="content-header">
-            <h3>{getTypeIcon(content.type)} {content.title}</h3>
-            <div class="author">{content.author}</div>
+            <div class="content-header__eyebrow">
+              <span class={`type-pill type-pill--${getNormalizedType(content.type)}`}>
+                {getTypeLabel(content.type)}
+              </span>
+              {#if getDisplayAuthor(content)}
+                <div class="author">{getDisplayAuthor(content)}</div>
+              {/if}
+            </div>
+            <h3>{getDisplayTitle(content)}</h3>
           </div>
           
           <div class="content-meta">
-            <div>Type: {content.type}</div>
+            <div>{getTypeLabel(content.type)}</div>
             <div class="badges">
               <span class="badge status-{getStatusBadge(content.status)}">{content.status}</span>
               <span class="badge state-{getStateBadge(content.state)}">{content.state}</span>
             </div>
           </div>
           
-          <p class="content-description">{content.description}</p>
+          <p class="content-description">{getDisplayDescription(content)}</p>
           
           <div class="content-footer">
             <div class="meta-links">
@@ -280,11 +386,11 @@ function handleDeleteContent(content: any) {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1.25rem;
     flex-wrap: wrap;
-    gap: 1.5rem;
+    gap: 1rem;
     background: var(--smrt-color-surface);
-    padding: 1rem 1.5rem;
+    padding: 0.9rem 1.1rem;
     border-radius: 0.75rem;
     box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0,0,0,0.1));
   }
@@ -298,7 +404,7 @@ function handleDeleteContent(content: any) {
 
   .search-filters input,
   .search-filters select {
-    padding: 0.5rem 1rem;
+    padding: 0.5rem 0.9rem;
     border: 1px solid var(--smrt-color-outline);
     border-radius: 0.5rem;
     font-size: 0.875rem;
@@ -316,7 +422,7 @@ function handleDeleteContent(content: any) {
 
   .actions-group {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     align-items: center;
   }
 
@@ -359,7 +465,7 @@ function handleDeleteContent(content: any) {
     background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     color: white;
     border: none;
-    padding: 0.5rem 1.25rem;
+    padding: 0.5rem 1rem;
     height: 38px;
     border-radius: 0.5rem;
     font-weight: 600;
@@ -370,6 +476,43 @@ function handleDeleteContent(content: any) {
   .add-button:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 6px -1px rgba(59,130,246,0.5);
+  }
+
+  .content-header__eyebrow,
+  .content-row__eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.55rem;
+  }
+
+  .type-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.2rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface-variant);
+  }
+
+  .type-pill--article {
+    background: color-mix(in srgb, var(--smrt-color-primary) 11%, transparent);
+    color: var(--smrt-color-primary);
+  }
+
+  .type-pill--document {
+    background: color-mix(in srgb, var(--smrt-color-tertiary, #0f766e) 12%, transparent);
+    color: var(--smrt-color-tertiary, #0f766e);
+  }
+
+  .type-pill--mirror {
+    background: color-mix(in srgb, var(--smrt-color-secondary, #9333ea) 12%, transparent);
+    color: var(--smrt-color-secondary, #9333ea);
   }
 
   /* Shared Card Styles */
@@ -536,40 +679,94 @@ function handleDeleteContent(content: any) {
   .content-detailed {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
-  }
-  
-  .content-detailed .content-card {
-    flex-direction: row;
-    align-items: stretch;
-    gap: 2rem;
+    gap: 0;
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
-  .content-detailed .content-header {
-    flex: 1;
-    min-width: 250px;
+  .content-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.8fr) auto auto;
+    gap: 1.25rem;
+    align-items: start;
+    padding: 1.1rem 0;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
 
-  .content-detailed .content-description {
-    flex: 2;
-    margin-bottom: 0;
-    border-left: 1px solid var(--smrt-color-outline-variant);
-    padding-left: 2rem;
+  .content-row h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    line-height: 1.3;
   }
 
-  .content-detailed .content-footer {
-    flex-direction: column;
-    justify-content: flex-start;
-    align-items: flex-end;
-    min-width: 200px;
-    margin-top: 0;
+  .content-row__description {
+    margin: 0.45rem 0 0;
+    color: var(--smrt-color-on-surface-variant);
+    line-height: 1.55;
   }
 
-  .content-detailed .content-actions {
-    margin-top: auto;
-    border-top: none;
-    padding-top: 0;
-    width: 100%;
+  .content-row__meta {
+    display: grid;
+    gap: 0.45rem;
+    justify-items: start;
+    align-content: start;
+    min-width: 7.25rem;
+  }
+
+  .meta-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 700;
+    color: var(--smrt-color-on-surface-variant);
+  }
+
+  .content-row__actions {
+    display: grid;
+    gap: 0.55rem;
+    justify-items: stretch;
+    min-width: 8.5rem;
+  }
+
+  .quiet-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.4rem;
+    padding: 0 0.85rem;
+    border-radius: 999px;
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .quiet-action:hover {
+    background: var(--smrt-color-surface-container-low);
+  }
+
+  .quiet-action--danger {
+    color: #b91c1c;
+  }
+
+  .content-row__links {
+    display: flex;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    margin-top: 0.8rem;
+    font-size: 0.82rem;
+    color: var(--smrt-color-on-surface-variant);
+  }
+
+  .content-row__links a {
+    color: var(--smrt-color-primary);
+    text-decoration: none;
+  }
+
+  .content-row__author {
+    font-size: 0.85rem;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   /* COMPACT View Specifics */
@@ -612,10 +809,8 @@ function handleDeleteContent(content: any) {
     background: var(--smrt-color-surface-container-low);
   }
 
-  .icon-cell {
+  .type-cell {
     white-space: nowrap;
-    text-transform: capitalize;
-    color: var(--smrt-color-on-surface-variant);
   }
 
   .title-cell strong {
@@ -665,5 +860,44 @@ function handleDeleteContent(content: any) {
 
   .source, .file {
     color: var(--smrt-color-on-surface-variant);
+  }
+
+  @media (max-width: 960px) {
+    .content-row {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 0.9rem;
+    }
+
+    .content-row__actions {
+      grid-auto-flow: column;
+      grid-auto-columns: 1fr;
+      min-width: 0;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .content-controls {
+      align-items: stretch;
+    }
+
+    .search-filters,
+    .actions-group {
+      width: 100%;
+    }
+
+    .search-filters input,
+    .search-filters select,
+    .add-button {
+      width: 100%;
+    }
+
+    .actions-group {
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .content-row__actions {
+      grid-auto-flow: row;
+    }
   }
 </style>

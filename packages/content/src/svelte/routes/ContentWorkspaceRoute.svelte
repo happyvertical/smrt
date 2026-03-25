@@ -17,6 +17,7 @@ interface ContentWorkspaceRouteProps {
   navigation?: ContentRouteNavigationItem[];
   apiBaseUrl?: string;
   getPublishedHref?: (content: ContentData) => string | null;
+  embedded?: boolean;
 }
 
 function defaultGetPublishedHref(content: ContentData): string | null {
@@ -31,6 +32,7 @@ let {
   navigation = CONTENT_DEFAULT_ROUTE_NAVIGATION,
   apiBaseUrl = '/api/v1',
   getPublishedHref = defaultGetPublishedHref,
+  embedded = false,
 }: ContentWorkspaceRouteProps = $props();
 
 const client = $derived(createClient(apiBaseUrl));
@@ -148,18 +150,18 @@ function closeForms() {
 }
 </script>
 
-<div class="workspace-shell">
+<div class:workspace-shell={true} class:workspace-shell--embedded={embedded}>
   <header class="workspace-header">
     <div class="workspace-header__copy">
-      <div class="eyebrow">Content module</div>
-      <h1>Contents</h1>
+      <div class="eyebrow">Content operations</div>
+      <h1>Content workspace</h1>
       <p>
-        Author, review, and publish content records against the package's
-        content workflows and generated API routes.
+        Search, edit, and publish the tenant's articles, agendas, documents,
+        and mirrored records from one workspace.
       </p>
     </div>
 
-    <nav class="workspace-nav" aria-label="Content QA navigation">
+    <nav class="workspace-nav" aria-label="Content navigation">
       {#each navigation as item (item.routeId)}
         <a
           href={item.href}
@@ -177,11 +179,11 @@ function closeForms() {
     <section class="callout-grid">
       <article class="callout-card">
         <strong>{stats.total}</strong>
-        <span>Total content records</span>
+        <span>Records in the library</span>
       </article>
       <article class="callout-card">
         <strong>{stats.published}</strong>
-        <span>Published articles</span>
+        <span>Published right now</span>
       </article>
     </section>
 
@@ -219,6 +221,7 @@ function closeForms() {
         <ContentList
           {apiBaseUrl}
           {contents}
+          defaultViewMode="detailed"
           getViewHref={getPublishedHref}
           onEdit={handleEditContent}
           onDelete={handleDeleteContent}
@@ -231,10 +234,10 @@ function closeForms() {
                 class="secondary-action"
                 onclick={handleAddGovernedContent}
               >
-                Add governed article
+                Create governed article
               </button>
               <a class="inline-link" href={governanceHref}>
-                Review governance configuration
+                Review governance settings
               </a>
             </div>
           {/snippet}
@@ -268,6 +271,12 @@ function closeForms() {
     gap: 1.5rem;
     max-width: 1280px;
     margin: 0 auto;
+  }
+
+  .workspace-shell--embedded {
+    min-height: auto;
+    padding: 0;
+    max-width: none;
   }
 
   .workspace-header {
@@ -310,15 +319,35 @@ function closeForms() {
   }
 
   .workspace-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-surface) 92%,
+      transparent
+    );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
     font-weight: 600;
-    opacity: 0.85;
   }
 
   .workspace-nav a[aria-current='page'] {
-    opacity: 1;
     color: var(--smrt-color-primary);
+    border-color: color-mix(
+      in srgb,
+      var(--smrt-color-primary) 28%,
+      transparent
+    );
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-primary) 10%,
+      var(--smrt-color-surface)
+    );
   }
 
   .workspace-main {

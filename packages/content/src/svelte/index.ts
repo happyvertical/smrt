@@ -30,9 +30,19 @@ import ContentTransparencyReport from './components/ContentTransparencyReport.sv
 import GovernedContentEditor from './components/GovernedContentEditor.svelte';
 import Markdown from './components/Markdown.svelte';
 import ContentContributionsRoute from './routes/ContentContributionsRoute.svelte';
+import ContentFactsRoute from './routes/ContentFactsRoute.svelte';
 import ContentGovernanceRoute from './routes/ContentGovernanceRoute.svelte';
 import ContentWorkspaceRoute from './routes/ContentWorkspaceRoute.svelte';
 import PublishedArticleRoute from './routes/PublishedArticleRoute.svelte';
+import {
+  buildPublishedArticlePath,
+  CONTENT_DEFAULT_ROUTE_NAVIGATION,
+  CONTENT_ROUTE_IDS,
+  CONTENT_ROUTE_META,
+  createContentRouteNavigation,
+  getContentRouteDefaultPath,
+  getContentRouteHref,
+} from './routes/shared.js';
 
 // Export components
 export {
@@ -52,11 +62,19 @@ export {
   ContentList,
   ContentTransparencyReport,
   ContentContributionsRoute,
+  ContentFactsRoute,
   ContentGovernanceRoute,
   ContentWorkspaceRoute,
   GovernedContentEditor,
   Markdown,
   PublishedArticleRoute,
+  buildPublishedArticlePath,
+  CONTENT_DEFAULT_ROUTE_NAVIGATION,
+  CONTENT_ROUTE_IDS,
+  CONTENT_ROUTE_META,
+  createContentRouteNavigation,
+  getContentRouteDefaultPath,
+  getContentRouteHref,
 };
 
 // Export component prop types
@@ -104,6 +122,7 @@ export type MarkdownProps = ComponentProps<typeof Markdown>;
 export type ContentContributionsRouteProps = ComponentProps<
   typeof ContentContributionsRoute
 >;
+export type ContentFactsRouteProps = ComponentProps<typeof ContentFactsRoute>;
 export type ContentGovernanceRouteProps = ComponentProps<
   typeof ContentGovernanceRoute
 >;
@@ -114,6 +133,13 @@ export type PublishedArticleRouteProps = ComponentProps<
   typeof PublishedArticleRoute
 >;
 
+export type {
+  ContentRouteId,
+  ContentRouteKey,
+  ContentRouteNavigationItem,
+  LoadPublishedArticleRouteInput,
+  PublishedContentArticleRouteData,
+} from './routes/shared.js';
 // Export types
 export type {
   Article,

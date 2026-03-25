@@ -22,11 +22,13 @@ import {
 interface ContentContributionsRouteProps {
   navigation?: ContentRouteNavigationItem[];
   apiBaseUrl?: string;
+  embedded?: boolean;
 }
 
 let {
   navigation = CONTENT_DEFAULT_ROUTE_NAVIGATION,
   apiBaseUrl = '/api/v1',
+  embedded = false,
 }: ContentContributionsRouteProps = $props();
 
 const client = $derived(createClient(apiBaseUrl));
@@ -294,19 +296,19 @@ async function handleDeleteContributor(data: Record<string, any>) {
 }
 </script>
 
-<div class="page">
+<div class:page={true} class:page--embedded={embedded}>
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
         <div class="eyebrow">Content contributions</div>
-        <h1>Contribution Intake and Review</h1>
+        <h1>Contribution operations</h1>
         <p>
-          Review contributor submissions end to end: intake, portal visibility,
-          moderation decisions, and promotion into draft or review content.
+          Manage public intake, contributor records, moderation decisions, and
+          promotion into draft or review-ready content.
         </p>
       </div>
 
-      <nav class="page-nav" aria-label="Content QA navigation">
+      <nav class="page-nav" aria-label="Content navigation">
         {#each navigation as item (item.routeId)}
           <a
             href={item.href}
@@ -323,17 +325,29 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
   <main class="container page-main">
     <section class="callout">
-      <strong>What this route covers</strong>
-      <ul>
-        <li>Web submission creates held contributions and attachment metadata.</li>
-        <li>Portal and inbox actions drive the generated contribution workflow APIs.</li>
-        <li>Type and contributor managers exercise persisted admin overrides.</li>
-        <li>
-          Email ingestion stays API-driven and can be tested through
-          <code>/api/v1/contentcontributions/ingest-email</code> when message
-          records exist.
-        </li>
-      </ul>
+      <div class="callout__header">
+        <div>
+          <strong>Live contribution stack</strong>
+          <p>
+            Intake, moderation, and contributor controls against the generated
+            content APIs.
+          </p>
+        </div>
+        <span class="pill">Live</span>
+      </div>
+
+      <div class="callout__chips" aria-label="Workspace scope">
+        <span>Held web intake</span>
+        <span>Contributor portal actions</span>
+        <span>Editorial inbox decisions</span>
+        <span>Type and trust overrides</span>
+      </div>
+
+      <p class="callout__note">
+        Email ingestion remains available at
+        <code>/api/v1/contentcontributions/ingest-email</code> when message
+        records exist.
+      </p>
     </section>
 
     {#if loading}
@@ -510,6 +524,11 @@ async function handleDeleteContributor(data: Record<string, any>) {
     padding: 2rem 1.25rem 3rem;
   }
 
+  .page--embedded {
+    min-height: auto;
+    padding: 0;
+  }
+
   .container {
     max-width: 1400px;
     margin: 0 auto;
@@ -560,15 +579,35 @@ async function handleDeleteContributor(data: Record<string, any>) {
   }
 
   .page-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-surface) 92%,
+      transparent
+    );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
     font-weight: 600;
-    opacity: 0.85;
   }
 
   .page-nav a[aria-current='page'] {
-    opacity: 1;
     color: var(--smrt-color-primary);
+    border-color: color-mix(
+      in srgb,
+      var(--smrt-color-primary) 28%,
+      transparent
+    );
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-primary) 10%,
+      var(--smrt-color-surface)
+    );
   }
 
   .page-main {
@@ -599,13 +638,43 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
   .callout {
     display: grid;
-    gap: 0.75rem;
+    gap: 0.8rem;
   }
 
-  .callout ul {
+  .callout__header {
+    display: flex;
+    gap: 1rem;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .callout__header p,
+  .callout__note {
     margin: 0;
-    padding-left: 1.25rem;
     color: var(--smrt-color-on-surface-variant);
+  }
+
+  .callout__chips {
+    display: flex;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+  }
+
+  .callout__chips span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-surface-container-low) 90%,
+      transparent
+    );
+    color: var(--smrt-color-on-surface);
+    font-size: 0.83rem;
+    font-weight: 600;
   }
 
   .callout code {
@@ -689,6 +758,54 @@ async function handleDeleteContributor(data: Record<string, any>) {
   @media (min-width: 1024px) {
     .qa-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 720px) {
+    .page {
+      padding: 1rem 0.85rem 2rem;
+    }
+
+    .page-header {
+      margin-bottom: 1rem;
+    }
+
+    .page-header h1 {
+      margin-top: 0.25rem;
+      font-size: clamp(1.6rem, 9vw, 2.2rem);
+    }
+
+    .callout,
+    .panel {
+      padding: 1rem;
+      border-radius: 0.85rem;
+    }
+
+    .callout__chips {
+      display: none;
+    }
+
+    .callout__header {
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .callout__header p,
+    .callout__note {
+      font-size: 0.82rem;
+      line-height: 1.5;
+    }
+
+    .pill {
+      min-height: 1.7rem;
+      min-width: 0;
+      padding: 0 0.65rem;
+      font-size: 0.78rem;
+    }
+
+    .section-heading {
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
     }
   }
 </style>
