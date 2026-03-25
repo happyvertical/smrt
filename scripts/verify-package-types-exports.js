@@ -166,7 +166,7 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
   const importPattern =
     /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|import\(['"]([^'"]+)['"]\)/g;
 
-  const resolveCandidates = (basePath) => {
+  const resolveRuntimeCandidates = (basePath) => {
     const stems = new Set([basePath, getPathStem(basePath)]);
     const candidates = new Set();
 
@@ -180,6 +180,38 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
       candidates.add(join(stem, 'index.mjs'));
       candidates.add(join(stem, 'index.cjs'));
       candidates.add(join(stem, 'index.svelte'));
+    }
+
+    return [...candidates];
+  };
+  const resolveTypeCandidates = (basePath) => {
+    const stems = new Set([basePath, getPathStem(basePath)]);
+    const candidates = new Set();
+
+    for (const stem of stems) {
+      candidates.add(stem);
+      candidates.add(`${stem}.d.ts`);
+      candidates.add(`${stem}.d.mts`);
+      candidates.add(`${stem}.d.cts`);
+      candidates.add(`${stem}.ts`);
+      candidates.add(`${stem}.mts`);
+      candidates.add(`${stem}.cts`);
+      candidates.add(`${stem}.js`);
+      candidates.add(`${stem}.mjs`);
+      candidates.add(`${stem}.cjs`);
+      candidates.add(`${stem}.svelte`);
+      candidates.add(`${stem}.svelte.d.ts`);
+      candidates.add(join(stem, 'index.d.ts'));
+      candidates.add(join(stem, 'index.d.mts'));
+      candidates.add(join(stem, 'index.d.cts'));
+      candidates.add(join(stem, 'index.ts'));
+      candidates.add(join(stem, 'index.mts'));
+      candidates.add(join(stem, 'index.cts'));
+      candidates.add(join(stem, 'index.js'));
+      candidates.add(join(stem, 'index.mjs'));
+      candidates.add(join(stem, 'index.cjs'));
+      candidates.add(join(stem, 'index.svelte'));
+      candidates.add(join(stem, 'index.svelte.d.ts'));
     }
 
     return [...candidates];
@@ -210,13 +242,19 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
       seenSpecifiers.add(specifier);
 
       const basePath = resolve(dirname(filePath), specifier);
+      const fullMatch = match[0] ?? '';
+      const isTypeOnlyImport =
+        /^\s*(?:import|export)\s+type\b/.test(fullMatch) ||
+        /^\s*import\s*\{\s*type\b/.test(fullMatch);
       if (!isWithinPackageRoot(basePath)) {
         missing.push(
           `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
         );
         continue;
       }
-      const hasTarget = resolveCandidates(basePath).some(
+      const hasTarget = (
+        isTypeOnlyImport ? resolveTypeCandidates : resolveRuntimeCandidates
+      )(basePath).some(
         (candidate) => isWithinPackageRoot(candidate) && existsSync(candidate),
       );
 
