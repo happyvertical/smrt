@@ -11,11 +11,6 @@ export type { ContentAssetOptions } from './content-asset';
 export { ContentAsset } from './content-asset';
 export { ContentAssetCollection } from './content-assets';
 export type {
-  BackfillContentAssetsOptions,
-  BackfillContentAssetsResult,
-} from './content-assets-migration';
-export { backfillContentAssetsFromAssetAssociations } from './content-assets-migration';
-export type {
   AppendContentContributionRevisionOptions,
   ApproveContentContributionOptions,
   ContentContributionAttachmentInput,

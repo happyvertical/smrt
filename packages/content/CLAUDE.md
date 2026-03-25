@@ -109,11 +109,6 @@ missing chat tables (returns `session: null` with notice).
 - **ContentReference**: SMRT junction model backing `content_references` for content-to-content links
 - **ContentAsset**: dedicated SMRT junction model backing `content_assets` for content-owned asset links
 
-Legacy `asset_associations` rows are backfilled automatically by
-`smrt db:migrate` when `@happyvertical/smrt-content` is present in the loaded
-manifests. `backfillContentAssetsFromAssetAssociations()` remains available for
-explicit reruns and is not part of the live content relationship path.
-
 ```typescript
 await content.addAsset(image, 'thumbnail', 0);  // relationship, sortOrder
 await content.getAssets('attachment');

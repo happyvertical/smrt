@@ -1113,9 +1113,6 @@ export default testManifest;
         // 6. Get all merged schemas as SchemaDefinition objects
         // This format is compatible with SchemaComparer for proper diff detection
         const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
-        const shouldRunContentAssetBackfill = Boolean(
-          ObjectRegistry.getClass('ContentAsset'),
-        );
 
         if (options.verbose) {
           console.log('📋 Tables to check (in dependency order):');
@@ -1380,11 +1377,6 @@ export default testManifest;
             console.log(
               '✅ Database schema is up to date - no migrations needed\n',
             );
-            if (shouldRunContentAssetBackfill) {
-              console.log(
-                'ℹ️  Content asset legacy backfill runs during a non-dry-run `smrt db:migrate` when legacy rows are present.\n',
-              );
-            }
             return;
           }
 
@@ -1422,12 +1414,6 @@ export default testManifest;
             }
           }
           console.log();
-
-          if (shouldRunContentAssetBackfill) {
-            console.log(
-              '  Note: legacy content asset backfill runs only during a non-dry-run migration.\n',
-            );
-          }
 
           if (!options['upgrade-sti']) {
             console.log('✅ Dry-run complete (no changes made)');
@@ -1521,37 +1507,6 @@ export default testManifest;
             if (options.verbose && error instanceof Error && error.stack) {
               console.error(`\n${error.stack}\n`);
             }
-          }
-        }
-
-        if (shouldRunContentAssetBackfill) {
-          const contentPackageName = '@happyvertical/smrt-content';
-          const { backfillContentAssetsFromAssetAssociations } = await import(
-            /* @vite-ignore */ contentPackageName
-          );
-          const backfill = await backfillContentAssetsFromAssetAssociations({
-            db,
-          });
-
-          if (backfill.scanned > 0) {
-            console.log(
-              `\n✓ Backfilled ${backfill.migrated} content asset link(s) from asset_associations to content_assets.`,
-            );
-            if (backfill.duplicate > 0) {
-              console.log(
-                `  ${backfill.duplicate} legacy row(s) already had canonical content_assets links.`,
-              );
-            }
-            if (backfill.missingContent > 0) {
-              console.log(
-                `  ${backfill.missingContent} legacy row(s) were skipped because the target content no longer exists.`,
-              );
-            }
-            console.log();
-          } else if (options.verbose) {
-            console.log(
-              '\nℹ️  No legacy content asset associations needed backfill.\n',
-            );
           }
         }
 
