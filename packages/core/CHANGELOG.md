@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.15
+
+### Patch Changes
+
+- ### Features
+
+  - expand content workspace surfaces (#1077) (content)
+  - @happyvertical/smrt-scanner@0.21.15
+  - @happyvertical/smrt-config@0.21.15
+  - @happyvertical/smrt-types@0.21.15
+
 ## 0.21.14
 
 ### Patch Changes
