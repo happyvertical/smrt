@@ -1,5 +1,11 @@
 <script lang="ts">
 import { joinApiUrl } from '../api';
+import {
+  getCachedThumbnail,
+  setCachedThumbnail,
+  THUMBNAIL_FAILURE_TTL_MS,
+  type ThumbnailState,
+} from './ImageThumbnail.cache';
 
 interface ImageThumbnailProps {
   assetId: string;
@@ -9,6 +15,8 @@ interface ImageThumbnailProps {
 let { assetId, apiBaseUrl = '/api/v1' }: ImageThumbnailProps = $props();
 
 let imageUrl: string | null = $state(null);
+let thumbnailState: ThumbnailState = $state('loading');
+let currentCacheKey: string | null = $state(null);
 
 function isAbortError(error: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) {
@@ -25,20 +33,44 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
 
 $effect(() => {
   if (!assetId) {
+    currentCacheKey = null;
     imageUrl = null;
+    thumbnailState = 'missing';
+    return;
+  }
+
+  const cacheKey = `${apiBaseUrl}::${assetId}`;
+  currentCacheKey = cacheKey;
+  const cached = getCachedThumbnail(cacheKey);
+  if (cached) {
+    imageUrl = cached.url;
+    thumbnailState = cached.state;
     return;
   }
 
   imageUrl = null;
+  thumbnailState = 'loading';
 
   const abortController = new AbortController();
 
   fetch(joinApiUrl(apiBaseUrl, `/images/${assetId}`), {
     signal: abortController.signal,
   })
-    .then((res) => (res.ok ? res.json() : null))
+    .then((res) => {
+      if (!res.ok) {
+        return null;
+      }
+
+      return res.json();
+    })
     .then((data) => {
       imageUrl = data?.sourceUri || data?.url || null;
+      thumbnailState = imageUrl ? 'ready' : 'missing';
+      setCachedThumbnail(cacheKey, {
+        state: thumbnailState,
+        url: imageUrl,
+        expiresAt: imageUrl ? null : Date.now() + THUMBNAIL_FAILURE_TTL_MS,
+      });
     })
     .catch((error: unknown) => {
       if (isAbortError(error, abortController.signal)) {
@@ -46,6 +78,12 @@ $effect(() => {
       }
 
       imageUrl = null;
+      thumbnailState = 'missing';
+      setCachedThumbnail(cacheKey, {
+        state: 'missing',
+        url: null,
+        expiresAt: Date.now() + THUMBNAIL_FAILURE_TTL_MS,
+      });
     });
 
   return () => {
@@ -54,10 +92,30 @@ $effect(() => {
 });
 </script>
 
-{#if imageUrl}
-  <img src={imageUrl} alt="Thumbnail preview" class="smrt-thumbnail-img" />
+{#if thumbnailState === 'ready' && imageUrl}
+  <img
+    src={imageUrl}
+    alt="Thumbnail preview"
+    class="smrt-thumbnail-img"
+    loading="lazy"
+    onerror={() => {
+      imageUrl = null;
+      thumbnailState = 'missing';
+      if (currentCacheKey) {
+        setCachedThumbnail(currentCacheKey, {
+          state: 'missing',
+          url: null,
+          expiresAt: Date.now() + THUMBNAIL_FAILURE_TTL_MS,
+        });
+      }
+    }}
+  />
+{:else if thumbnailState === 'loading'}
+  <div class="smrt-thumbnail-skeleton" aria-hidden="true"></div>
 {:else}
-  <div class="smrt-thumbnail-skeleton"></div>
+  <div class="smrt-thumbnail-missing" aria-label="Thumbnail unavailable">
+    <span>Preview unavailable</span>
+  </div>
 {/if}
 
 <style>
@@ -70,5 +128,28 @@ $effect(() => {
     width: 100%;
     height: 100%;
     background: var(--smrt-color-surface-container-high, #242424);
+  }
+
+  .smrt-thumbnail-missing {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    place-items: center;
+    padding: 0.75rem;
+    background:
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--smrt-color-surface-container-low, #1f2937) 92%, transparent),
+        color-mix(in srgb, var(--smrt-color-surface-container-high, #111827) 96%, transparent)
+      );
+    color: var(--smrt-color-on-surface-variant, #cbd5e1);
+    text-align: center;
+  }
+
+  .smrt-thumbnail-missing span {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
   }
 </style>

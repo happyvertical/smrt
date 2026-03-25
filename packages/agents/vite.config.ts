@@ -4,6 +4,7 @@ export default createPackageConfig('agents', {
   svelte: 'svelte',
   entries: [
     'playground',
+    'summary-article',
     'ui',
     {
       name: 'vite-plugin',
@@ -12,6 +13,10 @@ export default createPackageConfig('agents', {
     {
       name: 'server',
       source: 'src/server/index.ts',
+    },
+    {
+      name: 'server/action-types',
+      source: 'src/server/action-types.ts',
     },
   ],
 });

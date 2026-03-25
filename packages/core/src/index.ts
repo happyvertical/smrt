@@ -36,6 +36,13 @@ export {
   type ResolveDatabaseOptions,
   resolveDatabase,
 } from './database';
+export {
+  applyPendingDecoratorRegistrations,
+  type CompatiblePropertyDecorator,
+  type CompatiblePropertyDecoratorContext,
+  type LegacyPropertyDecoratorTarget,
+  registerCompatibleFieldDecorator,
+} from './decorators/compatibility';
 // Property decorators for field definition
 // Re-export decorator versions with priority over field helpers
 export {

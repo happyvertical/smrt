@@ -15,10 +15,12 @@ describe('content route module', () => {
     );
     expect(Object.keys(CONTENT_ROUTE_MODULE.routes)).toEqual([
       'workspace',
+      'facts',
       'governance',
       'contributions',
       'article',
     ]);
+    expect(CONTENT_ROUTE_MODULE.routes.facts.defaultPath).toBe('/facts');
     expect(CONTENT_ROUTE_MODULE.routes.article.defaultPath).toBe(
       '/articles/[slug]',
     );
@@ -28,12 +30,14 @@ describe('content route module', () => {
   it('builds navigation with overrideable mount paths', () => {
     expect(CONTENT_DEFAULT_ROUTE_NAVIGATION.map((item) => item.label)).toEqual([
       'Workspace',
-      'Governance QA',
-      'Contribution QA',
+      'Facts',
+      'Governance',
+      'Contributions',
     ]);
 
     const navigation = createContentRouteNavigation({
       [CONTENT_ROUTE_IDS.workspace]: '/[siteSlug]/content',
+      [CONTENT_ROUTE_IDS.facts]: '/[siteSlug]/content/facts',
       [CONTENT_ROUTE_IDS.governance]: '/[siteSlug]/content/governance',
     });
 
@@ -41,6 +45,9 @@ describe('content route module', () => {
       navigation.find((item) => item.routeId === CONTENT_ROUTE_IDS.workspace)
         ?.href,
     ).toBe('/[siteSlug]/content');
+    expect(
+      navigation.find((item) => item.routeId === CONTENT_ROUTE_IDS.facts)?.href,
+    ).toBe('/[siteSlug]/content/facts');
     expect(
       navigation.find((item) => item.routeId === CONTENT_ROUTE_IDS.governance)
         ?.href,

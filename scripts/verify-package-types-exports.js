@@ -145,6 +145,19 @@ function walkFiles(rootDir) {
   return files;
 }
 
+function stripComments(source) {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+function getPathStem(filePath) {
+  return filePath.replace(
+    /\.(?:d\.(?:cts|mts|ts)|[cm]?ts|[cm]?js|svelte)$/,
+    '',
+  );
+}
+
 function collectMissingRelativeRuntimeImports(packageRoot) {
   const missing = [];
   const runtimeFiles = walkFiles(packageRoot).filter((filePath) =>
@@ -153,17 +166,56 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
   const importPattern =
     /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|import\(['"]([^'"]+)['"]\)/g;
 
-  const resolveCandidates = (basePath) => [
-    basePath,
-    `${basePath}.js`,
-    `${basePath}.mjs`,
-    `${basePath}.cjs`,
-    `${basePath}.svelte`,
-    join(basePath, 'index.js'),
-    join(basePath, 'index.mjs'),
-    join(basePath, 'index.cjs'),
-    join(basePath, 'index.svelte'),
-  ];
+  const resolveRuntimeCandidates = (basePath) => {
+    const stems = new Set([basePath, getPathStem(basePath)]);
+    const candidates = new Set();
+
+    for (const stem of stems) {
+      candidates.add(stem);
+      candidates.add(`${stem}.js`);
+      candidates.add(`${stem}.mjs`);
+      candidates.add(`${stem}.cjs`);
+      candidates.add(`${stem}.svelte`);
+      candidates.add(join(stem, 'index.js'));
+      candidates.add(join(stem, 'index.mjs'));
+      candidates.add(join(stem, 'index.cjs'));
+      candidates.add(join(stem, 'index.svelte'));
+    }
+
+    return [...candidates];
+  };
+  const resolveTypeCandidates = (basePath) => {
+    const stems = new Set([basePath, getPathStem(basePath)]);
+    const candidates = new Set();
+
+    for (const stem of stems) {
+      candidates.add(stem);
+      candidates.add(`${stem}.d.ts`);
+      candidates.add(`${stem}.d.mts`);
+      candidates.add(`${stem}.d.cts`);
+      candidates.add(`${stem}.ts`);
+      candidates.add(`${stem}.mts`);
+      candidates.add(`${stem}.cts`);
+      candidates.add(`${stem}.js`);
+      candidates.add(`${stem}.mjs`);
+      candidates.add(`${stem}.cjs`);
+      candidates.add(`${stem}.svelte`);
+      candidates.add(`${stem}.svelte.d.ts`);
+      candidates.add(join(stem, 'index.d.ts'));
+      candidates.add(join(stem, 'index.d.mts'));
+      candidates.add(join(stem, 'index.d.cts'));
+      candidates.add(join(stem, 'index.ts'));
+      candidates.add(join(stem, 'index.mts'));
+      candidates.add(join(stem, 'index.cts'));
+      candidates.add(join(stem, 'index.js'));
+      candidates.add(join(stem, 'index.mjs'));
+      candidates.add(join(stem, 'index.cjs'));
+      candidates.add(join(stem, 'index.svelte'));
+      candidates.add(join(stem, 'index.svelte.d.ts'));
+    }
+
+    return [...candidates];
+  };
   const isWithinPackageRoot = (targetPath) => {
     const relativePath = relative(packageRoot, targetPath);
     return (
@@ -175,7 +227,100 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
   };
 
   for (const filePath of runtimeFiles) {
-    const source = readFileSync(filePath, 'utf8');
+    const source = stripComments(readFileSync(filePath, 'utf8'));
+    const seenSpecifiers = new Set();
+
+    for (const match of source.matchAll(importPattern)) {
+      const specifier = match[1] || match[2];
+      if (!specifier || !specifier.startsWith('.')) {
+        continue;
+      }
+
+      if (seenSpecifiers.has(specifier)) {
+        continue;
+      }
+      seenSpecifiers.add(specifier);
+
+      const basePath = resolve(dirname(filePath), specifier);
+      const fullMatch = match[0] ?? '';
+      const isTypeOnlyImport =
+        /^\s*(?:import|export)\s+type\b/.test(fullMatch) ||
+        /^\s*import\s*\{\s*type\b/.test(fullMatch);
+      if (!isWithinPackageRoot(basePath)) {
+        missing.push(
+          `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
+        );
+        continue;
+      }
+      const hasTarget = (
+        isTypeOnlyImport ? resolveTypeCandidates : resolveRuntimeCandidates
+      )(basePath).some(
+        (candidate) => isWithinPackageRoot(candidate) && existsSync(candidate),
+      );
+
+      if (!hasTarget) {
+        missing.push(
+          `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
+        );
+      }
+    }
+  }
+
+  return missing;
+}
+
+function collectMissingTypeImports(packageRoot) {
+  const missing = [];
+  const typeFiles = walkFiles(packageRoot).filter((filePath) =>
+    /\.d\.(?:cts|mts|ts)$/.test(filePath),
+  );
+  const importPattern =
+    /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|import\(['"]([^'"]+)['"]\)/g;
+
+  const resolveCandidates = (basePath) => {
+    const stems = new Set([basePath, getPathStem(basePath)]);
+    const candidates = new Set();
+
+    for (const stem of stems) {
+      candidates.add(stem);
+      candidates.add(`${stem}.d.ts`);
+      candidates.add(`${stem}.d.mts`);
+      candidates.add(`${stem}.d.cts`);
+      candidates.add(`${stem}.ts`);
+      candidates.add(`${stem}.mts`);
+      candidates.add(`${stem}.cts`);
+      candidates.add(`${stem}.js`);
+      candidates.add(`${stem}.mjs`);
+      candidates.add(`${stem}.cjs`);
+      candidates.add(`${stem}.svelte`);
+      candidates.add(`${stem}.svelte.d.ts`);
+      candidates.add(join(stem, 'index.d.ts'));
+      candidates.add(join(stem, 'index.d.mts'));
+      candidates.add(join(stem, 'index.d.cts'));
+      candidates.add(join(stem, 'index.ts'));
+      candidates.add(join(stem, 'index.mts'));
+      candidates.add(join(stem, 'index.cts'));
+      candidates.add(join(stem, 'index.js'));
+      candidates.add(join(stem, 'index.mjs'));
+      candidates.add(join(stem, 'index.cjs'));
+      candidates.add(join(stem, 'index.svelte'));
+      candidates.add(join(stem, 'index.svelte.d.ts'));
+    }
+
+    return [...candidates];
+  };
+  const isWithinPackageRoot = (targetPath) => {
+    const relativePath = relative(packageRoot, targetPath);
+    return (
+      targetPath === packageRoot ||
+      (relativePath !== '..' &&
+        !relativePath.startsWith(`..${sep}`) &&
+        relativePath !== '')
+    );
+  };
+
+  for (const filePath of typeFiles) {
+    const source = stripComments(readFileSync(filePath, 'utf8'));
     const seenSpecifiers = new Set();
 
     for (const match of source.matchAll(importPattern)) {
@@ -269,11 +414,13 @@ try {
   const packageRoot = join(tempDir, 'package');
   const missingRelativeRuntimeImports =
     collectMissingRelativeRuntimeImports(packageRoot);
+  const missingTypeImports = collectMissingTypeImports(packageRoot);
 
   if (
     missing.length > 0 ||
     missingRuntime.length > 0 ||
-    missingRelativeRuntimeImports.length > 0
+    missingRelativeRuntimeImports.length > 0 ||
+    missingTypeImports.length > 0
   ) {
     fail(
       `${packageJson.name} is missing required package artifacts in the packed artifact:\n${[
@@ -282,6 +429,7 @@ try {
         ...missingRelativeRuntimeImports.map(
           (entry) => `- relative import target: ${entry}`,
         ),
+        ...missingTypeImports.map((entry) => `- type import target: ${entry}`),
       ].join('\n')}`,
     );
   }

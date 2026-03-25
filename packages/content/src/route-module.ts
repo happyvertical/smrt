@@ -38,6 +38,7 @@ import {
 } from './route-loaders.js';
 import {
   ContentContributionsRoute,
+  ContentFactsRoute,
   ContentGovernanceRoute,
   ContentWorkspaceRoute,
   PublishedArticleRoute,
@@ -55,6 +56,7 @@ import {
 
 export {
   ContentContributionsRoute,
+  ContentFactsRoute,
   ContentGovernanceRoute,
   ContentWorkspaceRoute,
   PublishedArticleRoute,
@@ -77,6 +79,7 @@ export type {
 
 export interface ContentRouteDefinitions {
   workspace: SmrtRouteDefinition;
+  facts: SmrtRouteDefinition;
   governance: SmrtRouteDefinition;
   contributions: SmrtRouteDefinition;
   article: SmrtRouteDefinition<
@@ -93,12 +96,17 @@ export const CONTENT_ROUTE_MODULE: ContentRouteModule = {
   packageName: '@happyvertical/smrt-content',
   displayName: 'Content',
   description:
-    'Package-owned route surfaces for authoring, governance, contributions, and published article rendering.',
+    'Package-owned route surfaces for authoring, facts, governance, contributions, and published article rendering.',
   routes: {
     workspace: {
       ...CONTENT_ROUTE_META.workspace,
       component: ContentWorkspaceRoute,
       tags: ['content', 'authoring', 'admin'],
+    },
+    facts: {
+      ...CONTENT_ROUTE_META.facts,
+      component: ContentFactsRoute,
+      tags: ['content', 'facts', 'admin'],
     },
     governance: {
       ...CONTENT_ROUTE_META.governance,

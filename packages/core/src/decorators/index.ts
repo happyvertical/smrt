@@ -6,6 +6,12 @@
  */
 
 import { ObjectRegistry } from '../registry.js';
+import {
+  type CompatiblePropertyDecorator,
+  type CompatiblePropertyDecoratorContext,
+  type LegacyPropertyDecoratorTarget,
+  registerCompatibleFieldDecorator,
+} from './compatibility.js';
 
 /**
  * Meta type wrapper for STI (Single Table Inheritance) meta fields
@@ -134,10 +140,18 @@ export interface RelationshipFieldOptions extends FieldOptions {
 export function field(
   options: FieldOptions | NumericFieldOptions | TextFieldOptions = {},
 ) {
-  return (target: any, propertyKey: string) => {
-    const className = target.constructor.name;
-    ObjectRegistry.registerFieldDecorator(className, propertyKey, options);
-  };
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, options);
+      },
+    );
+  }) as CompatiblePropertyDecorator;
 }
 
 /**
@@ -178,17 +192,25 @@ export function foreignKey(
   relatedClass: string | Function | any,
   options: Omit<RelationshipFieldOptions, 'related'> = {},
 ) {
-  return (target: any, propertyKey: string) => {
-    const className = target.constructor.name;
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
     const relatedClassName =
       typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
 
-    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-      ...options,
-      type: 'foreignKey',
-      related: relatedClassName,
-    });
-  };
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          ...options,
+          type: 'foreignKey',
+          related: relatedClassName,
+        });
+      },
+    );
+  }) as CompatiblePropertyDecorator;
 }
 
 /**
@@ -228,18 +250,26 @@ export function oneToMany(
   relatedClass: string | Function | any,
   options: Omit<RelationshipFieldOptions, 'related'> = {},
 ) {
-  return (target: any, propertyKey: string) => {
-    const className = target.constructor.name;
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
     const relatedClassName =
       typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
 
-    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-      ...options,
-      type: 'oneToMany',
-      related: relatedClassName,
-      transient: true, // Relationship fields are not database columns
-    });
-  };
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          ...options,
+          type: 'oneToMany',
+          related: relatedClassName,
+          transient: true, // Relationship fields are not database columns
+        });
+      },
+    );
+  }) as CompatiblePropertyDecorator;
 }
 
 /**
@@ -272,18 +302,26 @@ export function manyToMany(
   relatedClass: string | Function | any,
   options: Omit<RelationshipFieldOptions, 'related'> = {},
 ) {
-  return (target: any, propertyKey: string) => {
-    const className = target.constructor.name;
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
     const relatedClassName =
       typeof relatedClass === 'string' ? relatedClass : relatedClass.name;
 
-    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-      ...options,
-      type: 'manyToMany',
-      related: relatedClassName,
-      transient: true, // Relationship fields are not database columns
-    });
-  };
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          ...options,
+          type: 'manyToMany',
+          related: relatedClassName,
+          transient: true, // Relationship fields are not database columns
+        });
+      },
+    );
+  }) as CompatiblePropertyDecorator;
 }
 
 /**
@@ -321,11 +359,19 @@ export function manyToMany(
  * @see {@link field} for regular (non-STI) field declarations
  */
 export function meta(options: FieldOptions = {}) {
-  return (target: any, propertyKey: string) => {
-    const className = target.constructor.name;
-    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-      ...options,
-      type: 'meta', // Mark this field as a meta field for STI
-    });
-  };
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          ...options,
+          type: 'meta', // Mark this field as a meta field for STI
+        });
+      },
+    );
+  }) as CompatiblePropertyDecorator;
 }

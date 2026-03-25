@@ -10,6 +10,7 @@ import type {
 
 export const CONTENT_ROUTE_IDS = {
   workspace: 'content.workspace',
+  facts: 'content.facts',
   governance: 'content.governance',
   contributions: 'content.contributions',
   article: 'content.article',
@@ -64,10 +65,24 @@ export const CONTENT_ROUTE_META = {
       'Manage review policies, profiles, and publication assignments for governed content.',
     defaultPath: '/governance',
     nav: {
-      label: 'Governance QA',
+      label: 'Governance',
       description: 'Policy, profile, and assignment management',
       icon: 'shield-check',
       order: 20,
+      group: 'content',
+    },
+  },
+  facts: {
+    id: CONTENT_ROUTE_IDS.facts,
+    title: 'Fact Catalog',
+    description:
+      'Browse extracted facts, search by text or domain, and confirm what content workflows can cite.',
+    defaultPath: '/facts',
+    nav: {
+      label: 'Facts',
+      description: 'Browse indexed facts and confidence',
+      icon: 'sparkles',
+      order: 15,
       group: 'content',
     },
   },
@@ -78,7 +93,7 @@ export const CONTENT_ROUTE_META = {
       'Review contributor submissions, moderation state, and promotion flows into content.',
     defaultPath: '/contributions',
     nav: {
-      label: 'Contribution QA',
+      label: 'Contributions',
       description: 'Contributor intake, moderation, and promotion',
       icon: 'inbox',
       order: 30,
@@ -99,6 +114,7 @@ type ContentNavigableRouteKey = Exclude<ContentRouteKey, 'article'>;
 
 const CONTENT_NAV_ROUTE_KEYS = [
   'workspace',
+  'facts',
   'governance',
   'contributions',
 ] as const satisfies readonly ContentNavigableRouteKey[];

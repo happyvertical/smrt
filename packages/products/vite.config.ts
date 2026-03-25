@@ -88,6 +88,7 @@ const libEntries = {
 	generated: resolve(packageDir, 'src/generated.ts'),
 	utils: resolve(packageDir, 'src/utils.ts'),
 	collections: resolve(packageDir, 'src/collections.ts'),
+	'lib/mock-smrt-client': resolve(packageDir, 'src/lib/mock-smrt-client.ts'),
 } as const;
 
 export default defineConfig(async () => {

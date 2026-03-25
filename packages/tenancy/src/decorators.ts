@@ -22,7 +22,14 @@
  * @see https://github.com/happyvertical/smrt/issues/829
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  applyPendingDecoratorRegistrations,
+  type CompatiblePropertyDecorator,
+  type CompatiblePropertyDecoratorContext,
+  type LegacyPropertyDecoratorTarget,
+  ObjectRegistry,
+  registerCompatibleFieldDecorator,
+} from '@happyvertical/smrt-core';
 import type { TenantIdFieldOptions } from './fields.js';
 import {
   registerTenantScopedClass,
@@ -119,10 +126,13 @@ export interface TenantScopedOptions {
  * }
  * ```
  */
-export function TenantScoped(
-  options: TenantScopedOptions = {},
-): ClassDecorator {
-  return <T extends Function>(target: T): T => {
+export function TenantScoped(options: TenantScopedOptions = {}) {
+  return <T extends Function>(
+    target: T,
+    decoratorContext?: ClassDecoratorContext,
+  ): T => {
+    applyPendingDecoratorRegistrations(target, decoratorContext);
+
     const className = target.name;
 
     // Merge with defaults
@@ -191,19 +201,26 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
     ...options,
   };
 
-  return (target: any, propertyKey: string) => {
-    const className = target.constructor.name;
-
-    ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-      type: 'foreignKey',
-      related: 'Tenant',
-      sqlType: 'TEXT',
-      required: opts.required,
-      nullable: opts.nullable,
-      __tenancy: {
-        ...opts,
-        isTenantIdField: true,
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          type: 'foreignKey',
+          related: 'Tenant',
+          sqlType: 'TEXT',
+          required: opts.required,
+          nullable: opts.nullable,
+          __tenancy: {
+            ...opts,
+            isTenantIdField: true,
+          },
+        });
       },
-    });
-  };
+    );
+  }) as CompatiblePropertyDecorator;
 }

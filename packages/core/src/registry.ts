@@ -29,6 +29,7 @@
  */
 
 import { SmrtCollection } from './collection';
+import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
 import type {
   ClassEmbeddingConfig,
   ProjectEmbeddingConfig,
@@ -2683,7 +2684,12 @@ export class ObjectRegistry {
  * @see {@link field} / {@link meta} / {@link foreignKey} for field decorators
  */
 export function smrt(config: SmartObjectConfig = {}) {
-  return <T extends abstract new (...args: any[]) => any>(ctor: T): T => {
+  return <T extends abstract new (...args: any[]) => any>(
+    ctor: T,
+    decoratorContext?: ClassDecoratorContext<T>,
+  ): T => {
+    applyPendingDecoratorRegistrations(ctor, decoratorContext);
+
     // Check if this is a SmrtCollection class
     const isCollection = ctor.prototype instanceof SmrtCollection;
 

@@ -10,11 +10,13 @@ import {
 interface ContentGovernanceRouteProps {
   navigation?: ContentRouteNavigationItem[];
   apiBaseUrl?: string;
+  embedded?: boolean;
 }
 
 let {
   navigation = CONTENT_DEFAULT_ROUTE_NAVIGATION,
   apiBaseUrl = '/api/v1',
+  embedded = false,
 }: ContentGovernanceRouteProps = $props();
 
 const workspaceHref = $derived(
@@ -22,19 +24,19 @@ const workspaceHref = $derived(
 );
 </script>
 
-<div class="page">
+<div class:page={true} class:page--embedded={embedded}>
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
         <div class="eyebrow">Content governance</div>
-        <h1>Governance Admin</h1>
+        <h1>Governance rules</h1>
         <p>
-          Manage review policies, publication profiles, and assignment rules
-          that the content workspace enforces during authoring and publication.
+          Manage the policies, review profiles, fact-linking settings, and
+          publication rules the workspace applies during authoring.
         </p>
       </div>
 
-      <nav class="page-nav" aria-label="Content QA navigation">
+      <nav class="page-nav" aria-label="Content navigation">
         {#each navigation as item (item.routeId)}
           <a
             href={item.href}
@@ -51,13 +53,13 @@ const workspaceHref = $derived(
 
   <main class="container page-main">
     <section class="callout">
-      <strong>What this route covers</strong>
+      <strong>What you control here</strong>
       <ul>
-        <li>Create and edit governance policies, profiles, and type assignments.</li>
-        <li>Confirm persisted overrides stay separate from package defaults.</li>
+        <li>Create and edit review policies, profiles, and type assignments.</li>
+        <li>Control which content types require facts, reviews, and transparency.</li>
         <li>
           Return to the <a href={workspaceHref}>content workspace</a> to verify
-          governed authoring and publication against the updated definitions.
+          how the current rules affect live authoring and publication.
         </li>
       </ul>
     </section>
@@ -69,7 +71,7 @@ const workspaceHref = $derived(
 </div>
 
 <style>
-  :global(body) {
+  :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
       var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont,
@@ -88,6 +90,11 @@ const workspaceHref = $derived(
   .page {
     min-height: 100vh;
     padding: 2rem 1.25rem 3rem;
+  }
+
+  .page--embedded {
+    min-height: auto;
+    padding: 0;
   }
 
   .container {
@@ -140,15 +147,35 @@ const workspaceHref = $derived(
   }
 
   .page-nav a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.5rem;
+    padding: 0 1rem;
+    border-radius: 999px;
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-surface) 92%,
+      transparent
+    );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
     font-weight: 600;
-    opacity: 0.85;
   }
 
   .page-nav a[aria-current='page'] {
-    opacity: 1;
     color: var(--smrt-color-primary);
+    border-color: color-mix(
+      in srgb,
+      var(--smrt-color-primary) 28%,
+      transparent
+    );
+    background: color-mix(
+      in srgb,
+      var(--smrt-color-primary) 10%,
+      var(--smrt-color-surface)
+    );
   }
 
   .page-main {
