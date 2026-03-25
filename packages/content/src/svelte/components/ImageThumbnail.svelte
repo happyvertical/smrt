@@ -1,15 +1,11 @@
 <script lang="ts">
 import { joinApiUrl } from '../api';
-
-type ThumbnailState = 'loading' | 'ready' | 'missing';
-
-const thumbnailCache = new Map<
-  string,
-  {
-    state: ThumbnailState;
-    url: string | null;
-  }
->();
+import {
+  getCachedThumbnail,
+  setCachedThumbnail,
+  THUMBNAIL_FAILURE_TTL_MS,
+  type ThumbnailState,
+} from './ImageThumbnail.cache';
 
 interface ImageThumbnailProps {
   assetId: string;
@@ -20,6 +16,7 @@ let { assetId, apiBaseUrl = '/api/v1' }: ImageThumbnailProps = $props();
 
 let imageUrl: string | null = $state(null);
 let thumbnailState: ThumbnailState = $state('loading');
+let currentCacheKey: string | null = $state(null);
 
 function isAbortError(error: unknown, signal: AbortSignal): boolean {
   if (signal.aborted) {
@@ -36,13 +33,15 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
 
 $effect(() => {
   if (!assetId) {
+    currentCacheKey = null;
     imageUrl = null;
     thumbnailState = 'missing';
     return;
   }
 
   const cacheKey = `${apiBaseUrl}::${assetId}`;
-  const cached = thumbnailCache.get(cacheKey);
+  currentCacheKey = cacheKey;
+  const cached = getCachedThumbnail(cacheKey);
   if (cached) {
     imageUrl = cached.url;
     thumbnailState = cached.state;
@@ -67,9 +66,10 @@ $effect(() => {
     .then((data) => {
       imageUrl = data?.sourceUri || data?.url || null;
       thumbnailState = imageUrl ? 'ready' : 'missing';
-      thumbnailCache.set(cacheKey, {
+      setCachedThumbnail(cacheKey, {
         state: thumbnailState,
         url: imageUrl,
+        expiresAt: imageUrl ? null : Date.now() + THUMBNAIL_FAILURE_TTL_MS,
       });
     })
     .catch((error: unknown) => {
@@ -79,9 +79,10 @@ $effect(() => {
 
       imageUrl = null;
       thumbnailState = 'missing';
-      thumbnailCache.set(cacheKey, {
+      setCachedThumbnail(cacheKey, {
         state: 'missing',
         url: null,
+        expiresAt: Date.now() + THUMBNAIL_FAILURE_TTL_MS,
       });
     });
 
@@ -100,10 +101,13 @@ $effect(() => {
     onerror={() => {
       imageUrl = null;
       thumbnailState = 'missing';
-      thumbnailCache.set(`${apiBaseUrl}::${assetId}`, {
-        state: 'missing',
-        url: null,
-      });
+      if (currentCacheKey) {
+        setCachedThumbnail(currentCacheKey, {
+          state: 'missing',
+          url: null,
+          expiresAt: Date.now() + THUMBNAIL_FAILURE_TTL_MS,
+        });
+      }
     }}
   />
 {:else if thumbnailState === 'loading'}

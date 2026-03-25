@@ -22,35 +22,19 @@
  * @see https://github.com/happyvertical/smrt/issues/829
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  applyPendingDecoratorRegistrations,
+  type CompatiblePropertyDecorator,
+  type CompatiblePropertyDecoratorContext,
+  type LegacyPropertyDecoratorTarget,
+  ObjectRegistry,
+  registerCompatibleFieldDecorator,
+} from '@happyvertical/smrt-core';
 import type { TenantIdFieldOptions } from './fields.js';
 import {
   registerTenantScopedClass,
   type TenantScopedConfig,
 } from './registry.js';
-
-type LegacyPropertyDecoratorTarget = {
-  constructor?: {
-    name?: string;
-  };
-};
-
-interface CompatiblePropertyDecorator<This = any, Value = any> {
-  (target: object, propertyKey: string | symbol): void;
-  (value: undefined, context: ClassFieldDecoratorContext<This, Value>): void;
-}
-
-function resolveDecoratorClassName(target: unknown): string | undefined {
-  if (typeof target === 'function') {
-    return target.name;
-  }
-
-  if (target && typeof target === 'object') {
-    return (target as LegacyPropertyDecoratorTarget).constructor?.name;
-  }
-
-  return undefined;
-}
 
 /**
  * Options accepted by the `@TenantScoped()` class decorator.
@@ -142,10 +126,13 @@ export interface TenantScopedOptions {
  * }
  * ```
  */
-export function TenantScoped(
-  options: TenantScopedOptions = {},
-): ClassDecorator {
-  return <T extends Function>(target: T): T => {
+export function TenantScoped(options: TenantScopedOptions = {}) {
+  return <T extends Function>(
+    target: T,
+    decoratorContext?: ClassDecoratorContext,
+  ): T => {
+    applyPendingDecoratorRegistrations(target, decoratorContext);
+
     const className = target.name;
 
     // Merge with defaults
@@ -216,42 +203,24 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
 
   return ((
     targetOrValue: LegacyPropertyDecoratorTarget | undefined,
-    propertyKeyOrContext:
-      | string
-      | symbol
-      | ClassFieldDecoratorContext<any, any>,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
   ) => {
-    const registerTenantId = (className: string, propertyKey: string) => {
-      ObjectRegistry.registerFieldDecorator(className, propertyKey, {
-        type: 'foreignKey',
-        related: 'Tenant',
-        sqlType: 'TEXT',
-        required: opts.required,
-        nullable: opts.nullable,
-        __tenancy: {
-          ...opts,
-          isTenantIdField: true,
-        },
-      });
-    };
-
-    if (
-      typeof propertyKeyOrContext === 'string' ||
-      typeof propertyKeyOrContext === 'symbol'
-    ) {
-      const className = resolveDecoratorClassName(targetOrValue);
-      if (className) {
-        registerTenantId(className, String(propertyKeyOrContext));
-      }
-      return;
-    }
-
-    const context = propertyKeyOrContext;
-    context.addInitializer?.(function registerTenantIdDecorator() {
-      const className = resolveDecoratorClassName(this);
-      if (className) {
-        registerTenantId(className, String(context.name));
-      }
-    });
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          type: 'foreignKey',
+          related: 'Tenant',
+          sqlType: 'TEXT',
+          required: opts.required,
+          nullable: opts.nullable,
+          __tenancy: {
+            ...opts,
+            isTenantIdField: true,
+          },
+        });
+      },
+    );
   }) as CompatiblePropertyDecorator;
 }

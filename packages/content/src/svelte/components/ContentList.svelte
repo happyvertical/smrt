@@ -1,5 +1,6 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import { untrack } from 'svelte';
 import ImageThumbnail from './ImageThumbnail.svelte';
 
 let {
@@ -27,18 +28,12 @@ let {
 let searchTerm = $state('');
 let selectedType = $state('All Types');
 let selectedStatus = $state('All Statuses');
-let viewMode: 'grid' | 'detailed' | 'compact' = $state('grid');
-let hasSyncedDefaultView = false;
+let viewMode: 'grid' | 'detailed' | 'compact' = $state(
+  untrack(() => defaultViewMode),
+);
 
 $effect(() => {
   selectedType = type || 'All Types';
-});
-
-$effect(() => {
-  if (!hasSyncedDefaultView) {
-    viewMode = defaultViewMode;
-    hasSyncedDefaultView = true;
-  }
 });
 
 function getTextValue(value: unknown): string {

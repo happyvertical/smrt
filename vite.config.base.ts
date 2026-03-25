@@ -44,16 +44,28 @@ interface WorkspacePackageInfo {
 function collectWorkspacePackages(rootDir: string): WorkspacePackageInfo[] {
   return readdirSync(rootDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
-    .map((entry) => {
+    .flatMap((entry) => {
       const dir = resolve(rootDir, entry.name);
-      const packageJson = JSON.parse(
-        readFileSync(resolve(dir, 'package.json'), 'utf8'),
-      );
+      const packageJsonPath = resolve(dir, 'package.json');
+      if (!existsSync(packageJsonPath)) {
+        return [];
+      }
 
-      return {
-        dir,
-        name: packageJson.name as string,
-      };
+      try {
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8'));
+        if (typeof packageJson.name !== 'string' || packageJson.name === '') {
+          return [];
+        }
+
+        return [
+          {
+            dir,
+            name: packageJson.name,
+          },
+        ];
+      } catch {
+        return [];
+      }
     });
 }
 

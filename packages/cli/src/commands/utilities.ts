@@ -1612,6 +1612,12 @@ export default testManifest;
                 const resolution = resolveStiDiscriminatorUpgrade(metaType);
 
                 if (resolution.action === 'skip') {
+                  if (resolution.reason === 'ambiguous' && !options.verbose) {
+                    console.warn(
+                      `  ⚠ ${tableName}._meta_type="${metaType}" matches multiple registered classes; leaving it unchanged.`,
+                    );
+                  }
+
                   if (options.verbose) {
                     const detail =
                       resolution.reason === 'already-current'

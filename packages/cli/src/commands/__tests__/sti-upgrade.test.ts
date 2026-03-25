@@ -1,5 +1,5 @@
 import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveStiDiscriminatorUpgrade } from '../sti-upgrade.js';
 
 @smrt({ tableStrategy: 'sti', tableName: 'sti_upgrade_assets' })
@@ -59,5 +59,45 @@ describe('resolveStiDiscriminatorUpgrade', () => {
       action: 'skip',
       reason: 'unregistered',
     });
+  });
+
+  it('skips ambiguous simple discriminators when multiple classes share the name', () => {
+    const findClassesByName = vi
+      .spyOn(ObjectRegistry, 'findClassesByName')
+      .mockReturnValue([
+        {
+          name: 'StiUpgradeDuplicate',
+          qualifiedName: '@happyvertical/smrt-assets:StiUpgradeDuplicate',
+        },
+        {
+          name: 'StiUpgradeDuplicate',
+          qualifiedName: '@happyvertical/smrt-images:StiUpgradeDuplicate',
+        },
+      ] as ReturnType<typeof ObjectRegistry.findClassesByName>);
+
+    expect(resolveStiDiscriminatorUpgrade('StiUpgradeDuplicate')).toEqual({
+      action: 'skip',
+      reason: 'ambiguous',
+    });
+
+    findClassesByName.mockRestore();
+  });
+
+  it('skips classes that are registered without a qualified package name', () => {
+    const findClassesByName = vi
+      .spyOn(ObjectRegistry, 'findClassesByName')
+      .mockReturnValue([
+        {
+          name: 'UnqualifiedStiUpgrade',
+          qualifiedName: undefined,
+        },
+      ] as ReturnType<typeof ObjectRegistry.findClassesByName>);
+
+    expect(resolveStiDiscriminatorUpgrade('UnqualifiedStiUpgrade')).toEqual({
+      action: 'skip',
+      reason: 'unqualified',
+    });
+
+    findClassesByName.mockRestore();
   });
 });

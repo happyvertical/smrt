@@ -503,7 +503,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
 </div>
 
 <style>
-  :global(body) {
+  :global(body:has(.page:not(.page--embedded))) {
     margin: 0;
     font-family:
       var(--smrt-font-family, 'Inter', -apple-system, BlinkMacSystemFont,
