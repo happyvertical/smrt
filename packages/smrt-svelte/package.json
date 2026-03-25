@@ -10,61 +10,73 @@
     ".": {
       "types": "./dist/index.d.ts",
       "svelte": "./dist/index.js",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
     "./admin": {
       "types": "./dist/components/admin/index.d.ts",
       "svelte": "./dist/components/admin/index.js",
+      "import": "./dist/components/admin/index.js",
       "default": "./dist/components/admin/index.js"
     },
     "./calendar": {
       "types": "./dist/components/calendar/index.d.ts",
       "svelte": "./dist/components/calendar/index.js",
+      "import": "./dist/components/calendar/index.js",
       "default": "./dist/components/calendar/index.js"
     },
     "./content": {
       "types": "./dist/components/content/index.d.ts",
       "svelte": "./dist/components/content/index.js",
+      "import": "./dist/components/content/index.js",
       "default": "./dist/components/content/index.js"
     },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",
       "svelte": "./dist/components/forms/index.js",
+      "import": "./dist/components/forms/index.js",
       "default": "./dist/components/forms/index.js"
     },
     "./layout": {
       "types": "./dist/components/layout/index.d.ts",
       "svelte": "./dist/components/layout/index.js",
+      "import": "./dist/components/layout/index.js",
       "default": "./dist/components/layout/index.js"
     },
     "./meetings": {
       "types": "./dist/components/meetings/index.d.ts",
       "svelte": "./dist/components/meetings/index.js",
+      "import": "./dist/components/meetings/index.js",
       "default": "./dist/components/meetings/index.js"
     },
     "./town": {
       "types": "./dist/components/town/index.d.ts",
       "svelte": "./dist/components/town/index.js",
+      "import": "./dist/components/town/index.js",
       "default": "./dist/components/town/index.js"
     },
     "./ui": {
       "types": "./dist/components/ui/index.d.ts",
       "svelte": "./dist/components/ui/index.js",
+      "import": "./dist/components/ui/index.js",
       "default": "./dist/components/ui/index.js"
     },
     "./weather": {
       "types": "./dist/components/weather/index.d.ts",
       "svelte": "./dist/components/weather/index.js",
+      "import": "./dist/components/weather/index.js",
       "default": "./dist/components/weather/index.js"
     },
     "./jobs": {
       "types": "./dist/components/jobs/index.d.ts",
       "svelte": "./dist/components/jobs/index.js",
+      "import": "./dist/components/jobs/index.js",
       "default": "./dist/components/jobs/index.js"
     },
     "./agents": {
       "types": "./dist/components/agents/index.d.ts",
       "svelte": "./dist/components/agents/index.js",
+      "import": "./dist/components/agents/index.js",
       "default": "./dist/components/agents/index.js"
     },
     "./styles/tokens.css": {
@@ -73,11 +85,13 @@
     "./registry": {
       "types": "./dist/registry/index.d.ts",
       "svelte": "./dist/registry/index.js",
+      "import": "./dist/registry/index.js",
       "default": "./dist/registry/index.js"
     },
     "./themes": {
       "types": "./dist/themes/index.d.ts",
       "svelte": "./dist/themes/index.js",
+      "import": "./dist/themes/index.js",
       "default": "./dist/themes/index.js"
     },
     "./themes/styles/*": {
@@ -85,11 +99,13 @@
     },
     "./browser-ai": {
       "types": "./dist/browser-ai/index.d.ts",
+      "import": "./dist/browser-ai/index.js",
       "default": "./dist/browser-ai/index.js"
     },
     "./browser-ai/svelte": {
       "types": "./dist/browser-ai/svelte/index.d.ts",
       "svelte": "./dist/browser-ai/svelte/index.js",
+      "import": "./dist/browser-ai/svelte/index.js",
       "default": "./dist/browser-ai/svelte/index.js"
     }
   },
