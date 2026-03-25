@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.16
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: remove legacy asset backfill (#1078) (content)
+  - @happyvertical/smrt-scanner@0.21.16
+  - @happyvertical/smrt-config@0.21.16
+  - @happyvertical/smrt-types@0.21.16
+
 ## 0.21.15
 
 ### Patch Changes
