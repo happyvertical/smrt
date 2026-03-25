@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.17
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - publish import conditions for svelte exports (#1079) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.21.17
+  - @happyvertical/smrt-config@0.21.17
+  - @happyvertical/smrt-types@0.21.17
+
 ## 0.21.16
 
 ### Patch Changes

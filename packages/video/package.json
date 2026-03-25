@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-video",
-  "version": "0.21.16",
+  "version": "0.21.17",
   "type": "module",
   "description": "Video content management for AI-powered video production in the SMRT ecosystem",
   "author": "HappyVertical",
