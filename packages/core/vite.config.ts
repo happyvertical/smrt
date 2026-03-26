@@ -133,7 +133,6 @@ export default defineConfig({
         '@langchain/core',
         '@langchain/openai',
         '@langchain/anthropic',
-        '@langchain/community',
         'date-fns',
         'pluralize',
         'uuid',

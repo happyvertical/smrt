@@ -3,23 +3,23 @@ packages:
   - 'packages/smrt-playground/host'
 
 catalog:
-  '@happyvertical/ai': ^0.70.0
-  '@happyvertical/cache': ^0.70.0
-  '@happyvertical/documents': ^0.70.0
-  '@happyvertical/email': ^0.70.0
-  '@happyvertical/encryption': ^0.70.0
-  '@happyvertical/files': ^0.70.0
-  '@happyvertical/geo': ^0.70.0
-  '@happyvertical/images': ^0.70.0
-  '@happyvertical/jobs': ^0.70.0
-  '@happyvertical/json': ^0.70.0
-  '@happyvertical/logger': ^0.70.0
-  '@happyvertical/messages': ^0.70.0
-  '@happyvertical/ocr': ^0.60.8
-  '@happyvertical/pdf': ^0.62.2
-  '@happyvertical/projects': ^0.70.0
-  '@happyvertical/repos': ^0.70.0
-  '@happyvertical/secrets': ^0.70.0
-  '@happyvertical/spider': ^0.60.8
-  '@happyvertical/sql': ^0.70.0
-  '@happyvertical/utils': ^0.70.0
+  '@happyvertical/ai': ^0.71.18
+  '@happyvertical/cache': ^0.71.18
+  '@happyvertical/documents': ^0.71.18
+  '@happyvertical/email': ^0.71.18
+  '@happyvertical/encryption': ^0.71.18
+  '@happyvertical/files': ^0.71.18
+  '@happyvertical/geo': ^0.71.18
+  '@happyvertical/images': ^0.71.18
+  '@happyvertical/jobs': ^0.71.18
+  '@happyvertical/json': ^0.71.18
+  '@happyvertical/logger': ^0.71.18
+  '@happyvertical/messages': ^0.71.18
+  '@happyvertical/ocr': ^0.60.29
+  '@happyvertical/pdf': ^0.62.20
+  '@happyvertical/projects': ^0.71.18
+  '@happyvertical/repos': ^0.71.18
+  '@happyvertical/secrets': ^0.71.18
+  '@happyvertical/spider': ^0.60.9
+  '@happyvertical/sql': ^0.71.18
+  '@happyvertical/utils': ^0.71.18

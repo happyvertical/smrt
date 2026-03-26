@@ -6,10 +6,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "smrt": "./dist/index.js",
-    "smrt-cli": "./dist/index.js"
+    "smrt": "./bin/smrt.js",
+    "smrt-cli": "./bin/smrt.js"
   },
   "files": [
+    "bin",
     "dist",
     "README.md",
     "CLAUDE.md"

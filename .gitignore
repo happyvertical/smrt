@@ -173,3 +173,5 @@ repomix-output.xml
 
 # Act (GitHub Actions local runner) binaries
 bin/
+!packages/*/bin/
+!packages/*/bin/*.js
