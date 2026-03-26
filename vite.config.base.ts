@@ -278,7 +278,6 @@ export function createPackageConfig(
             '@langchain/core',
             '@langchain/openai',
             '@langchain/anthropic',
-            '@langchain/community',
             'date-fns',
             'pluralize',
             'uuid',

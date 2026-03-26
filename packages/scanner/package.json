@@ -7,9 +7,10 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "smrt-scan": "dist/cli.js"
+    "smrt-scan": "./bin/smrt-scan.js"
   },
   "files": [
+    "bin",
     "dist"
   ],
   "exports": {

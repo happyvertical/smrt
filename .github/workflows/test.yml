@@ -17,6 +17,9 @@ on:
         value: ${{ jobs.test-suite.outputs.tests-passed }}
   workflow_dispatch:  # Allow manual triggering
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   test-suite:
     name: Run Test Suite

@@ -7,9 +7,10 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "smrt-prebuild": "dist/prebuild/cli.js"
+    "smrt-prebuild": "./bin/smrt-prebuild.js"
   },
   "files": [
+    "bin",
     "dist",
     "CLAUDE.md"
   ],
@@ -49,7 +50,6 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
-    "@langchain/community": "^1.1.4",
     "@modelcontextprotocol/sdk": "^1.25.2",
     "cheerio": "^1.1.2",
     "fast-glob": "3.3.3",
