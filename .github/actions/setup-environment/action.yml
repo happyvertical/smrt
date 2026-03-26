@@ -99,9 +99,9 @@ runs:
         NODE_OPTIONS: --disable-warning=DEP0169
         NPM_TOKEN: ${{ inputs.auth-token }}
       run: |
-        store_root="${PNPM_STORE_DIR:-/home/runner/.local/share/pnpm/store}"
+        store_root="${PNPM_STORE_DIR:-$HOME/.local/share/pnpm/store}"
         mkdir -p "$store_root"
-        pnpm config set store-dir "$store_root" --location=user
+        pnpm config set store-dir "$store_root" --location=global
 
     - name: Get pnpm store directory
       id: pnpm-store
