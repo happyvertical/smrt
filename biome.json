@@ -3,6 +3,7 @@
   "files": {
     "includes": [
       "packages/*/src/**/*.{js,ts,tsx,jsx,svelte}",
+      "packages/*/bin/**/*.js",
       "packages/*/playground/src/**/*.{js,ts,tsx,jsx,svelte}",
       "packages/*/playground/*.{js,ts}",
       "packages/*/scripts/**/*.{js,ts}",
