@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.18
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: reduce warnings and bump happyvertical sdk (#1080) (ci)
+  - @happyvertical/smrt-scanner@0.21.18
+  - @happyvertical/smrt-config@0.21.18
+  - @happyvertical/smrt-types@0.21.18
+
 ## 0.21.17
 
 ### Patch Changes
