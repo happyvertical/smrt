@@ -9,26 +9,26 @@ overrides:
   '@happyvertical/smrt-types': workspace:*
   '@happyvertical/smrt-config': workspace:*
   '@happyvertical/smrt-core': workspace:*
-  '@happyvertical/ai': ^0.71.18
-  '@happyvertical/cache': ^0.71.18
-  '@happyvertical/documents': ^0.71.18
-  '@happyvertical/email': ^0.71.18
-  '@happyvertical/encryption': ^0.71.18
-  '@happyvertical/files': ^0.71.18
-  '@happyvertical/geo': ^0.71.18
-  '@happyvertical/images': ^0.71.18
-  '@happyvertical/jobs': ^0.71.18
-  '@happyvertical/json': ^0.71.18
-  '@happyvertical/logger': ^0.71.18
-  '@happyvertical/messages': ^0.71.18
+  '@happyvertical/ai': ^0.71.19
+  '@happyvertical/cache': ^0.71.19
+  '@happyvertical/documents': ^0.71.19
+  '@happyvertical/email': ^0.71.19
+  '@happyvertical/encryption': ^0.71.19
+  '@happyvertical/files': ^0.71.19
+  '@happyvertical/geo': ^0.71.19
+  '@happyvertical/images': ^0.71.19
+  '@happyvertical/jobs': ^0.71.19
+  '@happyvertical/json': ^0.71.19
+  '@happyvertical/logger': ^0.71.19
+  '@happyvertical/messages': ^0.71.19
   '@happyvertical/ocr': ^0.60.29
   '@happyvertical/pdf': ^0.62.20
-  '@happyvertical/projects': ^0.71.18
-  '@happyvertical/repos': ^0.71.18
-  '@happyvertical/secrets': ^0.71.18
+  '@happyvertical/projects': ^0.71.19
+  '@happyvertical/repos': ^0.71.19
+  '@happyvertical/secrets': ^0.71.19
   '@happyvertical/spider': ^0.60.9
-  '@happyvertical/sql': ^0.71.18
-  '@happyvertical/utils': ^0.71.18
+  '@happyvertical/sql': ^0.71.19
+  '@happyvertical/utils': ^0.71.19
 
 importers:
 
@@ -123,8 +123,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -163,8 +163,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -184,11 +184,11 @@ importers:
   packages/agents:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -199,12 +199,12 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte
@@ -212,8 +212,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@sveltejs/package':
         specifier: ^2.5.7
         version: 2.5.7(svelte@5.53.5)(typescript@5.9.3)
@@ -249,8 +249,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@sveltejs/package':
         specifier: ^2.5.7
         version: 2.5.7(svelte@5.53.5)(typescript@5.9.3)
@@ -279,14 +279,14 @@ importers:
   packages/assets:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -300,11 +300,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
@@ -401,14 +401,14 @@ importers:
   packages/cli:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-agents':
         specifier: workspace:*
         version: link:../agents
@@ -425,11 +425,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       fast-glob:
         specifier: 3.3.3
         version: 3.3.3
@@ -530,23 +530,23 @@ importers:
   packages/content:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/documents':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@napi-rs/canvas@0.1.95)(@noble/hashes@2.0.1)(@types/node@24.10.9)(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@napi-rs/canvas@0.1.95)(@noble/hashes@2.0.1)(@types/node@24.10.9)(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/geo':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/images':
-        specifier: ^0.71.18
-        version: 0.71.18(jimp@1.6.0)(sharp@0.34.5)
+        specifier: ^0.71.19
+        version: 0.71.19(jimp@1.6.0)(sharp@0.34.5)
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/ocr':
         specifier: ^0.60.29
         version: 0.60.29(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
@@ -584,11 +584,11 @@ importers:
         specifier: ^0.60.9
         version: 0.60.9(@noble/hashes@2.0.1)(@types/node@24.10.9)
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       yaml:
         specifier: ^2.8.2
         version: 2.8.2
@@ -636,17 +636,17 @@ importers:
   packages/core:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/json':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -657,11 +657,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)
@@ -712,14 +712,14 @@ importers:
   packages/events:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -739,11 +739,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
@@ -782,14 +782,14 @@ importers:
   packages/facts:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -797,11 +797,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -822,23 +822,23 @@ importers:
   packages/gnode:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@types/node':
         specifier: 24.10.9
@@ -859,11 +859,11 @@ importers:
   packages/images:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/images':
-        specifier: ^0.71.18
-        version: 0.71.18(jimp@1.6.0)(sharp@0.34.5)
+        specifier: ^0.71.19
+        version: 0.71.19(jimp@1.6.0)(sharp@0.34.5)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -877,8 +877,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
@@ -887,8 +887,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@sveltejs/kit':
         specifier: ^2.5.7
         version: 2.53.3(@opentelemetry/api@1.9.0)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.53.5)(vite@7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.53.5)(typescript@5.9.3)(vite@7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
@@ -920,11 +920,11 @@ importers:
   packages/jobs:
     dependencies:
       '@happyvertical/jobs':
-        specifier: ^0.71.18
-        version: 0.71.18(@aws-sdk/client-sqs@3.999.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.70.1)
+        specifier: ^0.71.19
+        version: 0.71.19(@aws-sdk/client-sqs@3.999.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.70.1)
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -935,11 +935,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
@@ -1006,23 +1006,23 @@ importers:
   packages/messages:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/email':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/encryption':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)(@types/node@24.10.9)(typescript@5.9.3)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)(@types/node@24.10.9)(typescript@5.9.3)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/messages':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1036,11 +1036,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
@@ -1076,20 +1076,20 @@ importers:
   packages/places:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/cache':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/geo':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1100,11 +1100,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1128,14 +1128,14 @@ importers:
   packages/products:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1143,11 +1143,11 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1189,14 +1189,14 @@ importers:
   packages/profiles:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -1207,11 +1207,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@noble/curves':
         specifier: ^1.8.1
         version: 1.9.7
@@ -1244,17 +1244,17 @@ importers:
   packages/projects:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/projects':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/repos':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1268,11 +1268,11 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -1333,8 +1333,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1388,8 +1388,8 @@ importers:
   packages/secrets:
     dependencies:
       '@happyvertical/secrets':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1397,11 +1397,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1438,8 +1438,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1459,23 +1459,23 @@ importers:
   packages/smrt-dev-mcp:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)
@@ -1633,21 +1633,21 @@ importers:
         specifier: workspace:*
         version: link:../video
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       svelte:
         specifier: ^5.0.0
         version: 5.53.5
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1664,14 +1664,14 @@ importers:
   packages/tags:
     dependencies:
       '@happyvertical/ai':
-        specifier: ^0.71.18
-        version: 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+        specifier: ^0.71.19
+        version: 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/files':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1679,11 +1679,11 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@types/node':
         specifier: 24.10.9
@@ -1725,11 +1725,11 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
     devDependencies:
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
@@ -1853,21 +1853,21 @@ importers:
         specifier: workspace:*
         version: link:../voice
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       svelte:
         specifier: ^5.0.0
         version: 5.53.5
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1887,8 +1887,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -1921,21 +1921,21 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/utils':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       svelte:
         specifier: ^5.0.0
         version: 5.53.5
     devDependencies:
       '@happyvertical/logger':
-        specifier: ^0.71.18
-        version: 0.71.18(@sentry/node@10.40.0)
+        specifier: ^0.71.19
+        version: 0.71.19(@sentry/node@10.40.0)
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.71.18
-        version: 0.71.18
+        specifier: ^0.71.19
+        version: 0.71.19
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -2819,47 +2819,47 @@ packages:
   '@gutenye/ocr-node@1.4.8':
     resolution: {integrity: sha512-Ej6hHQSrBLCY74Qb2rRYZ0v97kp3h1Q8obLdQDM208ft9BOyqj+aUN2yTYQ/1c/BO695OWDgufRSiWiLB92KLw==}
 
-  '@happyvertical/ai@0.71.18':
-    resolution: {integrity: sha512-XkgiBPe4Go2Agmm5IqXzOIOqeBTzvnrr1GLPWs0y9h6KWHzDAPE+Bu0cebJ/fj0gu4+hm6O/ftlEozIh+sUyhA==, tarball: https://npm.pkg.github.com/download/@happyvertical/ai/0.71.18/2a437d2cea1dd3af76481b7f9f29e4852fded7f7}
+  '@happyvertical/ai@0.71.19':
+    resolution: {integrity: sha512-y5hCrasiw056HFkDm5NhkdnmBazg64P2TKSZiRYblf73pIuR7ysUK7bg2ZREX4yoXbLwoKWvjnxdLNFJMSo8dQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/ai/0.71.19/7c37d731551761ce22a2a333b492f4396d5ca213}
     hasBin: true
 
-  '@happyvertical/cache@0.71.18':
-    resolution: {integrity: sha512-eJ1i2PiIKj6zn0Es1wspAMVhVXmDs2FssqSZ9k0DS5iVuDaLp34yhCrs2u/pvMDvdP9/u3vGgCPkhHugraQl8A==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.71.18/e783e0042c5e374c2e5a4cdc52b2a2d518a0c153}
+  '@happyvertical/cache@0.71.19':
+    resolution: {integrity: sha512-jJwSqMo/fU1Y6zTmlnOJ25cJuY+01i20O48mQ4wQFja9c9IyPbdSEMR2rveKWQcLnsFAPAcw1Bpf+pMAYnrV0A==, tarball: https://npm.pkg.github.com/download/@happyvertical/cache/0.71.19/dd7f2157adacdbf7a4e2c0a91fe0ce183cd2b2c0}
     hasBin: true
 
-  '@happyvertical/documents@0.71.18':
-    resolution: {integrity: sha512-9fJPLKLLZpb2wnXqNC3N8C9GWHLQkp5dRY2uDGUQ2s2Eyz8qWLGel2nxQik3bN+XjX/2eJ6mYIIVn5hwUsXvlw==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.71.18/0e26a2bb2a5e6a5818ba3983e92b09be08e7f0ee}
+  '@happyvertical/documents@0.71.19':
+    resolution: {integrity: sha512-zjSfa6/xe+ybgfHAJcBp0YLp+DWPd7jCovUp2WsY8bWSSfrNLVCBMeVTkU7S8UMJxdaR8VaAldJh1GmFhWCZPQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/documents/0.71.19/1d62b818a96b8636e6cf4ea2c2b874d3b0281f98}
     hasBin: true
 
-  '@happyvertical/email@0.71.18':
-    resolution: {integrity: sha512-na+mxSM9cCoWLSHKR2til6FycCHF+f++YpfR/TQaWoxvjB/v/LuTPhoMRVFB8p6twwA+40/H0RwglQz6nl3nrA==, tarball: https://npm.pkg.github.com/download/@happyvertical/email/0.71.18/88ba2a96d4a5d62852080ab2e98cf853abab1c5c}
+  '@happyvertical/email@0.71.19':
+    resolution: {integrity: sha512-Mm+PJQ9JGuskQppUacsIjIVKrWkw5NtpHy/qfwG2MS/C0EyHsPQFxzYEbqrz1YscpKL8lAHr4y9sv8YlPnQlyg==, tarball: https://npm.pkg.github.com/download/@happyvertical/email/0.71.19/3fd29081cb97ee0d65d92669f1eb89526129353f}
     hasBin: true
 
-  '@happyvertical/encryption@0.71.18':
-    resolution: {integrity: sha512-6xlGw8828+bx+0XPodAsr6ICav9wNLcJnKv1qHZLJxq5XnEGpKWbEQOV3vm8jBTHApQ7NjOI1IU35//FjpJFqw==, tarball: https://npm.pkg.github.com/download/@happyvertical/encryption/0.71.18/b897a1abdb4a710963c2842e8f668a6bd5337061}
+  '@happyvertical/encryption@0.71.19':
+    resolution: {integrity: sha512-Pb9TIuVTUPVjjWFt9uffZIH8xa1sbrlNYO1Qv8dwb7JC2IN7FO0P3YiIuoeN/1RxMeVgUGd+RfUX3snpfyUBow==, tarball: https://npm.pkg.github.com/download/@happyvertical/encryption/0.71.19/e71e54fa130597d8c235885a0a41b6ae3eabfc5a}
     hasBin: true
 
-  '@happyvertical/files@0.71.18':
-    resolution: {integrity: sha512-YFG8uo9qSkl6nywswtb4+jKAn4Ov04mXYisttrrpEEDPrQwoAK089fLQQib+fqnqzlOoxn3B7t60dkWF1POBgA==, tarball: https://npm.pkg.github.com/download/@happyvertical/files/0.71.18/216342624bb0abc54f0b8c04849760af99fb3e22}
+  '@happyvertical/files@0.71.19':
+    resolution: {integrity: sha512-IG8CmClidAr3DGdY0dqu835U8djIRasW6AkPCTtRtOlC/YonlouNPTAuMj0fEtJ2Ov3I3okVgNSG2Zftxg9/qw==, tarball: https://npm.pkg.github.com/download/@happyvertical/files/0.71.19/d7d36e243bcb7249c6c676207fd53d1a23ceb010}
     hasBin: true
 
-  '@happyvertical/geo@0.71.18':
-    resolution: {integrity: sha512-Qlv69ruSYOD/cxE/o0YV5fgkfq/xdahuOjhV6+cfTx67NtzF5ezaPAq0O6nCs/CODNowZSwkP5jO1U1FLfVqXQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.71.18/c7e649e7ab4ffe945730203cbdd51c32d56ce4c7}
+  '@happyvertical/geo@0.71.19':
+    resolution: {integrity: sha512-Iv5RfCSXskMJ8X+OoUZ9hyxuz4MjlpgfhKBQAZ09gV9+0vXGEzAVu2PuAq/ytTONxLOfmy2ltPa1P2tYW/iqfA==, tarball: https://npm.pkg.github.com/download/@happyvertical/geo/0.71.19/39db29ecd01e48283a4c0dd7f6103a5dbd093833}
     hasBin: true
 
-  '@happyvertical/graphql@0.71.18':
-    resolution: {integrity: sha512-3mTLKdgqPHtD2w3CLdkiumQnHnPRn51OUo2hYWuHmA9m9tuIcqHVPk+e8VlV/cY3UxBIVOPiL5sH/s1aePsx2Q==, tarball: https://npm.pkg.github.com/download/@happyvertical/graphql/0.71.18/310c59acee3f3e01c87bdf9f05b0212455e5ded9}
+  '@happyvertical/graphql@0.71.19':
+    resolution: {integrity: sha512-n/4KmDIblbGjyRA8f3JcG+pTmu6DL1YG/xpYpVZPvzkdmnePEEOJEM3GjEvkBd3FrJA00TQSvVoFCSWMdd5vUw==, tarball: https://npm.pkg.github.com/download/@happyvertical/graphql/0.71.19/ec20dda0701eeb644cb774bfa017cca45c73a7df}
     hasBin: true
 
-  '@happyvertical/images@0.71.18':
-    resolution: {integrity: sha512-I7DkQSE5mn+xr3PWC5zcvIasomCfeBLUT/AWMCudMvn1YoD8LYWoxHGrbFLhbGuLir4vCv6jbYanCpoO2E66PQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/images/0.71.18/5adb1f8a1371b2bd4b86b18588a11eaa5bbd6a29}
+  '@happyvertical/images@0.71.19':
+    resolution: {integrity: sha512-JVRi/2ghG9lnceA+cqm9qS59Eg1z+RhA7/rcTR4lUR1yeB+AUA94xgfXvXFqCMx3bd0jzIYPFOeRX7CHIxEQRw==, tarball: https://npm.pkg.github.com/download/@happyvertical/images/0.71.19/dc51ff2e81c2c9530fb4201b5fdd4b97beba0cf8}
     hasBin: true
     peerDependencies:
       jimp: '>=1.6.0'
       sharp: '>=0.34.5'
 
-  '@happyvertical/jobs@0.71.18':
-    resolution: {integrity: sha512-MmP2P44o3/SiFDaxUR9mIZ0ZUIv1aWBcO9fsma0LiB/00G57v23vKNNK521LLYpskwoNMfgv3FcQMUOSGWiZDw==, tarball: https://npm.pkg.github.com/download/@happyvertical/jobs/0.71.18/269099f3255726ad74d2d84d9e4ccd6364a2160f}
+  '@happyvertical/jobs@0.71.19':
+    resolution: {integrity: sha512-MIAVYpK/sNrhfgzkVxAS8635qMRvBIaW80uKPHm7RrQszKyZTde9HvIBtHo5JhcfCSEbqygLgb0F0ulRj8GeGg==, tarball: https://npm.pkg.github.com/download/@happyvertical/jobs/0.71.19/6fc00d01b5cbfbbed219de7f9b2f1f7938ec4e90}
     hasBin: true
     peerDependencies:
       '@aws-sdk/client-sqs': '>=3.997.0'
@@ -2867,17 +2867,17 @@ packages:
       bull: '>=4.16.5'
       bullmq: '>=5.70.1'
 
-  '@happyvertical/json@0.71.18':
-    resolution: {integrity: sha512-TM/WASFnsshz/bKD89OU00Afa1PYrxYcMQ/mCTZbupcnt8wkm2NQoeW630yTUcDB/pHERmyfLyqO7VSukW9hvQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/json/0.71.18/06999a76eaee8a9fa720ea2ce21751069b2e932a}
+  '@happyvertical/json@0.71.19':
+    resolution: {integrity: sha512-YqrJBqePSYKZ5KmE1iRX/hkMZ7UI43byH+1UxrTWSx+lt0SlpuCgm6p/rGYkttBGDGzB7yb7KJPiCLj8Z6A+dQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/json/0.71.19/5b2ebe4765824af72677246fb4404e16d4a4f253}
 
-  '@happyvertical/logger@0.71.18':
-    resolution: {integrity: sha512-hSpK15B+wMaEIthRlLnKwJL63jE3yKWa6NdIPqVCgxQAIwm8BNWEB6PyfycdvupKAkXVRSv+4rt0Trt6gEqJnQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.71.18/79a4db13ac9df9a440e1a9e9b7e1d01b5da6fe59}
+  '@happyvertical/logger@0.71.19':
+    resolution: {integrity: sha512-p7IiIDjmuLUbhwkdJSm35NqNSFgj/vx0RbsAJWlWRHs+QRjMQg6b1H92IKEBg3XgAE30hwqyqDA8Bm6Ov2UFZg==, tarball: https://npm.pkg.github.com/download/@happyvertical/logger/0.71.19/514285f3e827e1a1992a4591ddb20566f785b74b}
     hasBin: true
     peerDependencies:
       '@sentry/node': '>=10.40.0'
 
-  '@happyvertical/messages@0.71.18':
-    resolution: {integrity: sha512-w3Cm5S+ZkttzTkgL8eblZqkECWppxf77XnwiQB3DU4Cq3h/oJZB7qvohdx/+J/R0gajJBR3Ae0yGNmoQ4TmlQA==, tarball: https://npm.pkg.github.com/download/@happyvertical/messages/0.71.18/dde60910189eec8b479be820e3920c74d1fb3490}
+  '@happyvertical/messages@0.71.19':
+    resolution: {integrity: sha512-M/s6sbQSoPZBybOAJTltwlHGyug+LiEhBIfzVId7rsBYJXX+PslAP0YxI80FYRZS+r2CgdgK3ZMi1RGBP+72+g==, tarball: https://npm.pkg.github.com/download/@happyvertical/messages/0.71.19/0c07a9b1388fb23a0a4bec5509506c79bb2965e9}
 
   '@happyvertical/ocr@0.60.29':
     resolution: {integrity: sha512-FUJmuRbTH6MtWTarOAlSl7h6PUV1aEj2wZN8o7xBGcwRQq+1sCqbkl0cWocfpAVegc1I1Ex3AEZI9r17wxvW8g==, tarball: https://npm.pkg.github.com/download/@happyvertical/ocr/0.60.29/18c5fdf2542f656680fdf821be61165253f35a39}
@@ -2887,28 +2887,28 @@ packages:
     resolution: {integrity: sha512-F9Yj5zDa5nU4S+IK9tLRfrGsLg81oz/QxFfIbN+GP+zPzezgPVC4EBa+njLEXGgrsEBTkjhI33qgRGpnHy9Qww==, tarball: https://npm.pkg.github.com/download/@happyvertical/pdf/0.62.20/4154b584e1d4b4b95b4832f24b4b97c69bf7a567}
     engines: {node: '>=24', pnpm: '>=9'}
 
-  '@happyvertical/projects@0.71.18':
-    resolution: {integrity: sha512-ndzMvupgViXlAp3S9ZSD0YoIYNeNjmkVX1De6ztt02y23pQqYrAOxa0EjC7avNnTJ4u1xUY9LZJyod/sBh7dbg==, tarball: https://npm.pkg.github.com/download/@happyvertical/projects/0.71.18/05cc5291df13b5ae3dd6d4c9ca1a3edd2980b716}
+  '@happyvertical/projects@0.71.19':
+    resolution: {integrity: sha512-wlUBU3MR/v+0kPbFUo3saQTXYCAH3VNnb65Cu2bLqkyjTJ4rwTzv6CowKmuDET8CMGQk5P8fcWFcuQn5a8ZJhQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/projects/0.71.19/3bee2793b5c86d211238e0d99b1235c6edcedff6}
     hasBin: true
 
-  '@happyvertical/repos@0.71.18':
-    resolution: {integrity: sha512-6nZ5O7ljSooSemO3G2gtIubehJ/PwWe2vn0jbPoh1OQPNpdTyBTxo6Whpk/65gTpCa960azX6cML9ct81jCXTQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/repos/0.71.18/4838e415a4b9f4b07238706f62f2a3ec44e1e04b}
+  '@happyvertical/repos@0.71.19':
+    resolution: {integrity: sha512-HB0Kz8m0KuK4vLTCuvyhfSk1TE/SFtE1i7yGrsJBdK3Dfq2i5X3jP+TzTlAj3s2UIk9ejIQcgFCUccBGFhTI0w==, tarball: https://npm.pkg.github.com/download/@happyvertical/repos/0.71.19/fe4f93166e0fd6f3a54d3a658541b080df77ba81}
     hasBin: true
 
-  '@happyvertical/secrets@0.71.18':
-    resolution: {integrity: sha512-H9DinnA6mt7iVX5RI9P2zXN+9uHP6ylEeGaDnMeaz1tRJsohL/lcbF6M3riFPvUmjGyen6mUfrUmbNApSU+JIg==, tarball: https://npm.pkg.github.com/download/@happyvertical/secrets/0.71.18/260f83df5d38c196d20379437dbddc6327f85b3e}
+  '@happyvertical/secrets@0.71.19':
+    resolution: {integrity: sha512-hxCxpjyaplPSkNUwNB/TZuT+FupkMZwm58u/bx6S/mnpGfpYy6gPqTrq/Zq07OItH5mubjDFXj4hGHQWDYN/sQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/secrets/0.71.19/8fbb39e71995ea9d56dd3cc4ce6b9db624e9ddde}
     hasBin: true
 
   '@happyvertical/spider@0.60.9':
     resolution: {integrity: sha512-phBVm7jnn5T+frgid8kB++Wiz/x4bCyoc1GVhk9OFqs9KmU0HKEq0eLvRYXb5rw4uSJrpR+pUoNV2RjCGFBgww==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.60.9/bf714fe1c0d729bec24e2ee5a705fe3bf723b9ac}
     engines: {node: '>=24', pnpm: '>=9'}
 
-  '@happyvertical/sql@0.71.18':
-    resolution: {integrity: sha512-5LSn1wNASEwAG8oSlpYyG21b6Fneh/yhobe4/P0/hMXVNx/dfxzhAARpR3cafD7AzgjFDeTZeHmdVi9GJsltBA==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.71.18/475042b91dfa1c509b8a9b893c6778856ee34cff}
+  '@happyvertical/sql@0.71.19':
+    resolution: {integrity: sha512-8Y+5AYMpOSHTqbiWXuY/hoFZppgjYxereceZTN0L3RwzQwUcEJfgtDvXl7H7IoWukw/75Jb681c1syU40ny2Jg==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.71.19/b03ff1d89ca0892284ef11c66bd7bcd81b2ab55c}
     hasBin: true
 
-  '@happyvertical/utils@0.71.18':
-    resolution: {integrity: sha512-GZvuEnAsns+KssijqIZ33xuOIGDvKDWdY8fSAWBIz1xOVrTkuCf9ORsbqm1bPzei902EvNETia3ze6YjiryFug==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.71.18/c01627844a6c692bd1c11d04c403a4733fad3815}
+  '@happyvertical/utils@0.71.19':
+    resolution: {integrity: sha512-oTzf+tyDRmqiVsUVIiK/ERHDmOCnXBlUM8mZwb4M84razMBw888xNYUdl3AjIVKHCkbx+dyvrV5HWrTV1gBd7w==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.71.19/5fbee22d761d796ccaf303c35a14433f05ee1238}
     hasBin: true
 
   '@hono/node-server@1.19.9':
@@ -7242,9 +7242,6 @@ packages:
     peerDependencies:
       pg: '>=8.0'
 
-  pg-protocol@1.12.0:
-    resolution: {integrity: sha512-uOANXNRACNdElMXJ0tPz6RBM0XQ61nONGAwlt8da5zs/iUOOCLBQOHSXnrC6fMsvtjxbOJrZZl5IScGv+7mpbg==}
-
   pg-protocol@1.13.0:
     resolution: {integrity: sha512-zzdvXfS6v89r6v7OcFCHfHlyG/wvry1ALxZo4LqgUoy7W9xhBDMaqOuMiF3qEV45VqsN6rdlcehHrfDtlCPc8w==}
 
@@ -10077,12 +10074,12 @@ snapshots:
       onnxruntime-node: 1.24.2
       sharp: 0.33.5
 
-  '@happyvertical/ai@0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)':
+  '@happyvertical/ai@0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)':
     dependencies:
       '@anthropic-ai/sdk': 0.78.0(zod@4.3.6)
       '@aws-sdk/client-bedrock-runtime': 3.997.0
       '@google/genai': 1.44.0(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/utils': 0.71.19
       openai: 6.27.0(ws@8.19.0)(zod@4.3.6)
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -10093,23 +10090,23 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/cache@0.71.18':
+  '@happyvertical/cache@0.71.19':
     dependencies:
       '@aws-sdk/client-s3': 3.997.0
       '@aws-sdk/credential-providers': 3.997.0
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/utils': 0.71.19
       redis: 5.11.0
     transitivePeerDependencies:
       - '@node-rs/xxhash'
       - aws-crt
 
-  '@happyvertical/documents@0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@napi-rs/canvas@0.1.95)(@noble/hashes@2.0.1)(@types/node@24.10.9)(ws@8.19.0)(zod@4.3.6)':
+  '@happyvertical/documents@0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@napi-rs/canvas@0.1.95)(@noble/hashes@2.0.1)(@types/node@24.10.9)(ws@8.19.0)(zod@4.3.6)':
     dependencies:
-      '@happyvertical/files': 0.71.18
+      '@happyvertical/files': 0.71.19
       '@happyvertical/ocr': 0.60.29(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/pdf': 0.62.20(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@napi-rs/canvas@0.1.95)(ws@8.19.0)(zod@4.3.6)
       '@happyvertical/spider': 0.60.9(@noble/hashes@2.0.1)(@types/node@24.10.9)
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/utils': 0.71.19
       uuid: 13.0.0
     transitivePeerDependencies:
       - '@modelcontextprotocol/sdk'
@@ -10128,10 +10125,10 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/email@0.71.18(@sentry/node@10.40.0)':
+  '@happyvertical/email@0.71.19(@sentry/node@10.40.0)':
     dependencies:
-      '@happyvertical/logger': 0.71.18(@sentry/node@10.40.0)
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/logger': 0.71.19(@sentry/node@10.40.0)
+      '@happyvertical/utils': 0.71.19
       google-auth-library: 10.6.1
       googleapis: 170.1.0
       imapflow: 1.2.10
@@ -10142,10 +10139,10 @@ snapshots:
       - '@sentry/node'
       - supports-color
 
-  '@happyvertical/encryption@0.71.18(@sentry/node@10.40.0)(@types/node@24.10.9)(typescript@5.9.3)':
+  '@happyvertical/encryption@0.71.19(@sentry/node@10.40.0)(@types/node@24.10.9)(typescript@5.9.3)':
     dependencies:
-      '@happyvertical/logger': 0.71.18(@sentry/node@10.40.0)
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/logger': 0.71.19(@sentry/node@10.40.0)
+      '@happyvertical/utils': 0.71.19
       '@openpgp/web-stream-tools': 0.3.0(@types/node@24.10.9)(typescript@5.9.3)
       openpgp: 6.3.0
       tweetnacl: 1.0.3
@@ -10155,40 +10152,42 @@ snapshots:
       - '@types/node'
       - typescript
 
-  '@happyvertical/files@0.71.18':
+  '@happyvertical/files@0.71.19':
     dependencies:
-      '@happyvertical/utils': 0.71.18
+      '@aws-sdk/client-s3': 3.997.0
+      '@happyvertical/utils': 0.71.19
       google-auth-library: 9.15.1
       googleapis: 144.0.0
     transitivePeerDependencies:
+      - aws-crt
       - encoding
       - supports-color
 
-  '@happyvertical/geo@0.71.18':
+  '@happyvertical/geo@0.71.19':
     dependencies:
       '@googlemaps/google-maps-services-js': 3.4.2
-      '@happyvertical/cache': 0.71.18
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/cache': 0.71.19
+      '@happyvertical/utils': 0.71.19
     transitivePeerDependencies:
       - '@node-rs/xxhash'
       - aws-crt
       - debug
 
-  '@happyvertical/graphql@0.71.18': {}
+  '@happyvertical/graphql@0.71.19': {}
 
-  '@happyvertical/images@0.71.18(jimp@1.6.0)(sharp@0.34.5)':
+  '@happyvertical/images@0.71.19(jimp@1.6.0)(sharp@0.34.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
       jimp: 1.6.0
       satori: 0.19.2
       sharp: 0.34.5
 
-  '@happyvertical/jobs@0.71.18(@aws-sdk/client-sqs@3.999.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.70.1)':
+  '@happyvertical/jobs@0.71.19(@aws-sdk/client-sqs@3.999.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.70.1)':
     dependencies:
       '@aws-sdk/client-sqs': 3.999.0
       '@google-cloud/tasks': 6.2.1
-      '@happyvertical/sql': 0.71.18
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/sql': 0.71.19
+      '@happyvertical/utils': 0.71.19
       bull: 4.16.5
       bullmq: 5.70.1
     transitivePeerDependencies:
@@ -10197,18 +10196,18 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/json@0.71.18': {}
+  '@happyvertical/json@0.71.19': {}
 
-  '@happyvertical/logger@0.71.18(@sentry/node@10.40.0)':
+  '@happyvertical/logger@0.71.19(@sentry/node@10.40.0)':
     dependencies:
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/utils': 0.71.19
       '@sentry/node': 10.40.0
 
-  '@happyvertical/messages@0.71.18(@sentry/node@10.40.0)':
+  '@happyvertical/messages@0.71.19(@sentry/node@10.40.0)':
     dependencies:
-      '@happyvertical/email': 0.71.18(@sentry/node@10.40.0)
-      '@happyvertical/logger': 0.71.18(@sentry/node@10.40.0)
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/email': 0.71.19(@sentry/node@10.40.0)
+      '@happyvertical/logger': 0.71.19(@sentry/node@10.40.0)
+      '@happyvertical/utils': 0.71.19
       '@slack/web-api': 7.14.1
     transitivePeerDependencies:
       - '@sentry/node'
@@ -10218,8 +10217,8 @@ snapshots:
   '@happyvertical/ocr@0.60.29(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)':
     dependencies:
       '@gutenye/ocr-node': 1.4.8
-      '@happyvertical/ai': 0.71.18(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/ai': 0.71.19(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
+      '@happyvertical/utils': 0.71.19
       jpeg-js: 0.4.4
       pngjs: 7.0.0
       tesseract.js: 6.0.1
@@ -10236,7 +10235,7 @@ snapshots:
   '@happyvertical/pdf@0.62.20(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(@napi-rs/canvas@0.1.95)(ws@8.19.0)(zod@4.3.6)':
     dependencies:
       '@happyvertical/ocr': 0.60.29(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.19.0)(zod@4.3.6)
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/utils': 0.71.19
       pdf-to-png-converter: 3.14.0
       unpdf: 1.4.0(@napi-rs/canvas@0.1.95)
     optionalDependencies:
@@ -10252,20 +10251,20 @@ snapshots:
       - ws
       - zod
 
-  '@happyvertical/projects@0.71.18':
+  '@happyvertical/projects@0.71.19':
     dependencies:
-      '@happyvertical/graphql': 0.71.18
-      '@happyvertical/repos': 0.71.18
+      '@happyvertical/graphql': 0.71.19
+      '@happyvertical/repos': 0.71.19
 
-  '@happyvertical/repos@0.71.18':
+  '@happyvertical/repos@0.71.19':
     dependencies:
-      '@happyvertical/graphql': 0.71.18
+      '@happyvertical/graphql': 0.71.19
       js-yaml: 4.1.1
 
-  '@happyvertical/secrets@0.71.18':
+  '@happyvertical/secrets@0.71.19':
     dependencies:
-      '@happyvertical/sql': 0.71.18
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/sql': 0.71.19
+      '@happyvertical/utils': 0.71.19
     transitivePeerDependencies:
       - bufferutil
       - encoding
@@ -10274,9 +10273,9 @@ snapshots:
 
   '@happyvertical/spider@0.60.9(@noble/hashes@2.0.1)(@types/node@24.10.9)':
     dependencies:
-      '@happyvertical/cache': 0.71.18
-      '@happyvertical/files': 0.71.18
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/cache': 0.71.19
+      '@happyvertical/files': 0.71.19
+      '@happyvertical/utils': 0.71.19
       '@mozilla/readability': 0.6.0
       cheerio: 1.2.0
       crawlee: 3.16.0(@types/node@24.10.9)(playwright@1.58.2)
@@ -10297,10 +10296,10 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/sql@0.71.18':
+  '@happyvertical/sql@0.71.19':
     dependencies:
       '@duckdb/node-api': 1.4.3-r.3
-      '@happyvertical/utils': 0.71.18
+      '@happyvertical/utils': 0.71.19
       '@libsql/client': 0.17.0
       pg: 8.20.0
       sqlite-vss: 0.1.2
@@ -10310,7 +10309,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/utils@0.71.18':
+  '@happyvertical/utils@0.71.19':
     dependencies:
       '@paralleldrive/cuid2': 3.3.0
       date-fns: 4.1.0
@@ -12331,7 +12330,7 @@ snapshots:
   '@types/pg@8.15.6':
     dependencies:
       '@types/node': 24.10.9
-      pg-protocol: 1.12.0
+      pg-protocol: 1.13.0
       pg-types: 2.2.0
 
   '@types/pluralize@0.0.33': {}
@@ -14984,8 +14983,6 @@ snapshots:
   pg-pool@3.13.0(pg@8.20.0):
     dependencies:
       pg: 8.20.0
-
-  pg-protocol@1.12.0: {}
 
   pg-protocol@1.13.0: {}
 
