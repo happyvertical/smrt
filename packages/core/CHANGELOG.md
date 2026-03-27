@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.21.19
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - avoid ARC pnpm cache conflicts and bump sdk (#1082) (ci)
+  - use mounted pnpm store on ARC runners (#1081) (ci)
+  - @happyvertical/smrt-scanner@0.21.19
+  - @happyvertical/smrt-config@0.21.19
+  - @happyvertical/smrt-types@0.21.19
+
 ## 0.21.18
 
 ### Patch Changes
