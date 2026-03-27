@@ -92,6 +92,20 @@ runs:
       with:
         run_install: false
 
+    - name: Determine pnpm store strategy
+      id: pnpm-store-strategy
+      shell: bash
+      run: |
+        if [ -n "${PNPM_STORE_DIR:-}" ]; then
+          echo "store-root=${PNPM_STORE_DIR}" >> $GITHUB_OUTPUT
+          echo "use-actions-cache=false" >> $GITHUB_OUTPUT
+          echo "Using mounted pnpm store at ${PNPM_STORE_DIR}; skipping actions/cache restore"
+        else
+          echo "store-root=$HOME/.local/share/pnpm/store" >> $GITHUB_OUTPUT
+          echo "use-actions-cache=true" >> $GITHUB_OUTPUT
+          echo "Using local pnpm store with actions/cache"
+        fi
+
     - name: Configure pnpm store directory
       shell: bash
       env:
@@ -99,7 +113,7 @@ runs:
         NODE_OPTIONS: --disable-warning=DEP0169
         NPM_TOKEN: ${{ inputs.auth-token }}
       run: |
-        store_root="${PNPM_STORE_DIR:-$HOME/.local/share/pnpm/store}"
+        store_root="${{ steps.pnpm-store-strategy.outputs.store-root }}"
         mkdir -p "$store_root"
         pnpm config set store-dir "$store_root" --location=global
 
@@ -115,6 +129,7 @@ runs:
 
     - name: Setup pnpm cache
       id: pnpm-cache
+      if: steps.pnpm-store-strategy.outputs.use-actions-cache == 'true'
       uses: actions/cache@v4
       with:
         path: ${{ steps.pnpm-store.outputs.path }}
