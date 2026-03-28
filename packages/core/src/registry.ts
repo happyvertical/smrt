@@ -1768,7 +1768,16 @@ export class ObjectRegistry {
    * @returns Map of all fields (including inherited)
    */
   static async getAllFields(className: string): Promise<Map<string, any>> {
-    const registered = ObjectRegistry.findClass(className);
+    let registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
+      if (!loaded) {
+        return new Map();
+      }
+
+      registered = ObjectRegistry.findClass(className);
+    }
+
     if (!registered) {
       return new Map();
     }

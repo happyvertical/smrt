@@ -146,7 +146,16 @@ export function getInheritanceChain(className: string): string[] {
 export async function getAllFields(
   className: string,
 ): Promise<Map<string, any>> {
-  const registered = findClass(className);
+  let registered = findClass(className);
+  if (!registered) {
+    const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
+    if (!loaded) {
+      return new Map();
+    }
+
+    registered = findClass(className);
+  }
+
   if (!registered) {
     return new Map();
   }

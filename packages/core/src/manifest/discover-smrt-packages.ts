@@ -24,11 +24,13 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { parse } from '../utils/json.js';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
+const CACHE_VERSION = 3;
 
 /** Timing data for --timing flag */
 interface TimingData {
@@ -73,8 +75,7 @@ function getManifestTimestampsHash(packages: string[]): string {
 
   for (const pkgName of packages) {
     try {
-      const pkgPath = join(process.cwd(), 'node_modules', pkgName);
-      const manifestPath = findManifestPath(pkgPath);
+      const manifestPath = resolveManifestPath(pkgName);
 
       if (manifestPath && existsSync(manifestPath)) {
         const stats = statSync(manifestPath);
@@ -89,6 +90,7 @@ function getManifestTimestampsHash(packages: string[]): string {
 }
 
 interface DiscoveryCache {
+  version: number;
   lockfileHash: string | null;
   manifestsHash: string;
   timestamp: number;
@@ -111,6 +113,80 @@ function findManifestPath(pkgPath: string): string | null {
   return null;
 }
 
+function normalizePackagePath(pkgPath: string): string {
+  try {
+    return realpathSync(pkgPath);
+  } catch {
+    return pkgPath;
+  }
+}
+
+function resolvePackageDir(
+  packageName: string,
+  baseDir: string = process.cwd(),
+): string | null {
+  try {
+    const requireFromBase = createRequire(join(baseDir, 'package.json'));
+    const packageEntry = requireFromBase.resolve(packageName);
+    let currentDir = dirname(packageEntry);
+
+    for (let i = 0; i < 10; i++) {
+      const packageJsonPath = join(currentDir, 'package.json');
+
+      if (existsSync(packageJsonPath)) {
+        const packageJson = parse<{ name?: string }>(
+          readFileSync(packageJsonPath, 'utf-8'),
+        );
+
+        if (packageJson.name === packageName) {
+          return normalizePackagePath(currentDir);
+        }
+      }
+
+      const parentDir = dirname(currentDir);
+      if (parentDir === currentDir) {
+        break;
+      }
+
+      currentDir = parentDir;
+    }
+  } catch {
+    // Fall through to direct node_modules lookup below.
+  }
+
+  const directPath = join(baseDir, 'node_modules', packageName);
+  if (existsSync(directPath)) {
+    return normalizePackagePath(directPath);
+  }
+
+  return null;
+}
+
+function resolveManifestPath(
+  packageName: string,
+  baseDir: string = process.cwd(),
+): string | null {
+  const pkgPath = resolvePackageDir(packageName, baseDir);
+  if (!pkgPath) {
+    return null;
+  }
+
+  const manifestPath = findManifestPath(pkgPath);
+  if (!manifestPath) {
+    return null;
+  }
+
+  try {
+    const manifest = parse<{ moduleType?: string }>(
+      readFileSync(manifestPath, 'utf-8'),
+    );
+
+    return manifest.moduleType === 'smrt' ? manifestPath : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Load cached discovery results if valid
  * Cache is invalidated if:
@@ -128,6 +204,13 @@ function getCachedDiscovery(
 
   try {
     const cache: DiscoveryCache = parse(readFileSync(cachePath, 'utf-8'));
+    if (cache.version !== CACHE_VERSION) {
+      if (verbose) {
+        console.log('[discovery] Cache invalid: discovery version changed');
+      }
+      return null;
+    }
+
     const currentLockfileHash = getLockfileHash();
 
     // Check lockfile hash
@@ -166,6 +249,7 @@ function getCachedDiscovery(
  */
 function saveCachedDiscovery(packages: string[], verbose: boolean): void {
   const cache: DiscoveryCache = {
+    version: CACHE_VERSION,
     lockfileHash: getLockfileHash(),
     manifestsHash: getManifestTimestampsHash(packages),
     timestamp: Date.now(),
@@ -194,40 +278,48 @@ function saveCachedDiscovery(packages: string[], verbose: boolean): void {
  * Supports both regular npm dependencies and workspace: symlinks
  */
 function hasManifestExport(packageName: string): boolean {
+  return resolveManifestPath(packageName) !== null;
+}
+
+function getDeclaredSmrtPackages(baseDir: string, verbose: boolean): string[] {
+  const packageJsonPath = join(baseDir, 'package.json');
+  if (!existsSync(packageJsonPath)) {
+    return [];
+  }
+
   try {
-    // Try direct node_modules lookup first (handles workspace: symlinks)
-    let pkgPath = join(process.cwd(), 'node_modules', packageName);
+    const packageJson = parse<{
+      dependencies?: Record<string, string>;
+      devDependencies?: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    }>(readFileSync(packageJsonPath, 'utf-8'));
 
-    // If it doesn't exist, return false
-    if (!existsSync(pkgPath)) {
-      return false;
-    }
+    const allDeps = {
+      ...packageJson.dependencies,
+      ...packageJson.devDependencies,
+      ...packageJson.peerDependencies,
+    };
 
-    // Follow symlinks to get real path (for workspace: dependencies)
-    try {
-      pkgPath = realpathSync(pkgPath);
-    } catch {
-      // If realpath fails, continue with original path
-    }
+    return Object.keys(allDeps).filter((pkgName) => {
+      if (!pkgName.startsWith('@happyvertical/smrt-')) {
+        return false;
+      }
 
-    const manifestPath = findManifestPath(pkgPath);
-    if (!manifestPath) {
-      return false;
-    }
+      const hasManifest = hasManifestExport(pkgName);
+      if (verbose && hasManifest) {
+        console.log(`[discovery] ✅ Found declared SMRT package: ${pkgName}`);
+      }
 
-    // Load and validate manifest
-    const manifest = parse<{ moduleType?: string }>(
-      readFileSync(manifestPath, 'utf-8'),
-    );
-
-    // Validate moduleType
-    if (manifest.moduleType !== 'smrt') {
-      return false;
-    }
-
-    return true;
+      return hasManifest;
+    });
   } catch (error) {
-    return false;
+    if (verbose) {
+      console.warn(
+        '[discovery] Failed to read declared dependencies:',
+        (error as Error).message,
+      );
+    }
+    return [];
   }
 }
 
@@ -283,25 +375,29 @@ function performDiscovery(verbose: boolean): string[] {
   }
 
   try {
-    const smrtPackages: string[] = [];
+    const smrtPackages = new Set<string>();
 
     // Scan node_modules for all packages
     for (const pkgName of scanNodeModules(process.cwd())) {
       if (hasManifestExport(pkgName)) {
-        smrtPackages.push(pkgName);
+        smrtPackages.add(pkgName);
         if (verbose) {
           console.log(`[discovery] ✅ Found SMRT package: ${pkgName}`);
         }
       }
     }
 
+    for (const pkgName of getDeclaredSmrtPackages(process.cwd(), verbose)) {
+      smrtPackages.add(pkgName);
+    }
+
     if (verbose) {
       console.log(
-        `[discovery] Discovered ${smrtPackages.length} SMRT package(s)`,
+        `[discovery] Discovered ${smrtPackages.size} SMRT package(s)`,
       );
     }
 
-    return smrtPackages;
+    return Array.from(smrtPackages);
   } catch (error) {
     console.error(
       '[discovery] Failed to discover packages:',
