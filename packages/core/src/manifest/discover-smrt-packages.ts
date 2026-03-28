@@ -129,6 +129,7 @@ function resolvePackageDir(
     const requireFromBase = createRequire(join(baseDir, 'package.json'));
     const packageEntry = requireFromBase.resolve(packageName);
     let currentDir = dirname(packageEntry);
+    let resolvedPackageDir: string | null = null;
 
     for (let i = 0; i < 10; i++) {
       const packageJsonPath = join(currentDir, 'package.json');
@@ -139,7 +140,7 @@ function resolvePackageDir(
         );
 
         if (packageJson.name === packageName) {
-          return normalizePackagePath(currentDir);
+          resolvedPackageDir = currentDir;
         }
       }
 
@@ -149,6 +150,10 @@ function resolvePackageDir(
       }
 
       currentDir = parentDir;
+    }
+
+    if (resolvedPackageDir) {
+      return normalizePackagePath(resolvedPackageDir);
     }
   } catch {
     // Fall through to direct node_modules lookup below.
