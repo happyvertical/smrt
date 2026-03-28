@@ -155,10 +155,13 @@ export async function fieldsFromClass(
 
   // Add/override with fields from cached registry
   for (const [key, field] of cachedFields.entries()) {
+    const meta = { ...(field._meta || {}) };
+    delete meta.__smrtSystemField;
+
     fields[key] = {
       name: key,
       type: field.type || 'TEXT',
-      _meta: field._meta || {},
+      _meta: meta,
       ...(values && key in values ? { value: values[key] } : {}),
     };
   }
