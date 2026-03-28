@@ -10,13 +10,13 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 async function generateTestManifest() {
   try {
     console.log('[smrt] Generating test manifest...');
 
-    // Use ManifestBuilder via npx tsx to handle TypeScript imports
+    // Use ManifestBuilder via the tsx loader to handle TypeScript imports
     const tsCode = `
 import { ManifestBuilder } from './src/manifest/generator.js';
 
@@ -55,8 +55,10 @@ await builder.generate({
     writeFileSync(tempFile, tsCode);
 
     try {
-      // Execute with tsx
-      execSync(`npx tsx ${tempFile}`, { stdio: 'inherit' });
+      // Execute the temporary TypeScript module without shelling out through npm/npx.
+      execFileSync(process.execPath, ['--import', 'tsx', tempFile], {
+        stdio: 'inherit',
+      });
     } finally {
       // Clean up temporary file
       try {

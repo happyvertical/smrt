@@ -1785,9 +1785,6 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-profiles':
-        specifier: workspace:*
-        version: link:../profiles
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
@@ -1795,6 +1792,9 @@ importers:
         specifier: ^6.1.3
         version: 6.1.3
     devDependencies:
+      '@happyvertical/smrt-profiles':
+        specifier: workspace:*
+        version: link:../profiles
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte

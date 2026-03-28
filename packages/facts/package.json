@@ -23,8 +23,8 @@
     "dev": "vite dev",
     "prepack": "npm run build && npm run verify:pack",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "npx vitest run --passWithNoTests",
-    "test:watch": "npx vitest",
+    "test": "vitest run --passWithNoTests",
+    "test:watch": "vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

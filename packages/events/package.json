@@ -41,7 +41,7 @@
     "dev": "vite",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "npm run build && npm run verify:pack",
-    "test": "npx vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "typecheck": "echo '⏭️  Skipping events typecheck (use npm run check instead)'",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

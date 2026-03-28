@@ -25,8 +25,8 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "test": "npx vitest run",
-    "test:watch": "npx vitest"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",

@@ -44,8 +44,8 @@
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
     "prepack": "npm run build && npm run verify:pack",
-    "test": "npx vitest run",
-    "test:watch": "npx vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },

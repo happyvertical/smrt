@@ -49,11 +49,14 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
       expect.stringContaining('Missing ancestor class "SmrtObject"'),
     );
 
-    // NOTE: Fields will be empty because classes defined in test functions
-    // are not in the generated test manifest. This perfectly replicates
-    // the praeco scenario where manifest has null inheritance and no fields.
-    // The ObjectRegistry has no field data to return.
-    expect(fields.size).toBe(0);
+    // Local field metadata is still missing because the class is declared inside
+    // the test body, but SmrtObject system fields should remain visible.
+    expect(fields.size).toBe(5);
+    expect(fields.has('id')).toBe(true);
+    expect(fields.has('slug')).toBe(true);
+    expect(fields.has('context')).toBe(true);
+    expect(fields.has('created_at')).toBe(true);
+    expect(fields.has('updated_at')).toBe(true);
     expect(fields.has('title')).toBe(false);
     expect(fields.has('sourceUrl')).toBe(false);
 
@@ -116,8 +119,14 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
       expect.stringContaining('Missing ancestor class "SmrtObject"'),
     );
 
-    // NOTE: Fields will be empty for the same reason as test 1
-    expect(fields.size).toBe(0);
+    // Local manifest data is still missing, but SmrtObject system fields should
+    // be present even when inheritance metadata is absent.
+    expect(fields.size).toBe(5);
+    expect(fields.has('id')).toBe(true);
+    expect(fields.has('slug')).toBe(true);
+    expect(fields.has('context')).toBe(true);
+    expect(fields.has('created_at')).toBe(true);
+    expect(fields.has('updated_at')).toBe(true);
 
     consoleSpy.mockRestore();
   });
@@ -145,8 +154,14 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
       expect.stringContaining('Missing ancestor class "SmrtObject"'),
     );
 
-    // NOTE: Fields will still be empty because no manifest data
-    expect(fields.size).toBe(0);
+    // Even if SmrtObject appears in a forced chain, base system fields should
+    // still be present and user-defined fields remain absent without manifest data.
+    expect(fields.size).toBe(5);
+    expect(fields.has('id')).toBe(true);
+    expect(fields.has('slug')).toBe(true);
+    expect(fields.has('context')).toBe(true);
+    expect(fields.has('created_at')).toBe(true);
+    expect(fields.has('updated_at')).toBe(true);
 
     consoleSpy.mockRestore();
   });

@@ -7,6 +7,7 @@
 import { ConfigurationError } from '../errors';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
+import { prependSmrtSystemFields } from '../system-fields';
 import { findClass, findClassStrict } from './name-resolver';
 import {
   getInheritanceCache,
@@ -217,7 +218,7 @@ export async function getAllFields(
     }
   }
 
-  return allFields;
+  return prependSmrtSystemFields(allFields);
 }
 
 export function mergeFieldConfigs(

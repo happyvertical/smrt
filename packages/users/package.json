@@ -36,7 +36,7 @@
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
     "prepack": "npm run build && npm run verify:pack",
-    "test": "npx vitest run",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
@@ -56,6 +56,7 @@
     "jose": "^6.1.3"
   },
   "devDependencies": {
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.7",
