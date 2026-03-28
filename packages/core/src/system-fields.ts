@@ -57,6 +57,9 @@ export function prependSmrtSystemFields(
   }
 
   for (const [fieldName, fieldDef] of fields.entries()) {
+    if (isInjectedSmrtSystemField(fieldDef) && merged.has(fieldName)) {
+      continue;
+    }
     merged.set(fieldName, fieldDef);
   }
 

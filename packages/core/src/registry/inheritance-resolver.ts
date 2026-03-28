@@ -156,7 +156,7 @@ export async function getAllFields(
 
   // Check if class has inheritedFields cache (set during manifest loading)
   if (registered.inheritedFields) {
-    return new Map(registered.inheritedFields);
+    return prependSmrtSystemFields(new Map(registered.inheritedFields));
   }
 
   // Get config for error handling behavior
