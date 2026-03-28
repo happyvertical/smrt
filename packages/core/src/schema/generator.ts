@@ -383,10 +383,15 @@ export class SchemaGenerator {
         continue;
       }
 
-      // Skip default fields if already added
+      const isDefaultSmrtColumn =
+        fieldName === 'id' || fieldName === 'slug' || fieldName === 'context';
+
+      // Default SMRT columns are added above when we use the standard primary
+      // key path. When a class declares a custom primary key, only explicitly
+      // declared id/slug/context fields should survive this loop.
       if (
-        !hasCustomPK &&
-        (fieldName === 'id' || fieldName === 'slug' || fieldName === 'context')
+        isDefaultSmrtColumn &&
+        (!hasCustomPK || field._meta?.__smrtSystemField === true)
       ) {
         continue;
       }
