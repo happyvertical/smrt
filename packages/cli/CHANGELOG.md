@@ -1,5 +1,16 @@
 # @happyvertical/smrt-cli
 
+## 0.21.20
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.21.20
+  - @happyvertical/smrt-agents@0.21.20
+  - @happyvertical/smrt-playground@0.21.20
+  - @happyvertical/smrt-config@0.21.20
+  - @happyvertical/smrt-types@0.21.20
+
 ## 0.21.19
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.20
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - Restore SmrtObject base fields and clean workspace test warnings
+  - @happyvertical/smrt-scanner@0.21.20
+  - @happyvertical/smrt-config@0.21.20
+  - @happyvertical/smrt-types@0.21.20
+
 ## 0.21.19
 
 ### Patch Changes
