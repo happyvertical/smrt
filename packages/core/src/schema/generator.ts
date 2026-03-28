@@ -383,10 +383,15 @@ export class SchemaGenerator {
         continue;
       }
 
-      // Skip default fields if already added
+      const isDefaultSmrtColumn =
+        fieldName === 'id' || fieldName === 'slug' || fieldName === 'context';
+
+      // Default SMRT columns are added above when we use the standard primary
+      // key path. When a class declares a custom primary key, only explicitly
+      // declared id/slug/context fields should survive this loop.
       if (
-        !hasCustomPK &&
-        (fieldName === 'id' || fieldName === 'slug' || fieldName === 'context')
+        isDefaultSmrtColumn &&
+        (!hasCustomPK || field._meta?.__smrtSystemField === true)
       ) {
         continue;
       }
@@ -395,10 +400,24 @@ export class SchemaGenerator {
       if (fieldName === 'created_at' || fieldName === 'createdAt') {
         if (hasCreatedAt) continue;
         hasCreatedAt = true;
+        columns.created_at = {
+          type: 'TIMESTAMP',
+          notNull: true,
+          defaultValue: 'current_timestamp',
+          description: 'Creation timestamp',
+        };
+        continue;
       }
       if (fieldName === 'updated_at' || fieldName === 'updatedAt') {
         if (hasUpdatedAt) continue;
         hasUpdatedAt = true;
+        columns.updated_at = {
+          type: 'TIMESTAMP',
+          notNull: true,
+          defaultValue: 'current_timestamp',
+          description: 'Last update timestamp',
+        };
+        continue;
       }
 
       // Skip relationship fields that don't create columns
@@ -644,10 +663,24 @@ export class SchemaGenerator {
         if (fieldName === 'created_at' || fieldName === 'createdAt') {
           if (hasCreatedAt) continue;
           hasCreatedAt = true;
+          columns.created_at = {
+            type: 'TIMESTAMP',
+            notNull: true,
+            defaultValue: 'current_timestamp',
+            description: 'Creation timestamp',
+          };
+          continue;
         }
         if (fieldName === 'updated_at' || fieldName === 'updatedAt') {
           if (hasUpdatedAt) continue;
           hasUpdatedAt = true;
+          columns.updated_at = {
+            type: 'TIMESTAMP',
+            notNull: true,
+            defaultValue: 'current_timestamp',
+            description: 'Last update timestamp',
+          };
+          continue;
         }
 
         // Skip relationship fields that don't create columns

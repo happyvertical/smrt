@@ -5,7 +5,8 @@
  */
 
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, join, resolve } from 'node:path';
 import {
   isQualifiedName,
   ObjectRegistry,
@@ -40,6 +41,12 @@ interface IndexDef {
   name: string;
   columns: string[];
   unique?: boolean;
+}
+
+export function resolveVitestEntrypoint(fromDir = process.cwd()): string {
+  const requireFromDir = createRequire(resolve(fromDir, 'package.json'));
+  const vitestPackageJson = requireFromDir.resolve('vitest/package.json');
+  return join(dirname(vitestPackageJson), 'vitest.mjs');
 }
 
 /**
@@ -315,7 +322,7 @@ export const utilityCommands: Record<string, CLICommand> = {
   test: {
     name: 'test',
     description:
-      '[DEPRECATED] Generate test manifest and run tests - use npx vitest instead',
+      '[DEPRECATED] Generate test manifest and run tests - use pnpm exec vitest instead',
     args: ['[pattern...]'],
     options: {
       'manifest-only': {
@@ -338,9 +345,9 @@ export const utilityCommands: Record<string, CLICommand> = {
 ║  The vitest plugin now generates manifests automatically.             ║
 ║                                                                       ║
 ║  Instead, just run:                                                   ║
-║    npx vitest                                                         ║
-║    npx vitest run                                                     ║
-║    npm test                                                           ║
+║    pnpm exec vitest                                                   ║
+║    pnpm exec vitest run                                               ║
+║    pnpm test                                                          ║
 ║                                                                       ║
 ║  Make sure vitest.config.ts includes:                                 ║
 ║    import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';     ║
@@ -447,14 +454,12 @@ export default testManifest;
 
           // Check if vitest is available
           try {
-            const { access } = await import('node:fs/promises');
-            await access(resolve(process.cwd(), 'node_modules/.bin/vitest'));
+            const vitestEntrypoint = resolveVitestEntrypoint();
 
             // Run vitest with forwarded arguments (file patterns)
-            const vitestArgs = ['vitest', 'run', ...args];
-            const proc = spawn('npx', vitestArgs, {
+            const vitestArgs = [vitestEntrypoint, 'run', ...args];
+            const proc = spawn(process.execPath, vitestArgs, {
               stdio: 'inherit',
-              shell: true,
             });
 
             await new Promise<void>((resolve, reject) => {

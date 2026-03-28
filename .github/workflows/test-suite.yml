@@ -157,7 +157,7 @@ jobs:
 
       - name: Generate test manifest and run core tests (shard ${{ matrix.shard }})
         working-directory: packages/core
-        run: node scripts/generate-test-manifest.js && npx vitest run --shard=${{ matrix.shard }}
+        run: node scripts/generate-test-manifest.js && pnpm exec vitest run --shard=${{ matrix.shard }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test

@@ -114,6 +114,7 @@ import type {
   ValidationRule,
 } from './scanner/types.js';
 import type { SchemaDefinition } from './schema/types.js';
+import { prependSmrtSystemFields } from './system-fields';
 import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
 
@@ -1777,7 +1778,7 @@ export class ObjectRegistry {
 
     // Check if class has inheritedFields cache (set during manifest loading)
     if (registered.inheritedFields) {
-      return new Map(registered.inheritedFields);
+      return prependSmrtSystemFields(new Map(registered.inheritedFields));
     }
 
     // Get config for error handling behavior
@@ -1839,7 +1840,7 @@ export class ObjectRegistry {
       }
     }
 
-    return allFields;
+    return prependSmrtSystemFields(allFields);
   }
 
   /**

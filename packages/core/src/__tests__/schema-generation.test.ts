@@ -43,6 +43,14 @@ class ConflictKeyRecord extends SmrtObject {
   label: string = '';
 }
 
+@smrt()
+class CustomPrimaryKeyRecord extends SmrtObject {
+  @field({ required: true, primaryKey: true })
+  externalId: string = '';
+
+  label: string = '';
+}
+
 // Move to module level so AST scanner can pick it up during test manifest generation
 @smrt()
 class CustomTimestamps extends SmrtObject {
@@ -196,5 +204,16 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
           index.columns[1] === 'context',
       ),
     ).toBe(false);
+  });
+
+  it('should not add synthetic id, slug, or context columns for custom primary keys', async () => {
+    const schema = await generateSchema(CustomPrimaryKeyRecord);
+
+    expect(schema).toContain('"external_id" TEXT PRIMARY KEY');
+    expect(schema).not.toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).not.toContain('"slug" TEXT NOT NULL');
+    expect(schema).not.toContain('"context" TEXT NOT NULL');
+    expect(schema).toContain('"created_at" TIMESTAMP');
+    expect(schema).toContain('"updated_at" TIMESTAMP');
   });
 });

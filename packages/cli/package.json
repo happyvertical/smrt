@@ -26,8 +26,8 @@
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
-    "test": "npx vitest run",
-    "test:watch": "npx vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "cli": "tsx src/index.ts"
   },
   "dependencies": {

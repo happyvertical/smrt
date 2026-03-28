@@ -7,13 +7,13 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 
 async function generateManifest() {
   try {
     console.log('[smrt] Generating static manifest...');
 
-    // Use ManifestBuilder via npx tsx to handle TypeScript imports
+    // Use ManifestBuilder via the tsx loader to handle TypeScript imports
     const tsCode = `
 import { ManifestBuilder } from './src/manifest/generator.js';
 
@@ -52,16 +52,21 @@ await builder.generate({
 `;
 
     // Write temporary TypeScript file
-    const { writeFileSync } = await import('node:fs');
+    const { writeFileSync, unlinkSync } = await import('node:fs');
     writeFileSync('temp-manifest-gen.ts', tsCode);
 
     try {
-      // Execute with tsx
-      execSync('npx tsx temp-manifest-gen.ts', { stdio: 'inherit' });
+      // Execute the temporary TypeScript module without shelling out through npm/npx.
+      execFileSync(
+        process.execPath,
+        ['--import', 'tsx', 'temp-manifest-gen.ts'],
+        {
+          stdio: 'inherit',
+        },
+      );
     } finally {
-      // Clean up temporary file
       try {
-        execSync('rm temp-manifest-gen.ts');
+        unlinkSync('temp-manifest-gen.ts');
       } catch {}
     }
   } catch (error) {

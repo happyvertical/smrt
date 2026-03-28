@@ -116,7 +116,7 @@
     "build": "svelte-package -i src --tsconfig tsconfig.svelte.json",
     "dev": "svelte-package -i src --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "test": "npx vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
   "keywords": [

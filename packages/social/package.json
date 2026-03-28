@@ -30,7 +30,7 @@
   "scripts": {
     "build": "vite build --mode library",
     "build:watch": "vite build --mode library --watch",
-    "test": "npx vitest run --passWithNoTests",
+    "test": "vitest run --passWithNoTests",
     "test:watch": "vitest"
   },
   "dependencies": {

@@ -47,7 +47,7 @@
     "dev": "vite dev",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "npm run build && npm run verify:pack",
-    "test": "npx vitest run",
+    "test": "vitest run",
     "test:watch": "vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },

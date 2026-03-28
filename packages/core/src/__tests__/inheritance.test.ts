@@ -138,13 +138,18 @@ describe('Multi-level Class Inheritance', () => {
       expect(allFields.has('bentleyCustom1')).toBe(false);
     });
 
-    it('should exclude framework base class fields (SmrtObject)', async () => {
+    it('should include SmrtObject system fields but exclude internal framework properties', async () => {
       const allFields = await ObjectRegistry.getAllFields(
         'InheritanceTestContent',
       );
 
-      // Framework base fields should be excluded from count
-      // (id, slug, context are added separately by schema generator)
+      expect(allFields.has('id')).toBe(true);
+      expect(allFields.has('slug')).toBe(true);
+      expect(allFields.has('context')).toBe(true);
+      expect(allFields.has('created_at')).toBe(true);
+      expect(allFields.has('updated_at')).toBe(true);
+
+      // Internal implementation details should still stay out of field metadata.
       const fieldNames = Array.from(allFields.keys());
       expect(fieldNames).not.toContain('_tableName');
       expect(fieldNames).not.toContain('options');
@@ -165,6 +170,35 @@ describe('Multi-level Class Inheritance', () => {
       // Both should have same content
       expect(fields1.size).toBe(fields2.size);
       expect(Array.from(fields1.keys())).toEqual(Array.from(fields2.keys()));
+    });
+
+    it('should prepend system fields when inherited field cache is pre-populated', async () => {
+      const registered = ObjectRegistry.getClass(
+        'InheritanceTestBentleyContent',
+      );
+      expect(registered).toBeDefined();
+      if (!registered) {
+        return;
+      }
+
+      registered.inheritedFields = new Map([
+        ['headline', { type: 'text', _meta: { required: true } }],
+      ]);
+
+      try {
+        const fields = await ObjectRegistry.getAllFields(
+          'InheritanceTestBentleyContent',
+        );
+
+        expect(fields.has('headline')).toBe(true);
+        expect(fields.has('id')).toBe(true);
+        expect(fields.has('slug')).toBe(true);
+        expect(fields.has('context')).toBe(true);
+        expect(fields.has('created_at')).toBe(true);
+        expect(fields.has('updated_at')).toBe(true);
+      } finally {
+        registered.inheritedFields = undefined;
+      }
     });
   });
 
