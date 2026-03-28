@@ -338,9 +338,9 @@ export const utilityCommands: Record<string, CLICommand> = {
 ║  The vitest plugin now generates manifests automatically.             ║
 ║                                                                       ║
 ║  Instead, just run:                                                   ║
-║    npx vitest                                                         ║
-║    npx vitest run                                                     ║
-║    npm test                                                           ║
+║    pnpm exec vitest                                                   ║
+║    pnpm exec vitest run                                               ║
+║    pnpm test                                                          ║
 ║                                                                       ║
 ║  Make sure vitest.config.ts includes:                                 ║
 ║    import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';     ║
@@ -448,13 +448,16 @@ export default testManifest;
           // Check if vitest is available
           try {
             const { access } = await import('node:fs/promises');
-            await access(resolve(process.cwd(), 'node_modules/.bin/vitest'));
+            const vitestEntrypoint = resolve(
+              process.cwd(),
+              'node_modules/vitest/vitest.mjs',
+            );
+            await access(vitestEntrypoint);
 
             // Run vitest with forwarded arguments (file patterns)
-            const vitestArgs = ['vitest', 'run', ...args];
-            const proc = spawn('npx', vitestArgs, {
+            const vitestArgs = [vitestEntrypoint, 'run', ...args];
+            const proc = spawn(process.execPath, vitestArgs, {
               stdio: 'inherit',
-              shell: true,
             });
 
             await new Promise<void>((resolve, reject) => {
