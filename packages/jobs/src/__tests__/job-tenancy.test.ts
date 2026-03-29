@@ -24,6 +24,68 @@ afterEach(() => {
 });
 
 describe('job tenancy propagation', () => {
+  it('registers SmrtJob persistence fields with explicit runtime types', async () => {
+    const fields = await ObjectRegistry.getAllFields('SmrtJob');
+
+    expect(fields.get('tenantId')?.type).toBe('text');
+    expect(fields.get('queue')?.type).toBe('text');
+    expect(fields.get('objectType')?.type).toBe('text');
+    expect(fields.get('args')?.type).toBe('json');
+    expect(fields.get('runAt')?.type).toBe('datetime');
+    expect(fields.get('priority')?.type).toBe('integer');
+    expect(fields.get('retryStrategy')?.type).toBe('json');
+    expect(fields.get('workerHeartbeat')?.type).toBe('datetime');
+  });
+
+  it('persists core job fields to the _smrt_jobs row', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+    const runAt = new Date('2026-03-29T21:54:43.000Z');
+
+    const job = await collection.create({
+      tenantId: 'tenant-row',
+      queue: 'agents',
+      objectType: 'JobTenantProbe',
+      objectId: 'probe-1',
+      method: 'captureTenantId',
+      args: { hello: 'world' },
+      runAt,
+      priority: 75,
+      maxAttempts: 5,
+      timeout: 60000,
+    });
+
+    const persisted = await db.query(
+      `SELECT queue, object_type, object_id, method, status, tenant_id, run_at, args
+         FROM _smrt_jobs
+        WHERE id = ?`,
+      job.id,
+    );
+
+    const row = persisted.rows[0] as {
+      queue: string;
+      object_type: string;
+      object_id: string | null;
+      method: string;
+      status: string;
+      tenant_id: string | null;
+      run_at: string | null;
+      args: string | Record<string, unknown> | null;
+    };
+
+    const persistedArgs =
+      typeof row.args === 'string' ? JSON.parse(row.args) : row.args;
+
+    expect(row.queue).toBe('agents');
+    expect(row.object_type).toBe('JobTenantProbe');
+    expect(row.object_id).toBe('probe-1');
+    expect(row.method).toBe('captureTenantId');
+    expect(row.status).toBe('pending');
+    expect(row.tenant_id).toBe('tenant-row');
+    expect(row.run_at).toContain('2026-03-29');
+    expect(persistedArgs).toEqual({ hello: 'world' });
+  });
+
   it('captures tenantId when jobs are created inside a tenant context', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const collection = await SmrtJobCollection.create({ db });

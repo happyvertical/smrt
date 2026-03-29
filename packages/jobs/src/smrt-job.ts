@@ -1,5 +1,10 @@
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
-import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
 import { ensureJobsSystemTableCompatibility } from '../../core/src/system/compatibility.js';
 
@@ -36,66 +41,86 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
 })
 export class SmrtJob extends SmrtObject {
   /** Tenant context captured for this job, if any */
+  @field({ type: 'text', nullable: true })
   tenantId: string | null | undefined = undefined;
 
   /** Queue name for the job */
+  @field({ type: 'text' })
   queue: string = 'default';
 
   /** Type of object to invoke method on */
+  @field({ type: 'text' })
   objectType: string = '';
 
   /** ID of the specific object (null for static methods) */
+  @field({ type: 'text', nullable: true })
   objectId: string | null = null;
 
   /** Method name to invoke */
+  @field({ type: 'text' })
   method: string = '';
 
   /** Arguments to pass to the method (JSON) */
+  @field({ type: 'json' })
   args: Record<string, unknown> = {};
 
   /** When to run the job */
+  @field({ type: 'datetime' })
   runAt: Date = new Date();
 
   /** Priority (higher = sooner) */
+  @field({ type: 'integer' })
   priority: number = 50;
 
   /** Current status */
+  @field({ type: 'text' })
   status: JobStatus = 'pending';
 
   /** Number of execution attempts */
+  @field({ type: 'integer' })
   attempts: number = 0;
 
   /** Maximum retry attempts */
+  @field({ type: 'integer' })
   maxAttempts: number = 3;
 
   /** Timeout in milliseconds */
+  @field({ type: 'integer' })
   timeout: number = 300000;
 
   /** What to do on timeout */
+  @field({ type: 'text' })
   timeoutBehavior: TimeoutBehavior = 'fail';
 
   /** When execution started */
+  @field({ type: 'datetime', nullable: true })
   startedAt: Date | null = null;
 
   /** When execution completed */
+  @field({ type: 'datetime', nullable: true })
   completedAt: Date | null = null;
 
   /** Last error message */
+  @field({ type: 'text', nullable: true })
   lastError: string | null = null;
 
   /** Pointer to where result is stored */
+  @field({ type: 'text', nullable: true })
   resultPointer: string | null = null;
 
   /** Retry strategy configuration */
+  @field({ type: 'json' })
   retryStrategy: RetryStrategyConfig = {
     type: 'exponential',
     config: { initialDelay: 1000, multiplier: 2, maxDelay: 300000 },
   };
 
   /** ID of the worker processing this job */
+  @field({ type: 'text', nullable: true })
   workerId: string | null = null;
 
   /** Last heartbeat from the worker */
+  @field({ type: 'datetime', nullable: true })
   workerHeartbeat: Date | null = null;
 
   /**
