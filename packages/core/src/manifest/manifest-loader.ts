@@ -671,7 +671,15 @@ function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
   return null;
 }
 
-function resolveManifestExportPath(packageName: string): string | null {
+interface ManifestLoadOptions {
+  warn?: boolean;
+}
+
+function resolveManifestExportPath(
+  packageName: string,
+  options: ManifestLoadOptions = {},
+): string | null {
+  const shouldWarn = options.warn ?? true;
   const packageJsonPath =
     resolveInstalledPackageJsonPath(packageName) ||
     resolveWorkspacePackageJsonPath(packageName);
@@ -700,16 +708,20 @@ function resolveManifestExportPath(packageName: string): string | null {
           manifestExport.require;
 
     if (!manifestRelativePath) {
-      console.warn(
-        `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
-      );
+      if (shouldWarn) {
+        console.warn(
+          `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
+        );
+      }
       return null;
     }
 
     if (!manifestRelativePath.endsWith('.json')) {
-      console.warn(
-        `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
-      );
+      if (shouldWarn) {
+        console.warn(
+          `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
+        );
+      }
       return null;
     }
 
@@ -724,9 +736,11 @@ function resolveManifestExportPath(packageName: string): string | null {
       return workspaceSourceManifest;
     }
 
-    console.warn(
-      `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
-    );
+    if (shouldWarn) {
+      console.warn(
+        `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
+      );
+    }
     return null;
   }
 
@@ -764,7 +778,10 @@ function collectDeclaredSmrtDependencies(
  * Load external package manifest synchronously
  * This is the synchronous version of loadExternalManifest for use during class registration
  */
-export function loadExternalManifestSync(packageName: string): Manifest | null {
+export function loadExternalManifestSync(
+  packageName: string,
+  options: ManifestLoadOptions = {},
+): Manifest | null {
   // Check cache first
   if (getManifestCacheMap().has(packageName)) {
     debugLog(`[manifest-loader] Using cached manifest for ${packageName}`);
@@ -775,7 +792,7 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     `[manifest-loader] Attempting to load external manifest for ${packageName}`,
   );
 
-  const manifestPath = resolveManifestExportPath(packageName);
+  const manifestPath = resolveManifestExportPath(packageName, options);
 
   if (!manifestPath) {
     debugLog(
@@ -788,7 +805,9 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     const manifest = parse<Manifest>(readFileSync(manifestPath, 'utf-8'));
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
-      console.warn(`Invalid manifest structure for package ${packageName}`);
+      if (options.warn ?? true) {
+        console.warn(`Invalid manifest structure for package ${packageName}`);
+      }
       return null;
     }
 
@@ -803,18 +822,21 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
 
     return cachedManifest;
   } catch (error) {
-    console.warn(
-      `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,
-    );
+    if (options.warn ?? true) {
+      console.warn(
+        `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
     return null;
   }
 }
 
 export async function loadExternalManifest(
   packageName: string,
+  options: ManifestLoadOptions = {},
 ): Promise<Manifest | null> {
   // Delegate to synchronous version since all operations are sync anyway
-  return loadExternalManifestSync(packageName);
+  return loadExternalManifestSync(packageName, options);
 }
 
 /**
@@ -1124,16 +1146,13 @@ export async function discoverManifestEntry(
         }
       }
 
-      // Source-registered classes with explicit field metadata do not need a
-      // second manifest probe from node_modules. This keeps workspace/dev
-      // runtimes from spamming missing-dist-manifest warnings for packages that
-      // are already fully usable from source.
-      if (registered.fields.size > 0) {
-        return undefined;
-      }
-
-      // Load the manifest for this specific package
-      const manifest = await loadExternalManifest(packageName);
+      // Load the manifest for this specific package before trusting any
+      // existing runtime field metadata. Imported external classes can be
+      // registered with only a partial field set until their manifest is
+      // hydrated, which is exactly what happens with STI parents like Event.
+      const manifest = await loadExternalManifest(packageName, {
+        warn: registered.fields.size === 0,
+      });
       if (manifest) {
         // Look up the entry using the qualified name (exact match)
         const entry = lookupInManifest(manifest, registered.qualifiedName);
@@ -1143,6 +1162,15 @@ export async function discoverManifestEntry(
             ? { ...entry, packageName: manifest.packageName }
             : entry;
         }
+      }
+
+      // Source-registered classes with explicit field metadata do not need a
+      // second manifest probe from fallback discovery when the package did not
+      // resolve to a manifest. This keeps workspace/dev runtimes from spamming
+      // missing-dist-manifest warnings for packages that are already fully
+      // usable from source.
+      if (registered.fields.size > 0) {
+        return undefined;
       }
     }
   }

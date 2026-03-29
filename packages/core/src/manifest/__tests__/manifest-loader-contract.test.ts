@@ -1,9 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { SmrtObject } from '../../object.js';
+import { ObjectRegistry } from '../../registry.js';
 import {
   clearManifestCache,
+  discoverManifestEntry,
   discoverManifestSync,
 } from '../manifest-loader.js';
 
@@ -11,19 +14,22 @@ function writeScopedPackage(
   appDir: string,
   packageName: string,
   packageJson: Record<string, unknown>,
-  manifest: Record<string, unknown>,
+  manifest?: Record<string, unknown>,
 ): void {
   const [, scope, pkg] = packageName.match(/^@([^/]+)\/(.+)$/) || [];
   const packageDir = join(appDir, 'node_modules', `@${scope}`, pkg);
-  mkdirSync(join(packageDir, 'dist'), { recursive: true });
+  mkdirSync(packageDir, { recursive: true });
   writeFileSync(
     join(packageDir, 'package.json'),
     JSON.stringify(packageJson, null, 2),
   );
-  writeFileSync(
-    join(packageDir, 'dist', 'manifest.json'),
-    JSON.stringify(manifest, null, 2),
-  );
+  if (manifest) {
+    mkdirSync(join(packageDir, 'dist'), { recursive: true });
+    writeFileSync(
+      join(packageDir, 'dist', 'manifest.json'),
+      JSON.stringify(manifest, null, 2),
+    );
+  }
 }
 
 describe('Manifest loader contract', () => {
@@ -40,11 +46,13 @@ describe('Manifest loader contract', () => {
       JSON.stringify({ name: 'manifest-loader-test-app', version: '1.0.0' }),
     );
     clearManifestCache();
+    ObjectRegistry.clear();
   });
 
   afterEach(() => {
     process.chdir(originalCwd);
     clearManifestCache();
+    ObjectRegistry.clear();
     rmSync(tempRoot, { recursive: true, force: true });
   });
 
@@ -338,5 +346,43 @@ describe('Manifest loader contract', () => {
     } as any;
 
     expect(discoverManifestSync('HiddenContractClass')).toBeUndefined();
+  });
+
+  it('silently skips partial source-class probes when a manifest export file is missing', async () => {
+    const packageName = '@happyvertical/smrt-contract-missing-manifest';
+    writeScopedPackage(appDir, packageName, {
+      name: packageName,
+      version: '1.0.0',
+      exports: {
+        './manifest.json': './dist/manifest.json',
+      },
+    });
+
+    process.chdir(appDir);
+
+    class MissingManifestContractClass extends SmrtObject {}
+
+    ObjectRegistry.register(MissingManifestContractClass as any, {
+      packageName,
+      tableStrategy: 'sti',
+    });
+
+    const registered = ObjectRegistry.findClass('MissingManifestContractClass');
+    expect(registered).toBeDefined();
+    registered?.fields.set('tenantId', { type: 'text', _meta: {} });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    try {
+      const entry = await discoverManifestEntry(
+        MissingManifestContractClass as any,
+        'MissingManifestContractClass',
+      );
+
+      expect(entry).toBeUndefined();
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
