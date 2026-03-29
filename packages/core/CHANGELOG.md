@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.25
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - register persisted smrt job fields (#1091) (jobs)
+  - @happyvertical/smrt-scanner@0.21.25
+  - @happyvertical/smrt-config@0.21.25
+  - @happyvertical/smrt-types@0.21.25
+
 ## 0.21.24
 
 ### Patch Changes
