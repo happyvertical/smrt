@@ -23,7 +23,7 @@
  * (published packages) workflows without changing code or configuration.
  */
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { ObjectRegistry } from '../registry.js';
@@ -92,7 +92,9 @@ function getStaticManifestCache(): SmartObjectManifest | null {
   return globalThis.__smrtManifestStatic ?? null;
 }
 
-function setStaticManifestCache(manifest: SmartObjectManifest | null): void {
+function setStaticManifestCache(
+  manifest: SmartObjectManifest | null | undefined,
+): void {
   globalThis.__smrtManifestStatic = manifest;
 }
 
@@ -111,7 +113,9 @@ function getTestManifestCache(): SmartObjectManifest | null {
   return globalThis.__smrtManifestTest ?? null;
 }
 
-function setTestManifestCache(manifest: SmartObjectManifest | null): void {
+function setTestManifestCache(
+  manifest: SmartObjectManifest | null | undefined,
+): void {
   globalThis.__smrtManifestTest = manifest;
 }
 
@@ -255,38 +259,6 @@ function getClassNameIndex(
     classNameIndexCache.set(manifest, index);
   }
   return index;
-}
-
-/**
- * Cached list of @happyvertical packages in node_modules.
- * Avoids repeated readdirSync calls on the same directory.
- * @see https://github.com/happyvertical/smrt/issues/729
- */
-let cachedNodeModulesPackages: string[] | null = null;
-
-/**
- * Get the list of @happyvertical packages in node_modules.
- * Result is cached to avoid repeated filesystem scans.
- */
-function getHappyVerticalPackages(): string[] {
-  if (cachedNodeModulesPackages === null) {
-    const nodeModulesPath = join(
-      process.cwd(),
-      'node_modules',
-      '@happyvertical',
-    );
-    try {
-      cachedNodeModulesPackages = existsSync(nodeModulesPath)
-        ? readdirSync(nodeModulesPath)
-        : [];
-    } catch {
-      cachedNodeModulesPackages = [];
-    }
-    debugLog(
-      `[manifest-loader] Found ${cachedNodeModulesPackages.length} @happyvertical packages in node_modules`,
-    );
-  }
-  return cachedNodeModulesPackages;
 }
 
 /**
@@ -599,6 +571,46 @@ export function getPackageName(
   }
 }
 
+function getCallingRequire() {
+  try {
+    return createRequire(join(process.cwd(), 'package.json'));
+  } catch {
+    return require;
+  }
+}
+
+function resolveExternalManifestPath(packageName: string): string | null {
+  const callingRequire = getCallingRequire();
+  const manifestSpecifiers = [
+    `${packageName}/manifest.json`,
+    `${packageName}/manifest`,
+  ];
+
+  for (const specifier of manifestSpecifiers) {
+    try {
+      return callingRequire.resolve(specifier);
+    } catch {
+      // Try next manifest export specifier
+    }
+  }
+
+  return null;
+}
+
+function collectDeclaredSmrtDependencies(
+  manifests: Array<Manifest | null | undefined>,
+): string[] {
+  const dependencies = new Set<string>();
+
+  for (const manifest of manifests) {
+    for (const pkg of manifest?.smrtDependencies || []) {
+      dependencies.add(pkg);
+    }
+  }
+
+  return Array.from(dependencies);
+}
+
 /**
  * Load manifest from external package
  *
@@ -627,191 +639,41 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     `[manifest-loader] Attempting to load external manifest for ${packageName}`,
   );
 
-  let pkgPath: string | null = null;
+  const manifestPath = resolveExternalManifestPath(packageName);
 
-  try {
-    // Try Method 1: require.resolve() - works for published packages
-    const require = createRequire(`${process.cwd()}/package.json`);
-    const pkgMainPath = require.resolve(packageName);
-
-    // Walk up from main entry to find package.json
-    let dir = dirname(pkgMainPath);
-
-    for (let i = 0; i < 10; i++) {
-      const testPath = join(dir, 'package.json');
-      try {
-        const content = readFileSync(testPath, 'utf-8');
-        const json = parse<{ name?: string }>(content);
-        if (json.name === packageName) {
-          pkgPath = testPath;
-          break;
-        }
-      } catch {
-        // File doesn't exist or can't be read, keep walking
-      }
-
-      const parent = dirname(dir);
-      if (parent === dir) break; // Reached filesystem root
-      dir = parent;
-    }
-  } catch (error) {
-    // Try Method 2: Direct node_modules lookup - works for file: protocol
-    // When packages are linked via file: protocol, require.resolve() fails
-    // because Node.js expects the exports field to define a main entry point.
-    // We fall back to directly checking node_modules for the package.
-
-    // Convert @scope/package-name to node_modules/@scope/package-name
-    const nodeModulesPath = join(process.cwd(), 'node_modules', packageName);
-    const nodeModulesPkgPath = join(nodeModulesPath, 'package.json');
-
-    try {
-      if (existsSync(nodeModulesPkgPath)) {
-        const content = readFileSync(nodeModulesPkgPath, 'utf-8');
-        const json = parse<{ name?: string }>(content);
-        if (json.name === packageName) {
-          pkgPath = nodeModulesPkgPath;
-        }
-      }
-    } catch {
-      // Fallback also failed
-    }
-  }
-
-  // Try Method 3: Workspace/monorepo packages - works for pnpm workspaces
-  if (!pkgPath) {
-    // Extract package short name (e.g., @happyvertical/smrt-profiles -> profiles)
-    const packageShortName = packageName.split('/').pop() || '';
-    const packageWithoutScope = packageShortName.replace(/^smrt-/, '');
-
-    // Check if we're in a pnpm workspace by looking for pnpm-workspace.yaml
-    // or if we're in a monorepo structure where packages are siblings
-    const workspacePaths = [
-      // Same monorepo - sibling packages (e.g., packages/core -> packages/profiles)
-      join(process.cwd(), '..', packageWithoutScope),
-      join(process.cwd(), '..', packageShortName),
-      // From monorepo root
-      join(process.cwd(), '../..', 'packages', packageWithoutScope),
-      join(process.cwd(), '../..', 'packages', packageShortName),
-      // Sibling monorepo (e.g., smrt -> ../praeco)
-      join(process.cwd(), '../..', packageWithoutScope),
-      join(process.cwd(), '../..', packageShortName),
-      join(process.cwd(), '../../..', packageWithoutScope),
-      join(process.cwd(), '../../..', packageShortName),
-    ];
-
-    for (const workspacePath of workspacePaths) {
-      const workspacePkgPath = join(workspacePath, 'package.json');
-      try {
-        if (existsSync(workspacePkgPath)) {
-          const content = readFileSync(workspacePkgPath, 'utf-8');
-          const json = parse<{ name?: string }>(content);
-          if (json.name === packageName) {
-            pkgPath = workspacePkgPath;
-            debugLog(
-              `[manifest-loader] ✅ Found ${packageName} in workspace at ${workspacePath}`,
-            );
-            break;
-          }
-        }
-      } catch {
-        // Keep trying other paths
-      }
-    }
-  }
-
-  if (!pkgPath) {
+  if (!manifestPath) {
     debugLog(
-      `[manifest-loader] Could not find package.json for ${packageName}`,
+      `[manifest-loader] Package ${packageName} does not expose a manifest export`,
     );
     return null;
   }
 
   try {
-    const pkgDir = dirname(pkgPath);
+    const manifest = manifestPath.endsWith('.json')
+      ? parse<Manifest>(readFileSync(manifestPath, 'utf-8'))
+      : (() => {
+          const imported = require(manifestPath);
+          return (imported.staticManifest ||
+            imported.testManifest ||
+            imported.default ||
+            imported) as Manifest;
+        })();
 
-    // Use ManifestManager for external package manifest loading
-    // Priority: dist/manifest.json -> .smrt/manifest.json
-    // External packages should prefer their production manifest to avoid
-    // pulling in test objects and transitive dependencies
-    const manager = new ManifestManager(pkgDir);
-    const manifest = manager.loadForExternalPackage();
-
-    if (manifest) {
-      // Validate manifest structure
-      if (!manifest.objects || typeof manifest.objects !== 'object') {
-        console.warn(`Invalid manifest structure for package ${packageName}`);
-        return null;
-      }
-
-      // Cache the loaded manifest
-      getManifestCacheMap().set(packageName, manifest);
-      debugLog(
-        `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(manifest.objects).length} objects)`,
-      );
-
-      return manifest;
-    }
-
-    // Fallback: Try package.json exports (for published packages without .smrt/)
-    const pkgJson = parse<{
-      exports?: Record<string, string | { default?: string; import?: string }>;
-    }>(readFileSync(pkgPath, 'utf-8'));
-    let manifestExport = pkgJson.exports?.['./manifest.json'];
-
-    if (!manifestExport) {
-      manifestExport = pkgJson.exports?.['./manifest'];
-    }
-
-    if (!manifestExport) {
-      debugLog(
-        `[manifest-loader] Package ${packageName} does not export manifest (checked ./manifest.json and ./manifest)`,
-      );
-      return null;
-    }
-
-    // Resolve manifest path (handle both string and conditional exports)
-    const manifestRelPath =
-      typeof manifestExport === 'string'
-        ? manifestExport
-        : manifestExport.default || manifestExport.import;
-
-    if (!manifestRelPath) {
-      console.warn(
-        `Package ${packageName} has invalid manifest export configuration`,
-      );
-      return null;
-    }
-
-    // Check if the path points to a JSON file
-    if (!manifestRelPath.endsWith('.json')) {
-      debugLog(
-        `[manifest-loader] Package ${packageName} manifest export points to non-JSON file: ${manifestRelPath}`,
-      );
-      return null;
-    }
-
-    const manifestPath = join(pkgDir, manifestRelPath);
-
-    // Read and parse manifest JSON
-    const manifestJson = readFileSync(manifestPath, 'utf-8');
-    const fallbackManifest: Manifest = parse(manifestJson);
-
-    // Validate manifest structure
-    if (
-      !fallbackManifest.objects ||
-      typeof fallbackManifest.objects !== 'object'
-    ) {
+    if (!manifest.objects || typeof manifest.objects !== 'object') {
       console.warn(`Invalid manifest structure for package ${packageName}`);
       return null;
     }
 
-    // Cache the loaded manifest
-    getManifestCacheMap().set(packageName, fallbackManifest);
+    const cachedManifest = manifest.packageName
+      ? manifest
+      : { ...manifest, packageName };
+
+    getManifestCacheMap().set(packageName, cachedManifest);
     debugLog(
-      `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(fallbackManifest.objects).length} objects) via exports`,
+      `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(cachedManifest.objects).length} objects)`,
     );
 
-    return fallbackManifest;
+    return cachedManifest;
   } catch (error) {
     console.warn(
       `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,
@@ -938,15 +800,17 @@ export function discoverManifestSync(
     }
   }
 
-  // 5. Try loading from external SMRT packages
-  // This handles STI inheritance where child class is in one package
-  // but parent class is in another (e.g., Meeting in praeco extends Event from smrt-events)
+  // 5. Try loading from explicitly declared external SMRT package dependencies.
   debugLog(
     `[manifest-loader] ${className} not found in cached manifests, trying external packages...`,
   );
 
-  // Read discovered packages from manifest (populated at build time)
-  const smrtPackages = getLocalTestManifestCache()?.smrtDependencies || [];
+  const smrtPackages = collectDeclaredSmrtDependencies([
+    getLocalTestManifestCache(),
+    isTestEnvironment() ? getTestManifest() : null,
+    staticManifest,
+    ...getManifestCacheMap().values(),
+  ]);
 
   if (smrtPackages.length === 0) {
     debugLog(
@@ -968,63 +832,6 @@ export function discoverManifestSync(
           return { ...entry, packageName: manifest.packageName };
         }
         return entry;
-      }
-    }
-  }
-
-  // 6. Scan ALL @happyvertical packages in node_modules for manifests
-  // This is critical for production environments where localTestManifest is not available
-  // and smrtDependencies is empty. Without this, external package classes (like EventType
-  // from smrt-events) won't be found, causing schema generation to miss indexes.
-  // Uses cached package list to avoid repeated readdirSync calls (issue #729)
-  const packages = getHappyVerticalPackages();
-  if (packages.length > 0) {
-    const nodeModulesPath = join(
-      process.cwd(),
-      'node_modules',
-      '@happyvertical',
-    );
-    debugLog(
-      `[manifest-loader] Scanning ${packages.length} @happyvertical packages in node_modules for ${className}`,
-    );
-    for (const pkg of packages) {
-      const fullPackageName = `@happyvertical/${pkg}`;
-      // Skip if already in cache (already checked above)
-      if (getManifestCacheMap().has(fullPackageName)) {
-        continue;
-      }
-      // Check for manifest in dist/ or root
-      const manifestPaths = [
-        join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
-        join(nodeModulesPath, pkg, 'manifest.json'),
-      ];
-      for (const manifestPath of manifestPaths) {
-        if (existsSync(manifestPath)) {
-          try {
-            const manifestContent = readFileSync(manifestPath, 'utf-8');
-            const manifest: Manifest = parse(manifestContent);
-            // Cache it for future lookups
-            getManifestCacheMap().set(fullPackageName, manifest);
-            // Check if this manifest has the class we're looking for
-            // Use lookupInManifest for qualified name support (Issue #713)
-            const entry = lookupInManifest(manifest, className);
-            if (entry) {
-              debugLog(
-                `[manifest-loader] ✅ Found ${className} in node_modules package ${fullPackageName}`,
-              );
-              // Enrich entry with packageName from manifest if not already present
-              if (!entry.packageName && manifest.packageName) {
-                return { ...entry, packageName: manifest.packageName };
-              }
-              return entry;
-            }
-            break; // Found manifest for this package, move to next package
-          } catch (parseError) {
-            debugLog(
-              `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
-            );
-          }
-        }
       }
     }
   }
@@ -1407,7 +1214,15 @@ export function getManifestCollisions(): Map<
  * Useful for testing or when packages are updated at runtime.
  */
 export function clearManifestCache(): void {
+  // Reset all cached manifest state so tests/dev tooling can force a full
+  // rediscovery pass on the next lookup.
+  setStaticManifestCache(undefined);
+  setStaticManifestLoadAttempted(false);
+  setTestManifestCache(undefined);
+  setTestManifestLoadAttempted(false);
+  setLocalTestManifestCache(undefined);
   getManifestCacheMap().clear();
+  getManifestCollisionsMap().clear();
   getSTISiblingCache().clear();
 }
 
@@ -1503,8 +1318,8 @@ export function discoverSTISiblingsSync(
   }
 
   // 2. Check test manifest (core test classes)
-  if (isTestEnvironment()) {
-    const testManifestData = getTestManifest();
+  const testManifestData = isTestEnvironment() ? getTestManifest() : null;
+  if (testManifestData) {
     addFromManifest(testManifestData, 'testManifest');
   }
 
@@ -1519,31 +1334,14 @@ export function discoverSTISiblingsSync(
 
   // 5. Try loading from SMRT dependencies from ALL manifests (not just localTestManifest)
   // This ensures production environments also discover STI siblings
-  const allSmrtDeps = new Set<string>();
-
-  // Collect from localTestManifest (test environment)
-  const localTestManifest = getLocalTestManifestCache();
-  if (localTestManifest?.smrtDependencies) {
-    for (const pkg of localTestManifest.smrtDependencies) {
-      allSmrtDeps.add(pkg);
-    }
-  }
-
-  // Collect from ALL cached manifests (production)
-  for (const [, manifest] of getManifestCacheMap().entries()) {
-    if (manifest.smrtDependencies) {
-      for (const pkg of manifest.smrtDependencies) {
-        allSmrtDeps.add(pkg);
-      }
-    }
-  }
-
-  // Also check static manifest for smrtDependencies
-  if (staticManifestData?.smrtDependencies) {
-    for (const pkg of staticManifestData.smrtDependencies) {
-      allSmrtDeps.add(pkg);
-    }
-  }
+  const allSmrtDeps = new Set(
+    collectDeclaredSmrtDependencies([
+      getLocalTestManifestCache(),
+      isTestEnvironment() ? testManifestData : null,
+      staticManifestData,
+      ...getManifestCacheMap().values(),
+    ]),
+  );
 
   debugLog(
     `[manifest-loader] Scanning ${allSmrtDeps.size} SMRT dependencies for STI siblings: ${[...allSmrtDeps].join(', ')}`,
@@ -1555,49 +1353,6 @@ export function discoverSTISiblingsSync(
       const manifest = loadExternalManifestSync(pkg);
       if (manifest) {
         addFromManifest(manifest, `smrtDependency:${pkg}`);
-      }
-    }
-  }
-
-  // 6. Scan ALL @happyvertical packages in node_modules for manifests
-  // This catches peer packages like praeco/caelus that aren't in smrtDependencies
-  // Uses cached package list to avoid repeated readdirSync calls (issue #729)
-  const nodeModulesPackages = getHappyVerticalPackages();
-  if (nodeModulesPackages.length > 0) {
-    const nodeModulesPath = join(
-      process.cwd(),
-      'node_modules',
-      '@happyvertical',
-    );
-    debugLog(
-      `[manifest-loader] Scanning ${nodeModulesPackages.length} @happyvertical packages in node_modules`,
-    );
-    for (const pkg of nodeModulesPackages) {
-      const fullPackageName = `@happyvertical/${pkg}`;
-      // Skip if already in cache
-      if (getManifestCacheMap().has(fullPackageName)) {
-        continue;
-      }
-      // Check for manifest in dist/ or root
-      const manifestPaths = [
-        join(nodeModulesPath, pkg, 'dist', 'manifest.json'),
-        join(nodeModulesPath, pkg, 'manifest.json'),
-      ];
-      for (const manifestPath of manifestPaths) {
-        if (existsSync(manifestPath)) {
-          try {
-            const manifestContent = readFileSync(manifestPath, 'utf-8');
-            const manifest = parse<SmartObjectManifest>(manifestContent);
-            // Cache it
-            getManifestCacheMap().set(fullPackageName, manifest);
-            addFromManifest(manifest, `nodeModules:${fullPackageName}`);
-            break; // Found manifest, skip other paths
-          } catch (parseError) {
-            debugLog(
-              `[manifest-loader] Failed to parse manifest at ${manifestPath}: ${parseError}`,
-            );
-          }
-        }
       }
     }
   }
