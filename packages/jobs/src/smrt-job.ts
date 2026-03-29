@@ -5,7 +5,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { getTenantId, tenantId } from '@happyvertical/smrt-tenancy';
 import { ensureJobsSystemTableCompatibility } from '../../core/src/system/compatibility.js';
 
 /**
@@ -41,15 +41,15 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
 })
 export class SmrtJob extends SmrtObject {
   /** Tenant context captured for this job, if any */
-  @field({ type: 'text', nullable: true })
+  @tenantId({ nullable: true })
   tenantId: string | null | undefined = undefined;
 
   /** Queue name for the job */
-  @field({ type: 'text' })
+  @field({ type: 'text', required: true, default: 'default' })
   queue: string = 'default';
 
   /** Type of object to invoke method on */
-  @field({ type: 'text' })
+  @field({ type: 'text', required: true })
   objectType: string = '';
 
   /** ID of the specific object (null for static methods) */
@@ -57,7 +57,7 @@ export class SmrtJob extends SmrtObject {
   objectId: string | null = null;
 
   /** Method name to invoke */
-  @field({ type: 'text' })
+  @field({ type: 'text', required: true })
   method: string = '';
 
   /** Arguments to pass to the method (JSON) */
@@ -65,31 +65,31 @@ export class SmrtJob extends SmrtObject {
   args: Record<string, unknown> = {};
 
   /** When to run the job */
-  @field({ type: 'datetime' })
+  @field({ type: 'datetime', required: true })
   runAt: Date = new Date();
 
   /** Priority (higher = sooner) */
-  @field({ type: 'integer' })
+  @field({ type: 'integer', required: true, default: 50 })
   priority: number = 50;
 
   /** Current status */
-  @field({ type: 'text' })
+  @field({ type: 'text', required: true, default: 'pending' })
   status: JobStatus = 'pending';
 
   /** Number of execution attempts */
-  @field({ type: 'integer' })
+  @field({ type: 'integer', required: true, default: 0 })
   attempts: number = 0;
 
   /** Maximum retry attempts */
-  @field({ type: 'integer' })
+  @field({ type: 'integer', required: true, default: 3 })
   maxAttempts: number = 3;
 
   /** Timeout in milliseconds */
-  @field({ type: 'integer' })
+  @field({ type: 'integer', required: true, default: 300000 })
   timeout: number = 300000;
 
   /** What to do on timeout */
-  @field({ type: 'text' })
+  @field({ type: 'text', required: true, default: 'fail' })
   timeoutBehavior: TimeoutBehavior = 'fail';
 
   /** When execution started */

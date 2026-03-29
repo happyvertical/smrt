@@ -27,12 +27,16 @@ describe('job tenancy propagation', () => {
   it('registers SmrtJob persistence fields with explicit runtime types', async () => {
     const fields = await ObjectRegistry.getAllFields('SmrtJob');
 
-    expect(fields.get('tenantId')?.type).toBe('text');
+    expect(fields.get('tenantId')?.type).toBe('foreignKey');
     expect(fields.get('queue')?.type).toBe('text');
+    expect(fields.get('queue')?._meta?.required).toBe(true);
+    expect(fields.get('queue')?._meta?.default).toBe('default');
     expect(fields.get('objectType')?.type).toBe('text');
     expect(fields.get('args')?.type).toBe('json');
     expect(fields.get('runAt')?.type).toBe('datetime');
+    expect(fields.get('runAt')?._meta?.required).toBe(true);
     expect(fields.get('priority')?.type).toBe('integer');
+    expect(fields.get('priority')?._meta?.default).toBe(50);
     expect(fields.get('retryStrategy')?.type).toBe('json');
     expect(fields.get('workerHeartbeat')?.type).toBe('datetime');
   });
@@ -62,6 +66,8 @@ describe('job tenancy propagation', () => {
       job.id,
     );
 
+    expect(persisted.rows.length).toBe(1);
+
     const row = persisted.rows[0] as {
       queue: string;
       object_type: string;
@@ -84,6 +90,29 @@ describe('job tenancy propagation', () => {
     expect(row.tenant_id).toBe('tenant-row');
     expect(row.run_at).toContain('2026-03-29');
     expect(persistedArgs).toEqual({ hello: 'world' });
+  });
+
+  it('persists implicit global jobs with NULL tenant_id outside tenant context', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+
+    const job = await collection.create({
+      objectType: 'JobTenantProbe',
+      method: 'captureTenantId',
+      args: {},
+    });
+
+    const persisted = await db.query(
+      `SELECT tenant_id
+         FROM _smrt_jobs
+        WHERE id = ?`,
+      job.id,
+    );
+
+    expect(persisted.rows.length).toBe(1);
+    expect(
+      (persisted.rows[0] as { tenant_id: string | null }).tenant_id,
+    ).toBeNull();
   });
 
   it('captures tenantId when jobs are created inside a tenant context', async () => {
