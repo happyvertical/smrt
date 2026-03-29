@@ -147,6 +147,116 @@ describe('Manifest loader contract', () => {
     expect(entry?.className).toBe('ContractExported');
   });
 
+  it('supports import-only manifest exports under the JSON manifest contract', () => {
+    const packageName = '@happyvertical/smrt-contract-import-only';
+    writeScopedPackage(
+      appDir,
+      packageName,
+      {
+        name: packageName,
+        version: '1.0.0',
+        exports: {
+          './manifest.json': {
+            import: './dist/manifest.json',
+          },
+        },
+      },
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        moduleType: 'smrt',
+        packageName,
+        objects: {
+          [`${packageName}:ImportOnlyManifest`]: {
+            className: 'ImportOnlyManifest',
+            fields: {
+              title: { type: 'text' },
+            },
+          },
+        },
+      },
+    );
+
+    process.chdir(appDir);
+    globalThis.__smrtManifestLocalTest = {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@local/test-app',
+      objects: {},
+      smrtDependencies: [packageName],
+    } as any;
+
+    const entry = discoverManifestSync('ImportOnlyManifest');
+
+    expect(entry).toBeDefined();
+    expect(entry?.className).toBe('ImportOnlyManifest');
+  });
+
+  it('loads transitive declared dependencies during a single discovery pass', () => {
+    const parentPackage = '@happyvertical/smrt-contract-parent';
+    const childPackage = '@happyvertical/smrt-contract-child';
+
+    writeScopedPackage(
+      appDir,
+      parentPackage,
+      {
+        name: parentPackage,
+        version: '1.0.0',
+        exports: {
+          './manifest.json': './dist/manifest.json',
+        },
+      },
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        moduleType: 'smrt',
+        packageName: parentPackage,
+        smrtDependencies: [childPackage],
+        objects: {},
+      },
+    );
+
+    writeScopedPackage(
+      appDir,
+      childPackage,
+      {
+        name: childPackage,
+        version: '1.0.0',
+        exports: {
+          './manifest.json': './dist/manifest.json',
+        },
+      },
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        moduleType: 'smrt',
+        packageName: childPackage,
+        objects: {
+          [`${childPackage}:TransitiveContractClass`]: {
+            className: 'TransitiveContractClass',
+            fields: {
+              title: { type: 'text' },
+            },
+          },
+        },
+      },
+    );
+
+    process.chdir(appDir);
+    globalThis.__smrtManifestLocalTest = {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@local/test-app',
+      objects: {},
+      smrtDependencies: [parentPackage],
+    } as any;
+
+    const entry = discoverManifestSync('TransitiveContractClass');
+
+    expect(entry).toBeDefined();
+    expect(entry?.className).toBe('TransitiveContractClass');
+  });
+
   it('does not fall back to implicit filesystem probing when a package omits manifest exports', () => {
     const packageName = '@happyvertical/smrt-contract-hidden';
     writeScopedPackage(

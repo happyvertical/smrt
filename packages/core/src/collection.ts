@@ -1407,8 +1407,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       }
 
       const camelKey = key.includes('_') ? toCamelCase(key) : key;
+      const snakeKey = key.includes('_') ? key : toSnakeCase(key);
       const outputKey =
-        key in fields ? key : camelKey in fields ? camelKey : key;
+        key in fields
+          ? key
+          : camelKey in fields
+            ? camelKey
+            : snakeKey in fields
+              ? snakeKey
+              : key;
 
       normalized[outputKey] = value;
     }

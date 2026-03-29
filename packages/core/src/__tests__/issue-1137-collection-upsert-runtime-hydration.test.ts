@@ -37,6 +37,9 @@ class Issue1137HydrationEntry extends SmrtObject {
   @field()
   startDate: string = '';
 
+  @field()
+  publish_date: string = '';
+
   @foreignKey('Issue1137HydrationParent')
   parentId?: string;
 
@@ -45,6 +48,10 @@ class Issue1137HydrationEntry extends SmrtObject {
     if (options.name) this.name = options.name;
     if (options.status) this.status = options.status;
     if (options.startDate) this.startDate = options.startDate;
+    if ((options as any).publish_date)
+      this.publish_date = (options as any).publish_date;
+    if ((options as any).publishDate)
+      this.publish_date = (options as any).publishDate;
     if (options.parentId) this.parentId = options.parentId;
   }
 }
@@ -159,6 +166,24 @@ describe('Issue #1137: collection upsert semantics and lightweight hydration', (
 
     const persisted = await entries.get({ slug: 'camel-case-entry' });
     expect(formatDateOnly(persisted?.startDate)).toBe('2026-04-15');
+  });
+
+  it('maps camelCase input onto snake_case logical field names', async () => {
+    await entries.create({
+      slug: 'snake-logical-entry',
+      name: 'Snake Logical Entry',
+      publish_date: '2026-03-01',
+    } as any);
+
+    const updated = await entries.getOrUpsert({
+      slug: 'snake-logical-entry',
+      publishDate: '2026-04-15',
+    } as any);
+
+    expect(formatDateOnly(updated.publish_date)).toBe('2026-04-15');
+
+    const persisted = await entries.get({ slug: 'snake-logical-entry' });
+    expect(formatDateOnly(persisted?.publish_date)).toBe('2026-04-15');
   });
 
   it('keeps id lookup precedence ahead of conflicting slug data', async () => {

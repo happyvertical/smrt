@@ -12,15 +12,13 @@
  * Flow:
  * 1. Check testManifest (for test classes)
  * 2. Check staticManifest (for core framework classes)
- * 3. Try dynamic import from external package manifest
+ * 3. Resolve external package manifests from explicit JSON exports
  * 4. Return manifest entry or undefined
  *
- * Module Resolution Strategy:
- * - Method 1: require.resolve() - works for published packages from npm registry
- * - Method 2: Direct node_modules lookup - works for file: protocol linked packages
- *
- * The dual-method approach enables both development (file: protocol) and production
- * (published packages) workflows without changing code or configuration.
+ * External manifest loading intentionally follows a pure-ESM JSON contract.
+ * Packages are expected to publish a JSON manifest via "./manifest" and/or
+ * "./manifest.json" exports. Runtime discovery does not guess sibling workspace
+ * paths or load JavaScript manifest modules.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -571,27 +569,67 @@ export function getPackageName(
   }
 }
 
-function getCallingRequire() {
-  try {
-    return createRequire(join(process.cwd(), 'package.json'));
-  } catch {
-    return require;
-  }
+interface ManifestExportConditions {
+  default?: string;
+  import?: string;
+  require?: string;
 }
 
-function resolveExternalManifestPath(packageName: string): string | null {
-  const callingRequire = getCallingRequire();
-  const manifestSpecifiers = [
-    `${packageName}/manifest.json`,
-    `${packageName}/manifest`,
-  ];
+interface ExternalPackageJson {
+  exports?: Record<string, string | ManifestExportConditions>;
+}
 
-  for (const specifier of manifestSpecifiers) {
-    try {
-      return callingRequire.resolve(specifier);
-    } catch {
-      // Try next manifest export specifier
+function resolveInstalledPackageJsonPath(packageName: string): string | null {
+  const packageJsonPath = join(
+    process.cwd(),
+    'node_modules',
+    packageName,
+    'package.json',
+  );
+  return existsSync(packageJsonPath) ? packageJsonPath : null;
+}
+
+function resolveManifestExportPath(packageName: string): string | null {
+  const packageJsonPath = resolveInstalledPackageJsonPath(packageName);
+
+  if (!packageJsonPath) {
+    return null;
+  }
+
+  const packageDir = dirname(packageJsonPath);
+  const packageJson = parse<ExternalPackageJson>(
+    readFileSync(packageJsonPath, 'utf-8'),
+  );
+  const manifestExports = ['./manifest.json', './manifest'];
+
+  for (const exportKey of manifestExports) {
+    const manifestExport = packageJson.exports?.[exportKey];
+    if (!manifestExport) {
+      continue;
     }
+
+    const manifestRelativePath =
+      typeof manifestExport === 'string'
+        ? manifestExport
+        : manifestExport.import ||
+          manifestExport.default ||
+          manifestExport.require;
+
+    if (!manifestRelativePath) {
+      console.warn(
+        `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
+      );
+      return null;
+    }
+
+    if (!manifestRelativePath.endsWith('.json')) {
+      console.warn(
+        `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
+      );
+      return null;
+    }
+
+    return join(packageDir, manifestRelativePath);
   }
 
   return null;
@@ -639,25 +677,17 @@ export function loadExternalManifestSync(packageName: string): Manifest | null {
     `[manifest-loader] Attempting to load external manifest for ${packageName}`,
   );
 
-  const manifestPath = resolveExternalManifestPath(packageName);
+  const manifestPath = resolveManifestExportPath(packageName);
 
   if (!manifestPath) {
     debugLog(
-      `[manifest-loader] Package ${packageName} does not expose a manifest export`,
+      `[manifest-loader] Package ${packageName} does not expose a JSON manifest export`,
     );
     return null;
   }
 
   try {
-    const manifest = manifestPath.endsWith('.json')
-      ? parse<Manifest>(readFileSync(manifestPath, 'utf-8'))
-      : (() => {
-          const imported = require(manifestPath);
-          return (imported.staticManifest ||
-            imported.testManifest ||
-            imported.default ||
-            imported) as Manifest;
-        })();
+    const manifest = parse<Manifest>(readFileSync(manifestPath, 'utf-8'));
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
       console.warn(`Invalid manifest structure for package ${packageName}`);
@@ -805,34 +835,50 @@ export function discoverManifestSync(
     `[manifest-loader] ${className} not found in cached manifests, trying external packages...`,
   );
 
-  const smrtPackages = collectDeclaredSmrtDependencies([
+  const pendingPackages = collectDeclaredSmrtDependencies([
     getLocalTestManifestCache(),
     isTestEnvironment() ? getTestManifest() : null,
     staticManifest,
     ...getManifestCacheMap().values(),
   ]);
 
-  if (smrtPackages.length === 0) {
+  if (pendingPackages.length === 0) {
     debugLog(
       '[manifest-loader] No SMRT dependencies discovered. Run manifest generation if external packages are expected.',
     );
   }
 
-  for (const pkg of smrtPackages) {
+  const visitedPackages = new Set<string>();
+
+  while (pendingPackages.length > 0) {
+    const pkg = pendingPackages.shift();
+    if (!pkg || visitedPackages.has(pkg)) {
+      continue;
+    }
+
+    visitedPackages.add(pkg);
     const manifest = loadExternalManifestSync(pkg);
-    if (manifest) {
-      // Use lookupInManifest for qualified name support (Issue #713)
-      const entry = lookupInManifest(manifest, className);
-      if (entry) {
-        debugLog(
-          `[manifest-loader] ✅ Found ${className} in external package ${pkg}`,
-        );
-        // Enrich entry with packageName from manifest if not already present
-        if (!entry.packageName && manifest.packageName) {
-          return { ...entry, packageName: manifest.packageName };
-        }
-        return entry;
+    if (!manifest) {
+      continue;
+    }
+
+    for (const dependency of manifest.smrtDependencies || []) {
+      if (!visitedPackages.has(dependency)) {
+        pendingPackages.push(dependency);
       }
+    }
+
+    // Use lookupInManifest for qualified name support (Issue #713)
+    const entry = lookupInManifest(manifest, className);
+    if (entry) {
+      debugLog(
+        `[manifest-loader] ✅ Found ${className} in external package ${pkg}`,
+      );
+      // Enrich entry with packageName from manifest if not already present
+      if (!entry.packageName && manifest.packageName) {
+        return { ...entry, packageName: manifest.packageName };
+      }
+      return entry;
     }
   }
 
@@ -1334,25 +1380,34 @@ export function discoverSTISiblingsSync(
 
   // 5. Try loading from SMRT dependencies from ALL manifests (not just localTestManifest)
   // This ensures production environments also discover STI siblings
-  const allSmrtDeps = new Set(
-    collectDeclaredSmrtDependencies([
-      getLocalTestManifestCache(),
-      isTestEnvironment() ? testManifestData : null,
-      staticManifestData,
-      ...getManifestCacheMap().values(),
-    ]),
-  );
+  const pendingDependencies = collectDeclaredSmrtDependencies([
+    getLocalTestManifestCache(),
+    isTestEnvironment() ? testManifestData : null,
+    staticManifestData,
+    ...getManifestCacheMap().values(),
+  ]);
+  const visitedDependencies = new Set<string>();
 
   debugLog(
-    `[manifest-loader] Scanning ${allSmrtDeps.size} SMRT dependencies for STI siblings: ${[...allSmrtDeps].join(', ')}`,
+    `[manifest-loader] Scanning ${pendingDependencies.length} SMRT dependencies for STI siblings: ${pendingDependencies.join(', ')}`,
   );
 
-  // Load and scan each dependency
-  for (const pkg of allSmrtDeps) {
-    if (!getManifestCacheMap().has(pkg)) {
-      const manifest = loadExternalManifestSync(pkg);
-      if (manifest) {
-        addFromManifest(manifest, `smrtDependency:${pkg}`);
+  while (pendingDependencies.length > 0) {
+    const pkg = pendingDependencies.shift();
+    if (!pkg || visitedDependencies.has(pkg)) {
+      continue;
+    }
+
+    visitedDependencies.add(pkg);
+
+    const manifest = loadExternalManifestSync(pkg);
+    if (manifest) {
+      addFromManifest(manifest, `smrtDependency:${pkg}`);
+
+      for (const dependency of manifest.smrtDependencies || []) {
+        if (!visitedDependencies.has(dependency)) {
+          pendingDependencies.push(dependency);
+        }
       }
     }
   }

@@ -397,6 +397,11 @@ export class SmrtClass {
   private _runtimeServicesInitialized = false;
 
   /**
+   * Shared in-flight runtime initialization promise for single-flight setup.
+   */
+  private _runtimeServicesInitPromise?: Promise<void>;
+
+  /**
    * Configuration options provided to the class
    */
   public options: SmrtClassOptions;
@@ -558,76 +563,90 @@ export class SmrtClass {
       return;
     }
 
-    if (this.options.fs && !this._fs) {
-      this._fs = await FilesystemAdapter.create(this.options.fs);
-    }
-
-    // Initialize AI client with environment variable support
-    // Priority: instance options > env vars > global config > defaults
-    const globalConfig = config.toJSON();
-    const usageConfig = this.mergeAiUsageConfig(globalConfig);
-    this.initializeAiUsageHandlers(usageConfig);
-
-    if (
-      !this._ai &&
-      (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER)
-    ) {
-      // Check if options.ai is already a client-like object with embed method
-      // This allows passing mock AI clients for testing
-      const aiOption = this.options.ai as Record<string, unknown> | undefined;
-      if (
-        aiOption &&
-        typeof aiOption === 'object' &&
-        typeof aiOption.embed === 'function' &&
-        !aiOption.provider
-      ) {
-        this._ai = aiOption as unknown as AIClient;
-      } else {
-        const { loadEnvConfig } = await import('@happyvertical/utils');
-
-        // Start with global defaults
-        const baseConfig = globalConfig.ai || {};
-
-        // Merge with instance options (takes priority over global)
-        const userConfig = { ...baseConfig, ...this.options.ai };
-
-        // Load environment variables and merge (user options take priority)
-        const aiConfig = loadEnvConfig<any>(userConfig, {
-          packageName: 'ai',
-          prefix: 'SMRT',
-          schema: {
-            provider: 'string',
-            model: 'string',
-            apiKey: 'string',
-            timeout: 'number',
-            maxRetries: 'number',
-            temperature: 'number',
-            maxTokens: 'number',
-          },
-        });
-
-        const existingOnUsage =
-          aiConfig.onUsage ??
-          (userConfig as Record<string, unknown>).onUsage ??
-          undefined;
-        aiConfig.onUsage = async (event: unknown) => {
-          if (typeof existingOnUsage === 'function') {
-            await (existingOnUsage as (usageEvent: unknown) => unknown)(event);
-          }
-          await this.handleAiUsageCallback(event, aiConfig, usageConfig);
-        };
-
-        // Only initialize if we have a provider configured
-        if (aiConfig.provider || aiConfig.type || aiConfig.apiKey) {
-          // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
-          // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
-          this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+    if (!this._runtimeServicesInitPromise) {
+      this._runtimeServicesInitPromise = (async () => {
+        if (this.options.fs && !this._fs) {
+          this._fs = await FilesystemAdapter.create(this.options.fs);
         }
-      }
+
+        // Initialize AI client with environment variable support
+        // Priority: instance options > env vars > global config > defaults
+        const globalConfig = config.toJSON();
+        const usageConfig = this.mergeAiUsageConfig(globalConfig);
+        this.initializeAiUsageHandlers(usageConfig);
+
+        if (
+          !this._ai &&
+          (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER)
+        ) {
+          // Check if options.ai is already a client-like object with embed method
+          // This allows passing mock AI clients for testing
+          const aiOption = this.options.ai as
+            | Record<string, unknown>
+            | undefined;
+          if (
+            aiOption &&
+            typeof aiOption === 'object' &&
+            typeof aiOption.embed === 'function' &&
+            !aiOption.provider
+          ) {
+            this._ai = aiOption as unknown as AIClient;
+          } else {
+            const { loadEnvConfig } = await import('@happyvertical/utils');
+
+            // Start with global defaults
+            const baseConfig = globalConfig.ai || {};
+
+            // Merge with instance options (takes priority over global)
+            const userConfig = { ...baseConfig, ...this.options.ai };
+
+            // Load environment variables and merge (user options take priority)
+            const aiConfig = loadEnvConfig<any>(userConfig, {
+              packageName: 'ai',
+              prefix: 'SMRT',
+              schema: {
+                provider: 'string',
+                model: 'string',
+                apiKey: 'string',
+                timeout: 'number',
+                maxRetries: 'number',
+                temperature: 'number',
+                maxTokens: 'number',
+              },
+            });
+
+            const existingOnUsage =
+              aiConfig.onUsage ??
+              (userConfig as Record<string, unknown>).onUsage ??
+              undefined;
+            aiConfig.onUsage = async (event: unknown) => {
+              if (typeof existingOnUsage === 'function') {
+                await (existingOnUsage as (usageEvent: unknown) => unknown)(
+                  event,
+                );
+              }
+              await this.handleAiUsageCallback(event, aiConfig, usageConfig);
+            };
+
+            // Only initialize if we have a provider configured
+            if (aiConfig.provider || aiConfig.type || aiConfig.apiKey) {
+              // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
+              // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
+              this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+            }
+          }
+        }
+
+        await this.initializeSignals();
+        this._runtimeServicesInitialized = true;
+      })();
     }
 
-    await this.initializeSignals();
-    this._runtimeServicesInitialized = true;
+    try {
+      await this._runtimeServicesInitPromise;
+    } finally {
+      this._runtimeServicesInitPromise = undefined;
+    }
   }
 
   /**

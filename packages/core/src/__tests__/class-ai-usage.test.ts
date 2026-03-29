@@ -30,6 +30,34 @@ class TenantTestSmrtClass extends TestSmrtClass {
   tenantId: string | null = 'tenant-123';
 }
 
+class RuntimeSingleFlightTestSmrtClass extends SmrtClass {
+  initializeSignalsCalls = 0;
+  private _signalsInitStarted?: () => void;
+  private _releaseSignalsInit?: () => void;
+
+  readonly signalsInitStarted = new Promise<void>((resolve) => {
+    this._signalsInitStarted = resolve;
+  });
+
+  readonly releaseSignalsInit = new Promise<void>((resolve) => {
+    this._releaseSignalsInit = resolve;
+  });
+
+  async ensureRuntimeReady(): Promise<void> {
+    await this.ensureRuntimeServicesInitialized();
+  }
+
+  protected async initializeSignals(): Promise<void> {
+    this.initializeSignalsCalls += 1;
+    this._signalsInitStarted?.();
+    await this.releaseSignalsInit;
+  }
+
+  releaseBlockedSignalsInitialization(): void {
+    this._releaseSignalsInit?.();
+  }
+}
+
 describe('SmrtClass AI usage tracking', () => {
   beforeEach(() => {
     config.reset();
@@ -199,5 +227,22 @@ describe('SmrtClass AI usage tracking', () => {
     expect(warnSpy).toHaveBeenCalledWith(
       '[smrt] AI usage handler failed for openai:gpt-4o-mini: handler exploded',
     );
+  });
+
+  it('should single-flight deferred runtime initialization', async () => {
+    const instance = new RuntimeSingleFlightTestSmrtClass();
+
+    const firstEnsure = instance.ensureRuntimeReady();
+    await instance.signalsInitStarted;
+
+    const secondEnsure = instance.ensureRuntimeReady();
+    await Promise.resolve();
+
+    expect(instance.initializeSignalsCalls).toBe(1);
+
+    instance.releaseBlockedSignalsInitialization();
+    await Promise.all([firstEnsure, secondEnsure]);
+
+    expect(instance.initializeSignalsCalls).toBe(1);
   });
 });
