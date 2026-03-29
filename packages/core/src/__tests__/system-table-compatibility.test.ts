@@ -1,5 +1,5 @@
 import { getDatabase } from '@happyvertical/sql';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object';
 import { ensureJobsSystemTableCompatibility } from '../system/compatibility';
 import { SMRT_SCHEMA_VERSION } from '../system/schema';
@@ -153,5 +153,45 @@ describe('system table compatibility', () => {
     `);
     const indexNames = indexes.rows.map((row: { name: string }) => row.name);
     expect(indexNames).toContain('idx_smrt_jobs_tenant_id');
+  });
+
+  it('skips Postgres jobs DDL when the compatibility column and index already exist', async () => {
+    const query = vi
+      .fn()
+      .mockImplementation(async (sql: string, ...params: unknown[]) => {
+        if (sql === 'SELECT 1 FROM _smrt_jobs LIMIT 1') {
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('information_schema.columns')) {
+          expect(params).toEqual(['_smrt_jobs', 'tenant_id']);
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('pg_indexes')) {
+          expect(params).toEqual(['idx_smrt_jobs_tenant_id']);
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        throw new Error(`Unexpected query: ${sql}`);
+      });
+
+    await ensureJobsSystemTableCompatibility({
+      url: 'postgresql://localhost:5432/test',
+      query,
+    } as any);
+
+    expect(
+      query.mock.calls.some(([sql]) =>
+        String(sql).includes('ALTER TABLE _smrt_jobs ADD COLUMN'),
+      ),
+    ).toBe(false);
+    expect(
+      query.mock.calls.some(([sql]) =>
+        String(sql).includes(
+          'CREATE INDEX IF NOT EXISTS idx_smrt_jobs_tenant_id',
+        ),
+      ),
+    ).toBe(false);
   });
 });

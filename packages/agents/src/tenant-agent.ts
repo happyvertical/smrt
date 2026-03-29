@@ -8,7 +8,12 @@
  * is a resolution behavior, not stored state.
  */
 
-import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AgentManifestInfo } from './ui.js';
 
@@ -72,15 +77,19 @@ export class TenantAgent extends SmrtObject {
   tenantId: string = '';
 
   /** Agent class name (e.g., 'Praeco', 'Caelus') */
+  @field({ type: 'text' })
   agentClass: string = '';
 
   /** Status of the agent for this tenant */
+  @field({ type: 'text' })
   status: TenantAgentStatus = 'active';
 
   /** Explicit permission overrides (JSON). null = use manifest defaults */
+  @field({ type: 'json', nullable: true })
   permissions: Record<string, boolean> | null = null;
 
   /** Tenant-level agent config overrides (JSON) */
+  @field({ type: 'json', nullable: true })
   config: Record<string, any> | null = null;
 }
 

@@ -83,6 +83,10 @@ async function addColumnIfMissing(
   const engine = detectEngine(getDatabaseUrl(db));
 
   if (engine === 'postgres') {
+    if (await columnExists(db, tableName, columnName)) {
+      return;
+    }
+
     await db.query(
       `ALTER TABLE ${tableName} ADD COLUMN IF NOT EXISTS ${columnName} ${definition}`,
     );
@@ -106,12 +110,40 @@ async function addColumnIfMissing(
   }
 }
 
+async function indexExists(
+  db: DatabaseInterface,
+  indexName: string,
+): Promise<boolean> {
+  try {
+    const engine = detectEngine(getDatabaseUrl(db));
+    if (engine === 'postgres') {
+      const result = await db.query(
+        'SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1 LIMIT 1',
+        indexName,
+      );
+      return getQueryRows(result).length > 0;
+    }
+
+    const result = await db.query(
+      `SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ? LIMIT 1`,
+      indexName,
+    );
+    return getQueryRows(result).length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function addIndexIfMissing(
   db: DatabaseInterface,
   indexName: string,
   tableName: string,
   columnName: string,
 ): Promise<void> {
+  if (await indexExists(db, indexName)) {
+    return;
+  }
+
   await db.query(
     `CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columnName})`,
   );

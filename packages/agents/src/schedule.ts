@@ -1,4 +1,9 @@
-import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
@@ -42,60 +47,79 @@ export class AgentSchedule extends SmrtObject {
   tenantId: string | null = null;
 
   /** Type/class name of the agent to run */
+  @field({ type: 'text' })
   agentType: string = '';
 
   /** Optional agent instance ID (for running specific instances) */
+  @field({ type: 'text', nullable: true })
   agentId: string | null = null;
 
   /** Agent configuration to pass when running */
+  @field({ type: 'json' })
   agentConfig: Record<string, unknown> = {};
 
   /** Cron expression (e.g., '0 2 * * *' for 2 AM daily) */
+  @field({ type: 'text' })
   cron: string = '';
 
   /** Timezone for cron interpretation (default: UTC) */
+  @field({ type: 'text' })
   timezone: string = 'UTC';
 
   /** Whether the schedule is enabled */
+  @field({ type: 'boolean' })
   enabled: boolean = true;
 
   /** Current schedule status */
+  @field({ type: 'text' })
   status: ScheduleStatus = 'active';
 
   /** Last time the agent was run */
+  @field({ type: 'datetime', nullable: true })
   lastRun: Date | null = null;
 
   /** Next scheduled run time */
+  @field({ type: 'datetime', nullable: true })
   nextRun: Date | null = null;
 
   /** Status of the last run */
+  @field({ type: 'text', nullable: true })
   lastStatus: 'success' | 'failed' | null = null;
 
   /** Error message from last failed run */
+  @field({ type: 'text', nullable: true })
   lastError: string | null = null;
 
   /** Total number of runs */
+  @field({ type: 'integer' })
   runCount: number = 0;
 
   /** Total number of successful runs */
+  @field({ type: 'integer' })
   successCount: number = 0;
 
   /** Total number of failed runs */
+  @field({ type: 'integer' })
   failureCount: number = 0;
 
   /** Maximum concurrent runs (prevent overlapping) */
+  @field({ type: 'integer' })
   maxConcurrent: number = 1;
 
   /** Current number of running instances */
+  @field({ type: 'integer' })
   runningCount: number = 0;
 
   /** Timeout for agent execution in milliseconds (default: 1 hour) */
+  @field({ type: 'integer' })
   timeout: number = 3600000;
 
   /** Method to call on the agent (default: 'run') */
+  @field({ type: 'text' })
   method: string = 'run';
 
   /** Arguments to pass to the method */
+  @field({ type: 'json' })
   methodArgs: Record<string, unknown> = {};
 
   /**

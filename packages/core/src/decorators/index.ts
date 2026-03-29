@@ -40,7 +40,23 @@ export type Meta<T> = T;
 /**
  * Base field options
  */
+export type PrimitiveFieldType =
+  | 'text'
+  | 'integer'
+  | 'decimal'
+  | 'boolean'
+  | 'datetime'
+  | 'json';
+
+export type FieldType =
+  | PrimitiveFieldType
+  | 'foreignKey'
+  | 'oneToMany'
+  | 'manyToMany';
+
 export interface FieldOptions {
+  /** Explicit field type for runtime-only registration paths */
+  type?: FieldType;
   /** Whether the field is required */
   required?: boolean;
   /** Default value for the field */
