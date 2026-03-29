@@ -1,6 +1,7 @@
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { ensureJobsSystemTableCompatibility } from '../../core/src/system/compatibility.js';
 
 /**
  * Job status type
@@ -35,7 +36,7 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
 })
 export class SmrtJob extends SmrtObject {
   /** Tenant context captured for this job, if any */
-  tenantId: string | null = null;
+  tenantId: string | null | undefined = undefined;
 
   /** Queue name for the job */
   queue: string = 'default';
@@ -103,7 +104,7 @@ export class SmrtJob extends SmrtObject {
    * Scheduled jobs can also set this explicitly from their owning schedule.
    */
   override async save(): Promise<this> {
-    if (!this.tenantId) {
+    if (this.tenantId === undefined) {
       const contextTenantId = getTenantId();
       if (contextTenantId) {
         this.tenantId = contextTenantId;
@@ -188,6 +189,12 @@ export interface ListReadyOptions {
  */
 export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
   static readonly _itemClass = SmrtJob;
+
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    await ensureJobsSystemTableCompatibility(this.db);
+    return this;
+  }
 
   /**
    * List jobs by status
