@@ -192,6 +192,52 @@ describe('Manifest loader contract', () => {
     expect(entry?.className).toBe('ImportOnlyManifest');
   });
 
+  it('resolves installed package manifests through parent node_modules directories', () => {
+    const packageName = '@happyvertical/smrt-contract-parent-chain';
+    writeScopedPackage(
+      appDir,
+      packageName,
+      {
+        name: packageName,
+        version: '1.0.0',
+        exports: {
+          './manifest.json': './dist/manifest.json',
+        },
+      },
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        moduleType: 'smrt',
+        packageName,
+        objects: {
+          [`${packageName}:ParentChainManifest`]: {
+            className: 'ParentChainManifest',
+            fields: {
+              title: { type: 'text' },
+            },
+          },
+        },
+      },
+    );
+
+    const nestedAppDir = join(appDir, 'apps', 'dashboard');
+    mkdirSync(nestedAppDir, { recursive: true });
+
+    process.chdir(nestedAppDir);
+    globalThis.__smrtManifestLocalTest = {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@local/test-app',
+      objects: {},
+      smrtDependencies: [packageName],
+    } as any;
+
+    const entry = discoverManifestSync('ParentChainManifest');
+
+    expect(entry).toBeDefined();
+    expect(entry?.className).toBe('ParentChainManifest');
+  });
+
   it('loads transitive declared dependencies during a single discovery pass', () => {
     const parentPackage = '@happyvertical/smrt-contract-parent';
     const childPackage = '@happyvertical/smrt-contract-child';

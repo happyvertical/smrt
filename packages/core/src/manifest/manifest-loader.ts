@@ -21,7 +21,7 @@
  * paths or load JavaScript manifest modules.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { ObjectRegistry } from '../registry.js';
@@ -579,18 +579,102 @@ interface ExternalPackageJson {
   exports?: Record<string, string | ManifestExportConditions>;
 }
 
+function findWorkspaceRoot(startDir: string): string | null {
+  let currentDir = startDir;
+
+  while (true) {
+    if (existsSync(join(currentDir, 'pnpm-workspace.yaml'))) {
+      return currentDir;
+    }
+
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
 function resolveInstalledPackageJsonPath(packageName: string): string | null {
-  const packageJsonPath = join(
-    process.cwd(),
-    'node_modules',
-    packageName,
-    'package.json',
-  );
-  return existsSync(packageJsonPath) ? packageJsonPath : null;
+  let currentDir = process.cwd();
+
+  while (true) {
+    const packageJsonPath = join(
+      currentDir,
+      'node_modules',
+      packageName,
+      'package.json',
+    );
+
+    if (existsSync(packageJsonPath)) {
+      return packageJsonPath;
+    }
+
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
+function resolveWorkspacePackageJsonPath(packageName: string): string | null {
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const workspacePackagesDir = join(workspaceRoot, 'packages');
+  if (!existsSync(workspacePackagesDir)) {
+    return null;
+  }
+
+  for (const packageDirName of readdirSync(workspacePackagesDir)) {
+    const packageJsonPath = join(
+      workspacePackagesDir,
+      packageDirName,
+      'package.json',
+    );
+    if (!existsSync(packageJsonPath)) {
+      continue;
+    }
+
+    try {
+      const packageJson = parse<{ name?: string }>(
+        readFileSync(packageJsonPath, 'utf-8'),
+      );
+      if (packageJson.name === packageName) {
+        return packageJsonPath;
+      }
+    } catch {
+      // Ignore unreadable workspace package metadata and continue scanning.
+    }
+  }
+
+  return null;
+}
+
+function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
+  const candidates = [
+    join(packageDir, 'src', 'manifest', 'manifest.json'),
+    join(packageDir, '.smrt', 'manifest.json'),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 function resolveManifestExportPath(packageName: string): string | null {
-  const packageJsonPath = resolveInstalledPackageJsonPath(packageName);
+  const packageJsonPath =
+    resolveInstalledPackageJsonPath(packageName) ||
+    resolveWorkspacePackageJsonPath(packageName);
 
   if (!packageJsonPath) {
     return null;
@@ -629,7 +713,21 @@ function resolveManifestExportPath(packageName: string): string | null {
       return null;
     }
 
-    return join(packageDir, manifestRelativePath);
+    const manifestPath = join(packageDir, manifestRelativePath);
+    if (existsSync(manifestPath)) {
+      return manifestPath;
+    }
+
+    const workspaceSourceManifest =
+      resolveWorkspaceSourceManifestPath(packageDir);
+    if (workspaceSourceManifest) {
+      return workspaceSourceManifest;
+    }
+
+    console.warn(
+      `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
+    );
+    return null;
   }
 
   return null;

@@ -1329,7 +1329,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     const existing = await this.get(where);
     if (existing) {
-      const diff = this.getDiff(existing, diffData);
+      const diff = this.getDiffSync(existing, diffData);
       if (diff) {
         Object.assign(existing, diff);
         await existing.save();
@@ -1351,7 +1351,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @param data - New data
    * @returns Object containing only the changed fields
    */
-  getDiff(
+  async getDiff(
+    existing: Record<string, any>,
+    data: Record<string, any>,
+  ): Promise<Record<string, any> | null> {
+    return this.getDiffSync(existing, data);
+  }
+
+  private getDiffSync(
     existing: Record<string, any>,
     data: Record<string, any>,
   ): Record<string, any> | null {
@@ -1361,10 +1368,6 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       'id',
       'slug',
       'context',
-      'created_at',
-      'updated_at',
-      '_meta_type',
-      '_meta_data',
     ]);
     const diff = Object.keys(data).reduce(
       (acc, key) => {
