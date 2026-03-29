@@ -1774,12 +1774,10 @@ export class ObjectRegistry {
       if (!loaded) {
         return new Map();
       }
-
       registered = ObjectRegistry.findClass(className);
-    }
-
-    if (!registered) {
-      return new Map();
+      if (!registered) {
+        return new Map();
+      }
     }
 
     // Ensure manifest is loaded (handles external packages)

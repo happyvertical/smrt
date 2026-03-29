@@ -400,7 +400,11 @@ export function formatDataJs(
       const isDate = fieldType === 'datetime' || isDateField(key);
 
       if (isDate) {
-        normalizedData[outputKey] = new Date(value);
+        const parsedDate = value.trim() ? new Date(value) : null;
+        normalizedData[outputKey] =
+          parsedDate && !Number.isNaN(parsedDate.getTime())
+            ? parsedDate
+            : value;
       } else if (fieldType === 'json') {
         // Parse JSON strings back to objects
         try {

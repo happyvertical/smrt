@@ -324,6 +324,23 @@ export interface SmrtClassOptions {
     /** Additional custom adapters */
     adapters?: SignalAdapter[];
   };
+
+  /**
+   * Internal flag to reuse an already initialized DatabaseInterface instance.
+   *
+   * Skips database resolution and system-table setup during lightweight hydration.
+   * @internal
+   */
+  _reuseInitializedDb?: boolean;
+
+  /**
+   * Internal flag to defer runtime-only services such as signals and AI setup.
+   *
+   * Lightweight hydration paths set this so plain query reads avoid per-row
+   * runtime bootstrap costs.
+   * @internal
+   */
+  _deferRuntimeInitialization?: boolean;
 }
 
 /**
@@ -373,6 +390,16 @@ export class SmrtClass {
    * Registered AI usage handlers for this instance.
    */
   private _aiUsageHandlers: AiUsageHandler[] = [];
+
+  /**
+   * Tracks whether optional runtime services (signals, AI, fs) are ready.
+   */
+  private _runtimeServicesInitialized = false;
+
+  /**
+   * Shared in-flight runtime initialization promise for single-flight setup.
+   */
+  private _runtimeServicesInitPromise?: Promise<void>;
 
   /**
    * Configuration options provided to the class
@@ -427,6 +454,23 @@ export class SmrtClass {
    * @throws {Error} If database is required but not provided in options
    */
   protected async initialize(): Promise<this> {
+    await this.initializeCoreResources();
+
+    if (!this.options._deferRuntimeInitialization) {
+      await this.initializeRuntimeServices();
+    }
+
+    return this;
+  }
+
+  /**
+   * Initialize core resources required for ORM behavior.
+   *
+   * This setup is shared by both full runtime initialization and lightweight
+   * query hydration. Hydrated objects reuse an existing DB connection and skip
+   * repeated system-table checks.
+   */
+  protected async initializeCoreResources(): Promise<void> {
     // Map persistence to db for backward compatibility
     if (this.options.persistence && !this.options.db) {
       this.options.db = this.options.persistence;
@@ -441,132 +485,201 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
-      // Handle four db config formats (in implementation order):
-      // 1. String URL: 'products.db' (shortcut)
-      // 2. DatabaseInterface instance: already initialized db (has 'query' method)
-      // 3. Config with client: { type: 'postgres', client: pgPool } (SvelteKit pattern)
-      // 4. Config object: { type: 'sqlite', url: 'products.db' }
-      if (typeof this.options.db === 'string') {
-        // Format 1: String shortcut - let getDatabase auto-detect type from URL
-        // Preserve connection sharing for file-backed databases while leaving
-        // true in-memory databases isolated per instance.
-        const isMemoryDb = this.options.db === ':memory:';
-        this._db = await getDatabase({
-          url: this.options.db,
-          ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
-        });
-      } else if ('query' in this.options.db) {
-        // Format 2: Already a DatabaseInterface instance - return as-is
-        this._db = this.options.db as DatabaseInterface;
-      } else if ('client' in this.options.db && this.options.db.client) {
-        // Format 3: Config with pre-created client (e.g., from SvelteKit's $env-based connection)
-        // Pass the client to getDatabase which will use it instead of creating a new connection
-        const dbConfig = this.options.db as {
-          type?: string;
-          client: unknown;
-          url?: string;
-        };
-        this._db = await getDatabase({
-          type: dbConfig.type || 'postgres',
-          client: dbConfig.client,
-          url: dbConfig.url,
-        } as any);
-      } else {
-        // Format 4: Config object - pass to getDatabase (handles all types uniformly)
-        // Preserve connection sharing for file-backed databases while leaving
-        // true in-memory databases isolated per instance.
-        const dbConfig = this.options.db as { url?: string; type?: string };
-        const dbUrl = dbConfig.url || 'memory';
-        const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
-        this._db = await getDatabase({
-          ...this.options.db,
-          ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
-        } as any);
-      }
-
-      /**
-       * INTENTIONAL MUTATION: After resolving the database config,
-       * we replace options.db with the actual DatabaseInterface instance.
-       * This enables child objects to share the same connection via:
-       *
-       *   const child = new ChildObject({ db: parent.options.db });
-       *
-       * Without this, passing this.options to getCollection() would use the config object
-       * which causes a NEW db instance to be created, losing data isolation.
-       *
-       * See issue #567 for context on why this pattern is necessary.
-       */
-      this.options.db = this._db;
-
-      await this.ensureSystemTables();
-    }
-    if (this.options.fs) {
-      this._fs = await FilesystemAdapter.create(this.options.fs);
-    }
-
-    // Initialize AI client with environment variable support
-    // Priority: instance options > env vars > global config > defaults
-    const globalConfig = config.toJSON();
-    const usageConfig = this.mergeAiUsageConfig(globalConfig);
-    this.initializeAiUsageHandlers(usageConfig);
-
-    if (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER) {
-      // Check if options.ai is already a client-like object with embed method
-      // This allows passing mock AI clients for testing
-      const aiOption = this.options.ai as Record<string, unknown> | undefined;
       if (
-        aiOption &&
-        typeof aiOption === 'object' &&
-        typeof aiOption.embed === 'function' &&
-        !aiOption.provider
+        this.options._reuseInitializedDb &&
+        typeof this.options.db === 'object' &&
+        'query' in this.options.db
       ) {
-        this._ai = aiOption as unknown as AIClient;
+        this._db = this.options.db as DatabaseInterface;
+        this.options.db = this._db;
       } else {
-        const { loadEnvConfig } = await import('@happyvertical/utils');
-
-        // Start with global defaults
-        const baseConfig = globalConfig.ai || {};
-
-        // Merge with instance options (takes priority over global)
-        const userConfig = { ...baseConfig, ...this.options.ai };
-
-        // Load environment variables and merge (user options take priority)
-        const aiConfig = loadEnvConfig<any>(userConfig, {
-          packageName: 'ai',
-          prefix: 'SMRT',
-          schema: {
-            provider: 'string',
-            model: 'string',
-            apiKey: 'string',
-            timeout: 'number',
-            maxRetries: 'number',
-            temperature: 'number',
-            maxTokens: 'number',
-          },
-        });
-
-        const existingOnUsage =
-          aiConfig.onUsage ??
-          (userConfig as Record<string, unknown>).onUsage ??
-          undefined;
-        aiConfig.onUsage = async (event: unknown) => {
-          if (typeof existingOnUsage === 'function') {
-            await (existingOnUsage as (usageEvent: unknown) => unknown)(event);
-          }
-          await this.handleAiUsageCallback(event, aiConfig, usageConfig);
-        };
-
-        // Only initialize if we have a provider configured
-        if (aiConfig.provider || aiConfig.type || aiConfig.apiKey) {
-          // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
-          // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
-          this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+        // Handle four db config formats (in implementation order):
+        // 1. String URL: 'products.db' (shortcut)
+        // 2. DatabaseInterface instance: already initialized db (has 'query' method)
+        // 3. Config with client: { type: 'postgres', client: pgPool } (SvelteKit pattern)
+        // 4. Config object: { type: 'sqlite', url: 'products.db' }
+        if (typeof this.options.db === 'string') {
+          // Format 1: String shortcut - let getDatabase auto-detect type from URL
+          // Preserve connection sharing for file-backed databases while leaving
+          // true in-memory databases isolated per instance.
+          const isMemoryDb = this.options.db === ':memory:';
+          this._db = await getDatabase({
+            url: this.options.db,
+            ...(isMemoryDb ? {} : { dbid: `smrt:${this.options.db}` }),
+          });
+        } else if ('query' in this.options.db) {
+          // Format 2: Already a DatabaseInterface instance - return as-is
+          this._db = this.options.db as DatabaseInterface;
+        } else if ('client' in this.options.db && this.options.db.client) {
+          // Format 3: Config with pre-created client (e.g., from SvelteKit's $env-based connection)
+          // Pass the client to getDatabase which will use it instead of creating a new connection
+          const dbConfig = this.options.db as {
+            type?: string;
+            client: unknown;
+            url?: string;
+          };
+          this._db = await getDatabase({
+            type: dbConfig.type || 'postgres',
+            client: dbConfig.client,
+            url: dbConfig.url,
+          } as any);
+        } else {
+          // Format 4: Config object - pass to getDatabase (handles all types uniformly)
+          // Preserve connection sharing for file-backed databases while leaving
+          // true in-memory databases isolated per instance.
+          const dbConfig = this.options.db as { url?: string; type?: string };
+          const dbUrl = dbConfig.url || 'memory';
+          const isMemoryDb = dbUrl === ':memory:' || dbUrl === 'memory';
+          this._db = await getDatabase({
+            ...this.options.db,
+            ...(isMemoryDb ? {} : { dbid: `smrt:${dbUrl}` }),
+          } as any);
         }
+
+        /**
+         * INTENTIONAL MUTATION: After resolving the database config,
+         * we replace options.db with the actual DatabaseInterface instance.
+         * This enables child objects to share the same connection via:
+         *
+         *   const child = new ChildObject({ db: parent.options.db });
+         *
+         * Without this, passing this.options to getCollection() would use the config object
+         * which causes a NEW db instance to be created, losing data isolation.
+         *
+         * See issue #567 for context on why this pattern is necessary.
+         */
+        this.options.db = this._db;
+
+        await this.ensureSystemTables();
       }
     }
+  }
 
-    await this.initializeSignals();
-    return this;
+  /**
+   * Initialize optional runtime services that are not required for plain ORM reads.
+   */
+  protected async initializeRuntimeServices(): Promise<void> {
+    if (this._runtimeServicesInitialized) {
+      return;
+    }
+
+    if (!this._runtimeServicesInitPromise) {
+      this._runtimeServicesInitPromise = (async () => {
+        if (this.options.fs && !this._fs) {
+          this._fs = await FilesystemAdapter.create(this.options.fs);
+        }
+
+        // Initialize AI client with environment variable support
+        // Priority: instance options > env vars > global config > defaults
+        const globalConfig = config.toJSON();
+        const usageConfig = this.mergeAiUsageConfig(globalConfig);
+        this.initializeAiUsageHandlers(usageConfig);
+
+        if (
+          !this._ai &&
+          (this.options.ai || globalConfig.ai || process.env.SMRT_AI_PROVIDER)
+        ) {
+          // Check if options.ai is already a client-like object with embed method
+          // This allows passing mock AI clients for testing
+          const aiOption = this.options.ai as
+            | Record<string, unknown>
+            | undefined;
+          if (
+            aiOption &&
+            typeof aiOption === 'object' &&
+            typeof aiOption.embed === 'function' &&
+            !aiOption.provider
+          ) {
+            this._ai = aiOption as unknown as AIClient;
+          } else {
+            const { loadEnvConfig } = await import('@happyvertical/utils');
+
+            // Start with global defaults
+            const baseConfig = globalConfig.ai || {};
+
+            // Merge with instance options (takes priority over global)
+            const userConfig = { ...baseConfig, ...this.options.ai };
+
+            // Load environment variables and merge (user options take priority)
+            const aiConfig = loadEnvConfig<any>(userConfig, {
+              packageName: 'ai',
+              prefix: 'SMRT',
+              schema: {
+                provider: 'string',
+                model: 'string',
+                apiKey: 'string',
+                timeout: 'number',
+                maxRetries: 'number',
+                temperature: 'number',
+                maxTokens: 'number',
+              },
+            });
+
+            const existingOnUsage =
+              aiConfig.onUsage ??
+              (userConfig as Record<string, unknown>).onUsage ??
+              undefined;
+            aiConfig.onUsage = async (event: unknown) => {
+              if (typeof existingOnUsage === 'function') {
+                await (existingOnUsage as (usageEvent: unknown) => unknown)(
+                  event,
+                );
+              }
+              await this.handleAiUsageCallback(event, aiConfig, usageConfig);
+            };
+
+            // Only initialize if we have a provider configured
+            if (aiConfig.provider || aiConfig.type || aiConfig.apiKey) {
+              // Use getAI() factory to support all AI providers (OpenAI, Anthropic, Gemini, etc.)
+              // getAI() returns AIInterface, which we cast to AIClient for backward compatibility
+              this._ai = (await getAI(aiConfig as any)) as any as AIClient;
+            }
+          }
+        }
+
+        await this.initializeSignals();
+        this._runtimeServicesInitialized = true;
+      })();
+    }
+
+    try {
+      await this._runtimeServicesInitPromise;
+    } finally {
+      this._runtimeServicesInitPromise = undefined;
+    }
+  }
+
+  /**
+   * Ensure deferred runtime services are ready before using them.
+   */
+  protected async ensureRuntimeServicesInitialized(): Promise<void> {
+    if (!this._runtimeServicesInitialized) {
+      await this.initializeRuntimeServices();
+    }
+  }
+
+  /**
+   * Resolve the AI client, initializing deferred runtime services on demand.
+   */
+  protected async getAiClient(): Promise<AIClient> {
+    await this.ensureRuntimeServicesInitialized();
+
+    if (!this._ai) {
+      throw new Error(
+        `${this._className} does not have an AI client configured. ` +
+          `Provide 'ai' in options or configure a global SMRT AI provider.`,
+      );
+    }
+
+    return this._ai;
+  }
+
+  /**
+   * Resolve the AI client if one is configured, otherwise return undefined.
+   */
+  protected async getOptionalAiClient(): Promise<AIClient | undefined> {
+    await this.ensureRuntimeServicesInitialized();
+    return this._ai;
   }
 
   /**

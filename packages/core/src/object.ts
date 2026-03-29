@@ -1179,10 +1179,14 @@ export class SmrtObject extends SmrtClass {
       const embeddingConfig = ObjectRegistry.getEmbeddingConfig(
         this.constructor.name,
       );
+      const aiClient =
+        embeddingConfig && embeddingConfig.autoGenerate !== false
+          ? await this.getOptionalAiClient()
+          : undefined;
       if (
         embeddingConfig &&
         embeddingConfig.autoGenerate !== false &&
-        this.ai
+        aiClient
       ) {
         // Check if any embedding field content has changed
         const isStale = await this.hasStaleEmbeddings();
@@ -1426,12 +1430,13 @@ export class SmrtObject extends SmrtClass {
    * @see {@link do} for open-ended instructions instead of boolean checks
    */
   public async is(criteria: string, options: any = {}) {
+    const ai = await this.getAiClient();
     const prompt = `--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
 
     // Get available tools for AI function calling
     const tools = this.getAvailableTools();
 
-    const message = await this.ai.message(prompt, {
+    const message = await ai.message(prompt, {
       ...(options as any),
       responseFormat: { type: 'json_object' },
       tools: tools.length > 0 ? tools : undefined,
@@ -1472,12 +1477,13 @@ export class SmrtObject extends SmrtClass {
    * @see {@link is} for boolean criteria checks
    */
   public async do(instructions: string, options: any = {}) {
+    const ai = await this.getAiClient();
     const prompt = `--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
 
     // Get available tools for AI function calling
     const tools = this.getAvailableTools();
 
-    const result = await this.ai.message(prompt, {
+    const result = await ai.message(prompt, {
       ...options,
       tools: tools.length > 0 ? tools : undefined,
     });
@@ -1506,12 +1512,13 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public async describe(options: any = {}) {
+    const ai = await this.getAiClient();
     const prompt = `Generate a concise, professional description of this object based on its content and properties. The description should be clear, informative, and suitable for display to end users. Focus on the most important and distinctive characteristics.`;
 
     // Get available tools for AI function calling
     const tools = this.getAvailableTools();
 
-    const result = await this.ai.message(prompt, {
+    const result = await ai.message(prompt, {
       ...options,
       tools: tools.length > 0 ? tools : undefined,
     });

@@ -42,7 +42,8 @@
       "types": "./dist/lib/collections.d.ts",
       "default": "./dist/lib/collections.js"
     },
-    "./manifest": "./dist/lib/manifest.json"
+    "./manifest": "./dist/lib/manifest.json",
+    "./manifest.json": "./dist/lib/manifest.json"
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",

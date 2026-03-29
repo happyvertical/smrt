@@ -14,8 +14,8 @@ import { verifyPersistenceTable } from './schema/table-verifier';
 import {
   fieldsFromClass,
   formatDataJs,
-  formatDataSql,
   tableNameFromClass,
+  toCamelCase,
   toSnakeCase,
 } from './utils';
 
@@ -746,7 +746,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    const fields = await this.getFields();
+    const fields = this.getFieldsSync();
     const instance = await this.hydrateResultRow(rows[0], fields, isSTI);
 
     // Execute afterGet interceptors (e.g., tenant validation)
@@ -908,7 +908,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const params = [...whereValues, ...limitOffsetValues];
 
     const result = await this.db.query(sql, ...params);
-    const fields = await this.getFields();
+    const fields = this.getFieldsSync();
 
     // STI: Hydrate instances polymorphically based on _meta_type
     // Reuse tableStrategy and isSTI from earlier in the function
@@ -1226,6 +1226,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   private async createPolymorphic(
     className: string | null | undefined,
     options: any,
+    hydrationOptions: { hydrateOnly?: boolean } = {},
   ): Promise<ModelType> {
     // Schema already initialized in Collection.create() static factory
 
@@ -1257,6 +1258,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ai: this.options.ai,
       db: this.db,
       _skipLoad: true,
+      ...(hydrationOptions.hydrateOnly
+        ? {
+            _reuseInitializedDb: true,
+            _deferRuntimeInitialization: true,
+          }
+        : {}),
       ...options,
     };
 
@@ -1304,29 +1311,37 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link get} for read-only lookup
    */
   public async getOrUpsert(data: any, defaults: any = {}) {
-    data = formatDataSql(data);
+    const logicalData = this.normalizeLogicalData(data);
+    const logicalDefaults = this.normalizeLogicalData(defaults);
     let where: any = {};
-    if (data.id) {
-      where = { id: data.id };
-    } else if (data.slug) {
-      where = { slug: data.slug, context: data.context || '' };
+    const diffData = { ...logicalData };
+    if (logicalData.id) {
+      where = { id: logicalData.id };
+      delete diffData.id;
+      delete diffData.slug;
+      delete diffData.context;
+    } else if (logicalData.slug) {
+      where = { slug: logicalData.slug, context: logicalData.context || '' };
+      delete diffData.slug;
+      delete diffData.context;
     } else {
-      where = data;
+      where = logicalData;
     }
     const existing = await this.get(where);
     if (existing) {
-      const diff = await this.getDiff(existing, data);
+      const diff = this.getDiffSync(existing, diffData);
       if (diff) {
         Object.assign(existing, diff);
         await existing.save();
-        return existing;
       }
       return existing;
     }
-    const upsertData = { ...defaults, ...data };
-    const upserted = await this.create(upsertData);
-    await upserted.save();
-    return upserted;
+    const createData = {
+      ...logicalDefaults,
+      ...logicalData,
+    } as SmrtCreateInput<ModelType>;
+
+    return await this.create(createData);
   }
 
   /**
@@ -1339,17 +1354,35 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   async getDiff(
     existing: Record<string, any>,
     data: Record<string, any>,
-  ): Promise<Record<string, any>> {
-    const fields = await this._itemClass.prototype.getFields();
-    return Object.keys(data).reduce(
+  ): Promise<Record<string, any> | null> {
+    return this.getDiffSync(existing, data);
+  }
+
+  private getDiffSync(
+    existing: Record<string, any>,
+    data: Record<string, any>,
+  ): Record<string, any> | null {
+    const fields = this.getFieldsSync();
+    const validKeys = new Set([
+      ...Object.keys(fields),
+      'id',
+      'slug',
+      'context',
+    ]);
+    const diff = Object.keys(data).reduce(
       (acc, key) => {
-        if (fields[key] && existing[key] !== data[key]) {
+        if (
+          validKeys.has(key) &&
+          !this.areEquivalentValues(existing[key], data[key])
+        ) {
           acc[key] = data[key];
         }
         return acc;
       },
       {} as Record<string, any>,
     );
+
+    return Object.keys(diff).length > 0 ? diff : null;
   }
 
   /**
@@ -1359,6 +1392,100 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   async getFields() {
     return await fieldsFromClass(this._itemClass);
+  }
+
+  /**
+   * Normalize user input into the model's logical field names before diffing or creation.
+   *
+   * Accepts both camelCase and snake_case keys while preserving framework meta fields.
+   */
+  private normalizeLogicalData(data: Record<string, any>): Record<string, any> {
+    const fields = this.getFieldsSync();
+    const normalized: Record<string, any> = {};
+
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith('_')) {
+        normalized[key] = value;
+        continue;
+      }
+
+      const camelKey = key.includes('_') ? toCamelCase(key) : key;
+      const snakeKey = key.includes('_') ? key : toSnakeCase(key);
+      const outputKey =
+        key in fields
+          ? key
+          : camelKey in fields
+            ? camelKey
+            : snakeKey in fields
+              ? snakeKey
+              : key;
+
+      normalized[outputKey] = value;
+    }
+
+    return normalized;
+  }
+
+  /**
+   * Preserve persisted core timestamp fields during lightweight hydration.
+   */
+  private withHydratedCoreFields(
+    data: Record<string, any>,
+  ): Record<string, any> {
+    const hydratedData = { ...data };
+
+    if (
+      hydratedData.createdAt !== undefined &&
+      hydratedData.created_at === undefined
+    ) {
+      hydratedData.created_at = hydratedData.createdAt;
+    }
+
+    if (
+      hydratedData.updatedAt !== undefined &&
+      hydratedData.updated_at === undefined
+    ) {
+      hydratedData.updated_at = hydratedData.updatedAt;
+    }
+
+    return hydratedData;
+  }
+
+  /**
+   * Treat date-equivalent values as unchanged even if their runtime types differ.
+   */
+  private areEquivalentValues(
+    existingValue: unknown,
+    nextValue: unknown,
+  ): boolean {
+    if (existingValue instanceof Date || nextValue instanceof Date) {
+      const existingTime = this.toComparableTime(existingValue);
+      const nextTime = this.toComparableTime(nextValue);
+
+      if (existingTime !== null && nextTime !== null) {
+        return existingTime === nextTime;
+      }
+    }
+
+    return existingValue === nextValue;
+  }
+
+  /**
+   * Convert supported date inputs into comparable timestamps.
+   */
+  private toComparableTime(value: unknown): number | null {
+    if (value instanceof Date) {
+      const timestamp = value.getTime();
+      return Number.isNaN(timestamp) ? null : timestamp;
+    }
+
+    if (typeof value === 'string' && value.trim()) {
+      const parsedDate = new Date(value);
+      const timestamp = parsedDate.getTime();
+      return Number.isNaN(timestamp) ? null : timestamp;
+    }
+
+    return null;
   }
 
   /**
@@ -1609,7 +1736,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       interceptedQuery.sql,
       ...interceptedQuery.params,
     );
-    const fields = await this.getFields();
+    const fields = this.getFieldsSync();
 
     // STI: Check if we need polymorphic hydration
     const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
@@ -1632,12 +1759,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     fields: Record<string, any>,
     isSTI: boolean,
   ): Promise<ModelType> {
-    const formattedData = formatDataJs(row, fields);
+    const formattedData = this.withHydratedCoreFields(
+      formatDataJs(row, fields),
+    );
 
     if (isSTI && formattedData._meta_type) {
       return await this.createPolymorphic(
         formattedData._meta_type,
         formattedData,
+        { hydrateOnly: true },
       );
     }
 
@@ -1645,6 +1775,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ai: this.options.ai,
       db: this.db,
       _skipLoad: true,
+      _reuseInitializedDb: true,
+      _deferRuntimeInitialization: true,
       ...formattedData,
     };
 
