@@ -16,6 +16,7 @@ import {
   discoverManifestSync,
   getPackageName,
 } from '../manifest/manifest-loader';
+import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 
 describe('Issue #131: External package manifest loading', () => {
@@ -100,6 +101,39 @@ describe('Issue #131: External package manifest loading', () => {
 
       // This flow is tested end-to-end in the places/events packages
       expect(true).toBe(true); // Documentation test
+    });
+
+    it('hydrates full manifest fields for partially registered external classes', async () => {
+      class Event extends SmrtObject {}
+
+      ObjectRegistry.register(Event as any, {
+        packageName: '@happyvertical/smrt-events',
+        tableStrategy: 'sti',
+      });
+
+      const registered = ObjectRegistry.findClass('Event');
+      expect(registered).toBeDefined();
+
+      registered?.fields.set('tenantId', {
+        type: 'text',
+        _meta: {},
+      });
+
+      const manifestEntry = await discoverManifestEntry(Event as any, 'Event');
+
+      expect(manifestEntry).toBeDefined();
+      expect(manifestEntry?.packageName).toBe('@happyvertical/smrt-events');
+      expect(Object.keys(manifestEntry?.fields || {})).toContain('startDate');
+      expect(Object.keys(manifestEntry?.fields || {})).toContain('endDate');
+
+      await ObjectRegistry.ensureManifestLoaded('Event');
+
+      const fields = ObjectRegistry.getFields('Event');
+      expect(fields.has('tenantId')).toBe(true);
+      expect(fields.has('startDate')).toBe(true);
+      expect(fields.has('endDate')).toBe(true);
+      expect(fields.has('placeId')).toBe(true);
+      expect(fields.has('status')).toBe(true);
     });
   });
 

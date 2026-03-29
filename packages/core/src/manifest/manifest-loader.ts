@@ -1124,15 +1124,10 @@ export async function discoverManifestEntry(
         }
       }
 
-      // Source-registered classes with explicit field metadata do not need a
-      // second manifest probe from node_modules. This keeps workspace/dev
-      // runtimes from spamming missing-dist-manifest warnings for packages that
-      // are already fully usable from source.
-      if (registered.fields.size > 0) {
-        return undefined;
-      }
-
-      // Load the manifest for this specific package
+      // Load the manifest for this specific package before trusting any
+      // existing runtime field metadata. Imported external classes can be
+      // registered with only a partial field set until their manifest is
+      // hydrated, which is exactly what happens with STI parents like Event.
       const manifest = await loadExternalManifest(packageName);
       if (manifest) {
         // Look up the entry using the qualified name (exact match)
@@ -1143,6 +1138,15 @@ export async function discoverManifestEntry(
             ? { ...entry, packageName: manifest.packageName }
             : entry;
         }
+      }
+
+      // Source-registered classes with explicit field metadata do not need a
+      // second manifest probe from fallback discovery when the package did not
+      // resolve to a manifest. This keeps workspace/dev runtimes from spamming
+      // missing-dist-manifest warnings for packages that are already fully
+      // usable from source.
+      if (registered.fields.size > 0) {
+        return undefined;
       }
     }
   }
