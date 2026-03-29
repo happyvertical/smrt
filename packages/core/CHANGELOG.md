@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.21.21
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] remediate smrt-core audit findings
+  - [codex] Fix downstream external getAllFields autoload
+  - @happyvertical/smrt-scanner@0.21.21
+  - @happyvertical/smrt-config@0.21.21
+  - @happyvertical/smrt-types@0.21.21
+
 ## 0.21.20
 
 ### Patch Changes
