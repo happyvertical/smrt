@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.23
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve tenant context for queued work (#1089) (jobs)
+  - @happyvertical/smrt-scanner@0.21.23
+  - @happyvertical/smrt-config@0.21.23
+  - @happyvertical/smrt-types@0.21.23
+
 ## 0.21.22
 
 ### Patch Changes
