@@ -8,6 +8,7 @@
  */
 
 import {
+  field,
   type SmrtClassOptions,
   SmrtCollection,
   SmrtObject,
@@ -56,26 +57,31 @@ export class AgentConfig extends SmrtObject {
   /**
    * ID of the agent instance this config belongs to
    */
+  @field({ type: 'text' })
   agentId: string = '';
 
   /**
    * Class name of the agent (e.g., 'Praeco', 'Caelus')
    */
+  @field({ type: 'text' })
   agentClass: string = '';
 
   /**
    * UI slot ID (e.g., 'sources', 'settings', 'reports')
    */
+  @field({ type: 'text' })
   slotId: string = '';
 
   /**
    * Configuration data stored as JSON
    */
+  @field({ type: 'json' })
   configData: Record<string, any> = {};
 
   /**
    * Schema version for future migrations
    */
+  @field({ type: 'integer' })
   schemaVersion: number = 1;
 
   /**
