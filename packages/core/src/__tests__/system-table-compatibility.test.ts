@@ -164,6 +164,7 @@ describe('system table compatibility', () => {
         }
 
         if (sql.includes('information_schema.columns')) {
+          expect(sql).toContain('table_schema = current_schema()');
           expect(params).toEqual(['_smrt_jobs', 'tenant_id']);
           return { rows: [{ '?column?': 1 }] };
         }

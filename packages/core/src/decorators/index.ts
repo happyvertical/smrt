@@ -50,6 +50,7 @@ export type PrimitiveFieldType =
 
 export type FieldType =
   | PrimitiveFieldType
+  | 'meta'
   | 'foreignKey'
   | 'oneToMany'
   | 'manyToMany';

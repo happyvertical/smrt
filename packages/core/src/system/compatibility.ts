@@ -43,7 +43,7 @@ async function columnExists(
     const engine = detectEngine(getDatabaseUrl(db));
     if (engine === 'postgres') {
       const result = await db.query(
-        'SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND column_name = $2 LIMIT 1',
+        'SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2 LIMIT 1',
         tableName,
         columnName,
       );
