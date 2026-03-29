@@ -1,5 +1,6 @@
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import { SmrtCollection, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { getTenantId } from '@happyvertical/smrt-tenancy';
 
 /**
  * Job status type
@@ -33,6 +34,9 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
   mcp: { include: ['list', 'get'] },
 })
 export class SmrtJob extends SmrtObject {
+  /** Tenant context captured for this job, if any */
+  tenantId: string | null = null;
+
   /** Queue name for the job */
   queue: string = 'default';
 
@@ -94,6 +98,22 @@ export class SmrtJob extends SmrtObject {
   workerHeartbeat: Date | null = null;
 
   /**
+   * Capture ambient tenant context when a job is saved inside withTenant().
+   *
+   * Scheduled jobs can also set this explicitly from their owning schedule.
+   */
+  override async save(): Promise<this> {
+    if (!this.tenantId) {
+      const contextTenantId = getTenantId();
+      if (contextTenantId) {
+        this.tenantId = contextTenantId;
+      }
+    }
+
+    return super.save();
+  }
+
+  /**
    * Mark the job for retry
    */
   async retry(): Promise<void> {
@@ -141,6 +161,7 @@ export class SmrtJob extends SmrtObject {
  * Job data type (for create operations)
  */
 export interface SmrtJobData {
+  tenantId?: string | null;
   queue?: string;
   objectType: string;
   objectId?: string | null;
