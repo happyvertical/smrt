@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.22
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - hydrate partial external manifests (#1088) (core)
+  - @happyvertical/smrt-scanner@0.21.22
+  - @happyvertical/smrt-config@0.21.22
+  - @happyvertical/smrt-types@0.21.22
+
 ## 0.21.21
 
 ### Patch Changes
