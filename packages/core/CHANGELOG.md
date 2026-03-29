@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.24
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - restore bundled runtime fields (#1090) (agents)
+  - @happyvertical/smrt-scanner@0.21.24
+  - @happyvertical/smrt-config@0.21.24
+  - @happyvertical/smrt-types@0.21.24
+
 ## 0.21.23
 
 ### Patch Changes
