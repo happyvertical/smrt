@@ -155,9 +155,26 @@ export async function ensureDispatchSubscriptionsSystemTableCompatibility(
   );
 }
 
+export async function ensureJobsSystemTableCompatibility(
+  db: DatabaseInterface,
+): Promise<void> {
+  if (!(await tableExists(db, '_smrt_jobs'))) {
+    return;
+  }
+
+  await addColumnIfMissing(db, '_smrt_jobs', 'tenant_id', 'TEXT');
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_jobs_tenant_id',
+    '_smrt_jobs',
+    'tenant_id',
+  );
+}
+
 export async function ensureLegacySystemTableCompatibility(
   db: DatabaseInterface,
 ): Promise<void> {
   await ensureDispatchSystemTableCompatibility(db);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db);
+  await ensureJobsSystemTableCompatibility(db);
 }

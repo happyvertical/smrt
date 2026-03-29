@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
 import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
+import { TenantContext } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { JobContextLogger } from './logger-extension.js';
@@ -258,69 +259,89 @@ export class TaskRunner extends EventEmitter {
   private async executeJob(
     job: SmrtJob,
   ): Promise<{ result?: unknown; resultPointer?: string }> {
-    // Get the object class from registry
-    const registeredClass = ObjectRegistry.getClass(job.objectType);
-    if (!registeredClass) {
-      throw new Error(`Unknown object type: ${job.objectType}`);
+    const runJob = async (): Promise<{
+      result?: unknown;
+      resultPointer?: string;
+    }> => {
+      // Get the object class from registry
+      const registeredClass = ObjectRegistry.getClass(job.objectType);
+      if (!registeredClass) {
+        throw new Error(`Unknown object type: ${job.objectType}`);
+      }
+
+      // Get the constructor from the registry entry
+      const ObjectClass = registeredClass.constructor as unknown as new (
+        options: Record<string, unknown>,
+      ) => SmrtObject;
+
+      // Extract internal keys from args before passing to constructor/method
+      const rawArgs = (job.args ?? {}) as Record<string, unknown>;
+      const agentConfig = (rawArgs._agentConfig ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const { _agentConfig: _, _scheduleId: __, ...methodArgs } = rawArgs;
+
+      // Create or load the object instance
+      let instance: SmrtObject;
+
+      if (job.objectId) {
+        // Load existing object
+        instance = new ObjectClass({ db: this.db, ...agentConfig });
+        await instance.initialize();
+        await (
+          instance as SmrtObject & { loadFromId(id: string): Promise<void> }
+        ).loadFromId(job.objectId);
+      } else {
+        // Create new instance for static-like methods
+        instance = new ObjectClass({ db: this.db, ...agentConfig });
+        await instance.initialize();
+      }
+
+      const jobId = job.id;
+      if (!jobId) {
+        throw new Error('Job has no ID');
+      }
+
+      // Create a base logger for job context
+      const baseLogger = createLogger(true);
+
+      // Inject job context logger
+      const contextLogger = new JobContextLogger(baseLogger, {
+        jobId,
+        attempt: job.attempts,
+        queue: job.queue,
+        objectType: job.objectType,
+        method: job.method,
+      });
+
+      // Log job start
+      contextLogger.info(`Starting job: ${job.getDescription()}`);
+
+      // Invoke the method with cleaned args (no internal keys)
+      const method = (
+        instance as unknown as Record<
+          string,
+          (args: unknown) => Promise<unknown>
+        >
+      )[job.method];
+      if (typeof method !== 'function') {
+        throw new Error(`Method not found: ${job.objectType}.${job.method}`);
+      }
+
+      const result = await method.call(instance, methodArgs);
+
+      return { result };
+    };
+
+    if (job.tenantId) {
+      return TenantContext.runWithJobContext(
+        { tenantId: job.tenantId },
+        runJob,
+      );
     }
 
-    // Get the constructor from the registry entry
-    const ObjectClass = registeredClass.constructor as unknown as new (
-      options: Record<string, unknown>,
-    ) => SmrtObject;
-
-    // Extract internal keys from args before passing to constructor/method
-    const rawArgs = (job.args ?? {}) as Record<string, unknown>;
-    const agentConfig = (rawArgs._agentConfig ?? {}) as Record<string, unknown>;
-    const { _agentConfig: _, _scheduleId: __, ...methodArgs } = rawArgs;
-
-    // Create or load the object instance
-    let instance: SmrtObject;
-
-    if (job.objectId) {
-      // Load existing object
-      instance = new ObjectClass({ db: this.db, ...agentConfig });
-      await instance.initialize();
-      await (
-        instance as SmrtObject & { loadFromId(id: string): Promise<void> }
-      ).loadFromId(job.objectId);
-    } else {
-      // Create new instance for static-like methods
-      instance = new ObjectClass({ db: this.db, ...agentConfig });
-      await instance.initialize();
-    }
-
-    const jobId = job.id;
-    if (!jobId) {
-      throw new Error('Job has no ID');
-    }
-
-    // Create a base logger for job context
-    const baseLogger = createLogger(true);
-
-    // Inject job context logger
-    const contextLogger = new JobContextLogger(baseLogger, {
-      jobId,
-      attempt: job.attempts,
-      queue: job.queue,
-      objectType: job.objectType,
-      method: job.method,
-    });
-
-    // Log job start
-    contextLogger.info(`Starting job: ${job.getDescription()}`);
-
-    // Invoke the method with cleaned args (no internal keys)
-    const method = (
-      instance as unknown as Record<string, (args: unknown) => Promise<unknown>>
-    )[job.method];
-    if (typeof method !== 'function') {
-      throw new Error(`Method not found: ${job.objectType}.${job.method}`);
-    }
-
-    const result = await method.call(instance, methodArgs);
-
-    return { result };
+    return runJob();
   }
 
   /**

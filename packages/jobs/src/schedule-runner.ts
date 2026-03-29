@@ -313,6 +313,11 @@ export class ScheduleRunner extends EventEmitter {
       }
 
       const job = await this.jobCollection.create({
+        tenantId:
+          typeof schedule.tenant_id === 'string' &&
+          schedule.tenant_id.length > 0
+            ? (schedule.tenant_id as string)
+            : null,
         queue: 'agents',
         objectType: schedule.agent_type as string,
         objectId: schedule.agent_id as string | null,
@@ -360,6 +365,7 @@ interface ScheduleRow {
   id: unknown;
   agent_type: unknown;
   agent_id: unknown;
+  tenant_id: unknown;
   agent_config: unknown;
   cron: unknown;
   method: unknown;

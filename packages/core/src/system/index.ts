@@ -6,4 +6,5 @@
  */
 
 // Only export types - schema SQL strings are internal implementation details
+export * from './compatibility.js';
 export * from './types.js';
