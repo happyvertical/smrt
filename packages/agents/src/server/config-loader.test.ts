@@ -96,6 +96,19 @@ describe('loadSlotConfigs', () => {
     ).rejects.toThrow('database connection lost');
   });
 
+  it('should rethrow unrelated missing-table errors', async () => {
+    mockForAgents.mockRejectedValueOnce(
+      new Error('relation "dispatch_subscriptions" does not exist'),
+    );
+
+    await expect(
+      loadSlotConfigs(
+        [{ id: 'agent-1', agentClass: 'BrokenAgent' }],
+        dbOptions,
+      ),
+    ).rejects.toThrow('dispatch_subscriptions');
+  });
+
   it('should return empty object for empty agents array', async () => {
     const result = await loadSlotConfigs([], dbOptions);
     expect(result).toEqual({});

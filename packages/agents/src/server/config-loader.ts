@@ -60,8 +60,8 @@ function isMissingAgentConfigTableError(error: unknown): boolean {
 
   return (
     message.includes("Run 'smrt db:migrate'") ||
-    /no such table/i.test(message) ||
-    /does not exist/i.test(message) ||
-    /relation .*agent_configs.*does not exist/i.test(message)
+    /no such table[:\s]+agent_configs/i.test(message) ||
+    /relation .*agent_configs.*does not exist/i.test(message) ||
+    /table .*agent_configs.*doesn'?t exist/i.test(message)
   );
 }

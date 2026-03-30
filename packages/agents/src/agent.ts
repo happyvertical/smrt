@@ -249,7 +249,7 @@ export abstract class Agent extends SmrtObject {
   protected getAgentTypeName(): string {
     const metaType = (this as { _meta_type?: unknown })._meta_type;
     if (typeof metaType === 'string' && metaType.length > 0) {
-      return metaType;
+      return resolveAgentTypeName(metaType);
     }
 
     return resolveAgentTypeName(this.constructor.name);

@@ -359,13 +359,14 @@ function mergePermissions(
 
 function getManifestForAgent(
   manifests: Map<string, AgentManifestInfo> | undefined,
-  agentClass: string,
+  agentTypeOrIdentifier: string,
 ): AgentManifestInfo | undefined {
   if (!manifests) {
     return undefined;
   }
 
   return (
-    manifests.get(agentClass) || manifests.get(getAgentClassName(agentClass))
+    manifests.get(agentTypeOrIdentifier) ||
+    manifests.get(getAgentClassName(agentTypeOrIdentifier))
   );
 }

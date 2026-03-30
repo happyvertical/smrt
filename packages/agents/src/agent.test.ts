@@ -37,6 +37,38 @@ class TestAgent extends Agent {
   }
 }
 
+@smrt()
+class ArticleAgent extends Agent {
+  protected config = {};
+
+  async run(): Promise<void> {}
+
+  async summaryArticle(
+    _options: SummaryArticleOptions,
+  ): Promise<SummaryArticleResult> {
+    return {
+      title: 'Weekly Recap',
+      summary: 'A weekly recap.',
+      body: 'Full body content.',
+      dateRange: { start: '2025-01-01', end: '2025-01-07' },
+    };
+  }
+}
+
+@smrt()
+class PrototypeArticleAgent extends Agent {
+  protected config = {};
+
+  async run(): Promise<void> {}
+}
+
+PrototypeArticleAgent.prototype.summaryArticle = async () => ({
+  title: 'Test',
+  summary: 'Summary',
+  body: 'Body',
+  dateRange: { start: '2025-01-01', end: '2025-01-07' },
+});
+
 describe('@have/agents', () => {
   // Create a SINGLE shared database instance for all tests
   // This ensures all agents share the same in-memory database and tables persist
@@ -155,24 +187,6 @@ describe('@have/agents', () => {
   });
 
   describe('custom subclass methods', () => {
-    @smrt()
-    class ArticleAgent extends Agent {
-      protected config = {};
-
-      async run(): Promise<void> {}
-
-      async summaryArticle(
-        _options: SummaryArticleOptions,
-      ): Promise<SummaryArticleResult> {
-        return {
-          title: 'Weekly Recap',
-          summary: 'A weekly recap.',
-          body: 'Full body content.',
-          dateRange: { start: '2025-01-01', end: '2025-01-07' },
-        };
-      }
-    }
-
     it('should allow subclasses to declare summaryArticle as a normal method', () => {
       const agent = new ArticleAgent({ name: 'article-agent' });
 
@@ -180,9 +194,12 @@ describe('@have/agents', () => {
       expect(Object.hasOwn(agent, 'summaryArticle')).toBe(false);
     });
 
-    it('should not register summaryArticle as a field', () => {
-      const fields = ObjectRegistry.getFields('ArticleAgent');
+    it('should not register summaryArticle as a field', async () => {
+      const registered = ObjectRegistry.getClass('ArticleAgent');
+      const fields = await ObjectRegistry.getAllFields('ArticleAgent');
 
+      expect(registered?.qualifiedName).toContain('ArticleAgent');
+      expect(fields.has('status')).toBe(true);
       expect(fields.has('summaryArticle')).toBe(false);
     });
 
@@ -200,20 +217,6 @@ describe('@have/agents', () => {
 
   describe('summaryArticle subclass override (#1016)', () => {
     it('should not shadow a subclass summaryArticle prototype method', () => {
-      @smrt()
-      class PrototypeArticleAgent extends Agent {
-        protected config = {};
-
-        async run(): Promise<void> {}
-      }
-
-      PrototypeArticleAgent.prototype.summaryArticle = async () => ({
-        title: 'Test',
-        summary: 'Summary',
-        body: 'Body',
-        dateRange: { start: '2025-01-01', end: '2025-01-07' },
-      });
-
       const agent = new PrototypeArticleAgent({ name: 'article-agent' });
 
       expect(typeof agent.summaryArticle).toBe('function');
