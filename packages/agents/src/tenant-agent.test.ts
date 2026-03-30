@@ -5,11 +5,30 @@
  * permission merging, and enable/disable/setPermissions operations.
  */
 
-import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  getTestDatabase,
+  ObjectRegistry,
+  smrt,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { Agent } from './agent.js';
 import { TenantAgentCollection } from './tenant-agent.js';
 import type { AgentManifestInfo } from './ui.js';
+
+@smrt()
+class Praeco extends Agent {
+  protected config = {};
+
+  async run(): Promise<void> {}
+}
+
+@smrt()
+class Caelus extends Agent {
+  protected config = {};
+
+  async run(): Promise<void> {}
+}
 
 describe('TenantAgentCollection', () => {
   let sharedDb: DatabaseInterface;
@@ -101,13 +120,21 @@ describe('TenantAgentCollection', () => {
     ]);
   }
 
+  function praecoType(): string {
+    return ObjectRegistry.getClass('Praeco')?.qualifiedName || 'Praeco';
+  }
+
+  function caelusType(): string {
+    return ObjectRegistry.getClass('Caelus')?.qualifiedName || 'Caelus';
+  }
+
   describe('enableAgent', () => {
     it('should create an active tenant-agent binding', async () => {
       const tid = tenantId('enable');
       const entry = await collection.enableAgent(tid, 'Praeco');
 
       expect(entry.tenantId).toBe(tid);
-      expect(entry.agentClass).toBe('Praeco');
+      expect(entry.agentClass).toBe(praecoType());
       expect(entry.status).toBe('active');
     });
 
@@ -126,7 +153,7 @@ describe('TenantAgentCollection', () => {
       const entry = await collection.disableAgent(tid, 'Praeco');
 
       expect(entry.tenantId).toBe(tid);
-      expect(entry.agentClass).toBe('Praeco');
+      expect(entry.agentClass).toBe(praecoType());
       expect(entry.status).toBe('disabled');
     });
 
@@ -197,13 +224,31 @@ describe('TenantAgentCollection', () => {
 
       const found = await collection.findByTenantAndClass(tid, 'Praeco');
       expect(found).not.toBeNull();
-      expect(found?.agentClass).toBe('Praeco');
+      expect(found?.agentClass).toBe(praecoType());
     });
 
     it('should return null for non-existent binding', async () => {
       const tid = tenantId('findnone');
       const found = await collection.findByTenantAndClass(tid, 'Praeco');
       expect(found).toBeNull();
+    });
+
+    it('should migrate legacy simple-name bindings to the canonical agent type', async () => {
+      const tid = tenantId('find-legacy');
+      const legacy = await collection.create({
+        tenantId: tid,
+        agentClass: 'Praeco',
+        status: 'active',
+      });
+      await legacy.save();
+
+      const found = await collection.findByTenantAndClass(tid, 'Praeco');
+      expect(found?.agentClass).toBe(praecoType());
+
+      const persisted = await collection.list({
+        where: { tenantId: tid, agentClass: praecoType() },
+      });
+      expect(persisted).toHaveLength(1);
     });
   });
 
@@ -224,6 +269,7 @@ describe('TenantAgentCollection', () => {
 
       const praeco = resolved.find((r) => r.agentClass === 'Praeco');
       expect(praeco).toBeDefined();
+      expect(praeco?.agentType).toBe(praecoType());
       expect(praeco?.status).toBe('active');
       expect(praeco?.source).toBe('explicit');
       expect(praeco?.sourceTenantId).toBe(tid);
@@ -231,6 +277,7 @@ describe('TenantAgentCollection', () => {
 
       const caelus = resolved.find((r) => r.agentClass === 'Caelus');
       expect(caelus).toBeDefined();
+      expect(caelus?.agentType).toBe(caelusType());
       expect(caelus?.source).toBe('explicit');
     });
 

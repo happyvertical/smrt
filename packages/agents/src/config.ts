@@ -15,13 +15,14 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { getAgentTypeName } from './identity.js';
 
 /**
  * AgentConfig stores agent configuration in the database
  *
  * Each config record maps to a UI slot for an agent instance:
  * - agentId: The agent instance's ID
- * - agentClass: The agent's class name (e.g., 'Praeco')
+ * - agentClass: The canonical agent type (qualified name when available)
  * - slotId: The configuration slot (e.g., 'sources', 'settings')
  * - configData: JSON object containing the configuration
  *
@@ -61,7 +62,7 @@ export class AgentConfig extends SmrtObject {
   agentId: string = '';
 
   /**
-   * Class name of the agent (e.g., 'Praeco', 'Caelus')
+   * Canonical agent type for this config (qualified name when available)
    */
   @field({ type: 'text' })
   agentClass: string = '';
@@ -95,12 +96,39 @@ export class AgentConfig extends SmrtObject {
     agentId: string,
     options: SmrtClassOptions,
   ): Promise<Map<string, any>> {
+    const configsByAgent = await AgentConfig.forAgents([agentId], options);
+    return configsByAgent.get(agentId) ?? new Map();
+  }
+
+  /**
+   * Load configs for multiple agents in a single query.
+   *
+   * @param agentIds - Agent instance IDs
+   * @param options - Database options
+   * @returns Map of agentId -> (slotId -> configData)
+   */
+  static async forAgents(
+    agentIds: string[],
+    options: SmrtClassOptions,
+  ): Promise<Map<string, Map<string, any>>> {
+    const configsByAgent = new Map<string, Map<string, any>>();
+    if (agentIds.length === 0) {
+      return configsByAgent;
+    }
+
     const collection = await AgentConfigCollection.create(options);
     const configs = await collection.list({
-      where: { agentId },
+      where: { 'agentId in': agentIds },
     });
 
-    return new Map(configs.map((c) => [c.slotId, c.configData]));
+    for (const config of configs) {
+      if (!configsByAgent.has(config.agentId)) {
+        configsByAgent.set(config.agentId, new Map());
+      }
+      configsByAgent.get(config.agentId)?.set(config.slotId, config.configData);
+    }
+
+    return configsByAgent;
   }
 
   /**
@@ -140,6 +168,7 @@ export class AgentConfig extends SmrtObject {
     },
     options: SmrtClassOptions,
   ): Promise<AgentConfig> {
+    const normalizedAgentClass = getAgentTypeName(data.agentClass);
     const collection = await AgentConfigCollection.create(options);
 
     // Check for existing config using list with where clause
@@ -152,7 +181,7 @@ export class AgentConfig extends SmrtObject {
       // Update existing
       const existing = existingConfigs[0];
       existing.configData = data.configData;
-      existing.agentClass = data.agentClass;
+      existing.agentClass = normalizedAgentClass;
       await existing.save();
       return existing;
     }
@@ -160,7 +189,7 @@ export class AgentConfig extends SmrtObject {
     // Create new
     const config = await collection.create({
       agentId: data.agentId,
-      agentClass: data.agentClass,
+      agentClass: normalizedAgentClass,
       slotId: data.slotId,
       configData: data.configData,
       slug: `${data.agentId}-${data.slotId}`,

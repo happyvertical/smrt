@@ -2,7 +2,7 @@
  * Tests for declarative signal subscriptions and auto-processing in Agent lifecycle
  */
 
-import { smrt } from '@happyvertical/smrt-core';
+import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Agent } from './agent.js';
@@ -46,6 +46,12 @@ describe('Declarative Signal Subscriptions', () => {
     sharedDb = await getDatabase({ type: 'sqlite', url: ':memory:' });
   });
 
+  function subscriberId(): string {
+    return (
+      ObjectRegistry.getClass('EmailHandler')?.qualifiedName || 'EmailHandler'
+    );
+  }
+
   it('should seed subscriptions from signalSubscriptions on first initialize()', async () => {
     const agent = new EmailHandler({
       name: 'email-handler-1',
@@ -55,7 +61,7 @@ describe('Declarative Signal Subscriptions', () => {
     await agent.initialize();
 
     const dispatch = await agent.getDispatch();
-    const subs = await dispatch.listSubscriptions('EmailHandler');
+    const subs = await dispatch.listSubscriptions(subscriberId());
 
     expect(subs).toHaveLength(2);
     const types = subs.map((s) => s.signalType).sort();
@@ -73,7 +79,7 @@ describe('Declarative Signal Subscriptions', () => {
     await agent.initialize();
 
     const dispatch = await agent.getDispatch();
-    const subs = await dispatch.listSubscriptions('EmailHandler');
+    const subs = await dispatch.listSubscriptions(subscriberId());
 
     // Still only 2, not 4
     expect(subs).toHaveLength(2);
@@ -94,19 +100,52 @@ describe('Declarative Signal Subscriptions', () => {
     const dispatch = await agent.getDispatch();
     await dispatch.subscribe({
       signalType: 'email.custom',
-      subscriber: 'EmailHandler',
+      subscriber: subscriberId(),
     });
 
     // Initialize again — should not lose the custom subscription
     await agent.initialize();
 
-    const subs = await dispatch.listSubscriptions('EmailHandler');
+    const subs = await dispatch.listSubscriptions(subscriberId());
     const types = subs.map((s) => s.signalType).sort();
 
     // Should have all 3: the 2 from static + 1 custom
     expect(types).toContain('email.custom');
     expect(types).toContain('email.received');
     expect(types).toContain('email.bounced');
+  });
+
+  it('should migrate legacy simple-name subscriptions to the canonical subscriber id', async () => {
+    const freshDb = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    const agent = new EmailHandler({
+      name: 'email-handler-legacy',
+      db: freshDb,
+    });
+
+    await agent.initialize();
+    const dispatch = await agent.getDispatch();
+    await dispatch.subscribe({
+      signalType: 'email.received',
+      subscriber: 'EmailHandler',
+    });
+    await dispatch.subscribe({
+      signalType: 'email.custom',
+      subscriber: 'EmailHandler',
+    });
+
+    await agent.initialize();
+
+    const canonicalSubscriber = subscriberId();
+    const canonicalSubs = await dispatch.listSubscriptions(canonicalSubscriber);
+    const legacySubs = await dispatch.listSubscriptions('EmailHandler');
+
+    expect(canonicalSubscriber).not.toBe('EmailHandler');
+    expect(canonicalSubs.map((sub) => sub.signalType).sort()).toEqual([
+      'email.bounced',
+      'email.custom',
+      'email.received',
+    ]);
+    expect(legacySubs).toHaveLength(0);
   });
 });
 

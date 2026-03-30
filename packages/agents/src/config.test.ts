@@ -17,11 +17,13 @@ describe('agent model runtime field registration', () => {
     const { getTestDatabase, ObjectRegistry, AgentConfig } =
       await loadFreshAgentsModules();
     const db = await getTestDatabase();
+    const agentType =
+      ObjectRegistry.getClass('Agent')?.qualifiedName || 'Agent';
 
     await AgentConfig.saveSlot(
       {
         agentId: 'praeco-main',
-        agentClass: 'Praeco',
+        agentClass: 'Agent',
         slotId: 'sources',
         configData: { scrapers: ['civicweb'] },
       },
@@ -38,10 +40,24 @@ describe('agent model runtime field registration', () => {
     const configs = await AgentConfig.forAgent('praeco-main', { db });
     expect(configs.get('sources')).toEqual({ scrapers: ['civicweb'] });
 
+    const configsByAgent = await AgentConfig.forAgents(['praeco-main'], { db });
+    expect(configsByAgent.get('praeco-main')?.get('sources')).toEqual({
+      scrapers: ['civicweb'],
+    });
+
     const slotConfig = await AgentConfig.forSlot('praeco-main', 'sources', {
       db,
     });
     expect(slotConfig).toEqual({ scrapers: ['civicweb'] });
+
+    const persisted = await db.query(
+      `SELECT agent_class FROM agent_configs WHERE agent_id = ? AND slot_id = ?`,
+      'praeco-main',
+      'sources',
+    );
+    expect((persisted.rows[0] as { agent_class: string }).agent_class).toBe(
+      agentType,
+    );
   });
 
   it('registers AgentSchedule fields with explicit runtime types', async () => {

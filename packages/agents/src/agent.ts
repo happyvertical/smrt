@@ -12,6 +12,10 @@ import {
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AgentConfig } from './config.js';
+import {
+  getAgentClassName as resolveAgentClassName,
+  getAgentTypeName as resolveAgentTypeName,
+} from './identity.js';
 import type {
   AgentWithInterestsOptions,
   InterestFilter,
@@ -34,6 +38,13 @@ export interface AgentOptions
    * When true, creates a no-op logger that discards all messages
    */
   silent?: boolean;
+  /**
+   * Opt into process-level SIGTERM/SIGINT handling for this instance.
+   *
+   * Host runtimes should generally own process lifecycle; this remains available
+   * for single-agent CLIs and scripts that explicitly want it.
+   */
+  manageProcessSignals?: boolean;
 }
 
 /**
@@ -44,7 +55,7 @@ export interface AgentOptions
  * - Configuration management via @have/config
  * - Structured logging via @happyvertical/logger
  * - Lifecycle hooks (initialize, validate, run, shutdown)
- * - Automatic signal handling for graceful shutdown
+ * - Optional process signal handling for graceful shutdown
  *
  * Agents can define their own properties for state management - since they extend
  * SmrtObject, any properties defined will be automatically persisted to the database.
@@ -233,6 +244,25 @@ export abstract class Agent extends SmrtObject {
   }
 
   /**
+   * Canonical agent type for persistence and dispatch routing.
+   */
+  protected getAgentTypeName(): string {
+    const metaType = (this as { _meta_type?: unknown })._meta_type;
+    if (typeof metaType === 'string' && metaType.length > 0) {
+      return metaType;
+    }
+
+    return resolveAgentTypeName(this.constructor.name);
+  }
+
+  /**
+   * Human-readable class name for logs and UI.
+   */
+  protected getAgentClassName(): string {
+    return resolveAgentClassName(this.getAgentTypeName());
+  }
+
+  /**
    * Get UI slot definitions for this agent instance
    *
    * Returns the static uiSlots defined on the agent's class.
@@ -302,7 +332,7 @@ export abstract class Agent extends SmrtObject {
     await AgentConfig.saveSlot(
       {
         agentId: this.id,
-        agentClass: this.constructor.name,
+        agentClass: this.getAgentTypeName(),
         slotId,
         configData: data,
       },
@@ -461,7 +491,7 @@ export abstract class Agent extends SmrtObject {
   async processDispatches(): Promise<number> {
     const dispatch = await this.getDispatch();
     return dispatch.process(
-      this.constructor.name,
+      this.getAgentTypeName(),
       this.handleDispatch.bind(this),
     );
   }
@@ -485,21 +515,27 @@ export abstract class Agent extends SmrtObject {
     this.status = 'initializing';
     this.logger.info('Agent initializing');
 
-    // Setup signal handlers for graceful shutdown
-    this.setupSignalHandlers();
+    if ((this.options as AgentOptions).manageProcessSignals) {
+      this.setupSignalHandlers();
+    }
 
     // Seed declarative signal subscriptions (DB is source of truth)
-    const subs = (this.constructor as typeof Agent).signalSubscriptions;
-    if (subs.length > 0 && this._db) {
+    if (this._db) {
       const dispatch = await this.getDispatch();
-      const existing = await dispatch.listSubscriptions(this.constructor.name);
-      const existingTypes = new Set(existing.map((s) => s.signalType));
-      for (const signalType of subs) {
-        if (!existingTypes.has(signalType)) {
-          await dispatch.subscribe({
-            signalType,
-            subscriber: this.constructor.name,
-          });
+      await this.migrateLegacyDispatchSubscriptions(dispatch);
+
+      const subs = (this.constructor as typeof Agent).signalSubscriptions;
+      if (subs.length > 0) {
+        const subscriber = this.getAgentTypeName();
+        const existing = await dispatch.listSubscriptions(subscriber);
+        const existingTypes = new Set(existing.map((s) => s.signalType));
+        for (const signalType of subs) {
+          if (!existingTypes.has(signalType)) {
+            await dispatch.subscribe({
+              signalType,
+              subscriber,
+            });
+          }
         }
       }
     }
@@ -530,6 +566,73 @@ export abstract class Agent extends SmrtObject {
       this.signalHandlers.set(signal, handler);
       process.on(signal, handler);
     }
+  }
+
+  /**
+   * Migrate legacy simple-name dispatch subscribers to the canonical agent type.
+   *
+   * Older releases used `this.constructor.name` directly for subscriber IDs.
+   * That collides across packages and leaves fan-out dispatches targeted at the
+   * wrong subscriber once qualified names are available.
+   */
+  private async migrateLegacyDispatchSubscriptions(
+    dispatch: DispatchBus,
+  ): Promise<void> {
+    if (!this._db) {
+      return;
+    }
+
+    const legacySubscriber = this.constructor.name;
+    const canonicalSubscriber = this.getAgentTypeName();
+
+    if (legacySubscriber === canonicalSubscriber) {
+      return;
+    }
+
+    const legacySubscriptions =
+      await dispatch.listSubscriptions(legacySubscriber);
+    if (legacySubscriptions.length === 0) {
+      return;
+    }
+
+    const currentSubscriptions =
+      await dispatch.listSubscriptions(canonicalSubscriber);
+    const currentSignalTypes = new Set(
+      currentSubscriptions.map((sub) => sub.signalType),
+    );
+
+    for (const subscription of legacySubscriptions) {
+      if (!currentSignalTypes.has(subscription.signalType)) {
+        await dispatch.subscribe({
+          signalType: subscription.signalType,
+          subscriber: canonicalSubscriber,
+          handler: subscription.handler,
+          delivery: subscription.delivery,
+          enabled: subscription.enabled,
+        });
+      }
+
+      await dispatch.unsubscribe(subscription.signalType, legacySubscriber);
+    }
+
+    await this._db.query(
+      `UPDATE _smrt_dispatch
+       SET target_subscriber = CASE
+             WHEN target_subscriber = ? THEN ?
+             ELSE target_subscriber
+           END,
+           processed_by = CASE
+             WHEN processed_by = ? THEN ?
+             ELSE processed_by
+           END
+       WHERE target_subscriber = ? OR processed_by = ?`,
+      legacySubscriber,
+      canonicalSubscriber,
+      legacySubscriber,
+      canonicalSubscriber,
+      legacySubscriber,
+      legacySubscriber,
+    );
   }
 
   /**
@@ -645,7 +748,7 @@ export abstract class Agent extends SmrtObject {
       // Auto-process pending dispatches for agents with signal subscriptions
       if (this._db) {
         const dispatch = await this.getDispatch();
-        const subs = await dispatch.listSubscriptions(this.constructor.name);
+        const subs = await dispatch.listSubscriptions(this.getAgentTypeName());
         if (subs.length > 0) {
           const count = await this.processDispatches();
           if (count > 0) {

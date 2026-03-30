@@ -7,6 +7,9 @@ import type { ResolvedAgentAvailability } from '../tenant-agent.js';
 import type { AgentManifestInfo } from '../ui.js';
 import { serializeResolvedAgent } from './serialization.js';
 
+const PRAECO_TYPE = '@happyvertical/smrt-agents:Praeco';
+const CAELUS_TYPE = '@happyvertical/smrt-agents:Caelus';
+
 function createManifest(
   overrides: Partial<AgentManifestInfo> = {},
 ): AgentManifestInfo {
@@ -43,6 +46,7 @@ describe('serializeResolvedAgent', () => {
     const manifest = createManifest();
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Praeco',
+      agentType: PRAECO_TYPE,
       status: 'active',
       source: 'explicit',
       sourceTenantId: 'tenant-1',
@@ -57,7 +61,8 @@ describe('serializeResolvedAgent', () => {
     expect(result.id).toBe('agent-123');
     expect(result.name).toBe('Praeco');
     expect(result.agentClass).toBe('Praeco');
-    expect(result._meta_type).toBe('Praeco');
+    expect(result.agentType).toBe(PRAECO_TYPE);
+    expect(result._meta_type).toBe(PRAECO_TYPE);
     expect(result.source).toBe('explicit');
     expect(result.sourceTenantId).toBe('tenant-1');
     expect(result.permissions).toEqual({ read: true, write: false });
@@ -69,6 +74,7 @@ describe('serializeResolvedAgent', () => {
     const manifest = createManifest();
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Praeco',
+      agentType: PRAECO_TYPE,
       status: 'active',
       source: 'explicit',
       sourceTenantId: 'tenant-1',
@@ -87,6 +93,7 @@ describe('serializeResolvedAgent', () => {
     const manifest = createManifest();
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Praeco',
+      agentType: PRAECO_TYPE,
       status: 'active',
       source: 'explicit',
       sourceTenantId: 'tenant-1',
@@ -104,6 +111,7 @@ describe('serializeResolvedAgent', () => {
   it('should generate synthetic ID when agentId is missing', () => {
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Caelus',
+      agentType: CAELUS_TYPE,
       status: 'active',
       source: 'inherited',
       sourceTenantId: 'parent-tenant',
@@ -112,12 +120,13 @@ describe('serializeResolvedAgent', () => {
 
     const result = serializeResolvedAgent(resolved);
 
-    expect(result.id).toBe('parent-tenant:Caelus');
+    expect(result.id).toBe(`parent-tenant:${CAELUS_TYPE}`);
   });
 
   it('should use agentClass as name when manifest is missing', () => {
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Caelus',
+      agentType: CAELUS_TYPE,
       status: 'active',
       source: 'inherited',
       sourceTenantId: 'tenant-1',
@@ -135,6 +144,7 @@ describe('serializeResolvedAgent', () => {
   it('should handle inherited source', () => {
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Praeco',
+      agentType: PRAECO_TYPE,
       status: 'active',
       source: 'inherited',
       sourceTenantId: 'root-tenant',
@@ -152,6 +162,7 @@ describe('serializeResolvedAgent', () => {
   it('should handle undefined config', () => {
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Praeco',
+      agentType: PRAECO_TYPE,
       status: 'active',
       source: 'explicit',
       sourceTenantId: 'tenant-1',
@@ -166,6 +177,7 @@ describe('serializeResolvedAgent', () => {
   it('should handle empty permissions', () => {
     const resolved: ResolvedAgentAvailability = {
       agentClass: 'Praeco',
+      agentType: PRAECO_TYPE,
       status: 'active',
       source: 'explicit',
       sourceTenantId: 'tenant-1',

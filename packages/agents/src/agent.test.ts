@@ -1,6 +1,6 @@
 import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Agent } from './agent.js';
 import type {
   SummaryArticleOptions,
@@ -44,6 +44,10 @@ describe('@have/agents', () => {
 
   beforeAll(async () => {
     sharedDb = await getDatabase({ type: 'sqlite', url: ':memory:' });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe('Agent lifecycle', () => {
@@ -109,6 +113,44 @@ describe('@have/agents', () => {
 
       // Config maxItems is 10, but run() processes min(5, maxItems) = 5
       expect(agent.itemsProcessed).toBe(5);
+    });
+  });
+
+  describe('process signal handling', () => {
+    it('should not register process signal handlers by default', async () => {
+      const onSpy = vi.spyOn(process, 'on');
+      const agent = new TestAgent({
+        name: 'no-signal-hooks',
+        db: sharedDb,
+      });
+
+      await agent.initialize();
+
+      expect(onSpy).not.toHaveBeenCalled();
+    });
+
+    it('should register and clean up process signal handlers when opted in', async () => {
+      const onSpy = vi.spyOn(process, 'on');
+      const removeListenerSpy = vi.spyOn(process, 'removeListener');
+      const agent = new TestAgent({
+        name: 'with-signal-hooks',
+        db: sharedDb,
+        manageProcessSignals: true,
+      });
+
+      await agent.initialize();
+      await agent.shutdown();
+
+      expect(onSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+      expect(onSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+      expect(removeListenerSpy).toHaveBeenCalledWith(
+        'SIGTERM',
+        expect.any(Function),
+      );
+      expect(removeListenerSpy).toHaveBeenCalledWith(
+        'SIGINT',
+        expect.any(Function),
+      );
     });
   });
 

@@ -5,6 +5,11 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getAgentClassName,
+  getAgentTypeAliases,
+  getAgentTypeName,
+} from './identity.js';
 
 /**
  * Status of a scheduled agent
@@ -46,7 +51,7 @@ export class AgentSchedule extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  /** Type/class name of the agent to run */
+  /** Canonical agent type to run (qualified name when available) */
   @field({ type: 'text' })
   agentType: string = '';
 
@@ -230,9 +235,10 @@ export class AgentSchedule extends SmrtObject {
    * Get a human-readable description of the schedule
    */
   getDescription(): string {
+    const displayAgentType = getAgentClassName(this.agentType);
     const agent = this.agentId
-      ? `${this.agentType}#${this.agentId}`
-      : this.agentType;
+      ? `${displayAgentType}#${this.agentId}`
+      : displayAgentType;
     return `${agent}.${this.method}() @ ${this.cron}`;
   }
 
@@ -240,6 +246,9 @@ export class AgentSchedule extends SmrtObject {
    * Lifecycle hook - calculate next run on save
    */
   async beforeSave(): Promise<void> {
+    if (this.agentType) {
+      this.agentType = getAgentTypeName(this.agentType);
+    }
     if (!this.nextRun && this.enabled) {
       this.calculateNextRun();
     }
@@ -321,7 +330,11 @@ export class AgentScheduleCollection extends SmrtCollection<AgentSchedule> {
     agentType: string,
     options: { limit?: number; includeDisabled?: boolean } = {},
   ): Promise<AgentSchedule[]> {
-    const where: Record<string, unknown> = { agentType };
+    const aliases = getAgentTypeAliases(agentType);
+    const where: Record<string, unknown> =
+      aliases.length > 1
+        ? { 'agentType in': aliases }
+        : { agentType: getAgentTypeName(agentType) };
     if (!options.includeDisabled) {
       where.enabled = true;
     }
