@@ -21,9 +21,11 @@ export interface SerializedAgent {
   id: string;
   /** Human-readable name from manifest */
   name?: string;
-  /** Agent class name (e.g., 'Praeco') */
+  /** Human-readable agent class name (e.g., 'Praeco') */
   agentClass: string;
-  /** STI type discriminator (same as agentClass) */
+  /** Canonical agent type (qualified name when available) */
+  agentType: string;
+  /** STI type discriminator (same as agentType) */
   _meta_type?: string;
   /** UI slot definitions from manifest */
   slots?: AgentUISlots;
@@ -53,10 +55,11 @@ export function serializeResolvedAgent(
   const manifest = resolved.manifest;
 
   return {
-    id: resolved.agentId || `${resolved.sourceTenantId}:${resolved.agentClass}`,
+    id: resolved.agentId || `${resolved.sourceTenantId}:${resolved.agentType}`,
     name: manifest?.name || resolved.agentClass,
     agentClass: resolved.agentClass,
-    _meta_type: resolved.agentClass,
+    agentType: resolved.agentType,
+    _meta_type: resolved.agentType,
     slots: manifest?.uiSlots as AgentUISlots | undefined,
     adminRoutes: manifest?.adminRoutes as AgentAdminRoute[] | undefined,
     source: resolved.source,

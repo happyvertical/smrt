@@ -8,6 +8,7 @@ import {
 import { getTenantId, withTenant } from '@happyvertical/smrt-tenancy';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
+import { withBackgroundJobs } from '../object-extension.js';
 import { createTaskRunner } from '../runner.js';
 import { createScheduleRunner } from '../schedule-runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
@@ -188,6 +189,9 @@ describe('job tenancy propagation', () => {
 
   it('copies tenantId from schedules onto created jobs', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const canonicalAgentType =
+      ObjectRegistry.getClass('JobTenantProbe')?.qualifiedName ||
+      'JobTenantProbe';
 
     await db.query(`
       CREATE TABLE _smrt_agent_schedules (
@@ -235,13 +239,40 @@ describe('job tenancy propagation', () => {
 
     const collection = await SmrtJobCollection.create({ db });
     const jobs = await collection.list({});
+    const schedules = await db.query(
+      `SELECT agent_type FROM _smrt_agent_schedules WHERE id = ?`,
+      'schedule-1',
+    );
 
     expect(jobs).toHaveLength(1);
     expect(jobs[0]?.tenantId).toBe('tenant-schedule');
+    expect(jobs[0]?.objectType).toBe(canonicalAgentType);
+    expect((schedules.rows[0] as { agent_type: string }).agent_type).toBe(
+      canonicalAgentType,
+    );
+  });
+
+  it('uses canonical object types for background jobs created from object instances', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const canonicalObjectType =
+      ObjectRegistry.getClass('JobTenantProbe')?.qualifiedName ||
+      'JobTenantProbe';
+    const BackgroundProbe = withBackgroundJobs(JobTenantProbe);
+    const probe = new BackgroundProbe({ db });
+
+    await probe.initialize();
+
+    const handle = await probe.bg('captureTenantId');
+    const job = await handle.getJob();
+
+    expect(job.objectType).toBe(canonicalObjectType);
   });
 
   it('upgrades legacy jobs tables even when system tables are already current', async () => {
     const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+
+    await db.query(`DROP TABLE IF EXISTS _smrt_jobs`);
+    await db.query(`DROP TABLE IF EXISTS _smrt_migrations`);
 
     await db.query(`
       CREATE TABLE _smrt_jobs (

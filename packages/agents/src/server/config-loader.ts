@@ -25,24 +25,43 @@ export async function loadSlotConfigs(
   agents: Array<{ id: string; agentClass: string }>,
   dbOptions: SmrtClassOptions,
 ): Promise<Record<string, Record<string, unknown>>> {
-  const configs: Record<string, Record<string, unknown>> = {};
+  if (agents.length === 0) {
+    return {};
+  }
 
-  for (const agent of agents) {
-    const agentConfig: Record<string, unknown> = {};
+  try {
+    const configsByAgent = await AgentConfig.forAgents(
+      agents.map((agent) => agent.id),
+      dbOptions,
+    );
 
-    try {
-      const slotConfigs = await AgentConfig.forAgent(agent.id, dbOptions);
+    const configs: Record<string, Record<string, unknown>> = {};
+    for (const [agentId, slotConfigs] of configsByAgent) {
+      const agentConfig: Record<string, unknown> = {};
       for (const [slotId, configData] of slotConfigs) {
         agentConfig[slotId] = configData;
       }
-    } catch {
-      // agent_configs table may not exist yet — silently skip
+      if (Object.keys(agentConfig).length > 0) {
+        configs[agentId] = agentConfig;
+      }
     }
 
-    if (Object.keys(agentConfig).length > 0) {
-      configs[agent.id] = agentConfig;
+    return configs;
+  } catch (error) {
+    if (isMissingAgentConfigTableError(error)) {
+      return {};
     }
+    throw error;
   }
+}
 
-  return configs;
+function isMissingAgentConfigTableError(error: unknown): boolean {
+  const message = String((error as Error)?.message || error || '');
+
+  return (
+    message.includes("Run 'smrt db:migrate'") ||
+    /no such table[:\s]+agent_configs/i.test(message) ||
+    /relation .*agent_configs.*does not exist/i.test(message) ||
+    /table .*agent_configs.*doesn'?t exist/i.test(message)
+  );
 }

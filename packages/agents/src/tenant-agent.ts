@@ -15,6 +15,11 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getAgentClassName,
+  getAgentTypeAliases,
+  getAgentTypeName,
+} from './identity.js';
 import type { AgentManifestInfo } from './ui.js';
 
 /**
@@ -34,8 +39,10 @@ interface PermissionDef {
  * Result of resolving agent availability for a tenant
  */
 export interface ResolvedAgentAvailability {
-  /** Agent class name (e.g., 'Praeco') */
+  /** Human-readable agent class name (e.g., 'Praeco') */
   agentClass: string;
+  /** Canonical agent type (qualified name when available) */
+  agentType: string;
   /** Resolved status */
   status: TenantAgentStatus;
   /** How this was resolved */
@@ -76,7 +83,7 @@ export class TenantAgent extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  /** Agent class name (e.g., 'Praeco', 'Caelus') */
+  /** Canonical agent type (qualified name when available) */
   @field({ type: 'text' })
   agentClass: string = '';
 
@@ -128,14 +135,16 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
 
     // Step 2: Build result from explicit entries
     for (const entry of explicitEntries) {
-      const manifest = manifests?.get(entry.agentClass);
+      const agentType = await this.normalizeStoredAgentClass(entry);
+      const manifest = getManifestForAgent(manifests, agentType);
       const mergedPermissions = mergePermissions(
         manifest?.permissions,
         entry.permissions,
       );
 
-      result.set(entry.agentClass, {
-        agentClass: entry.agentClass,
+      result.set(agentType, {
+        agentClass: getAgentClassName(agentType),
+        agentType,
         status: entry.status,
         source: 'explicit',
         sourceTenantId: tenantId,
@@ -153,17 +162,19 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
       });
 
       for (const entry of ancestorEntries) {
+        const agentType = await this.normalizeStoredAgentClass(entry);
         // Skip if already resolved explicitly or from a closer ancestor
-        if (result.has(entry.agentClass)) continue;
+        if (result.has(agentType)) continue;
 
-        const manifest = manifests?.get(entry.agentClass);
+        const manifest = getManifestForAgent(manifests, agentType);
         const mergedPermissions = mergePermissions(
           manifest?.permissions,
           entry.permissions,
         );
 
-        result.set(entry.agentClass, {
-          agentClass: entry.agentClass,
+        result.set(agentType, {
+          agentClass: getAgentClassName(agentType),
+          agentType,
           status: entry.status,
           source: 'inherited',
           sourceTenantId: ancestorId,
@@ -184,6 +195,7 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
     tenantId: string,
     agentClass: string,
   ): Promise<TenantAgent> {
+    const canonicalAgentClass = getAgentTypeName(agentClass);
     const existing = await this.findByTenantAndClass(tenantId, agentClass);
     if (existing) {
       existing.status = 'active';
@@ -193,7 +205,7 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
 
     const entry = await this.create({
       tenantId,
-      agentClass,
+      agentClass: canonicalAgentClass,
       status: 'active',
     });
     await entry.save();
@@ -207,6 +219,7 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
     tenantId: string,
     agentClass: string,
   ): Promise<TenantAgent> {
+    const canonicalAgentClass = getAgentTypeName(agentClass);
     const existing = await this.findByTenantAndClass(tenantId, agentClass);
     if (existing) {
       existing.status = 'disabled';
@@ -216,7 +229,7 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
 
     const entry = await this.create({
       tenantId,
-      agentClass,
+      agentClass: canonicalAgentClass,
       status: 'disabled',
     });
     await entry.save();
@@ -241,6 +254,7 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
     agentClass: string,
     permissions: Record<string, boolean>,
   ): Promise<TenantAgent> {
+    const canonicalAgentClass = getAgentTypeName(agentClass);
     const existing = await this.findByTenantAndClass(tenantId, agentClass);
     if (existing) {
       existing.permissions = permissions;
@@ -250,7 +264,7 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
 
     const entry = await this.create({
       tenantId,
-      agentClass,
+      agentClass: canonicalAgentClass,
       status: 'active',
       permissions,
     });
@@ -265,10 +279,55 @@ export class TenantAgentCollection extends SmrtCollection<TenantAgent> {
     tenantId: string,
     agentClass: string,
   ): Promise<TenantAgent | null> {
+    const aliases = getAgentTypeAliases(agentClass);
     const results = await this.list({
-      where: { tenantId, agentClass },
+      where:
+        aliases.length > 1
+          ? { tenantId, 'agentClass in': aliases }
+          : { tenantId, agentClass: aliases[0] },
     });
-    return results[0] ?? null;
+
+    const canonicalAgentClass = getAgentTypeName(agentClass);
+    const found =
+      results.find((entry) => entry.agentClass === canonicalAgentClass) ||
+      results[0] ||
+      null;
+
+    if (found && found.agentClass !== canonicalAgentClass) {
+      await this.persistCanonicalAgentClass(found, canonicalAgentClass);
+    }
+
+    return found;
+  }
+
+  private async normalizeStoredAgentClass(entry: TenantAgent): Promise<string> {
+    const canonicalAgentClass = getAgentTypeName(entry.agentClass);
+    if (entry.agentClass !== canonicalAgentClass) {
+      await this.persistCanonicalAgentClass(entry, canonicalAgentClass);
+    }
+    return canonicalAgentClass;
+  }
+
+  private async persistCanonicalAgentClass(
+    entry: TenantAgent,
+    canonicalAgentClass: string,
+  ): Promise<void> {
+    if (!entry.id || entry.agentClass === canonicalAgentClass) {
+      entry.agentClass = canonicalAgentClass;
+      return;
+    }
+
+    await this._db.query(
+      `UPDATE ${this.tableName}
+       SET agent_class = ?,
+           updated_at = ?
+       WHERE id = ?`,
+      canonicalAgentClass,
+      new Date().toISOString(),
+      entry.id,
+    );
+
+    entry.agentClass = canonicalAgentClass;
   }
 }
 
@@ -296,4 +355,18 @@ function mergePermissions(
   }
 
   return result;
+}
+
+function getManifestForAgent(
+  manifests: Map<string, AgentManifestInfo> | undefined,
+  agentTypeOrIdentifier: string,
+): AgentManifestInfo | undefined {
+  if (!manifests) {
+    return undefined;
+  }
+
+  return (
+    manifests.get(agentTypeOrIdentifier) ||
+    manifests.get(getAgentClassName(agentTypeOrIdentifier))
+  );
 }

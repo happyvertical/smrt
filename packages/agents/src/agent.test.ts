@@ -1,7 +1,11 @@
-import { smrt } from '@happyvertical/smrt-core';
+import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import { getDatabase } from '@happyvertical/sql';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Agent } from './agent.js';
+import type {
+  SummaryArticleOptions,
+  SummaryArticleResult,
+} from './summary-article.js';
 
 // Test agent implementation
 interface TestAgentConfig {
@@ -33,6 +37,38 @@ class TestAgent extends Agent {
   }
 }
 
+@smrt()
+class ArticleAgent extends Agent {
+  protected config = {};
+
+  async run(): Promise<void> {}
+
+  async summaryArticle(
+    _options: SummaryArticleOptions,
+  ): Promise<SummaryArticleResult> {
+    return {
+      title: 'Weekly Recap',
+      summary: 'A weekly recap.',
+      body: 'Full body content.',
+      dateRange: { start: '2025-01-01', end: '2025-01-07' },
+    };
+  }
+}
+
+@smrt()
+class PrototypeArticleAgent extends Agent {
+  protected config = {};
+
+  async run(): Promise<void> {}
+}
+
+PrototypeArticleAgent.prototype.summaryArticle = async () => ({
+  title: 'Test',
+  summary: 'Summary',
+  body: 'Body',
+  dateRange: { start: '2025-01-01', end: '2025-01-07' },
+});
+
 describe('@have/agents', () => {
   // Create a SINGLE shared database instance for all tests
   // This ensures all agents share the same in-memory database and tables persist
@@ -40,6 +76,10 @@ describe('@have/agents', () => {
 
   beforeAll(async () => {
     sharedDb = await getDatabase({ type: 'sqlite', url: ':memory:' });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe('Agent lifecycle', () => {
@@ -108,54 +148,79 @@ describe('@have/agents', () => {
     });
   });
 
-  describe('summaryArticle subclass override (#1016)', () => {
-    it('should not shadow a subclass summaryArticle prototype method', () => {
-      @smrt()
-      class ArticleAgent extends Agent {
-        protected config = {};
-
-        async run(): Promise<void> {}
-      }
-
-      // Attach summaryArticle on the prototype (simulates what downstream
-      // packages do when they define the method on the class body).
-      ArticleAgent.prototype.summaryArticle = async () => ({
-        title: 'Test',
-        summary: 'Summary',
-        body: 'Body',
-        dateRange: { start: '2025-01-01', end: '2025-01-07' },
+  describe('process signal handling', () => {
+    it('should not register process signal handlers by default', async () => {
+      const onSpy = vi.spyOn(process, 'on');
+      const agent = new TestAgent({
+        name: 'no-signal-hooks',
+        db: sharedDb,
       });
 
+      await agent.initialize();
+
+      expect(onSpy).not.toHaveBeenCalled();
+    });
+
+    it('should register and clean up process signal handlers when opted in', async () => {
+      const onSpy = vi.spyOn(process, 'on');
+      const removeListenerSpy = vi.spyOn(process, 'removeListener');
+      const agent = new TestAgent({
+        name: 'with-signal-hooks',
+        db: sharedDb,
+        manageProcessSignals: true,
+      });
+
+      await agent.initialize();
+      await agent.shutdown();
+
+      expect(onSpy).toHaveBeenCalledWith('SIGTERM', expect.any(Function));
+      expect(onSpy).toHaveBeenCalledWith('SIGINT', expect.any(Function));
+      expect(removeListenerSpy).toHaveBeenCalledWith(
+        'SIGTERM',
+        expect.any(Function),
+      );
+      expect(removeListenerSpy).toHaveBeenCalledWith(
+        'SIGINT',
+        expect.any(Function),
+      );
+    });
+  });
+
+  describe('custom subclass methods', () => {
+    it('should allow subclasses to declare summaryArticle as a normal method', () => {
       const agent = new ArticleAgent({ name: 'article-agent' });
 
-      // The bug: bare field declaration compiled to this.summaryArticle = undefined
-      // which overwrote the prototype method
       expect(typeof agent.summaryArticle).toBe('function');
-      expect(agent.summaryArticle).toBeDefined();
+      expect(Object.hasOwn(agent, 'summaryArticle')).toBe(false);
+    });
+
+    it('should not register summaryArticle as a field', async () => {
+      const registered = ObjectRegistry.getClass('ArticleAgent');
+      const fields = await ObjectRegistry.getAllFields('ArticleAgent');
+
+      expect(registered?.qualifiedName).toContain('ArticleAgent');
+      expect(fields.has('status')).toBe(true);
+      expect(fields.has('summaryArticle')).toBe(false);
     });
 
     it('should allow calling the subclass summaryArticle method', async () => {
-      @smrt()
-      class CallableArticleAgent extends Agent {
-        protected config = {};
+      const agent = new ArticleAgent({ name: 'callable-agent' });
 
-        async run(): Promise<void> {}
-      }
-
-      CallableArticleAgent.prototype.summaryArticle = async () => ({
-        title: 'Weekly Recap',
-        summary: 'A weekly recap.',
-        body: 'Full body content.',
-        dateRange: { start: '2025-01-01', end: '2025-01-07' },
-      });
-
-      const agent = new CallableArticleAgent({ name: 'callable-agent' });
-      expect(typeof agent.summaryArticle).toBe('function');
-      const result = await agent.summaryArticle?.({
+      const result = await agent.summaryArticle({
         startDate: '2025-01-01',
         endDate: '2025-01-07',
       });
+
       expect(result.title).toBe('Weekly Recap');
+    });
+  });
+
+  describe('summaryArticle subclass override (#1016)', () => {
+    it('should not shadow a subclass summaryArticle prototype method', () => {
+      const agent = new PrototypeArticleAgent({ name: 'article-agent' });
+
+      expect(typeof agent.summaryArticle).toBe('function');
+      expect(Object.hasOwn(agent, 'summaryArticle')).toBe(false);
     });
   });
 });

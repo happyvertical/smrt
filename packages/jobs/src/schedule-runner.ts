@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { createLogger } from '@happyvertical/logger';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { SmrtJobCollection } from './smrt-job.js';
@@ -264,9 +265,13 @@ export class ScheduleRunner extends EventEmitter {
   private async triggerSchedule(schedule: ScheduleRow): Promise<void> {
     if (!this.db || !this.jobCollection) return;
 
+    const rawAgentType = schedule.agent_type as string;
+    const canonicalAgentType =
+      ObjectRegistry.getClass(rawAgentType)?.qualifiedName || rawAgentType;
+
     const scheduleInfo: ScheduleInfo = {
       id: schedule.id as string,
-      agentType: schedule.agent_type as string,
+      agentType: canonicalAgentType,
       agentId: schedule.agent_id as string | null,
       cron: schedule.cron as string,
     };
@@ -294,9 +299,11 @@ export class ScheduleRunner extends EventEmitter {
       // Increment running count and advance next_run in one update
       await this.db.query(
         `UPDATE _smrt_agent_schedules
-         SET running_count = running_count + 1,
+         SET agent_type = ?,
+             running_count = running_count + 1,
              next_run = ?
          WHERE id = ?`,
+        canonicalAgentType,
         nextRun.toISOString(),
         schedule.id,
       );
@@ -319,7 +326,7 @@ export class ScheduleRunner extends EventEmitter {
             ? (schedule.tenant_id as string)
             : null,
         queue: 'agents',
-        objectType: schedule.agent_type as string,
+        objectType: canonicalAgentType,
         objectId: schedule.agent_id as string | null,
         method: (schedule.method as string) || 'run',
         args,
@@ -333,7 +340,7 @@ export class ScheduleRunner extends EventEmitter {
       this.emit('schedule:triggered', scheduleInfo);
       this.logger.info('Schedule triggered', {
         scheduleId: schedule.id,
-        agentType: schedule.agent_type,
+        agentType: canonicalAgentType,
         jobId: job.id,
         nextRun: nextRun.toISOString(),
       });

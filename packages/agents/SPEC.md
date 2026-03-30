@@ -69,7 +69,7 @@ The `Agent` class will have a set of lifecycle methods that can be overridden by
 - `initialize()`: Called after the agent has been constructed and the configuration has been loaded. Sets status to 'initializing'.
 - `validate()`: Called before `run()` to validate configuration and dependencies. Throws if validation fails. This prevents runtime errors from misconfiguration.
 - `run()`: The main entry point for the agent's logic. Sets status to 'running'. Updates `lastRun` metadata on completion.
-- `shutdown()`: Called when the agent is shutting down (e.g., SIGTERM), allowing for graceful cleanup. Sets status to 'shutdown'.
+- `shutdown()`: Called when the agent is shutting down, allowing for graceful cleanup. Sets status to 'shutdown'. Single-agent CLIs can opt into `SIGTERM`/`SIGINT` handling with `manageProcessSignals: true`.
 
 ## 4. Agent Class Structure
 
@@ -99,8 +99,10 @@ export abstract class Agent extends SmrtObject {
     this.status = 'initializing';
     this.logger.info('Agent initializing');
 
-    // Setup signal handlers for graceful shutdown
-    this.setupSignalHandlers();
+    if ((this.options as AgentOptions).manageProcessSignals) {
+      // Setup signal handlers for graceful shutdown in single-agent processes
+      this.setupSignalHandlers();
+    }
 
     return this;
   }
