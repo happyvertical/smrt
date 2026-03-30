@@ -1,5 +1,18 @@
 # @happyvertical/smrt-agents
 
+## 0.21.26
+
+### Patch Changes
+
+- 1d2c8ee: Refactor agent identity and summary method handling so agent-specific methods
+  like `summaryArticle()` remain opt-in prototype methods instead of base-class
+  properties. This release also makes `manageProcessSignals` explicitly opt-in;
+  single-agent CLIs can enable it, while multi-agent hosts should coordinate
+  shutdown themselves.
+  - @happyvertical/smrt-tenancy@0.21.26
+  - @happyvertical/smrt-config@0.21.26
+  - @happyvertical/smrt-core@0.21.26
+
 ## 0.21.25
 
 ### Patch Changes

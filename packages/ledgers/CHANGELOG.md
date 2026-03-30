@@ -1,5 +1,12 @@
 # @happyvertical/smrt-ledgers
 
+## 0.21.26
+
+### Patch Changes
+
+- @happyvertical/smrt-tenancy@0.21.26
+- @happyvertical/smrt-core@0.21.26
+
 ## 0.21.25
 
 ### Patch Changes
