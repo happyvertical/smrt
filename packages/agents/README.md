@@ -54,6 +54,11 @@ const agent = new MyAgent({ name: 'my-agent' });
 await agent.execute(); // initialize() -> validate() -> run() -> shutdown()
 ```
 
+If you are running a single-agent CLI or script and want built-in
+`SIGTERM`/`SIGINT` handling, pass `manageProcessSignals: true` to the
+constructor. Multi-agent hosts should leave that off and coordinate process
+shutdown themselves.
+
 ## API
 
 ### Main Export (`@happyvertical/smrt-agents`)

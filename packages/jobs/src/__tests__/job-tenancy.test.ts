@@ -271,6 +271,9 @@ describe('job tenancy propagation', () => {
   it('upgrades legacy jobs tables even when system tables are already current', async () => {
     const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
 
+    await db.query(`DROP TABLE IF EXISTS _smrt_jobs`);
+    await db.query(`DROP TABLE IF EXISTS _smrt_migrations`);
+
     await db.query(`
       CREATE TABLE _smrt_jobs (
         id TEXT PRIMARY KEY,

@@ -42,7 +42,9 @@ export interface AgentOptions
    * Opt into process-level SIGTERM/SIGINT handling for this instance.
    *
    * Host runtimes should generally own process lifecycle; this remains available
-   * for single-agent CLIs and scripts that explicitly want it.
+   * for single-agent CLIs and scripts that explicitly want it. Do not enable
+   * this for multiple agents in the same process unless the host coordinates
+   * shutdown itself; the first handler to finish exits the process.
    */
   manageProcessSignals?: boolean;
 }
@@ -545,7 +547,7 @@ export abstract class Agent extends SmrtObject {
 
   /**
    * Set up signal handlers for graceful shutdown
-   * Handles SIGTERM and SIGINT
+   * Handles SIGTERM and SIGINT for single-agent processes that explicitly opt in.
    */
   private setupSignalHandlers(): void {
     const signals: NodeJS.Signals[] = ['SIGTERM', 'SIGINT'];

@@ -4,11 +4,12 @@ Agent framework for autonomous actors with inter-agent messaging, interest-based
 
 ## Agent Lifecycle
 
-`initialize()` → `validate()` → `run()` → `shutdown()` (with SIGTERM/SIGINT handling)
+`initialize()` → `validate()` → `run()` → `shutdown()`
 
 - Extend `Agent` (which extends `SmrtObject`) and implement `run()`
 - Status tracking: `idle → initializing → running → error/shutdown`
 - `execute()` runs the full lifecycle automatically
+- Process signal handling is opt-in via `manageProcessSignals: true` and is intended for single-agent processes
 
 ## DispatchBus — Inter-Agent Communication
 
