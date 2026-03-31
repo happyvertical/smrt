@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.28
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - treat bare smrt imports as package usage (#1094) (scanner)
+  - @happyvertical/smrt-scanner@0.21.28
+  - @happyvertical/smrt-config@0.21.28
+  - @happyvertical/smrt-types@0.21.28
+
 ## 0.21.27
 
 ### Patch Changes
