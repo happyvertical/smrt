@@ -657,6 +657,7 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
  * included in the generated manifest.
  *
  * Handles all import forms:
+ * - Side-effect imports — `import '@happyvertical/smrt-messages'` (recorded as `'*'`)
  * - Named imports — `import { Person, Organization } from '@happyvertical/smrt-profiles'`
  * - Renamed named imports — `import { Person as PersonBase } from '...'` (records original name `Person`)
  * - Namespace imports — `import * as Profiles from '@happyvertical/smrt-profiles'` (recorded as `'*'`)
@@ -707,7 +708,10 @@ export function extractSmrtImports(
     }
     const classSet = imports.get(moduleName)!;
 
-    if (!node.specifiers) continue;
+    if (!node.specifiers || node.specifiers.length === 0) {
+      classSet.add('*');
+      continue;
+    }
 
     for (const spec of node.specifiers) {
       if (spec.type === 'ImportSpecifier' && spec.imported && spec.local) {
