@@ -14,7 +14,11 @@ import {
 } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
-import { formatRuntimeCheckReport, runRuntimeCheck } from '../runtime-check.js';
+import {
+  formatRuntimeCheckReport,
+  type RuntimeCheckResult,
+  runRuntimeCheck,
+} from '../runtime-check.js';
 import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -48,6 +52,26 @@ export function resolveVitestEntrypoint(fromDir = process.cwd()): string {
   const requireFromDir = createRequire(resolve(fromDir, 'package.json'));
   const vitestPackageJson = requireFromDir.resolve('vitest/package.json');
   return join(dirname(vitestPackageJson), 'vitest.mjs');
+}
+
+export async function runRuntimeCheckSafely(
+  projectRoot: string,
+): Promise<RuntimeCheckResult> {
+  try {
+    return await runRuntimeCheck(projectRoot);
+  } catch (error) {
+    return {
+      projectRoot,
+      discoveredManifestCount: 0,
+      findings: [
+        {
+          severity: 'error',
+          code: 'runtime-check-crashed',
+          message: `Runtime diagnostics crashed: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+    };
+  }
 }
 
 /**
@@ -1932,7 +1956,7 @@ export default testManifest;
       // ========== Runtime ==========
       console.log('🏃 Runtime\n');
 
-      const runtimeCheck = await runRuntimeCheck(cwd);
+      const runtimeCheck = await runRuntimeCheckSafely(cwd);
       const runtimeErrors = runtimeCheck.findings.filter(
         (finding) => finding.severity === 'error',
       );
@@ -2069,7 +2093,7 @@ export default testManifest;
     args: [],
     options: {},
     handler: async () => {
-      const result = await runRuntimeCheck(process.cwd());
+      const result = await runRuntimeCheckSafely(process.cwd());
       console.log(`${formatRuntimeCheckReport(result)}\n`);
 
       if (result.findings.some((finding) => finding.severity === 'error')) {

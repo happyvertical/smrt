@@ -39,6 +39,21 @@ interface ManifestEntryRef {
   definition: SmartObjectDefinition;
 }
 
+type EntryLookupResult =
+  | {
+      kind: 'resolved';
+      entry: ManifestEntryRef;
+    }
+  | {
+      kind: 'ambiguous';
+      name: string;
+      matches: ManifestEntryRef[];
+    }
+  | {
+      kind: 'missing';
+      name: string;
+    };
+
 const SYSTEM_FIELDS = new Set([
   'context',
   'created_at',
@@ -137,38 +152,97 @@ function findProjectManifest(
   return manifests.find((manifest) => manifest.source === 'project');
 }
 
-function findEntryByName(
+function flattenRuntimeEntries(
+  manifests: SmartObjectManifest[],
+): ManifestEntryRef[] {
+  return manifests.flatMap((manifest, index) =>
+    flattenManifestEntries(
+      manifest,
+      index === 0 ? 'project' : 'dependency',
+      manifest.packageName,
+    ),
+  );
+}
+
+function entryMatchesQualifiedName(
+  entry: ManifestEntryRef,
+  name: string,
+): boolean {
+  const qualifiedName = getEntryQualifiedName(
+    entry.key,
+    entry.definition,
+    entry.manifestPackageName,
+  );
+
+  return (
+    qualifiedName === name || qualifiedName.toLowerCase() === name.toLowerCase()
+  );
+}
+
+function entryMatchesShortName(entry: ManifestEntryRef, name: string): boolean {
+  const className = getEntryClassName(entry.key, entry.definition);
+
+  return className === name || className.toLowerCase() === name.toLowerCase();
+}
+
+function resolveEntryByName(
   manifests: SmartObjectManifest[],
   name: string,
-): ManifestEntryRef | undefined {
-  for (const manifest of manifests) {
-    for (const [key, objectDef] of Object.entries(manifest.objects || {})) {
-      const definition = objectDef as SmartObjectDefinition;
-      const className = getEntryClassName(key, definition);
-      const qualifiedName = getEntryQualifiedName(
-        key,
-        definition,
-        manifest.packageName,
-      );
+): EntryLookupResult {
+  const entries = flattenRuntimeEntries(manifests);
+  const qualifiedMatches = entries.filter((entry) =>
+    entryMatchesQualifiedName(entry, name),
+  );
 
-      if (
-        name === className ||
-        name === qualifiedName ||
-        (isQualifiedName(name) &&
-          qualifiedName.toLowerCase() === name.toLowerCase()) ||
-        className.toLowerCase() === name.toLowerCase()
-      ) {
-        return {
-          manifestPackageName: manifest.packageName,
-          manifestSource: manifest === manifests[0] ? 'project' : 'dependency',
-          key,
-          definition,
-        };
-      }
-    }
+  if (qualifiedMatches.length === 1) {
+    return {
+      kind: 'resolved',
+      entry: qualifiedMatches[0],
+    };
   }
 
-  return undefined;
+  if (qualifiedMatches.length > 1) {
+    return {
+      kind: 'ambiguous',
+      name,
+      matches: qualifiedMatches,
+    };
+  }
+
+  const shortName = isQualifiedName(name)
+    ? parseQualifiedName(name).className
+    : name;
+  const shortNameMatches = entries.filter((entry) =>
+    entryMatchesShortName(entry, shortName),
+  );
+
+  if (shortNameMatches.length === 1) {
+    return {
+      kind: 'resolved',
+      entry: shortNameMatches[0],
+    };
+  }
+
+  if (shortNameMatches.length > 1) {
+    return {
+      kind: 'ambiguous',
+      name,
+      matches: shortNameMatches,
+    };
+  }
+
+  return {
+    kind: 'missing',
+    name,
+  };
+}
+
+function describeEntry(entry: ManifestEntryRef): string {
+  return getEntryQualifiedName(
+    entry.key,
+    entry.definition,
+    entry.manifestPackageName,
+  );
 }
 
 function collectShadowCandidates(
@@ -312,6 +386,28 @@ async function checkRuntimeHydration(
       entry.definition,
       projectManifest.packageName,
     );
+    let parentEntry: ManifestEntryRef | undefined;
+
+    if (entry.definition.extends) {
+      const parentLookup = resolveEntryByName(
+        allManifests,
+        entry.definition.extends,
+      );
+
+      if (parentLookup.kind === 'ambiguous') {
+        addFinding(
+          findings,
+          'error',
+          'ambiguous-extends-reference',
+          `Runtime hydration for "${qualifiedName}" cannot resolve "${entry.definition.extends}" because it matches multiple manifest classes: ${parentLookup.matches.map(describeEntry).sort().join(', ')}.`,
+        );
+        continue;
+      }
+
+      if (parentLookup.kind === 'resolved') {
+        parentEntry = parentLookup.entry;
+      }
+    }
 
     const expectedOwnFields = getOwnFieldNames(entry.definition);
     let resolvedFields: Map<string, any>;
@@ -342,25 +438,19 @@ async function checkRuntimeHydration(
       );
     }
 
-    if (entry.definition.extends) {
-      const parentEntry = findEntryByName(
-        allManifests,
-        entry.definition.extends,
+    if (parentEntry) {
+      const expectedInherited = getOwnFieldNames(parentEntry.definition);
+      const missingInherited = expectedInherited.filter(
+        (field) => !resolvedFieldNames.has(field),
       );
-      if (parentEntry) {
-        const expectedInherited = getOwnFieldNames(parentEntry.definition);
-        const missingInherited = expectedInherited.filter(
-          (field) => !resolvedFieldNames.has(field),
-        );
 
-        if (missingInherited.length > 0) {
-          addFinding(
-            findings,
-            'error',
-            'runtime-inheritance-hydration',
-            `Runtime hydration for "${qualifiedName}" is missing inherited fields from "${entry.definition.extends}": ${missingInherited.join(', ')}.`,
-          );
-        }
+      if (missingInherited.length > 0) {
+        addFinding(
+          findings,
+          'error',
+          'runtime-inheritance-hydration',
+          `Runtime hydration for "${qualifiedName}" is missing inherited fields from "${entry.definition.extends}": ${missingInherited.join(', ')}.`,
+        );
       }
     }
   }
@@ -458,7 +548,24 @@ export async function runRuntimeCheck(
   }
 
   ObjectRegistry.clear();
-  await autoDiscoverAndLoad(projectRoot);
+  try {
+    await autoDiscoverAndLoad(projectRoot);
+  } catch (error) {
+    addFinding(
+      findings,
+      'error',
+      'runtime-discovery-error',
+      `Runtime discovery failed before hydration checks could run: ${error instanceof Error ? error.message : String(error)}`,
+    );
+
+    return {
+      projectRoot,
+      projectManifestPath: projectManifestInfo.path,
+      projectPackageName: projectManifest.packageName,
+      discoveredManifestCount: discovered.length,
+      findings,
+    };
+  }
   await checkRuntimeHydration(projectManifest, dependencyManifests, findings);
   checkShadowing(projectManifest, dependencyManifests, findings);
 

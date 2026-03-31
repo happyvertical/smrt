@@ -17,6 +17,7 @@ async function createExternalPackage(
   projectRoot: string,
   packageName: string,
   manifest: SmartObjectManifest,
+  options: { version?: string } = {},
 ): Promise<void> {
   const packageDir = resolve(
     projectRoot,
@@ -26,7 +27,7 @@ async function createExternalPackage(
 
   await writeJson(resolve(packageDir, 'package.json'), {
     name: packageName,
-    version: '0.0.0-test',
+    version: options.version || '0.0.0-test',
     type: 'module',
     exports: {
       '.': './dist/index.js',
@@ -40,6 +41,20 @@ async function createExternalPackage(
   await mkdir(resolve(packageDir, 'dist'), { recursive: true });
   await writeFile(resolve(packageDir, 'dist/index.js'), 'export {};\n');
   await writeJson(resolve(packageDir, 'dist/manifest.json'), manifest);
+}
+
+async function createLoosePackage(
+  projectRoot: string,
+  relativeDir: string,
+  packageJson: Record<string, unknown>,
+  manifest?: SmartObjectManifest,
+): Promise<void> {
+  const packageDir = resolve(projectRoot, 'node_modules', relativeDir);
+
+  await writeJson(resolve(packageDir, 'package.json'), packageJson);
+  if (manifest) {
+    await writeJson(resolve(packageDir, 'manifest.json'), manifest);
+  }
 }
 
 async function createProject(
@@ -207,6 +222,168 @@ describe('runRuntimeCheck', () => {
           code: 'runtime-check-passed',
         }),
       ]),
+    );
+  });
+
+  it('reports ambiguous short-name parent references instead of picking the first manifest entry', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(projectRoot, '@fixture/profiles-a', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/profiles-a',
+      objects: {
+        '@fixture/profiles-a:FixtureProfile': {
+          className: 'FixtureProfile',
+          qualifiedName: '@fixture/profiles-a:FixtureProfile',
+          packageName: '@fixture/profiles-a',
+          collection: 'profiles',
+          fields: {
+            displayName: { type: 'text', required: false },
+          },
+        },
+      },
+    });
+
+    await createExternalPackage(projectRoot, '@fixture/profiles-b', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/profiles-b',
+      objects: {
+        '@fixture/profiles-b:FixtureProfile': {
+          className: 'FixtureProfile',
+          qualifiedName: '@fixture/profiles-b:FixtureProfile',
+          packageName: '@fixture/profiles-b',
+          collection: 'profiles',
+          fields: {
+            nickname: { type: 'text', required: false },
+          },
+        },
+      },
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/profiles-a', '@fixture/profiles-b'],
+      objects: {
+        '@test/app:FixtureStaffProfile': {
+          className: 'FixtureStaffProfile',
+          qualifiedName: '@test/app:FixtureStaffProfile',
+          packageName: '@test/app',
+          collection: 'profiles',
+          extends: 'FixtureProfile',
+          fields: {
+            role: { type: 'text', required: false },
+          },
+        },
+      },
+    });
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'error',
+          code: 'ambiguous-extends-reference',
+          message: expect.stringContaining(
+            '@fixture/profiles-a:FixtureProfile',
+          ),
+        }),
+      ]),
+    );
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'error',
+          code: 'ambiguous-extends-reference',
+          message: expect.stringContaining(
+            '@fixture/profiles-b:FixtureProfile',
+          ),
+        }),
+      ]),
+    );
+  });
+
+  it('reports runtime discovery failures without crashing the command', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: [],
+      objects: {},
+    });
+
+    await createLoosePackage(
+      projectRoot,
+      'conflict-a',
+      {
+        name: '@happyvertical/smrt-core',
+        version: '0.21.27',
+        dependencies: { smrt: '^0.21.27' },
+      },
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        packageName: '@happyvertical/smrt-core',
+        objects: {
+          '@happyvertical/smrt-core:CoreFixtureA': {
+            className: 'CoreFixtureA',
+            qualifiedName: '@happyvertical/smrt-core:CoreFixtureA',
+            packageName: '@happyvertical/smrt-core',
+            collection: 'core_fixtures',
+            fields: {},
+          },
+        },
+      },
+    );
+
+    await createLoosePackage(
+      projectRoot,
+      'conflict-b',
+      {
+        name: '@happyvertical/smrt-core',
+        version: '0.21.28',
+        dependencies: { smrt: '^0.21.28' },
+      },
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        packageName: '@happyvertical/smrt-core',
+        objects: {
+          '@happyvertical/smrt-core:CoreFixtureB': {
+            className: 'CoreFixtureB',
+            qualifiedName: '@happyvertical/smrt-core:CoreFixtureB',
+            packageName: '@happyvertical/smrt-core',
+            collection: 'core_fixtures',
+            fields: {},
+          },
+        },
+      },
+    );
+
+    process.chdir(projectRoot);
+    await expect(runRuntimeCheck(projectRoot)).resolves.toEqual(
+      expect.objectContaining({
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'runtime-discovery-error',
+            message: expect.stringContaining('SMRT Version Conflict Detected'),
+          }),
+        ]),
+      }),
     );
   });
 });
