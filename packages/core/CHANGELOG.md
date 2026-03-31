@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve nested runtime manifests (#1096) (cli)
+  - @happyvertical/smrt-scanner@0.21.30
+  - @happyvertical/smrt-config@0.21.30
+  - @happyvertical/smrt-types@0.21.30
+
 ## 0.21.29
 
 ### Patch Changes
