@@ -651,6 +651,17 @@ describe('OXC Parser', () => {
       );
     });
 
+    it('should treat bare SMRT imports as include-all package imports', () => {
+      const source = `
+        import '@happyvertical/smrt-messages';
+      `;
+
+      const result = parseSource(source);
+      expect(result.smrtImports?.get('@happyvertical/smrt-messages')).toEqual(
+        new Set(['*']),
+      );
+    });
+
     it('should handle default imports', () => {
       const source = `
         import SomeClass from '@happyvertical/smrt-profiles';
