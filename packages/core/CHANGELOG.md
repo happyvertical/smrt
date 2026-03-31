@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.27
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - harden runtime manifest hydration (#1093) (core)
+  - @happyvertical/smrt-scanner@0.21.27
+  - @happyvertical/smrt-config@0.21.27
+  - @happyvertical/smrt-types@0.21.27
+
 ## 0.21.26
 
 ### Patch Changes
