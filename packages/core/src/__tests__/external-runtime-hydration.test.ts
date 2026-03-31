@@ -11,11 +11,13 @@ import {
   it,
 } from 'vitest';
 import { field } from '../decorators/index.js';
+import type { ConfigurationError } from '../errors.js';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
+import { createQualifiedName } from '../utils/qualified-names.js';
 
 function writeScopedPackage(
   appDir: string,
@@ -218,6 +220,116 @@ describe('external runtime field hydration', () => {
     ).resolves.toEqual([]);
   });
 
+  it('hydrates manifest metadata even when runtime field counts and types already match', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-metadata';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureMetadataAccount: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_metadata_accounts',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            status: {
+              type: 'text',
+              required: true,
+              default: 'active',
+              description: 'Current delivery status',
+            },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_metadata_accounts',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureMetadataAccount extends SmrtObject {
+      @field()
+      status: string = '';
+    }
+
+    const registered = ObjectRegistry.findClass('FixtureMetadataAccount');
+    expect(registered).toBeDefined();
+    registered!.packageName = packageName;
+    registered!.qualifiedName = createQualifiedName(
+      packageName,
+      'FixtureMetadataAccount',
+    );
+    registered!.inheritedFields = new Map(registered?.fields);
+
+    await ObjectRegistry.ensureManifestLoaded('FixtureMetadataAccount');
+
+    const hydratedField = ObjectRegistry.getFields(
+      'FixtureMetadataAccount',
+    ).get('status');
+    expect(hydratedField?._meta?.required).toBe(true);
+    expect(hydratedField?._meta?.default).toBe('active');
+    expect(hydratedField?._meta?.description).toBe('Current delivery status');
+  });
+
+  it('preserves existing field metadata when fallback manifest hydration only refines adjacent properties', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-fallback-metadata';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureFallbackMetadataAccount: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_fallback_metadata_accounts',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            status: {
+              type: 'text',
+              _meta: {
+                default: 'active',
+                description: 'Fallback hydrated status',
+              },
+            },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_fallback_metadata_accounts',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureFallbackMetadataAccount extends SmrtObject {
+      @field({ required: true })
+      status: string = '';
+    }
+
+    stripPackageIdentity('FixtureFallbackMetadataAccount');
+
+    const fields = await ObjectRegistry.getAllFields(
+      'FixtureFallbackMetadataAccount',
+    );
+    const hydratedField = fields.get('status');
+
+    expect(hydratedField?._meta?.required).toBe(true);
+    expect(hydratedField?._meta?.default).toBe('active');
+    expect(hydratedField?._meta?.description).toBe('Fallback hydrated status');
+  });
+
   it('includes parent manifest fields when a local STI class extends a sparse external parent', async () => {
     const packageName = '@happyvertical/smrt-runtime-fixture-analytics';
 
@@ -408,5 +520,62 @@ describe('external runtime field hydration', () => {
       ObjectRegistry.getFields('FixtureSeason').get('isActive')?.type,
     ).toBe('boolean');
     expect(upserts[0]?.is_active).toBeUndefined();
+  });
+
+  it('rejects ambiguous external-package fallback when multiple manifests define the same simple class name', async () => {
+    writeScopedPackage(
+      appDir,
+      '@happyvertical/smrt-runtime-fixture-shared-a',
+      fixtureManifest('@happyvertical/smrt-runtime-fixture-shared-a', {
+        FixtureSharedThing: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_shared_things',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            source: { type: 'text', default: 'a' },
+          },
+        },
+      }),
+    );
+
+    writeScopedPackage(
+      appDir,
+      '@happyvertical/smrt-runtime-fixture-shared-b',
+      fixtureManifest('@happyvertical/smrt-runtime-fixture-shared-b', {
+        FixtureSharedThing: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_shared_things',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            source: { type: 'text', default: 'b' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_shared_things',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureSharedThing extends SmrtObject {}
+
+    stripPackageIdentity('FixtureSharedThing');
+
+    await expect(
+      ObjectRegistry.getAllFields('FixtureSharedThing'),
+    ).rejects.toMatchObject<Partial<ConfigurationError>>({
+      code: 'CONFIG_AMBIGUOUS_CLASS',
+    });
   });
 });

@@ -63,6 +63,17 @@ function getExpectedMetaType(className: string): string {
   return registeredClass?.qualifiedName || className;
 }
 
+function getSTIHierarchyMembers(className: string): string[] {
+  const stiBase = ObjectRegistry.getSTIBase(className);
+  if (!stiBase) {
+    return [];
+  }
+
+  return Array.from(
+    new Set([stiBase, ...ObjectRegistry.getDescendants(stiBase)]),
+  );
+}
+
 /**
  * Options for SmrtObject initialization
  */
@@ -747,20 +758,8 @@ export class SmrtObject extends SmrtClass {
     // In STI mode, we need to know about ALL sibling class fields to provide default values
     // for fields that exist in siblings but not in this class (Issue #391)
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(this.constructor.name);
-      if (stiBase) {
-        const descendants = Array.from(
-          new Set(
-            Array.from(ObjectRegistry.getAllClasses()).flatMap(
-              ([registrationKey, registeredClass]) => {
-                const candidate = registeredClass.name || registrationKey;
-                return ObjectRegistry.getSTIBase(candidate) === stiBase
-                  ? [candidate]
-                  : [];
-              },
-            ),
-          ),
-        );
+      const descendants = getSTIHierarchyMembers(this.constructor.name);
+      if (descendants.length > 0) {
         const allSTIFields = new Map(registeredFields);
 
         // Merge fields from all sibling classes
@@ -1113,23 +1112,18 @@ export class SmrtObject extends SmrtClass {
       }
 
       if (tableStrategy === 'sti') {
-        const stiBase = ObjectRegistry.getSTIBase(this.constructor.name);
-        if (stiBase) {
-          const descendants = Array.from(
-            new Set(
-              Array.from(ObjectRegistry.getAllClasses()).flatMap(
-                ([registrationKey, registeredClass]) => {
-                  const candidate = registeredClass.name || registrationKey;
-                  return ObjectRegistry.getSTIBase(candidate) === stiBase
-                    ? [candidate]
-                    : [];
-                },
-              ),
+        const descendants = getSTIHierarchyMembers(this.constructor.name);
+        const descendantsNeedingHydration = descendants.filter((descendant) => {
+          const registeredDescendant = ObjectRegistry.getClass(descendant);
+          return registeredDescendant && !registeredDescendant.inheritedFields;
+        });
+
+        if (descendantsNeedingHydration.length > 0) {
+          await Promise.all(
+            descendantsNeedingHydration.map((descendant) =>
+              ObjectRegistry.getAllFields(descendant),
             ),
           );
-          for (const descendant of descendants) {
-            await ObjectRegistry.getAllFields(descendant);
-          }
         }
       }
 

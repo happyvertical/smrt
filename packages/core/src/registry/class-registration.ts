@@ -25,6 +25,10 @@ import {
 } from '../utils/qualified-names.js';
 import { buildInheritanceChain } from './inheritance-resolver';
 import {
+  createFieldFromManifest,
+  mergeManifestField,
+} from './manifest-field-merge.js';
+import {
   addToClassNameMap,
   findClass,
   getCanonicalClassName,
@@ -937,15 +941,7 @@ export function registerFromManifest(
             )) {
               const fd = fieldDef as any;
               if (!existing.fields.has(fieldName)) {
-                existing.fields.set(fieldName, {
-                  type: fd.type,
-                  _meta: {
-                    required: fd.required,
-                    default: fd.default,
-                    description: fd.description,
-                    ...fd._meta,
-                  },
-                });
+                existing.fields.set(fieldName, createFieldFromManifest(fd));
                 continue;
               }
 
@@ -954,25 +950,10 @@ export function registerFromManifest(
                 continue;
               }
 
-              const hasTenancyMarker =
-                existingField.__tenancy?.isTenantIdField ||
-                existingField._meta?.__tenancy?.isTenantIdField;
-              const shouldOverrideType =
-                !hasTenancyMarker && fd.type && existingField.type !== fd.type;
-
-              const mergedMeta = {
-                ...(existingField._meta || {}),
-                required: fd.required ?? existingField.required,
-                default: fd.default,
-                description: fd.description,
-                ...fd._meta,
-              };
-
-              existing.fields.set(fieldName, {
-                ...existingField,
-                type: shouldOverrideType ? fd.type : existingField.type,
-                _meta: mergedMeta,
-              });
+              existing.fields.set(
+                fieldName,
+                mergeManifestField(existingField, fd),
+              );
             }
 
             if (objectDef.methods) {
@@ -1003,6 +984,17 @@ export function registerFromManifest(
               existing.extends = packageName
                 ? qualifyExtendsName(objectDef.extends, packageName)
                 : objectDef.extends;
+            }
+
+            if (registrationKey !== existingCanonical) {
+              const classes = getClasses();
+              classes.set(registrationKey, existing);
+              removeFromClassNameMap(
+                existing.name.toLowerCase(),
+                existingCanonical,
+              );
+              addToClassNameMap(existing.name.toLowerCase(), registrationKey);
+              getConstructorIndex().set(existing.constructor, registrationKey);
             }
 
             return;
@@ -1062,15 +1054,7 @@ export function registerFromManifest(
       objectDef.fields as any,
     )) {
       const fd = fieldDef as any;
-      fields.set(fieldName, {
-        type: fd.type,
-        _meta: {
-          required: fd.required,
-          default: fd.default,
-          description: fd.description,
-          ...fd._meta,
-        },
-      });
+      fields.set(fieldName, createFieldFromManifest(fd));
     }
   }
 
