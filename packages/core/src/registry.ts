@@ -1252,20 +1252,51 @@ export class ObjectRegistry {
 
     // Try to load manifest from external package (even if some fields exist)
     // This handles cases where AST scanner missed optional fields without initializers
+    const existingFieldCount = registered.fields.size;
+
     const manifestEntry = await discoverManifestEntry(
       registered.constructor,
       className,
     );
 
     if (!manifestEntry) {
+      // Bundled consumers can register external classes without preserving the
+      // package identity we normally use for direct manifest discovery. In
+      // that case, fall back to class-name package scans and merge any fields
+      // found into the existing registration instead of leaving a sparse entry.
+      if (!registered.packageName || !registered.qualifiedName) {
+        const loaded =
+          await ObjectRegistry.tryLoadFromExternalPackage(className);
+        if (loaded) {
+          ObjectRegistry.invalidateInheritanceCache(className);
+        }
+      }
       return;
     }
 
     if (manifestEntry?.fields) {
       const manifestFieldCount = Object.keys(manifestEntry.fields).length;
-      const existingFieldCount = registered.fields.size;
+      let didHydrate = false;
+      const needsFieldHydration = Object.entries(manifestEntry.fields).some(
+        ([fieldName, fieldDef]) => {
+          const existingField = registered.fields.get(fieldName);
+          if (!existingField) {
+            return true;
+          }
 
-      if (existingFieldCount > 0 && existingFieldCount >= manifestFieldCount) {
+          const hasTenancyMarker =
+            existingField.__tenancy?.isTenantIdField ||
+            existingField._meta?.__tenancy?.isTenantIdField;
+
+          return !hasTenancyMarker && existingField.type !== fieldDef.type;
+        },
+      );
+
+      if (
+        existingFieldCount > 0 &&
+        existingFieldCount >= manifestFieldCount &&
+        !needsFieldHydration
+      ) {
         return;
       }
 
@@ -1273,8 +1304,9 @@ export class ObjectRegistry {
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
       )) {
-        // Only add if not already present (don't overwrite AST-scanned fields)
-        if (!registered.fields.has(fieldName)) {
+        const existingField = registered.fields.get(fieldName);
+
+        if (!existingField) {
           registered.fields.set(fieldName, {
             type: fieldDef.type,
             _meta: {
@@ -1284,6 +1316,38 @@ export class ObjectRegistry {
               ...fieldDef._meta, // Includes unique, primaryKey, index, etc.
             },
           });
+          didHydrate = true;
+          continue;
+        }
+
+        const hasTenancyMarker =
+          existingField.__tenancy?.isTenantIdField ||
+          existingField._meta?.__tenancy?.isTenantIdField;
+        const nextType =
+          !hasTenancyMarker && fieldDef.type
+            ? fieldDef.type
+            : existingField.type;
+        const nextMeta = {
+          ...(existingField._meta || {}),
+          required: fieldDef.required ?? existingField.required,
+          default:
+            fieldDef.default !== undefined
+              ? fieldDef.default
+              : existingField._meta?.default,
+          description: fieldDef.description ?? existingField._meta?.description,
+          ...fieldDef._meta,
+        };
+
+        if (
+          nextType !== existingField.type ||
+          JSON.stringify(nextMeta) !== JSON.stringify(existingField._meta || {})
+        ) {
+          registered.fields.set(fieldName, {
+            ...existingField,
+            type: nextType,
+            _meta: nextMeta,
+          });
+          didHydrate = true;
         }
       }
 
@@ -1294,16 +1358,23 @@ export class ObjectRegistry {
         )) {
           registered.methods.set(methodName, methodDef);
         }
+        didHydrate = true;
       }
 
       // Extract and store package name from manifest entry (for getPackageName() lookup)
       if (manifestEntry.packageName) {
         registered.packageName = manifestEntry.packageName;
+        didHydrate = true;
       }
 
       // Store extends info for getAllFields() to use (if present)
       if (manifestEntry.extends) {
         registered.extends = manifestEntry.extends;
+        didHydrate = true;
+      }
+
+      if (didHydrate) {
+        ObjectRegistry.invalidateInheritanceCache(className);
       }
 
       verboseLog(
@@ -1806,6 +1877,14 @@ export class ObjectRegistry {
         continue;
       }
 
+      try {
+        await ObjectRegistry.ensureManifestLoaded(ancestorName);
+      } catch {
+        // Local classes and pure test fixtures may not have manifests. In that
+        // case we still want to use whatever runtime metadata is already
+        // registered instead of failing the entire inheritance walk.
+      }
+
       const ancestor = ObjectRegistry.findClass(ancestorName);
       if (!ancestor) {
         // Handle missing ancestors according to config
@@ -1846,6 +1925,8 @@ export class ObjectRegistry {
         }
       }
     }
+
+    registered.inheritedFields = new Map(allFields);
 
     return prependSmrtSystemFields(allFields);
   }

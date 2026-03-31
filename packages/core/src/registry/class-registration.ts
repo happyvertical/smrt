@@ -935,8 +935,8 @@ export function registerFromManifest(
             for (const [fieldName, fieldDef] of Object.entries(
               objectDef.fields as Record<string, any>,
             )) {
+              const fd = fieldDef as any;
               if (!existing.fields.has(fieldName)) {
-                const fd = fieldDef as any;
                 existing.fields.set(fieldName, {
                   type: fd.type,
                   _meta: {
@@ -946,7 +946,56 @@ export function registerFromManifest(
                     ...fd._meta,
                   },
                 });
+                continue;
               }
+
+              const existingField = existing.fields.get(fieldName);
+              if (!existingField) {
+                continue;
+              }
+
+              const hasTenancyMarker =
+                existingField.__tenancy?.isTenantIdField ||
+                existingField._meta?.__tenancy?.isTenantIdField;
+              const shouldOverrideType =
+                !hasTenancyMarker && fd.type && existingField.type !== fd.type;
+
+              const mergedMeta = {
+                ...(existingField._meta || {}),
+                required: fd.required ?? existingField.required,
+                default: fd.default,
+                description: fd.description,
+                ...fd._meta,
+              };
+
+              existing.fields.set(fieldName, {
+                ...existingField,
+                type: shouldOverrideType ? fd.type : existingField.type,
+                _meta: mergedMeta,
+              });
+            }
+
+            if (objectDef.methods) {
+              for (const [methodName, methodDef] of Object.entries(
+                objectDef.methods as Record<string, any>,
+              )) {
+                existing.methods.set(methodName, methodDef);
+              }
+            }
+
+            // Invalidate cached inheritance so callers immediately see the
+            // refined manifest-backed field types/metadata.
+            existing.inheritedFields = undefined;
+            existing.inheritedMethods = undefined;
+
+            if (!existing.packageName) {
+              existing.packageName = packageName;
+            }
+            if (!existing.qualifiedName && packageName) {
+              existing.qualifiedName = createQualifiedName(
+                packageName,
+                existing.name,
+              );
             }
             // Backfill extends when absent (needed for STI chain resolution)
             // Issue #1004: Qualify the backfilled extends too
@@ -955,6 +1004,8 @@ export function registerFromManifest(
                 ? qualifyExtendsName(objectDef.extends, packageName)
                 : objectDef.extends;
             }
+
+            return;
           }
         } else {
           return;

@@ -186,6 +186,13 @@ export async function getAllFields(
       continue;
     }
 
+    try {
+      await ObjectRegistry.ensureManifestLoaded(ancestorName);
+    } catch {
+      // Local classes and pure test fixtures may not have manifests. Continue
+      // with whatever runtime metadata is already available.
+    }
+
     const ancestor = findClass(ancestorName);
     if (!ancestor) {
       // Handle missing ancestors according to config
@@ -226,6 +233,8 @@ export async function getAllFields(
       }
     }
   }
+
+  registered.inheritedFields = new Map(allFields);
 
   return prependSmrtSystemFields(allFields);
 }

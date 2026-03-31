@@ -1,0 +1,412 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from 'vitest';
+import { field } from '../decorators/index.js';
+import { clearManifestCache } from '../manifest/manifest-loader.js';
+import { SmrtObject } from '../object.js';
+import { ObjectRegistry, smrt } from '../registry.js';
+import { snapshotObjectRegistryState } from '../test-utils.js';
+import { getTestDatabase } from '../testing/database.js';
+
+function writeScopedPackage(
+  appDir: string,
+  packageName: string,
+  manifest: Record<string, unknown>,
+): void {
+  const [, scope, pkg] = packageName.match(/^@([^/]+)\/(.+)$/) || [];
+  const packageDir = join(appDir, 'node_modules', `@${scope}`, pkg);
+
+  mkdirSync(join(packageDir, 'dist'), { recursive: true });
+  writeFileSync(
+    join(packageDir, 'package.json'),
+    JSON.stringify(
+      {
+        name: packageName,
+        version: '1.0.0',
+        type: 'module',
+        exports: {
+          './manifest.json': './dist/manifest.json',
+          './manifest': './dist/manifest.json',
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  writeFileSync(
+    join(packageDir, 'dist', 'manifest.json'),
+    JSON.stringify(manifest, null, 2),
+  );
+}
+
+function fixtureManifest(
+  packageName: string,
+  objects: Record<string, Record<string, unknown>>,
+): Record<string, unknown> {
+  const qualifiedObjects = Object.fromEntries(
+    Object.entries(objects).map(([className, objectDef]) => [
+      `${packageName}:${className}`,
+      {
+        className,
+        ...objectDef,
+      },
+    ]),
+  );
+
+  return {
+    version: '1.0.0',
+    timestamp: Date.now(),
+    moduleType: 'smrt',
+    packageName,
+    objects: qualifiedObjects,
+  };
+}
+
+function stripPackageIdentity(...classNames: string[]): void {
+  for (const className of classNames) {
+    const registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      continue;
+    }
+
+    registered.packageName = undefined;
+    registered.qualifiedName = undefined;
+  }
+
+  ObjectRegistry.invalidateAllInheritanceCaches();
+}
+
+describe('external runtime field hydration', () => {
+  const originalCwd = process.cwd();
+  let restoreRegistry: () => void;
+  let tempRoot = '';
+  let appDir = '';
+
+  beforeAll(() => {
+    restoreRegistry = snapshotObjectRegistryState();
+  });
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), 'smrt-runtime-hydration-'));
+    appDir = join(tempRoot, 'app');
+    mkdirSync(appDir, { recursive: true });
+    writeFileSync(
+      join(appDir, 'package.json'),
+      JSON.stringify({ name: 'runtime-hydration-app', version: '1.0.0' }),
+    );
+    process.chdir(appDir);
+    ObjectRegistry.clear();
+    clearManifestCache();
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    ObjectRegistry.clear();
+    clearManifestCache();
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  afterAll(() => {
+    restoreRegistry();
+    clearManifestCache();
+  });
+
+  it('hydrates sparse registered fields from installed manifests when package identity is missing', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-email';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureAccount: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_accounts',
+            tenantScoped: true,
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            tenantId: {
+              type: 'text',
+              required: false,
+              _meta: {
+                __tenancy: {
+                  isTenantIdField: true,
+                  mode: 'required',
+                  field: 'tenantId',
+                  autoFilter: true,
+                  autoPopulate: true,
+                  allowSuperAdminBypass: false,
+                },
+              },
+            },
+            name: { type: 'text' },
+            providerType: { type: 'text' },
+          },
+        },
+        FixtureEmailAccount: {
+          extends: 'FixtureAccount',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_accounts',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            email: { type: 'text' },
+            isActive: { type: 'boolean' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_accounts',
+      tenantScoped: true,
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureAccount extends SmrtObject {}
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_accounts',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureEmailAccount extends FixtureAccount {}
+
+    stripPackageIdentity('FixtureAccount', 'FixtureEmailAccount');
+
+    const fields = await ObjectRegistry.getAllFields('FixtureEmailAccount');
+
+    expect(fields.has('tenantId')).toBe(true);
+    expect(fields.has('name')).toBe(true);
+    expect(fields.has('providerType')).toBe(true);
+    expect(fields.has('isActive')).toBe(true);
+    expect(fields.has('email')).toBe(true);
+
+    const db = await getTestDatabase({
+      classes: ['FixtureAccount', 'FixtureEmailAccount'],
+    });
+    const collection = await ObjectRegistry.getCollection(
+      'FixtureEmailAccount',
+      {
+        db,
+      },
+    );
+
+    await expect(
+      collection.list({
+        where: { isActive: true, email: 'alerts@example.com' },
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('includes parent manifest fields when a local STI class extends a sparse external parent', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-analytics';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureAnalyticsProperty: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_analytics_properties',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            provider: { type: 'text' },
+            externalId: { type: 'text' },
+            measurementId: { type: 'text' },
+            siteDomain: { type: 'text' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_analytics_properties',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureAnalyticsProperty extends SmrtObject {}
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_analytics_properties',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureNetworkAnalyticsProperty extends FixtureAnalyticsProperty {
+      @field()
+      publicationId: string = '';
+    }
+
+    stripPackageIdentity(
+      'FixtureAnalyticsProperty',
+      'FixtureNetworkAnalyticsProperty',
+    );
+
+    const fields = await ObjectRegistry.getAllFields(
+      'FixtureNetworkAnalyticsProperty',
+    );
+
+    expect(fields.has('publicationId')).toBe(true);
+    expect(fields.has('provider')).toBe(true);
+    expect(fields.has('externalId')).toBe(true);
+    expect(fields.has('measurementId')).toBe(true);
+    expect(fields.has('siteDomain')).toBe(true);
+
+    const db = await getTestDatabase({
+      classes: ['FixtureAnalyticsProperty', 'FixtureNetworkAnalyticsProperty'],
+    });
+    const collection = await ObjectRegistry.getCollection(
+      'FixtureNetworkAnalyticsProperty',
+      { db },
+    );
+
+    await expect(
+      collection.list({
+        where: { externalId: 'properties/123', publicationId: 'pub-1' },
+      }),
+    ).resolves.toEqual([]);
+  });
+
+  it('hydrates STI sibling field types before save so missing booleans do not serialize as empty strings', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-events';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureEvent: {
+          collection: 'fixture_events',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_events',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {},
+        },
+        FixtureSeason: {
+          extends: 'FixtureEvent',
+          collection: 'fixture_events',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_events',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            isActive: { type: 'boolean' },
+          },
+        },
+        FixtureForecast: {
+          extends: 'FixtureEvent',
+          collection: 'fixture_events',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_events',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            temperature: { type: 'number' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_events',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureEvent extends SmrtObject {}
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_events',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureSeason extends FixtureEvent {
+      @field()
+      isActive: boolean = false;
+    }
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_events',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureForecast extends FixtureEvent {
+      @field()
+      temperature: number = 10;
+    }
+
+    stripPackageIdentity('FixtureEvent', 'FixtureSeason', 'FixtureForecast');
+
+    expect(
+      ObjectRegistry.getFields('FixtureSeason').get('isActive')?.type,
+    ).toBe('text');
+
+    const upserts: Array<Record<string, unknown>> = [];
+    const db = {
+      url: ':memory:',
+      tableExists: async () => true,
+      get: async () => null,
+      upsert: async (
+        _tableName: string,
+        _conflictColumns: string[],
+        data: Record<string, unknown>,
+      ) => {
+        upserts.push(data);
+      },
+    };
+
+    const forecast = await new FixtureForecast({ db: db as any }).initialize();
+    (forecast as any)._db = db;
+    (forecast as any).verifyStorageReady = async () => {};
+    await forecast.save();
+
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0]?._meta_type).toBeTruthy();
+    expect(upserts[0]?.temperature).toBe(10);
+    expect(
+      ObjectRegistry.getFields('FixtureSeason').get('isActive')?.type,
+    ).toBe('boolean');
+    expect(upserts[0]?.is_active).toBeUndefined();
+  });
+});
