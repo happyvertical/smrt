@@ -17,11 +17,10 @@ async function createExternalPackage(
   projectRoot: string,
   packageName: string,
   manifest: SmartObjectManifest,
-  options: { version?: string } = {},
+  options: { version?: string; baseDir?: string } = {},
 ): Promise<void> {
   const packageDir = resolve(
-    projectRoot,
-    'node_modules',
+    options.baseDir || resolve(projectRoot, 'node_modules'),
     ...packageName.split('/'),
   );
 
@@ -41,6 +40,40 @@ async function createExternalPackage(
   await mkdir(resolve(packageDir, 'dist'), { recursive: true });
   await writeFile(resolve(packageDir, 'dist/index.js'), 'export {};\n');
   await writeJson(resolve(packageDir, 'dist/manifest.json'), manifest);
+}
+
+async function createBrokenManifestPackage(
+  projectRoot: string,
+  packageName: string,
+  options: {
+    exports?: Record<string, string>;
+    manifestContents?: string;
+  } = {},
+): Promise<void> {
+  const packageDir = resolve(
+    projectRoot,
+    'node_modules',
+    ...packageName.split('/'),
+  );
+  const manifestContents = options.manifestContents || '{ not valid json }\n';
+
+  await writeJson(resolve(packageDir, 'package.json'), {
+    name: packageName,
+    version: '0.0.0-test',
+    type: 'module',
+    exports: {
+      '.': './dist/index.js',
+      './manifest': './dist/manifest.json',
+      './manifest.json': './dist/manifest.json',
+      ...options.exports,
+    },
+    dependencies: {
+      '@happyvertical/smrt-core': '0.0.0-test',
+    },
+  });
+  await mkdir(resolve(packageDir, 'dist'), { recursive: true });
+  await writeFile(resolve(packageDir, 'dist/index.js'), 'export {};\n');
+  await writeFile(resolve(packageDir, 'dist/manifest.json'), manifestContents);
 }
 
 async function createLoosePackage(
@@ -106,6 +139,81 @@ describe('runRuntimeCheck', () => {
           code: 'missing-dependency-manifest',
         }),
       ]),
+    );
+  });
+
+  it('reports malformed dependency manifests as missing findings instead of crashing', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createBrokenManifestPackage(projectRoot, '@fixture/broken-manifest');
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/broken-manifest'],
+      objects: {},
+    });
+
+    process.chdir(projectRoot);
+    await expect(runRuntimeCheck(projectRoot)).resolves.toEqual(
+      expect.objectContaining({
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'missing-dependency-manifest',
+            message: expect.stringContaining('@fixture/broken-manifest'),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it('ignores unsafe exported manifest targets instead of reading them directly', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createBrokenManifestPackage(projectRoot, '@fixture/unsafe-export', {
+      exports: {
+        './manifest': './dist/manifest.js',
+        './manifest.json': './dist/manifest.js',
+      },
+    });
+    await writeFile(
+      resolve(
+        projectRoot,
+        'node_modules',
+        '@fixture',
+        'unsafe-export',
+        'dist',
+        'manifest.js',
+      ),
+      'export default {};\n',
+    );
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/unsafe-export'],
+      objects: {},
+    });
+
+    process.chdir(projectRoot);
+    await expect(runRuntimeCheck(projectRoot)).resolves.toEqual(
+      expect.objectContaining({
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'missing-dependency-manifest',
+            message: expect.stringContaining('@fixture/unsafe-export'),
+          }),
+        ]),
+      }),
     );
   });
 
@@ -223,6 +331,94 @@ describe('runRuntimeCheck', () => {
         }),
       ]),
     );
+  });
+
+  it('loads transitive dependency manifests relative to the package that declares them', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(
+      projectRoot,
+      '@fixture/parent',
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        packageName: '@fixture/parent',
+        smrtDependencies: ['@fixture/child'],
+        objects: {
+          '@fixture/parent:FixtureParent': {
+            className: 'FixtureParent',
+            qualifiedName: '@fixture/parent:FixtureParent',
+            packageName: '@fixture/parent',
+            collection: 'profiles',
+            fields: {
+              displayName: { type: 'text', required: false },
+            },
+          },
+        },
+      },
+      { version: '1.0.0' },
+    );
+
+    const parentNodeModules = resolve(
+      projectRoot,
+      'node_modules',
+      '@fixture',
+      'parent',
+      'node_modules',
+    );
+
+    await createExternalPackage(
+      projectRoot,
+      '@fixture/child',
+      {
+        version: '1.0.0',
+        timestamp: Date.now(),
+        packageName: '@fixture/child',
+        objects: {
+          '@fixture/child:FixtureChild': {
+            className: 'FixtureChild',
+            qualifiedName: '@fixture/child:FixtureChild',
+            packageName: '@fixture/child',
+            collection: 'profiles',
+            fields: {
+              nickname: { type: 'text', required: false },
+            },
+          },
+        },
+      },
+      { version: '1.0.0', baseDir: parentNodeModules },
+    );
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/parent'],
+      objects: {
+        '@test/app:FixtureGrandchild': {
+          className: 'FixtureGrandchild',
+          qualifiedName: '@test/app:FixtureGrandchild',
+          packageName: '@test/app',
+          collection: 'profiles',
+          extends: '@fixture/child:FixtureChild',
+          fields: {
+            role: { type: 'text', required: false },
+          },
+        },
+      },
+    });
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+    const errorCodes = result.findings
+      .filter((finding) => finding.severity === 'error')
+      .map((finding) => finding.code);
+
+    expect(errorCodes).not.toContain('missing-dependency-manifest');
+    expect(errorCodes).toEqual([]);
   });
 
   it('reports ambiguous short-name parent references instead of picking the first manifest entry', async () => {

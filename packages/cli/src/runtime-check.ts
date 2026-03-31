@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   createQualifiedName,
   isQualifiedName,
@@ -39,6 +42,11 @@ interface ManifestEntryRef {
   definition: SmartObjectDefinition;
 }
 
+interface LoadedDependencyManifest {
+  manifest: SmartObjectManifest;
+  resolverPath: string;
+}
+
 type EntryLookupResult =
   | {
       kind: 'resolved';
@@ -63,6 +71,10 @@ const SYSTEM_FIELDS = new Set([
   'tenant_id',
   'updated_at',
 ]);
+
+// pnpm nests package entries under .pnpm/<pkg>/node_modules/<pkg>, so allow a
+// bounded upward walk when resolving the owning package.json from an entry path.
+const MAX_PACKAGE_JSON_ASCENTS = 12;
 
 function addFinding(
   findings: RuntimeCheckFinding[],
@@ -287,37 +299,247 @@ function collectShadowCandidates(
 
 async function loadDependencyManifests(
   rootManifest: SmartObjectManifest,
+  projectRoot: string,
   findings: RuntimeCheckFinding[],
 ): Promise<SmartObjectManifest[]> {
-  const loaded = new Map<string, SmartObjectManifest>();
-  const queue = [...(rootManifest.smrtDependencies || [])];
+  const loaded = new Map<string, LoadedDependencyManifest>();
+  const queue = (rootManifest.smrtDependencies || []).map((dependency) => ({
+    dependency,
+    issuerResolverPath: resolve(projectRoot, 'package.json'),
+  }));
 
   while (queue.length > 0) {
-    const dependency = queue.shift();
-    if (!dependency || loaded.has(dependency)) {
+    const next = queue.shift();
+    if (!next || !next.dependency || loaded.has(next.dependency)) {
       continue;
     }
 
-    const manifest = loadExternalManifestSync(dependency, { warn: false });
-    if (!manifest) {
+    const loadedDependency = await loadDependencyManifest(
+      next.dependency,
+      next.issuerResolverPath,
+    );
+
+    if (!loadedDependency) {
       addFinding(
         findings,
         'error',
         'missing-dependency-manifest',
-        `Declared SMRT dependency "${dependency}" does not expose a runtime manifest.`,
+        `Declared SMRT dependency "${next.dependency}" does not expose a runtime manifest.`,
       );
       continue;
     }
 
-    loaded.set(dependency, manifest);
-    for (const nestedDependency of manifest.smrtDependencies || []) {
+    loaded.set(next.dependency, loadedDependency);
+    for (const nestedDependency of loadedDependency.manifest.smrtDependencies ||
+      []) {
       if (!loaded.has(nestedDependency)) {
-        queue.push(nestedDependency);
+        queue.push({
+          dependency: nestedDependency,
+          issuerResolverPath: loadedDependency.resolverPath,
+        });
       }
     }
   }
 
-  return Array.from(loaded.values());
+  return Array.from(loaded.values(), (entry) => entry.manifest);
+}
+
+function registerDependencyManifests(
+  dependencyManifests: SmartObjectManifest[],
+): void {
+  for (const manifest of dependencyManifests) {
+    for (const [name, objectDef] of Object.entries(manifest.objects || {})) {
+      ObjectRegistry.registerFromManifest(
+        name,
+        objectDef,
+        manifest.packageName,
+      );
+    }
+  }
+}
+
+function resolvePackageJsonPath(
+  packageName: string,
+  issuerResolverPath: string,
+): string | null {
+  const requireFromIssuer = createRequire(issuerResolverPath);
+  const resolutionCandidates = [
+    packageName,
+    `${packageName}/manifest`,
+    `${packageName}/manifest.json`,
+  ];
+
+  for (const candidate of resolutionCandidates) {
+    try {
+      const resolvedPath = requireFromIssuer.resolve(candidate);
+      const packageJsonPath = findPackageJsonForResolvedEntry(
+        resolvedPath,
+        packageName,
+      );
+
+      if (packageJsonPath) {
+        return packageJsonPath;
+      }
+    } catch {
+      // Keep trying the next candidate.
+    }
+  }
+
+  return null;
+}
+
+function findPackageJsonForResolvedEntry(
+  resolvedPath: string,
+  packageName: string,
+): string | null {
+  let currentDir = dirname(resolvedPath);
+
+  for (let index = 0; index < MAX_PACKAGE_JSON_ASCENTS; index += 1) {
+    const packageJsonPath = join(currentDir, 'package.json');
+    if (existsSync(packageJsonPath)) {
+      try {
+        const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+        if (packageJson?.name === packageName) {
+          return packageJsonPath;
+        }
+      } catch {
+        // Keep walking upward.
+      }
+    }
+
+    const parentDir = dirname(currentDir);
+    if (parentDir === currentDir) {
+      break;
+    }
+    currentDir = parentDir;
+  }
+
+  return null;
+}
+
+async function tryLoadManifestFile(
+  manifestPath: string,
+): Promise<SmartObjectManifest | null> {
+  try {
+    const manifest = (await loadManifestFile(
+      manifestPath,
+    )) as SmartObjectManifest;
+    return manifest?.objects && typeof manifest.objects === 'object'
+      ? manifest
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveExportedManifestPath(
+  packageDir: string,
+  manifestExport: unknown,
+): string | null {
+  const exportRecord =
+    manifestExport &&
+    typeof manifestExport === 'object' &&
+    !Array.isArray(manifestExport)
+      ? (manifestExport as Record<string, unknown>)
+      : null;
+  const manifestRelPath =
+    typeof manifestExport === 'string'
+      ? manifestExport
+      : exportRecord?.default || exportRecord?.import;
+
+  if (
+    typeof manifestRelPath !== 'string' ||
+    !manifestRelPath.startsWith('./') ||
+    !manifestRelPath.endsWith('.json')
+  ) {
+    return null;
+  }
+
+  const manifestPath = resolve(packageDir, manifestRelPath);
+  const packageRelativePath = relative(packageDir, manifestPath);
+
+  if (
+    packageRelativePath === '' ||
+    packageRelativePath.startsWith('..') ||
+    isAbsolute(packageRelativePath)
+  ) {
+    return null;
+  }
+
+  return manifestPath;
+}
+
+async function loadDependencyManifest(
+  packageName: string,
+  issuerResolverPath: string,
+): Promise<LoadedDependencyManifest | null> {
+  const packageJsonPath = resolvePackageJsonPath(
+    packageName,
+    issuerResolverPath,
+  );
+
+  if (!packageJsonPath) {
+    const fallbackManifest = loadExternalManifestSync(packageName, {
+      warn: false,
+    });
+    if (!fallbackManifest) {
+      return null;
+    }
+
+    return {
+      manifest: fallbackManifest,
+      resolverPath: issuerResolverPath,
+    };
+  }
+
+  const packageDir = dirname(packageJsonPath);
+  const manifestCandidates = [
+    join(packageDir, 'dist', 'manifest.json'),
+    join(packageDir, '.smrt', 'manifest.json'),
+    join(packageDir, 'manifest.json'),
+  ];
+
+  for (const manifestPath of manifestCandidates) {
+    if (!existsSync(manifestPath)) {
+      continue;
+    }
+
+    const manifest = await tryLoadManifestFile(manifestPath);
+    if (manifest) {
+      return {
+        manifest,
+        resolverPath: packageJsonPath,
+      };
+    }
+  }
+
+  try {
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    const manifestExport =
+      packageJson?.exports?.['./manifest.json'] ||
+      packageJson?.exports?.['./manifest'];
+    const manifestPath = resolveExportedManifestPath(
+      packageDir,
+      manifestExport,
+    );
+
+    if (!manifestPath) {
+      return null;
+    }
+
+    const manifest = await tryLoadManifestFile(manifestPath);
+
+    if (manifest) {
+      return {
+        manifest,
+        resolverPath: packageJsonPath,
+      };
+    }
+  } catch {
+    // Fall through to missing-manifest handling.
+  }
+
+  return null;
 }
 
 function checkManifestIdentity(
@@ -529,6 +751,7 @@ export async function runRuntimeCheck(
   )) as SmartObjectManifest;
   const dependencyManifests = await loadDependencyManifests(
     projectManifest,
+    projectRoot,
     findings,
   );
 
@@ -566,6 +789,7 @@ export async function runRuntimeCheck(
       findings,
     };
   }
+  registerDependencyManifests(dependencyManifests);
   await checkRuntimeHydration(projectManifest, dependencyManifests, findings);
   checkShadowing(projectManifest, dependencyManifests, findings);
 
