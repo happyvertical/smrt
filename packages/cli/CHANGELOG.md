@@ -1,5 +1,16 @@
 # @happyvertical/smrt-cli
 
+## 0.21.29
+
+### Patch Changes
+
+- a70dbe4: Add `smrt runtime:check` for manifest and registry hydration diagnostics, and surface the same runtime checks from `smrt doctor`.
+  - @happyvertical/smrt-agents@0.21.29
+  - @happyvertical/smrt-config@0.21.29
+  - @happyvertical/smrt-core@0.21.29
+  - @happyvertical/smrt-types@0.21.29
+  - @happyvertical/smrt-playground@0.21.29
+
 ## 0.21.28
 
 ### Patch Changes

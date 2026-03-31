@@ -1,5 +1,19 @@
 # @happyvertical/smrt-content
 
+## 0.21.29
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@0.21.29
+- @happyvertical/smrt-chat@0.21.29
+- @happyvertical/smrt-core@0.21.29
+- @happyvertical/smrt-facts@0.21.29
+- @happyvertical/smrt-images@0.21.29
+- @happyvertical/smrt-messages@0.21.29
+- @happyvertical/smrt-profiles@0.21.29
+- @happyvertical/smrt-tenancy@0.21.29
+- @happyvertical/smrt-types@0.21.29
+
 ## 0.21.28
 
 ### Patch Changes
