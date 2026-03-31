@@ -42,6 +42,40 @@ async function createExternalPackage(
   await writeJson(resolve(packageDir, 'dist/manifest.json'), manifest);
 }
 
+async function createBrokenManifestPackage(
+  projectRoot: string,
+  packageName: string,
+  options: {
+    exports?: Record<string, string>;
+    manifestContents?: string;
+  } = {},
+): Promise<void> {
+  const packageDir = resolve(
+    projectRoot,
+    'node_modules',
+    ...packageName.split('/'),
+  );
+  const manifestContents = options.manifestContents || '{ not valid json }\n';
+
+  await writeJson(resolve(packageDir, 'package.json'), {
+    name: packageName,
+    version: '0.0.0-test',
+    type: 'module',
+    exports: {
+      '.': './dist/index.js',
+      './manifest': './dist/manifest.json',
+      './manifest.json': './dist/manifest.json',
+      ...options.exports,
+    },
+    dependencies: {
+      '@happyvertical/smrt-core': '0.0.0-test',
+    },
+  });
+  await mkdir(resolve(packageDir, 'dist'), { recursive: true });
+  await writeFile(resolve(packageDir, 'dist/index.js'), 'export {};\n');
+  await writeFile(resolve(packageDir, 'dist/manifest.json'), manifestContents);
+}
+
 async function createLoosePackage(
   projectRoot: string,
   relativeDir: string,
@@ -105,6 +139,81 @@ describe('runRuntimeCheck', () => {
           code: 'missing-dependency-manifest',
         }),
       ]),
+    );
+  });
+
+  it('reports malformed dependency manifests as missing findings instead of crashing', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createBrokenManifestPackage(projectRoot, '@fixture/broken-manifest');
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/broken-manifest'],
+      objects: {},
+    });
+
+    process.chdir(projectRoot);
+    await expect(runRuntimeCheck(projectRoot)).resolves.toEqual(
+      expect.objectContaining({
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'missing-dependency-manifest',
+            message: expect.stringContaining('@fixture/broken-manifest'),
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it('ignores unsafe exported manifest targets instead of reading them directly', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createBrokenManifestPackage(projectRoot, '@fixture/unsafe-export', {
+      exports: {
+        './manifest': './dist/manifest.js',
+        './manifest.json': './dist/manifest.js',
+      },
+    });
+    await writeFile(
+      resolve(
+        projectRoot,
+        'node_modules',
+        '@fixture',
+        'unsafe-export',
+        'dist',
+        'manifest.js',
+      ),
+      'export default {};\n',
+    );
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/unsafe-export'],
+      objects: {},
+    });
+
+    process.chdir(projectRoot);
+    await expect(runRuntimeCheck(projectRoot)).resolves.toEqual(
+      expect.objectContaining({
+        findings: expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error',
+            code: 'missing-dependency-manifest',
+            message: expect.stringContaining('@fixture/unsafe-export'),
+          }),
+        ]),
+      }),
     );
   });
 

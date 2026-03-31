@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import {
   createQualifiedName,
   isQualifiedName,
@@ -71,6 +71,10 @@ const SYSTEM_FIELDS = new Set([
   'tenant_id',
   'updated_at',
 ]);
+
+// pnpm nests package entries under .pnpm/<pkg>/node_modules/<pkg>, so allow a
+// bounded upward walk when resolving the owning package.json from an entry path.
+const MAX_PACKAGE_JSON_ASCENTS = 12;
 
 function addFinding(
   findings: RuntimeCheckFinding[],
@@ -390,7 +394,7 @@ function findPackageJsonForResolvedEntry(
 ): string | null {
   let currentDir = dirname(resolvedPath);
 
-  for (let index = 0; index < 12; index += 1) {
+  for (let index = 0; index < MAX_PACKAGE_JSON_ASCENTS; index += 1) {
     const packageJsonPath = join(currentDir, 'package.json');
     if (existsSync(packageJsonPath)) {
       try {
@@ -413,6 +417,58 @@ function findPackageJsonForResolvedEntry(
   return null;
 }
 
+async function tryLoadManifestFile(
+  manifestPath: string,
+): Promise<SmartObjectManifest | null> {
+  try {
+    const manifest = (await loadManifestFile(
+      manifestPath,
+    )) as SmartObjectManifest;
+    return manifest?.objects && typeof manifest.objects === 'object'
+      ? manifest
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveExportedManifestPath(
+  packageDir: string,
+  manifestExport: unknown,
+): string | null {
+  const exportRecord =
+    manifestExport &&
+    typeof manifestExport === 'object' &&
+    !Array.isArray(manifestExport)
+      ? (manifestExport as Record<string, unknown>)
+      : null;
+  const manifestRelPath =
+    typeof manifestExport === 'string'
+      ? manifestExport
+      : exportRecord?.default || exportRecord?.import;
+
+  if (
+    typeof manifestRelPath !== 'string' ||
+    !manifestRelPath.startsWith('./') ||
+    !manifestRelPath.endsWith('.json')
+  ) {
+    return null;
+  }
+
+  const manifestPath = resolve(packageDir, manifestRelPath);
+  const packageRelativePath = relative(packageDir, manifestPath);
+
+  if (
+    packageRelativePath === '' ||
+    packageRelativePath.startsWith('..') ||
+    isAbsolute(packageRelativePath)
+  ) {
+    return null;
+  }
+
+  return manifestPath;
+}
+
 async function loadDependencyManifest(
   packageName: string,
   issuerResolverPath: string,
@@ -423,7 +479,9 @@ async function loadDependencyManifest(
   );
 
   if (!packageJsonPath) {
-    const fallbackManifest = loadExternalManifestSync(packageName);
+    const fallbackManifest = loadExternalManifestSync(packageName, {
+      warn: false,
+    });
     if (!fallbackManifest) {
       return null;
     }
@@ -446,10 +504,8 @@ async function loadDependencyManifest(
       continue;
     }
 
-    const manifest = (await loadManifestFile(
-      manifestPath,
-    )) as SmartObjectManifest;
-    if (manifest?.objects && typeof manifest.objects === 'object') {
+    const manifest = await tryLoadManifestFile(manifestPath);
+    if (manifest) {
       return {
         manifest,
         resolverPath: packageJsonPath,
@@ -462,20 +518,18 @@ async function loadDependencyManifest(
     const manifestExport =
       packageJson?.exports?.['./manifest.json'] ||
       packageJson?.exports?.['./manifest'];
-    const manifestRelPath =
-      typeof manifestExport === 'string'
-        ? manifestExport
-        : manifestExport?.default || manifestExport?.import;
+    const manifestPath = resolveExportedManifestPath(
+      packageDir,
+      manifestExport,
+    );
 
-    if (!manifestRelPath) {
+    if (!manifestPath) {
       return null;
     }
 
-    const manifest = (await loadManifestFile(
-      join(packageDir, manifestRelPath),
-    )) as SmartObjectManifest;
+    const manifest = await tryLoadManifestFile(manifestPath);
 
-    if (manifest?.objects && typeof manifest.objects === 'object') {
+    if (manifest) {
       return {
         manifest,
         resolverPath: packageJsonPath,
