@@ -35,6 +35,7 @@ import type {
   ProjectEmbeddingConfig,
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
+import { ConfigurationError } from './errors';
 import {
   discoverManifestEntry,
   discoverManifestSync,
@@ -54,6 +55,11 @@ import {
   hasEmbeddings as _hasEmbeddings,
   resolveEmbeddingConfig as _resolveEmbeddingConfig,
 } from './registry/embedding-manager';
+import {
+  createFieldFromManifest,
+  manifestFieldDiffers,
+  mergeManifestField,
+} from './registry/manifest-field-merge.js';
 import {
   findClass as _findClass,
   findClassesByName as _findClassesByName,
@@ -117,6 +123,10 @@ import type { SchemaDefinition } from './schema/types.js';
 import { prependSmrtSystemFields } from './system-fields';
 import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
+import {
+  isQualifiedName,
+  parseQualifiedName,
+} from './utils/qualified-names.js';
 
 // Re-export types for backward compatibility
 export type {
@@ -702,11 +712,24 @@ export class ObjectRegistry {
       './manifest/manifest-loader.js'
     );
 
-    const smrtPackages = discoverSmrtPackages();
+    const requestedQualifiedName = isQualifiedName(className)
+      ? parseQualifiedName(className)
+      : null;
+    const requestedClassName = requestedQualifiedName?.className || className;
+    const requestedPackageName = requestedQualifiedName?.packageName;
+    const smrtPackages = requestedPackageName
+      ? [requestedPackageName]
+      : discoverSmrtPackages();
 
     verboseLog(
       `[ObjectRegistry] Attempting to auto-load ${className} from ${smrtPackages.length} external packages...`,
     );
+
+    const matches: Array<{
+      manifest: any;
+      packageName: string;
+      objectDef: any;
+    }> = [];
 
     // Try each package
     for (const packageName of smrtPackages) {
@@ -718,17 +741,25 @@ export class ObjectRegistry {
 
       // Look for the class in this manifest (case-insensitive)
       // Support both qualified keys (@pkg:Class) and simple class names
-      const lowerClassName = className.toLowerCase();
+      const lowerClassName = requestedClassName.toLowerCase();
       let objectDef =
-        manifest.objects[lowerClassName] || manifest.objects[className];
+        manifest.objects[lowerClassName] ||
+        manifest.objects[requestedClassName] ||
+        (requestedPackageName
+          ? manifest.objects[
+              `${requestedPackageName}:${requestedClassName}` as string
+            ]
+          : undefined);
 
       // If not found by direct key lookup, search by className field (Issue #713)
       // This handles manifests with qualified keys while allowing simple name lookups
       if (!objectDef) {
-        for (const [_key, def] of Object.entries(manifest.objects)) {
+        for (const [_key, def] of Object.entries(
+          manifest.objects as Record<string, any>,
+        )) {
           if (
             def.className?.toLowerCase() === lowerClassName ||
-            def.className === className
+            def.className === requestedClassName
           ) {
             objectDef = def;
             break;
@@ -740,74 +771,99 @@ export class ObjectRegistry {
         continue;
       }
 
-      verboseLog(
-        `[ObjectRegistry] ✅ Found ${className} in ${packageName} manifest`,
-      );
-
-      // Register the class from manifest
-      ObjectRegistry.registerFromManifest(
-        objectDef.className || className,
+      matches.push({
+        manifest,
+        packageName: manifest.packageName || packageName,
         objectDef,
-        manifest.packageName,
+      });
+    }
+
+    if (matches.length === 0) {
+      verboseLog(
+        `[ObjectRegistry] ❌ Could not find ${className} in any SMRT package`,
       );
+      return false;
+    }
 
-      // If this is an STI class, also register the parent class
-      // Skip if extends points to the same className (self-referential):
-      // This happens when a child class in one package extends a parent with the
-      // same name from another package (e.g., histrio:Performer extends smrt-video:Performer)
-      // and only the child package is installed
-      const childClassName = objectDef.className || className;
-      if (objectDef.extends && objectDef.extends !== childClassName) {
-        const parentName = objectDef.extends;
-        const lowerParentName = parentName.toLowerCase();
-        let parentDef =
-          manifest.objects[lowerParentName] || manifest.objects[parentName];
+    if (!requestedPackageName && matches.length > 1) {
+      throw new ConfigurationError(
+        `Ambiguous class name "${className}" — found in multiple external SMRT packages: ` +
+          `${matches.map((match) => match.packageName).join(', ')}. ` +
+          'Preserve package identity or use a qualified class name to disambiguate.',
+        'CONFIG_AMBIGUOUS_CLASS',
+        {
+          className,
+          candidates: matches.map((match) => match.packageName),
+        },
+      );
+    }
 
-        // Search by className field if not found by key (Issue #713)
-        if (!parentDef) {
-          for (const [_key, def] of Object.entries(manifest.objects)) {
-            if (
-              def.className?.toLowerCase() === lowerParentName ||
-              def.className === parentName
-            ) {
-              parentDef = def;
-              break;
-            }
+    const { manifest, packageName, objectDef } = matches[0];
+
+    verboseLog(
+      `[ObjectRegistry] ✅ Found ${className} in ${packageName} manifest`,
+    );
+
+    // Register the class from manifest
+    ObjectRegistry.registerFromManifest(
+      objectDef.className || requestedClassName,
+      objectDef,
+      manifest.packageName,
+    );
+
+    // If this is an STI class, also register the parent class
+    // Skip if extends points to the same className (self-referential):
+    // This happens when a child class in one package extends a parent with the
+    // same name from another package (e.g., histrio:Performer extends smrt-video:Performer)
+    // and only the child package is installed
+    const childClassName = objectDef.className || requestedClassName;
+    if (objectDef.extends && objectDef.extends !== childClassName) {
+      const parentName = objectDef.extends;
+      const lowerParentName = parentName.toLowerCase();
+      let parentDef =
+        manifest.objects[lowerParentName] || manifest.objects[parentName];
+
+      // Search by className field if not found by key (Issue #713)
+      if (!parentDef) {
+        for (const [_key, def] of Object.entries(
+          manifest.objects as Record<string, any>,
+        )) {
+          if (
+            def.className?.toLowerCase() === lowerParentName ||
+            def.className === parentName
+          ) {
+            parentDef = def;
+            break;
           }
-        }
-
-        if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
-          verboseLog(
-            `[ObjectRegistry] Also registering parent class ${objectDef.extends} for STI`,
-          );
-          ObjectRegistry.registerFromManifest(
-            parentDef.className || objectDef.extends,
-            parentDef,
-            manifest.packageName,
-          );
-        }
-
-        // Merge inherited fields from parent into child
-        // This ensures STI child classes get all parent fields
-        verboseLog(
-          `[ObjectRegistry] Merging inherited fields for ${className}...`,
-        );
-        await ObjectRegistry.getAllFields(className);
-        const registered = ObjectRegistry.findClass(className);
-        if (registered?.inheritedFields) {
-          verboseLog(
-            `[ObjectRegistry] ✅ ${className} now has ${registered.inheritedFields.size} total fields (including inherited)`,
-          );
         }
       }
 
-      return true;
+      if (parentDef && !ObjectRegistry.hasClass(objectDef.extends)) {
+        verboseLog(
+          `[ObjectRegistry] Also registering parent class ${objectDef.extends} for STI`,
+        );
+        ObjectRegistry.registerFromManifest(
+          parentDef.className || objectDef.extends,
+          parentDef,
+          manifest.packageName,
+        );
+      }
+
+      // Merge inherited fields from parent into child
+      // This ensures STI child classes get all parent fields
+      verboseLog(
+        `[ObjectRegistry] Merging inherited fields for ${className}...`,
+      );
+      await ObjectRegistry.getAllFields(requestedClassName);
+      const registered = ObjectRegistry.findClass(requestedClassName);
+      if (registered?.inheritedFields) {
+        verboseLog(
+          `[ObjectRegistry] ✅ ${className} now has ${registered.inheritedFields.size} total fields (including inherited)`,
+        );
+      }
     }
 
-    verboseLog(
-      `[ObjectRegistry] ❌ Could not find ${className} in any SMRT package`,
-    );
-    return false;
+    return true;
   }
 
   /**
@@ -1252,20 +1308,64 @@ export class ObjectRegistry {
 
     // Try to load manifest from external package (even if some fields exist)
     // This handles cases where AST scanner missed optional fields without initializers
+    const existingFieldCount = registered.fields.size;
+
     const manifestEntry = await discoverManifestEntry(
       registered.constructor,
       className,
     );
 
     if (!manifestEntry) {
+      // Bundled consumers can register external classes without preserving the
+      // package identity we normally use for direct manifest discovery. In
+      // that case, fall back to class-name package scans and merge any fields
+      // found into the existing registration instead of leaving a sparse entry.
+      if (!registered.packageName || !registered.qualifiedName) {
+        const loaded =
+          await ObjectRegistry.tryLoadFromExternalPackage(className);
+        if (loaded) {
+          ObjectRegistry.invalidateInheritanceCache(className);
+        }
+      }
       return;
     }
 
     if (manifestEntry?.fields) {
       const manifestFieldCount = Object.keys(manifestEntry.fields).length;
-      const existingFieldCount = registered.fields.size;
+      let didHydrate = false;
+      const needsFieldHydration = Object.entries(manifestEntry.fields).some(
+        ([fieldName, fieldDef]) => {
+          const existingField = registered.fields.get(fieldName);
+          if (!existingField) {
+            return true;
+          }
 
-      if (existingFieldCount > 0 && existingFieldCount >= manifestFieldCount) {
+          return manifestFieldDiffers(existingField, fieldDef);
+        },
+      );
+      const needsMethodHydration =
+        !!manifestEntry.methods &&
+        Object.entries(manifestEntry.methods).some(
+          ([methodName, methodDef]) => {
+            return (
+              JSON.stringify(registered.methods.get(methodName)) !==
+              JSON.stringify(methodDef)
+            );
+          },
+        );
+      const needsRegistrationHydration =
+        (!!manifestEntry.packageName &&
+          registered.packageName !== manifestEntry.packageName) ||
+        (!!manifestEntry.extends &&
+          registered.extends !== manifestEntry.extends);
+
+      if (
+        existingFieldCount > 0 &&
+        existingFieldCount >= manifestFieldCount &&
+        !needsFieldHydration &&
+        !needsMethodHydration &&
+        !needsRegistrationHydration
+      ) {
         return;
       }
 
@@ -1273,17 +1373,20 @@ export class ObjectRegistry {
       for (const [fieldName, fieldDef] of Object.entries(
         manifestEntry.fields,
       )) {
-        // Only add if not already present (don't overwrite AST-scanned fields)
-        if (!registered.fields.has(fieldName)) {
-          registered.fields.set(fieldName, {
-            type: fieldDef.type,
-            _meta: {
-              required: fieldDef.required,
-              default: fieldDef.default,
-              description: fieldDef.description,
-              ...fieldDef._meta, // Includes unique, primaryKey, index, etc.
-            },
-          });
+        const existingField = registered.fields.get(fieldName);
+
+        if (!existingField) {
+          registered.fields.set(fieldName, createFieldFromManifest(fieldDef));
+          didHydrate = true;
+          continue;
+        }
+
+        if (manifestFieldDiffers(existingField, fieldDef)) {
+          registered.fields.set(
+            fieldName,
+            mergeManifestField(existingField, fieldDef),
+          );
+          didHydrate = true;
         }
       }
 
@@ -1294,16 +1397,23 @@ export class ObjectRegistry {
         )) {
           registered.methods.set(methodName, methodDef);
         }
+        didHydrate = true;
       }
 
       // Extract and store package name from manifest entry (for getPackageName() lookup)
       if (manifestEntry.packageName) {
         registered.packageName = manifestEntry.packageName;
+        didHydrate = true;
       }
 
       // Store extends info for getAllFields() to use (if present)
       if (manifestEntry.extends) {
         registered.extends = manifestEntry.extends;
+        didHydrate = true;
+      }
+
+      if (didHydrate) {
+        ObjectRegistry.invalidateInheritanceCache(className);
       }
 
       verboseLog(
@@ -1806,6 +1916,14 @@ export class ObjectRegistry {
         continue;
       }
 
+      try {
+        await ObjectRegistry.ensureManifestLoaded(ancestorName);
+      } catch {
+        // Local classes and pure test fixtures may not have manifests. In that
+        // case we still want to use whatever runtime metadata is already
+        // registered instead of failing the entire inheritance walk.
+      }
+
       const ancestor = ObjectRegistry.findClass(ancestorName);
       if (!ancestor) {
         // Handle missing ancestors according to config
@@ -1846,6 +1964,8 @@ export class ObjectRegistry {
         }
       }
     }
+
+    registered.inheritedFields = new Map(allFields);
 
     return prependSmrtSystemFields(allFields);
   }

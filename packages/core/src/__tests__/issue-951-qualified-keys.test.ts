@@ -142,6 +142,72 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     expect(resolved?.constructor).toBe(QualifiedTestCSource);
   });
 
+  it('should preserve a qualified registry key when manifest hydration merges into an existing source registration', () => {
+    class QualifiedTestCPromoted extends SmrtObject {}
+
+    ObjectRegistry.register(QualifiedTestCPromoted, {
+      name: 'QualifiedTestCPromoted',
+    });
+
+    let initialKey: string | undefined;
+    let entry: any;
+    // @ts-expect-error - accessing private property for verification
+    for (const [key, val] of ObjectRegistry.classes) {
+      if (val.name === 'QualifiedTestCPromoted') {
+        initialKey = key;
+        entry = val;
+        break;
+      }
+    }
+
+    expect(initialKey).toBeDefined();
+
+    // Simulate a source registration that has not yet been promoted to its
+    // package-qualified key.
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.delete(initialKey!);
+    entry.packageName = undefined;
+    entry.qualifiedName = undefined;
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.set('QualifiedTestCPromoted', entry);
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classNameMap.set('qualifiedtestcpromoted', [
+      'QualifiedTestCPromoted',
+    ]);
+
+    ObjectRegistry.registerFromManifest(
+      'QualifiedTestCPromoted',
+      {
+        className: 'QualifiedTestCPromoted',
+        fields: {
+          status: {
+            type: 'text',
+            required: true,
+          },
+        },
+        methods: {},
+        decoratorConfig: {},
+      },
+      '@test/pkg',
+    );
+
+    const byQualified = ObjectRegistry.getClass(
+      '@test/pkg:QualifiedTestCPromoted',
+    );
+    expect(byQualified).toBeDefined();
+    expect(byQualified?.constructor).toBe(QualifiedTestCPromoted);
+    expect(byQualified?.qualifiedName).toBe('@test/pkg:QualifiedTestCPromoted');
+    expect(
+      ObjectRegistry.getClassByConstructor(QualifiedTestCPromoted)
+        ?.qualifiedName,
+    ).toBe('@test/pkg:QualifiedTestCPromoted');
+
+    // @ts-expect-error - accessing private property for verification
+    expect(ObjectRegistry.classNameMap.get('qualifiedtestcpromoted')).toEqual([
+      '@test/pkg:QualifiedTestCPromoted',
+    ]);
+  });
+
   it('should return simple names from getClassNames()', () => {
     @smrt()
     class QualifiedTestD extends SmrtObject {}
@@ -298,6 +364,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
   it('should reject promotion when the target qualified key already belongs to another class', () => {
     class QualifiedTestI extends SmrtObject {}
+    class QualifiedTestICollision extends SmrtObject {}
 
     ObjectRegistry.register(QualifiedTestI, { name: 'QualifiedTestI' });
 
@@ -325,16 +392,22 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     // @ts-expect-error - accessing private property for verification
     ObjectRegistry.classNameMap.set('qualifiedtesti', ['QualifiedTestI']);
 
-    ObjectRegistry.registerFromManifest(
-      '@test/pkg:QualifiedTestI',
-      {
-        className: 'QualifiedTestI',
-        fields: {},
-        methods: {},
-        decoratorConfig: {},
-      },
-      '@test/pkg',
+    ObjectRegistry.register(QualifiedTestICollision, {
+      name: 'QualifiedTestICollision',
+      packageName: '@test/pkg',
+    });
+
+    const collisionEntry = ObjectRegistry.getClassByConstructor(
+      QualifiedTestICollision,
     );
+    expect(collisionEntry).toBeDefined();
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.delete('@test/pkg:QualifiedTestICollision');
+    collisionEntry!.name = 'QualifiedTestI';
+    collisionEntry!.packageName = '@test/pkg';
+    collisionEntry!.qualifiedName = '@test/pkg:QualifiedTestI';
+    // @ts-expect-error - accessing private property for verification
+    ObjectRegistry.classes.set('@test/pkg:QualifiedTestI', collisionEntry!);
 
     expect(() =>
       ObjectRegistry.register(QualifiedTestI, {

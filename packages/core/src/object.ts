@@ -63,6 +63,17 @@ function getExpectedMetaType(className: string): string {
   return registeredClass?.qualifiedName || className;
 }
 
+function getSTIHierarchyMembers(className: string): string[] {
+  const stiBase = ObjectRegistry.getSTIBase(className);
+  if (!stiBase) {
+    return [];
+  }
+
+  return Array.from(
+    new Set([stiBase, ...ObjectRegistry.getDescendants(stiBase)]),
+  );
+}
+
 /**
  * Options for SmrtObject initialization
  */
@@ -747,15 +758,15 @@ export class SmrtObject extends SmrtClass {
     // In STI mode, we need to know about ALL sibling class fields to provide default values
     // for fields that exist in siblings but not in this class (Issue #391)
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(this.constructor.name);
-      if (stiBase) {
-        // Get all descendants (siblings + this class)
-        const descendants = ObjectRegistry.getDescendants(stiBase);
+      const descendants = getSTIHierarchyMembers(this.constructor.name);
+      if (descendants.length > 0) {
         const allSTIFields = new Map(registeredFields);
 
         // Merge fields from all sibling classes
         for (const descendant of descendants) {
-          const descendantFields = ObjectRegistry.getFields(descendant);
+          const descendantFields =
+            ObjectRegistry.getClass(descendant)?.inheritedFields ||
+            ObjectRegistry.getFields(descendant);
           for (const [key, value] of descendantFields) {
             if (!allSTIFields.has(key)) {
               allSTIFields.set(key, value);
@@ -1080,12 +1091,13 @@ export class SmrtObject extends SmrtClass {
       // Execute save operation with retry logic for transient failures
       // Use per-adapter upsert method instead of generating SQL
 
+      const tableStrategy = ObjectRegistry.getTableStrategy(
+        this.constructor.name,
+      );
+
       // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
       if (process.env.NODE_ENV === 'development') {
         const hasOverride = this.toJSON !== SmrtObject.prototype.toJSON;
-        const tableStrategy = ObjectRegistry.getTableStrategy(
-          this.constructor.name,
-        );
         const usesSTI = tableStrategy === 'sti';
 
         if (hasOverride && usesSTI) {
@@ -1099,12 +1111,25 @@ export class SmrtObject extends SmrtClass {
         }
       }
 
+      if (tableStrategy === 'sti') {
+        const descendants = getSTIHierarchyMembers(this.constructor.name);
+        const descendantsNeedingHydration = descendants.filter((descendant) => {
+          const registeredDescendant = ObjectRegistry.getClass(descendant);
+          return registeredDescendant && !registeredDescendant.inheritedFields;
+        });
+
+        if (descendantsNeedingHydration.length > 0) {
+          await Promise.all(
+            descendantsNeedingHydration.map((descendant) =>
+              ObjectRegistry.getAllFields(descendant),
+            ),
+          );
+        }
+      }
+
       const jsonData = this.toJSON();
 
       // STI: Fail-fast validation for _meta_type discriminator
-      const tableStrategy = ObjectRegistry.getTableStrategy(
-        this.constructor.name,
-      );
       if (tableStrategy === 'sti') {
         if (!jsonData._meta_type) {
           throw new Error(
