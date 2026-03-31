@@ -14,6 +14,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { formatRuntimeCheckReport, runRuntimeCheck } from '../runtime-check.js';
 import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -1928,6 +1929,31 @@ export default testManifest;
 
       console.log();
 
+      // ========== Runtime ==========
+      console.log('🏃 Runtime\n');
+
+      const runtimeCheck = await runRuntimeCheck(cwd);
+      const runtimeErrors = runtimeCheck.findings.filter(
+        (finding) => finding.severity === 'error',
+      );
+      const runtimeWarnings = runtimeCheck.findings.filter(
+        (finding) => finding.severity === 'warning',
+      );
+
+      if (runtimeErrors.length === 0 && runtimeWarnings.length === 0) {
+        check('Runtime manifest/registry hydration', true);
+      } else {
+        for (const finding of runtimeErrors) {
+          check(`runtime: ${finding.code}`, false, finding.message);
+        }
+
+        for (const finding of runtimeWarnings) {
+          check(`runtime: ${finding.code}`, false, undefined, finding.message);
+        }
+      }
+
+      console.log();
+
       // ========== Server Configuration ==========
       console.log('🖥️  Server\n');
 
@@ -2030,6 +2056,23 @@ export default testManifest;
 
       // Exit with error code if there are issues
       if (issues.length > 0) {
+        process.exit(1);
+      }
+    },
+  },
+
+  'runtime:check': {
+    name: 'runtime:check',
+    description:
+      'Validate runtime manifest discovery, package identity, and registry hydration',
+    aliases: ['runtime-check'],
+    args: [],
+    options: {},
+    handler: async () => {
+      const result = await runRuntimeCheck(process.cwd());
+      console.log(`${formatRuntimeCheckReport(result)}\n`);
+
+      if (result.findings.some((finding) => finding.severity === 'error')) {
         process.exit(1);
       }
     },
