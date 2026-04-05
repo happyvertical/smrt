@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - recover stale scheduled work (#1097) (jobs)
+  - @happyvertical/smrt-scanner@0.21.31
+  - @happyvertical/smrt-config@0.21.31
+  - @happyvertical/smrt-types@0.21.31
+
 ## 0.21.30
 
 ### Patch Changes
