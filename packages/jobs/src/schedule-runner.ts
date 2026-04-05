@@ -4,6 +4,10 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { SmrtJobCollection } from './smrt-job.js';
+import {
+  DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
+  getEffectiveStaleJobThresholdMs,
+} from './stale-recovery.js';
 
 /**
  * ScheduleRunner configuration
@@ -17,6 +21,8 @@ export interface ScheduleRunnerConfig {
   batchSize?: number;
   /** Reconcile running schedule slots after this many milliseconds without a worker heartbeat */
   staleJobThresholdMs?: number;
+  /** Expected TaskRunner heartbeat interval for scheduled jobs */
+  taskHeartbeatInterval?: number;
 }
 
 /**
@@ -50,6 +56,7 @@ const DEFAULT_CONFIG: Required<ScheduleRunnerConfig> = {
   pollInterval: 60000, // 1 minute
   batchSize: 50,
   staleJobThresholdMs: 90000,
+  taskHeartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
 };
 
 /**
@@ -270,6 +277,10 @@ export class ScheduleRunner extends EventEmitter {
    * This handles two failure modes:
    * - a running job is still marked `running` but its heartbeat is stale
    * - a schedule slot remains occupied even though no running job still exists
+   *
+   * The effective stale cutoff is floored by the task-runner heartbeat cadence,
+   * so schedules do not recover work from healthy runners that simply heartbeat
+   * more slowly than the raw stale threshold.
    */
   private async recoverStaleScheduleState(): Promise<void> {
     if (!this.db) return;
@@ -285,8 +296,12 @@ export class ScheduleRunner extends EventEmitter {
     }>;
     if (schedules.length === 0) return;
 
+    const effectiveStaleThresholdMs = getEffectiveStaleJobThresholdMs(
+      this.config.staleJobThresholdMs,
+      this.config.taskHeartbeatInterval,
+    );
     const cutoff = new Date(
-      Date.now() - this.config.staleJobThresholdMs,
+      Date.now() - effectiveStaleThresholdMs,
     ).toISOString();
     const jobsResult = await this.db.query(
       `SELECT id, args, worker_heartbeat, started_at
@@ -326,31 +341,34 @@ export class ScheduleRunner extends EventEmitter {
     }
 
     const now = new Date().toISOString();
+    const staleJobIds = schedules.flatMap((schedule) => {
+      const state = stateBySchedule.get(schedule.id);
+      return state?.staleJobIds ?? [];
+    });
+
+    if (staleJobIds.length > 0) {
+      const placeholders = staleJobIds.map(() => '?').join(', ');
+      await this.db.query(
+        `UPDATE _smrt_jobs
+            SET status = 'failed',
+                completed_at = ?,
+                last_error = ?,
+                worker_id = NULL,
+                worker_heartbeat = NULL
+          WHERE status = 'running'
+            AND id IN (${placeholders})`,
+        now,
+        `Recovered stale scheduled job after ${effectiveStaleThresholdMs}ms without a heartbeat`,
+        ...staleJobIds,
+      );
+    }
+
     for (const schedule of schedules) {
       const state = stateBySchedule.get(schedule.id);
       if (!state) continue;
 
-      for (const staleJobId of state.staleJobIds) {
-        await this.db.query(
-          `UPDATE _smrt_jobs
-              SET status = 'failed',
-                  completed_at = ?,
-                  last_error = ?,
-                  worker_id = NULL,
-                  worker_heartbeat = NULL
-            WHERE id = ?
-              AND status = 'running'`,
-          now,
-          `Recovered stale scheduled job after ${this.config.staleJobThresholdMs}ms without a heartbeat`,
-          staleJobId,
-        );
-      }
-
       const desiredRunningCount = state.live;
-      const recoveredCount = Math.max(
-        state.staleJobIds.length,
-        Math.max(0, Number(schedule.running_count) - desiredRunningCount),
-      );
+      const recoveredCount = state.staleJobIds.length;
 
       if (
         Number(schedule.running_count) === desiredRunningCount &&
