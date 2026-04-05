@@ -4,6 +4,10 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { SmrtJobCollection } from './smrt-job.js';
+import {
+  DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
+  getEffectiveStaleJobThresholdMs,
+} from './stale-recovery.js';
 
 /**
  * ScheduleRunner configuration
@@ -15,6 +19,10 @@ export interface ScheduleRunnerConfig {
   pollInterval?: number;
   /** Maximum schedules to process per poll */
   batchSize?: number;
+  /** Reconcile running schedule slots after this many milliseconds without a worker heartbeat */
+  staleJobThresholdMs?: number;
+  /** Expected TaskRunner heartbeat interval for scheduled jobs */
+  taskHeartbeatInterval?: number;
 }
 
 /**
@@ -47,6 +55,8 @@ const DEFAULT_CONFIG: Required<ScheduleRunnerConfig> = {
   id: '',
   pollInterval: 60000, // 1 minute
   batchSize: 50,
+  staleJobThresholdMs: 90000,
+  taskHeartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
 };
 
 /**
@@ -239,6 +249,8 @@ export class ScheduleRunner extends EventEmitter {
   private async poll(): Promise<void> {
     if (!this.db || !this.jobCollection) return;
 
+    await this.recoverStaleScheduleState();
+
     const now = new Date().toISOString();
 
     // Find due schedules
@@ -257,6 +269,172 @@ export class ScheduleRunner extends EventEmitter {
     for (const row of result.rows) {
       await this.triggerSchedule(row as ScheduleRow);
     }
+  }
+
+  /**
+   * Reconcile stuck schedule slots against running jobs.
+   *
+   * This handles two failure modes:
+   * - a running job is still marked `running` but its heartbeat is stale
+   * - a schedule slot remains occupied even though no running job still exists
+   *
+   * The effective stale cutoff is floored by the task-runner heartbeat cadence,
+   * so schedules do not recover work from healthy runners that simply heartbeat
+   * more slowly than the raw stale threshold.
+   */
+  private async recoverStaleScheduleState(): Promise<void> {
+    if (!this.db) return;
+
+    const schedulesResult = await this.db.query(
+      `SELECT id, running_count
+         FROM _smrt_agent_schedules
+        WHERE COALESCE(running_count, 0) > 0`,
+    );
+    const schedules = schedulesResult.rows as Array<{
+      id: string;
+      running_count: number;
+    }>;
+    if (schedules.length === 0) return;
+
+    const effectiveStaleThresholdMs = getEffectiveStaleJobThresholdMs(
+      this.config.staleJobThresholdMs,
+      this.config.taskHeartbeatInterval,
+    );
+    const cutoff = new Date(
+      Date.now() - effectiveStaleThresholdMs,
+    ).toISOString();
+    const jobsResult = await this.db.query(
+      `SELECT id, args, worker_heartbeat, started_at
+         FROM _smrt_jobs
+        WHERE status = 'running'`,
+    );
+
+    type ScheduleState = { live: number; staleJobIds: string[] };
+    const stateBySchedule = new Map<string, ScheduleState>();
+    for (const schedule of schedules) {
+      stateBySchedule.set(schedule.id, { live: 0, staleJobIds: [] });
+    }
+
+    for (const row of jobsResult.rows as Array<{
+      id: string;
+      args: unknown;
+      worker_heartbeat: string | null;
+      started_at: string | null;
+    }>) {
+      const scheduleId = this.getScheduleIdFromJobArgs(row.args);
+      if (!scheduleId) continue;
+
+      const state = stateBySchedule.get(scheduleId);
+      if (!state) continue;
+
+      const heartbeat = row.worker_heartbeat;
+      const startedAt = row.started_at;
+      const isStale =
+        (heartbeat !== null && heartbeat < cutoff) ||
+        (heartbeat === null && startedAt !== null && startedAt < cutoff);
+
+      if (isStale) {
+        state.staleJobIds.push(row.id);
+      } else {
+        state.live += 1;
+      }
+    }
+
+    const now = new Date().toISOString();
+    const staleJobIds = schedules.flatMap((schedule) => {
+      const state = stateBySchedule.get(schedule.id);
+      return state?.staleJobIds ?? [];
+    });
+
+    if (staleJobIds.length > 0) {
+      const placeholders = staleJobIds.map(() => '?').join(', ');
+      await this.db.query(
+        `UPDATE _smrt_jobs
+            SET status = 'failed',
+                completed_at = ?,
+                last_error = ?,
+                worker_id = NULL,
+                worker_heartbeat = NULL
+          WHERE status = 'running'
+            AND id IN (${placeholders})`,
+        now,
+        `Recovered stale scheduled job after ${effectiveStaleThresholdMs}ms without a heartbeat`,
+        ...staleJobIds,
+      );
+    }
+
+    for (const schedule of schedules) {
+      const state = stateBySchedule.get(schedule.id);
+      if (!state) continue;
+
+      const desiredRunningCount = state.live;
+      const recoveredCount = state.staleJobIds.length;
+
+      if (
+        Number(schedule.running_count) === desiredRunningCount &&
+        recoveredCount === 0
+      ) {
+        continue;
+      }
+
+      if (recoveredCount > 0) {
+        await this.db.query(
+          `UPDATE _smrt_agent_schedules
+              SET running_count = ?,
+                  last_run = ?,
+                  last_status = 'failed',
+                  last_error = ?,
+                  run_count = COALESCE(run_count, 0) + ?,
+                  failure_count = COALESCE(failure_count, 0) + ?
+            WHERE id = ?`,
+          desiredRunningCount,
+          now,
+          `Recovered ${recoveredCount} stale scheduled job(s) after missing heartbeats`,
+          recoveredCount,
+          recoveredCount,
+          schedule.id,
+        );
+        this.emit(
+          'schedule:failed',
+          schedule.id,
+          `Recovered ${recoveredCount} stale scheduled job(s)`,
+        );
+      } else {
+        await this.db.query(
+          `UPDATE _smrt_agent_schedules
+              SET running_count = ?
+            WHERE id = ?`,
+          desiredRunningCount,
+          schedule.id,
+        );
+      }
+    }
+  }
+
+  private getScheduleIdFromJobArgs(args: unknown): string | null {
+    if (!args) return null;
+
+    let parsedArgs = args;
+    if (typeof parsedArgs === 'string') {
+      try {
+        parsedArgs = JSON.parse(parsedArgs) as Record<string, unknown>;
+      } catch {
+        return null;
+      }
+    }
+
+    if (
+      !parsedArgs ||
+      typeof parsedArgs !== 'object' ||
+      Array.isArray(parsedArgs)
+    ) {
+      return null;
+    }
+
+    const scheduleId = (parsedArgs as Record<string, unknown>)._scheduleId;
+    return typeof scheduleId === 'string' && scheduleId.length > 0
+      ? scheduleId
+      : null;
   }
 
   /**

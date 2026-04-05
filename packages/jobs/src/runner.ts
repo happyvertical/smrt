@@ -7,6 +7,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { JobContextLogger } from './logger-extension.js';
 import { type SmrtJob, SmrtJobCollection } from './smrt-job.js';
+import {
+  DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
+  getEffectiveStaleJobThresholdMs,
+} from './stale-recovery.js';
 
 /**
  * TaskRunner configuration
@@ -24,6 +28,8 @@ export interface TaskRunnerConfig {
   heartbeatInterval?: number;
   /** Maximum time to wait for jobs to complete on shutdown */
   shutdownTimeout?: number;
+  /** Mark running jobs stale after this many milliseconds without a heartbeat */
+  staleJobThresholdMs?: number;
 }
 
 /**
@@ -47,8 +53,9 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   concurrency: 5,
   queues: ['default'],
   pollInterval: 1000,
-  heartbeatInterval: 30000,
+  heartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
   shutdownTimeout: 30000,
+  staleJobThresholdMs: 90000,
 };
 
 /**
@@ -185,7 +192,9 @@ export class TaskRunner extends EventEmitter {
    * Poll for and process jobs
    */
   private async poll(): Promise<void> {
-    if (!this.collection) return;
+    if (!this.collection || !this.db) return;
+
+    await this.recoverStaleJobs();
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -370,6 +379,71 @@ export class TaskRunner extends EventEmitter {
       job.lastError = error.message;
       await job.save();
 
+      this.emit('job:failed', job, error);
+    }
+  }
+
+  /**
+   * Recover jobs abandoned by dead workers.
+   *
+   * Jobs should heartbeat every {@link TaskRunnerConfig.heartbeatInterval}. If
+   * a running job stops heartbeating beyond the stale threshold, we fail it so
+   * other schedulers and operators are not left with permanently stuck work.
+   * The effective threshold is never allowed to fall below three heartbeat
+   * intervals, which avoids marking healthy slow-heartbeat workers stale.
+   */
+  private async recoverStaleJobs(): Promise<void> {
+    if (!this.db || !this.collection) return;
+
+    const effectiveStaleThresholdMs = getEffectiveStaleJobThresholdMs(
+      this.config.staleJobThresholdMs,
+      this.config.heartbeatInterval,
+    );
+    const cutoff = new Date(
+      Date.now() - effectiveStaleThresholdMs,
+    ).toISOString();
+    const staleJobs = await this.collection.query(
+      `SELECT *
+         FROM _smrt_jobs
+        WHERE status = 'running'
+          AND (
+            (worker_heartbeat IS NOT NULL AND worker_heartbeat < ?)
+            OR (worker_heartbeat IS NULL AND started_at IS NOT NULL AND started_at < ?)
+          )`,
+      [cutoff, cutoff],
+    );
+    if (staleJobs.length === 0) return;
+
+    const staleJobIds = staleJobs
+      .map((job) => job.id)
+      .filter((jobId): jobId is string => typeof jobId === 'string');
+    if (staleJobIds.length === 0) return;
+
+    const placeholders = staleJobIds.map(() => '?').join(', ');
+    const recoveredAt = new Date();
+    const errorMessage = `Recovered stale running job after ${effectiveStaleThresholdMs}ms without a heartbeat`;
+
+    await this.db.query(
+      `UPDATE _smrt_jobs
+          SET status = 'failed',
+              completed_at = ?,
+              last_error = ?,
+              worker_id = NULL,
+              worker_heartbeat = NULL
+        WHERE status = 'running'
+          AND id IN (${placeholders})`,
+      recoveredAt.toISOString(),
+      errorMessage,
+      ...staleJobIds,
+    );
+
+    for (const job of staleJobs) {
+      job.status = 'failed';
+      job.completedAt = recoveredAt;
+      job.lastError = errorMessage;
+      job.workerId = null;
+      job.workerHeartbeat = null;
+      const error = new Error(errorMessage);
       this.emit('job:failed', job, error);
     }
   }

@@ -252,6 +252,375 @@ describe('job tenancy propagation', () => {
     );
   });
 
+  it('recovers stale running jobs during task polling', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+
+    const job = await collection.create({
+      tenantId: 'tenant-stale-job',
+      objectType: 'JobTenantProbe',
+      method: 'captureTenantId',
+      args: {},
+    });
+    job.status = 'running';
+    job.workerId = 'runner-old';
+    job.startedAt = new Date('2026-04-02T08:30:00.000Z');
+    job.workerHeartbeat = new Date('2026-04-02T08:30:00.000Z');
+    await job.save();
+
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      heartbeatInterval: 1,
+      staleJobThresholdMs: 1,
+    });
+    await runner.initialize(db);
+    await (runner as unknown as { poll(): Promise<void> }).poll();
+
+    const recovered = await collection.get({ id: job.id ?? '' });
+    expect(recovered?.status).toBe('failed');
+    expect(recovered?.workerId).toBeNull();
+    expect(recovered?.workerHeartbeat).toBeNull();
+    expect(recovered?.lastError).toContain('Recovered stale running job');
+  });
+
+  it('reconciles stale scheduled jobs and frees stuck running slots', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+
+    await db.query(`
+      CREATE TABLE _smrt_agent_schedules (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        agent_type TEXT NOT NULL,
+        agent_id TEXT,
+        agent_config TEXT,
+        cron TEXT NOT NULL,
+        method TEXT,
+        method_args TEXT,
+        timeout INTEGER,
+        enabled BOOLEAN NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'active',
+        next_run TIMESTAMP,
+        last_run TIMESTAMP,
+        last_status TEXT,
+        last_error TEXT,
+        run_count INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        running_count INTEGER NOT NULL DEFAULT 0,
+        max_concurrent INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
+    await db.query(
+      `INSERT INTO _smrt_agent_schedules (
+        id, tenant_id, agent_type, agent_id, agent_config, cron, method,
+        method_args, timeout, enabled, status, next_run, last_run,
+        last_status, last_error, run_count, success_count, failure_count,
+        running_count, max_concurrent
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      'schedule-stale',
+      'tenant-schedule',
+      'JobTenantProbe',
+      null,
+      '{}',
+      '* * * * *',
+      'captureTenantId',
+      '{}',
+      60000,
+      1,
+      'active',
+      new Date(Date.now() - 60_000).toISOString(),
+      null,
+      'success',
+      null,
+      3,
+      2,
+      0,
+      1,
+      1,
+    );
+
+    const job = await collection.create({
+      tenantId: 'tenant-schedule',
+      objectType: 'JobTenantProbe',
+      method: 'captureTenantId',
+      args: { _scheduleId: 'schedule-stale' },
+    });
+    job.status = 'running';
+    job.workerId = 'runner-old';
+    job.startedAt = new Date('2026-04-02T08:30:00.000Z');
+    job.workerHeartbeat = new Date('2026-04-02T08:30:00.000Z');
+    await job.save();
+
+    const runner = createScheduleRunner({
+      pollInterval: 60_000,
+      taskHeartbeatInterval: 1,
+      staleJobThresholdMs: 1,
+    });
+    await runner.initialize(db);
+    await (
+      runner as unknown as {
+        recoverStaleScheduleState(): Promise<void>;
+      }
+    ).recoverStaleScheduleState();
+
+    const recoveredJob = await collection.get({ id: job.id ?? '' });
+    const schedules = await db.query(
+      `SELECT running_count, last_status, last_error, failure_count
+         FROM _smrt_agent_schedules
+        WHERE id = ?`,
+      'schedule-stale',
+    );
+
+    expect(recoveredJob?.status).toBe('failed');
+    expect(recoveredJob?.workerId).toBeNull();
+    expect(recoveredJob?.workerHeartbeat).toBeNull();
+    expect(
+      (
+        schedules.rows[0] as {
+          running_count: number;
+          last_status: string | null;
+          last_error: string | null;
+          failure_count: number;
+        }
+      ).running_count,
+    ).toBe(0);
+    expect(
+      (schedules.rows[0] as { last_status: string | null }).last_status,
+    ).toBe('failed');
+    expect(
+      (schedules.rows[0] as { last_error: string | null }).last_error,
+    ).toContain('Recovered 1 stale scheduled job');
+    expect((schedules.rows[0] as { failure_count: number }).failure_count).toBe(
+      1,
+    );
+  });
+
+  it('does not recover healthy jobs before the heartbeat grace window elapses', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+
+    const job = await collection.create({
+      tenantId: 'tenant-healthy-job',
+      objectType: 'JobTenantProbe',
+      method: 'captureTenantId',
+      args: {},
+    });
+    job.status = 'running';
+    job.workerId = 'runner-live';
+    job.startedAt = new Date();
+    job.workerHeartbeat = new Date();
+    await job.save();
+
+    const runner = createTaskRunner({
+      concurrency: 1,
+      pollInterval: 10,
+      heartbeatInterval: 60_000,
+      staleJobThresholdMs: 1,
+    });
+    await runner.initialize(db);
+    await (runner as unknown as { poll(): Promise<void> }).poll();
+
+    const recovered = await collection.get({ id: job.id ?? '' });
+    expect(recovered?.status).toBe('running');
+    expect(recovered?.workerId).toBe('runner-live');
+  });
+
+  it('reconciles schedule slot drift without recording a stale-job failure', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+
+    await db.query(`
+      CREATE TABLE _smrt_agent_schedules (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        agent_type TEXT NOT NULL,
+        agent_id TEXT,
+        agent_config TEXT,
+        cron TEXT NOT NULL,
+        method TEXT,
+        method_args TEXT,
+        timeout INTEGER,
+        enabled BOOLEAN NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'active',
+        next_run TIMESTAMP,
+        last_run TIMESTAMP,
+        last_status TEXT,
+        last_error TEXT,
+        run_count INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        running_count INTEGER NOT NULL DEFAULT 0,
+        max_concurrent INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
+    await db.query(
+      `INSERT INTO _smrt_agent_schedules (
+        id, tenant_id, agent_type, agent_id, agent_config, cron, method,
+        method_args, timeout, enabled, status, next_run, last_run,
+        last_status, last_error, run_count, success_count, failure_count,
+        running_count, max_concurrent
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      'schedule-drift',
+      'tenant-schedule',
+      'JobTenantProbe',
+      null,
+      '{}',
+      '* * * * *',
+      'captureTenantId',
+      '{}',
+      60000,
+      1,
+      'active',
+      new Date(Date.now() - 60_000).toISOString(),
+      null,
+      'success',
+      null,
+      5,
+      4,
+      1,
+      1,
+      1,
+    );
+
+    const runner = createScheduleRunner({
+      pollInterval: 60_000,
+      taskHeartbeatInterval: 60_000,
+      staleJobThresholdMs: 1,
+    });
+    await runner.initialize(db);
+    await (
+      runner as unknown as {
+        recoverStaleScheduleState(): Promise<void>;
+      }
+    ).recoverStaleScheduleState();
+
+    const schedules = await db.query(
+      `SELECT running_count, last_status, last_error, run_count, failure_count
+         FROM _smrt_agent_schedules
+        WHERE id = ?`,
+      'schedule-drift',
+    );
+
+    expect((schedules.rows[0] as { running_count: number }).running_count).toBe(
+      0,
+    );
+    expect(
+      (schedules.rows[0] as { last_status: string | null }).last_status,
+    ).toBe('success');
+    expect(
+      (schedules.rows[0] as { last_error: string | null }).last_error,
+    ).toBe(null);
+    expect((schedules.rows[0] as { run_count: number }).run_count).toBe(5);
+    expect((schedules.rows[0] as { failure_count: number }).failure_count).toBe(
+      1,
+    );
+  });
+
+  it('does not free healthy scheduled jobs before the heartbeat grace window elapses', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const collection = await SmrtJobCollection.create({ db });
+
+    await db.query(`
+      CREATE TABLE _smrt_agent_schedules (
+        id TEXT PRIMARY KEY,
+        tenant_id TEXT,
+        agent_type TEXT NOT NULL,
+        agent_id TEXT,
+        agent_config TEXT,
+        cron TEXT NOT NULL,
+        method TEXT,
+        method_args TEXT,
+        timeout INTEGER,
+        enabled BOOLEAN NOT NULL DEFAULT 1,
+        status TEXT NOT NULL DEFAULT 'active',
+        next_run TIMESTAMP,
+        last_run TIMESTAMP,
+        last_status TEXT,
+        last_error TEXT,
+        run_count INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        running_count INTEGER NOT NULL DEFAULT 0,
+        max_concurrent INTEGER NOT NULL DEFAULT 1
+      )
+    `);
+
+    await db.query(
+      `INSERT INTO _smrt_agent_schedules (
+        id, tenant_id, agent_type, agent_id, agent_config, cron, method,
+        method_args, timeout, enabled, status, next_run, last_run,
+        last_status, last_error, run_count, success_count, failure_count,
+        running_count, max_concurrent
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      'schedule-healthy',
+      'tenant-schedule',
+      'JobTenantProbe',
+      null,
+      '{}',
+      '* * * * *',
+      'captureTenantId',
+      '{}',
+      60000,
+      1,
+      'active',
+      new Date(Date.now() - 60_000).toISOString(),
+      null,
+      'success',
+      null,
+      3,
+      2,
+      1,
+      1,
+      1,
+    );
+
+    const job = await collection.create({
+      tenantId: 'tenant-schedule',
+      objectType: 'JobTenantProbe',
+      method: 'captureTenantId',
+      args: { _scheduleId: 'schedule-healthy' },
+    });
+    job.status = 'running';
+    job.workerId = 'runner-live';
+    job.startedAt = new Date();
+    job.workerHeartbeat = new Date();
+    await job.save();
+
+    const runner = createScheduleRunner({
+      pollInterval: 60_000,
+      taskHeartbeatInterval: 60_000,
+      staleJobThresholdMs: 1,
+    });
+    await runner.initialize(db);
+    await (
+      runner as unknown as {
+        recoverStaleScheduleState(): Promise<void>;
+      }
+    ).recoverStaleScheduleState();
+
+    const recoveredJob = await collection.get({ id: job.id ?? '' });
+    const schedules = await db.query(
+      `SELECT running_count, last_status, failure_count
+         FROM _smrt_agent_schedules
+        WHERE id = ?`,
+      'schedule-healthy',
+    );
+
+    expect(recoveredJob?.status).toBe('running');
+    expect((schedules.rows[0] as { running_count: number }).running_count).toBe(
+      1,
+    );
+    expect(
+      (schedules.rows[0] as { last_status: string | null }).last_status,
+    ).toBe('success');
+    expect((schedules.rows[0] as { failure_count: number }).failure_count).toBe(
+      1,
+    );
+  });
+
   it('uses canonical object types for background jobs created from object instances', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const canonicalObjectType =
