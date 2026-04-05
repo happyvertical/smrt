@@ -24,6 +24,8 @@ export interface TaskRunnerConfig {
   heartbeatInterval?: number;
   /** Maximum time to wait for jobs to complete on shutdown */
   shutdownTimeout?: number;
+  /** Mark running jobs stale after this many milliseconds without a heartbeat */
+  staleJobThresholdMs?: number;
 }
 
 /**
@@ -49,6 +51,7 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   pollInterval: 1000,
   heartbeatInterval: 30000,
   shutdownTimeout: 30000,
+  staleJobThresholdMs: 90000,
 };
 
 /**
@@ -185,7 +188,9 @@ export class TaskRunner extends EventEmitter {
    * Poll for and process jobs
    */
   private async poll(): Promise<void> {
-    if (!this.collection) return;
+    if (!this.collection || !this.db) return;
+
+    await this.recoverStaleJobs();
 
     // Calculate how many jobs we can take
     const available = this.config.concurrency - this.activeJobs.size;
@@ -368,6 +373,50 @@ export class TaskRunner extends EventEmitter {
       job.status = 'failed';
       job.completedAt = new Date();
       job.lastError = error.message;
+      await job.save();
+
+      this.emit('job:failed', job, error);
+    }
+  }
+
+  /**
+   * Recover jobs abandoned by dead workers.
+   *
+   * Jobs should heartbeat every {@link TaskRunnerConfig.heartbeatInterval}. If
+   * a running job stops heartbeating beyond the stale threshold, we fail it so
+   * other schedulers and operators are not left with permanently stuck work.
+   */
+  private async recoverStaleJobs(): Promise<void> {
+    if (!this.db || !this.collection) return;
+
+    const cutoff = new Date(
+      Date.now() - this.config.staleJobThresholdMs,
+    ).toISOString();
+    const staleJobs = await this.db.query(
+      `SELECT id
+         FROM _smrt_jobs
+        WHERE status = 'running'
+          AND (
+            (worker_heartbeat IS NOT NULL AND worker_heartbeat < ?)
+            OR (worker_heartbeat IS NULL AND started_at IS NOT NULL AND started_at < ?)
+          )`,
+      cutoff,
+      cutoff,
+    );
+
+    for (const row of staleJobs.rows as Array<{ id: string }>) {
+      const job = await this.collection.get({ id: row.id });
+      if (!job || job.status !== 'running') continue;
+
+      const error = new Error(
+        `Recovered stale running job after ${this.config.staleJobThresholdMs}ms without a heartbeat`,
+      );
+
+      job.status = 'failed';
+      job.completedAt = new Date();
+      job.lastError = error.message;
+      job.workerId = null;
+      job.workerHeartbeat = null;
       await job.save();
 
       this.emit('job:failed', job, error);
