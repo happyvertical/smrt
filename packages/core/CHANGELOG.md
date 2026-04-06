@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.33
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - merge sti child columns in schema aggregation (#1100) (core)
+  - @happyvertical/smrt-scanner@0.21.33
+  - @happyvertical/smrt-config@0.21.33
+  - @happyvertical/smrt-types@0.21.33
+
 ## 0.21.32
 
 ### Patch Changes
