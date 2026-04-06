@@ -248,4 +248,33 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  it('does not enforce smrtConsumer during vitest startup', async () => {
+    createExternalSmrtPackage(tmpDir, '@fixture/messages');
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({
+        name: 'test-app',
+        version: '1.0.0',
+        dependencies: {
+          '@happyvertical/smrt-core': '*',
+          '@fixture/messages': '1.0.0',
+        },
+      }),
+    );
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await expect(
+      (plugin as any).configResolved({
+        root: tmpDir,
+        build: {},
+        mode: 'test',
+        plugins: [{ name: 'smrt-auto-service' }],
+      }),
+    ).resolves.toBeUndefined();
+  });
 });

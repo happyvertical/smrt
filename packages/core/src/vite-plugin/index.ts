@@ -141,6 +141,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     m: SmartObjectManifest,
     context: 'configResolved' | 'buildStart',
   ): void {
+    if (config?.mode === 'test') {
+      return;
+    }
+
     if (config?.build?.lib) {
       return;
     }

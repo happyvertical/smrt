@@ -14,11 +14,6 @@ import {
 } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
-import {
-  formatRuntimeCheckReport,
-  type RuntimeCheckResult,
-  runRuntimeCheck,
-} from '../runtime-check.js';
 import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -26,6 +21,10 @@ import { dbHistoryCommand } from './db-history.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { exportCommand } from './export.js';
+import {
+  runRuntimeCheckSafely,
+  runtimeCheckCommand,
+} from './runtime-check-command.js';
 import { resolveStiDiscriminatorUpgrade } from './sti-upgrade.js';
 
 /**
@@ -52,26 +51,6 @@ export function resolveVitestEntrypoint(fromDir = process.cwd()): string {
   const requireFromDir = createRequire(resolve(fromDir, 'package.json'));
   const vitestPackageJson = requireFromDir.resolve('vitest/package.json');
   return join(dirname(vitestPackageJson), 'vitest.mjs');
-}
-
-export async function runRuntimeCheckSafely(
-  projectRoot: string,
-): Promise<RuntimeCheckResult> {
-  try {
-    return await runRuntimeCheck(projectRoot);
-  } catch (error) {
-    return {
-      projectRoot,
-      discoveredManifestCount: 0,
-      findings: [
-        {
-          severity: 'error',
-          code: 'runtime-check-crashed',
-          message: `Runtime diagnostics crashed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-    };
-  }
 }
 
 /**
@@ -2126,22 +2105,7 @@ export default testManifest;
     },
   },
 
-  'runtime:check': {
-    name: 'runtime:check',
-    description:
-      'Validate runtime manifest discovery, package identity, and registry hydration',
-    aliases: ['runtime-check'],
-    args: [],
-    options: {},
-    handler: async () => {
-      const result = await runRuntimeCheckSafely(process.cwd());
-      console.log(`${formatRuntimeCheckReport(result)}\n`);
-
-      if (result.findings.some((finding) => finding.severity === 'error')) {
-        process.exit(1);
-      }
-    },
-  },
+  'runtime:check': runtimeCheckCommand,
 
   // Migration status and history commands (from separate modules)
   'db:status': dbStatusCommand,
