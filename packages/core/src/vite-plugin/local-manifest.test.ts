@@ -16,6 +16,52 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { smrtPlugin } from './index';
 
+function createExternalSmrtPackage(
+  projectRoot: string,
+  packageName: string,
+): void {
+  const packageDir = join(
+    projectRoot,
+    'node_modules',
+    ...packageName.split('/'),
+  );
+  mkdirSync(join(packageDir, 'dist'), { recursive: true });
+
+  writeFileSync(
+    join(packageDir, 'package.json'),
+    JSON.stringify({
+      name: packageName,
+      version: '1.0.0',
+      type: 'module',
+      exports: {
+        '.': './dist/index.js',
+        './manifest': './dist/manifest.json',
+        './manifest.json': './dist/manifest.json',
+      },
+    }),
+  );
+
+  writeFileSync(join(packageDir, 'dist', 'index.js'), 'export {};\n');
+  writeFileSync(
+    join(packageDir, 'dist', 'manifest.json'),
+    JSON.stringify({
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName,
+      moduleType: 'smrt',
+      objects: {
+        [`${packageName}:FixtureExternal`]: {
+          className: 'FixtureExternal',
+          qualifiedName: `${packageName}:FixtureExternal`,
+          packageName,
+          collection: 'fixture_externals',
+          fields: {},
+        },
+      },
+    }),
+  );
+}
+
 describe('smrtPlugin local manifest writing (Issue #963)', () => {
   let tmpDir: string;
 
@@ -145,5 +191,61 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     // But .smrt/manifest.json should exist (written during configResolved)
     const localManifestPath = join(tmpDir, '.smrt', 'manifest.json');
     expect(existsSync(localManifestPath)).toBe(true);
+  });
+
+  it('fails fast when a consumer app has external SMRT dependencies but no smrtConsumer plugin', async () => {
+    createExternalSmrtPackage(tmpDir, '@fixture/messages');
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({
+        name: 'test-app',
+        version: '1.0.0',
+        dependencies: {
+          '@happyvertical/smrt-core': '*',
+          '@fixture/messages': '1.0.0',
+        },
+      }),
+    );
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await expect(
+      (plugin as any).configResolved({
+        root: tmpDir,
+        build: {},
+        plugins: [{ name: 'smrt-auto-service' }],
+      }),
+    ).rejects.toThrow(/missing smrtConsumer\(\)/);
+  });
+
+  it('allows consumer apps when smrtConsumer is registered in Vite', async () => {
+    createExternalSmrtPackage(tmpDir, '@fixture/messages');
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({
+        name: 'test-app',
+        version: '1.0.0',
+        dependencies: {
+          '@happyvertical/smrt-core': '*',
+          '@fixture/messages': '1.0.0',
+        },
+      }),
+    );
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await expect(
+      (plugin as any).configResolved({
+        root: tmpDir,
+        build: {},
+        plugins: [{ name: 'smrt-auto-service' }, { name: 'smrt-consumer' }],
+      }),
+    ).resolves.toBeUndefined();
   });
 });

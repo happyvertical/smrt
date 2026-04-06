@@ -107,6 +107,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
   let config: any = null; // Store resolved config for closeBundle hook
+  let resolvedPluginNames: string[] = [];
 
   /**
    * Write manifest to .smrt/manifest.json for CLI discovery.
@@ -136,6 +137,38 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     }
   }
 
+  function validateConsumerPluginSetup(
+    m: SmartObjectManifest,
+    context: 'configResolved' | 'buildStart',
+  ): void {
+    if (config?.build?.lib) {
+      return;
+    }
+
+    const consumerDependencies = (m.smrtDependencies || []).filter(
+      (dependency) => dependency !== '@happyvertical/smrt-core',
+    );
+    if (consumerDependencies.length === 0) {
+      return;
+    }
+
+    const hasConsumerPlugin = resolvedPluginNames.some(
+      (name) => name === 'smrt-consumer',
+    );
+    if (hasConsumerPlugin) {
+      return;
+    }
+
+    const dependencySummary =
+      consumerDependencies.length <= 4
+        ? consumerDependencies.join(', ')
+        : `${consumerDependencies.slice(0, 4).join(', ')}, +${consumerDependencies.length - 4} more`;
+
+    throw new Error(
+      `[smrt] Consumer project misconfiguration detected during ${context}: found external SMRT dependencies (${dependencySummary}) but vite.config is missing smrtConsumer(). Add "import { smrtConsumer } from '@happyvertical/smrt-core/consumer-plugin'" and register it alongside smrtPlugin() so .smrt/register.js is generated for CLI/runtime class loading.`,
+    );
+  }
+
   return {
     name: 'smrt-auto-service',
 
@@ -152,6 +185,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     async configResolved(resolvedConfig) {
       // Store config for closeBundle hook
       config = resolvedConfig;
+      resolvedPluginNames = (resolvedConfig.plugins || []).map(
+        (plugin) => plugin?.name || '',
+      );
 
       // Store project root for file scanning
       projectRoot = resolvedConfig.root;
@@ -179,6 +215,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Write local manifest for CLI discovery (Issue #963)
       if (manifest) {
         await writeLocalManifest(manifest, projectRoot);
+        validateConsumerPluginSetup(manifest, 'configResolved');
       }
 
       // Generate SvelteKit routes if enabled
@@ -200,6 +237,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Write local manifest for CLI discovery (Issue #963)
       if (manifest) {
         await writeLocalManifest(manifest, projectRoot);
+        validateConsumerPluginSetup(manifest, 'buildStart');
       }
     },
 
@@ -621,7 +659,7 @@ export default testManifest;
       const { discoverSmrtPackages } = await import(
         '../manifest/discover-smrt-packages.js'
       );
-      const smrtDependencies = discoverSmrtPackages();
+      const smrtDependencies = discoverSmrtPackages({ baseDir: rootDir });
       if (smrtDependencies.length > 0) {
         newManifest.smrtDependencies = smrtDependencies;
         console.log(

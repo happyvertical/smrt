@@ -52,11 +52,11 @@ export function getDiscoveryTiming(): TimingData {
 /**
  * Get hash of lockfile for cache invalidation
  */
-function getLockfileHash(): string | null {
+function getLockfileHash(baseDir: string): string | null {
   // Check for pnpm or npm lockfile
-  const lockfile = existsSync('pnpm-lock.yaml')
-    ? 'pnpm-lock.yaml'
-    : 'package-lock.json';
+  const lockfile = existsSync(join(baseDir, 'pnpm-lock.yaml'))
+    ? join(baseDir, 'pnpm-lock.yaml')
+    : join(baseDir, 'package-lock.json');
 
   if (!existsSync(lockfile)) {
     return null;
@@ -199,9 +199,10 @@ function resolveManifestPath(
  * - Manifest timestamps hash changed (SMRT packages rebuilt)
  */
 function getCachedDiscovery(
+  baseDir: string,
   verbose: boolean,
 ): { packages: string[]; reason?: string } | null {
-  const cachePath = join(CACHE_DIR, CACHE_FILE);
+  const cachePath = join(baseDir, CACHE_DIR, CACHE_FILE);
 
   if (!existsSync(cachePath)) {
     return null;
@@ -216,7 +217,7 @@ function getCachedDiscovery(
       return null;
     }
 
-    const currentLockfileHash = getLockfileHash();
+    const currentLockfileHash = getLockfileHash(baseDir);
 
     // Check lockfile hash
     if (cache.lockfileHash !== currentLockfileHash) {
@@ -252,18 +253,25 @@ function getCachedDiscovery(
 /**
  * Save discovery results to cache
  */
-function saveCachedDiscovery(packages: string[], verbose: boolean): void {
+function saveCachedDiscovery(
+  baseDir: string,
+  packages: string[],
+  verbose: boolean,
+): void {
   const cache: DiscoveryCache = {
     version: CACHE_VERSION,
-    lockfileHash: getLockfileHash(),
+    lockfileHash: getLockfileHash(baseDir),
     manifestsHash: getManifestTimestampsHash(packages),
     timestamp: Date.now(),
     packages: packages,
   };
 
   try {
-    mkdirSync(CACHE_DIR, { recursive: true });
-    writeFileSync(join(CACHE_DIR, CACHE_FILE), JSON.stringify(cache, null, 2));
+    mkdirSync(join(baseDir, CACHE_DIR), { recursive: true });
+    writeFileSync(
+      join(baseDir, CACHE_DIR, CACHE_FILE),
+      JSON.stringify(cache, null, 2),
+    );
     if (verbose) {
       console.log(`[discovery] Saved cache with ${packages.length} package(s)`);
     }
@@ -282,8 +290,8 @@ function saveCachedDiscovery(packages: string[], verbose: boolean): void {
  *
  * Supports both regular npm dependencies and workspace: symlinks
  */
-function hasManifestExport(packageName: string): boolean {
-  return resolveManifestPath(packageName) !== null;
+function hasManifestExport(packageName: string, baseDir: string): boolean {
+  return resolveManifestPath(packageName, baseDir) !== null;
 }
 
 function getDeclaredSmrtPackages(baseDir: string, verbose: boolean): string[] {
@@ -310,7 +318,7 @@ function getDeclaredSmrtPackages(baseDir: string, verbose: boolean): string[] {
         return false;
       }
 
-      const hasManifest = hasManifestExport(pkgName);
+      const hasManifest = hasManifestExport(pkgName, baseDir);
       if (verbose && hasManifest) {
         console.log(`[discovery] ✅ Found declared SMRT package: ${pkgName}`);
       }
@@ -374,7 +382,7 @@ function* scanNodeModules(baseDir: string): Generator<string> {
 /**
  * Perform fresh discovery of SMRT packages
  */
-function performDiscovery(verbose: boolean): string[] {
+function performDiscovery(baseDir: string, verbose: boolean): string[] {
   if (verbose) {
     console.log('[discovery] Scanning node_modules for SMRT packages...');
   }
@@ -383,8 +391,8 @@ function performDiscovery(verbose: boolean): string[] {
     const smrtPackages = new Set<string>();
 
     // Scan node_modules for all packages
-    for (const pkgName of scanNodeModules(process.cwd())) {
-      if (hasManifestExport(pkgName)) {
+    for (const pkgName of scanNodeModules(baseDir)) {
+      if (hasManifestExport(pkgName, baseDir)) {
         smrtPackages.add(pkgName);
         if (verbose) {
           console.log(`[discovery] ✅ Found SMRT package: ${pkgName}`);
@@ -392,7 +400,7 @@ function performDiscovery(verbose: boolean): string[] {
       }
     }
 
-    for (const pkgName of getDeclaredSmrtPackages(process.cwd(), verbose)) {
+    for (const pkgName of getDeclaredSmrtPackages(baseDir, verbose)) {
       smrtPackages.add(pkgName);
     }
 
@@ -413,6 +421,8 @@ function performDiscovery(verbose: boolean): string[] {
 }
 
 export interface DiscoveryOptions {
+  /** Override project root for discovery/cache */
+  baseDir?: string;
   /** Force fresh discovery, ignoring cache */
   noCache?: boolean;
   /** Show verbose output */
@@ -433,6 +443,7 @@ export interface DiscoveryOptions {
 export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
   const startTime = options.timing ? performance.now() : 0;
   lastTimingData = {};
+  const baseDir = options.baseDir || process.cwd();
 
   const cacheDisabled =
     options.noCache || process.env.SMRT_DISABLE_DISCOVERY_CACHE === 'true';
@@ -447,7 +458,7 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
       console.log('[discovery] Cache disabled, performing fresh discovery...');
     }
 
-    const packages = performDiscovery(verbose);
+    const packages = performDiscovery(baseDir, verbose);
 
     if (options.timing) {
       lastTimingData.discovery = performance.now() - startTime;
@@ -459,7 +470,7 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
 
   // Try cache first
   const cacheCheckStart = options.timing ? performance.now() : 0;
-  const cached = getCachedDiscovery(verbose);
+  const cached = getCachedDiscovery(baseDir, verbose);
 
   if (options.timing) {
     lastTimingData.cacheCheck = performance.now() - cacheCheckStart;
@@ -485,14 +496,14 @@ export function discoverSmrtPackages(options: DiscoveryOptions = {}): string[] {
   }
 
   const discoveryStart = options.timing ? performance.now() : 0;
-  const packages = performDiscovery(verbose);
+  const packages = performDiscovery(baseDir, verbose);
 
   if (options.timing) {
     lastTimingData.discovery = performance.now() - discoveryStart;
   }
 
   // Save to cache
-  saveCachedDiscovery(packages, verbose);
+  saveCachedDiscovery(baseDir, packages, verbose);
 
   if (options.timing) {
     lastTimingData.total = performance.now() - startTime;
