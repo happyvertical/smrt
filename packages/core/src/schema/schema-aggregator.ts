@@ -132,6 +132,95 @@ const DEFAULT_MINIMAL_SKIP_PATTERNS: RegExp[] = [
   /_relationship_type/,
 ];
 
+const CONSTRAINT_KEYWORDS = new Set([
+  'CONSTRAINT',
+  'PRIMARY',
+  'UNIQUE',
+  'FOREIGN',
+  'CHECK',
+]);
+
+function tokenizeDDLBody(body: string): string[] {
+  const segments: string[] = [];
+  let current = '';
+  let parenDepth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index];
+    const prev = index > 0 ? body[index - 1] : '';
+
+    if (char === "'" && prev !== '\\' && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+    } else if (char === '"' && prev !== '\\' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+    } else if (!inSingleQuote && !inDoubleQuote) {
+      if (char === '(') parenDepth += 1;
+      if (char === ')') parenDepth -= 1;
+    }
+
+    if (char === ',' && parenDepth === 0 && !inSingleQuote && !inDoubleQuote) {
+      const trimmed = current.trim();
+      if (trimmed) segments.push(trimmed);
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  const trimmed = current.trim();
+  if (trimmed) {
+    segments.push(trimmed);
+  }
+
+  return segments;
+}
+
+function parseColumnsFromDDL(ddl: string): Map<string, string> {
+  const columns = new Map<string, string>();
+  const bodyMatch = ddl.match(/\(([\s\S]*)\)\s*;?\s*$/);
+  if (!bodyMatch) return columns;
+
+  const segments = tokenizeDDLBody(bodyMatch[1]);
+
+  for (const segment of segments) {
+    const colMatch = segment.match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+/);
+    if (!colMatch) continue;
+
+    const firstToken = colMatch[1].toUpperCase();
+    if (CONSTRAINT_KEYWORDS.has(firstToken)) continue;
+
+    columns.set(colMatch[1], segment);
+  }
+
+  return columns;
+}
+
+function mergeDDL(existingDDL: string, newDDL: string): string {
+  const existingCols = parseColumnsFromDDL(existingDDL);
+  const newCols = parseColumnsFromDDL(newDDL);
+
+  const missingCols: string[] = [];
+  for (const [name, def] of newCols) {
+    if (!existingCols.has(name)) {
+      missingCols.push(def);
+    }
+  }
+
+  if (missingCols.length === 0) return existingDDL;
+
+  const closingIdx = existingDDL.lastIndexOf(')');
+  if (closingIdx === -1) return existingDDL;
+
+  const before = existingDDL.substring(0, closingIdx).trimEnd();
+  const after = existingDDL.substring(closingIdx);
+  const additions = missingCols.map((col) => `  ${col}`).join(',\n');
+
+  return `${before},\n${additions}\n${after}`;
+}
+
 // ============================================================================
 // SchemaAggregator
 // ============================================================================
@@ -281,11 +370,15 @@ export class SchemaAggregator {
         const existing = tables.get(tableName);
 
         if (existing) {
-          // STI table — keep the most comprehensive DDL
-          if (schema.ddl.length > existing.ddl.length) {
-            existing.ddl = schema.ddl;
-          }
+          // STI table — merge columns from every subtype into the shared DDL.
+          existing.ddl = mergeDDL(existing.ddl, schema.ddl);
           existing.sources.push(`${manifest.packageName || '?'}:${className}`);
+          if (schema.columns) {
+            existing.columns = {
+              ...(existing.columns || {}),
+              ...schema.columns,
+            };
+          }
 
           // Merge indexes (deduplicate by SQL text)
           for (const idx of schema.indexes || []) {
