@@ -200,9 +200,16 @@ export async function ensureSchema(
     );
   }
 
+  // Use the merged table definition for shared tables (especially STI).
+  // Per-class schema metadata can reflect only the current class, while
+  // the database table must include columns from all classes sharing it.
+  const mergedSchemaDefinition =
+    ObjectRegistry.getAllSchemasAsDefinitions()[schemaDefinition.tableName];
+  const effectiveSchemaDefinition = mergedSchemaDefinition ?? schemaDefinition;
+
   const schemaManager = new SchemaManager(db, {
     skipTriggers:
       typeof (db as { exportTable?: unknown }).exportTable === 'function',
   });
-  await schemaManager.ensureTable(schemaDefinition);
+  await schemaManager.ensureTable(effectiveSchemaDefinition);
 }
