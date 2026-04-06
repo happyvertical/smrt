@@ -210,6 +210,37 @@ describe('runRuntimeCheck', () => {
     ).toBe(false);
   });
 
+  it('does not require generated registrations for empty dependency manifests', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(projectRoot, '@fixture/empty-manifest', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/empty-manifest',
+      objects: {},
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/empty-manifest'],
+      objects: {},
+    });
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(
+      result.findings.some(
+        (finding) => finding.code === 'missing-consumer-register',
+      ),
+    ).toBe(false);
+  });
+
   it('fails when a declared SMRT dependency has no manifest export', async () => {
     const projectRoot = await mkdtemp(
       resolve(process.cwd(), '.tmp-runtime-check-'),

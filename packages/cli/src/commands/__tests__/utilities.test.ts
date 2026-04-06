@@ -1,10 +1,58 @@
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveVitestEntrypoint, utilityCommands } from '../utilities.js';
 
 describe('utilities', () => {
   const tempDirs: string[] = [];
+
+  async function writeJson(path: string, value: unknown): Promise<void> {
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
+  }
+
+  async function createExternalPackage(
+    projectRoot: string,
+    packageName: string,
+  ): Promise<void> {
+    const packageDir = resolve(
+      projectRoot,
+      'node_modules',
+      ...packageName.split('/'),
+    );
+
+    await writeJson(resolve(packageDir, 'package.json'), {
+      name: packageName,
+      version: '0.0.0-test',
+      type: 'module',
+      exports: {
+        '.': './dist/index.js',
+        './manifest': './dist/manifest.json',
+        './manifest.json': './dist/manifest.json',
+      },
+      dependencies: {
+        '@happyvertical/smrt-core': '0.0.0-test',
+      },
+    });
+    await mkdir(resolve(packageDir, 'dist'), { recursive: true });
+    await writeFile(resolve(packageDir, 'dist/index.js'), 'export {};\n');
+    await writeJson(resolve(packageDir, 'dist/manifest.json'), {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName,
+      objects: {
+        [`${packageName}:FixtureExternal`]: {
+          className: 'FixtureExternal',
+          qualifiedName: `${packageName}:FixtureExternal`,
+          packageName,
+          collection: 'fixture_externals',
+          fields: {
+            email: { type: 'text', required: true },
+          },
+        },
+      },
+    });
+  }
 
   afterEach(async () => {
     await Promise.all(
@@ -41,6 +89,7 @@ describe('utilities', () => {
     await mkdir(resolve(projectDir, 'src/lib/objects'), { recursive: true });
     await mkdir(resolve(projectDir, 'src/lib/server'), { recursive: true });
     await mkdir(resolve(projectDir, '.smrt'), { recursive: true });
+    await createExternalPackage(projectDir, '@fixture/messages');
 
     await writeFile(
       resolve(projectDir, 'package.json'),

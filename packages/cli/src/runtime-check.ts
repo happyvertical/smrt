@@ -732,14 +732,29 @@ function checkShadowing(
   }
 }
 
+function getConsumerObjectDependencies(
+  dependencyManifests: SmartObjectManifest[],
+): string[] {
+  return Array.from(
+    new Set(
+      dependencyManifests
+        .filter(
+          (manifest) => manifest.packageName !== '@happyvertical/smrt-core',
+        )
+        .filter((manifest) => Object.keys(manifest.objects || {}).length > 0)
+        .map((manifest) => manifest.packageName)
+        .filter((dependency): dependency is string => Boolean(dependency)),
+    ),
+  ).sort();
+}
+
 function checkConsumerRegistration(
   projectManifest: SmartObjectManifest,
+  dependencyManifests: SmartObjectManifest[],
   projectRoot: string,
   findings: RuntimeCheckFinding[],
 ): void {
-  const dependencies = (projectManifest.smrtDependencies || []).filter(
-    (dependency) => dependency !== '@happyvertical/smrt-core',
-  );
+  const dependencies = getConsumerObjectDependencies(dependencyManifests);
   if (dependencies.length === 0) {
     return;
   }
@@ -782,9 +797,14 @@ export async function runRuntimeCheck(
   const projectManifest = (await loadManifestFile(
     projectManifestInfo.path,
   )) as SmartObjectManifest;
-  checkConsumerRegistration(projectManifest, projectRoot, findings);
   const dependencyManifests = await loadDependencyManifests(
     projectManifest,
+    projectRoot,
+    findings,
+  );
+  checkConsumerRegistration(
+    projectManifest,
+    dependencyManifests,
     projectRoot,
     findings,
   );

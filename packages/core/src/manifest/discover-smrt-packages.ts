@@ -70,12 +70,15 @@ function getLockfileHash(baseDir: string): string | null {
  * Get a hash of all manifest timestamps for cache invalidation
  * This catches changes to SMRT packages even when lockfile hasn't changed
  */
-function getManifestTimestampsHash(packages: string[]): string {
+function getManifestTimestampsHash(
+  baseDir: string,
+  packages: string[],
+): string {
   const timestamps: string[] = [];
 
   for (const pkgName of packages) {
     try {
-      const manifestPath = resolveManifestPath(pkgName);
+      const manifestPath = resolveManifestPath(pkgName, baseDir);
 
       if (manifestPath && existsSync(manifestPath)) {
         const stats = statSync(manifestPath);
@@ -229,7 +232,10 @@ function getCachedDiscovery(
 
     // Check manifest timestamps (only if we have cached packages)
     if (cache.packages.length > 0) {
-      const currentManifestsHash = getManifestTimestampsHash(cache.packages);
+      const currentManifestsHash = getManifestTimestampsHash(
+        baseDir,
+        cache.packages,
+      );
       if (cache.manifestsHash !== currentManifestsHash) {
         if (verbose) {
           console.log('[discovery] Cache invalid: manifest(s) changed');
@@ -261,7 +267,7 @@ function saveCachedDiscovery(
   const cache: DiscoveryCache = {
     version: CACHE_VERSION,
     lockfileHash: getLockfileHash(baseDir),
-    manifestsHash: getManifestTimestampsHash(packages),
+    manifestsHash: getManifestTimestampsHash(baseDir, packages),
     timestamp: Date.now(),
     packages: packages,
   };

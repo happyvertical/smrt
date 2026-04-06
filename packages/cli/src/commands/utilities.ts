@@ -1951,6 +1951,8 @@ export default testManifest;
         );
       }
 
+      const runtimeCheck = await runRuntimeCheckSafely(cwd);
+
       // 10.5 Check consumer registration for external SMRT packages
       const projectManifestPath = resolve(cwd, '.smrt', 'manifest.json');
       const registerPath = resolve(cwd, '.smrt', 'register.js');
@@ -1969,27 +1971,17 @@ export default testManifest;
 
           if (smrtDependencies.length > 0) {
             const hasRegisterFile = existsSync(registerPath);
-            const viteConfigPath = existsSync(viteConfigTs)
-              ? viteConfigTs
-              : existsSync(viteConfigJs)
-                ? viteConfigJs
-                : null;
-            const viteConfigContent = viteConfigPath
-              ? readFileSync(viteConfigPath, 'utf-8')
-              : '';
-            const hasSmrtConsumer = viteConfigContent.includes('smrtConsumer');
-            const dependencySummary =
-              smrtDependencies.length <= 3
-                ? smrtDependencies.join(', ')
-                : `${smrtDependencies.slice(0, 3).join(', ')}, +${smrtDependencies.length - 3} more`;
-
-            check(
-              'External SMRT registrations generated',
-              hasRegisterFile,
-              hasSmrtConsumer
-                ? `Project manifest declares external SMRT dependencies (${dependencySummary}) but ".smrt/register.js" is missing. Run your build or "smrt generate-register" before using CLI health checks.`
-                : `Project manifest declares external SMRT dependencies (${dependencySummary}) but vite.config is missing smrtConsumer() and ".smrt/register.js" is missing.`,
+            const missingRegisterFinding = runtimeCheck.findings.find(
+              (finding) => finding.code === 'missing-consumer-register',
             );
+
+            if (hasRegisterFile || missingRegisterFinding) {
+              check(
+                'External SMRT registrations generated',
+                hasRegisterFile,
+                missingRegisterFinding?.message,
+              );
+            }
           }
         } catch {
           check(
@@ -2006,7 +1998,6 @@ export default testManifest;
       // ========== Runtime ==========
       console.log('🏃 Runtime\n');
 
-      const runtimeCheck = await runRuntimeCheckSafely(cwd);
       const runtimeErrors = runtimeCheck.findings.filter(
         (finding) => finding.severity === 'error',
       );
