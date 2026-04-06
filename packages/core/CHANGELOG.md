@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.32
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - fail fast on missing consumer setup (#1098) (core)
+  - @happyvertical/smrt-scanner@0.21.32
+  - @happyvertical/smrt-config@0.21.32
+  - @happyvertical/smrt-types@0.21.32
+
 ## 0.21.31
 
 ### Patch Changes
