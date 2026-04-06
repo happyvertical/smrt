@@ -186,11 +186,33 @@ export async function ensureSchema(
   }
 
   let schemaDefinition = ObjectRegistry.getSchema(className);
+  if (tableStrategy === 'sti') {
+    const tableName = ObjectRegistry.getTableName(className);
+    if (tableName) {
+      const mergedSchema =
+        ObjectRegistry.getAllSchemasAsDefinitions()[tableName];
+      if (mergedSchema) {
+        schemaDefinition = mergedSchema;
+      }
+    }
+  }
+
   if (!schemaDefinition?.tableName) {
     const providedFields =
       registered.fields.size > 0 ? registered.fields : undefined;
     await generateSchema(registered.constructor, providedFields);
     schemaDefinition = ObjectRegistry.getSchema(className);
+
+    if (tableStrategy === 'sti') {
+      const tableName = ObjectRegistry.getTableName(className);
+      if (tableName) {
+        const mergedSchema =
+          ObjectRegistry.getAllSchemasAsDefinitions()[tableName];
+        if (mergedSchema) {
+          schemaDefinition = mergedSchema;
+        }
+      }
+    }
   }
 
   if (!schemaDefinition?.tableName) {
