@@ -153,4 +153,73 @@ describe('SchemaAggregator STI merge', () => {
     );
     expect(result.sql).toContain('"meeting_id" TEXT');
   });
+
+  it('inserts merged STI columns before trailing table constraints', () => {
+    const tempDir = mkdtempSync(
+      join(tmpdir(), 'schema-aggregator-sti-constraints-'),
+    );
+    tempDirs.push(tempDir);
+
+    const baseManifestPath = writeManifest(tempDir, 'base.manifest.json', {
+      packageName: '@happyvertical/base',
+      version: '1.0.0',
+      objects: {
+        '@happyvertical/base:Content': {
+          className: 'Content',
+          schema: {
+            tableName: 'contents',
+            ddl: `CREATE TABLE IF NOT EXISTS "contents" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  UNIQUE("slug")
+);`,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              slug: { type: 'TEXT', notNull: true },
+            },
+            indexes: [],
+          },
+        },
+      },
+    });
+
+    const childManifestPath = writeManifest(tempDir, 'child.manifest.json', {
+      packageName: '@happyvertical/child',
+      version: '1.0.0',
+      objects: {
+        '@happyvertical/child:Agenda': {
+          className: 'Agenda',
+          schema: {
+            tableName: 'contents',
+            ddl: `CREATE TABLE IF NOT EXISTS "contents" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "meeting_id" TEXT,
+  UNIQUE("slug")
+);`,
+            columns: {
+              id: { type: 'TEXT', primaryKey: true, notNull: true },
+              slug: { type: 'TEXT', notNull: true },
+              meeting_id: { type: 'TEXT' },
+            },
+            indexes: [],
+          },
+        },
+      },
+    });
+
+    const aggregator = new SchemaAggregator();
+    const result = aggregator.aggregate({
+      packages: ['@happyvertical/base', '@happyvertical/child'],
+      localPaths: {
+        '@happyvertical/base': baseManifestPath,
+        '@happyvertical/child': childManifestPath,
+      },
+    });
+
+    const contents = result.tables.get('contents');
+    expect(contents).toBeDefined();
+    expect(contents?.ddl).toContain('"meeting_id" TEXT');
+    expect(contents?.ddl).toMatch(/"meeting_id" TEXT,\n\s+UNIQUE\("slug"\)/);
+  });
 });

@@ -140,6 +140,17 @@ const CONSTRAINT_KEYWORDS = new Set([
   'CHECK',
 ]);
 
+function isTableConstraintSegment(segment: string): boolean {
+  const firstTokenMatch = segment.match(
+    /^"?([a-zA-Z_][a-zA-Z0-9_]*)"?(?=\s|\()/,
+  );
+  if (!firstTokenMatch) {
+    return false;
+  }
+
+  return CONSTRAINT_KEYWORDS.has(firstTokenMatch[1].toUpperCase());
+}
+
 function tokenizeDDLBody(body: string): string[] {
   const segments: string[] = [];
   let current = '';
@@ -189,8 +200,7 @@ function parseColumnsFromDDL(ddl: string): Map<string, string> {
     const colMatch = segment.match(/^"?([a-zA-Z_][a-zA-Z0-9_]*)"?\s+/);
     if (!colMatch) continue;
 
-    const firstToken = colMatch[1].toUpperCase();
-    if (CONSTRAINT_KEYWORDS.has(firstToken)) continue;
+    if (isTableConstraintSegment(segment)) continue;
 
     columns.set(colMatch[1], segment);
   }
@@ -211,14 +221,23 @@ function mergeDDL(existingDDL: string, newDDL: string): string {
 
   if (missingCols.length === 0) return existingDDL;
 
-  const closingIdx = existingDDL.lastIndexOf(')');
-  if (closingIdx === -1) return existingDDL;
+  const bodyMatch = existingDDL.match(/^([\s\S]*?\()([\s\S]*)(\)\s*;?\s*)$/);
+  if (!bodyMatch) return existingDDL;
 
-  const before = existingDDL.substring(0, closingIdx).trimEnd();
-  const after = existingDDL.substring(closingIdx);
-  const additions = missingCols.map((col) => `  ${col}`).join(',\n');
+  const [, prefix, body, suffix] = bodyMatch;
+  const segments = tokenizeDDLBody(body);
+  const firstConstraintIndex = segments.findIndex((segment) =>
+    isTableConstraintSegment(segment),
+  );
+  const insertionIndex =
+    firstConstraintIndex === -1 ? segments.length : firstConstraintIndex;
+  const mergedSegments = [
+    ...segments.slice(0, insertionIndex),
+    ...missingCols,
+    ...segments.slice(insertionIndex),
+  ];
 
-  return `${before},\n${additions}\n${after}`;
+  return `${prefix}\n${mergedSegments.map((segment) => `  ${segment}`).join(',\n')}\n${suffix}`;
 }
 
 // ============================================================================
