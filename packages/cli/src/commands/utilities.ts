@@ -14,11 +14,6 @@ import {
 } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
-import {
-  formatRuntimeCheckReport,
-  type RuntimeCheckResult,
-  runRuntimeCheck,
-} from '../runtime-check.js';
 import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
@@ -26,6 +21,10 @@ import { dbHistoryCommand } from './db-history.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { exportCommand } from './export.js';
+import {
+  runRuntimeCheckSafely,
+  runtimeCheckCommand,
+} from './runtime-check-command.js';
 import { resolveStiDiscriminatorUpgrade } from './sti-upgrade.js';
 
 /**
@@ -52,26 +51,6 @@ export function resolveVitestEntrypoint(fromDir = process.cwd()): string {
   const requireFromDir = createRequire(resolve(fromDir, 'package.json'));
   const vitestPackageJson = requireFromDir.resolve('vitest/package.json');
   return join(dirname(vitestPackageJson), 'vitest.mjs');
-}
-
-export async function runRuntimeCheckSafely(
-  projectRoot: string,
-): Promise<RuntimeCheckResult> {
-  try {
-    return await runRuntimeCheck(projectRoot);
-  } catch (error) {
-    return {
-      projectRoot,
-      discoveredManifestCount: 0,
-      findings: [
-        {
-          severity: 'error',
-          code: 'runtime-check-crashed',
-          message: `Runtime diagnostics crashed: ${error instanceof Error ? error.message : String(error)}`,
-        },
-      ],
-    };
-  }
 }
 
 /**
@@ -1951,12 +1930,53 @@ export default testManifest;
         );
       }
 
+      const runtimeCheck = await runRuntimeCheckSafely(cwd);
+
+      // 10.5 Check consumer registration for external SMRT packages
+      const projectManifestPath = resolve(cwd, '.smrt', 'manifest.json');
+      const registerPath = resolve(cwd, '.smrt', 'register.js');
+      if (existsSync(projectManifestPath)) {
+        try {
+          const projectManifest = JSON.parse(
+            readFileSync(projectManifestPath, 'utf-8'),
+          );
+          const smrtDependencies = (
+            Array.isArray(projectManifest.smrtDependencies)
+              ? projectManifest.smrtDependencies
+              : []
+          ).filter(
+            (dependency: string) => dependency !== '@happyvertical/smrt-core',
+          );
+
+          if (smrtDependencies.length > 0) {
+            const hasRegisterFile = existsSync(registerPath);
+            const missingRegisterFinding = runtimeCheck.findings.find(
+              (finding) => finding.code === 'missing-consumer-register',
+            );
+
+            if (hasRegisterFile || missingRegisterFinding) {
+              check(
+                'External SMRT registrations generated',
+                hasRegisterFile,
+                missingRegisterFinding?.message,
+              );
+            }
+          }
+        } catch {
+          check(
+            'Project manifest readable',
+            false,
+            undefined,
+            'Could not read .smrt/manifest.json to validate external registrations',
+          );
+        }
+      }
+
       console.log();
 
       // ========== Runtime ==========
       console.log('🏃 Runtime\n');
 
-      const runtimeCheck = await runRuntimeCheckSafely(cwd);
       const runtimeErrors = runtimeCheck.findings.filter(
         (finding) => finding.severity === 'error',
       );
@@ -2085,22 +2105,7 @@ export default testManifest;
     },
   },
 
-  'runtime:check': {
-    name: 'runtime:check',
-    description:
-      'Validate runtime manifest discovery, package identity, and registry hydration',
-    aliases: ['runtime-check'],
-    args: [],
-    options: {},
-    handler: async () => {
-      const result = await runRuntimeCheckSafely(process.cwd());
-      console.log(`${formatRuntimeCheckReport(result)}\n`);
-
-      if (result.findings.some((finding) => finding.severity === 'error')) {
-        process.exit(1);
-      }
-    },
-  },
+  'runtime:check': runtimeCheckCommand,
 
   // Migration status and history commands (from separate modules)
   'db:status': dbStatusCommand,

@@ -27,7 +27,9 @@ describe('runtime-check utilities', () => {
   it('wraps runtime-check crashes into structured findings', async () => {
     mocks.runRuntimeCheck.mockRejectedValueOnce(new Error('boom'));
 
-    const { runRuntimeCheckSafely } = await import('../utilities.js');
+    const { runRuntimeCheckSafely } = await import(
+      '../runtime-check-command.js'
+    );
     const result = await runRuntimeCheckSafely('/tmp/runtime-check-fixture');
 
     expect(result).toEqual(
@@ -54,11 +56,9 @@ describe('runtime-check utilities', () => {
       throw new Error(`exit:${code ?? ''}`);
     }) as typeof process.exit);
 
-    const { utilityCommands } = await import('../utilities.js');
+    const { runtimeCheckCommand } = await import('../runtime-check-command.js');
 
-    await expect(utilityCommands['runtime:check'].handler()).rejects.toThrow(
-      'exit:1',
-    );
+    await expect(runtimeCheckCommand.handler()).rejects.toThrow('exit:1');
     expect(mocks.formatRuntimeCheckReport).toHaveBeenCalledWith(
       expect.objectContaining({
         findings: [

@@ -76,6 +76,14 @@ const SYSTEM_FIELDS = new Set([
 // bounded upward walk when resolving the owning package.json from an entry path.
 const MAX_PACKAGE_JSON_ASCENTS = 12;
 
+function formatDependencyList(dependencies: string[]): string {
+  if (dependencies.length <= 3) {
+    return dependencies.join(', ');
+  }
+
+  return `${dependencies.slice(0, 3).join(', ')}, +${dependencies.length - 3} more`;
+}
+
 function addFinding(
   findings: RuntimeCheckFinding[],
   severity: RuntimeCheckSeverity,
@@ -724,6 +732,46 @@ function checkShadowing(
   }
 }
 
+function getConsumerObjectDependencies(
+  dependencyManifests: SmartObjectManifest[],
+): string[] {
+  return Array.from(
+    new Set(
+      dependencyManifests
+        .filter(
+          (manifest) => manifest.packageName !== '@happyvertical/smrt-core',
+        )
+        .filter((manifest) => Object.keys(manifest.objects || {}).length > 0)
+        .map((manifest) => manifest.packageName)
+        .filter((dependency): dependency is string => Boolean(dependency)),
+    ),
+  ).sort();
+}
+
+function checkConsumerRegistration(
+  projectManifest: SmartObjectManifest,
+  dependencyManifests: SmartObjectManifest[],
+  projectRoot: string,
+  findings: RuntimeCheckFinding[],
+): void {
+  const dependencies = getConsumerObjectDependencies(dependencyManifests);
+  if (dependencies.length === 0) {
+    return;
+  }
+
+  const registerPath = join(projectRoot, '.smrt', 'register.js');
+  if (existsSync(registerPath)) {
+    return;
+  }
+
+  addFinding(
+    findings,
+    'error',
+    'missing-consumer-register',
+    `Project "${projectManifest.packageName || projectRoot}" declares external SMRT dependencies (${formatDependencyList(dependencies)}) but is missing ".smrt/register.js". Consumer apps must generate runtime registrations via smrtConsumer() or "smrt generate-register" before running runtime checks.`,
+  );
+}
+
 export async function runRuntimeCheck(
   projectRoot: string = process.cwd(),
 ): Promise<RuntimeCheckResult> {
@@ -751,6 +799,12 @@ export async function runRuntimeCheck(
   )) as SmartObjectManifest;
   const dependencyManifests = await loadDependencyManifests(
     projectManifest,
+    projectRoot,
+    findings,
+  );
+  checkConsumerRegistration(
+    projectManifest,
+    dependencyManifests,
     projectRoot,
     findings,
   );

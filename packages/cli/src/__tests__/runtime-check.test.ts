@@ -105,6 +105,14 @@ async function createProject(
   await writeJson(resolve(projectRoot, '.smrt/manifest.json'), manifest);
 }
 
+async function createRegisterFile(projectRoot: string): Promise<void> {
+  await mkdir(resolve(projectRoot, '.smrt'), { recursive: true });
+  await writeFile(
+    resolve(projectRoot, '.smrt/register.js'),
+    'export function registerAll() {}\n',
+  );
+}
+
 afterEach(async () => {
   process.chdir(originalCwd);
   ObjectRegistry.clear();
@@ -115,6 +123,124 @@ afterEach(async () => {
 });
 
 describe('runRuntimeCheck', () => {
+  it('fails when a consumer project declares SMRT dependencies without generated registrations', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(projectRoot, '@fixture/messages', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/messages',
+      objects: {
+        '@fixture/messages:EmailAccount': {
+          className: 'EmailAccount',
+          qualifiedName: '@fixture/messages:EmailAccount',
+          packageName: '@fixture/messages',
+          collection: 'email_accounts',
+          fields: {
+            email: { type: 'text', required: true },
+          },
+        },
+      },
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/messages'],
+      objects: {},
+    });
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(result.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'error',
+          code: 'missing-consumer-register',
+          message: expect.stringContaining('.smrt/register.js'),
+        }),
+      ]),
+    );
+  });
+
+  it('accepts consumer projects once generated registrations exist', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(projectRoot, '@fixture/messages', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/messages',
+      objects: {
+        '@fixture/messages:EmailAccount': {
+          className: 'EmailAccount',
+          qualifiedName: '@fixture/messages:EmailAccount',
+          packageName: '@fixture/messages',
+          collection: 'email_accounts',
+          fields: {
+            email: { type: 'text', required: true },
+          },
+        },
+      },
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/messages'],
+      objects: {},
+    });
+    await createRegisterFile(projectRoot);
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(
+      result.findings.some(
+        (finding) => finding.code === 'missing-consumer-register',
+      ),
+    ).toBe(false);
+  });
+
+  it('does not require generated registrations for empty dependency manifests', async () => {
+    const projectRoot = await mkdtemp(
+      resolve(process.cwd(), '.tmp-runtime-check-'),
+    );
+    tempDirs.push(projectRoot);
+
+    await createExternalPackage(projectRoot, '@fixture/empty-manifest', {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@fixture/empty-manifest',
+      objects: {},
+    });
+
+    await createProject(projectRoot, {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@test/app',
+      smrtDependencies: ['@fixture/empty-manifest'],
+      objects: {},
+    });
+
+    process.chdir(projectRoot);
+    const result = await runRuntimeCheck(projectRoot);
+
+    expect(
+      result.findings.some(
+        (finding) => finding.code === 'missing-consumer-register',
+      ),
+    ).toBe(false);
+  });
+
   it('fails when a declared SMRT dependency has no manifest export', async () => {
     const projectRoot = await mkdtemp(
       resolve(process.cwd(), '.tmp-runtime-check-'),
@@ -315,6 +441,7 @@ describe('runRuntimeCheck', () => {
         },
       },
     });
+    await createRegisterFile(projectRoot);
 
     process.chdir(projectRoot);
     const result = await runRuntimeCheck(projectRoot);
@@ -410,6 +537,7 @@ describe('runRuntimeCheck', () => {
         },
       },
     });
+    await createRegisterFile(projectRoot);
 
     process.chdir(projectRoot);
     const result = await runRuntimeCheck(projectRoot);
