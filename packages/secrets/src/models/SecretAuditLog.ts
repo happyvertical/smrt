@@ -167,6 +167,7 @@ export class SecretAuditLog extends SmrtObject {
 export function createAuditEntry(params: {
   secretId?: string | null;
   secretName: string;
+  tenantId?: string | null;
   userId: string;
   action: SecretAuditAction;
   result: SecretAuditResult;
@@ -174,7 +175,7 @@ export function createAuditEntry(params: {
   userAgent?: string;
   details?: Record<string, unknown>;
 }): Partial<SecretAuditLog> {
-  return {
+  const entry: Record<string, unknown> = {
     secretId: params.secretId ?? null,
     secretName: params.secretName,
     userId: params.userId,
@@ -184,4 +185,10 @@ export function createAuditEntry(params: {
     userAgent: params.userAgent ?? '',
     details: params.details ?? {},
   };
+
+  if (params.tenantId !== undefined) {
+    entry.tenantId = params.tenantId;
+  }
+
+  return entry as Partial<SecretAuditLog>;
 }
