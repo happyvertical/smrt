@@ -3,6 +3,7 @@
  * @packageDocumentation
  */
 
+import type { SmrtCreateInput } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 /**
@@ -167,14 +168,15 @@ export class SecretAuditLog extends SmrtObject {
 export function createAuditEntry(params: {
   secretId?: string | null;
   secretName: string;
+  tenantId?: string | null;
   userId: string;
   action: SecretAuditAction;
   result: SecretAuditResult;
   ipAddress?: string;
   userAgent?: string;
   details?: Record<string, unknown>;
-}): Partial<SecretAuditLog> {
-  return {
+}): SmrtCreateInput<SecretAuditLog> {
+  const entry: SmrtCreateInput<SecretAuditLog> = {
     secretId: params.secretId ?? null,
     secretName: params.secretName,
     userId: params.userId,
@@ -183,5 +185,7 @@ export function createAuditEntry(params: {
     ipAddress: params.ipAddress ?? '',
     userAgent: params.userAgent ?? '',
     details: params.details ?? {},
+    ...(params.tenantId !== undefined ? { tenantId: params.tenantId } : {}),
   };
+  return entry;
 }
