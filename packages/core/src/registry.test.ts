@@ -1038,6 +1038,56 @@ describe('ObjectRegistry', () => {
       expect(registered?.schema.tableName).toBe('bundled_secrets');
       expect((BundledSecret as any).SMRT_TABLE_NAME).toBe('bundled_secrets');
     });
+
+    it('should inject tenant metadata from external decorator config', () => {
+      class ExternalTenantScopedSecret extends SmrtObject {
+        name: string = '';
+      }
+
+      Object.defineProperty(ExternalTenantScopedSecret, 'name', {
+        value: 'y',
+        configurable: true,
+      });
+
+      ObjectRegistry.register(ExternalTenantScopedSecret as any, {
+        name: 'ExternalTenantScopedSecret',
+        packageName: '@test/pkg',
+        _manifest: {
+          objects: {
+            ExternalTenantScopedSecret: {
+              className: 'ExternalTenantScopedSecret',
+              fields: {
+                name: { type: 'text' },
+              },
+              decoratorConfig: {
+                tenantScoped: true,
+              },
+              schema: {
+                tableName: 'external_tenant_scoped_secrets',
+                ddl: '',
+                columns: {},
+                indexes: [],
+                version: 'test',
+              },
+            },
+          },
+        } as any,
+      });
+
+      const registered = ObjectRegistry.getClassByConstructor(
+        ExternalTenantScopedSecret as any,
+      );
+      expect(registered?.tenantScopedConfig?.field).toBe('tenantId');
+      expect(registered?.fields.has('tenantId')).toBe(true);
+      expect(registered?.fields.get('tenantId')?.related).toBe('Tenant');
+      expect(
+        (registered?.fields.get('tenantId') as any)?._meta?.__tenancy
+          ?.isTenantIdField,
+      ).toBe(true);
+      expect(
+        ObjectRegistry.getAllSchemas().external_tenant_scoped_secrets?.ddl,
+      ).toContain('"tenant_id"');
+    });
   });
 
   describe('Mixed Field helpers and primitives (Issue #102, #103)', () => {

@@ -139,7 +139,9 @@ export async function fieldsFromClass(
   ClassType: new (...args: any[]) => any,
   values?: Record<string, any>,
 ) {
-  const className = ClassType.name;
+  const className =
+    ObjectRegistry.getClassByConstructor(ClassType as any)?.name ||
+    ClassType.name;
   // NEW: Use getAllFields() to include inherited fields from parent classes
   const cachedFields = await ObjectRegistry.getAllFields(className);
 

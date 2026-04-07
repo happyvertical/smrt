@@ -216,11 +216,30 @@ export class SmrtObject extends SmrtClass {
     // Skip registration during field extraction to avoid infinite recursion
     if (
       this.constructor !== SmrtObject &&
-      !ObjectRegistry.hasClass(this.constructor.name) &&
+      !ObjectRegistry.getClassByConstructor(
+        this.constructor as typeof SmrtObject,
+      ) &&
       !(options as any)?._skipRegistration
     ) {
       ObjectRegistry.register(this.constructor as typeof SmrtObject, {});
     }
+  }
+
+  private getRegisteredClassInfo() {
+    return ObjectRegistry.getClassByConstructor(
+      this.constructor as typeof SmrtObject,
+    );
+  }
+
+  protected getResolvedClassName(): string {
+    return this.getRegisteredClassInfo()?.name || this.constructor.name;
+  }
+
+  protected getResolvedQualifiedName(): string {
+    const registered = this.getRegisteredClassInfo();
+    return (
+      registered?.qualifiedName || registered?.name || this.constructor.name
+    );
   }
 
   /**
@@ -457,7 +476,7 @@ export class SmrtObject extends SmrtClass {
    * @private
    */
   private needsPropertyInitialization(): boolean {
-    const className = this.constructor.name;
+    const className = this.getResolvedClassName();
 
     // Check if this class has decorator metadata in the registry
     // If it does, it's using decorators and handles its own initialization
@@ -484,9 +503,11 @@ export class SmrtObject extends SmrtClass {
    * @throws Error if STI validation fails
    */
   async loadDataFromDb(data: any) {
+    const className = this.getResolvedClassName();
+
     if (process.env.DEBUG_STI) {
       console.log('[loadDataFromDb] Loading:', {
-        class: this.constructor.name,
+        class: className,
         dataKeys: Object.keys(data),
         metaType: data._meta_type,
       });
@@ -497,7 +518,7 @@ export class SmrtObject extends SmrtClass {
 
     if (process.env.DEBUG_STI) {
       console.log('[loadDataFromDb] Field definitions:', {
-        class: this.constructor.name,
+        class: className,
         fieldKeys: Object.keys(fields),
       });
     }
@@ -508,14 +529,12 @@ export class SmrtObject extends SmrtClass {
     const formattedData = formatDataJs(data, fields);
 
     // Check if this class uses STI (Single Table Inheritance)
-    const tableStrategy = ObjectRegistry.getTableStrategy(
-      this.constructor.name,
-    );
+    const tableStrategy = ObjectRegistry.getTableStrategy(className);
     const isSTI = tableStrategy === 'sti';
 
     if (process.env.DEBUG_STI) {
       console.log('[loadDataFromDb] After formatDataJs:', {
-        class: this.constructor.name,
+        class: className,
         isSTI,
         formattedDataKeys: Object.keys(formattedData),
       });
@@ -526,17 +545,17 @@ export class SmrtObject extends SmrtClass {
       // Validation 1: _meta_type must be present in database row
       if (!formattedData._meta_type) {
         throw new Error(
-          `STI validation failed: Missing _meta_type discriminator in database row for ${this.constructor.name}. ` +
+          `STI validation failed: Missing _meta_type discriminator in database row for ${className}. ` +
             `Ensure the row was saved with STI support enabled.`,
         );
       }
 
       // Validation 2: _meta_type must match the class being instantiated
       // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-      if (!isValidMetaType(formattedData._meta_type, this.constructor.name)) {
+      if (!isValidMetaType(formattedData._meta_type, className)) {
         throw new Error(
-          `STI validation failed: Type mismatch when loading ${this.constructor.name}. ` +
-            `Database row has _meta_type='${formattedData._meta_type}' but expected '${getExpectedMetaType(this.constructor.name)}'. ` +
+          `STI validation failed: Type mismatch when loading ${className}. ` +
+            `Database row has _meta_type='${formattedData._meta_type}' but expected '${getExpectedMetaType(className)}'. ` +
             `This usually means you're trying to load a row with the wrong class.`,
         );
       }
@@ -550,7 +569,7 @@ export class SmrtObject extends SmrtClass {
 
     if (process.env.DEBUG_STI) {
       console.log('[loadDataFromDb] Starting field hydration:', {
-        class: this.constructor.name,
+        class: className,
         fieldCount: Object.keys(fields).length,
       });
     }
@@ -598,7 +617,7 @@ export class SmrtObject extends SmrtClass {
 
     if (process.env.DEBUG_STI) {
       console.log('[loadDataFromDb] Hydration complete:', {
-        class: this.constructor.name,
+        class: className,
         hydratedCount,
         skippedCount,
         totalFields: Object.keys(fields).length,
@@ -612,7 +631,7 @@ export class SmrtObject extends SmrtClass {
   get tableName() {
     if (!this._tableName) {
       // For STI, use the base class's table name from schema (manifest-derived)
-      const className = this.constructor.name;
+      const className = this.getResolvedClassName();
       const tableStrategy = ObjectRegistry.getTableStrategy(className);
 
       if (tableStrategy === 'sti') {
@@ -650,13 +669,20 @@ export class SmrtObject extends SmrtClass {
    * @returns Object containing field definitions with current values
    */
   async getFields() {
-    // Use cached field definitions from ObjectRegistry (via fieldsFromClass)
-    // This is much more efficient than creating temporary instances
-    const fields = await fieldsFromClass(
-      this.constructor as new (
-        ...args: any[]
-      ) => any,
-    );
+    const className = this.getResolvedClassName();
+    const cachedFields = await ObjectRegistry.getAllFields(className);
+    const fields: Record<string, any> = {};
+
+    for (const [key, field] of cachedFields.entries()) {
+      const meta = { ...(field._meta || {}) };
+      delete meta.__smrtSystemField;
+
+      fields[key] = {
+        name: key,
+        type: field.type || 'TEXT',
+        _meta: meta,
+      };
+    }
 
     // Add current instance values to the fields
     // Use getPropertyValue to unwrap Field instances
@@ -723,6 +749,7 @@ export class SmrtObject extends SmrtClass {
    * See transformJSON() documentation for safe customization patterns.
    */
   toJSON() {
+    const className = this.getResolvedClassName();
     const data: any = {
       id: this.id,
       slug: this.slug,
@@ -732,9 +759,7 @@ export class SmrtObject extends SmrtClass {
     };
 
     // Check if this class uses STI (Single Table Inheritance)
-    const tableStrategy = ObjectRegistry.getTableStrategy(
-      this.constructor.name,
-    );
+    const tableStrategy = ObjectRegistry.getTableStrategy(className);
     const isSTI = tableStrategy === 'sti';
 
     // If STI, add discriminator and prepare meta_data container
@@ -742,23 +767,21 @@ export class SmrtObject extends SmrtClass {
       // Use qualified name for STI discriminator (namespace isolation)
       // The qualified name uses the child class's own package, not the parent's
       // This supports multi-package inheritance hierarchies (Issue #713)
-      const registeredClass = ObjectRegistry.getClass(this.constructor.name);
-      data._meta_type = registeredClass?.qualifiedName || this.constructor.name;
+      data._meta_type = this.getResolvedQualifiedName();
       data._meta_data = {};
     }
 
     // Get registered field definitions (synchronous access to already-loaded metadata)
     // For inheritance hierarchies, use cached inherited fields if available (populated by getAllFields())
     // This ensures multi-level STI classes serialize all parent fields correctly (Issue #332)
-    const registered = ObjectRegistry.getClass(this.constructor.name);
+    const registered = ObjectRegistry.getClass(className);
     let registeredFields =
-      registered?.inheritedFields ||
-      ObjectRegistry.getFields(this.constructor.name);
+      registered?.inheritedFields || ObjectRegistry.getFields(className);
 
     // In STI mode, we need to know about ALL sibling class fields to provide default values
     // for fields that exist in siblings but not in this class (Issue #391)
     if (isSTI) {
-      const descendants = getSTIHierarchyMembers(this.constructor.name);
+      const descendants = getSTIHierarchyMembers(className);
       if (descendants.length > 0) {
         const allSTIFields = new Map(registeredFields);
 
@@ -1060,15 +1083,14 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   async save() {
+    const className = this.getResolvedClassName();
+
     try {
       // Validate object state before saving
       await this.validateBeforeSave();
 
       // Execute beforeSave interceptors (e.g., tenancy validation)
-      const interceptorContext = createInterceptorContext(
-        this.constructor.name,
-        'save',
-      );
+      const interceptorContext = createInterceptorContext(className, 'save');
       await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
 
       if (!this.id) {
@@ -1091,9 +1113,7 @@ export class SmrtObject extends SmrtClass {
       // Execute save operation with retry logic for transient failures
       // Use per-adapter upsert method instead of generating SQL
 
-      const tableStrategy = ObjectRegistry.getTableStrategy(
-        this.constructor.name,
-      );
+      const tableStrategy = ObjectRegistry.getTableStrategy(className);
 
       // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
       if (process.env.NODE_ENV === 'development') {
@@ -1112,7 +1132,7 @@ export class SmrtObject extends SmrtClass {
       }
 
       if (tableStrategy === 'sti') {
-        const descendants = getSTIHierarchyMembers(this.constructor.name);
+        const descendants = getSTIHierarchyMembers(className);
         const descendantsNeedingHydration = descendants.filter((descendant) => {
           const registeredDescendant = ObjectRegistry.getClass(descendant);
           return registeredDescendant && !registeredDescendant.inheritedFields;
@@ -1133,15 +1153,15 @@ export class SmrtObject extends SmrtClass {
       if (tableStrategy === 'sti') {
         if (!jsonData._meta_type) {
           throw new Error(
-            `STI validation failed: Missing _meta_type discriminator when saving ${this.constructor.name}. ` +
+            `STI validation failed: Missing _meta_type discriminator when saving ${className}. ` +
               `This should have been set automatically by toJSON(). Please report this bug.`,
           );
         }
         // Accept both simple class name and qualified name (namespace isolation - Issue #713)
-        if (!isValidMetaType(jsonData._meta_type, this.constructor.name)) {
+        if (!isValidMetaType(jsonData._meta_type, className)) {
           throw new Error(
-            `STI validation failed: _meta_type mismatch when saving ${this.constructor.name}. ` +
-              `Expected '${getExpectedMetaType(this.constructor.name)}' but got '${jsonData._meta_type}'. ` +
+            `STI validation failed: _meta_type mismatch when saving ${className}. ` +
+              `Expected '${getExpectedMetaType(className)}' but got '${jsonData._meta_type}'. ` +
               `This should not happen - please report this bug.`,
           );
         }
@@ -1160,9 +1180,7 @@ export class SmrtObject extends SmrtClass {
       }
 
       // Get conflict columns from registry (supports custom columns for junction tables)
-      const conflictColumns = ObjectRegistry.getConflictColumns(
-        this.constructor.name,
-      );
+      const conflictColumns = ObjectRegistry.getConflictColumns(className);
 
       await ErrorUtils.withRetry(
         async () => {
@@ -1180,10 +1198,7 @@ export class SmrtObject extends SmrtClass {
               }
               if (error.message.includes('NOT NULL constraint failed')) {
                 const field = this.extractConstraintField(error.message);
-                throw ValidationError.requiredField(
-                  field,
-                  this.constructor.name,
-                );
+                throw ValidationError.requiredField(field, className);
               }
               throw DatabaseError.queryFailed(
                 `UPSERT INTO ${this.tableName}`,
@@ -1201,9 +1216,7 @@ export class SmrtObject extends SmrtClass {
       await GlobalInterceptors.executeAfterSave(this, interceptorContext);
 
       // Auto-generate embeddings if configured
-      const embeddingConfig = ObjectRegistry.getEmbeddingConfig(
-        this.constructor.name,
-      );
+      const embeddingConfig = ObjectRegistry.getEmbeddingConfig(className);
       const aiClient =
         embeddingConfig && embeddingConfig.autoGenerate !== false
           ? await this.getOptionalAiClient()
@@ -1235,7 +1248,7 @@ export class SmrtObject extends SmrtClass {
 
       throw RuntimeError.operationFailed(
         'save',
-        `${this.constructor.name}#${this.id}`,
+        `${className}#${this.id}`,
         error instanceof Error ? error : new Error(String(error)),
       );
     }
@@ -1246,7 +1259,7 @@ export class SmrtObject extends SmrtClass {
    * Override in subclasses to add custom validation logic
    */
   protected async validateBeforeSave(): Promise<void> {
-    const className = this.constructor.name;
+    const className = this.getResolvedClassName();
 
     // Priority 1: Use pre-computed validation rules from manifest (Issue #782)
     // This is the fastest path - rules are serializable and don't require closures

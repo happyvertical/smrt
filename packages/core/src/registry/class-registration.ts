@@ -114,6 +114,18 @@ export function register(
       ...config,
       tableName: nextTableName,
     };
+    if (!existing.schema) {
+      existing.schema = {
+        ddl: '',
+        indexes: [],
+        triggers: [],
+        tableName: nextTableName,
+        columns: {},
+        foreignKeys: [],
+        dependencies: [],
+        version: '',
+      };
+    }
     existing.schema.tableName = nextTableName;
     existing.constructor = ctor;
     setSmrtTableName(ctor, nextTableName);
@@ -579,12 +591,15 @@ export function register(
   }
 
   // Handle tenantScoped configuration (Issue #688)
-  // Normalize config and inject tenantId field if enabled
+  // External manifests can carry tenantScoped only in decoratorConfig, so
+  // registration must honor the merged view rather than only explicit config.
   let tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined;
-  if (config.tenantScoped) {
+  const effectiveTenantScoped =
+    config.tenantScoped ?? manifestEntry?.decoratorConfig?.tenantScoped;
+  if (effectiveTenantScoped) {
     // Normalize boolean or object config into full options
     const tenantOpts =
-      typeof config.tenantScoped === 'boolean' ? {} : config.tenantScoped;
+      typeof effectiveTenantScoped === 'boolean' ? {} : effectiveTenantScoped;
     tenantScopedConfig = {
       mode: tenantOpts.mode ?? 'required',
       field: tenantOpts.field ?? 'tenantId',
