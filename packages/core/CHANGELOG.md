@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.37
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - persist tenant audit logs explicitly (#1104) (secrets)
+  - @happyvertical/smrt-scanner@0.21.37
+  - @happyvertical/smrt-config@0.21.37
+  - @happyvertical/smrt-types@0.21.37
+
 ## 0.21.36
 
 ### Patch Changes
