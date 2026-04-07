@@ -68,9 +68,11 @@ export default defineConfig(async () => {
       }),
       dts({
         outDir: resolve(packageDir, 'dist'),
+        entryRoot: resolve(packageDir, 'src'),
         include: [resolve(packageDir, 'src/**/*')],
         exclude: ['**/*.test.ts', '**/*.spec.ts'],
-        rollupTypes: true,
+        insertTypesEntry: false,
+        rollupTypes: false,
         tsconfigPath: resolve(packageDir, 'tsconfig.json'),
         clearPureImport: true,
       }),
