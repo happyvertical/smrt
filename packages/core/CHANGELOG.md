@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.35
+
+### Patch Changes
+
+- ### Features
+
+  - resolve tenant AI secrets with ancestor fallback (#1102) (agents)
+  - @happyvertical/smrt-scanner@0.21.35
+  - @happyvertical/smrt-config@0.21.35
+  - @happyvertical/smrt-types@0.21.35
+
 ## 0.21.34
 
 ### Patch Changes
