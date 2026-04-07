@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.21.34
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - guard provider sync and bump sdk (#1101) (smrt-svelte)
+  - merge sti child columns in ensureSchema (#1099) (core)
+  - @happyvertical/smrt-scanner@0.21.34
+  - @happyvertical/smrt-config@0.21.34
+  - @happyvertical/smrt-types@0.21.34
+
 ## 0.21.33
 
 ### Patch Changes
