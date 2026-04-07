@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.36
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve smrt runtime class names (#1103) (secrets)
+  - @happyvertical/smrt-scanner@0.21.36
+  - @happyvertical/smrt-config@0.21.36
+  - @happyvertical/smrt-types@0.21.36
+
 ## 0.21.35
 
 ### Patch Changes
