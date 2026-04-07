@@ -1,3 +1,4 @@
+import type { AIClientOptions } from '@happyvertical/ai';
 import { createLogger, type Logger } from '@happyvertical/logger';
 import { sanitizeConfig } from '@happyvertical/smrt-config';
 import {
@@ -10,7 +11,12 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
+import { type AgentAIOptions, resolveAgentAIOptions } from './ai-config.js';
 import { AgentConfig } from './config.js';
 import {
   getAgentClassName as resolveAgentClassName,
@@ -33,6 +39,13 @@ import type { AgentAdminRoute, AgentUISlots } from './ui.js';
 export interface AgentOptions
   extends SmrtObjectOptions,
     AgentWithInterestsOptions {
+  /**
+   * Optional AI configuration for this agent.
+   *
+   * When `apiKey` is omitted, the runtime can resolve provider credentials from
+   * tenant secrets based on the active tenant context.
+   */
+  ai?: AgentAIOptions;
   /**
    * Suppress all log output (useful for CLI --json mode)
    * When true, creates a no-op logger that discards all messages
@@ -516,6 +529,31 @@ export abstract class Agent extends SmrtObject {
     await super.initialize();
     this.status = 'initializing';
     this.logger.info('Agent initializing');
+
+    const fileAiConfig =
+      typeof this.config === 'object' &&
+      this.config !== null &&
+      'ai' in (this.config as Record<string, unknown>) &&
+      typeof (this.config as Record<string, unknown>).ai === 'object' &&
+      (this.config as Record<string, unknown>).ai !== null
+        ? ((this.config as Record<string, unknown>).ai as AgentAIOptions)
+        : undefined;
+    const configuredAi =
+      ((this.options as AgentOptions).ai as AgentAIOptions | undefined) ??
+      fileAiConfig;
+    if (configuredAi && this._db) {
+      const resolvedAi = await resolveAgentAIOptions({
+        aiConfig: configuredAi,
+        db: this._db,
+        tenantId:
+          getCurrentTenant()?.tenantId ||
+          (typeof this.tenantId === 'string' ? this.tenantId : undefined),
+      });
+      if (resolvedAi) {
+        (this.options as AgentOptions).ai = resolvedAi as AIClientOptions &
+          Record<string, unknown>;
+      }
+    }
 
     if ((this.options as AgentOptions).manageProcessSignals) {
       this.setupSignalHandlers();

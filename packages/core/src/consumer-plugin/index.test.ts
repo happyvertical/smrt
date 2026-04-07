@@ -76,7 +76,7 @@ describe('smrtConsumer registration generation', () => {
 
     const content = readFileSync(registerPath, 'utf-8');
     expect(content).toContain(
-      'ObjectRegistry.register(ExternalThing, { packageName: "@test/pkg" });',
+      'ObjectRegistry.register(ExternalThing, { name: "ExternalThing", packageName: "@test/pkg" });',
     );
   });
 });

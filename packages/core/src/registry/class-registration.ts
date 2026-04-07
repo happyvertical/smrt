@@ -52,6 +52,37 @@ import type {
 } from './types.js';
 import { compileValidators } from './validator';
 
+function resolveTableName(
+  ctor: typeof SmrtObject,
+  name: string,
+  config: SmartObjectConfig,
+): string {
+  const manifestEntry = config._manifest
+    ? lookupInManifest(config._manifest, name)
+    : discoverManifestSync(name);
+
+  return (
+    manifestEntry?.schema?.tableName ||
+    manifestEntry?.decoratorConfig?.tableName ||
+    config.tableName ||
+    tableNameFromClass(ctor)
+  );
+}
+
+function setSmrtTableName(ctor: typeof SmrtObject, tableName: string): void {
+  const existing = Object.getOwnPropertyDescriptor(ctor, 'SMRT_TABLE_NAME');
+  if (existing?.value === tableName) {
+    return;
+  }
+
+  Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
+    value: tableName,
+    writable: false,
+    enumerable: false,
+    configurable: true,
+  });
+}
+
 export function register(
   ctor: typeof SmrtObject,
   config: SmartObjectConfig = {},
@@ -74,8 +105,18 @@ export function register(
     existing.qualifiedName = nextPackageName
       ? (createQualifiedName(nextPackageName, name) as QualifiedClassName)
       : undefined;
-    existing.config = { ...existing.config, ...config };
+    const nextTableName = resolveTableName(ctor, name, {
+      ...existing.config,
+      ...config,
+    });
+    existing.config = {
+      ...existing.config,
+      ...config,
+      tableName: nextTableName,
+    };
+    existing.schema.tableName = nextTableName;
     existing.constructor = ctor;
+    setSmrtTableName(ctor, nextTableName);
 
     if (existingKey !== nextKey) {
       const classes = getClasses();
@@ -632,10 +673,8 @@ export function register(
   // The manifest's tableName is computed at build-time when full class hierarchy is known,
   // which correctly handles STI inheritance. The decorator may derive wrong tableName
   // if parent class isn't registered yet at decorator execution time.
-  const tableName =
-    manifestEntry?.decoratorConfig?.tableName ||
-    config.tableName ||
-    tableNameFromClass(ctor);
+  const tableName = resolveTableName(ctor, name, config);
+  setSmrtTableName(ctor, tableName);
 
   // Load pre-generated schema from manifest if available, otherwise placeholder
   let schema: SchemaDefinition;

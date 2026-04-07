@@ -232,11 +232,11 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationContent).toContain(
         "import { ObjectRegistry } from '@happyvertical/smrt-core';",
       );
-      expect(registrationContent).toContain(
-        "ObjectRegistry.register(LocalThing, { packageName: '@test/app' });",
+      expect(registrationContent).toMatch(
+        /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*\}\);/s,
       );
-      expect(registrationContent).toContain(
-        "ObjectRegistry.register(ExternalThing, { packageName: '@test/pkg' });",
+      expect(registrationContent).toMatch(
+        /ObjectRegistry\.register\(ExternalThing,\s*\{\s*name: 'ExternalThing',\s*packageName: '@test\/pkg',\s*\}\);/s,
       );
     });
 
@@ -281,8 +281,8 @@ describe('SvelteKit Route Generator', () => {
       expect(registrationCall).toBeDefined();
       const registrationContent = registrationCall?.[1] as string;
 
-      expect(registrationContent).toContain(
-        "ObjectRegistry.register(LocalThing, { packageName: '@test/app' });",
+      expect(registrationContent).toMatch(
+        /ObjectRegistry\.register\(LocalThing,\s*\{\s*name: 'LocalThing',\s*packageName: '@test\/app',\s*\}\);/s,
       );
       expect(registrationContent).not.toContain(
         'ObjectRegistry.register(UnqualifiedThing, {});',
