@@ -5,7 +5,6 @@ import dts from 'vite-plugin-dts';
 const packageDir = resolve(__dirname);
 
 export default defineConfig(async () => {
-  // Dynamically import smrtPlugin
   const { smrtPlugin } = await import(
     '../../packages/core/src/vite-plugin/index.js'
   );
@@ -13,9 +12,15 @@ export default defineConfig(async () => {
   return {
     build: {
       lib: {
-        entry: resolve(packageDir, 'src/index.ts'),
+        entry: {
+          index: resolve(packageDir, 'src/index.ts'),
+          'models/index': resolve(packageDir, 'src/models/index.ts'),
+          'services/SecretService': resolve(
+            packageDir,
+            'src/services/SecretService.ts',
+          ),
+        },
         formats: ['es'] as const,
-        fileName: () => 'index.js',
       },
       rollupOptions: {
         output: {
@@ -26,7 +31,6 @@ export default defineConfig(async () => {
           chunkFileNames: 'chunks/[name]-[hash].js',
         },
         external: [
-          // Node.js built-ins
           /^node:/,
           /^bun:/,
           'fs',
@@ -40,7 +44,6 @@ export default defineConfig(async () => {
           'child_process',
           'buffer',
           'Buffer',
-          // External dependencies
           '@happyvertical/sql',
           '@happyvertical/utils',
           '@happyvertical/ai',
@@ -50,6 +53,10 @@ export default defineConfig(async () => {
           '@happyvertical/secrets',
         ],
       },
+      minify: false,
+      sourcemap: true,
+      target: 'es2022',
+      reportCompressedSize: false,
     },
     plugins: [
       smrtPlugin({
