@@ -1178,12 +1178,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link getOrUpsert} to avoid duplicates by finding-or-creating
    */
   public async create(options: SmrtCreateInput<ModelType>) {
-    const itemClassName = this.getResolvedItemClassName();
-    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    let itemClassName = this.getResolvedItemClassName();
 
     // Ensure manifest is loaded before creating instance metadata; save() will
     // ensure the actual table exists right before persistence.
     await ObjectRegistry.ensureManifestLoaded(itemClassName);
+    itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     // STI: Check for polymorphic instantiation
     const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);

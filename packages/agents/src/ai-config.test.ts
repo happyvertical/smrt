@@ -12,8 +12,9 @@ import {
 import { enableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
 import { Tenant, TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Agent } from './agent.js';
+import { resolveAgentAIOptions } from './ai-config.js';
 
 const TEST_AMK =
   '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
@@ -105,6 +106,7 @@ describe('agent AI secret resolution', () => {
 
   afterEach(() => {
     delete process.env.SMRT_SECRET_MASTER_KEY;
+    vi.restoreAllMocks();
   });
 
   async function createTenantHierarchy() {
@@ -197,5 +199,24 @@ describe('agent AI secret resolution', () => {
         (agent.options.ai as { apiKey?: string } | undefined)?.apiKey,
       ).toBeUndefined();
     });
+  });
+
+  it('rethrows unexpected secret retrieval failures', async () => {
+    const { child } = await createTenantHierarchy();
+
+    vi.spyOn(SecretService.prototype, 'retrieve').mockRejectedValue(
+      new Error('decrypt exploded'),
+    );
+
+    await expect(
+      resolveAgentAIOptions({
+        aiConfig: {
+          type: 'gemini',
+          defaultModel: 'gemini-flash-latest',
+        },
+        db,
+        tenantId: child.id,
+      }),
+    ).rejects.toThrow('decrypt exploded');
   });
 });

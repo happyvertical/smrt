@@ -124,6 +124,7 @@ import { prependSmrtSystemFields } from './system-fields';
 import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
 import {
+  createQualifiedName,
   isQualifiedName,
   parseQualifiedName,
 } from './utils/qualified-names.js';
@@ -1403,6 +1404,10 @@ export class ObjectRegistry {
       // Extract and store package name from manifest entry (for getPackageName() lookup)
       if (manifestEntry.packageName) {
         registered.packageName = manifestEntry.packageName;
+        registered.qualifiedName = createQualifiedName(
+          manifestEntry.packageName,
+          registered.name,
+        ) as QualifiedClassName;
         didHydrate = true;
       }
 

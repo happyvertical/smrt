@@ -131,8 +131,12 @@ async function resolveSecretValue(
     const value = await withTenant({ tenantId }, async () => {
       try {
         return (await service.retrieve(secretName)).value;
-      } catch {
-        return undefined;
+      } catch (error) {
+        if (isMissingSecretError(error, secretName)) {
+          return undefined;
+        }
+
+        throw error;
       }
     });
 
@@ -142,6 +146,17 @@ async function resolveSecretValue(
   }
 
   return undefined;
+}
+
+function isMissingSecretError(error: unknown, secretName: string): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.message === `Secret '${secretName}' not found` ||
+    error.message === 'Secret not found'
+  );
 }
 
 export async function resolveAgentAIOptions(
