@@ -102,9 +102,14 @@ const appState = createAppState({
 });
 
 $effect(() => {
+  const currentPreferences = untrack(() => appState.state.session.preferences);
+  if (currentPreferences.autoEnableSmrt === autoEnableSmrt) {
+    return;
+  }
+
   appState.updateSession({
     preferences: {
-      ...appState.state.session.preferences,
+      ...currentPreferences,
       autoEnableSmrt,
     },
   });
