@@ -12,9 +12,9 @@ import type { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
+  classnameToTablename,
   fieldsFromClass,
   formatDataJs,
-  tableNameFromClass,
   toCamelCase,
   toSnakeCase,
 } from './utils';
@@ -173,6 +173,24 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   private _cachedFields: Record<string, any> | null = null;
 
+  private getRegisteredItemClass() {
+    return (
+      ObjectRegistry.getClassByConstructor(this._itemClass as any) ||
+      ObjectRegistry.getClass(this._itemClass.name)
+    );
+  }
+
+  private getResolvedItemClassName(): string {
+    return this.getRegisteredItemClass()?.name || this._itemClass.name;
+  }
+
+  private getResolvedItemQualifiedName(): string {
+    const registered = this.getRegisteredItemClass();
+    return (
+      registered?.qualifiedName || registered?.name || this._itemClass.name
+    );
+  }
+
   /**
    * Convert WHERE clause field names from camelCase to snake_case while preserving operators.
    * Validates operators and field names to prevent SQL injection and invalid queries.
@@ -218,7 +236,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     validFieldNames.add('updated_at');
 
     // Add STI discriminator field for polymorphic queries
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const itemClassName = this.getResolvedItemClassName();
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
     if (tableStrategy === 'sti') {
       // Add both with and without leading underscore (toSnakeCase strips leading _)
       validFieldNames.add('_meta_type');
@@ -228,14 +247,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       // Issue #869: For STI classes, also include fields from all ancestor classes
       // This ensures child class collections can filter by parent class fields
-      const inheritanceChain = ObjectRegistry.getInheritanceChain(
-        this._itemClass.name,
-      );
+      const inheritanceChain =
+        ObjectRegistry.getInheritanceChain(itemClassName);
       for (const ancestorName of inheritanceChain) {
         if (
           ancestorName === 'SmrtObject' ||
           ancestorName === 'SmrtClass' ||
-          ancestorName === this._itemClass.name
+          ancestorName === itemClassName
         ) {
           continue; // Skip framework base classes and self (already included)
         }
@@ -323,7 +341,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       if (!skipFieldValidation && !validFieldNames.has(snakeBaseFieldName)) {
         throw new Error(
           `Invalid WHERE clause field: '${fieldName}'. ` +
-            `Field does not exist on ${this._itemClass.name}. ` +
+            `Field does not exist on ${itemClassName}. ` +
             `Valid fields: ${Array.from(validFieldNames).sort().join(', ')}`,
         );
       }
@@ -464,7 +482,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       this.constructor !== SmrtCollection &&
       (this.constructor as any)._itemClass
     ) {
-      const itemClassName = (this.constructor as any)._itemClass.name;
+      const itemClass = (this.constructor as any)._itemClass;
+      const itemClassName =
+        ObjectRegistry.getClassByConstructor(itemClass)?.name || itemClass.name;
       ObjectRegistry.registerCollection(itemClassName, this.constructor as any);
     }
   }
@@ -570,7 +590,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * This is a fail-fast check only. It does not create or alter schema.
    */
   public async ensureStorageReady(): Promise<void> {
-    await verifyPersistenceTable(this.db, this.tableName, this._itemClass.name);
+    await verifyPersistenceTable(
+      this.db,
+      this.tableName,
+      this.getResolvedItemClassName(),
+    );
   }
 
   /**
@@ -689,15 +713,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     filter: string | Record<string, any>,
   ): Promise<ModelType | null> {
     await this.ensureStorageReady();
+    const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     // Execute beforeGet interceptors (e.g., tenancy validation)
     const interceptorContext = createInterceptorContext(
-      this._itemClass.name,
+      itemClassName,
       'get',
       this.constructor.name,
     );
     const interceptedFilter = await GlobalInterceptors.executeBeforeGet(
-      this._itemClass.name,
+      itemClassName,
       filter,
       interceptorContext,
     );
@@ -712,18 +738,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         : interceptedFilter;
 
     // Fix for issue #386: Add _meta_type filter for STI child collections
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
+      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
       // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== this._itemClass.name) {
-        // Use qualified name for STI filtering (namespace isolation)
-        const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
-        const metaType = registeredClass?.qualifiedName || this._itemClass.name;
+      if (stiBase && stiBase !== itemClassName) {
         where = {
-          _meta_type: metaType,
+          _meta_type: itemQualifiedName,
           ...where,
         };
       }
@@ -740,7 +763,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       // Execute afterGet with null result
       // Explicitly specify type parameter since TypeScript can't infer from null
       return await GlobalInterceptors.executeAfterGet<ModelType>(
-        this._itemClass.name,
+        itemClassName,
         null,
         interceptorContext,
       );
@@ -751,7 +774,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Execute afterGet interceptors (e.g., tenant validation)
     return await GlobalInterceptors.executeAfterGet(
-      this._itemClass.name,
+      itemClassName,
       instance,
       interceptorContext,
     );
@@ -818,16 +841,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     } = {},
   ): Promise<ModelType[]> {
     await this.ensureStorageReady();
+    const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     // Execute beforeList interceptors (e.g., tenancy filtering)
     const interceptorContext = createInterceptorContext(
-      this._itemClass.name,
+      itemClassName,
       'list',
       this.constructor.name,
     );
     const interceptedOptions =
       (await GlobalInterceptors.executeBeforeList(
-        this._itemClass.name,
+        itemClassName,
         options as InterceptorListOptions,
         interceptorContext,
       )) ??
@@ -837,18 +862,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     let { where, offset, limit, orderBy } = interceptedOptions;
 
     // STI: Child collections should automatically filter by _meta_type
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
+      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
       // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== this._itemClass.name) {
-        // Use qualified name for STI filtering (namespace isolation)
-        const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
-        const metaType = registeredClass?.qualifiedName || this._itemClass.name;
+      if (stiBase && stiBase !== itemClassName) {
         where = {
-          _meta_type: metaType,
+          _meta_type: itemQualifiedName,
           ...(where || {}),
         };
       }
@@ -930,7 +952,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     // Execute afterList interceptors (e.g., tenant validation)
     const finalInstances = await GlobalInterceptors.executeAfterList(
-      this._itemClass.name,
+      itemClassName,
       instances,
       interceptorContext,
     );
@@ -1156,12 +1178,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * @see {@link getOrUpsert} to avoid duplicates by finding-or-creating
    */
   public async create(options: SmrtCreateInput<ModelType>) {
+    let itemClassName = this.getResolvedItemClassName();
+
     // Ensure manifest is loaded before creating instance metadata; save() will
     // ensure the actual table exists right before persistence.
-    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+    await ObjectRegistry.ensureManifestLoaded(itemClassName);
+    itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     // STI: Check for polymorphic instantiation
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
 
     if (tableStrategy === 'sti' && options._meta_type) {
       // Use polymorphic instantiation for STI child classes
@@ -1201,11 +1227,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // When classes are registered with qualified names as keys (e.g., from consumer plugin),
     // name-based lookup fails. Constructor lookup uses a WeakMap index for O(1) lookups.
     if (tableStrategy === 'sti') {
-      const registeredClass = ObjectRegistry.getClassByConstructor(
-        this._itemClass,
-      );
-      (instance as any)._meta_type =
-        registeredClass?.qualifiedName || this._itemClass.name;
+      (instance as any)._meta_type = itemQualifiedName;
     }
     // Generate ID if not provided, then save
     if (!instance.id) {
@@ -1504,7 +1526,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     // Fallback to ObjectRegistry sync method if cache not populated
     // This handles edge cases where collection wasn't created via static create()
-    const className = this._itemClass.name;
+    const className = this.getResolvedItemClassName();
     const fields = ObjectRegistry.getFields(className);
     // Convert Map to Record for consistency with getFields() return type
     return Object.fromEntries(fields);
@@ -1529,8 +1551,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   get tableName() {
     if (!this._tableName) {
       // For STI, use the base class's table name from schema (manifest-derived)
-      const className = this._itemClass.name;
+      const className = this.getResolvedItemClassName();
       const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const fallbackTableName =
+        (this._itemClass as any).SMRT_TABLE_NAME ||
+        classnameToTablename(className);
 
       if (tableStrategy === 'sti') {
         const stiBase = ObjectRegistry.getSTIBase(className);
@@ -1542,20 +1567,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           } else {
             // Fallback to own schema tableName
             const ownSchema = ObjectRegistry.getSchema(className);
-            this._tableName =
-              ownSchema?.tableName || tableNameFromClass(this._itemClass);
+            this._tableName = ownSchema?.tableName || fallbackTableName;
           }
         } else {
           // Fallback to own schema tableName
           const ownSchema = ObjectRegistry.getSchema(className);
-          this._tableName =
-            ownSchema?.tableName || tableNameFromClass(this._itemClass);
+          this._tableName = ownSchema?.tableName || fallbackTableName;
         }
       } else {
         // CTI: Use own schema tableName
         const ownSchema = ObjectRegistry.getSchema(className);
-        this._tableName =
-          ownSchema?.tableName || tableNameFromClass(this._itemClass);
+        this._tableName = ownSchema?.tableName || fallbackTableName;
       }
     }
     return this._tableName;
@@ -1602,7 +1624,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Schema already initialized in Collection.create() static factory
 
     // Ensure manifest is loaded for external packages
-    await ObjectRegistry.ensureManifestLoaded(this._itemClass.name);
+    await ObjectRegistry.ensureManifestLoaded(this.getResolvedItemClassName());
 
     // Load the object first - if it doesn't exist, return false immediately
     const instance = await this.get(id);
@@ -1642,22 +1664,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async count(options: { where?: Record<string, any> } = {}) {
     await this.ensureStorageReady();
+    const itemClassName = this.getResolvedItemClassName();
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     let { where } = options;
 
     // Fix for issue #386: Add _meta_type filter for STI child collections
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(this._itemClass.name);
+      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
       // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== this._itemClass.name) {
-        // Use qualified name for STI filtering (namespace isolation - issue #713)
-        const registeredClass = ObjectRegistry.getClass(this._itemClass.name);
-        const metaType = registeredClass?.qualifiedName || this._itemClass.name;
+      if (stiBase && stiBase !== itemClassName) {
         where = {
-          _meta_type: metaType,
+          _meta_type: itemQualifiedName,
           ...(where || {}),
         };
       }

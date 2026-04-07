@@ -562,7 +562,7 @@ async function generateRegistrationFile(
       }
 
       const packageNameLiteral = toSingleQuotedStringLiteral(packageName);
-      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { packageName: ${packageNameLiteral} });`;
+      const singleLineRegistration = `ObjectRegistry.register(${simpleClassName}, { name: '${simpleClassName}', packageName: ${packageNameLiteral} });`;
 
       if (singleLineRegistration.length <= BIOME_LINE_WIDTH) {
         return singleLineRegistration;
@@ -570,6 +570,7 @@ async function generateRegistrationFile(
 
       return [
         `ObjectRegistry.register(${simpleClassName}, {`,
+        `  name: '${simpleClassName}',`,
         `  packageName: ${packageNameLiteral},`,
         `});`,
       ].join('\n');

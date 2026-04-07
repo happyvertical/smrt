@@ -179,4 +179,132 @@ describe('discoverSmrtPackages', () => {
     const secondCache = JSON.parse(readFileSync(cachePath, 'utf-8'));
     expect(secondCache.manifestsHash).not.toBe(firstCache.manifestsHash);
   });
+
+  it('invalidates cached discovery when package.json dependencies change without a lockfile', () => {
+    testDir = mkdtempSync(join(tmpdir(), 'smrt-discovery-package-json-'));
+    const packageA = '@happyvertical/smrt-one';
+    const packageB = '@happyvertical/smrt-two';
+
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'smrt-discovery-consumer',
+          type: 'module',
+          dependencies: {
+            [packageA]: '1.0.0',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    for (const packageName of [packageA]) {
+      const packageDir = join(
+        testDir,
+        'node_modules',
+        '@happyvertical',
+        packageName.replace('@happyvertical/', ''),
+      );
+      mkdirSync(join(packageDir, 'dist'), { recursive: true });
+      writeFileSync(
+        join(packageDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: packageName,
+            type: 'module',
+            exports: {
+              '.': {
+                import: './dist/index.js',
+              },
+              './manifest': './dist/manifest.json',
+              './manifest.json': './dist/manifest.json',
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      writeFileSync(join(packageDir, 'dist', 'index.js'), 'export {};\n');
+      writeFileSync(
+        join(packageDir, 'dist', 'manifest.json'),
+        JSON.stringify(
+          {
+            moduleType: 'smrt',
+            version: '1.0.0',
+            packageName,
+            objects: {},
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
+    const firstPackages = discoverSmrtPackages({ baseDir: testDir });
+    expect(firstPackages).toEqual([packageA]);
+
+    writeFileSync(
+      join(testDir, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'smrt-discovery-consumer',
+          type: 'module',
+          dependencies: {
+            [packageA]: '1.0.0',
+            [packageB]: '1.0.0',
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    {
+      const packageDir = join(
+        testDir,
+        'node_modules',
+        '@happyvertical',
+        packageB.replace('@happyvertical/', ''),
+      );
+      mkdirSync(join(packageDir, 'dist'), { recursive: true });
+      writeFileSync(
+        join(packageDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: packageB,
+            type: 'module',
+            exports: {
+              '.': {
+                import: './dist/index.js',
+              },
+              './manifest': './dist/manifest.json',
+              './manifest.json': './dist/manifest.json',
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      writeFileSync(join(packageDir, 'dist', 'index.js'), 'export {};\n');
+      writeFileSync(
+        join(packageDir, 'dist', 'manifest.json'),
+        JSON.stringify(
+          {
+            moduleType: 'smrt',
+            version: '1.0.0',
+            packageName: packageB,
+            objects: {},
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
+    const secondPackages = discoverSmrtPackages({ baseDir: testDir });
+    expect(secondPackages).toContain(packageA);
+    expect(secondPackages).toContain(packageB);
+  });
 });

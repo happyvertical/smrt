@@ -165,15 +165,17 @@ export function getAllSchemas(): Record<
         }
       }
 
-      // Get columns from schema, or generate from fields if schema.columns is empty
-      // This handles STI subclasses that have fields but no pre-generated schema
-      // (Issue #690: db:migrate doesn't detect STI subclass columns)
-      let columnsToUse = registered.schema.columns || {};
-      if (
-        Object.keys(columnsToUse).length === 0 &&
-        registered.fields.size > 0
-      ) {
-        columnsToUse = fieldsToColumns(registered.fields);
+      // Start with manifest columns, then merge in any field-derived columns that
+      // were added or repaired at runtime (for example tenantScoped injections
+      // from external decorator config).
+      const columnsToUse = { ...(registered.schema.columns || {}) };
+      if (registered.fields.size > 0) {
+        const fieldColumns = fieldsToColumns(registered.fields);
+        for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
+          if (!columnsToUse[columnName]) {
+            columnsToUse[columnName] = columnDef;
+          }
+        }
       }
 
       if (!tableSchemas[tableName]) {
@@ -356,12 +358,14 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       }
 
       // Get columns from schema, or generate from fields if empty
-      let columnsToUse = registered.schema.columns || {};
-      if (
-        Object.keys(columnsToUse).length === 0 &&
-        registered.fields.size > 0
-      ) {
-        columnsToUse = fieldsToColumns(registered.fields);
+      const columnsToUse = { ...(registered.schema.columns || {}) };
+      if (registered.fields.size > 0) {
+        const fieldColumns = fieldsToColumns(registered.fields);
+        for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
+          if (!columnsToUse[columnName]) {
+            columnsToUse[columnName] = columnDef;
+          }
+        }
       }
 
       if (!tableSchemas[tableName]) {

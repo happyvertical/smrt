@@ -994,6 +994,100 @@ describe('ObjectRegistry', () => {
       // Should read from SMRT_TABLE_NAME property, not derive from class name
       expect(tableName).toBe('test_for_table_names');
     });
+
+    it('should repair bundled table metadata during explicit re-registration', () => {
+      class BundledSecret extends SmrtObject {
+        name: string = '';
+      }
+
+      Object.defineProperty(BundledSecret, 'name', {
+        value: 'y',
+        configurable: true,
+      });
+
+      ObjectRegistry.register(BundledSecret as any, {});
+      expect((BundledSecret as any).SMRT_TABLE_NAME).toBe('ys');
+
+      ObjectRegistry.register(BundledSecret as any, {
+        name: 'BundledSecret',
+        packageName: '@test/pkg',
+        _manifest: {
+          objects: {
+            BundledSecret: {
+              className: 'BundledSecret',
+              fields: {
+                name: { type: 'text' },
+              },
+              schema: {
+                tableName: 'bundled_secrets',
+                ddl: '',
+                columns: {},
+                indexes: [],
+                version: 'test',
+              },
+            },
+          },
+        } as any,
+      });
+
+      const registered = ObjectRegistry.getClassByConstructor(
+        BundledSecret as any,
+      );
+      expect(registered?.name).toBe('BundledSecret');
+      expect(registered?.qualifiedName).toBe('@test/pkg:BundledSecret');
+      expect(registered?.schema.tableName).toBe('bundled_secrets');
+      expect((BundledSecret as any).SMRT_TABLE_NAME).toBe('bundled_secrets');
+    });
+
+    it('should inject tenant metadata from external decorator config', () => {
+      class ExternalTenantScopedSecret extends SmrtObject {
+        name: string = '';
+      }
+
+      Object.defineProperty(ExternalTenantScopedSecret, 'name', {
+        value: 'y',
+        configurable: true,
+      });
+
+      ObjectRegistry.register(ExternalTenantScopedSecret as any, {
+        name: 'ExternalTenantScopedSecret',
+        packageName: '@test/pkg',
+        _manifest: {
+          objects: {
+            ExternalTenantScopedSecret: {
+              className: 'ExternalTenantScopedSecret',
+              fields: {
+                name: { type: 'text' },
+              },
+              decoratorConfig: {
+                tenantScoped: true,
+              },
+              schema: {
+                tableName: 'external_tenant_scoped_secrets',
+                ddl: '',
+                columns: {},
+                indexes: [],
+                version: 'test',
+              },
+            },
+          },
+        } as any,
+      });
+
+      const registered = ObjectRegistry.getClassByConstructor(
+        ExternalTenantScopedSecret as any,
+      );
+      expect(registered?.tenantScopedConfig?.field).toBe('tenantId');
+      expect(registered?.fields.has('tenantId')).toBe(true);
+      expect(registered?.fields.get('tenantId')?.related).toBe('Tenant');
+      expect(
+        (registered?.fields.get('tenantId') as any)?._meta?.__tenancy
+          ?.isTenantIdField,
+      ).toBe(true);
+      expect(
+        ObjectRegistry.getAllSchemas().external_tenant_scoped_secrets?.ddl,
+      ).toContain('"tenant_id"');
+    });
   });
 
   describe('Mixed Field helpers and primitives (Issue #102, #103)', () => {

@@ -124,6 +124,7 @@ import { prependSmrtSystemFields } from './system-fields';
 import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
 import {
+  createQualifiedName,
   isQualifiedName,
   parseQualifiedName,
 } from './utils/qualified-names.js';
@@ -1403,6 +1404,10 @@ export class ObjectRegistry {
       // Extract and store package name from manifest entry (for getPackageName() lookup)
       if (manifestEntry.packageName) {
         registered.packageName = manifestEntry.packageName;
+        registered.qualifiedName = createQualifiedName(
+          manifestEntry.packageName,
+          registered.name,
+        ) as QualifiedClassName;
         didHydrate = true;
       }
 
@@ -2846,16 +2851,6 @@ export function smrt(config: SmartObjectConfig = {}) {
           }
         }
 
-        // Only define SMRT_TABLE_NAME if it doesn't exist (avoid redefinition errors)
-        if (!Object.hasOwn(itemClass, 'SMRT_TABLE_NAME')) {
-          Object.defineProperty(itemClass, 'SMRT_TABLE_NAME', {
-            value: tableName,
-            writable: false,
-            enumerable: false,
-            configurable: false,
-          });
-        }
-
         ObjectRegistry.register(itemClass, { ...config, tableName });
 
         const registeredItemClass = ObjectRegistry.getClass(itemClass.name);
@@ -2942,13 +2937,6 @@ export function smrt(config: SmartObjectConfig = {}) {
           }
         }
       }
-
-      Object.defineProperty(ctor, 'SMRT_TABLE_NAME', {
-        value: tableName,
-        writable: false,
-        enumerable: false,
-        configurable: false,
-      });
 
       ObjectRegistry.register(ctor as any, { ...config, tableName });
     }

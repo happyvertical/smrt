@@ -30,7 +30,7 @@ import { parse } from '../utils/json.js';
 
 const CACHE_DIR = '.smrt';
 const CACHE_FILE = 'discovery-cache.json';
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 4;
 
 /** Timing data for --timing flag */
 interface TimingData {
@@ -67,6 +67,21 @@ function getLockfileHash(baseDir: string): string | null {
 }
 
 /**
+ * Get hash of package.json for cache invalidation when a package workspace
+ * changes its declared dependencies without a colocated lockfile.
+ */
+function getPackageJsonHash(baseDir: string): string | null {
+  const packageJsonPath = join(baseDir, 'package.json');
+
+  if (!existsSync(packageJsonPath)) {
+    return null;
+  }
+
+  const content = readFileSync(packageJsonPath, 'utf-8');
+  return createHash('sha256').update(content).digest('hex');
+}
+
+/**
  * Get a hash of all manifest timestamps for cache invalidation
  * This catches changes to SMRT packages even when lockfile hasn't changed
  */
@@ -95,6 +110,7 @@ function getManifestTimestampsHash(
 interface DiscoveryCache {
   version: number;
   lockfileHash: string | null;
+  packageJsonHash: string | null;
   manifestsHash: string;
   timestamp: number;
   packages: string[];
@@ -221,11 +237,19 @@ function getCachedDiscovery(
     }
 
     const currentLockfileHash = getLockfileHash(baseDir);
+    const currentPackageJsonHash = getPackageJsonHash(baseDir);
 
     // Check lockfile hash
     if (cache.lockfileHash !== currentLockfileHash) {
       if (verbose) {
         console.log('[discovery] Cache invalid: lockfile changed');
+      }
+      return null;
+    }
+
+    if (cache.packageJsonHash !== currentPackageJsonHash) {
+      if (verbose) {
+        console.log('[discovery] Cache invalid: package.json changed');
       }
       return null;
     }
@@ -267,6 +291,7 @@ function saveCachedDiscovery(
   const cache: DiscoveryCache = {
     version: CACHE_VERSION,
     lockfileHash: getLockfileHash(baseDir),
+    packageJsonHash: getPackageJsonHash(baseDir),
     manifestsHash: getManifestTimestampsHash(baseDir, packages),
     timestamp: Date.now(),
     packages: packages,

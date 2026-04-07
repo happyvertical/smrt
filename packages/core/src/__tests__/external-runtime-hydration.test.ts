@@ -578,4 +578,78 @@ describe('external runtime field hydration', () => {
       code: 'CONFIG_AMBIGUOUS_CLASS',
     });
   });
+
+  it('creates STI child rows with the hydrated qualified discriminator after manifest loading', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-accounts';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureAccount: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_accounts',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            name: { type: 'text' },
+          },
+        },
+        FixtureEmailAccount: {
+          extends: 'FixtureAccount',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_accounts',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            email: { type: 'text' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_accounts',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureAccount extends SmrtObject {}
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_accounts',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureEmailAccount extends FixtureAccount {}
+
+    stripPackageIdentity('FixtureAccount', 'FixtureEmailAccount');
+
+    const db = await getTestDatabase({
+      classes: ['FixtureAccount', 'FixtureEmailAccount'],
+    });
+    const collection = await ObjectRegistry.getCollection(
+      'FixtureEmailAccount',
+      { db },
+    );
+
+    const created = await collection.create({
+      name: 'Alerts',
+      email: 'alerts@example.com',
+    });
+
+    expect((created as any)._meta_type).toBe(
+      `${packageName}:FixtureEmailAccount`,
+    );
+    await expect(collection.count()).resolves.toBe(1);
+  });
 });
