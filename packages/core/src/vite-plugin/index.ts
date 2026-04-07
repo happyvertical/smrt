@@ -173,6 +173,27 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     );
   }
 
+  function validateLibraryMinifySetup(
+    m: SmartObjectManifest,
+    context: 'configResolved' | 'buildStart',
+  ): void {
+    if (!config?.build?.lib) {
+      return;
+    }
+
+    if (Object.keys(m.objects || {}).length === 0) {
+      return;
+    }
+
+    if (config.build.minify === false) {
+      return;
+    }
+
+    throw new Error(
+      `[smrt] Library package misconfiguration detected during ${context}: packages that publish SMRT objects must set Vite build.minify = false. Minification rewrites runtime class names and breaks manifest registration, STI resolution, and collection queries in downstream apps.`,
+    );
+  }
+
   return {
     name: 'smrt-auto-service',
 
@@ -219,6 +240,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Write local manifest for CLI discovery (Issue #963)
       if (manifest) {
         await writeLocalManifest(manifest, projectRoot);
+        validateLibraryMinifySetup(manifest, 'configResolved');
         validateConsumerPluginSetup(manifest, 'configResolved');
       }
 
@@ -241,6 +263,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       // Write local manifest for CLI discovery (Issue #963)
       if (manifest) {
         await writeLocalManifest(manifest, projectRoot);
+        validateLibraryMinifySetup(manifest, 'buildStart');
         validateConsumerPluginSetup(manifest, 'buildStart');
       }
     },

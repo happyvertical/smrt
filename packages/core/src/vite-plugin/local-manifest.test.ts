@@ -62,6 +62,21 @@ function createExternalSmrtPackage(
   );
 }
 
+function createLocalSmrtObject(projectRoot: string): void {
+  writeFileSync(
+    join(projectRoot, 'src', 'LocalThing.ts'),
+    [
+      "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+      '',
+      '@smrt()',
+      'export class LocalThing extends SmrtObject {',
+      "  name: string = '';",
+      '}',
+      '',
+    ].join('\n'),
+  );
+}
+
 describe('smrtPlugin local manifest writing (Issue #963)', () => {
   let tmpDir: string;
 
@@ -274,6 +289,48 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
         build: {},
         mode: 'test',
         plugins: [{ name: 'smrt-auto-service' }],
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('fails fast when a library build with SMRT objects enables minification', async () => {
+    createLocalSmrtObject(tmpDir);
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await expect(
+      (plugin as any).configResolved({
+        root: tmpDir,
+        build: {
+          lib: { entry: 'src/index.ts' },
+          outDir: 'dist',
+          minify: 'esbuild',
+        },
+        plugins: [],
+      }),
+    ).rejects.toThrow(/build\.minify = false/);
+  });
+
+  it('allows library builds with SMRT objects when minification is disabled', async () => {
+    createLocalSmrtObject(tmpDir);
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await expect(
+      (plugin as any).configResolved({
+        root: tmpDir,
+        build: {
+          lib: { entry: 'src/index.ts' },
+          outDir: 'dist',
+          minify: false,
+        },
+        plugins: [],
       }),
     ).resolves.toBeUndefined();
   });
