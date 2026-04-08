@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.39
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] Fix packed export validation in CI
+  - @happyvertical/smrt-scanner@0.21.39
+  - @happyvertical/smrt-config@0.21.39
+  - @happyvertical/smrt-types@0.21.39
+
 ## 0.21.38
 
 ### Patch Changes
