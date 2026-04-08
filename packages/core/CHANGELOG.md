@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.38
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - merge external manifest schema into runtime registrations (#1106)
+  - @happyvertical/smrt-scanner@0.21.38
+  - @happyvertical/smrt-config@0.21.38
+  - @happyvertical/smrt-types@0.21.38
+
 ## 0.21.37
 
 ### Patch Changes

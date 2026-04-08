@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-config",
-  "version": "0.21.37",
+  "version": "0.21.38",
   "type": "module",
   "description": "Centralized configuration management for SMRT modules",
   "author": "HappyVertical",
