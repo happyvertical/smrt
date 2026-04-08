@@ -109,6 +109,10 @@ export class SecretAuditLog extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) {
+      (this as SecretAuditLog & { tenantId?: string | null }).tenantId =
+        options.tenantId;
+    }
     if (options.secretId !== undefined) this.secretId = options.secretId;
     if (options.secretName !== undefined) this.secretName = options.secretName;
     if (options.userId !== undefined) this.userId = options.userId;

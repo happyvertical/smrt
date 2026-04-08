@@ -41,6 +41,7 @@ import {
   getCollections,
   getConstructorIndex,
   getFieldDecorators,
+  getInheritanceCache,
   getSourceFileFromStack,
   getStiSiblingsLoaded,
   verboseLog,
@@ -927,6 +928,243 @@ export function resolveManifestCollision(
   return 'skip';
 }
 
+function normalizeTenantScopedConfig(
+  tenantScoped: any,
+): RegisteredClass['tenantScopedConfig'] | undefined {
+  if (!tenantScoped) {
+    return undefined;
+  }
+
+  const tenantOpts = typeof tenantScoped === 'boolean' ? {} : tenantScoped;
+  return {
+    mode: tenantOpts.mode ?? 'required',
+    field: tenantOpts.field ?? 'tenantId',
+    autoFilter: tenantOpts.autoFilter ?? true,
+    autoPopulate: tenantOpts.autoPopulate ?? true,
+    allowSuperAdminBypass: tenantOpts.allowSuperAdminBypass ?? false,
+  };
+}
+
+function ensureTenantScopedField(
+  fields: Map<string, any>,
+  tenantScopedConfig: RegisteredClass['tenantScopedConfig'] | undefined,
+): void {
+  if (!tenantScopedConfig) {
+    return;
+  }
+
+  const fieldName = tenantScopedConfig.field;
+  if (fields.has(fieldName)) {
+    return;
+  }
+
+  fields.set(fieldName, {
+    type: 'foreignKey',
+    related: 'Tenant',
+    required: tenantScopedConfig.mode === 'required',
+    _meta: {
+      reference: 'Tenant',
+      sqlType: 'TEXT',
+      __tenancy: {
+        isTenantIdField: true,
+        ...tenantScopedConfig,
+      },
+    },
+  });
+}
+
+function mergeIndexDefinitions(
+  existingIndexes: Array<any> | undefined,
+  manifestIndexes: Array<any> | undefined,
+): Array<any> {
+  const merged = [...(existingIndexes || [])];
+  const seen = new Set(merged.map((index) => index?.name).filter(Boolean));
+
+  for (const index of manifestIndexes || []) {
+    if (!index?.name || seen.has(index.name)) {
+      continue;
+    }
+    merged.push(index);
+    seen.add(index.name);
+  }
+
+  return merged;
+}
+
+function invalidateInheritanceEntries(existing: RegisteredClass): void {
+  const cache = getInheritanceCache();
+  const affectedNames = new Set<string>();
+
+  const remember = (name: string | undefined): void => {
+    if (name) {
+      affectedNames.add(name);
+    }
+  };
+
+  remember(existing.name);
+  remember(existing.qualifiedName);
+
+  for (const [key, candidate] of getClasses()) {
+    if (
+      candidate === existing ||
+      candidate.extends === existing.name ||
+      candidate.extends === existing.qualifiedName ||
+      candidate.inheritanceChain?.includes(existing.name) ||
+      (existing.qualifiedName &&
+        candidate.inheritanceChain?.includes(existing.qualifiedName))
+    ) {
+      candidate.inheritanceChain = undefined;
+      candidate.inheritedFields = undefined;
+      candidate.inheritedMethods = undefined;
+      remember(key);
+      remember(candidate.name);
+      remember(candidate.qualifiedName);
+    }
+  }
+
+  for (const name of affectedNames) {
+    cache.delete(name);
+  }
+}
+
+function mergeManifestIntoExistingRegistration(
+  existing: RegisteredClass,
+  objectDef: any,
+  packageName?: string,
+): void {
+  const manifestConfig = objectDef.decoratorConfig || {};
+  const manifestTableName =
+    objectDef.schema?.tableName ||
+    manifestConfig.tableName ||
+    existing.schema?.tableName ||
+    existing.config.tableName ||
+    tableNameFromClass(existing.constructor);
+
+  existing.config = {
+    ...manifestConfig,
+    ...existing.config,
+    tableName: manifestTableName,
+  };
+
+  if (objectDef.fields) {
+    for (const [fieldName, fieldDef] of Object.entries(
+      objectDef.fields as Record<string, any>,
+    )) {
+      const fd = fieldDef as any;
+      if (!existing.fields.has(fieldName)) {
+        existing.fields.set(fieldName, createFieldFromManifest(fd));
+        continue;
+      }
+
+      const existingField = existing.fields.get(fieldName);
+      if (!existingField) {
+        continue;
+      }
+
+      existing.fields.set(fieldName, mergeManifestField(existingField, fd));
+    }
+  }
+
+  const tenantScopedConfig = normalizeTenantScopedConfig(
+    existing.config.tenantScoped,
+  );
+  if (tenantScopedConfig) {
+    existing.tenantScopedConfig = tenantScopedConfig;
+    ensureTenantScopedField(existing.fields, tenantScopedConfig);
+  }
+
+  if (objectDef.methods) {
+    for (const [methodName, methodDef] of Object.entries(
+      objectDef.methods as Record<string, any>,
+    )) {
+      existing.methods.set(methodName, methodDef);
+    }
+  }
+
+  if (objectDef.schema) {
+    const manifestSchema: SchemaDefinition = {
+      ddl: objectDef.schema.ddl || '',
+      indexes:
+        objectDef.schema.indexes?.map((idx: any) => ({
+          name: idx.name,
+          columns: idx.columns || [],
+          unique: idx.unique || false,
+          where: idx.where,
+          description: idx.description,
+        })) || [],
+      triggers: [],
+      tableName: objectDef.schema.tableName || manifestTableName,
+      columns: objectDef.schema.columns || {},
+      foreignKeys: [],
+      dependencies: [],
+      version: objectDef.schema.version || '',
+      packageName: packageName,
+    };
+
+    existing.schema = {
+      ...(existing.schema || {}),
+      ...manifestSchema,
+      tableName: manifestSchema.tableName,
+      ddl: manifestSchema.ddl || existing.schema?.ddl || '',
+      columns: {
+        ...(existing.schema?.columns || {}),
+        ...(manifestSchema.columns || {}),
+      },
+      indexes: mergeIndexDefinitions(
+        existing.schema?.indexes,
+        manifestSchema.indexes,
+      ),
+      packageName: packageName || existing.schema?.packageName,
+    };
+  } else if (!existing.schema) {
+    existing.schema = {
+      ddl: '',
+      indexes: [],
+      triggers: [],
+      tableName: manifestTableName,
+      columns: {},
+      foreignKeys: [],
+      dependencies: [],
+      version: '',
+      packageName: packageName,
+    };
+  } else {
+    existing.schema.tableName = manifestTableName;
+    existing.schema.packageName = packageName || existing.schema.packageName;
+  }
+
+  if (objectDef.validationRules !== undefined) {
+    existing.validationRules = objectDef.validationRules;
+    existing.validators = undefined;
+  } else if (!existing.validationRules && !existing.validators) {
+    existing.validators = compileValidators(existing.name, existing.fields);
+  }
+
+  if (packageName) {
+    existing.packageName = packageName;
+    existing.qualifiedName = createQualifiedName(
+      packageName,
+      existing.name,
+    ) as QualifiedClassName;
+  } else if (!existing.packageName && objectDef.packageName) {
+    existing.packageName = objectDef.packageName;
+  }
+
+  if (objectDef.extends) {
+    existing.extends = packageName
+      ? qualifyExtendsName(objectDef.extends, packageName)
+      : objectDef.extends;
+  }
+
+  if (!existing.sourceFilePath && objectDef.filePath) {
+    existing.sourceFilePath = objectDef.filePath;
+  }
+
+  existing.visibility =
+    objectDef.visibility || manifestConfig.visibility || existing.visibility;
+  invalidateInheritanceEntries(existing);
+}
+
 export function registerFromManifest(
   name: string,
   objectDef: any,
@@ -969,8 +1207,18 @@ export function registerFromManifest(
         removeFromClassNameMap(existing.name.toLowerCase(), existingCanonical);
       } else {
         // 'skip' — existing wins (parent after child, same file, or true collision)
+        const allowCoexistingQualifiedRegistration =
+          registrationKey !== existingCanonical &&
+          !!packageName &&
+          !!existing.packageName &&
+          packageName !== existing.packageName;
+
         // Issue #951: With qualified keys, allow coexistence of different packages
         if (registrationKey !== existingCanonical) {
+          const canMergeIntoExisting =
+            packageName &&
+            (!existing.packageName || packageName === existing.packageName);
+
           // Different qualified keys → allow both to be registered
           // (ambiguity will be detected at findClass time)
           //
@@ -986,59 +1234,17 @@ export function registerFromManifest(
           // Restricting to same-package prevents corrupting unrelated classes that
           // happen to share a name across different packages (genuine collisions).
           if (
-            packageName &&
-            (!existing.packageName || packageName === existing.packageName) &&
-            objectDef.fields
+            canMergeIntoExisting &&
+            (objectDef.fields ||
+              objectDef.methods ||
+              objectDef.schema ||
+              objectDef.decoratorConfig)
           ) {
-            for (const [fieldName, fieldDef] of Object.entries(
-              objectDef.fields as Record<string, any>,
-            )) {
-              const fd = fieldDef as any;
-              if (!existing.fields.has(fieldName)) {
-                existing.fields.set(fieldName, createFieldFromManifest(fd));
-                continue;
-              }
-
-              const existingField = existing.fields.get(fieldName);
-              if (!existingField) {
-                continue;
-              }
-
-              existing.fields.set(
-                fieldName,
-                mergeManifestField(existingField, fd),
-              );
-            }
-
-            if (objectDef.methods) {
-              for (const [methodName, methodDef] of Object.entries(
-                objectDef.methods as Record<string, any>,
-              )) {
-                existing.methods.set(methodName, methodDef);
-              }
-            }
-
-            // Invalidate cached inheritance so callers immediately see the
-            // refined manifest-backed field types/metadata.
-            existing.inheritedFields = undefined;
-            existing.inheritedMethods = undefined;
-
-            if (!existing.packageName) {
-              existing.packageName = packageName;
-            }
-            if (!existing.qualifiedName && packageName) {
-              existing.qualifiedName = createQualifiedName(
-                packageName,
-                existing.name,
-              );
-            }
-            // Backfill extends when absent (needed for STI chain resolution)
-            // Issue #1004: Qualify the backfilled extends too
-            if (!existing.extends && objectDef.extends) {
-              existing.extends = packageName
-                ? qualifyExtendsName(objectDef.extends, packageName)
-                : objectDef.extends;
-            }
+            mergeManifestIntoExistingRegistration(
+              existing,
+              objectDef,
+              packageName,
+            );
 
             if (registrationKey !== existingCanonical) {
               const classes = getClasses();
@@ -1053,7 +1259,32 @@ export function registerFromManifest(
 
             return;
           }
-        } else {
+
+          if (allowCoexistingQualifiedRegistration) {
+            // Same simple class name in a different package: allow coexistence.
+            // We'll continue into the exact-key/new-registration path below.
+          } else {
+            return;
+          }
+        }
+
+        if (
+          packageName &&
+          (!existing.packageName || packageName === existing.packageName) &&
+          (objectDef.fields ||
+            objectDef.methods ||
+            objectDef.schema ||
+            objectDef.decoratorConfig)
+        ) {
+          mergeManifestIntoExistingRegistration(
+            existing,
+            objectDef,
+            packageName,
+          );
+          return;
+        }
+
+        if (!allowCoexistingQualifiedRegistration) {
           return;
         }
       }
@@ -1076,6 +1307,7 @@ export function registerFromManifest(
       getClasses().delete(registrationKey);
       removeFromClassNameMap(existing.name.toLowerCase(), registrationKey);
     } else {
+      mergeManifestIntoExistingRegistration(existing, objectDef, packageName);
       return;
     }
   }
