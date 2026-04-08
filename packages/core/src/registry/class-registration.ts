@@ -1207,8 +1207,18 @@ export function registerFromManifest(
         removeFromClassNameMap(existing.name.toLowerCase(), existingCanonical);
       } else {
         // 'skip' — existing wins (parent after child, same file, or true collision)
+        const allowCoexistingQualifiedRegistration =
+          registrationKey !== existingCanonical &&
+          !!packageName &&
+          !!existing.packageName &&
+          packageName !== existing.packageName;
+
         // Issue #951: With qualified keys, allow coexistence of different packages
         if (registrationKey !== existingCanonical) {
+          const canMergeIntoExisting =
+            packageName &&
+            (!existing.packageName || packageName === existing.packageName);
+
           // Different qualified keys → allow both to be registered
           // (ambiguity will be detected at findClass time)
           //
@@ -1224,8 +1234,7 @@ export function registerFromManifest(
           // Restricting to same-package prevents corrupting unrelated classes that
           // happen to share a name across different packages (genuine collisions).
           if (
-            packageName &&
-            (!existing.packageName || packageName === existing.packageName) &&
+            canMergeIntoExisting &&
             (objectDef.fields ||
               objectDef.methods ||
               objectDef.schema ||
@@ -1250,12 +1259,18 @@ export function registerFromManifest(
 
             return;
           }
+
+          if (allowCoexistingQualifiedRegistration) {
+            // Same simple class name in a different package: allow coexistence.
+            // We'll continue into the exact-key/new-registration path below.
+          } else {
+            return;
+          }
         }
 
         if (
           packageName &&
-          existing.packageName &&
-          packageName === existing.packageName &&
+          (!existing.packageName || packageName === existing.packageName) &&
           (objectDef.fields ||
             objectDef.methods ||
             objectDef.schema ||
@@ -1269,7 +1284,9 @@ export function registerFromManifest(
           return;
         }
 
-        return;
+        if (!allowCoexistingQualifiedRegistration) {
+          return;
+        }
       }
     } else {
       // Stale classNameMap entry (key exists but class was removed) — allow registration
