@@ -165,4 +165,93 @@ describe('utilities', () => {
     logSpy.mockRestore();
     process.chdir(originalCwd);
   });
+
+  it('doctor reports broken packed publish artifacts for publishable packages', async () => {
+    const projectDir = await mkdtemp(
+      resolve(process.cwd(), '.tmp-smrt-doctor-pack-'),
+    );
+    tempDirs.push(projectDir);
+
+    await mkdir(resolve(projectDir, 'src/lib/objects'), { recursive: true });
+    await mkdir(resolve(projectDir, 'src/lib/server'), { recursive: true });
+    await mkdir(resolve(projectDir, '.smrt'), { recursive: true });
+
+    await writeFile(
+      resolve(projectDir, 'package.json'),
+      JSON.stringify({
+        name: '@fixture/publishable',
+        version: '1.0.0',
+        type: 'module',
+        dependencies: {
+          '@happyvertical/smrt-core': '0.0.0-test',
+          '@sveltejs/kit': '0.0.0-test',
+        },
+        exports: {
+          '.': './dist/index.js',
+        },
+      }),
+    );
+    await writeFile(
+      resolve(projectDir, 'smrt.config.js'),
+      'export default {};\n',
+    );
+    await writeFile(
+      resolve(projectDir, 'vite.config.ts'),
+      [
+        "import { smrtPlugin } from '@happyvertical/smrt-core/vite-plugin';",
+        'export default {',
+        '  plugins: [smrtPlugin()],',
+        '};',
+        '',
+      ].join('\n'),
+    );
+    await writeFile(
+      resolve(projectDir, 'tsconfig.json'),
+      JSON.stringify({
+        compilerOptions: {
+          experimentalDecorators: true,
+        },
+      }),
+    );
+    await writeFile(
+      resolve(projectDir, 'src/lib/objects/index.ts'),
+      'export {};\n',
+    );
+    await writeFile(
+      resolve(projectDir, 'src/lib/server/smrt.ts'),
+      'export {};\n',
+    );
+    await writeFile(resolve(projectDir, '.env'), '\n');
+    await writeFile(
+      resolve(projectDir, '.smrt/manifest.json'),
+      JSON.stringify({
+        version: '1.0.0',
+        timestamp: Date.now(),
+        packageName: '@fixture/publishable',
+        objects: {},
+      }),
+    );
+
+    const originalCwd = process.cwd();
+    process.chdir(projectDir);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((
+      code?: string | number | null,
+    ) => {
+      throw new Error(`exit:${code ?? ''}`);
+    }) as typeof process.exit);
+
+    await expect(utilityCommands.doctor.handler([], {})).rejects.toThrow(
+      'exit:1',
+    );
+
+    const output = logSpy.mock.calls.flat().join('\n');
+    expect(output).toContain('Packed publish artifact verification');
+    expect(output).toContain('dist/index.js');
+
+    exitSpy.mockRestore();
+    logSpy.mockRestore();
+    process.chdir(originalCwd);
+  });
 });

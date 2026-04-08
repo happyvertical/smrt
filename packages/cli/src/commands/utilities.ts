@@ -4,9 +4,11 @@
  * Commands for introspection, testing, and project management
  */
 
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   isQualifiedName,
   ObjectRegistry,
@@ -1812,6 +1814,63 @@ export default testManifest;
       }
 
       console.log();
+
+      const hasPublishSurface =
+        packageJson.private !== true &&
+        (typeof packageJson.main === 'string' ||
+          typeof packageJson.module === 'string' ||
+          typeof packageJson.svelte === 'string' ||
+          typeof packageJson.types === 'string' ||
+          (packageJson.exports &&
+            typeof packageJson.exports === 'object' &&
+            Object.keys(packageJson.exports).length > 0));
+
+      if (hasPublishSurface) {
+        console.log('📦 Publish Artifacts\n');
+
+        const packedExportVerifierPath = fileURLToPath(
+          new URL(
+            '../../scripts/verify-package-types-exports.js',
+            import.meta.url,
+          ),
+        );
+
+        if (existsSync(packedExportVerifierPath)) {
+          const verificationResult = spawnSync(
+            process.execPath,
+            [packedExportVerifierPath, cwd],
+            {
+              encoding: 'utf8',
+              stdio: ['ignore', 'pipe', 'pipe'],
+            },
+          );
+          const verificationOutput = [
+            verificationResult.stdout,
+            verificationResult.stderr,
+          ]
+            .filter((chunk): chunk is string => Boolean(chunk?.trim()))
+            .join('\n')
+            .trim();
+
+          if (verificationResult.status === 0) {
+            check('Packed publish artifact verification', true);
+          } else {
+            check(
+              'Packed publish artifact verification',
+              false,
+              verificationOutput || 'Packed artifact validation failed',
+            );
+          }
+        } else {
+          check(
+            'Packed publish artifact verification',
+            false,
+            undefined,
+            'Pack verifier is unavailable in this SMRT CLI build',
+          );
+        }
+        console.log();
+      }
 
       // ========== Configuration Files ==========
       console.log('⚙️  Configuration\n');
