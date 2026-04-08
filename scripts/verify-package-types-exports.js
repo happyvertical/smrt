@@ -138,7 +138,7 @@ function archiveHasPath(archiveEntries, relativePath) {
   return [...archiveEntries].some((entry) => pattern.test(entry));
 }
 
-function walkFiles(rootDir) {
+function _walkFiles(rootDir) {
   const pending = [rootDir];
   const files = [];
 
@@ -175,6 +175,127 @@ function getPathStem(filePath) {
     /\.(?:d\.(?:cts|mts|ts)|[cm]?ts|[cm]?js|svelte)$/,
     '',
   );
+}
+
+function isRuntimeSourceFile(filePath) {
+  return /\.(?:[cm]?js|svelte)$/.test(filePath);
+}
+
+function isTypeSourceFile(filePath) {
+  return /\.d\.(?:cts|mts|ts)$/.test(filePath);
+}
+
+function resolveRuntimeCandidates(basePath) {
+  const stems = new Set([basePath, getPathStem(basePath)]);
+  const candidates = new Set();
+
+  for (const stem of stems) {
+    candidates.add(stem);
+    candidates.add(`${stem}.js`);
+    candidates.add(`${stem}.mjs`);
+    candidates.add(`${stem}.cjs`);
+    candidates.add(`${stem}.svelte`);
+    candidates.add(join(stem, 'index.js'));
+    candidates.add(join(stem, 'index.mjs'));
+    candidates.add(join(stem, 'index.cjs'));
+    candidates.add(join(stem, 'index.svelte'));
+  }
+
+  return [...candidates];
+}
+
+function resolveTypeCandidates(basePath) {
+  const stems = new Set([basePath, getPathStem(basePath)]);
+  const candidates = new Set();
+
+  for (const stem of stems) {
+    candidates.add(stem);
+    candidates.add(`${stem}.d.ts`);
+    candidates.add(`${stem}.d.mts`);
+    candidates.add(`${stem}.d.cts`);
+    candidates.add(`${stem}.ts`);
+    candidates.add(`${stem}.mts`);
+    candidates.add(`${stem}.cts`);
+    candidates.add(`${stem}.js`);
+    candidates.add(`${stem}.mjs`);
+    candidates.add(`${stem}.cjs`);
+    candidates.add(`${stem}.svelte`);
+    candidates.add(`${stem}.svelte.d.ts`);
+    candidates.add(join(stem, 'index.d.ts'));
+    candidates.add(join(stem, 'index.d.mts'));
+    candidates.add(join(stem, 'index.d.cts'));
+    candidates.add(join(stem, 'index.ts'));
+    candidates.add(join(stem, 'index.mts'));
+    candidates.add(join(stem, 'index.cts'));
+    candidates.add(join(stem, 'index.js'));
+    candidates.add(join(stem, 'index.mjs'));
+    candidates.add(join(stem, 'index.cjs'));
+    candidates.add(join(stem, 'index.svelte'));
+    candidates.add(join(stem, 'index.svelte.d.ts'));
+  }
+
+  return [...candidates];
+}
+
+function isWithinPackageRoot(packageRoot, targetPath) {
+  const relativePath = relative(packageRoot, targetPath);
+  return (
+    targetPath === packageRoot ||
+    (relativePath !== '..' &&
+      !relativePath.startsWith(`..${sep}`) &&
+      relativePath !== '')
+  );
+}
+
+function findExistingPackageCandidate(
+  packageRoot,
+  basePath,
+  candidateResolver,
+  predicate = () => true,
+) {
+  for (const candidate of candidateResolver(basePath)) {
+    if (
+      isWithinPackageRoot(packageRoot, candidate) &&
+      existsSync(candidate) &&
+      predicate(candidate)
+    ) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function collectPackageEntryFiles(
+  packageRoot,
+  exportPaths,
+  candidateResolver,
+  predicate,
+) {
+  const entryFiles = [];
+  const seen = new Set();
+
+  for (const exportPath of exportPaths) {
+    if (exportPath.includes('*')) {
+      continue;
+    }
+
+    const resolved = findExistingPackageCandidate(
+      packageRoot,
+      resolve(packageRoot, exportPath),
+      candidateResolver,
+      predicate,
+    );
+
+    if (!resolved || seen.has(resolved)) {
+      continue;
+    }
+
+    seen.add(resolved);
+    entryFiles.push(resolved);
+  }
+
+  return entryFiles;
 }
 
 function collectRelativeEsmSpecifiers(source) {
@@ -232,75 +353,20 @@ function collectRelativeEsmSpecifiers(source) {
   return specifiers;
 }
 
-function collectMissingRelativeRuntimeImports(packageRoot) {
+function collectMissingRelativeRuntimeImports(packageRoot, runtimeEntryFiles) {
   const missing = [];
-  const runtimeFiles = walkFiles(packageRoot).filter((filePath) =>
-    /\.(?:[cm]?js|svelte)$/.test(filePath),
-  );
   const importPattern =
     /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|import\(['"]([^'"]+)['"]\)/g;
+  const pending = [...runtimeEntryFiles];
+  const scanned = new Set();
 
-  const resolveRuntimeCandidates = (basePath) => {
-    const stems = new Set([basePath, getPathStem(basePath)]);
-    const candidates = new Set();
-
-    for (const stem of stems) {
-      candidates.add(stem);
-      candidates.add(`${stem}.js`);
-      candidates.add(`${stem}.mjs`);
-      candidates.add(`${stem}.cjs`);
-      candidates.add(`${stem}.svelte`);
-      candidates.add(join(stem, 'index.js'));
-      candidates.add(join(stem, 'index.mjs'));
-      candidates.add(join(stem, 'index.cjs'));
-      candidates.add(join(stem, 'index.svelte'));
+  while (pending.length > 0) {
+    const filePath = pending.pop();
+    if (!filePath || scanned.has(filePath)) {
+      continue;
     }
 
-    return [...candidates];
-  };
-  const resolveTypeCandidates = (basePath) => {
-    const stems = new Set([basePath, getPathStem(basePath)]);
-    const candidates = new Set();
-
-    for (const stem of stems) {
-      candidates.add(stem);
-      candidates.add(`${stem}.d.ts`);
-      candidates.add(`${stem}.d.mts`);
-      candidates.add(`${stem}.d.cts`);
-      candidates.add(`${stem}.ts`);
-      candidates.add(`${stem}.mts`);
-      candidates.add(`${stem}.cts`);
-      candidates.add(`${stem}.js`);
-      candidates.add(`${stem}.mjs`);
-      candidates.add(`${stem}.cjs`);
-      candidates.add(`${stem}.svelte`);
-      candidates.add(`${stem}.svelte.d.ts`);
-      candidates.add(join(stem, 'index.d.ts'));
-      candidates.add(join(stem, 'index.d.mts'));
-      candidates.add(join(stem, 'index.d.cts'));
-      candidates.add(join(stem, 'index.ts'));
-      candidates.add(join(stem, 'index.mts'));
-      candidates.add(join(stem, 'index.cts'));
-      candidates.add(join(stem, 'index.js'));
-      candidates.add(join(stem, 'index.mjs'));
-      candidates.add(join(stem, 'index.cjs'));
-      candidates.add(join(stem, 'index.svelte'));
-      candidates.add(join(stem, 'index.svelte.d.ts'));
-    }
-
-    return [...candidates];
-  };
-  const isWithinPackageRoot = (targetPath) => {
-    const relativePath = relative(packageRoot, targetPath);
-    return (
-      targetPath === packageRoot ||
-      (relativePath !== '..' &&
-        !relativePath.startsWith(`..${sep}`) &&
-        relativePath !== '')
-    );
-  };
-
-  for (const filePath of runtimeFiles) {
+    scanned.add(filePath);
     const rawSource = readFileSync(filePath, 'utf8');
     const source = filePath.endsWith('.svelte')
       ? stripComments(rawSource)
@@ -343,7 +409,7 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
 
       const specifier = entry.specifier;
       const basePath = resolve(dirname(filePath), specifier);
-      if (!isWithinPackageRoot(basePath)) {
+      if (!isWithinPackageRoot(packageRoot, basePath)) {
         missing.push(
           `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
         );
@@ -352,14 +418,21 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
       const candidateResolver = entry.isTypeOnlyImport
         ? resolveTypeCandidates
         : resolveRuntimeCandidates;
-      const hasTarget = candidateResolver(basePath).some(
-        (candidate) => isWithinPackageRoot(candidate) && existsSync(candidate),
+      const targetPath = findExistingPackageCandidate(
+        packageRoot,
+        basePath,
+        candidateResolver,
       );
 
-      if (!hasTarget) {
+      if (!targetPath) {
         missing.push(
           `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
         );
+        continue;
+      }
+
+      if (!entry.isTypeOnlyImport && isRuntimeSourceFile(targetPath)) {
+        pending.push(targetPath);
       }
     }
   }
@@ -367,57 +440,20 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
   return missing;
 }
 
-function collectMissingTypeImports(packageRoot) {
+function collectMissingTypeImports(packageRoot, typeEntryFiles) {
   const missing = [];
-  const typeFiles = walkFiles(packageRoot).filter((filePath) =>
-    /\.d\.(?:cts|mts|ts)$/.test(filePath),
-  );
   const importPattern =
     /(?:import|export)\s+(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]|import\(['"]([^'"]+)['"]\)/g;
+  const pending = [...typeEntryFiles];
+  const scanned = new Set();
 
-  const resolveCandidates = (basePath) => {
-    const stems = new Set([basePath, getPathStem(basePath)]);
-    const candidates = new Set();
-
-    for (const stem of stems) {
-      candidates.add(stem);
-      candidates.add(`${stem}.d.ts`);
-      candidates.add(`${stem}.d.mts`);
-      candidates.add(`${stem}.d.cts`);
-      candidates.add(`${stem}.ts`);
-      candidates.add(`${stem}.mts`);
-      candidates.add(`${stem}.cts`);
-      candidates.add(`${stem}.js`);
-      candidates.add(`${stem}.mjs`);
-      candidates.add(`${stem}.cjs`);
-      candidates.add(`${stem}.svelte`);
-      candidates.add(`${stem}.svelte.d.ts`);
-      candidates.add(join(stem, 'index.d.ts'));
-      candidates.add(join(stem, 'index.d.mts'));
-      candidates.add(join(stem, 'index.d.cts'));
-      candidates.add(join(stem, 'index.ts'));
-      candidates.add(join(stem, 'index.mts'));
-      candidates.add(join(stem, 'index.cts'));
-      candidates.add(join(stem, 'index.js'));
-      candidates.add(join(stem, 'index.mjs'));
-      candidates.add(join(stem, 'index.cjs'));
-      candidates.add(join(stem, 'index.svelte'));
-      candidates.add(join(stem, 'index.svelte.d.ts'));
+  while (pending.length > 0) {
+    const filePath = pending.pop();
+    if (!filePath || scanned.has(filePath)) {
+      continue;
     }
 
-    return [...candidates];
-  };
-  const isWithinPackageRoot = (targetPath) => {
-    const relativePath = relative(packageRoot, targetPath);
-    return (
-      targetPath === packageRoot ||
-      (relativePath !== '..' &&
-        !relativePath.startsWith(`..${sep}`) &&
-        relativePath !== '')
-    );
-  };
-
-  for (const filePath of typeFiles) {
+    scanned.add(filePath);
     const source = stripComments(readFileSync(filePath, 'utf8'));
     const seenSpecifiers = new Set();
 
@@ -433,20 +469,27 @@ function collectMissingTypeImports(packageRoot) {
       seenSpecifiers.add(specifier);
 
       const basePath = resolve(dirname(filePath), specifier);
-      if (!isWithinPackageRoot(basePath)) {
+      if (!isWithinPackageRoot(packageRoot, basePath)) {
         missing.push(
           `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
         );
         continue;
       }
-      const hasTarget = resolveCandidates(basePath).some(
-        (candidate) => isWithinPackageRoot(candidate) && existsSync(candidate),
+      const targetPath = findExistingPackageCandidate(
+        packageRoot,
+        basePath,
+        resolveTypeCandidates,
       );
 
-      if (!hasTarget) {
+      if (!targetPath) {
         missing.push(
           `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
         );
+        continue;
+      }
+
+      if (isTypeSourceFile(targetPath)) {
+        pending.push(targetPath);
       }
     }
   }
@@ -510,9 +553,26 @@ try {
 
   run('tar', ['-xf', tarballPath, '-C', tempDir]);
   const packageRoot = join(tempDir, 'package');
-  const missingRelativeRuntimeImports =
-    collectMissingRelativeRuntimeImports(packageRoot);
-  const missingTypeImports = collectMissingTypeImports(packageRoot);
+  const runtimeEntryFiles = collectPackageEntryFiles(
+    packageRoot,
+    runtimePaths,
+    resolveRuntimeCandidates,
+    isRuntimeSourceFile,
+  );
+  const typeEntryFiles = collectPackageEntryFiles(
+    packageRoot,
+    typePaths,
+    resolveTypeCandidates,
+    isTypeSourceFile,
+  );
+  const missingRelativeRuntimeImports = collectMissingRelativeRuntimeImports(
+    packageRoot,
+    runtimeEntryFiles,
+  );
+  const missingTypeImports = collectMissingTypeImports(
+    packageRoot,
+    typeEntryFiles,
+  );
 
   if (
     missing.length > 0 ||
