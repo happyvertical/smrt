@@ -991,6 +991,42 @@ function mergeIndexDefinitions(
   return merged;
 }
 
+function invalidateInheritanceEntries(existing: RegisteredClass): void {
+  const cache = getInheritanceCache();
+  const affectedNames = new Set<string>();
+
+  const remember = (name: string | undefined): void => {
+    if (name) {
+      affectedNames.add(name);
+    }
+  };
+
+  remember(existing.name);
+  remember(existing.qualifiedName);
+
+  for (const [key, candidate] of getClasses()) {
+    if (
+      candidate === existing ||
+      candidate.extends === existing.name ||
+      candidate.extends === existing.qualifiedName ||
+      candidate.inheritanceChain?.includes(existing.name) ||
+      (existing.qualifiedName &&
+        candidate.inheritanceChain?.includes(existing.qualifiedName))
+    ) {
+      candidate.inheritanceChain = undefined;
+      candidate.inheritedFields = undefined;
+      candidate.inheritedMethods = undefined;
+      remember(key);
+      remember(candidate.name);
+      remember(candidate.qualifiedName);
+    }
+  }
+
+  for (const name of affectedNames) {
+    cache.delete(name);
+  }
+}
+
 function mergeManifestIntoExistingRegistration(
   existing: RegisteredClass,
   objectDef: any,
@@ -1097,11 +1133,10 @@ function mergeManifestIntoExistingRegistration(
     existing.schema.packageName = packageName || existing.schema.packageName;
   }
 
-  if (objectDef.validationRules?.length) {
+  if (objectDef.validationRules !== undefined) {
     existing.validationRules = objectDef.validationRules;
     existing.validators = undefined;
-  } else {
-    existing.validationRules = undefined;
+  } else if (!existing.validationRules && !existing.validators) {
     existing.validators = compileValidators(existing.name, existing.fields);
   }
 
@@ -1127,10 +1162,7 @@ function mergeManifestIntoExistingRegistration(
 
   existing.visibility =
     objectDef.visibility || manifestConfig.visibility || existing.visibility;
-  existing.inheritanceChain = undefined;
-  existing.inheritedFields = undefined;
-  existing.inheritedMethods = undefined;
-  getInheritanceCache().clear();
+  invalidateInheritanceEntries(existing);
 }
 
 export function registerFromManifest(
@@ -1221,9 +1253,9 @@ export function registerFromManifest(
         }
 
         if (
-          (!packageName ||
-            !existing.packageName ||
-            packageName === existing.packageName) &&
+          packageName &&
+          existing.packageName &&
+          packageName === existing.packageName &&
           (objectDef.fields ||
             objectDef.methods ||
             objectDef.schema ||

@@ -110,6 +110,23 @@ describe('SecretService', () => {
         expect(await service.exists('non-existent')).toBe(false);
       });
     });
+
+    it('persists tenant-scoped secrets without relying on the tenancy interceptor', async () => {
+      disableTenancy();
+
+      await withTenant({ tenantId: 'tenant-1' }, async () => {
+        await service.store('interceptor-free-secret', 'value');
+      });
+
+      const { rows } = await db.query(
+        'SELECT name, tenant_id FROM secrets WHERE name = ?',
+        'interceptor-free-secret',
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.name).toBe('interceptor-free-secret');
+      expect(rows[0]?.tenant_id).toBe('tenant-1');
+    });
   });
 
   describe('Secret lifecycle', () => {

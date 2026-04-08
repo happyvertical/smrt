@@ -518,6 +518,112 @@ describe('external runtime field hydration', () => {
     expect(definitions.fixture_runtime_meeting_recaps).toBeUndefined();
   });
 
+  it('preserves existing validation rules when a later manifest merge omits them', () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-validation';
+    const registrationKey = createQualifiedName(
+      packageName,
+      'FixtureRuntimeValidated',
+    );
+
+    @smrt({
+      packageName,
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_validated',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeValidated extends SmrtObject {
+      @field()
+      status: string = '';
+    }
+
+    const registered = ObjectRegistry.findClass(registrationKey);
+    expect(registered).toBeDefined();
+    const existingRules = [{ type: 'required', field: 'status' }] as any;
+    if (!registered) {
+      throw new Error('Expected FixtureRuntimeValidated to be registered');
+    }
+    registered.validationRules = existingRules;
+    registered.validators = undefined;
+
+    ObjectRegistry.registerFromManifest(
+      'FixtureRuntimeValidated',
+      {
+        className: 'FixtureRuntimeValidated',
+        decoratorConfig: {
+          tableStrategy: 'sti',
+          tableName: 'fixture_runtime_validated',
+          api: false,
+          cli: false,
+          mcp: false,
+        },
+        fields: {
+          status: { type: 'text' },
+          category: { type: 'text' },
+        },
+      },
+      packageName,
+    );
+
+    const after = ObjectRegistry.findClass(registrationKey);
+    expect(after?.validationRules).toBe(existingRules);
+    expect(after?.validators).toBeUndefined();
+    expect(after?.fields.has('category')).toBe(true);
+  });
+
+  it('does not merge an unqualified manifest into an already-qualified runtime class', () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-guard';
+    const registrationKey = createQualifiedName(
+      packageName,
+      'FixtureRuntimeGuarded',
+    );
+
+    @smrt({
+      packageName,
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_guarded',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeGuarded extends SmrtObject {
+      @field()
+      status: string = '';
+    }
+
+    const before = ObjectRegistry.findClass(registrationKey);
+    expect(before).toBeDefined();
+    expect(before?.fields.has('unexpectedField')).toBe(false);
+
+    ObjectRegistry.registerFromManifest('FixtureRuntimeGuarded', {
+      className: 'FixtureRuntimeGuarded',
+      fields: {
+        unexpectedField: { type: 'text' },
+      },
+      decoratorConfig: {
+        tableStrategy: 'sti',
+        tableName: 'wrong_table_name',
+      },
+      schema: {
+        tableName: 'wrong_table_name',
+        ddl: '',
+        columns: {
+          unexpected_field: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const after = ObjectRegistry.findClass(registrationKey);
+    expect(after?.fields.has('unexpectedField')).toBe(false);
+    expect(after?.schema?.tableName).toBe('fixture_runtime_guarded');
+  });
+
   it('hydrates STI sibling field types before save so missing booleans do not serialize as empty strings', async () => {
     const packageName = '@happyvertical/smrt-runtime-fixture-events';
 
