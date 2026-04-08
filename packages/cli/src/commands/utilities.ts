@@ -1847,6 +1847,7 @@ export default testManifest;
           const verificationOutput = [
             verificationResult.stdout,
             verificationResult.stderr,
+            verificationResult.error?.message,
           ]
             .filter((chunk): chunk is string => Boolean(chunk?.trim()))
             .join('\n')

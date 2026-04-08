@@ -1,14 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from 'node:child_process';
-import {
-  existsSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-} from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { parse } from 'acorn';
@@ -132,36 +125,10 @@ function archiveHasPath(archiveEntries, relativePath) {
   }
 
   const pattern = new RegExp(
-    `^${escapeRegex(archivePath).replaceAll('*', '.+')}$`,
+    `^${escapeRegex(archivePath).replaceAll('*', '[^/]+')}$`,
   );
 
   return [...archiveEntries].some((entry) => pattern.test(entry));
-}
-
-function _walkFiles(rootDir) {
-  const pending = [rootDir];
-  const files = [];
-
-  while (pending.length > 0) {
-    const current = pending.pop();
-    if (!current) {
-      continue;
-    }
-
-    for (const entry of readdirSync(current)) {
-      const entryPath = join(current, entry);
-      const stats = statSync(entryPath);
-
-      if (stats.isDirectory()) {
-        pending.push(entryPath);
-        continue;
-      }
-
-      files.push(entryPath);
-    }
-  }
-
-  return files;
 }
 
 function stripComments(source) {

@@ -439,6 +439,9 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.71.20
         version: 0.71.20
+      acorn:
+        specifier: ^8.15.0
+        version: 8.16.0
       fast-glob:
         specifier: 3.3.3
         version: 3.3.3
