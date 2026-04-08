@@ -97,6 +97,26 @@ for (const pkg of publishablePackages) {
   if (result.status !== 0) {
     fail(`npm pack --dry-run failed for ${pkg.name}`);
   }
+
+  const verifyResult = spawnSync(
+    process.execPath,
+    [join(repoRoot, 'scripts', 'verify-package-types-exports.js'), pkg.dir],
+    {
+      cwd: repoRoot,
+      stdio: 'inherit',
+      env: process.env,
+    },
+  );
+
+  if (verifyResult.error) {
+    fail(
+      `Failed to verify packed exports for ${pkg.name}: ${verifyResult.error.message}`,
+    );
+  }
+
+  if (verifyResult.status !== 0) {
+    fail(`Packed export verification failed for ${pkg.name}`);
+  }
 }
 
 console.log(

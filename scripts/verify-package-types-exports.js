@@ -11,6 +11,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
+import { parse } from 'acorn';
 
 function fail(message) {
   throw new Error(message);
@@ -119,6 +120,24 @@ function collectRuntimePaths(packageJson) {
   return [...runtimePaths];
 }
 
+function escapeRegex(source) {
+  return source.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+}
+
+function archiveHasPath(archiveEntries, relativePath) {
+  const archivePath = `package/${relativePath}`;
+
+  if (!archivePath.includes('*')) {
+    return archiveEntries.has(archivePath);
+  }
+
+  const pattern = new RegExp(
+    `^${escapeRegex(archivePath).replaceAll('*', '.+')}$`,
+  );
+
+  return [...archiveEntries].some((entry) => pattern.test(entry));
+}
+
 function walkFiles(rootDir) {
   const pending = [rootDir];
   const files = [];
@@ -156,6 +175,61 @@ function getPathStem(filePath) {
     /\.(?:d\.(?:cts|mts|ts)|[cm]?ts|[cm]?js|svelte)$/,
     '',
   );
+}
+
+function collectRelativeEsmSpecifiers(source) {
+  const program = parse(source, {
+    ecmaVersion: 'latest',
+    sourceType: 'module',
+  });
+  const specifiers = [];
+  const pending = [program];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+
+    if (!current || typeof current !== 'object') {
+      continue;
+    }
+
+    switch (current.type) {
+      case 'ImportDeclaration':
+      case 'ExportAllDeclaration':
+      case 'ExportNamedDeclaration': {
+        const specifier = current.source?.value;
+        if (typeof specifier === 'string' && specifier.startsWith('.')) {
+          specifiers.push(specifier);
+        }
+        break;
+      }
+      case 'ImportExpression': {
+        const specifier = current.source?.value;
+        if (typeof specifier === 'string' && specifier.startsWith('.')) {
+          specifiers.push(specifier);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+
+    for (const value of Object.values(current)) {
+      if (!value || typeof value !== 'object') {
+        continue;
+      }
+
+      if (Array.isArray(value)) {
+        for (const entry of value) {
+          pending.push(entry);
+        }
+        continue;
+      }
+
+      pending.push(value);
+    }
+  }
+
+  return specifiers;
 }
 
 function collectMissingRelativeRuntimeImports(packageRoot) {
@@ -227,34 +301,58 @@ function collectMissingRelativeRuntimeImports(packageRoot) {
   };
 
   for (const filePath of runtimeFiles) {
-    const source = stripComments(readFileSync(filePath, 'utf8'));
+    const rawSource = readFileSync(filePath, 'utf8');
+    const source = filePath.endsWith('.svelte')
+      ? stripComments(rawSource)
+      : rawSource;
+    const specifiers = filePath.endsWith('.svelte')
+      ? [...source.matchAll(importPattern)]
+          .map((match) => {
+            const specifier = match[1] || match[2];
+            const fullMatch = match[0] ?? '';
+            const isTypeOnlyImport =
+              /^\s*(?:import|export)\s+type\b/.test(fullMatch) ||
+              /^\s*import\s*\{\s*type\b/.test(fullMatch);
+
+            if (typeof specifier !== 'string' || !specifier.startsWith('.')) {
+              return null;
+            }
+
+            return {
+              specifier,
+              isTypeOnlyImport,
+            };
+          })
+          .filter(Boolean)
+      : collectRelativeEsmSpecifiers(source).map((specifier) => ({
+          specifier,
+          isTypeOnlyImport: false,
+        }));
     const seenSpecifiers = new Set();
 
-    for (const match of source.matchAll(importPattern)) {
-      const specifier = match[1] || match[2];
-      if (!specifier || !specifier.startsWith('.')) {
+    for (const entry of specifiers) {
+      if (!entry) {
         continue;
       }
 
-      if (seenSpecifiers.has(specifier)) {
+      const key = `${entry.specifier}:${entry.isTypeOnlyImport ? 'type' : 'runtime'}`;
+      if (seenSpecifiers.has(key)) {
         continue;
       }
-      seenSpecifiers.add(specifier);
+      seenSpecifiers.add(key);
 
+      const specifier = entry.specifier;
       const basePath = resolve(dirname(filePath), specifier);
-      const fullMatch = match[0] ?? '';
-      const isTypeOnlyImport =
-        /^\s*(?:import|export)\s+type\b/.test(fullMatch) ||
-        /^\s*import\s*\{\s*type\b/.test(fullMatch);
       if (!isWithinPackageRoot(basePath)) {
         missing.push(
           `${filePath.replace(`${packageRoot}/`, '')} -> ${specifier}`,
         );
         continue;
       }
-      const hasTarget = (
-        isTypeOnlyImport ? resolveTypeCandidates : resolveRuntimeCandidates
-      )(basePath).some(
+      const candidateResolver = entry.isTypeOnlyImport
+        ? resolveTypeCandidates
+        : resolveRuntimeCandidates;
+      const hasTarget = candidateResolver(basePath).some(
         (candidate) => isWithinPackageRoot(candidate) && existsSync(candidate),
       );
 
@@ -403,11 +501,11 @@ try {
   );
 
   const missing = typePaths.filter(
-    (typePath) => !archiveEntries.has(`package/${typePath}`),
+    (typePath) => !archiveHasPath(archiveEntries, typePath),
   );
 
   const missingRuntime = runtimePaths.filter(
-    (runtimePath) => !archiveEntries.has(`package/${runtimePath}`),
+    (runtimePath) => !archiveHasPath(archiveEntries, runtimePath),
   );
 
   run('tar', ['-xf', tarballPath, '-C', tempDir]);
