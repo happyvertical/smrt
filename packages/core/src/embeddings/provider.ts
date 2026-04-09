@@ -52,8 +52,6 @@ function formatTransformersResolutionError(
 export async function resolveLocalTransformersModule(
   importModule: OptionalModuleImporter = importOptional,
 ): Promise<TransformersModuleResolution> {
-  let lastError: unknown = null;
-
   for (const packageName of LOCAL_TRANSFORMERS_PACKAGES) {
     try {
       const module = await importModule(packageName);
@@ -62,12 +60,7 @@ export async function resolveLocalTransformersModule(
       if (!isModuleNotFoundError(error, packageName)) {
         throw error;
       }
-      lastError = error;
     }
-  }
-
-  if (lastError) {
-    throw formatTransformersResolutionError(LOCAL_TRANSFORMERS_PACKAGES);
   }
 
   throw formatTransformersResolutionError(LOCAL_TRANSFORMERS_PACKAGES);
