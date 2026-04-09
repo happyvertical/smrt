@@ -22,6 +22,7 @@ import { PermissionCollection } from '../collections/PermissionCollection.js';
 import { RoleCollection } from '../collections/RoleCollection.js';
 import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
+import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { PermissionResolver } from '../services/PermissionResolver.js';
 import { UserStatus } from '../types/index.js';
@@ -391,6 +392,7 @@ describe('PermissionResolver', () => {
   let groupMembers: GroupMemberCollection;
   let groupRoles: GroupRoleCollection;
   let membershipOverrides: MembershipOverrideCollection;
+  let tenantOverrides: TenantPermissionOverrideCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-resolver-test-${Date.now()}.db`);
@@ -406,6 +408,7 @@ describe('PermissionResolver', () => {
     groupMembers = await GroupMemberCollection.create(options);
     groupRoles = await GroupRoleCollection.create(options);
     membershipOverrides = await MembershipOverrideCollection.create(options);
+    tenantOverrides = await TenantPermissionOverrideCollection.create(options);
   });
 
   afterEach(() => {
@@ -594,6 +597,63 @@ describe('PermissionResolver', () => {
     // Should NOT have delete permission due to DENY override
     expect(result.permissions.has('articles.delete')).toBe(false);
     expect(result.deniedPermissionIds).toContain(deletePerm.id);
+  });
+
+  it('should merge inherited tenant permissions before membership denies', async () => {
+    const parent = await tenants.create({
+      cascadePermissions: true,
+      name: 'Parent Org',
+    });
+    await parent.save();
+
+    const child = await tenants.create({
+      inheritPermissions: true,
+      name: 'Child Org',
+      parentTenantId: parent.id!,
+    });
+    await child.save();
+
+    const user = await users.create({ email: 'tenant-inherit@example.com' });
+    await user.save();
+
+    const role = await roles.create({ name: 'Editor' });
+    await role.save();
+
+    const inheritedPermission = await permissions.create({
+      slug: 'articles.read',
+      name: 'Read Articles',
+    });
+    await inheritedPermission.save();
+
+    const rolePermission = await permissions.create({
+      slug: 'articles.create',
+      name: 'Create Articles',
+    });
+    await rolePermission.save();
+
+    await tenantOverrides.grantPermission(parent.id!, inheritedPermission.id!);
+    await rolePermissions.addPermission(role.id!, rolePermission.id!);
+
+    const membership = await memberships.create({
+      roleId: role.id!,
+      tenantId: child.id!,
+      userId: user.id!,
+    });
+    await membership.save();
+
+    await membershipOverrides.denyPermission(
+      membership.id!,
+      inheritedPermission.id!,
+    );
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+
+    expect(result.permissions.has('articles.create')).toBe(true);
+    expect(result.permissions.has('articles.read')).toBe(false);
+    expect(result.deniedPermissionIds).toContain(inheritedPermission.id);
   });
 
   it('should return empty permissions for non-member', async () => {

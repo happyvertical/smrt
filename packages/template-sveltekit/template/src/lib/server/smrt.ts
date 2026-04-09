@@ -10,6 +10,13 @@ import { ObjectRegistry, type SmrtClassOptions } from '@happyvertical/smrt-core'
 // Import all SMRT objects to register them
 import '../objects/index.js';
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtGetRequestScopedDatabase:
+    | (() => SmrtClassOptions['db'] | undefined)
+    | undefined;
+}
+
 /**
  * Per-object configuration overrides
  *
@@ -39,6 +46,11 @@ function getDefaultConfig(): SmrtClassOptions {
   };
 }
 
+function getRequestScopedDatabase(): SmrtClassOptions['db'] | undefined {
+  const getter = globalThis.__smrtGetRequestScopedDatabase;
+  return typeof getter === 'function' ? getter() : undefined;
+}
+
 /**
  * Get configuration for a specific SMRT class
  */
@@ -56,5 +68,14 @@ export function getSmrtConfig(className: string): SmrtClassOptions {
  *   const items = await products.list();
  */
 export async function getCollection<T>(className: string) {
-  return await ObjectRegistry.getCollection<T>(className, getSmrtConfig(className));
+  const config = getSmrtConfig(className);
+  const objectOverride = objectOverrides[className];
+  const requestScopedDb = objectOverride?.db
+    ? undefined
+    : getRequestScopedDatabase();
+
+  return await ObjectRegistry.getCollection<T>(className, {
+    ...config,
+    db: requestScopedDb ?? config.db,
+  });
 }

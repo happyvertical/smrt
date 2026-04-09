@@ -641,6 +641,13 @@ import './smrt-register.js';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __smrtGetRequestScopedDatabase:
+    | (() => SmrtClassOptions['db'] | undefined)
+    | undefined;
+}
+
 /**
  * Per-object configuration overrides
  * Define specific backends for objects that differ from project defaults
@@ -697,6 +704,11 @@ function getDefaultConfig(): SmrtClassOptions {
   };
 }
 
+function getRequestScopedDatabase(): SmrtClassOptions['db'] | undefined {
+  const getter = globalThis.__smrtGetRequestScopedDatabase;
+  return typeof getter === 'function' ? getter() : undefined;
+}
+
 /**
  * Get configuration for a specific SMRT object
  * Merges project defaults with per-object overrides if defined
@@ -729,6 +741,11 @@ export async function getCollection<
   T extends import('@happyvertical/smrt-core').SmrtObject,
 >(className: string, overrides: Partial<SmrtClassOptions> = {}) {
   const config = getSmrtConfig(className);
+  const objectOverride = objectOverrides[className];
+  const requestScopedDb =
+    !overrides.db && !objectOverride?.db
+      ? getRequestScopedDatabase()
+      : undefined;
 
   return await ObjectRegistry.getCollection<T>(
     className,
@@ -737,7 +754,7 @@ export async function getCollection<
       ...overrides,
       db: overrides.db
         ? { ...(config.db as any), ...(overrides.db as any) }
-        : config.db,
+        : requestScopedDb ?? config.db,
       ai: overrides.ai !== undefined ? overrides.ai : config.ai
     }
   );

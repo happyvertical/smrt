@@ -157,6 +157,13 @@ export class SessionService {
   }
 
   /**
+   * Get the initialized database connection backing this session service.
+   */
+  getDatabase() {
+    return this.sessionCollection.db;
+  }
+
+  /**
    * Refresh session (extend expiry, update lastAccessed)
    */
   async refreshSession(sessionId: string): Promise<boolean> {

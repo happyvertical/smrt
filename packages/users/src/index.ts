@@ -34,6 +34,21 @@
  * // Resolve permissions
  * const resolver = await PermissionResolver.create({ persistence: { type: 'sql', url: 'app.db' } });
  * const hasAccess = await resolver.hasPermission(user.id, tenant.id, 'articles.create');
+ *
+ * // Sync manifest-derived permissions into the Permission table
+ * const syncResult = await syncPermissionCatalog({
+ *   db: { type: 'postgres', url: process.env.DATABASE_URL! }
+ * });
+ * console.log(syncResult.created);
+ *
+ * // Generate or apply Postgres RLS policies
+ * const sql = generatePostgresPermissionSql({
+ *   db: { type: 'postgres', url: process.env.DATABASE_URL! }
+ * });
+ * console.log(sql.targets);
+ * await applyPostgresPermissionPolicies({
+ *   db: { type: 'postgres', url: process.env.DATABASE_URL! }
+ * });
  * ```
  *
  * @packageDocumentation
@@ -87,20 +102,40 @@ export {
 
 // Services
 export {
+  applyPostgresPermissionPolicies,
   type EnsureTenantResult,
+  type GeneratePostgresPermissionSqlResult,
+  generatePostgresPermissionSql,
+  getCurrentSessionPermissionContext,
+  getRequestScopedDatabase,
   MagicLinkError,
   type MagicLinkResult,
   MagicLinkService,
   type MagicLinkServiceOptions,
   type MagicLinkVerifyResult,
+  type PermissionCatalog,
+  PermissionCatalogService,
+  type PermissionCatalogSource,
+  type PermissionCatalogSyncResult,
+  type PermissionDefinition,
   type PermissionResolutionResult,
   PermissionResolver,
+  type PostgresPermissionAction,
+  type PostgresPermissionBinding,
+  type PostgresPermissionPolicyReportItem,
+  type PostgresPermissionPolicyTarget,
+  registerPermissionDefinitions,
   type SessionContext,
+  type SessionPermissionRuntimeContext,
+  type SessionPermissionRuntimeOptions,
   SessionService,
   type SessionServiceOptions,
+  syncPermissionCatalog,
   type TenantPermissionInheritanceResult,
   TenantService,
   type TenantWithOwnershipResult,
+  type UsersConfig,
+  withSessionPermissionContext,
 } from './services/index.js';
 
 // Types
