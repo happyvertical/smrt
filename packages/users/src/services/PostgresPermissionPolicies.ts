@@ -3,6 +3,7 @@
  * @packageDocumentation
  */
 
+import { createHash } from 'node:crypto';
 import {
   findManifestEntryByQualifiedName,
   ObjectRegistry,
@@ -19,6 +20,8 @@ interface QueryableDatabase {
   query: (sql: string, ...params: unknown[]) => Promise<unknown>;
   url?: string;
 }
+
+type DatabaseConfig = SmrtClassOptions['db'] | SmrtClassOptions['persistence'];
 
 interface TablePolicyTarget {
   actions: Map<PostgresPermissionAction, Set<string>>;
@@ -73,7 +76,7 @@ function quoteLiteral(value: string): string {
 }
 
 function isProbablyPostgres(
-  configDb: SmrtClassOptions['db'],
+  configDb: DatabaseConfig,
   database: QueryableDatabase,
 ): boolean {
   if (
@@ -91,6 +94,51 @@ function isProbablyPostgres(
   }
 
   return (database.constructor?.name || '').toLowerCase().includes('postgres');
+}
+
+function normalizePostgresPermissionAction(
+  action: PostgresPermissionBinding['action'],
+): PostgresPermissionAction {
+  const normalized = action.toUpperCase();
+  if (
+    normalized === 'SELECT' ||
+    normalized === 'INSERT' ||
+    normalized === 'UPDATE' ||
+    normalized === 'DELETE'
+  ) {
+    return normalized;
+  }
+
+  throw new Error(
+    `Invalid Postgres permission binding action "${action}". Expected one of SELECT, INSERT, UPDATE, DELETE.`,
+  );
+}
+
+function normalizePostgresPermissionBinding(
+  binding: PostgresPermissionBinding,
+  fallbackPermission?: string,
+): PostgresPermissionBinding {
+  const tableName = binding.tableName?.trim();
+  if (!tableName) {
+    throw new Error(
+      'Postgres permission binding is missing a tableName value.',
+    );
+  }
+
+  const permission = binding.permission ?? fallbackPermission;
+  if (!permission) {
+    throw new Error(
+      'Postgres permission binding is missing a permission value.',
+    );
+  }
+
+  return {
+    action: normalizePostgresPermissionAction(binding.action),
+    permission,
+    schemaName: binding.schemaName,
+    tableName,
+    tenantField: binding.tenantField,
+  };
 }
 
 function parseTableReference(
@@ -114,10 +162,24 @@ function buildPolicyName(
   tableName: string,
   action: PostgresPermissionAction,
 ): string {
-  const sanitized = `${tableName}_${action.toLowerCase()}`
+  const actionSegment = action.toLowerCase();
+  const hash = createHash('sha1')
+    .update(`${tableName}:${action}`)
+    .digest('hex')
+    .slice(0, 8);
+  const sanitizedTable = tableName
     .replace(/[^a-zA-Z0-9_]+/g, '_')
-    .slice(0, 48);
-  return `smrt_${sanitized}`;
+    .replace(/^_+|_+$/g, '');
+  const prefix = 'smrt_';
+  const separatorLength = 2;
+  const maxTableSegmentLength =
+    63 - prefix.length - actionSegment.length - hash.length - separatorLength;
+  const tableSegment = (sanitizedTable || 'table').slice(
+    0,
+    Math.max(maxTableSegmentLength, 1),
+  );
+
+  return `${prefix}${tableSegment}_${actionSegment}_${hash}`;
 }
 
 function buildPermissionExpression(permissionSlugs: string[]): string {
@@ -250,7 +312,7 @@ function addBindingToTarget(
     tableName,
     tenantField,
   };
-  const action = binding.action.toUpperCase() as PostgresPermissionAction;
+  const action = normalizePostgresPermissionAction(binding.action);
   const permissions = target.actions.get(action) ?? new Set<string>();
   if (binding.permission) {
     permissions.add(binding.permission);
@@ -411,14 +473,13 @@ export function generatePostgresPermissionSql(
   const explicitBindings: PostgresPermissionBinding[] = [];
   for (const definition of catalog.permissions) {
     for (const binding of definition.postgres?.bindings ?? []) {
-      explicitBindings.push({
-        ...binding,
-        permission: binding.permission ?? definition.slug,
-      });
+      explicitBindings.push(
+        normalizePostgresPermissionBinding(binding, definition.slug),
+      );
     }
   }
   for (const binding of config.permissions?.postgres?.bindings ?? []) {
-    explicitBindings.push(binding);
+    explicitBindings.push(normalizePostgresPermissionBinding(binding));
   }
 
   for (const binding of explicitBindings) {
@@ -492,7 +553,10 @@ export async function applyPostgresPermissionPolicies(
   options: SmrtClassOptions = {},
 ): Promise<GeneratePostgresPermissionSqlResult> {
   const permissions = await PermissionCollection.create(options);
-  if (!isProbablyPostgres(options.db, permissions.db as QueryableDatabase)) {
+  const databaseOptions = options.db ?? options.persistence;
+  if (
+    !isProbablyPostgres(databaseOptions, permissions.db as QueryableDatabase)
+  ) {
     throw new Error(
       'applyPostgresPermissionPolicies() requires a Postgres database connection.',
     );

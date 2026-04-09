@@ -154,15 +154,61 @@ function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
   );
 }
 
-function getCustomMethodExposureNames(config: unknown): Set<string> {
-  if (!config || config === true || typeof config !== 'object') {
+interface ManifestMethodCandidate {
+  isPublic?: boolean;
+  name?: string;
+}
+
+function getPublicCustomMethodNames(
+  methodEntries: ManifestMethodCandidate[],
+  standardActions: readonly string[],
+): string[] {
+  return Array.from(
+    new Set(
+      methodEntries
+        .filter(
+          (method) =>
+            Boolean(method?.name) &&
+            method?.isPublic === true &&
+            !standardActions.includes(method.name!),
+        )
+        .map((method) => method.name!),
+    ),
+  );
+}
+
+function getCustomMethodExposureNames(
+  config: unknown,
+  availableCustomMethods: string[],
+): Set<string> {
+  if (!config || config === false) {
     return new Set();
   }
 
-  const include = Array.isArray((config as { include?: string[] }).include)
-    ? (config as { include?: string[] }).include
-    : [];
-  return new Set(include);
+  if (config === true || typeof config !== 'object') {
+    return new Set(availableCustomMethods);
+  }
+
+  const rawInclude = (config as { include?: string[] }).include;
+  const include = Array.isArray(rawInclude) ? [...rawInclude] : undefined;
+  const rawExclude = (config as { exclude?: string[] }).exclude;
+  const exclude: string[] = Array.isArray(rawExclude) ? [...rawExclude] : [];
+
+  if (!include) {
+    return new Set(
+      availableCustomMethods.filter(
+        (methodName) => !exclude.includes(methodName),
+      ),
+    );
+  }
+
+  const baseMethods = include.filter((methodName) =>
+    availableCustomMethods.includes(methodName),
+  );
+
+  return new Set(
+    baseMethods.filter((methodName) => !exclude.includes(methodName)),
+  );
 }
 
 function isOperationEnabled(config: unknown, action: string): boolean {
@@ -517,25 +563,26 @@ export class PermissionCatalogService {
         });
       }
 
-      const customApiMethods = new Set<string>();
-      const customCliMethods = getCustomMethodExposureNames(objectConfig.cli);
-      const customMcpMethods = getCustomMethodExposureNames(objectConfig.mcp);
       const methodEntries = manifestEntry?.methods
         ? Object.values(manifestEntry.methods)
         : Array.from(metadata.methods.values());
+      const publicCustomMethodNames = getPublicCustomMethodNames(
+        methodEntries,
+        standardActions,
+      );
+      const customApiMethods = new Set<string>();
+      const customCliMethods = getCustomMethodExposureNames(
+        objectConfig.cli,
+        publicCustomMethodNames,
+      );
+      const customMcpMethods = getCustomMethodExposureNames(
+        objectConfig.mcp,
+        publicCustomMethodNames,
+      );
 
-      for (const method of methodEntries) {
-        if (
-          !method ||
-          !method.name ||
-          standardActions.includes(method.name) ||
-          method.isPublic !== true
-        ) {
-          continue;
-        }
-
-        if (isOperationEnabled(objectConfig.api, method.name)) {
-          customApiMethods.add(method.name);
+      for (const methodName of publicCustomMethodNames) {
+        if (isOperationEnabled(objectConfig.api, methodName)) {
+          customApiMethods.add(methodName);
         }
       }
 

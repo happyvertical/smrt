@@ -101,4 +101,56 @@ describe('Session Permission Context', () => {
     expect(transaction.commit).toHaveBeenCalledTimes(1);
     expect(resolve).toHaveBeenCalledTimes(1);
   });
+
+  it('should fail closed when Postgres RLS context initialization fails', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const baseDb = {
+      query: vi.fn().mockResolvedValue(undefined),
+      url: 'postgres://base-db',
+    };
+    const sessionContext = {
+      permissions: ['articles.read'],
+      sessionId: 'session-123',
+      tenantId: 'tenant-123',
+      user: {
+        email: 'handler@example.com',
+        id: 'user-123',
+      },
+    };
+    const fakeSessionService = {
+      getDatabase: () => baseDb,
+      loadSessionContext: vi.fn().mockResolvedValue(sessionContext),
+    } as unknown as SessionService;
+
+    vi.spyOn(SessionService, 'create').mockResolvedValue(fakeSessionService);
+
+    const handler = createSessionHandler({
+      db: { type: 'postgres', url: 'postgres://base-db' },
+      postgresRls: true,
+    });
+
+    const event = {
+      cookies: {
+        delete: vi.fn(),
+        get: vi.fn().mockReturnValue('session-123'),
+        set: vi.fn(),
+      },
+      locals: {} as Record<string, unknown>,
+      request: { headers: new Headers() },
+      url: { pathname: '/dashboard' },
+    };
+    const resolve = vi.fn(async () => new Response('ok'));
+
+    const response = await handler({
+      event,
+      resolve,
+    });
+
+    expect(response.status).toBe(500);
+    expect(resolve).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledWith(
+      'Session or request context initialization error:',
+      expect.any(Error),
+    );
+  });
 });

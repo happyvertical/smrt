@@ -322,11 +322,6 @@ export class PermissionResolver {
       deniedPermissionIds: [],
     };
 
-    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
-    for (const slug of tenantPermissions.permissions) {
-      result.permissions.add(slug);
-    }
-
     // 1. Get membership
     const membership = await this.membershipCollection.findByUserAndTenant(
       userId,
@@ -338,6 +333,11 @@ export class PermissionResolver {
 
     result.membershipId = membership.id ?? null;
     result.roleId = membership.roleId ?? null;
+
+    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
+    for (const slug of tenantPermissions.permissions) {
+      result.permissions.add(slug);
+    }
 
     if (!membership.roleId) {
       return result;

@@ -675,6 +675,41 @@ describe('PermissionResolver', () => {
     expect(result.roleId).toBeNull();
   });
 
+  it('should not inherit tenant permissions without an active membership', async () => {
+    const user = await users.create({ email: 'tenant-nonmember@example.com' });
+    await user.save();
+
+    const parent = await tenants.create({
+      cascadePermissions: true,
+      name: 'Parent Org',
+    });
+    await parent.save();
+
+    const child = await tenants.create({
+      inheritPermissions: true,
+      name: 'Child Org',
+      parentTenantId: parent.id!,
+    });
+    await child.save();
+
+    const inheritedPermission = await permissions.create({
+      slug: 'articles.read',
+      name: 'Read Articles',
+    });
+    await inheritedPermission.save();
+
+    await tenantOverrides.grantPermission(parent.id!, inheritedPermission.id!);
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const result = await resolver.resolvePermissions(user.id!, child.id!);
+
+    expect(result.permissions.size).toBe(0);
+    expect(result.permissions.has('articles.read')).toBe(false);
+    expect(result.membershipId).toBeNull();
+  });
+
   it('should check hasPermission convenience method', async () => {
     const user = await users.create({ email: 'hasperm@example.com' });
     await user.save();

@@ -361,4 +361,16 @@ describePostgres('Postgres permission RLS', () => {
       ).rejects.toThrow(/row-level security/i);
     });
   });
+
+  it('accepts the persistence alias when applying Postgres permission policies', async () => {
+    const result = await applyPostgresPermissionPolicies({
+      persistence: { type: 'postgres', url: isolated?.config.url },
+    });
+
+    expect(
+      result.targets.some(
+        (target) => target.tableName === 'permission_rls_records',
+      ),
+    ).toBe(true);
+  });
 });

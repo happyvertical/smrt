@@ -159,8 +159,12 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
         },
       );
     } catch (error) {
-      // Log error but don't fail the request
-      console.error('Session loading error:', error);
+      console.error('Session or request context initialization error:', error);
+
+      if (options.postgresRls) {
+        return new Response('Internal Server Error', { status: 500 });
+      }
+
       return resolve(event);
     }
   };

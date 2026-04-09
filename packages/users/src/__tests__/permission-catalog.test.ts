@@ -46,6 +46,38 @@ class OptionalPermissionCatalogRecord extends SmrtObject {
   tenantId: string | null = null;
 }
 
+@smrt({
+  api: false,
+  cli: true,
+  collection: 'default_exposure_permission_catalog_records',
+  mcp: true,
+  tenantScoped: { mode: 'required' },
+})
+class DefaultExposurePermissionCatalogRecord extends SmrtObject {
+  tenantId: string = '';
+  title: string = '';
+
+  async summarize(): Promise<boolean> {
+    return true;
+  }
+
+  protected async hidden(): Promise<boolean> {
+    return false;
+  }
+}
+
+@smrt({
+  api: { include: ['list', 'create', 'update', 'delete'] },
+  collection: 'long_policy_permission_catalog_records',
+  tableName:
+    'permission_policy_table_name_that_is_far_too_long_for_postgres_identifier_limits',
+  tenantScoped: { mode: 'required' },
+})
+class LongPolicyPermissionCatalogRecord extends SmrtObject {
+  tenantId: string = '';
+  title: string = '';
+}
+
 describe('PermissionCatalogService', () => {
   const cleanupFns: Array<() => void> = [];
   const dbPaths: string[] = [];
@@ -82,6 +114,22 @@ describe('PermissionCatalogService', () => {
     expect(matchingSlugs).not.toContain('permission_catalog_records.delete');
     expect(matchingSlugs).not.toContain(
       'permission_catalog_records.internalOnly',
+    );
+  });
+
+  it('should include CLI and MCP custom methods when the transport is enabled without an include list', () => {
+    const catalog = PermissionCatalogService.create().getCatalog();
+    const matchingSlugs = catalog.permissions
+      .map((permission) => permission.slug)
+      .filter((slug) =>
+        slug.startsWith('default_exposure_permission_catalog_records.'),
+      );
+
+    expect(matchingSlugs).toContain(
+      'default_exposure_permission_catalog_records.summarize',
+    );
+    expect(matchingSlugs).not.toContain(
+      'default_exposure_permission_catalog_records.hidden',
     );
   });
 
@@ -240,6 +288,51 @@ describe('PermissionCatalogService', () => {
           reason: expect.stringContaining("tenant mode 'optional'"),
         }),
       ]),
+    );
+  });
+
+  it('should preserve unique Postgres policy names for long table names across actions', () => {
+    const result = generatePostgresPermissionSql();
+    const longTableStatements = result.statements.filter(
+      (statement) =>
+        statement.startsWith('CREATE POLICY') &&
+        statement.includes(
+          '"permission_policy_table_name_that_is_far_too_long_for_postgres_identifier_limits"',
+        ),
+    );
+    const policyNames = longTableStatements
+      .map((statement) => statement.match(/CREATE POLICY "([^"]+)"/)?.[1])
+      .filter((name): name is string => Boolean(name));
+
+    expect(policyNames).toHaveLength(4);
+    expect(new Set(policyNames).size).toBe(4);
+    expect(policyNames.some((name) => name.includes('_select_'))).toBe(true);
+    expect(policyNames.some((name) => name.includes('_insert_'))).toBe(true);
+    expect(policyNames.some((name) => name.includes('_update_'))).toBe(true);
+    expect(policyNames.some((name) => name.includes('_delete_'))).toBe(true);
+  });
+
+  it('should reject invalid Postgres permission bindings from config', () => {
+    setConfig({
+      packages: {
+        users: {
+          permissions: {
+            postgres: {
+              bindings: [
+                {
+                  action: 'archive' as any,
+                  permission: 'app.archive',
+                  tableName: 'permission_catalog_records',
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    expect(() => generatePostgresPermissionSql()).toThrow(
+      /Invalid Postgres permission binding action/,
     );
   });
 });
