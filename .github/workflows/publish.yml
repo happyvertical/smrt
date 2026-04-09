@@ -153,6 +153,7 @@ jobs:
 
             echo "🧹 Running release safety checks..."
             pnpm run format-check
+            node scripts/validate-publish-packages.js
 
             echo "🔍 Validating workflow files before push..."
             for file in .github/workflows/*.yml .github/workflows/*.yaml; do

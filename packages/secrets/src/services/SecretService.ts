@@ -208,7 +208,9 @@ export class SecretService {
         expiresAt: options.expiresAt ?? null,
         metadata: options.metadata ?? {},
         context: tenantId, // Per-tenant uniqueness
+        tenantId,
       });
+      (secret as Secret & { tenantId?: string | null }).tenantId = tenantId;
       await secret.save();
 
       await this.audit(secret.id ?? null, name, userId, 'create', 'success');
@@ -480,6 +482,7 @@ export class SecretService {
     if (!this.auditEnabled) return;
 
     try {
+      const tenantId = getCurrentTenant()?.tenantId;
       const log = await this.auditLogs.create(
         createAuditEntry({
           secretId,
@@ -488,6 +491,7 @@ export class SecretService {
           action,
           result,
           details,
+          tenantId,
         }),
       );
       await log.save();

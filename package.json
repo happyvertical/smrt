@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.21.36",
+  "version": "0.21.39",
   "scripts": {
     "format": "turbo format",
     "format-check": "turbo format-check",
@@ -41,6 +41,7 @@
     "@commitlint/config-conventional": "^20.3.1",
     "@playwright/test": "^1.57.0",
     "@vitest/coverage-v8": "4.0.17",
+    "acorn": "^8.15.0",
     "chokidar": "^5.0.0",
     "concurrently": "9.2.1",
     "dependency-cruiser": "^17.3.6",

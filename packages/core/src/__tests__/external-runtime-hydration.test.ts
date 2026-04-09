@@ -406,6 +406,224 @@ describe('external runtime field hydration', () => {
     ).resolves.toEqual([]);
   });
 
+  it('merges manifest schema into an already-registered external class with the same qualified key', () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-recaps';
+    const registrationKey = createQualifiedName(
+      packageName,
+      'FixtureRuntimeMeetingRecap',
+    );
+
+    @smrt({
+      packageName,
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_contents',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeContent extends SmrtObject {}
+
+    @smrt({
+      packageName,
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeMeetingRecap extends FixtureRuntimeContent {
+      @field()
+      meetingId: string = '';
+    }
+
+    const before = ObjectRegistry.findClass(registrationKey);
+    expect(before).toBeDefined();
+    expect(before?.schema?.tableName).toBe('fixture_runtime_contents');
+    expect(before?.fields.has('meetingId')).toBe(true);
+    expect(before?.fields.has('councilId')).toBe(false);
+    expect(before?.fields.has('body')).toBe(false);
+
+    const beforeDefinitions = ObjectRegistry.getAllSchemasAsDefinitions();
+    expect(
+      beforeDefinitions.fixture_runtime_contents.columns.meeting_id,
+    ).toBeDefined();
+    expect(
+      beforeDefinitions.fixture_runtime_contents.columns.council_id,
+    ).toBeUndefined();
+    expect(
+      beforeDefinitions.fixture_runtime_contents.columns.body,
+    ).toBeUndefined();
+
+    ObjectRegistry.registerFromManifest(
+      'FixtureRuntimeMeetingRecap',
+      {
+        className: 'FixtureRuntimeMeetingRecap',
+        extends: 'FixtureRuntimeContent',
+        decoratorConfig: {
+          tableStrategy: 'sti',
+          tableName: 'fixture_runtime_contents',
+          api: false,
+          cli: false,
+          mcp: false,
+        },
+        fields: {
+          meetingId: { type: 'text' },
+          councilId: { type: 'text' },
+          body: { type: 'text' },
+        },
+        schema: {
+          tableName: 'fixture_runtime_contents',
+          ddl: `CREATE TABLE IF NOT EXISTS "fixture_runtime_contents" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "_meta_type" TEXT NOT NULL DEFAULT '',
+  "_meta_data" JSON,
+  "meeting_id" TEXT DEFAULT '',
+  "council_id" TEXT DEFAULT '',
+  "body" TEXT DEFAULT ''
+);`,
+          columns: {
+            meeting_id: { type: 'TEXT', defaultValue: '' },
+            council_id: { type: 'TEXT', defaultValue: '' },
+            body: { type: 'TEXT', defaultValue: '' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      },
+      packageName,
+    );
+
+    const after = ObjectRegistry.findClass(registrationKey);
+    expect(after).toBeDefined();
+    expect(after?.schema?.tableName).toBe('fixture_runtime_contents');
+    expect(after?.qualifiedName).toBe(registrationKey);
+    expect(after?.fields.has('meetingId')).toBe(true);
+    expect(after?.fields.has('councilId')).toBe(true);
+    expect(after?.fields.has('body')).toBe(true);
+
+    const definitions = ObjectRegistry.getAllSchemasAsDefinitions();
+    expect(definitions.fixture_runtime_contents).toBeDefined();
+    expect(
+      definitions.fixture_runtime_contents.columns.meeting_id,
+    ).toBeDefined();
+    expect(
+      definitions.fixture_runtime_contents.columns.council_id,
+    ).toBeDefined();
+    expect(definitions.fixture_runtime_contents.columns.body).toBeDefined();
+    expect(definitions.fixture_runtime_meeting_recaps).toBeUndefined();
+  });
+
+  it('preserves existing validation rules when a later manifest merge omits them', () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-validation';
+    const registrationKey = createQualifiedName(
+      packageName,
+      'FixtureRuntimeValidated',
+    );
+
+    @smrt({
+      packageName,
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_validated',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeValidated extends SmrtObject {
+      @field()
+      status: string = '';
+    }
+
+    const registered = ObjectRegistry.findClass(registrationKey);
+    expect(registered).toBeDefined();
+    const existingRules = [{ type: 'required', field: 'status' }] as any;
+    if (!registered) {
+      throw new Error('Expected FixtureRuntimeValidated to be registered');
+    }
+    registered.validationRules = existingRules;
+    registered.validators = undefined;
+
+    ObjectRegistry.registerFromManifest(
+      'FixtureRuntimeValidated',
+      {
+        className: 'FixtureRuntimeValidated',
+        decoratorConfig: {
+          tableStrategy: 'sti',
+          tableName: 'fixture_runtime_validated',
+          api: false,
+          cli: false,
+          mcp: false,
+        },
+        fields: {
+          status: { type: 'text' },
+          category: { type: 'text' },
+        },
+      },
+      packageName,
+    );
+
+    const after = ObjectRegistry.findClass(registrationKey);
+    expect(after?.validationRules).toBe(existingRules);
+    expect(after?.validators).toBeUndefined();
+    expect(after?.fields.has('category')).toBe(true);
+  });
+
+  it('does not merge an unqualified manifest into an already-qualified runtime class', () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-guard';
+    const registrationKey = createQualifiedName(
+      packageName,
+      'FixtureRuntimeGuarded',
+    );
+
+    @smrt({
+      packageName,
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_guarded',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeGuarded extends SmrtObject {
+      @field()
+      status: string = '';
+    }
+
+    const before = ObjectRegistry.findClass(registrationKey);
+    expect(before).toBeDefined();
+    expect(before?.fields.has('unexpectedField')).toBe(false);
+
+    ObjectRegistry.registerFromManifest('FixtureRuntimeGuarded', {
+      className: 'FixtureRuntimeGuarded',
+      fields: {
+        unexpectedField: { type: 'text' },
+      },
+      decoratorConfig: {
+        tableStrategy: 'sti',
+        tableName: 'wrong_table_name',
+      },
+      schema: {
+        tableName: 'wrong_table_name',
+        ddl: '',
+        columns: {
+          unexpected_field: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const after = ObjectRegistry.findClass(registrationKey);
+    expect(after?.fields.has('unexpectedField')).toBe(false);
+    expect(after?.schema?.tableName).toBe('fixture_runtime_guarded');
+  });
+
   it('hydrates STI sibling field types before save so missing booleans do not serialize as empty strings', async () => {
     const packageName = '@happyvertical/smrt-runtime-fixture-events';
 

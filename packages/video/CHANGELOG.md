@@ -1,5 +1,44 @@
 # @happyvertical/smrt-video
 
+## 0.21.39
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.21.39
+  - @happyvertical/smrt-assets@0.21.39
+  - @happyvertical/smrt-content@0.21.39
+  - @happyvertical/smrt-profiles@0.21.39
+  - @happyvertical/smrt-tenancy@0.21.39
+  - @happyvertical/smrt-voice@0.21.39
+  - @happyvertical/smrt-config@0.21.39
+
+## 0.21.38
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.21.38
+  - @happyvertical/smrt-assets@0.21.38
+  - @happyvertical/smrt-content@0.21.38
+  - @happyvertical/smrt-profiles@0.21.38
+  - @happyvertical/smrt-tenancy@0.21.38
+  - @happyvertical/smrt-voice@0.21.38
+  - @happyvertical/smrt-config@0.21.38
+
+## 0.21.37
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.21.37
+  - @happyvertical/smrt-assets@0.21.37
+  - @happyvertical/smrt-content@0.21.37
+  - @happyvertical/smrt-profiles@0.21.37
+  - @happyvertical/smrt-tenancy@0.21.37
+  - @happyvertical/smrt-voice@0.21.37
+  - @happyvertical/smrt-config@0.21.37
+
 ## 0.21.36
 
 ### Patch Changes

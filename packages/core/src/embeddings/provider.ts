@@ -2,7 +2,7 @@
  * Embedding Provider
  *
  * Unified interface for generating embeddings using local models or AI APIs.
- * Supports @xenova/transformers for local inference and @happyvertical/ai for cloud.
+ * Supports transformers.js packages for local inference and @happyvertical/ai for cloud.
  */
 
 import type { EmbeddingProviderType, ProjectEmbeddingConfig } from './types';
@@ -17,6 +17,55 @@ async function importOptional(moduleName: string): Promise<any> {
   return import(/* @vite-ignore */ name);
 }
 
+export type OptionalModuleImporter = (moduleName: string) => Promise<any>;
+
+export const LOCAL_TRANSFORMERS_PACKAGES = [
+  '@huggingface/transformers',
+  '@xenova/transformers',
+] as const;
+
+export type LocalTransformersPackage =
+  (typeof LOCAL_TRANSFORMERS_PACKAGES)[number];
+
+export interface TransformersModuleResolution {
+  module: any;
+  packageName: LocalTransformersPackage;
+}
+
+function isModuleNotFoundError(error: unknown, moduleName: string): boolean {
+  return (
+    error instanceof Error &&
+    (error.message.includes(`Cannot find module '${moduleName}'`) ||
+      error.message.includes(`Cannot find package '${moduleName}'`))
+  );
+}
+
+function formatTransformersResolutionError(
+  attemptedPackages: readonly string[],
+): Error {
+  return new Error(
+    `Local embeddings require one of: ${attemptedPackages.join(', ')}. ` +
+      `Install one of them to use provider: "local", or switch to provider: "ai".`,
+  );
+}
+
+export async function resolveLocalTransformersModule(
+  importModule: OptionalModuleImporter = importOptional,
+): Promise<TransformersModuleResolution> {
+  for (const packageName of LOCAL_TRANSFORMERS_PACKAGES) {
+    try {
+      const module = await importModule(packageName);
+      return { module, packageName };
+    } catch (error) {
+      if (!isModuleNotFoundError(error, packageName)) {
+        throw error;
+      }
+    }
+  }
+
+  throw formatTransformersResolutionError(LOCAL_TRANSFORMERS_PACKAGES);
+}
+
 /**
  * Interface for AI client that can generate embeddings
  */
@@ -28,7 +77,7 @@ interface EmbeddingCapableAI {
 }
 
 /**
- * Pipeline type for @xenova/transformers
+ * Pipeline type for local transformers packages
  */
 type FeatureExtractionPipeline = (
   texts: string[],
@@ -98,7 +147,7 @@ export class EmbeddingProvider {
   }
 
   /**
-   * Generate embeddings using local model (@xenova/transformers)
+   * Generate embeddings using a local transformers model
    */
   private async embedLocal(texts: string[]): Promise<number[][]> {
     const pipeline = await this.getLocalPipeline();
@@ -133,30 +182,15 @@ export class EmbeddingProvider {
    * Initialize the local embedding pipeline
    */
   private async initLocalPipeline(): Promise<FeatureExtractionPipeline> {
-    try {
-      // Dynamic import for optional dependency
-      const transformers = await importOptional('@xenova/transformers');
-      const { pipeline } = transformers;
+    const { module: transformers } = await resolveLocalTransformersModule();
+    const { pipeline } = transformers;
 
-      const model = this.config.localModel || 'Xenova/bge-base-en-v1.5';
+    const model = this.config.localModel || 'Xenova/bge-base-en-v1.5';
 
-      // Initialize the feature extraction pipeline
-      const pipe = await pipeline('feature-extraction', model);
+    // Initialize the feature extraction pipeline
+    const pipe = await pipeline('feature-extraction', model);
 
-      return pipe as unknown as FeatureExtractionPipeline;
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        error.message.includes("Cannot find module '@xenova/transformers'")
-      ) {
-        throw new Error(
-          'Local embeddings require @xenova/transformers. ' +
-            'Install it with: pnpm add @xenova/transformers\n' +
-            'Or use provider: "ai" in your embedding configuration.',
-        );
-      }
-      throw error;
-    }
+    return pipe as unknown as FeatureExtractionPipeline;
   }
 
   /**
@@ -201,7 +235,7 @@ export class EmbeddingProvider {
    */
   async isLocalAvailable(): Promise<boolean> {
     try {
-      await importOptional('@xenova/transformers');
+      await resolveLocalTransformersModule();
       return true;
     } catch {
       return false;

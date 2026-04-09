@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-cli",
-  "version": "0.21.36",
+  "version": "0.21.39",
   "description": "Developer CLI for SMRT framework - introspection, testing, and project management",
   "type": "module",
   "main": "./dist/index.js",
@@ -12,6 +12,7 @@
   "files": [
     "bin",
     "dist",
+    "scripts",
     "README.md",
     "CLAUDE.md"
   ],
@@ -41,6 +42,7 @@
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
+    "acorn": "^8.15.0",
     "fast-glob": "3.3.3",
     "tar": "^7.5.2"
   },

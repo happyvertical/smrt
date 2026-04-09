@@ -52,6 +52,9 @@ importers:
       '@vitest/coverage-v8':
         specifier: 4.0.17
         version: 4.0.17(vitest@4.0.17(@opentelemetry/api@1.9.0)(@types/node@24.10.9)(happy-dom@20.7.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.0.1))(tsx@4.21.0)(yaml@2.8.2))
+      acorn:
+        specifier: ^8.15.0
+        version: 8.16.0
       chokidar:
         specifier: ^5.0.0
         version: 5.0.0
@@ -436,6 +439,9 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.71.20
         version: 0.71.20
+      acorn:
+        specifier: ^8.15.0
+        version: 8.16.0
       fast-glob:
         specifier: 3.3.3
         version: 3.3.3
@@ -696,6 +702,9 @@ importers:
       '@faker-js/faker':
         specifier: ^10.2.0
         version: 10.3.0
+      '@huggingface/transformers':
+        specifier: ^3.8.1
+        version: 3.8.1
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -12692,11 +12701,11 @@ snapshots:
 
   acorn-loose@8.5.2:
     dependencies:
-      acorn: 8.15.0
+      acorn: 8.16.0
 
   acorn-walk@8.3.4:
     dependencies:
-      acorn: 8.15.0
+      acorn: 8.16.0
 
   acorn@8.15.0: {}
 

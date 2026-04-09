@@ -1,5 +1,38 @@
 # @happyvertical/smrt-core
 
+## 0.21.39
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] Fix packed export validation in CI
+  - @happyvertical/smrt-scanner@0.21.39
+  - @happyvertical/smrt-config@0.21.39
+  - @happyvertical/smrt-types@0.21.39
+
+## 0.21.38
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - merge external manifest schema into runtime registrations (#1106)
+  - @happyvertical/smrt-scanner@0.21.38
+  - @happyvertical/smrt-config@0.21.38
+  - @happyvertical/smrt-types@0.21.38
+
+## 0.21.37
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - persist tenant audit logs explicitly (#1104) (secrets)
+  - @happyvertical/smrt-scanner@0.21.37
+  - @happyvertical/smrt-config@0.21.37
+  - @happyvertical/smrt-types@0.21.37
+
 ## 0.21.36
 
 ### Patch Changes

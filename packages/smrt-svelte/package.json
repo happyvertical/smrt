@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.21.36",
+  "version": "0.21.39",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,12 +25,6 @@
       "import": "./dist/components/calendar/index.js",
       "default": "./dist/components/calendar/index.js"
     },
-    "./content": {
-      "types": "./dist/components/content/index.d.ts",
-      "svelte": "./dist/components/content/index.js",
-      "import": "./dist/components/content/index.js",
-      "default": "./dist/components/content/index.js"
-    },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",
       "svelte": "./dist/components/forms/index.js",
@@ -43,41 +37,11 @@
       "import": "./dist/components/layout/index.js",
       "default": "./dist/components/layout/index.js"
     },
-    "./meetings": {
-      "types": "./dist/components/meetings/index.d.ts",
-      "svelte": "./dist/components/meetings/index.js",
-      "import": "./dist/components/meetings/index.js",
-      "default": "./dist/components/meetings/index.js"
-    },
-    "./town": {
-      "types": "./dist/components/town/index.d.ts",
-      "svelte": "./dist/components/town/index.js",
-      "import": "./dist/components/town/index.js",
-      "default": "./dist/components/town/index.js"
-    },
     "./ui": {
       "types": "./dist/components/ui/index.d.ts",
       "svelte": "./dist/components/ui/index.js",
       "import": "./dist/components/ui/index.js",
       "default": "./dist/components/ui/index.js"
-    },
-    "./weather": {
-      "types": "./dist/components/weather/index.d.ts",
-      "svelte": "./dist/components/weather/index.js",
-      "import": "./dist/components/weather/index.js",
-      "default": "./dist/components/weather/index.js"
-    },
-    "./jobs": {
-      "types": "./dist/components/jobs/index.d.ts",
-      "svelte": "./dist/components/jobs/index.js",
-      "import": "./dist/components/jobs/index.js",
-      "default": "./dist/components/jobs/index.js"
-    },
-    "./agents": {
-      "types": "./dist/components/agents/index.d.ts",
-      "svelte": "./dist/components/agents/index.js",
-      "import": "./dist/components/agents/index.js",
-      "default": "./dist/components/agents/index.js"
     },
     "./styles/tokens.css": {
       "default": "./dist/styles/tokens.css"

@@ -10,7 +10,11 @@
  */
 
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
-import { enableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
+import {
+  disableTenancy,
+  enableTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SecretCollection } from '../collections/SecretCollection.js';
@@ -39,6 +43,7 @@ describe('SecretService', () => {
   });
 
   afterEach(() => {
+    disableTenancy();
     delete process.env.SMRT_SECRET_MASTER_KEY;
   });
 
@@ -104,6 +109,23 @@ describe('SecretService', () => {
         expect(await service.exists('existing-secret')).toBe(true);
         expect(await service.exists('non-existent')).toBe(false);
       });
+    });
+
+    it('persists tenant-scoped secrets without relying on the tenancy interceptor', async () => {
+      disableTenancy();
+
+      await withTenant({ tenantId: 'tenant-1' }, async () => {
+        await service.store('interceptor-free-secret', 'value');
+      });
+
+      const { rows } = await db.query(
+        'SELECT name, tenant_id FROM secrets WHERE name = ?',
+        'interceptor-free-secret',
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.name).toBe('interceptor-free-secret');
+      expect(rows[0]?.tenant_id).toBe('tenant-1');
     });
   });
 
@@ -264,6 +286,26 @@ describe('SecretService', () => {
         expect(logs[0].result).toBe('failure');
       });
     });
+
+    it('persists tenant-scoped audit failures without relying on the tenancy interceptor', async () => {
+      disableTenancy();
+
+      await withTenant({ tenantId: 'tenant-1' }, async () => {
+        await expect(service.retrieve('missing-secret')).rejects.toThrow(
+          "Secret 'missing-secret' not found",
+        );
+      });
+
+      const { rows } = await db.query(
+        'SELECT secret_name, result, tenant_id FROM secret_audit_logs WHERE secret_name = ?',
+        'missing-secret',
+      );
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.secret_name).toBe('missing-secret');
+      expect(rows[0]?.result).toBe('failure');
+      expect(rows[0]?.tenant_id).toBe('tenant-1');
+    });
   });
 
   describe('Categories', () => {
@@ -289,6 +331,10 @@ describe('Secret Model', () => {
     enableTenancy();
     db = await getTestDatabase();
     secrets = await SecretCollection.create({ db });
+  });
+
+  afterEach(() => {
+    disableTenancy();
   });
 
   it('should track access count', async () => {

@@ -1,3 +1,5 @@
 import { createPackageConfig } from '../../vite.config.base.js';
 
-export default createPackageConfig('profiles');
+export default createPackageConfig('profiles', {
+  entries: ['utils'],
+});
