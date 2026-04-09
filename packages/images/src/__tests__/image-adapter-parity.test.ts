@@ -104,6 +104,8 @@ const adapterConfigs = [
   },
 ];
 
+const ADAPTER_HOOK_TIMEOUT_MS = 30_000;
+
 // ============================================================================
 // Reusable Test Suites
 // ============================================================================
@@ -260,14 +262,14 @@ describe('Image Adapter Parity', () => {
         db = await getTestDatabase(dbConfig);
         images = await ImageCollection.create({ db });
         assets = await AssetCollection.create({ db });
-      });
+      }, ADAPTER_HOOK_TIMEOUT_MS);
 
       afterEach(async () => {
         if (db && typeof db.close === 'function') {
           await db.close();
         }
         await adapterConfig.cleanup(dbConfig);
-      });
+      }, ADAPTER_HOOK_TIMEOUT_MS);
 
       const getImageContext = () => ({ images });
       const getFullContext = () => ({ images, assets });

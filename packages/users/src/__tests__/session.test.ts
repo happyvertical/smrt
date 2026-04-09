@@ -21,6 +21,7 @@ import { RoleCollection } from '../collections/RoleCollection.js';
 import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
 import { SessionCollection } from '../collections/SessionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
+import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import {
   DEFAULT_SESSION_TTL,
@@ -319,6 +320,7 @@ describe('SessionService', () => {
   let groupMembers: GroupMemberCollection;
   let groupRoles: GroupRoleCollection;
   let membershipOverrides: MembershipOverrideCollection;
+  let tenantOverrides: TenantPermissionOverrideCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-session-service-test-${Date.now()}.db`);
@@ -335,6 +337,7 @@ describe('SessionService', () => {
     groupMembers = await GroupMemberCollection.create(options);
     groupRoles = await GroupRoleCollection.create(options);
     membershipOverrides = await MembershipOverrideCollection.create(options);
+    tenantOverrides = await TenantPermissionOverrideCollection.create(options);
   });
 
   afterEach(() => {
@@ -407,6 +410,58 @@ describe('SessionService', () => {
     const context = await sessionService.loadSessionContext(sessionId);
     expect(context).toBeDefined();
     expect(context?.tenantId).toBe(tenant.id);
+    expect(context?.permissions).toContain('articles.create');
+  });
+
+  it('should include inherited tenant permissions in session context', async () => {
+    const parent = await tenants.create({
+      cascadePermissions: true,
+      name: 'Parent Org',
+    });
+    await parent.save();
+
+    const child = await tenants.create({
+      inheritPermissions: true,
+      name: 'Child Org',
+      parentTenantId: parent.id!,
+    });
+    await child.save();
+
+    const user = await users.create({ email: 'tenant-session@example.com' });
+    await user.save();
+
+    const role = await roles.create({ name: 'Editor' });
+    await role.save();
+
+    const inheritedPermission = await permissions.create({
+      slug: 'articles.read',
+      name: 'Read Articles',
+    });
+    await inheritedPermission.save();
+
+    const rolePermission = await permissions.create({
+      slug: 'articles.create',
+      name: 'Create Articles',
+    });
+    await rolePermission.save();
+
+    await tenantOverrides.grantPermission(parent.id!, inheritedPermission.id!);
+    await rolePermissions.addPermission(role.id!, rolePermission.id!);
+
+    const membership = await memberships.create({
+      roleId: role.id!,
+      tenantId: child.id!,
+      userId: user.id!,
+    });
+    await membership.save();
+
+    const sessionService = await SessionService.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const sessionId = await sessionService.createSession(user.id!, child.id!);
+    const context = await sessionService.loadSessionContext(sessionId);
+
+    expect(context?.permissions).toContain('articles.read');
     expect(context?.permissions).toContain('articles.create');
   });
 

@@ -334,6 +334,11 @@ export class PermissionResolver {
     result.membershipId = membership.id ?? null;
     result.roleId = membership.roleId ?? null;
 
+    const tenantPermissions = await this.resolveTenantPermissions(tenantId);
+    for (const slug of tenantPermissions.permissions) {
+      result.permissions.add(slug);
+    }
+
     if (!membership.roleId) {
       return result;
     }
@@ -433,7 +438,8 @@ export class PermissionResolver {
       }
     }
 
-    // 7. Remove denied overrides (DENY takes precedence)
+    // 7. Remove denied overrides (DENY takes precedence over tenant, role,
+    // group, and granted membership permissions)
     for (const permId of deniedPermissionIds) {
       const slug = permissionIdToSlug.get(permId);
       if (slug) {
