@@ -702,6 +702,9 @@ importers:
       '@faker-js/faker':
         specifier: ^10.2.0
         version: 10.3.0
+      '@huggingface/transformers':
+        specifier: ^3.8.1
+        version: 3.8.1
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
