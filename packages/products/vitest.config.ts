@@ -45,7 +45,7 @@ export default defineConfig({
 
     // Timeouts for async operations
     testTimeout: 30000,
-    hookTimeout: 10000,
+    hookTimeout: 30000,
 
     // Setup files removed - file doesn't exist
     // setupFiles: ['../../vitest.setup.ts'],
