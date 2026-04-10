@@ -1,4 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>happyvertical/renovate-config:smrt"]
+  "extends": ["local>happyvertical/renovate-config:smrt"],
+  "packageRules": [
+    {
+      "description": "Automerge minor and patch updates on green branches",
+      "matchUpdateTypes": ["minor", "patch"],
+      "automerge": true,
+      "automergeType": "branch"
+    }
+  ]
 }
