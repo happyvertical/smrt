@@ -80,6 +80,15 @@ interface MethodDefinition {
 
 interface SmartObjectConfig {
   tableStrategy?: 'sti' | 'cti';
+  features?: Record<
+    string,
+    {
+      defaultEnabled: boolean;
+      label?: string;
+      description?: string;
+      metadata?: Record<string, unknown>;
+    }
+  >;
   api?: {
     include?: string[];
     exclude?: string[];

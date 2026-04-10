@@ -223,7 +223,13 @@ export class APIGenerator {
       }
 
       // Use registered collection directly
-      return await this.executeCrudOperation(req, collection, objectId, url);
+      return await this.executeCrudOperation(
+        req,
+        collection,
+        objectId,
+        url,
+        this.getCollectionObjectName(collection) || objectType,
+      );
     }
 
     // Fall back to auto-discovery via ObjectRegistry
@@ -264,7 +270,13 @@ export class APIGenerator {
     // Get or create collection
     const collection = this.getCollection(classInfo);
 
-    return await this.executeCrudOperation(req, collection, objectId, url);
+    return await this.executeCrudOperation(
+      req,
+      collection,
+      objectId,
+      url,
+      classInfo.name,
+    );
   }
 
   /**
@@ -275,8 +287,14 @@ export class APIGenerator {
     collection: SmrtCollection<any>,
     objectId: string | undefined,
     url: URL,
+    objectName?: string,
   ): Promise<Response> {
     try {
+      const action = this.getCrudAction(req.method, objectId);
+      if (action && !this.isApiActionEnabled(objectName, action)) {
+        return this.createErrorResponse(405, 'Method not allowed');
+      }
+
       // Handle special /count endpoint
       if (objectId === 'count' && req.method === 'GET') {
         return await this.handleCount(collection, url.searchParams);
@@ -318,6 +336,63 @@ export class APIGenerator {
       console.error('API Error:', error);
       return this.createErrorResponse(500, 'Internal server error');
     }
+  }
+
+  private getCrudAction(
+    method: string,
+    objectId: string | undefined,
+  ): 'list' | 'get' | 'create' | 'update' | 'delete' | null {
+    switch (method) {
+      case 'GET':
+        return objectId && objectId !== 'count' ? 'get' : 'list';
+      case 'POST':
+        return 'create';
+      case 'PUT':
+      case 'PATCH':
+        return 'update';
+      case 'DELETE':
+        return 'delete';
+      default:
+        return null;
+    }
+  }
+
+  private isApiActionEnabled(
+    objectName: string | undefined,
+    action: 'list' | 'get' | 'create' | 'update' | 'delete',
+  ): boolean {
+    if (!objectName) {
+      return true;
+    }
+
+    const config = ObjectRegistry.getConfig(objectName);
+    const apiConfig = config.api;
+
+    if (apiConfig === false) {
+      return false;
+    }
+
+    if (apiConfig && typeof apiConfig === 'object') {
+      if (apiConfig.include && !apiConfig.include.includes(action)) {
+        return false;
+      }
+
+      if (apiConfig.exclude?.includes(action)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private getCollectionObjectName(
+    collection: SmrtCollection<any>,
+  ): string | undefined {
+    const itemClass =
+      (collection as any)._itemClass ||
+      (collection.constructor as any)?._itemClass;
+
+    return itemClass?.name;
   }
 
   /**

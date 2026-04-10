@@ -330,6 +330,68 @@ describe('external runtime field hydration', () => {
     expect(hydratedField?._meta?.description).toBe('Fallback hydrated status');
   });
 
+  it('hydrates feature decorator metadata from installed manifests', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-features';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureFeaturefulAccount: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_featureful_accounts',
+            api: false,
+            cli: false,
+            mcp: false,
+            features: {
+              newEditor: {
+                defaultEnabled: false,
+                label: 'New Editor',
+                description: 'Gradual editor rollout',
+                metadata: {
+                  audience: 'staff',
+                },
+              },
+            },
+          },
+          fields: {
+            name: { type: 'text' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_featureful_accounts',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureFeaturefulAccount extends SmrtObject {
+      @field()
+      name: string = '';
+    }
+
+    stripPackageIdentity('FixtureFeaturefulAccount');
+
+    await ObjectRegistry.ensureManifestLoaded('FixtureFeaturefulAccount');
+
+    expect(
+      ObjectRegistry.getConfig('FixtureFeaturefulAccount').features,
+    ).toEqual({
+      newEditor: {
+        defaultEnabled: false,
+        label: 'New Editor',
+        description: 'Gradual editor rollout',
+        metadata: {
+          audience: 'staff',
+        },
+      },
+    });
+  });
+
   it('includes parent manifest fields when a local STI class extends a sparse external parent', async () => {
     const packageName = '@happyvertical/smrt-runtime-fixture-analytics';
 

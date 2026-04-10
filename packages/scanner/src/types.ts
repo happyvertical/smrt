@@ -54,6 +54,17 @@ export interface RawDecoratorConfig {
   /** Table strategy: 'sti' | 'cti' */
   tableStrategy?: 'sti' | 'cti';
 
+  /** Code-owned feature toggle declarations */
+  features?: Record<
+    string,
+    {
+      defaultEnabled: boolean;
+      label?: string;
+      description?: string;
+      metadata?: Record<string, unknown>;
+    }
+  >;
+
   /** API configuration */
   api?: {
     include?: string[];

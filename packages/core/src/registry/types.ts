@@ -424,6 +424,41 @@ export interface SmartObjectConfig {
       };
 
   /**
+   * Code-owned feature toggle declarations for this class.
+   *
+   * Feature definitions live in code and can be synced into runtime metadata
+   * stores by downstream packages (for example `@happyvertical/smrt-features`).
+   * Each feature is identified by a class-local key that becomes part of the
+   * canonical feature key `<qualifiedClassName>#<localId>`.
+   *
+   * V1 supports boolean flags only.
+   */
+  features?: Record<
+    string,
+    {
+      /**
+       * Default enabled state before runtime overrides are applied.
+       */
+      defaultEnabled: boolean;
+
+      /**
+       * Human-friendly label for admin UIs and generated docs.
+       */
+      label?: string;
+
+      /**
+       * Optional description explaining what the feature does.
+       */
+      description?: string;
+
+      /**
+       * Additional code-owned metadata for applications.
+       */
+      metadata?: Record<string, unknown>;
+    }
+  >;
+
+  /**
    * Agent metadata configuration
    *
    * Only relevant for classes extending Agent. Provides metadata
