@@ -3,10 +3,10 @@
   "extends": ["local>happyvertical/renovate-config:smrt"],
   "packageRules": [
     {
-      "description": "Automerge minor and patch updates on green branches",
+      "description": "Automerge minor and patch updates on green PRs",
       "matchUpdateTypes": ["minor", "patch"],
       "automerge": true,
-      "automergeType": "branch"
+      "automergeType": "pr"
     }
   ]
 }
