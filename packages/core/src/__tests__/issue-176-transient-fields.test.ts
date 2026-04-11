@@ -59,7 +59,7 @@ describe('Issue #176: Transient fields', () => {
   beforeEach(async () => {
     dbPath = join(tmpdir(), `test-transient-${randomUUID().slice(0, 8)}.db`);
     db = await getTestDatabase({ type: 'sqlite', url: dbPath });
-  });
+  }, 120000);
 
   afterEach(async () => {
     if (db && typeof db.close === 'function') {

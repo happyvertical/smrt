@@ -100,6 +100,36 @@ describe('OXC Parser', () => {
       expect(config?.cli).toBe(true);
     });
 
+    it('should extract code-first feature declarations from decorator config', () => {
+      const source = `
+        @smrt({
+          features: {
+            newEditor: {
+              defaultEnabled: false,
+              label: 'New Editor',
+              description: 'Progressive editor rollout',
+              metadata: { audience: 'staff' }
+            }
+          }
+        })
+        class FeaturefulDocument extends SmrtObject {
+          title: string = '';
+        }
+      `;
+
+      const result = parseSource(source);
+      const config = result.classes[0].decoratorConfig;
+
+      expect(config?.features).toEqual({
+        newEditor: {
+          defaultEnabled: false,
+          label: 'New Editor',
+          description: 'Progressive editor rollout',
+          metadata: { audience: 'staff' },
+        },
+      });
+    });
+
     it('should extract method definitions', () => {
       const source = `
         @smrt()

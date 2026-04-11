@@ -1,0 +1,63 @@
+{
+  "name": "@happyvertical/smrt-features",
+  "version": "0.21.39",
+  "description": "Code-first feature flags and tenant-aware overrides for the SMRT framework",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CLAUDE.md"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./manifest": "./dist/manifest.json",
+    "./manifest.json": "./dist/manifest.json"
+  },
+  "scripts": {
+    "build": "vite build --mode library",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "prepack": "npm run build && npm run verify:pack",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+  },
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-users": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-users": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-cli": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@happyvertical/smrt-vitest": "workspace:*",
+    "@types/node": "24.10.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
+  },
+  "keywords": [
+    "smrt",
+    "feature-flags",
+    "feature-toggles",
+    "multi-tenant",
+    "rollout"
+  ],
+  "author": "HAVE Team",
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  }
+}

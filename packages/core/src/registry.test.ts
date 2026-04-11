@@ -1088,6 +1088,66 @@ describe('ObjectRegistry', () => {
         ObjectRegistry.getAllSchemas().external_tenant_scoped_secrets?.ddl,
       ).toContain('"tenant_id"');
     });
+
+    it('should preserve feature declarations from external decorator config', () => {
+      class ExternalFeaturefulSecret extends SmrtObject {
+        name: string = '';
+      }
+
+      Object.defineProperty(ExternalFeaturefulSecret, 'name', {
+        value: 'ExternalFeaturefulSecret',
+        configurable: true,
+      });
+
+      ObjectRegistry.register(ExternalFeaturefulSecret as any, {
+        name: 'ExternalFeaturefulSecret',
+        packageName: '@test/pkg',
+        _manifest: {
+          objects: {
+            ExternalFeaturefulSecret: {
+              className: 'ExternalFeaturefulSecret',
+              fields: {
+                name: { type: 'text' },
+              },
+              decoratorConfig: {
+                features: {
+                  newDashboard: {
+                    defaultEnabled: false,
+                    label: 'New Dashboard',
+                    description: 'Roll out the new dashboard experience',
+                    metadata: {
+                      tier: 'premium',
+                    },
+                  },
+                },
+              },
+              schema: {
+                tableName: 'external_featureful_secrets',
+                ddl: '',
+                columns: {},
+                indexes: [],
+                version: 'test',
+              },
+            },
+          },
+        } as any,
+      });
+
+      const registered = ObjectRegistry.getClassByConstructor(
+        ExternalFeaturefulSecret as any,
+      );
+
+      expect(registered?.config.features).toEqual({
+        newDashboard: {
+          defaultEnabled: false,
+          label: 'New Dashboard',
+          description: 'Roll out the new dashboard experience',
+          metadata: {
+            tier: 'premium',
+          },
+        },
+      });
+    });
   });
 
   describe('Mixed Field helpers and primitives (Issue #102, #103)', () => {
