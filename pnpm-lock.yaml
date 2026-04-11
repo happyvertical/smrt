@@ -1828,9 +1828,15 @@ importers:
 
   packages/users:
     dependencies:
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
@@ -1847,6 +1853,9 @@ importers:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
+      '@happyvertical/sql':
+        specifier: ^0.71.20
+        version: 0.71.20
       '@sveltejs/package':
         specifier: ^2.5.7
         version: 2.5.7(svelte@5.53.5)(typescript@5.9.3)

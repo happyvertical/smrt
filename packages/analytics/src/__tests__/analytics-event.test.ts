@@ -16,6 +16,7 @@ import {
 // Check postgres availability at module load (top-level await)
 const pgAvailable = await isPostgresAvailable();
 const skipTests = getTestAdapter() === 'postgres' && !pgAvailable;
+const ANALYTICS_HEAVY_TEST_TIMEOUT_MS = 15_000;
 
 describe('AnalyticsEvent', () => {
   describe('constructor', () => {
@@ -450,46 +451,49 @@ describe.skipIf(skipTests)(
         expect(stats.trendPercent).toBe(200);
       });
 
-      it('should report flat trend when change is within 5%', async () => {
-        const propertyId = 'prop-flat';
-        const now = new Date('2024-06-15T12:00:00Z');
-        const todayTs = new Date('2024-06-15T06:00:00Z');
-        const yesterdayTs = new Date('2024-06-14T06:00:00Z');
+      it(
+        'should report flat trend when change is within 5%',
+        async () => {
+          const propertyId = 'prop-flat';
+          const now = new Date('2024-06-15T12:00:00Z');
+          const todayTs = new Date('2024-06-15T06:00:00Z');
+          const yesterdayTs = new Date('2024-06-14T06:00:00Z');
 
-        // 20 pageviews today
-        for (let i = 0; i < 20; i++) {
-          await (
-            await collection.create({
-              propertyId,
-              eventName: 'page_view',
-              clientId: `client-${i}`,
-              eventTimestamp: todayTs,
-            })
-          ).save();
-        }
+          // JSON-mode tests export on every write, so this case needs more headroom in CI.
+          for (let i = 0; i < 20; i++) {
+            await (
+              await collection.create({
+                propertyId,
+                eventName: 'page_view',
+                clientId: `client-${i}`,
+                eventTimestamp: todayTs,
+              })
+            ).save();
+          }
 
-        // 20 pageviews yesterday (0% change)
-        for (let i = 0; i < 20; i++) {
-          await (
-            await collection.create({
-              propertyId,
-              eventName: 'page_view',
-              clientId: `client-${i}`,
-              eventTimestamp: yesterdayTs,
-            })
-          ).save();
-        }
+          for (let i = 0; i < 20; i++) {
+            await (
+              await collection.create({
+                propertyId,
+                eventName: 'page_view',
+                clientId: `client-${i}`,
+                eventTimestamp: yesterdayTs,
+              })
+            ).save();
+          }
 
-        const stats = await collection.getPropertyStatsWithTrend(
-          propertyId,
-          now,
-        );
+          const stats = await collection.getPropertyStatsWithTrend(
+            propertyId,
+            now,
+          );
 
-        expect(stats.todayPageviews).toBe(20);
-        expect(stats.yesterdayPageviews).toBe(20);
-        expect(stats.trend).toBe('flat');
-        expect(stats.trendPercent).toBe(0);
-      });
+          expect(stats.todayPageviews).toBe(20);
+          expect(stats.yesterdayPageviews).toBe(20);
+          expect(stats.trend).toBe('flat');
+          expect(stats.trendPercent).toBe(0);
+        },
+        ANALYTICS_HEAVY_TEST_TIMEOUT_MS,
+      );
 
       it('should ignore non-pageview events', async () => {
         const propertyId = 'prop-filter';

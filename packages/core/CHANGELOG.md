@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.21.40
+
+### Patch Changes
+
+- 60084ad: Prefer `@huggingface/transformers` for local embeddings and fall back to
+  `@xenova/transformers` only when the newer package is not installed. This
+  avoids the stale `sharp@0.32.x` runtime path on Node 24 while preserving
+  compatibility for older consumers.
+  - @happyvertical/smrt-scanner@0.21.40
+  - @happyvertical/smrt-config@0.21.40
+  - @happyvertical/smrt-types@0.21.40
+
 ## 0.21.39
 
 ### Patch Changes

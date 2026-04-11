@@ -102,6 +102,7 @@ describe('SvelteKit Route Generator', () => {
 
       expect(configContent).toContain('objectOverrides');
       expect(configContent).toContain('getDefaultConfig');
+      expect(configContent).toContain('getRequestScopedDatabase');
       expect(configContent).toContain('getSmrtConfig');
       expect(configContent).toContain('getCollection');
       expect(configContent).toContain('import { ObjectRegistry }');
@@ -111,6 +112,7 @@ describe('SvelteKit Route Generator', () => {
       expect(configContent).toContain(
         '{ ...(defaults.db as any), ...(override.db as any) }',
       );
+      expect(configContent).toContain('requestScopedDb ?? config.db');
     });
 
     it('should skip config generation when file already exists', async () => {

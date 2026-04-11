@@ -18,6 +18,7 @@
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
+import { withSessionPermissionContext } from '../services/SessionPermissionContext.js';
 import { SessionService } from '../services/SessionService.js';
 
 export { defaultSessionLocals, type SessionLocals } from './types.js';
@@ -42,6 +43,10 @@ export interface SessionHandlerOptions extends SmrtClassOptions {
   cookieSecure?: boolean;
   /** SameSite cookie attribute (default: 'lax') */
   cookieSameSite?: 'strict' | 'lax' | 'none';
+  /** Whether to enter smrt-tenancy request context when tenant data exists */
+  enterTenantContext?: boolean;
+  /** Whether to enforce Postgres RLS via request-scoped transactions */
+  postgresRls?: boolean;
 }
 
 /**
@@ -128,26 +133,40 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
 
     // Get session ID from cookie
     const sessionId = event.cookies.get(cookieName);
-
-    if (sessionId) {
-      try {
-        const service = await getSessionService();
-        const context = await service.loadSessionContext(sessionId);
-
-        if (context) {
-          // Populate locals with session context
-          event.locals.user = context.user;
-          event.locals.permissions = context.permissions;
-          event.locals.tenantId = context.tenantId;
-          event.locals.sessionId = context.sessionId;
-        }
-      } catch (error) {
-        // Log error but don't fail the request
-        console.error('Session loading error:', error);
-      }
+    if (!sessionId && !options.postgresRls) {
+      return resolve(event);
     }
 
-    return resolve(event);
+    try {
+      const service = await getSessionService();
+      return await withSessionPermissionContext(
+        {
+          ...options,
+          enterTenantContext: options.enterTenantContext,
+          postgresRls: options.postgresRls,
+          sessionId,
+          sessionService: service,
+        },
+        async (context) => {
+          if (context.session) {
+            event.locals.user = context.user;
+            event.locals.permissions = context.permissions;
+            event.locals.tenantId = context.tenantId;
+            event.locals.sessionId = context.sessionId;
+          }
+
+          return resolve(event);
+        },
+      );
+    } catch (error) {
+      console.error('Session or request context initialization error:', error);
+
+      if (options.postgresRls) {
+        return new Response('Internal Server Error', { status: 500 });
+      }
+
+      return resolve(event);
+    }
   };
 }
 
