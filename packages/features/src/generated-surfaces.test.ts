@@ -26,6 +26,40 @@ class ListOnlyRestFixtureCollection extends SmrtCollection<ListOnlyRestFixture> 
   static readonly _itemClass = ListOnlyRestFixture;
 }
 
+const GetOnlyCollisionRestFixture = (() => {
+  @smrt({
+    packageName: '@test/smrt-features-collision-a',
+    api: { include: ['get'] },
+    cli: false,
+    mcp: false,
+  })
+  class CollisionRestFixture extends SmrtObject {
+    name: string = '';
+  }
+
+  return CollisionRestFixture;
+})();
+
+const ListOnlyCollisionRestFixture = (() => {
+  @smrt({
+    packageName: '@test/smrt-features-collision-b',
+    api: { include: ['list'] },
+    cli: false,
+    mcp: false,
+  })
+  class CollisionRestFixture extends SmrtObject {
+    name: string = '';
+  }
+
+  return CollisionRestFixture;
+})();
+
+class CollisionRestFixtureCollection extends SmrtCollection<
+  InstanceType<typeof ListOnlyCollisionRestFixture>
+> {
+  static readonly _itemClass = ListOnlyCollisionRestFixture;
+}
+
 describe('smrt-features generated surfaces', () => {
   const closers = new Set<() => Promise<void>>();
 
@@ -173,6 +207,37 @@ describe('smrt-features generated surfaces', () => {
     );
     const getResponse = await handler(
       new Request('http://localhost/api/v1/listonlyrestfixture/some-id'),
+    );
+
+    expect(countResponse.status).toBe(200);
+    expect(await countResponse.json()).toEqual({ count: 0 });
+    expect(getResponse.status).toBe(405);
+  });
+
+  it('uses the collection constructor registration when same-named classes exist in multiple packages', async () => {
+    void GetOnlyCollisionRestFixture;
+
+    const db = await getTestDatabase({
+      classes: ['@test/smrt-features-collision-b:CollisionRestFixture'],
+    });
+    closers.add(async () => {
+      if (typeof (db as any).close === 'function') {
+        await (db as any).close();
+      }
+    });
+
+    const collection = await (CollisionRestFixtureCollection as any).create({
+      db,
+    });
+    const api = new APIGenerator({}, { db });
+    api.registerCollection('collisionrestfixture', collection);
+    const handler = api.generateHandler();
+
+    const countResponse = await handler(
+      new Request('http://localhost/api/v1/collisionrestfixture/count'),
+    );
+    const getResponse = await handler(
+      new Request('http://localhost/api/v1/collisionrestfixture/some-id'),
     );
 
     expect(countResponse.status).toBe(200);

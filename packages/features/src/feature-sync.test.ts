@@ -27,6 +27,20 @@ import { FeatureSyncService } from './feature-sync.js';
 })
 class FeatureSyncFixture extends SmrtObject {}
 
+@smrt({
+  packageName: '@test/smrt-feature-sync',
+  visibility: 'internal',
+  api: false,
+  cli: false,
+  mcp: false,
+  features: {
+    siblingRollout: {
+      defaultEnabled: true,
+    },
+  },
+})
+class FeatureSyncSiblingFixture extends SmrtObject {}
+
 describe('FeatureSyncService', () => {
   const closers = new Set<() => Promise<void>>();
 
@@ -235,5 +249,44 @@ describe('FeatureSyncService', () => {
       deleted: 1,
     });
     expect(alpha).toBeNull();
+  });
+
+  it('does not prune sibling definitions during filtered syncs', async () => {
+    const db = await getTestDatabase({
+      classes: ['FeatureDefinition'],
+    });
+    closers.add(async () => {
+      if (typeof (db as any).close === 'function') {
+        await (db as any).close();
+      }
+    });
+
+    const syncService = new FeatureSyncService({ db });
+    const definitions = await (FeatureDefinitionCollection as any).create({
+      db,
+    });
+
+    await syncService.syncDefinitions({
+      classNames: ['FeatureSyncFixture', 'FeatureSyncSiblingFixture'],
+    });
+
+    const result = await syncService.syncDefinitions({
+      classNames: ['FeatureSyncFixture'],
+      pruneStale: true,
+    });
+
+    const sibling = await definitions.findByFeatureKey(
+      '@test/smrt-feature-sync:FeatureSyncSiblingFixture#siblingRollout',
+    );
+
+    expect(result).toMatchObject({
+      total: 2,
+      created: 0,
+      updated: 0,
+      unchanged: 2,
+      deleted: 0,
+    });
+    expect(sibling).not.toBeNull();
+    expect(sibling?.defaultEnabled).toBe(true);
   });
 });

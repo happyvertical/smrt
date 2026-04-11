@@ -73,7 +73,14 @@ export function serializeFeatureMetadata(
   }
 
   if (typeof metadata === 'string') {
-    return metadata;
+    const parsed = parseFeatureMetadataString(metadata);
+    return JSON.stringify(parsed);
+  }
+
+  if (!isFeatureMetadataRecord(metadata)) {
+    throw new Error(
+      'Feature metadata must be a plain object or a JSON string representing a plain object.',
+    );
   }
 
   return JSON.stringify(metadata);
@@ -87,11 +94,40 @@ export function parseFeatureMetadata(
   }
 
   try {
-    const parsed = JSON.parse(metadata);
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    return parseFeatureMetadataString(metadata);
   } catch {
     return {};
   }
+}
+
+function parseFeatureMetadataString(metadata: string): FeatureMetadata {
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(metadata);
+  } catch (error) {
+    throw new Error(
+      'Feature metadata must be a plain object or a JSON string representing a plain object.',
+      { cause: error },
+    );
+  }
+
+  if (!isFeatureMetadataRecord(parsed)) {
+    throw new Error(
+      'Feature metadata must be a plain object or a JSON string representing a plain object.',
+    );
+  }
+
+  return parsed;
+}
+
+function isFeatureMetadataRecord(value: unknown): value is FeatureMetadata {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 export function getQualifiedClassNameFromRegistry(

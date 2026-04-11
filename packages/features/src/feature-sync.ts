@@ -37,11 +37,9 @@ export class FeatureSyncService {
     const isFilteredSync =
       Boolean(options.classNames?.length) ||
       Boolean(options.constructors?.length);
-    return this.applyDefinitions(
-      definitions,
-      touchedPackages,
-      options.pruneStale ?? !isFilteredSync,
-    );
+    const pruneStale = isFilteredSync ? false : (options.pruneStale ?? true);
+
+    return this.applyDefinitions(definitions, touchedPackages, pruneStale);
   }
 
   async syncManifest(
@@ -143,29 +141,38 @@ export class FeatureSyncService {
     let unchanged = 0;
     let deleted = 0;
 
-    const currentKeys = new Set<string>();
-    for (const definition of deduped.values()) {
-      currentKeys.add(definition.featureKey);
-
-      const result = await this.featureDefinitions.upsertDefinition(definition);
+    const dedupedDefinitions = Array.from(deduped.values());
+    const currentKeys = new Set(
+      dedupedDefinitions.map((definition) => definition.featureKey),
+    );
+    const upsertResults = await Promise.all(
+      dedupedDefinitions.map((definition) =>
+        this.featureDefinitions.upsertDefinition(definition),
+      ),
+    );
+    for (const result of upsertResults) {
       if (result.status === 'created') created++;
       if (result.status === 'updated') updated++;
       if (result.status === 'unchanged') unchanged++;
     }
 
     if (pruneStale) {
-      for (const packageName of touchedPackages) {
-        const existing =
-          await this.featureDefinitions.findByPackageName(packageName);
-        for (const definition of existing) {
-          if (currentKeys.has(definition.featureKey)) {
-            continue;
-          }
+      const existingByPackage = await Promise.all(
+        Array.from(touchedPackages, (packageName) =>
+          this.featureDefinitions.findByPackageName(packageName),
+        ),
+      );
 
-          await definition.delete();
-          deleted++;
-        }
-      }
+      const staleDefinitions = existingByPackage.flatMap((existing) =>
+        existing.filter(
+          (definition) => !currentKeys.has(definition.featureKey),
+        ),
+      );
+
+      await Promise.all(
+        staleDefinitions.map((definition) => definition.delete()),
+      );
+      deleted = staleDefinitions.length;
     }
 
     return {

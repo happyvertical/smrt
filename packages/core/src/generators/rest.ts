@@ -392,7 +392,12 @@ export class APIGenerator {
       (collection as any)._itemClass ||
       (collection.constructor as any)?._itemClass;
 
-    return itemClass?.name;
+    if (!itemClass) {
+      return undefined;
+    }
+
+    const registered = ObjectRegistry.getClassByConstructor(itemClass);
+    return registered?.qualifiedName || registered?.name || itemClass.name;
   }
 
   /**

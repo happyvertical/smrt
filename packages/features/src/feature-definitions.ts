@@ -37,7 +37,7 @@ export class FeatureDefinitionCollection extends SmrtCollection<FeatureDefinitio
       return { definition: created, status: 'created' };
     }
 
-    const nextMetadata = seed.metadata ? JSON.stringify(seed.metadata) : '';
+    const nextMetadata = serializeFeatureMetadata(seed.metadata);
     const changed =
       existing.packageName !== seed.packageName ||
       existing.qualifiedClassName !== seed.qualifiedClassName ||
