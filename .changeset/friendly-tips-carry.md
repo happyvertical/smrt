@@ -1,3 +1,4 @@
+---
 "@happyvertical/smrt-agents": patch
 "@happyvertical/smrt-core": patch
 "@happyvertical/smrt-jobs": patch
