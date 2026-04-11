@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.42
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] Add code-first feature flags package
+  - @happyvertical/smrt-scanner@0.21.42
+  - @happyvertical/smrt-config@0.21.42
+  - @happyvertical/smrt-types@0.21.42
+
 ## 0.21.41
 
 ### Patch Changes
