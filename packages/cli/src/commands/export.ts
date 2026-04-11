@@ -259,7 +259,7 @@ export async function queryWithProjection(
   }
 
   try {
-    const result = await db.query(sql, whereValues);
+    const result = await db.query(sql, ...whereValues);
     return Array.isArray(result) ? result : (result?.rows ?? []);
   } catch (error) {
     // If query fails (missing column, etc.), return empty

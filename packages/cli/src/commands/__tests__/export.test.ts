@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { formatProjectedRecords, queryWithProjection } from '../export.js';
 
 describe('export command helpers', () => {
-  it('passes query params as a single array to the database adapter', async () => {
+  it('passes query params as variadic database adapter arguments', async () => {
     const query = vi.fn().mockResolvedValue({
       rows: [{ title: 'Bridge update' }],
     });
@@ -19,7 +19,8 @@ describe('export command helpers', () => {
 
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('FROM contents'),
-      ['%:Article', 'published'],
+      '%:Article',
+      'published',
     );
   });
 
