@@ -10,6 +10,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { AccountCollection } from '../collections/Accounts';
 import { JournalEntryCollection } from '../collections/JournalEntries';
@@ -52,7 +53,29 @@ describe('Journal', () => {
     await revenueAccount.save();
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    const databases = new Set<DatabaseInterface>();
+
+    if (accounts) {
+      databases.add(accounts.db);
+    }
+    if (journals) {
+      databases.add(journals.db);
+    }
+    if (entries) {
+      databases.add(entries.db);
+    }
+
+    for (const db of databases) {
+      if (typeof db.close === 'function') {
+        try {
+          await db.close();
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
