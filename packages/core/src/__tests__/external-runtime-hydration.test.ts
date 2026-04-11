@@ -220,6 +220,47 @@ describe('external runtime field hydration', () => {
     ).resolves.toEqual([]);
   });
 
+  it('auto-loads unregistered external classes by qualified name', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-event-types';
+    const qualifiedClassName = createQualifiedName(
+      packageName,
+      'FixtureRuntimeEventType',
+    );
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureRuntimeEventType: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_runtime_event_types',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            label: { type: 'text' },
+            priority: { type: 'number' },
+          },
+        },
+      }),
+    );
+
+    await ObjectRegistry.ensureManifestLoaded(qualifiedClassName);
+
+    const registered =
+      ObjectRegistry.getClassByQualifiedName(qualifiedClassName);
+    expect(registered).toBeDefined();
+    expect(registered?.name).toBe('FixtureRuntimeEventType');
+    expect(ObjectRegistry.getFields(qualifiedClassName).has('label')).toBe(
+      true,
+    );
+    expect(ObjectRegistry.getFields(qualifiedClassName).has('priority')).toBe(
+      true,
+    );
+  });
+
   it('hydrates manifest metadata even when runtime field counts and types already match', async () => {
     const packageName = '@happyvertical/smrt-runtime-fixture-metadata';
 
@@ -931,5 +972,98 @@ describe('external runtime field hydration', () => {
       `${packageName}:FixtureEmailAccount`,
     );
     await expect(collection.count()).resolves.toBe(1);
+  });
+
+  it('hydrates STI rows whose child discriminator is only available from an installed manifest', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-polymorphic';
+    const childQualifiedName = createQualifiedName(
+      packageName,
+      'FixtureRuntimeMeeting',
+    );
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureRuntimeEvent: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_runtime_events',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            title: { type: 'text' },
+          },
+        },
+        FixtureRuntimeMeeting: {
+          extends: 'FixtureRuntimeEvent',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_runtime_events',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            location: { type: 'text' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_events',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeEvent extends SmrtObject {
+      @field()
+      title: string = '';
+    }
+
+    stripPackageIdentity('FixtureRuntimeEvent');
+
+    const db = await getTestDatabase({
+      classes: ['FixtureRuntimeEvent'],
+    });
+
+    await db.query(
+      `INSERT INTO fixture_runtime_events (
+        id,
+        slug,
+        context,
+        created_at,
+        updated_at,
+        _meta_type,
+        title
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      'event-1',
+      'event-1',
+      '',
+      '2026-04-11T20:00:00.000Z',
+      '2026-04-11T20:00:00.000Z',
+      childQualifiedName,
+      'Budget meeting',
+    );
+
+    const collection = await ObjectRegistry.getCollection(
+      'FixtureRuntimeEvent',
+      {
+        db,
+      },
+    );
+
+    const items = await collection.list({});
+
+    expect(items).toHaveLength(1);
+    expect(items[0]?.constructor.name).toBe('FixtureRuntimeMeeting');
+    expect((items[0] as any)._meta_type).toBe(childQualifiedName);
+    expect(
+      ObjectRegistry.getClassByQualifiedName(childQualifiedName),
+    ).toBeDefined();
   });
 });

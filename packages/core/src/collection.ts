@@ -1270,9 +1270,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     if (!registeredClass) {
+      await ObjectRegistry.ensureManifestLoaded(className);
+      registeredClass = ObjectRegistry.getClassByQualifiedName(className);
+      if (!registeredClass) {
+        registeredClass = ObjectRegistry.getClass(className);
+      }
+    }
+
+    if (!registeredClass) {
       throw new Error(
         `STI polymorphic query failed: Class '${className}' not found in ObjectRegistry. ` +
-          `Ensure the class is registered with @smrt() decorator.`,
+          `Ensure the class is registered with @smrt() decorator or available via an installed SMRT manifest.`,
       );
     }
 

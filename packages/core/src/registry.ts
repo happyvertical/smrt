@@ -1284,7 +1284,14 @@ export class ObjectRegistry {
    * ```
    */
   static async ensureManifestLoaded(className: string): Promise<void> {
-    const registered = ObjectRegistry.findClass(className);
+    let registered = ObjectRegistry.findClass(className);
+    if (!registered) {
+      const loaded = await ObjectRegistry.tryLoadFromExternalPackage(className);
+      if (loaded) {
+        registered = ObjectRegistry.findClass(className);
+      }
+    }
+
     if (!registered) {
       // Detect if running in test environment
       const isTestEnv =

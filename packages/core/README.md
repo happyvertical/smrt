@@ -50,6 +50,27 @@ const isExpensive = await product.is('costs more than the average product');
 const description = await product.do('Write a short marketing description');
 ```
 
+### Bundled Runtimes And External Manifests
+
+Long-lived bundled runtimes such as SvelteKit servers, background workers, and
+CLI entrypoints should ship two things together:
+
+1. The generated `smrt-register` runtime entrypoint for local class
+   registration.
+2. The `manifest.json` exports for any installed external `@happyvertical/smrt-*`
+   packages the runtime needs to hydrate at query time.
+
+`ObjectRegistry.ensureManifestLoaded()` can now auto-load installed external
+classes by either simple name (`'EventType'`) or qualified name
+(`'@happyvertical/smrt-events:EventType'`). `SmrtCollection.list()` and
+`SmrtCollection.get()` use that path when they encounter STI discriminators from
+external packages, so bundled runtimes do not need to import every child class
+eagerly just to hydrate rows correctly.
+
+If you want to avoid on-demand manifest discovery in a long-lived process, call
+`ObjectRegistry.loadAllManifests()` during startup after your local registration
+file has run.
+
 ## API
 
 ### Core Classes

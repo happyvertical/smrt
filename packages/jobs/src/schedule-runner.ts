@@ -358,7 +358,8 @@ export class ScheduleRunner extends EventEmitter {
           WHERE status = 'running'
             AND id IN (${placeholders})`,
         now,
-        `Recovered stale scheduled job after ${effectiveStaleThresholdMs}ms without a heartbeat`,
+        `Recovered stale scheduled job after ${effectiveStaleThresholdMs}ms without a heartbeat. ` +
+          `Long synchronous work can block heartbeats; prefer async subprocess APIs or raise the stale threshold for intentionally long jobs.`,
         ...staleJobIds,
       );
     }

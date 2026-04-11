@@ -421,7 +421,9 @@ export class TaskRunner extends EventEmitter {
 
     const placeholders = staleJobIds.map(() => '?').join(', ');
     const recoveredAt = new Date();
-    const errorMessage = `Recovered stale running job after ${effectiveStaleThresholdMs}ms without a heartbeat`;
+    const errorMessage =
+      `Recovered stale running job after ${effectiveStaleThresholdMs}ms without a heartbeat. ` +
+      `Long synchronous work can block heartbeats; prefer async subprocess APIs or raise the stale threshold for intentionally long jobs.`;
 
     await this.db.query(
       `UPDATE _smrt_jobs
