@@ -1,5 +1,16 @@
 # @happyvertical/smrt-cli
 
+## 0.21.43
+
+### Patch Changes
+
+- e6ee2db: Fix static-site export queries on Postgres by passing raw SQL parameters to the database adapter as variadic arguments instead of a single wrapped array.
+  - @happyvertical/smrt-agents@0.21.43
+  - @happyvertical/smrt-config@0.21.43
+  - @happyvertical/smrt-core@0.21.43
+  - @happyvertical/smrt-types@0.21.43
+  - @happyvertical/smrt-playground@0.21.43
+
 ## 0.21.42
 
 ### Patch Changes
