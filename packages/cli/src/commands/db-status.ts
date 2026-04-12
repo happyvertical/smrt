@@ -10,6 +10,7 @@
 import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { classifyTypeUpgradeSql } from './db-migrate-actions.js';
 
 type StatusDrift = {
   name: string;
@@ -27,6 +28,7 @@ export function summarizeSchemaDiff(diff: {
       expected: string;
       actual: string;
     };
+    sql?: string;
   }>;
 }): StatusDrift[] {
   const drift: StatusDrift[] = [];
@@ -61,12 +63,28 @@ export function summarizeSchemaDiff(diff: {
         break;
 
       case 'type_upgrade':
-        drift.push({
-          name: `${change.table}.${change.name ?? '(unknown)'}`,
-          type: 'type_upgrade',
-          recommendation:
-            'Run `smrt db:migrate` to apply the compatible type upgrade for this live column.',
-        });
+        switch (classifyTypeUpgradeSql(change.sql)) {
+          case 'executable':
+            drift.push({
+              name: `${change.table}.${change.name ?? '(unknown)'}`,
+              type: 'type_upgrade',
+              recommendation:
+                'Run `smrt db:migrate` to apply the compatible type upgrade for this live column.',
+            });
+            break;
+
+          case 'manual':
+            drift.push({
+              name: `${change.table}.${change.name ?? '(unknown)'}`,
+              type: 'type_upgrade',
+              recommendation:
+                'Manual intervention required: this live column needs a type upgrade that the current database engine cannot auto-apply.',
+            });
+            break;
+
+          case 'noop':
+            break;
+        }
         break;
 
       case 'type_mismatch':

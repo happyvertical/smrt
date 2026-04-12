@@ -44,15 +44,38 @@ export interface SchemaChangeLike {
   sql?: string;
 }
 
+export type TypeUpgradeExecutionKind = 'executable' | 'manual' | 'noop';
+
+export function classifyTypeUpgradeSql(sql?: string): TypeUpgradeExecutionKind {
+  const trimmed = sql?.trim();
+
+  if (!trimmed) {
+    return 'manual';
+  }
+
+  if (!trimmed.startsWith('--')) {
+    return 'executable';
+  }
+
+  if (
+    /no change needed/i.test(trimmed) ||
+    /already stores .* as /i.test(trimmed)
+  ) {
+    return 'noop';
+  }
+
+  return 'manual';
+}
+
 export function partitionSchemaChanges(
   changes: SchemaChangeLike[],
   getClassForTable: (tableName: string) => string,
 ): {
   migrations: MigrationAction[];
-  typeMismatches: MigrationAction[];
+  manualInterventions: MigrationAction[];
 } {
   const migrations: MigrationAction[] = [];
-  const typeMismatches: MigrationAction[] = [];
+  const manualInterventions: MigrationAction[] = [];
 
   for (const change of changes) {
     const className = getClassForTable(change.table);
@@ -97,7 +120,7 @@ export function partitionSchemaChanges(
       case 'type_mismatch': {
         const mm = change.mismatch;
         if (!change.name || !mm) continue;
-        typeMismatches.push({
+        manualInterventions.push({
           type: 'type_mismatch',
           tableName: change.table,
           className,
@@ -114,7 +137,7 @@ export function partitionSchemaChanges(
         const mm = change.mismatch;
         const col = change.column;
         if (!change.name || !mm || !col) continue;
-        migrations.push({
+        const action: MigrationAction = {
           type: 'type_upgrade',
           tableName: change.table,
           className,
@@ -131,11 +154,18 @@ export function partitionSchemaChanges(
             actual: mm.actual,
           },
           sql: change.sql,
-        });
+        };
+        const executionKind = classifyTypeUpgradeSql(change.sql);
+
+        if (executionKind === 'executable') {
+          migrations.push(action);
+        } else if (executionKind === 'manual') {
+          manualInterventions.push(action);
+        }
         break;
       }
     }
   }
 
-  return { migrations, typeMismatches };
+  return { migrations, manualInterventions };
 }

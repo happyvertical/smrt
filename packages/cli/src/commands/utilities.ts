@@ -1194,7 +1194,7 @@ export default testManifest;
         // 8. Compare schemas using SchemaComparer
         // This uses the same comparison logic as core (including equivalent index detection)
         const migrations: MigrationAction[] = [];
-        const typeMismatches: MigrationAction[] = [];
+        const manualInterventions: MigrationAction[] = [];
 
         console.log('🔍 Comparing schemas...\n');
 
@@ -1282,31 +1282,37 @@ export default testManifest;
           getClassForTable,
         );
         migrations.push(...partitionedChanges.migrations);
-        typeMismatches.push(...partitionedChanges.typeMismatches);
+        manualInterventions.push(...partitionedChanges.manualInterventions);
 
         console.log();
 
-        // 9. Report type mismatches (these require manual intervention)
-        if (typeMismatches.length > 0) {
+        // 9. Report non-executable drift that still needs manual intervention
+        if (manualInterventions.length > 0) {
           console.log(
-            '⚠️  Type mismatches detected (require manual intervention):\n',
+            '⚠️  Schema drift detected that requires manual intervention:\n',
           );
-          for (const mm of typeMismatches) {
-            if (mm.mismatch) {
-              console.log(
-                `   ${mm.tableName}.${mm.mismatch.column}: expected ${mm.mismatch.expected}, found ${mm.mismatch.actual}`,
-              );
-            }
+          for (const change of manualInterventions) {
+            if (!change.mismatch) continue;
+
+            const detail =
+              change.type === 'type_upgrade'
+                ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (cannot auto-apply on this database engine)`
+                : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
+
+            console.log(`   ${detail}`);
           }
           console.log();
           console.log(
-            '   Type changes require manual migration (backup, recreate, restore).\n',
+            '   Manual migration required (backup, recreate, restore as needed).\n',
           );
         }
 
         // 10. Handle no migrations needed
         const tablesCreated = diff.added_tables.length > 0;
-        const schemaUpToDate = migrations.length === 0 && !tablesCreated;
+        const schemaUpToDate =
+          migrations.length === 0 &&
+          manualInterventions.length === 0 &&
+          !tablesCreated;
 
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql

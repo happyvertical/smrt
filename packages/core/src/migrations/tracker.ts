@@ -275,19 +275,19 @@ export class MigrationTracker {
       // Handle based on existing status
       switch (existing.status) {
         case 'completed':
+          if (!options.force && existing.checksum !== checksum) {
+            return {
+              success: false,
+              applied: false,
+              skipped: false,
+              name: definition.id,
+              checksum,
+              execution_time_ms: 0,
+              error: `Migration ${definition.id} checksum mismatch. Was already applied with different checksum. Use --force to override.`,
+            };
+          }
+
           if (!options.force && !options.reconcile) {
-            // Verify checksum matches
-            if (existing.checksum !== checksum) {
-              return {
-                success: false,
-                applied: false,
-                skipped: false,
-                name: definition.id,
-                checksum,
-                execution_time_ms: 0,
-                error: `Migration ${definition.id} checksum mismatch. Was already applied with different checksum. Use --force to override.`,
-              };
-            }
             // Already applied, skip
             return {
               success: true,
@@ -301,7 +301,7 @@ export class MigrationTracker {
           break;
 
         case 'failed':
-          if (!options.force && !options.reconcile) {
+          if (!options.force) {
             return {
               success: false,
               applied: false,
@@ -316,7 +316,7 @@ export class MigrationTracker {
           break;
 
         case 'running':
-          if (!options.force && !options.reconcile) {
+          if (!options.force) {
             return {
               success: false,
               applied: false,

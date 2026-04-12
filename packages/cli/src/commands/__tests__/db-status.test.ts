@@ -113,12 +113,18 @@ describe('db:status', () => {
             name: 'script_text',
           },
           {
-            type: 'type_mismatch',
+            type: 'type_upgrade',
             table: 'contents',
             name: 'published_at',
+            sql: '-- SQLite: Type upgrade for "published_at" requires table recreation',
+          },
+          {
+            type: 'type_mismatch',
+            table: 'contents',
+            name: 'video_asset_id',
             mismatch: {
-              expected: 'TIMESTAMP',
-              actual: 'TEXT',
+              expected: 'TEXT',
+              actual: 'INTEGER',
             },
           },
         ],
@@ -138,9 +144,15 @@ describe('db:status', () => {
       },
       {
         name: 'contents.published_at',
+        type: 'type_upgrade',
+        recommendation:
+          'Manual intervention required: this live column needs a type upgrade that the current database engine cannot auto-apply.',
+      },
+      {
+        name: 'contents.video_asset_id',
         type: 'type_mismatch',
         recommendation:
-          'Manual intervention required: expected TIMESTAMP, found TEXT.',
+          'Manual intervention required: expected TEXT, found INTEGER.',
       },
     ]);
   });
@@ -192,5 +204,21 @@ describe('db:status', () => {
           'Run `smrt db:migrate` to add the missing index and reconcile the live schema.',
       },
     ]);
+  });
+
+  it('omits no-op type upgrades from drift output', () => {
+    expect(
+      summarizeSchemaDiff({
+        added_tables: [],
+        changes: [
+          {
+            type: 'type_upgrade',
+            table: 'contents',
+            name: 'metadata',
+            sql: '-- SQLite: "metadata" already stores JSON as TEXT (no change needed)',
+          },
+        ],
+      }),
+    ).toEqual([]);
   });
 });
