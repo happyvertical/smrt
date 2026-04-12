@@ -23,7 +23,15 @@ export interface MigrationAction {
 }
 
 export interface SchemaChangeLike {
-  type: 'add_column' | 'add_index' | 'type_mismatch' | 'type_upgrade';
+  type:
+    | 'add_table'
+    | 'drop_table'
+    | 'add_column'
+    | 'drop_column'
+    | 'add_index'
+    | 'drop_index'
+    | 'type_mismatch'
+    | 'type_upgrade';
   table: string;
   name?: string;
   column?: {

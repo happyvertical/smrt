@@ -7,12 +7,22 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@happyvertical/smrt-config": ["packages/config"],
+      "@happyvertical/smrt-scanner": ["packages/scanner"],
+      "@happyvertical/smrt-types": ["packages/types"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": [
     "**/*.test.ts",
     "**/*.spec.ts",
     "src/vite-plugin/templates/**"
+  ],
+  "references": [
+    { "path": "../config" },
+    { "path": "../scanner" },
+    { "path": "../types" }
   ]
 }

@@ -5,11 +5,20 @@
     "outDir": "./dist",
     "rootDir": "./src",
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@happyvertical/smrt-agents": ["packages/agents"],
+      "@happyvertical/smrt-config": ["packages/config"],
+      "@happyvertical/smrt-core": ["packages/core"],
+      "@happyvertical/smrt-playground": ["packages/smrt-playground"],
+      "@happyvertical/smrt-types": ["packages/types"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"],
   "references": [
+    { "path": "../agents" },
+    { "path": "../config" },
     { "path": "../core" },
     { "path": "../smrt-playground" },
     { "path": "../types" }
