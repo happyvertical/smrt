@@ -59,6 +59,19 @@ If you are running a single-agent CLI or script and want built-in
 constructor. Multi-agent hosts should leave that off and coordinate process
 shutdown themselves.
 
+## Scheduled Methods Vs Operator Actions
+
+Use scheduled agent methods for the regular, repeatable maintenance path: the
+work that should happen automatically every time the schedule fires. Keep those
+methods idempotent and safe to rerun.
+
+When operators need a composite catch-up or repair flow, expose that as an
+explicit method such as `forage()`, `backfill()`, or `rebuildIndex()` instead of
+overloading `run()` with manual-only behavior. Those operator actions can still
+be enqueued through `@happyvertical/smrt-jobs`, but they should remain distinct
+from the normal scheduled loop so it stays obvious which work is automatic and
+which work is an intentional intervention.
+
 ## API
 
 ### Main Export (`@happyvertical/smrt-agents`)

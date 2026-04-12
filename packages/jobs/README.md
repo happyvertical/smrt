@@ -58,6 +58,27 @@ runner.on('job:failed', (job, error) => { /* ... */ });
 process.on('SIGTERM', () => runner.stop());
 ```
 
+### Heartbeat-safe job execution
+
+`TaskRunner` keeps jobs alive with a heartbeat timer. If your job blocks the
+Node.js event loop for longer than the effective stale-job threshold, the runner
+will recover that work as stale and mark it failed.
+
+Common causes:
+
+- `execSync`, `spawnSync`, or other synchronous subprocess APIs
+- long CPU-bound loops in the job method itself
+- large synchronous filesystem work
+
+Prefer async subprocess APIs (`spawn`, `execFile`, streamed stdio) for long
+exports/builds/uploads, or move CPU-heavy work into a separate process or
+worker thread. If a job is intentionally long-running, tune
+`heartbeatInterval` and `staleJobThresholdMs` together so the stale threshold
+comfortably exceeds the longest gap between heartbeats.
+
+`ScheduleRunner` uses the same stale-heartbeat recovery rules when reconciling
+scheduled jobs.
+
 ### Schedule recurring jobs with ScheduleRunner
 
 The `ScheduleRunner` polls the `_smrt_agent_schedules` table for due cron entries and creates `SmrtJob` records for the `TaskRunner` to execute. Wire them together via events:
