@@ -85,6 +85,74 @@ export abstract class SmrtError extends Error {
   }
 }
 
+type ErrorLikeWithContext = Error & {
+  cause?: unknown;
+  context?: {
+    originalError?: unknown;
+  };
+};
+
+function collectErrorMessages(
+  value: unknown,
+  messages: string[],
+  visited: Set<unknown>,
+  depth = 0,
+): void {
+  if (!value || visited.has(value) || depth > 10) {
+    return;
+  }
+
+  visited.add(value);
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed) {
+      messages.push(trimmed);
+    }
+    return;
+  }
+
+  if (!(value instanceof Error)) {
+    return;
+  }
+
+  const message = value.message?.trim();
+  if (message) {
+    messages.push(message);
+  }
+
+  const errorWithContext = value as ErrorLikeWithContext;
+  collectErrorMessages(
+    errorWithContext.context?.originalError,
+    messages,
+    visited,
+    depth + 1,
+  );
+  collectErrorMessages(errorWithContext.cause, messages, visited, depth + 1);
+}
+
+function getPrimaryCauseMessage(cause?: Error): {
+  message?: string;
+  messages?: string[];
+} {
+  if (!cause) {
+    return {};
+  }
+
+  const collected: string[] = [];
+  collectErrorMessages(cause, collected, new Set<unknown>());
+
+  const uniqueMessages = [...new Set(collected.filter(Boolean))];
+  if (uniqueMessages.length === 0) {
+    return {};
+  }
+
+  return {
+    message: uniqueMessages[uniqueMessages.length - 1],
+    messages: uniqueMessages,
+  };
+}
+
 /**
  * Errors originating from database operations.
  *
@@ -119,12 +187,17 @@ export class DatabaseError extends SmrtError {
   }
 
   static queryFailed(query: string, cause?: Error): DatabaseError {
-    // Include root cause message for better debugging (issue #625)
-    const causeMsg = cause?.message ? `\nCause: ${cause.message}` : '';
+    // Include the deepest actionable cause message for better debugging.
+    const causeInfo = getPrimaryCauseMessage(cause);
+    const causeMsg = causeInfo.message ? `\nCause: ${causeInfo.message}` : '';
     return new DatabaseError(
       `Database query failed: ${query.substring(0, 100)}${query.length > 100 ? '...' : ''}${causeMsg}`,
       'DB_QUERY_FAILED',
-      { query, causeMessage: cause?.message },
+      {
+        query,
+        causeMessage: causeInfo.message,
+        causeMessages: causeInfo.messages,
+      },
       cause,
     );
   }

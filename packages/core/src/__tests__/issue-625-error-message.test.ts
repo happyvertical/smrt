@@ -64,4 +64,36 @@ describe('Issue #625: DatabaseError.queryFailed() root cause message', () => {
     // The cause should be preserved for debugging
     expect(error.cause).toBe(rootCause);
   });
+
+  it('should surface the deepest nested database cause message when available', () => {
+    const pgError = new Error(
+      'column "script_text" of relation "contents" does not exist',
+    );
+    const adapterError = new Error('Failed SQL execution');
+    (
+      adapterError as Error & {
+        context?: { originalError?: unknown };
+        cause?: unknown;
+      }
+    ).context = {
+      originalError: 'Database query failed: UPSERT INTO contents',
+    };
+    (adapterError as Error & { cause?: unknown }).cause = pgError;
+
+    const error = DatabaseError.queryFailed(
+      'UPSERT INTO contents',
+      adapterError,
+    );
+
+    expect(error.message).toContain(
+      'column "script_text" of relation "contents" does not exist',
+    );
+    expect(error.details?.causeMessage).toBe(
+      'column "script_text" of relation "contents" does not exist',
+    );
+    expect(error.details?.causeMessages).toContain('Failed SQL execution');
+    expect(error.details?.causeMessages).toContain(
+      'Database query failed: UPSERT INTO contents',
+    );
+  });
 });

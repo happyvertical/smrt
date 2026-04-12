@@ -122,6 +122,14 @@ export interface ApplyMigrationsOptions {
   dryRun?: boolean;
   /** Force application even if checksums don't match */
   force?: boolean;
+  /**
+   * Reconcile migration history with live schema drift.
+   *
+   * When true, the tracker will re-run a recorded migration if the caller has
+   * already independently determined the change is still required. This keeps
+   * live schema state authoritative for repair flows such as `db:migrate`.
+   */
+  reconcile?: boolean;
   /** Use PostgreSQL-safe operations (CONCURRENTLY, lock timeout) */
   postgresSafe?: boolean;
 }

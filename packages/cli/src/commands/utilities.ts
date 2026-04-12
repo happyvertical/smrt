@@ -20,6 +20,11 @@ import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
+import {
+  type MigrationAction,
+  partitionSchemaChanges,
+  type SchemaChangeLike,
+} from './db-migrate-actions.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { exportCommand } from './export.js';
@@ -1188,30 +1193,6 @@ export default testManifest;
 
         // 8. Compare schemas using SchemaComparer
         // This uses the same comparison logic as core (including equivalent index detection)
-        type MigrationAction = {
-          type: 'add_column' | 'add_index' | 'type_mismatch';
-          tableName: string;
-          className: string;
-          column?: {
-            name: string;
-            type: string;
-            notNull?: boolean;
-            defaultValue?: any;
-            unique?: boolean;
-          };
-          index?: {
-            name: string;
-            columns: string[];
-            unique?: boolean;
-          };
-          mismatch?: {
-            column: string;
-            expected: string;
-            actual: string;
-          };
-          sql?: string;
-        };
-
         const migrations: MigrationAction[] = [];
         const typeMismatches: MigrationAction[] = [];
 
@@ -1295,67 +1276,13 @@ export default testManifest;
           console.log();
         }
 
-        // Convert SchemaDiff changes to CLI MigrationAction format
-        for (const change of diff.changes) {
-          const className = getClassForTable(change.table);
-
-          switch (change.type) {
-            case 'add_column': {
-              // Type guard: add_column changes always have name and column
-              const col = change.column;
-              if (!change.name || !col) continue;
-              migrations.push({
-                type: 'add_column',
-                tableName: change.table,
-                className,
-                column: {
-                  name: change.name,
-                  type: col.type,
-                  notNull: col.notNull,
-                  defaultValue: col.defaultValue,
-                  unique: col.unique,
-                },
-                sql: change.sql,
-              });
-              break;
-            }
-
-            case 'add_index': {
-              // Type guard: add_index changes always have index
-              const idx = change.index;
-              if (!idx) continue;
-              migrations.push({
-                type: 'add_index',
-                tableName: change.table,
-                className,
-                index: {
-                  name: idx.name,
-                  columns: idx.columns,
-                  unique: idx.unique,
-                },
-                sql: change.sql,
-              });
-              break;
-            }
-
-            case 'type_mismatch': {
-              // Type guard: type_mismatch changes always have name and mismatch
-              const mm = change.mismatch;
-              if (!change.name || !mm) continue;
-              typeMismatches.push({
-                type: 'type_mismatch',
-                tableName: change.table,
-                className,
-                mismatch: {
-                  column: change.name,
-                  expected: mm.expected,
-                  actual: mm.actual,
-                },
-              });
-              break;
-            }
-          }
-        }
+        // Convert SchemaDiff changes to CLI MigrationAction format.
+        const partitionedChanges = partitionSchemaChanges(
+          diff.changes as SchemaChangeLike[],
+          getClassForTable,
+        );
+        migrations.push(...partitionedChanges.migrations);
+        typeMismatches.push(...partitionedChanges.typeMismatches);
 
         console.log();
 
@@ -1456,6 +1383,10 @@ export default testManifest;
               migrationName = `add_column_${migration.tableName}_${migration.column.name}`;
               migrationSql = migration.sql || '';
               actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+            } else if (migration.type === 'type_upgrade' && migration.column) {
+              migrationName = `type_upgrade_${migration.tableName}_${migration.column.name}`;
+              migrationSql = migration.sql || '';
+              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
             } else if (migration.type === 'add_index' && migration.index) {
               migrationName = `add_index_${migration.index.name}`;
               migrationSql = migration.sql || '';
@@ -1470,7 +1401,9 @@ export default testManifest;
               description:
                 migration.type === 'add_column'
                   ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                  : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                  : migration.type === 'type_upgrade'
+                    ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                    : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               up: [migrationSql],
               down: [], // Auto-migrations don't have rollback by default
@@ -1480,6 +1413,10 @@ export default testManifest;
             const result = await tracker.apply(migrationDef, {
               postgresSafe: options['postgres-safe'] ?? false,
               force: options.force ?? false,
+              // The diff was computed from the live schema moments earlier, so
+              // missing columns/indexes must be repaired even if a previous
+              // synthetic migration record says "completed".
+              reconcile: true,
             });
 
             if (result.success) {

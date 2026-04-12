@@ -274,7 +274,7 @@ export class MigrationTracker {
       // Handle based on existing status
       switch (existing.status) {
         case 'completed':
-          if (!options.force) {
+          if (!options.force && !options.reconcile) {
             // Verify checksum matches
             if (existing.checksum !== checksum) {
               return {
@@ -300,7 +300,7 @@ export class MigrationTracker {
           break;
 
         case 'failed':
-          if (!options.force) {
+          if (!options.force && !options.reconcile) {
             return {
               success: false,
               applied: false,
@@ -315,7 +315,7 @@ export class MigrationTracker {
           break;
 
         case 'running':
-          if (!options.force) {
+          if (!options.force && !options.reconcile) {
             return {
               success: false,
               applied: false,
