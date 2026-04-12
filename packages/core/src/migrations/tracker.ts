@@ -240,13 +240,14 @@ export class MigrationTracker {
       );
 
       if (!verification.valid) {
+        const driftType = verification.drift ?? 'db_modified';
         reports.push({
           migration_name: record.name,
           expected_checksum: record.checksum,
           actual_checksum: currentChecksum,
-          drift_type: verification.drift!,
+          drift_type: driftType,
           recommendation:
-            verification.drift === 'file_modified'
+            driftType === 'file_modified'
               ? 'Migration file was modified after application. Create a new migration instead.'
               : 'Database schema was modified outside of migrations. Review and reconcile manually.',
         });
