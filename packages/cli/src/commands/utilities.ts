@@ -20,6 +20,11 @@ import { configExportCommand } from './config-export.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
+import {
+  type MigrationAction,
+  partitionSchemaChanges,
+  type SchemaChangeLike,
+} from './db-migrate-actions.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { exportCommand } from './export.js';
@@ -1188,32 +1193,8 @@ export default testManifest;
 
         // 8. Compare schemas using SchemaComparer
         // This uses the same comparison logic as core (including equivalent index detection)
-        type MigrationAction = {
-          type: 'add_column' | 'add_index' | 'type_mismatch';
-          tableName: string;
-          className: string;
-          column?: {
-            name: string;
-            type: string;
-            notNull?: boolean;
-            defaultValue?: any;
-            unique?: boolean;
-          };
-          index?: {
-            name: string;
-            columns: string[];
-            unique?: boolean;
-          };
-          mismatch?: {
-            column: string;
-            expected: string;
-            actual: string;
-          };
-          sql?: string;
-        };
-
         const migrations: MigrationAction[] = [];
-        const typeMismatches: MigrationAction[] = [];
+        const manualInterventions: MigrationAction[] = [];
 
         console.log('🔍 Comparing schemas...\n');
 
@@ -1295,91 +1276,43 @@ export default testManifest;
           console.log();
         }
 
-        // Convert SchemaDiff changes to CLI MigrationAction format
-        for (const change of diff.changes) {
-          const className = getClassForTable(change.table);
-
-          switch (change.type) {
-            case 'add_column': {
-              // Type guard: add_column changes always have name and column
-              const col = change.column;
-              if (!change.name || !col) continue;
-              migrations.push({
-                type: 'add_column',
-                tableName: change.table,
-                className,
-                column: {
-                  name: change.name,
-                  type: col.type,
-                  notNull: col.notNull,
-                  defaultValue: col.defaultValue,
-                  unique: col.unique,
-                },
-                sql: change.sql,
-              });
-              break;
-            }
-
-            case 'add_index': {
-              // Type guard: add_index changes always have index
-              const idx = change.index;
-              if (!idx) continue;
-              migrations.push({
-                type: 'add_index',
-                tableName: change.table,
-                className,
-                index: {
-                  name: idx.name,
-                  columns: idx.columns,
-                  unique: idx.unique,
-                },
-                sql: change.sql,
-              });
-              break;
-            }
-
-            case 'type_mismatch': {
-              // Type guard: type_mismatch changes always have name and mismatch
-              const mm = change.mismatch;
-              if (!change.name || !mm) continue;
-              typeMismatches.push({
-                type: 'type_mismatch',
-                tableName: change.table,
-                className,
-                mismatch: {
-                  column: change.name,
-                  expected: mm.expected,
-                  actual: mm.actual,
-                },
-              });
-              break;
-            }
-          }
-        }
+        // Convert SchemaDiff changes to CLI MigrationAction format.
+        const partitionedChanges = partitionSchemaChanges(
+          diff.changes as SchemaChangeLike[],
+          getClassForTable,
+        );
+        migrations.push(...partitionedChanges.migrations);
+        manualInterventions.push(...partitionedChanges.manualInterventions);
 
         console.log();
 
-        // 9. Report type mismatches (these require manual intervention)
-        if (typeMismatches.length > 0) {
+        // 9. Report non-executable drift that still needs manual intervention
+        if (manualInterventions.length > 0) {
           console.log(
-            '⚠️  Type mismatches detected (require manual intervention):\n',
+            '⚠️  Schema drift detected that requires manual intervention:\n',
           );
-          for (const mm of typeMismatches) {
-            if (mm.mismatch) {
-              console.log(
-                `   ${mm.tableName}.${mm.mismatch.column}: expected ${mm.mismatch.expected}, found ${mm.mismatch.actual}`,
-              );
-            }
+          for (const change of manualInterventions) {
+            if (!change.mismatch) continue;
+
+            const detail =
+              change.type === 'type_upgrade'
+                ? `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual} (cannot auto-apply on this database engine)`
+                : `${change.tableName}.${change.mismatch.column}: expected ${change.mismatch.expected}, found ${change.mismatch.actual}`;
+
+            console.log(`   ${detail}`);
           }
           console.log();
           console.log(
-            '   Type changes require manual migration (backup, recreate, restore).\n',
+            '   Manual migration required (backup, recreate, restore as needed).\n',
           );
         }
 
         // 10. Handle no migrations needed
         const tablesCreated = diff.added_tables.length > 0;
-        const schemaUpToDate = migrations.length === 0 && !tablesCreated;
+        const schemaUpToDate =
+          migrations.length === 0 &&
+          manualInterventions.length === 0 &&
+          !tablesCreated;
 
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
@@ -1456,6 +1389,10 @@ export default testManifest;
               migrationName = `add_column_${migration.tableName}_${migration.column.name}`;
               migrationSql = migration.sql || '';
               actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+            } else if (migration.type === 'type_upgrade' && migration.column) {
+              migrationName = `type_upgrade_${migration.tableName}_${migration.column.name}`;
+              migrationSql = migration.sql || '';
+              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
             } else if (migration.type === 'add_index' && migration.index) {
               migrationName = `add_index_${migration.index.name}`;
               migrationSql = migration.sql || '';
@@ -1470,7 +1407,9 @@ export default testManifest;
               description:
                 migration.type === 'add_column'
                   ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                  : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                  : migration.type === 'type_upgrade'
+                    ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                    : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
               up: [migrationSql],
               down: [], // Auto-migrations don't have rollback by default
@@ -1480,6 +1419,10 @@ export default testManifest;
             const result = await tracker.apply(migrationDef, {
               postgresSafe: options['postgres-safe'] ?? false,
               force: options.force ?? false,
+              // The diff was computed from the live schema moments earlier, so
+              // missing columns/indexes must be repaired even if a previous
+              // synthetic migration record says "completed".
+              reconcile: true,
             });
 
             if (result.success) {

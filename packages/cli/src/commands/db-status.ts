@@ -7,8 +7,100 @@
  * - Drift detection warnings
  */
 
+import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { classifyTypeUpgradeSql } from './db-migrate-actions.js';
+
+type StatusDrift = {
+  name: string;
+  type: string;
+  recommendation: string;
+};
+
+export function summarizeSchemaDiff(diff: {
+  added_tables: Array<{ tableName: string }>;
+  changes: Array<{
+    type: string;
+    table: string;
+    name?: string;
+    mismatch?: {
+      expected: string;
+      actual: string;
+    };
+    sql?: string;
+  }>;
+}): StatusDrift[] {
+  const drift: StatusDrift[] = [];
+
+  for (const schema of diff.added_tables) {
+    drift.push({
+      name: schema.tableName,
+      type: 'missing_table',
+      recommendation:
+        'Run `smrt db:migrate` to create the missing table in the live database.',
+    });
+  }
+
+  for (const change of diff.changes) {
+    switch (change.type) {
+      case 'add_column':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'missing_column',
+          recommendation:
+            'Run `smrt db:migrate` to add the missing column before application writes hit this table.',
+        });
+        break;
+
+      case 'add_index':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'missing_index',
+          recommendation:
+            'Run `smrt db:migrate` to add the missing index and reconcile the live schema.',
+        });
+        break;
+
+      case 'type_upgrade':
+        switch (classifyTypeUpgradeSql(change.sql)) {
+          case 'executable':
+            drift.push({
+              name: `${change.table}.${change.name ?? '(unknown)'}`,
+              type: 'type_upgrade',
+              recommendation:
+                'Run `smrt db:migrate` to apply the compatible type upgrade for this live column.',
+            });
+            break;
+
+          case 'manual':
+            drift.push({
+              name: `${change.table}.${change.name ?? '(unknown)'}`,
+              type: 'type_upgrade',
+              recommendation:
+                'Manual intervention required: this live column needs a type upgrade that the current database engine cannot auto-apply.',
+            });
+            break;
+
+          case 'noop':
+            break;
+        }
+        break;
+
+      case 'type_mismatch':
+        drift.push({
+          name: `${change.table}.${change.name ?? '(unknown)'}`,
+          type: 'type_mismatch',
+          recommendation: change.mismatch
+            ? `Manual intervention required: expected ${change.mismatch.expected}, found ${change.mismatch.actual}.`
+            : 'Manual intervention required to reconcile this incompatible live column type.',
+        });
+        break;
+    }
+  }
+
+  return drift;
+}
 
 export const dbStatusCommand: CLICommand = {
   name: 'db:status',
@@ -99,12 +191,18 @@ export const dbStatusCommand: CLICommand = {
             checksum: m.checksum.substring(0, 8),
           })),
         },
-        drift: [] as { name: string; type: string; recommendation: string }[],
+        drift: [] as StatusDrift[],
       };
 
-      // 8. Check for drift (if we have migration definitions)
-      // Note: In dynamic mode, we don't have file-based definitions yet
-      // This will be more useful when file-based migrations are implemented
+      // 8. Compare the current manifest schema against the live database.
+      // This keeps db:status useful for shared Postgres databases where the
+      // migration history alone is not enough to prove the schema is current.
+      if (typeof db.getTableSchema === 'function') {
+        const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
+        const comparer = new SchemaComparer(db);
+        const diff = await comparer.compare(manifestSchemas);
+        status.drift = summarizeSchemaDiff(diff);
+      }
 
       // 9. Output results
       if (options.json) {
@@ -176,6 +274,9 @@ export const dbStatusCommand: CLICommand = {
             console.log(`     ${d.recommendation}`);
           }
         }
+        console.log();
+      } else {
+        console.log('✅ Live schema matches current manifests');
         console.log();
       }
 

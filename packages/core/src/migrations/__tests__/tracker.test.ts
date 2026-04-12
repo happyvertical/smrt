@@ -159,6 +159,58 @@ describe('MigrationTracker', () => {
       expect(result.error).toContain('checksum mismatch');
     });
 
+    it('should still block checksum mismatches during reconcile', async () => {
+      const migration1: MigrationDefinition = {
+        id: '0001_create_users',
+        description: 'Create users table',
+        version: '1.0.0',
+        up: ['CREATE TABLE users (id TEXT PRIMARY KEY);'],
+        down: ['DROP TABLE users;'],
+      };
+
+      await tracker.apply(migration1);
+
+      const migration2: MigrationDefinition = {
+        id: '0001_create_users',
+        description: 'Create users table',
+        version: '1.0.0',
+        up: ['CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT);'],
+        down: ['DROP TABLE users;'],
+      };
+
+      const result = await tracker.apply(migration2, { reconcile: true });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('checksum mismatch');
+    });
+
+    it('should allow reconcile to re-run a completed checksum-matching migration', async () => {
+      const migration: MigrationDefinition = {
+        id: '0001_reconcile',
+        description: 'Reconcile test',
+        version: '1.0.0',
+        up: [
+          'CREATE TABLE IF NOT EXISTS reconcile_test (id TEXT PRIMARY KEY);',
+        ],
+        down: ['DROP TABLE reconcile_test;'],
+      };
+
+      const first = await tracker.apply(migration);
+      expect(first.success).toBe(true);
+      expect(first.applied).toBe(true);
+
+      const second = await tracker.apply(migration, { reconcile: true });
+
+      expect(second.success).toBe(true);
+      expect(second.applied).toBe(true);
+      expect(second.skipped).toBe(false);
+
+      const history = await tracker.getHistory();
+      expect(history).toHaveLength(1);
+      expect(history[0].attempts).toBe(2);
+      expect(history[0].status).toBe('completed');
+    });
+
     it('should record migration with correct metadata', async () => {
       const migration: MigrationDefinition = {
         id: '0001_create_users',
@@ -254,6 +306,24 @@ describe('MigrationTracker', () => {
       expect(result.error).toContain('--force');
     });
 
+    it('should still block failed migrations during reconcile without --force', async () => {
+      const migration: MigrationDefinition = {
+        id: '0001_bad_sql',
+        description: 'Bad SQL',
+        version: '1.0.0',
+        up: ['THIS IS NOT VALID SQL;'],
+        down: [],
+      };
+
+      await tracker.apply(migration);
+
+      const result = await tracker.apply(migration, { reconcile: true });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('previously failed');
+      expect(result.error).toContain('--force');
+    });
+
     it('should allow retry of failed migration with --force', async () => {
       // First, create a migration that will fail
       const badMigration: MigrationDefinition = {
@@ -311,6 +381,27 @@ describe('MigrationTracker', () => {
       };
 
       const result = await tracker.apply(migration);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('currently running or was interrupted');
+      expect(result.error).toContain('--force');
+    });
+
+    it('should still block running migrations during reconcile without --force', async () => {
+      await db.query(
+        `INSERT INTO _smrt_schema_migrations (id, name, version, checksum, status, attempts, is_reversible, batch)
+         VALUES ('stuck-id', '0001_stuck', '1.0.0', 'abc123', 'running', 1, 0, 1)`,
+      );
+
+      const migration: MigrationDefinition = {
+        id: '0001_stuck',
+        description: 'Stuck migration',
+        version: '1.0.0',
+        up: ['SELECT 1;'],
+        down: [],
+      };
+
+      const result = await tracker.apply(migration, { reconcile: true });
 
       expect(result.success).toBe(false);
       expect(result.error).toContain('currently running or was interrupted');
