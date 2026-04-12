@@ -924,20 +924,6 @@ export class ManifestAdapter {
       }
     }
 
-    // Imported string enums often arrive as unresolved identifiers like
-    // `UserStatus` with enum-member initializers such as `UserStatus.ACTIVE`.
-    if (
-      type &&
-      /^[A-Za-z_$][\w$]*$/.test(type) &&
-      new RegExp(`^${type}\\.[A-Z0-9_]+$`).test(field.initializer ?? '')
-    ) {
-      return {
-        type: 'text',
-        required: isRequired,
-        source: 'heuristic',
-      };
-    }
-
     // String initializer heuristic: if initializer is a quoted string, infer text
     if (field.initializer?.match(/^(['"]).*\1$/)) {
       return {

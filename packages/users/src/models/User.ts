@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { UserStatus } from '../types/index.js';
 
 /**
@@ -68,6 +68,7 @@ export class User extends SmrtObject {
   /**
    * User account status
    */
+  @field({ type: 'text' })
   status: UserStatus = UserStatus.ACTIVE;
 
   /**

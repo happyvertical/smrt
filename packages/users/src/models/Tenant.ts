@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantStatus } from '../types/index.js';
 
 /**
@@ -76,6 +76,7 @@ export class Tenant extends SmrtObject {
   /**
    * Tenant status
    */
+  @field({ type: 'text' })
   status: TenantStatus = TenantStatus.ACTIVE;
 
   /**

@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantPermissionEffect } from '../types/index.js';
 
 /**
@@ -66,6 +66,7 @@ export class TenantPermissionOverride extends SmrtObject {
   /**
    * Effect of the override: inherit, grant, or deny
    */
+  @field({ type: 'text' })
   effect: TenantPermissionEffect = TenantPermissionEffect.INHERIT;
 
   constructor(options: any = {}) {

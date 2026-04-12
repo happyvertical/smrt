@@ -408,6 +408,39 @@ describe('OxcScanner', () => {
       expect(widgetDef.fields.visibility.type).toBe('text');
       expect(widgetDef.fields.visibility.default).toBe('public');
     });
+
+    it('should preserve explicit text fields for external enum imports', async () => {
+      writeFileSync(
+        join(tempDir, 'external-enum.ts'),
+        `
+        import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+        import { UserStatus } from '@happyvertical/smrt-types';
+
+        @smrt()
+        export class ExternalEnumUser extends SmrtObject {
+          @field({ type: 'text' })
+          status: UserStatus = UserStatus.ACTIVE;
+        }
+        `,
+      );
+
+      const scanner = new OxcScanner({
+        cwd: tempDir,
+        include: ['external-enum.ts'],
+      });
+
+      const { results, resolved } = await scanner.scanAndResolve();
+
+      const { ManifestAdapter } = await import('../manifest-adapter.js');
+      const adapter = new ManifestAdapter();
+      const manifest = adapter.toManifest(resolved, {
+        packageName: '@test/widget-pkg',
+        typeAliases: results.typeAliases,
+      });
+
+      const userDef = manifest.objects['@test/widget-pkg:ExternalEnumUser'];
+      expect(userDef.fields.status.type).toBe('text');
+    });
   });
 
   describe('getStats', () => {
@@ -422,7 +455,7 @@ describe('OxcScanner', () => {
 
       expect(stats.fileCount).toBeGreaterThan(0);
       expect(stats.totalClasses).toBeGreaterThan(0);
-      expect(stats.smrtClasses).toBe(8); // Product, Category, TestAgent, Event, Meeting, Conference, Performer, Widget
+      expect(stats.smrtClasses).toBe(9); // Product, Category, TestAgent, Event, Meeting, Conference, Performer, Widget, ExternalEnumUser
       expect(stats.stiClasses).toBe(3); // Event, Meeting, Conference
       expect(stats.parseTimeMs).toBeGreaterThanOrEqual(0);
     });
