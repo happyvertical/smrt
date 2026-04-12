@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.45
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] repair live schema drift reconciliation
+  - @happyvertical/smrt-scanner@0.21.45
+  - @happyvertical/smrt-config@0.21.45
+  - @happyvertical/smrt-types@0.21.45
+
 ## 0.21.44
 
 ### Patch Changes
