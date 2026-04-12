@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { partitionSchemaChanges } from '../db-migrate-actions.js';
+import {
+  getUnresolvedAdditiveMigrationNames,
+  partitionSchemaChanges,
+  summarizeFailedMigrations,
+} from '../db-migrate-actions.js';
 
 describe('partitionSchemaChanges', () => {
   it('keeps type upgrades in the executable migration set', () => {
@@ -141,5 +145,87 @@ describe('partitionSchemaChanges', () => {
         },
       },
     ]);
+  });
+});
+
+describe('failed migration classification', () => {
+  it('tracks current unresolved additive repairs separately from superseded failures', () => {
+    const unresolvedNames = getUnresolvedAdditiveMigrationNames([
+      {
+        type: 'add_column',
+        table: 'contents',
+        name: 'script_text',
+        column: { type: 'TEXT' },
+      },
+    ]);
+
+    expect(
+      summarizeFailedMigrations(
+        [
+          {
+            name: 'add_column_contents_script_text',
+            error_message: 'column missing',
+          },
+          {
+            name: 'add_index_idx_contents_published_at',
+            error_message: 'index already exists',
+          },
+          {
+            name: 'type_upgrade_contents_status',
+            error_message: 'cannot cast',
+          },
+        ],
+        unresolvedNames,
+      ),
+    ).toEqual({
+      unresolved: [
+        {
+          name: 'add_column_contents_script_text',
+          classification: 'unresolved',
+          recommendation:
+            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed additive migration no longer appears as unresolved.',
+          errorMessage: 'column missing',
+        },
+      ],
+      superseded: [
+        {
+          name: 'add_index_idx_contents_published_at',
+          classification: 'superseded',
+          recommendation:
+            'No current live-schema drift maps to this failed additive migration. Keep the row for audit history, but it no longer blocks the current schema.',
+          errorMessage: 'index already exists',
+        },
+      ],
+      other: [
+        {
+          name: 'type_upgrade_contents_status',
+          classification: 'other',
+          recommendation:
+            'Inspect this failed migration directly. It is not a superseded additive repair and may still need manual attention.',
+          errorMessage: 'cannot cast',
+        },
+      ],
+    });
+  });
+
+  it('falls back to direct-review classification when live drift comparison is unavailable', () => {
+    expect(
+      summarizeFailedMigrations(
+        [{ name: 'add_column_contents_script_text', error_message: null }],
+        null,
+      ),
+    ).toEqual({
+      unresolved: [],
+      superseded: [],
+      other: [
+        {
+          name: 'add_column_contents_script_text',
+          classification: 'other',
+          recommendation:
+            'Inspect this failed migration directly. Live schema comparison was unavailable, so SMRT could not determine whether it has been superseded.',
+          errorMessage: null,
+        },
+      ],
+    });
   });
 });

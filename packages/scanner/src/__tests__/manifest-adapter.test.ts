@@ -238,6 +238,54 @@ describe('ManifestAdapter', () => {
         expect(result.type).toBe('text');
       });
 
+      it('should treat string unions with null and undefined as optional text', () => {
+        const field: RawFieldDefinition = {
+          name: 'tenantId',
+          accessibility: 'public',
+          typeAnnotation: 'string | null | undefined',
+          initializer: null,
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], { typeAliases: {} });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('text');
+        expect(result.required).toBe(false);
+        expect(result.source).toBe('annotation');
+      });
+
+      it('should treat imported enum-member initializers as text', () => {
+        const field: RawFieldDefinition = {
+          name: 'status',
+          accessibility: 'public',
+          typeAnnotation: 'UserStatus',
+          initializer: 'UserStatus.ACTIVE',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const adapterWithAliases = new ManifestAdapter();
+        adapterWithAliases.toManifest([], { typeAliases: {} });
+
+        const result = adapterWithAliases.inferFieldType(field);
+        expect(result.type).toBe('text');
+        expect(result.required).toBe(false);
+        expect(result.source).toBe('heuristic');
+      });
+
       it('should use string initializer heuristic as fallback', () => {
         const field: RawFieldDefinition = {
           name: 'status',

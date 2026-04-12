@@ -10,7 +10,13 @@
 import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
-import { classifyTypeUpgradeSql } from './db-migrate-actions.js';
+import {
+  classifyTypeUpgradeSql,
+  type FailedMigrationBuckets,
+  type FailedMigrationSummaryItem,
+  getUnresolvedAdditiveMigrationNames,
+  summarizeFailedMigrations,
+} from './db-migrate-actions.js';
 
 type StatusDrift = {
   name: string;
@@ -192,7 +198,15 @@ export const dbStatusCommand: CLICommand = {
           })),
         },
         drift: [] as StatusDrift[],
+        failedMigrations: {
+          unresolved: [],
+          superseded: [],
+          other: [],
+        } as FailedMigrationBuckets,
       };
+
+      const failedHistory = await tracker.getHistory({ status: 'failed' });
+      status.failedMigrations = summarizeFailedMigrations(failedHistory, null);
 
       // 8. Compare the current manifest schema against the live database.
       // This keeps db:status useful for shared Postgres databases where the
@@ -202,6 +216,10 @@ export const dbStatusCommand: CLICommand = {
         const comparer = new SchemaComparer(db);
         const diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
+        status.failedMigrations = summarizeFailedMigrations(
+          failedHistory,
+          getUnresolvedAdditiveMigrationNames(diff.changes),
+        );
       }
 
       // 9. Output results
@@ -280,6 +298,22 @@ export const dbStatusCommand: CLICommand = {
         console.log();
       }
 
+      printFailedMigrationGroup(
+        '⚠️  Failed migrations still map to unresolved live drift:',
+        status.failedMigrations.unresolved,
+        options.verbose,
+      );
+      printFailedMigrationGroup(
+        '⚠️  Failed migrations requiring direct review:',
+        status.failedMigrations.other,
+        options.verbose,
+      );
+      printFailedMigrationGroup(
+        'ℹ️  Historical failed additive migrations already superseded by the live schema:',
+        status.failedMigrations.superseded,
+        options.verbose,
+      );
+
       console.log('💡 Commands:');
       console.log('   smrt db:migrate   - Apply pending changes');
       console.log('   smrt db:history   - View migration history');
@@ -315,4 +349,26 @@ function getTimeAgo(date: Date): string {
   if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
 
   return date.toLocaleDateString();
+}
+
+function printFailedMigrationGroup(
+  title: string,
+  migrations: FailedMigrationSummaryItem[],
+  verbose: boolean,
+): void {
+  if (migrations.length === 0) {
+    return;
+  }
+
+  console.log(title);
+  for (const migration of migrations) {
+    console.log(`   • ${migration.name}`);
+    if (verbose) {
+      console.log(`     ${migration.recommendation}`);
+      if (migration.errorMessage) {
+        console.log(`     Last error: ${migration.errorMessage}`);
+      }
+    }
+  }
+  console.log();
 }

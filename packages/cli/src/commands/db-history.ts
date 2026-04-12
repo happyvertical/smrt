@@ -4,8 +4,37 @@
  * Shows detailed migration history with filtering options.
  */
 
+import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { MigrationStatus } from '@happyvertical/smrt-core/migrations';
 import type { CLICommand } from '../cli-generator.js';
+import { autoDiscoverAndLoad } from '../discovery/index.js';
+import {
+  classifyFailedMigration,
+  type FailedMigrationClassification,
+  getFailedMigrationRecommendation,
+  getUnresolvedAdditiveMigrationNames,
+} from './db-migrate-actions.js';
+
+type AnnotatedHistoryEntry = {
+  id: string;
+  name: string;
+  version: string;
+  checksum: string;
+  applied_checksum: string | null;
+  applied_at: Date;
+  execution_time_ms: number | null;
+  status: MigrationStatus;
+  error_message: string | null;
+  attempts: number;
+  is_reversible: boolean;
+  rolled_back_at: Date | null;
+  applied_by: string | null;
+  batch: number | null;
+  package_name: string | null;
+  source_file: string | null;
+  classification: FailedMigrationClassification | null;
+  recommendation: string | null;
+};
 
 export const dbHistoryCommand: CLICommand = {
   name: 'db:history',
@@ -105,10 +134,50 @@ export const dbHistoryCommand: CLICommand = {
 
       // 6. Get history
       const history = await tracker.getHistory(queryOptions);
+      let unresolvedSyntheticMigrationNames: Set<string> | null = null;
+
+      if (
+        history.some((migration) => migration.status === 'failed') &&
+        typeof db.getTableSchema === 'function'
+      ) {
+        try {
+          await autoDiscoverAndLoad();
+          const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
+          const comparer = new SchemaComparer(db);
+          const diff = await comparer.compare(manifestSchemas);
+          unresolvedSyntheticMigrationNames =
+            getUnresolvedAdditiveMigrationNames(diff.changes);
+        } catch {
+          unresolvedSyntheticMigrationNames = null;
+        }
+      }
+
+      const annotatedHistory: AnnotatedHistoryEntry[] = history.map((m) => {
+        if (m.status !== 'failed') {
+          return {
+            ...m,
+            classification: null,
+            recommendation: null,
+          };
+        }
+
+        const classification = unresolvedSyntheticMigrationNames
+          ? classifyFailedMigration(m.name, unresolvedSyntheticMigrationNames)
+          : 'other';
+
+        return {
+          ...m,
+          classification,
+          recommendation: getFailedMigrationRecommendation(
+            classification,
+            unresolvedSyntheticMigrationNames !== null,
+          ),
+        };
+      });
 
       // 7. Output results
       if (options.json) {
-        const jsonOutput = history.map((m) => ({
+        const jsonOutput = annotatedHistory.map((m) => ({
           id: m.id,
           name: m.name,
           version: m.version,
@@ -125,13 +194,15 @@ export const dbHistoryCommand: CLICommand = {
           batch: m.batch,
           packageName: m.package_name,
           sourceFile: m.source_file,
+          classification: m.classification,
+          recommendation: m.recommendation,
         }));
         console.log(JSON.stringify(jsonOutput, null, 2));
         return;
       }
 
       // Human-readable output
-      if (history.length === 0) {
+      if (annotatedHistory.length === 0) {
         console.log('No migrations found matching criteria.');
         console.log();
         console.log('💡 Run `smrt db:migrate` to apply schema changes');
@@ -139,9 +210,9 @@ export const dbHistoryCommand: CLICommand = {
         return;
       }
 
-      console.log(`Showing ${history.length} migration(s):\n`);
+      console.log(`Showing ${annotatedHistory.length} migration(s):\n`);
 
-      for (const m of history) {
+      for (const m of annotatedHistory) {
         const statusIcon = getStatusIcon(m.status);
         const timeStr = formatDateTime(m.applied_at);
 
@@ -169,6 +240,10 @@ export const dbHistoryCommand: CLICommand = {
           if (m.error_message) {
             console.log(`   Error: ${m.error_message}`);
           }
+          if (m.classification) {
+            console.log(`   Failed state: ${m.classification}`);
+            console.log(`   Recommendation: ${m.recommendation}`);
+          }
           if (m.rolled_back_at) {
             console.log(`   Rolled back: ${formatDateTime(m.rolled_back_at)}`);
           }
@@ -184,6 +259,9 @@ export const dbHistoryCommand: CLICommand = {
           if (m.error_message) {
             parts.push(`error: ${m.error_message.substring(0, 50)}`);
           }
+          if (m.classification) {
+            parts.push(m.classification);
+          }
           if (parts.length > 0) {
             console.log(`   ${parts.join(' | ')}`);
           }
@@ -193,15 +271,28 @@ export const dbHistoryCommand: CLICommand = {
       }
 
       // Summary
-      const completed = history.filter((m) => m.status === 'completed').length;
-      const failed = history.filter((m) => m.status === 'failed').length;
-      const rolledBack = history.filter(
+      const completed = annotatedHistory.filter(
+        (m) => m.status === 'completed',
+      ).length;
+      const failed = annotatedHistory.filter(
+        (m) => m.status === 'failed',
+      ).length;
+      const failedUnresolved = annotatedHistory.filter(
+        (m) => m.classification === 'unresolved',
+      ).length;
+      const failedSuperseded = annotatedHistory.filter(
+        (m) => m.classification === 'superseded',
+      ).length;
+      const failedOther = annotatedHistory.filter(
+        (m) => m.classification === 'other',
+      ).length;
+      const rolledBack = annotatedHistory.filter(
         (m) => m.status === 'rolled_back',
       ).length;
 
       console.log('━'.repeat(50));
       console.log(
-        `Summary: ${completed} completed, ${failed} failed, ${rolledBack} rolled back`,
+        `Summary: ${completed} completed, ${failed} failed (${failedUnresolved} unresolved, ${failedSuperseded} superseded, ${failedOther} other), ${rolledBack} rolled back`,
       );
       console.log();
 

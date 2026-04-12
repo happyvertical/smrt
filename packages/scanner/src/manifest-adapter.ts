@@ -865,9 +865,19 @@ export class ManifestAdapter {
       };
     }
 
-    // Union types with null → nullable
-    if (type?.includes(' | null') || type?.includes('null | ')) {
-      const baseType = type.replace(/\s*\|\s*null/g, '').trim();
+    // Union types with null/undefined → nullable or optional
+    if (
+      type?.includes(' | null') ||
+      type?.includes('null | ') ||
+      type?.includes(' | undefined') ||
+      type?.includes('undefined | ')
+    ) {
+      const baseType = type
+        .replace(/\s*\|\s*null/g, '')
+        .replace(/\s*\|\s*undefined/g, '')
+        .replace(/\bnull\s*\|\s*/g, '')
+        .replace(/\bundefined\s*\|\s*/g, '')
+        .trim();
       const inference = this.inferFromAnnotation({
         ...field,
         typeAnnotation: baseType,
@@ -912,6 +922,20 @@ export class ManifestAdapter {
       } finally {
         this._aliasDepth = (this._aliasDepth ?? 0) - 1;
       }
+    }
+
+    // Imported string enums often arrive as unresolved identifiers like
+    // `UserStatus` with enum-member initializers such as `UserStatus.ACTIVE`.
+    if (
+      type &&
+      /^[A-Za-z_$][\w$]*$/.test(type) &&
+      new RegExp(`^${type}\\.[A-Z0-9_]+$`).test(field.initializer ?? '')
+    ) {
+      return {
+        type: 'text',
+        required: isRequired,
+        source: 'heuristic',
+      };
     }
 
     // String initializer heuristic: if initializer is a quoted string, infer text
