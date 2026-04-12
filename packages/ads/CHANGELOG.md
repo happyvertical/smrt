@@ -1,5 +1,17 @@
 # @happyvertical/smrt-ads
 
+## 0.21.44
+
+### Patch Changes
+
+- Updated dependencies [6056c00]
+  - @happyvertical/smrt-core@0.21.44
+  - @happyvertical/smrt-assets@0.21.44
+  - @happyvertical/smrt-commerce@0.21.44
+  - @happyvertical/smrt-properties@0.21.44
+  - @happyvertical/smrt-tags@0.21.44
+  - @happyvertical/smrt-tenancy@0.21.44
+
 ## 0.21.43
 
 ### Patch Changes

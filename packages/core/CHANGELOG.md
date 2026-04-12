@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.21.44
+
+### Patch Changes
+
+- 6056c00: Improve bundled runtime behavior and operator guidance for background jobs.
+
+  - fix `ObjectRegistry.ensureManifestLoaded()` and STI polymorphic hydration so installed external classes can be loaded on demand by qualified name
+  - clarify stale-heartbeat recovery errors for long-running blocking jobs
+  - document bundled runtime manifest loading, heartbeat-safe job execution, and the distinction between automatic scheduled work and manual operator actions such as forage/backfill flows
+  - @happyvertical/smrt-scanner@0.21.44
+  - @happyvertical/smrt-config@0.21.44
+  - @happyvertical/smrt-types@0.21.44
+
 ## 0.21.43
 
 ### Patch Changes
