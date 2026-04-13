@@ -371,6 +371,49 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(typeUpgrades[0].sql).toContain('::jsonb');
   });
 
+  it('should preserve PostgreSQL JSON defaults during TEXT→JSON upgrades', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'documents' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          metadata: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      documents: {
+        tableName: 'documents',
+        ddl: "CREATE TABLE documents (id TEXT PRIMARY KEY, metadata JSON DEFAULT '{}');",
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          metadata: { type: 'JSON', defaultValue: '{}' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('DROP DEFAULT');
+    expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
+    expect(typeUpgrades[0].sql).toContain('USING "metadata"::jsonb');
+    expect(typeUpgrades[0].sql).toContain("SET DEFAULT '{}'::jsonb");
+  });
+
   it('should generate DuckDB ALTER COLUMN TYPE for TEXT→JSON', async () => {
     // Create a mock database interface that identifies as DuckDB
     const mockDuckDb = {

@@ -21,6 +21,7 @@ import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import {
+  getSyntheticMigrationNameForAction,
   type MigrationAction,
   partitionSchemaChanges,
   type SchemaChangeLike,
@@ -1381,20 +1382,20 @@ export default testManifest;
         for (const migration of migrations) {
           try {
             // Generate a unique migration name based on the action
-            let migrationName: string;
+            const migrationName = getSyntheticMigrationNameForAction(migration);
+            if (!migrationName) {
+              continue;
+            }
             let migrationSql: string;
             let actionDesc: string;
 
             if (migration.type === 'add_column' && migration.column) {
-              migrationName = `add_column_${migration.tableName}_${migration.column.name}`;
               migrationSql = migration.sql || '';
               actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
             } else if (migration.type === 'type_upgrade' && migration.column) {
-              migrationName = `type_upgrade_${migration.tableName}_${migration.column.name}`;
               migrationSql = migration.sql || '';
               actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
             } else if (migration.type === 'add_index' && migration.index) {
-              migrationName = `add_index_${migration.index.name}`;
               migrationSql = migration.sql || '';
               actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
             } else {

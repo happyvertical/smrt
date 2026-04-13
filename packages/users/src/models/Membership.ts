@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { MembershipStatus } from '../types/index.js';
 
 /**
@@ -50,6 +50,7 @@ export class Membership extends SmrtObject {
   /**
    * Membership status
    */
+  @field({ type: 'text' })
   status: MembershipStatus = MembershipStatus.ACTIVE;
 
   constructor(options: any = {}) {

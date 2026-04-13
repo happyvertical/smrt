@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { OverrideEffect } from '../types/index.js';
 
 /**
@@ -50,6 +50,7 @@ export class MembershipOverride extends SmrtObject {
   /**
    * Effect of the override: grant or deny
    */
+  @field({ type: 'text' })
   effect: OverrideEffect = OverrideEffect.GRANT;
 
   constructor(options: any = {}) {

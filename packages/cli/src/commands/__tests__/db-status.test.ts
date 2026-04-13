@@ -8,6 +8,7 @@ const {
   compareMock,
   initializeMock,
   getAppliedMigrationsMock,
+  getHistoryMock,
   getEngineMock,
   SchemaComparerMock,
   MigrationTrackerMock,
@@ -15,6 +16,7 @@ const {
   const compare = vi.fn();
   const initialize = vi.fn();
   const getAppliedMigrations = vi.fn();
+  const getHistory = vi.fn();
   const getEngine = vi.fn();
 
   class MockSchemaComparer {
@@ -24,6 +26,7 @@ const {
   class MockMigrationTracker {
     initialize = initialize;
     getAppliedMigrations = getAppliedMigrations;
+    getHistory = getHistory;
     getEngine = getEngine;
   }
 
@@ -35,6 +38,7 @@ const {
     compareMock: compare,
     initializeMock: initialize,
     getAppliedMigrationsMock: getAppliedMigrations,
+    getHistoryMock: getHistory,
     getEngineMock: getEngine,
     SchemaComparerMock: MockSchemaComparer,
     MigrationTrackerMock: MockMigrationTracker,
@@ -95,6 +99,7 @@ describe('db:status', () => {
 
     initializeMock.mockResolvedValue(undefined);
     getAppliedMigrationsMock.mockResolvedValue([]);
+    getHistoryMock.mockResolvedValue([]);
     getEngineMock.mockReturnValue('postgres');
   });
 
@@ -204,6 +209,11 @@ describe('db:status', () => {
           'Run `smrt db:migrate` to add the missing index and reconcile the live schema.',
       },
     ]);
+    expect(parsed.failedMigrations).toEqual({
+      unresolved: [],
+      superseded: [],
+      other: [],
+    });
   });
 
   it('omits no-op type upgrades from drift output', () => {
@@ -220,5 +230,72 @@ describe('db:status', () => {
         ],
       }),
     ).toEqual([]);
+  });
+
+  it('classifies failed additive migrations against current live drift', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'add_column',
+          table: 'contents',
+          name: 'script_text',
+          column: { type: 'TEXT' },
+        },
+      ],
+    });
+    getHistoryMock.mockResolvedValue([
+      {
+        name: 'add_column_contents_script_text',
+        error_message: 'column missing',
+      },
+      {
+        name: 'add_index_idx_contents_published_at',
+        error_message: 'index already exists',
+      },
+      {
+        name: 'type_upgrade_contents_status',
+        error_message: 'cannot cast',
+      },
+    ]);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+    const parsed = JSON.parse(output);
+
+    expect(parsed.failedMigrations).toEqual({
+      unresolved: [
+        {
+          name: 'add_column_contents_script_text',
+          classification: 'unresolved',
+          recommendation:
+            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed additive migration no longer appears as unresolved.',
+          errorMessage: 'column missing',
+        },
+      ],
+      superseded: [
+        {
+          name: 'add_index_idx_contents_published_at',
+          classification: 'superseded',
+          recommendation:
+            'No current live-schema drift maps to this failed additive migration. Keep the row for audit history, but it no longer blocks the current schema.',
+          errorMessage: 'index already exists',
+        },
+      ],
+      other: [
+        {
+          name: 'type_upgrade_contents_status',
+          classification: 'other',
+          recommendation:
+            'Inspect this failed migration directly. It is not a superseded additive repair and may still need manual attention.',
+          errorMessage: 'cannot cast',
+        },
+      ],
+    });
   });
 });

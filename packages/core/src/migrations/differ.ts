@@ -199,7 +199,7 @@ export class SchemaComparer {
             const sql = this.generateTypeUpgradeSQL(
               tableName,
               colName,
-              colDef.type,
+              colDef,
               dbCol.type,
             );
             changes.push({
@@ -444,11 +444,12 @@ export class SchemaComparer {
   private generateTypeUpgradeSQL(
     tableName: string,
     colName: string,
-    manifestType: string,
+    colDef: ColumnDefinition,
     dbType: string,
   ): string {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
+    const manifestType = colDef.type;
 
     // Validate manifestType before mapping
     const validatedType: SQLDataType = isValidSQLDataType(manifestType)
@@ -469,30 +470,40 @@ export class SchemaComparer {
         // For other type upgrades, SQLite requires recreating the table
         return `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`;
 
-      case 'postgres':
-        // PostgreSQL requires explicit ALTER COLUMN with USING clause
-        if (
-          this.normalizeType(manifestType) === 'JSON' &&
-          this.normalizeType(dbType) === 'TEXT'
-        ) {
-          // TEXT → JSONB: cast text to jsonb
-          return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType} USING ${quotedCol}::${targetType.toLowerCase()}`;
+      case 'postgres': {
+        // PostgreSQL defaults must be dropped/reset around some type changes
+        // so drift repairs can succeed even when an existing default cannot
+        // be cast automatically to the target type.
+        const manifestNormalized = this.normalizeType(manifestType);
+        const dbNormalized = this.normalizeType(dbType);
+        const clauses: string[] = [];
+
+        if (colDef.defaultValue !== undefined) {
+          clauses.push(`ALTER COLUMN ${quotedCol} DROP DEFAULT`);
         }
-        if (
-          this.normalizeType(manifestType) === 'TEXT' &&
-          this.normalizeType(dbType) === 'JSON'
-        ) {
-          // JSONB → TEXT: cast jsonb to text
-          return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE TEXT USING ${quotedCol}::text`;
+
+        let typeClause = `ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+        if (manifestNormalized === 'JSON' && dbNormalized === 'TEXT') {
+          typeClause += ` USING ${quotedCol}::${targetType.toLowerCase()}`;
+        } else if (manifestNormalized === 'TEXT' && dbNormalized === 'JSON') {
+          typeClause += ` USING ${quotedCol}::text`;
         }
-        if (
-          this.normalizeType(manifestType) === 'REAL' &&
-          this.normalizeType(dbType) === 'INTEGER'
-        ) {
-          // INTEGER → DOUBLE PRECISION
-          return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+        clauses.push(typeClause);
+
+        if (colDef.defaultValue !== undefined) {
+          const formattedDefault = this.ddlStrategy.formatDefaultValue(
+            colDef.defaultValue,
+            validatedType,
+          );
+          const defaultSql =
+            manifestNormalized === 'JSON'
+              ? `${formattedDefault}::${targetType.toLowerCase()}`
+              : formattedDefault;
+          clauses.push(`ALTER COLUMN ${quotedCol} SET DEFAULT ${defaultSql}`);
         }
-        return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+
+        return `ALTER TABLE ${quotedTable} ${clauses.join(', ')}`;
+      }
 
       case 'duckdb':
         // DuckDB supports ALTER COLUMN TYPE for type conversions

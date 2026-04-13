@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { SessionStatus } from '../types/index.js';
 
 /**
@@ -58,6 +58,7 @@ export class Session extends SmrtObject {
   /**
    * Session status
    */
+  @field({ type: 'text' })
   status: SessionStatus = SessionStatus.ACTIVE;
 
   /**

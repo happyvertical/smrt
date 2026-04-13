@@ -865,9 +865,19 @@ export class ManifestAdapter {
       };
     }
 
-    // Union types with null → nullable
-    if (type?.includes(' | null') || type?.includes('null | ')) {
-      const baseType = type.replace(/\s*\|\s*null/g, '').trim();
+    // Union types with null/undefined → nullable or optional
+    if (
+      type?.includes(' | null') ||
+      type?.includes('null | ') ||
+      type?.includes(' | undefined') ||
+      type?.includes('undefined | ')
+    ) {
+      const baseType = type
+        .replace(/\s*\|\s*null/g, '')
+        .replace(/\s*\|\s*undefined/g, '')
+        .replace(/\bnull\s*\|\s*/g, '')
+        .replace(/\bundefined\s*\|\s*/g, '')
+        .trim();
       const inference = this.inferFromAnnotation({
         ...field,
         typeAnnotation: baseType,
