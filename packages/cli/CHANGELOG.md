@@ -1,5 +1,16 @@
 # @happyvertical/smrt-cli
 
+## 0.21.48
+
+### Patch Changes
+
+- 873af12: Fix static export to include inherited STI fields and fail loudly when projected export queries error instead of silently writing incomplete payloads.
+  - @happyvertical/smrt-agents@0.21.48
+  - @happyvertical/smrt-config@0.21.48
+  - @happyvertical/smrt-core@0.21.48
+  - @happyvertical/smrt-types@0.21.48
+  - @happyvertical/smrt-playground@0.21.48
+
 ## 0.21.47
 
 ### Patch Changes
