@@ -6,6 +6,7 @@
  */
 
 import { ObjectRegistry } from '../registry.js';
+import type { SQLDataType } from '../schema/types.js';
 import {
   type CompatiblePropertyDecorator,
   type CompatiblePropertyDecoratorContext,
@@ -59,14 +60,7 @@ export interface FieldOptions {
   /** Explicit field type for runtime-only registration paths */
   type?: FieldType;
   /** Explicit SQL storage type when runtime and persistence contracts differ */
-  sqlType?:
-    | 'TEXT'
-    | 'INTEGER'
-    | 'REAL'
-    | 'BLOB'
-    | 'BOOLEAN'
-    | 'JSON'
-    | 'TIMESTAMP';
+  sqlType?: SQLDataType;
   /** Whether the field is required */
   required?: boolean;
   /** Default value for the field */

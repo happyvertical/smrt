@@ -223,4 +223,24 @@ describe('db:history', () => {
       }),
     ]);
   });
+
+  it('counts manual-review failures when schema comparison is unavailable', async () => {
+    getDatabaseMock.mockResolvedValue({
+      url: 'postgresql://test:test@localhost:5432/test_db',
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbHistoryCommand.handler([], {});
+
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+
+    expect(autoDiscoverAndLoadMock).not.toHaveBeenCalled();
+    expect(output).toContain(
+      'Summary: 1 completed, 3 failed (0 unresolved, 0 superseded, 3 other), 0 rolled back',
+    );
+    expect(output).toContain(
+      '0 failed still require action, 0 are superseded history, 3 need manual review',
+    );
+  });
 });

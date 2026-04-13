@@ -3,7 +3,10 @@ import type {
   SchemaDiff,
   SchemaMigrationRecord,
 } from '@happyvertical/smrt-core/migrations';
-import { classifyTypeUpgradeSql } from './db-migrate-actions.js';
+import {
+  classifyTypeUpgradeSql,
+  getSyntheticMigrationNameForChange,
+} from './db-migrate-actions.js';
 
 export type FailedMigrationResolution =
   | 'action_required'
@@ -18,24 +21,16 @@ export interface FailedMigrationAssessment {
   errorMessage: string | null;
 }
 
-function getGeneratedMigrationName(change: SchemaChange): string | null {
-  if (change.type === 'add_column' && change.name) {
-    return `add_column_${change.table}_${change.name}`;
-  }
-
-  if (change.type === 'add_index') {
-    const indexName = change.index?.name || change.name;
-    return indexName ? `add_index_${indexName}` : null;
-  }
-
+function getActionableGeneratedMigrationName(
+  change: SchemaChange,
+): string | null {
   if (change.type === 'type_upgrade' && change.name) {
     if (classifyTypeUpgradeSql(change.sql) === 'noop') {
       return null;
     }
-    return `type_upgrade_${change.table}_${change.name}`;
   }
 
-  return null;
+  return getSyntheticMigrationNameForChange(change);
 }
 
 export function getActionableFailedMigrationNames(
@@ -44,7 +39,7 @@ export function getActionableFailedMigrationNames(
   const names = new Set<string>();
 
   for (const change of diff.changes) {
-    const name = getGeneratedMigrationName(change);
+    const name = getActionableGeneratedMigrationName(change);
     if (name) {
       names.add(name);
     }

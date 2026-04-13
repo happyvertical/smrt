@@ -16,6 +16,10 @@ import { classnameToTablename, toSnakeCase } from '../utils';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
 
+type ForeignKeyAction = NonNullable<
+  NonNullable<ColumnDefinition['foreignKey']>['onDelete']
+>;
+
 function applyDecoratorSqlTypeOverrides(
   className: string,
   columns: Record<string, ColumnDefinition>,
@@ -684,19 +688,17 @@ export function fieldsToColumns(
     // Handle foreign keys
     if (fieldDef.type === 'foreignKey' && fieldDef.related) {
       const [table, columnName = 'id'] = fieldDef.related.split('.');
+      const fieldMeta = fieldDef._meta as
+        | {
+            onDelete?: ForeignKeyAction;
+            onUpdate?: ForeignKeyAction;
+          }
+        | undefined;
       column.foreignKey = {
         table: classnameToTablename(table),
         column: columnName,
-        onDelete:
-          ((
-            fieldDef._meta as { onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' }
-          )?.onDelete as ColumnDefinition['foreignKey']['onDelete']) ||
-          'CASCADE',
-        onUpdate:
-          ((
-            fieldDef._meta as { onUpdate?: 'CASCADE' | 'SET NULL' | 'RESTRICT' }
-          )?.onUpdate as ColumnDefinition['foreignKey']['onUpdate']) ||
-          'CASCADE',
+        onDelete: fieldMeta?.onDelete ?? 'CASCADE',
+        onUpdate: fieldMeta?.onUpdate ?? 'CASCADE',
       };
     }
 

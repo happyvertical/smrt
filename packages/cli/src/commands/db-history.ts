@@ -9,12 +9,13 @@ import type { MigrationStatus } from '@happyvertical/smrt-core/migrations';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
-  classifyFailedMigration,
   type FailedMigrationClassification,
   getFailedMigrationRecommendation,
-  getUnresolvedGeneratedMigrationNames,
 } from './db-migrate-actions.js';
-import { assessFailedMigrations } from './migration-failure-analysis.js';
+import {
+  assessFailedMigrations,
+  type FailedMigrationAssessment,
+} from './migration-failure-analysis.js';
 
 type AnnotatedHistoryEntry = {
   id: string;
@@ -36,6 +37,19 @@ type AnnotatedHistoryEntry = {
   classification: FailedMigrationClassification | null;
   recommendation: string | null;
 };
+
+function getLegacyFailedMigrationClassification(
+  assessment: FailedMigrationAssessment,
+): FailedMigrationClassification {
+  switch (assessment.resolution) {
+    case 'action_required':
+      return 'unresolved';
+    case 'superseded':
+      return 'superseded';
+    default:
+      return 'other';
+  }
+}
 
 export const dbHistoryCommand: CLICommand = {
   name: 'db:history',
@@ -135,39 +149,28 @@ export const dbHistoryCommand: CLICommand = {
 
       // 6. Get history
       const history = await tracker.getHistory(queryOptions);
-      let unresolvedSyntheticMigrationNames: Set<string> | null = null;
-      let failedAssessmentsByName = new Map<
-        string,
-        ReturnType<typeof assessFailedMigrations>[number]
-      >();
+      const failedHistory = history.filter(
+        (migration) => migration.status === 'failed',
+      );
+      let liveSchemaCompared = false;
+      let failedAssessments = assessFailedMigrations(failedHistory, null);
 
-      if (
-        history.some((migration) => migration.status === 'failed') &&
-        typeof db.getTableSchema === 'function'
-      ) {
+      if (failedHistory.length > 0 && typeof db.getTableSchema === 'function') {
         try {
           await autoDiscoverAndLoad();
           const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
           const comparer = new SchemaComparer(db);
           const diff = await comparer.compare(manifestSchemas);
-          unresolvedSyntheticMigrationNames =
-            getUnresolvedGeneratedMigrationNames(diff.changes);
-          failedAssessmentsByName = new Map(
-            assessFailedMigrations(
-              history.filter((migration) => migration.status === 'failed'),
-              diff,
-            ).map((item) => [item.name, item]),
-          );
+          liveSchemaCompared = true;
+          failedAssessments = assessFailedMigrations(failedHistory, diff);
         } catch {
-          unresolvedSyntheticMigrationNames = null;
-          failedAssessmentsByName = new Map(
-            assessFailedMigrations(
-              history.filter((migration) => migration.status === 'failed'),
-              null,
-            ).map((item) => [item.name, item]),
-          );
+          liveSchemaCompared = false;
+          failedAssessments = assessFailedMigrations(failedHistory, null);
         }
       }
+      const failedAssessmentsByName = new Map(
+        failedAssessments.map((item) => [item.name, item]),
+      );
 
       const annotatedHistory: AnnotatedHistoryEntry[] = history.map((m) => {
         if (m.status !== 'failed') {
@@ -178,8 +181,9 @@ export const dbHistoryCommand: CLICommand = {
           };
         }
 
-        const classification = unresolvedSyntheticMigrationNames
-          ? classifyFailedMigration(m.name, unresolvedSyntheticMigrationNames)
+        const failedAssessment = failedAssessmentsByName.get(m.name);
+        const classification = failedAssessment
+          ? getLegacyFailedMigrationClassification(failedAssessment)
           : 'other';
 
         return {
@@ -187,7 +191,7 @@ export const dbHistoryCommand: CLICommand = {
           classification,
           recommendation: getFailedMigrationRecommendation(
             classification,
-            unresolvedSyntheticMigrationNames !== null,
+            liveSchemaCompared,
           ),
         };
       });
@@ -327,22 +331,15 @@ export const dbHistoryCommand: CLICommand = {
       const rolledBack = annotatedHistory.filter(
         (m) => m.status === 'rolled_back',
       ).length;
-      const actionRequired = history.filter(
-        (m) =>
-          m.status === 'failed' &&
-          failedAssessmentsByName.get(m.name)?.resolution === 'action_required',
+      const actionRequired = failedAssessments.filter(
+        (item) => item.resolution === 'action_required',
       ).length;
-      const superseded = history.filter(
-        (m) =>
-          m.status === 'failed' &&
-          failedAssessmentsByName.get(m.name)?.resolution === 'superseded',
+      const superseded = failedAssessments.filter(
+        (item) => item.resolution === 'superseded',
       ).length;
-      const manualReview = history.filter(
-        (m) =>
-          m.status === 'failed' &&
-          failedAssessmentsByName.get(m.name)?.resolution === 'manual_review',
+      const manualReview = failedAssessments.filter(
+        (item) => item.resolution === 'manual_review',
       ).length;
-
       console.log('━'.repeat(50));
       console.log(
         `Summary: ${completed} completed, ${failed} failed (${failedUnresolved} unresolved, ${failedSuperseded} superseded, ${failedOther} other), ${rolledBack} rolled back`,
