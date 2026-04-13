@@ -30,7 +30,55 @@ vi.mock('@happyvertical/smrt-core', () => ({
         baseFields.set('meetingId', { type: 'foreignKey' });
       }
 
+      if (typeName === 'Council') {
+        return new Map([
+          ['id', { type: 'text', _meta: { __smrtSystemField: true } }],
+          ['slug', { type: 'text', _meta: { __smrtSystemField: true } }],
+          ['context', { type: 'text', _meta: { __smrtSystemField: true } }],
+          ['tenantId', { type: 'foreignKey' }],
+          ['organizationId', { type: 'foreignKey' }],
+          ['name', { type: 'string' }],
+          ['meetingsUrl', { type: 'string' }],
+          ['timezone', { type: 'string' }],
+          ['logoUrl', { type: 'string' }],
+        ]);
+      }
+
       return baseFields;
+    }),
+    getTableStrategy: vi.fn((typeName: string) =>
+      typeName === 'Council' ? 'cti' : 'sti',
+    ),
+    getSchema: vi.fn((typeName: string) => {
+      if (typeName === 'Council') {
+        return {
+          tableName: 'councils',
+          columns: {
+            id: { type: 'TEXT' },
+            slug: { type: 'TEXT' },
+            tenant_id: { type: 'TEXT' },
+            organization_id: { type: 'TEXT' },
+            name: { type: 'TEXT' },
+            meetings_url: { type: 'TEXT' },
+            timezone: { type: 'TEXT' },
+            logo_url: { type: 'TEXT' },
+          },
+        };
+      }
+
+      return {
+        tableName: 'contents',
+        columns: {
+          id: { type: 'TEXT' },
+          slug: { type: 'TEXT' },
+          _meta_type: { type: 'TEXT' },
+          _meta_data: { type: 'JSON' },
+          title: { type: 'TEXT' },
+          body: { type: 'TEXT' },
+          status: { type: 'TEXT' },
+          publish_date: { type: 'DATE' },
+        },
+      };
     }),
   },
 }));
@@ -82,6 +130,18 @@ describe('export command helpers', () => {
     expect(fields).not.toContain('context');
     expect(fields).not.toContain('created_at');
     expect(fields).not.toContain('updated_at');
+  });
+
+  it('does not inject STI meta columns into CTI exports', async () => {
+    const fields = await getCommonFields(
+      ['Council'],
+      { types: ['Council'] },
+      true,
+    );
+
+    expect(fields).toEqual(expect.arrayContaining(['id', 'slug', 'name']));
+    expect(fields).not.toContain('_meta_type');
+    expect(fields).not.toContain('_meta_data');
   });
 
   it('formats export records using requested field names', () => {
@@ -165,5 +225,26 @@ describe('export command helpers', () => {
         'publishDate',
       ),
     ).rejects.toMatchObject({ cause: sourceError });
+  });
+
+  it('does not apply STI filters when exporting CTI tables', async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{ id: 'council-1', slug: 'bentley', name: 'Bentley Council' }],
+    });
+
+    await queryWithProjection(
+      { query },
+      'councils',
+      ['Council'],
+      ['id', 'slug', 'name'],
+      {},
+      'name',
+      10,
+    );
+
+    expect(query).toHaveBeenCalledWith(
+      expect.not.stringContaining('_meta_type LIKE ?'),
+    );
+    expect(query.mock.calls[0]?.slice(1)).toEqual([]);
   });
 });
