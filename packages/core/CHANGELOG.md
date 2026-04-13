@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.49
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - support CTI-safe static exports (#1122) (cli)
+  - @happyvertical/smrt-scanner@0.21.49
+  - @happyvertical/smrt-config@0.21.49
+  - @happyvertical/smrt-types@0.21.49
+
 ## 0.21.48
 
 ### Patch Changes
