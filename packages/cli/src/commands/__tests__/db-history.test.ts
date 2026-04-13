@@ -201,19 +201,20 @@ describe('db:history', () => {
         name: 'add_column_contents_script_text',
         classification: 'unresolved',
         recommendation:
-          'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed additive migration no longer appears as unresolved.',
+          'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
       }),
       expect.objectContaining({
         name: 'add_index_idx_contents_published_at',
         classification: 'superseded',
         recommendation:
-          'No current live-schema drift maps to this failed additive migration. Keep the row for audit history, but it no longer blocks the current schema.',
+          'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.',
       }),
       expect.objectContaining({
         name: 'type_upgrade_contents_status',
-        classification: 'other',
+        classification: 'superseded',
         recommendation:
-          'Inspect this failed migration directly. It is not a superseded additive repair and may still need manual attention.',
+          'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.',
+        resolution: 'superseded',
       }),
       expect.objectContaining({
         name: 'baseline_schema',

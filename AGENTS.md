@@ -89,6 +89,7 @@ npm run format                  # Biome
 - **STI discriminator**: qualified names — `@happyvertical/smrt-content:Article`
 - **Tenant scoping**: most domain models use `@TenantScoped({ mode: 'optional' })` + nullable tenantId
 - **JSON fields**: store as string, provide `getX()`/`setX()` helpers with graceful parse error handling
+- **No private reach-ins**: do not cast into underscored internals like `_db`, `_tableName`, or registry-private state from outside the owning class. If a public API is missing, add one upstream instead of reaching through a private implementation detail.
 - **Changesets**: auto-generated on merge to main. Don't run `npx changeset` manually
 
 ## SDK Dependencies

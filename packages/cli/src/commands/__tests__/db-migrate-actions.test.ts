@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  getUnresolvedAdditiveMigrationNames,
+  getUnresolvedGeneratedMigrationNames,
   partitionSchemaChanges,
   summarizeFailedMigrations,
 } from '../db-migrate-actions.js';
@@ -149,13 +149,19 @@ describe('partitionSchemaChanges', () => {
 });
 
 describe('failed migration classification', () => {
-  it('tracks current unresolved additive repairs separately from superseded failures', () => {
-    const unresolvedNames = getUnresolvedAdditiveMigrationNames([
+  it('tracks current unresolved generated repairs separately from superseded failures', () => {
+    const unresolvedNames = getUnresolvedGeneratedMigrationNames([
       {
         type: 'add_column',
         table: 'contents',
         name: 'script_text',
         column: { type: 'TEXT' },
+      },
+      {
+        type: 'type_upgrade',
+        table: 'contents',
+        name: 'status',
+        sql: 'ALTER TABLE contents ALTER COLUMN status TYPE JSONB USING status::jsonb',
       },
     ]);
 
@@ -183,8 +189,15 @@ describe('failed migration classification', () => {
           name: 'add_column_contents_script_text',
           classification: 'unresolved',
           recommendation:
-            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed additive migration no longer appears as unresolved.',
+            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
           errorMessage: 'column missing',
+        },
+        {
+          name: 'type_upgrade_contents_status',
+          classification: 'unresolved',
+          recommendation:
+            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
+          errorMessage: 'cannot cast',
         },
       ],
       superseded: [
@@ -192,19 +205,11 @@ describe('failed migration classification', () => {
           name: 'add_index_idx_contents_published_at',
           classification: 'superseded',
           recommendation:
-            'No current live-schema drift maps to this failed additive migration. Keep the row for audit history, but it no longer blocks the current schema.',
+            'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.',
           errorMessage: 'index already exists',
         },
       ],
-      other: [
-        {
-          name: 'type_upgrade_contents_status',
-          classification: 'other',
-          recommendation:
-            'Inspect this failed migration directly. It is not a superseded additive repair and may still need manual attention.',
-          errorMessage: 'cannot cast',
-        },
-      ],
+      other: [],
     });
   });
 

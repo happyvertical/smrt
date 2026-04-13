@@ -12,7 +12,7 @@ import {
   classifyFailedMigration,
   type FailedMigrationClassification,
   getFailedMigrationRecommendation,
-  getUnresolvedAdditiveMigrationNames,
+  getUnresolvedGeneratedMigrationNames,
 } from './db-migrate-actions.js';
 import { assessFailedMigrations } from './migration-failure-analysis.js';
 
@@ -151,7 +151,7 @@ export const dbHistoryCommand: CLICommand = {
           const comparer = new SchemaComparer(db);
           const diff = await comparer.compare(manifestSchemas);
           unresolvedSyntheticMigrationNames =
-            getUnresolvedAdditiveMigrationNames(diff.changes);
+            getUnresolvedGeneratedMigrationNames(diff.changes);
           failedAssessmentsByName = new Map(
             assessFailedMigrations(
               history.filter((migration) => migration.status === 'failed'),

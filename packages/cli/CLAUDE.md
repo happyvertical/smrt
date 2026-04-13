@@ -39,4 +39,4 @@ smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
 
 - **Test mode detection**: checks `NODE_ENV=test`, `VITEST=true`, `global.it`/`describe` — could conflict with other test runners
 - **External package load failures silenced**: one package failing doesn't prevent others from loading
-- **Schema history nuance**: `db:status` / `db:history` should distinguish active live drift from superseded failed additive migrations instead of treating all failed rows as current blockers
+- **Schema history nuance**: `db:status` / `db:history` should distinguish active live drift from superseded failed generated schema repairs instead of treating all failed rows as current blockers

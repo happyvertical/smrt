@@ -45,6 +45,26 @@ function applyDecoratorSqlTypeOverrides(
   return columns;
 }
 
+function mergeRuntimeFieldColumns(
+  className: string,
+  schemaColumns: Record<string, ColumnDefinition> | undefined,
+  fields: Map<string, FieldDefinition>,
+): Record<string, ColumnDefinition> {
+  const columnsToUse = { ...(schemaColumns || {}) };
+
+  if (fields.size > 0) {
+    const fieldColumns = fieldsToColumns(fields);
+    for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
+      if (!columnsToUse[columnName]) {
+        columnsToUse[columnName] = columnDef;
+      }
+    }
+  }
+
+  applyDecoratorSqlTypeOverrides(className, columnsToUse);
+  return columnsToUse;
+}
+
 /**
  * Get cached schema definition for a registered class
  *
@@ -194,17 +214,16 @@ export function getAllSchemas(): Record<
         }
       }
 
-      // Start with manifest columns, then merge in any field-derived columns that
-      // were added or repaired at runtime (for example tenantScoped injections
-      // or explicit sqlType overrides from decorator config).
-      const columnsToUse = { ...(registered.schema.columns || {}) };
-      if (registered.fields.size > 0) {
-        const fieldColumns = fieldsToColumns(registered.fields);
-        for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
-          columnsToUse[columnName] = columnDef;
-        }
-      }
-      applyDecoratorSqlTypeOverrides(simpleName, columnsToUse);
+      // Start with manifest columns, then backfill any columns that only exist
+      // in runtime field metadata (for example tenantScoped injections). We do
+      // not replace existing manifest column metadata here, because the manifest
+      // is authoritative for foreign keys, defaults, and other schema details.
+      // Explicit decorator sqlType overrides are patched onto the merged column.
+      const columnsToUse = mergeRuntimeFieldColumns(
+        simpleName,
+        registered.schema.columns,
+        registered.fields,
+      );
 
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
@@ -385,16 +404,14 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
         }
       }
 
-      // Get columns from schema, then repair/override them from runtime field
-      // metadata when decorators carry more precise storage intent.
-      const columnsToUse = { ...(registered.schema.columns || {}) };
-      if (registered.fields.size > 0) {
-        const fieldColumns = fieldsToColumns(registered.fields);
-        for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
-          columnsToUse[columnName] = columnDef;
-        }
-      }
-      applyDecoratorSqlTypeOverrides(simpleName, columnsToUse);
+      // Manifest schema remains authoritative for existing columns. Runtime
+      // field metadata can backfill missing columns and apply explicit sqlType
+      // overrides without erasing richer manifest metadata.
+      const columnsToUse = mergeRuntimeFieldColumns(
+        simpleName,
+        registered.schema.columns,
+        registered.fields,
+      );
 
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
@@ -670,8 +687,16 @@ export function fieldsToColumns(
       column.foreignKey = {
         table: classnameToTablename(table),
         column: columnName,
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
+        onDelete:
+          ((
+            fieldDef._meta as { onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' }
+          )?.onDelete as ColumnDefinition['foreignKey']['onDelete']) ||
+          'CASCADE',
+        onUpdate:
+          ((
+            fieldDef._meta as { onUpdate?: 'CASCADE' | 'SET NULL' | 'RESTRICT' }
+          )?.onUpdate as ColumnDefinition['foreignKey']['onUpdate']) ||
+          'CASCADE',
       };
     }
 

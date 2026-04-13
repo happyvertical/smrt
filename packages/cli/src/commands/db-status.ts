@@ -13,7 +13,7 @@ import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   classifyTypeUpgradeSql,
-  getUnresolvedAdditiveMigrationNames,
+  getUnresolvedGeneratedMigrationNames,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
 import { assessFailedMigrations } from './migration-failure-analysis.js';
@@ -241,7 +241,7 @@ export const dbStatusCommand: CLICommand = {
         status.drift = summarizeSchemaDiff(diff);
         status.failedMigrations = summarizeFailedMigrations(
           failed,
-          getUnresolvedAdditiveMigrationNames(diff.changes),
+          getUnresolvedGeneratedMigrationNames(diff.changes),
         );
       }
 
@@ -350,7 +350,7 @@ export const dbStatusCommand: CLICommand = {
         options.verbose,
       );
       printFailedMigrationGroup(
-        'ℹ️  Historical failed additive migrations already superseded by the live schema:',
+        'ℹ️  Historical failed generated schema repairs already superseded by the live schema:',
         status.failedMigrations.superseded,
         options.verbose,
       );
