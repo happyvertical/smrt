@@ -7,11 +7,11 @@
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "types": ["node", "vitest/globals"],
     "paths": {
-      "@happyvertical/smrt-agents": ["packages/agents"],
-      "@happyvertical/smrt-config": ["packages/config"],
-      "@happyvertical/smrt-core": ["packages/core"],
-      "@happyvertical/smrt-playground": ["packages/smrt-playground"],
-      "@happyvertical/smrt-types": ["packages/types"]
+      "@happyvertical/smrt-agents": ["packages/agents/src/index.ts"],
+      "@happyvertical/smrt-config": ["packages/config/src/index.ts"],
+      "@happyvertical/smrt-core": ["packages/core/src/index.ts"],
+      "@happyvertical/smrt-playground": ["packages/smrt-playground/src/index.ts"],
+      "@happyvertical/smrt-types": ["packages/types/src/index.ts"]
     }
   },
   "include": ["src/**/*"],

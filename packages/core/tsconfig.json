@@ -9,9 +9,9 @@
     "emitDecoratorMetadata": true,
     "types": ["node"],
     "paths": {
-      "@happyvertical/smrt-config": ["packages/config"],
-      "@happyvertical/smrt-scanner": ["packages/scanner"],
-      "@happyvertical/smrt-types": ["packages/types"]
+      "@happyvertical/smrt-config": ["packages/config/src/index.ts"],
+      "@happyvertical/smrt-scanner": ["packages/scanner/src/index.ts"],
+      "@happyvertical/smrt-types": ["packages/types/src/index.ts"]
     }
   },
   "include": ["src/**/*"],
