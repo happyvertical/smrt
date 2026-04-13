@@ -52,6 +52,34 @@ function toSafeTableName(tableName: string): string {
   return assertSafeIdentifier(tableName, 'table name');
 }
 
+type ExportProjectionCapabilities = {
+  includeMetaType: boolean;
+  includeMetaData: boolean;
+  schemaColumns: Set<string>;
+};
+
+async function getProjectionCapabilities(
+  typeName: string,
+): Promise<ExportProjectionCapabilities> {
+  const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+
+  const tableStrategy = ObjectRegistry.getTableStrategy(typeName);
+  const schemaOwner =
+    tableStrategy === 'sti'
+      ? ObjectRegistry.getSTIBase(typeName) || typeName
+      : typeName;
+  const schema = ObjectRegistry.getSchema(schemaOwner) as
+    | { columns?: Record<string, unknown> }
+    | undefined;
+  const schemaColumns = new Set(Object.keys(schema?.columns ?? {}));
+
+  return {
+    includeMetaType: tableStrategy === 'sti' || schemaColumns.has('_meta_type'),
+    includeMetaData: schemaColumns.has('_meta_data'),
+    schemaColumns,
+  };
+}
+
 /**
  * Get fields that should be exported for a given type
  */
@@ -61,6 +89,7 @@ async function getExportableFields(
   fieldExportDefault: boolean,
 ): Promise<string[]> {
   const { ObjectRegistry } = await import('@happyvertical/smrt-core');
+  const projection = await getProjectionCapabilities(typeName);
 
   // Export needs inherited STI/CTI fields as well as direct fields.
   const fields = await ObjectRegistry.getAllFields(typeName);
@@ -72,7 +101,12 @@ async function getExportableFields(
   // If include whitelist is specified, use only those fields
   if (fileConfig.include && fileConfig.include.length > 0) {
     return fileConfig.include.filter(
-      (f) => fields.has(f) || f === '_meta_type',
+      (f) =>
+        fields.has(f) ||
+        (f === '_meta_type' && projection.includeMetaType) ||
+        (f === '_meta_data' && projection.includeMetaData) ||
+        (f === 'id' && projection.schemaColumns.has('id')) ||
+        (f === 'slug' && projection.schemaColumns.has('slug')),
     );
   }
 
@@ -108,12 +142,17 @@ async function getExportableFields(
   const excluded = new Set(fileConfig.exclude || []);
   const result = exportableFields.filter((f) => !excluded.has(f));
 
-  // Always include _meta_type for STI discrimination
-  if (!result.includes('_meta_type')) {
+  if (projection.includeMetaType && !result.includes('_meta_type')) {
     result.push('_meta_type');
   }
 
-  for (const standardField of ['id', 'slug', '_meta_data']) {
+  const standardFields = [
+    projection.schemaColumns.has('id') ? 'id' : null,
+    projection.schemaColumns.has('slug') ? 'slug' : null,
+    projection.includeMetaData ? '_meta_data' : null,
+  ].filter((field): field is string => field !== null);
+
+  for (const standardField of standardFields) {
     if (!result.includes(standardField)) {
       result.push(standardField);
     }
@@ -174,6 +213,15 @@ export async function queryWithProjection(
   orderBy?: string,
   limit?: number,
 ): Promise<any[]> {
+  const projection =
+    types.length > 0
+      ? await getProjectionCapabilities(types[0])
+      : {
+          includeMetaType: false,
+          includeMetaData: false,
+          schemaColumns: new Set<string>(),
+        };
+
   // Build SELECT clause with only exportable fields
   const fieldColumns = fields.map((field) => ({
     field,
@@ -186,7 +234,7 @@ export async function queryWithProjection(
   const whereValues: any[] = [];
 
   // Filter by _meta_type if specified types
-  if (types.length > 0) {
+  if (types.length > 0 && projection.includeMetaType) {
     // Map type names to qualified names or just use as-is
     const typePatterns = types.map((t) => `%:${t}`);
     if (typePatterns.length === 1) {
@@ -364,11 +412,6 @@ export async function getCommonFields(
   const commonFields = [...fieldSets[0]].filter((field) =>
     fieldSets.every((set) => set.has(field)),
   );
-
-  // Add _meta_type if not present (needed for STI discrimination)
-  if (!commonFields.includes('_meta_type')) {
-    commonFields.push('_meta_type');
-  }
 
   return commonFields;
 }
