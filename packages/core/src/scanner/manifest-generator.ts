@@ -9,7 +9,7 @@ import {
 } from '../manifest/manifest-loader.js';
 import { generateToolManifest } from '../tools/tool-generator';
 import { createQualifiedName } from '../utils/qualified-names.js';
-import { classnameToTablename } from '../utils.js';
+import { classnameToTablename, toSnakeCase } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
@@ -337,13 +337,13 @@ export class ManifestGenerator {
    */
   generateSchemas(manifest: SmartObjectManifest): void {
     // Import SchemaGenerator synchronously (using createRequire for ESM compatibility)
-    // Try .js first (built output), fall back to .ts (source for tests)
+    // In Vitest/source runs, prefer the TypeScript source so tests exercise the
+    // current branch instead of stale built artifacts.
     let SchemaGenerator: any;
     try {
-      SchemaGenerator = require('../schema/generator.js').SchemaGenerator;
-    } catch {
-      // Fallback for when running tests directly on source files
       SchemaGenerator = require('../schema/generator.ts').SchemaGenerator;
+    } catch {
+      SchemaGenerator = require('../schema/generator.js').SchemaGenerator;
     }
     const generator = new SchemaGenerator();
 
@@ -383,6 +383,7 @@ export class ManifestGenerator {
           obj.fields,
           aggregatedManifest,
         );
+        this.applySqlTypeOverrides(obj);
       } else if (this.isSTIChildClass(obj, manifest)) {
         // This is an STI child class - check if base is LOCAL or EXTERNAL
         const stiBase = this.findSTIBaseInfo(obj, manifest);
@@ -410,6 +411,7 @@ export class ManifestGenerator {
             obj.fields,
             aggregatedManifest,
           );
+          this.applySqlTypeOverrides(obj);
         }
       } else {
         // CTI class - generate individual table schema
@@ -423,7 +425,31 @@ export class ManifestGenerator {
           obj.fields,
           obj.decoratorConfig,
         );
+        this.applySqlTypeOverrides(obj);
       }
+    }
+  }
+
+  private applySqlTypeOverrides(obj: SmartObjectDefinition): void {
+    if (!obj.schema?.columns) {
+      return;
+    }
+
+    for (const [fieldName, field] of Object.entries(obj.fields || {})) {
+      const sqlType = field?._meta?.sqlType;
+      if (!sqlType) {
+        continue;
+      }
+
+      const columnName = toSnakeCase(fieldName);
+      if (!obj.schema.columns[columnName]) {
+        continue;
+      }
+
+      obj.schema.columns[columnName] = {
+        ...obj.schema.columns[columnName],
+        type: sqlType,
+      };
     }
   }
 

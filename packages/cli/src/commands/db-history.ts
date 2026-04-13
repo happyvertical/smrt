@@ -14,6 +14,7 @@ import {
   getFailedMigrationRecommendation,
   getUnresolvedAdditiveMigrationNames,
 } from './db-migrate-actions.js';
+import { assessFailedMigrations } from './migration-failure-analysis.js';
 
 type AnnotatedHistoryEntry = {
   id: string;
@@ -135,6 +136,10 @@ export const dbHistoryCommand: CLICommand = {
       // 6. Get history
       const history = await tracker.getHistory(queryOptions);
       let unresolvedSyntheticMigrationNames: Set<string> | null = null;
+      let failedAssessmentsByName = new Map<
+        string,
+        ReturnType<typeof assessFailedMigrations>[number]
+      >();
 
       if (
         history.some((migration) => migration.status === 'failed') &&
@@ -147,8 +152,20 @@ export const dbHistoryCommand: CLICommand = {
           const diff = await comparer.compare(manifestSchemas);
           unresolvedSyntheticMigrationNames =
             getUnresolvedAdditiveMigrationNames(diff.changes);
+          failedAssessmentsByName = new Map(
+            assessFailedMigrations(
+              history.filter((migration) => migration.status === 'failed'),
+              diff,
+            ).map((item) => [item.name, item]),
+          );
         } catch {
           unresolvedSyntheticMigrationNames = null;
+          failedAssessmentsByName = new Map(
+            assessFailedMigrations(
+              history.filter((migration) => migration.status === 'failed'),
+              null,
+            ).map((item) => [item.name, item]),
+          );
         }
       }
 
@@ -196,6 +213,16 @@ export const dbHistoryCommand: CLICommand = {
           sourceFile: m.source_file,
           classification: m.classification,
           recommendation: m.recommendation,
+          resolution:
+            m.status === 'failed'
+              ? (failedAssessmentsByName.get(m.name)?.resolution ??
+                'manual_review')
+              : null,
+          resolutionReason:
+            m.status === 'failed'
+              ? (failedAssessmentsByName.get(m.name)?.reason ??
+                'Review the failed migration directly.')
+              : null,
         }));
         console.log(JSON.stringify(jsonOutput, null, 2));
         return;
@@ -215,8 +242,13 @@ export const dbHistoryCommand: CLICommand = {
       for (const m of annotatedHistory) {
         const statusIcon = getStatusIcon(m.status);
         const timeStr = formatDateTime(m.applied_at);
+        const failedAssessment =
+          m.status === 'failed' ? failedAssessmentsByName.get(m.name) : null;
+        const resolutionSuffix = failedAssessment
+          ? ` [${failedAssessment.resolution.replace('_', ' ')}]`
+          : '';
 
-        console.log(`${statusIcon} ${m.name}`);
+        console.log(`${statusIcon} ${m.name}${resolutionSuffix}`);
         console.log(`   Applied: ${timeStr}`);
 
         if (options.verbose) {
@@ -244,6 +276,9 @@ export const dbHistoryCommand: CLICommand = {
             console.log(`   Failed state: ${m.classification}`);
             console.log(`   Recommendation: ${m.recommendation}`);
           }
+          if (failedAssessment) {
+            console.log(`   Resolution: ${failedAssessment.reason}`);
+          }
           if (m.rolled_back_at) {
             console.log(`   Rolled back: ${formatDateTime(m.rolled_back_at)}`);
           }
@@ -261,6 +296,9 @@ export const dbHistoryCommand: CLICommand = {
           }
           if (m.classification) {
             parts.push(m.classification);
+          }
+          if (failedAssessment) {
+            parts.push(failedAssessment.resolution.replace('_', ' '));
           }
           if (parts.length > 0) {
             console.log(`   ${parts.join(' | ')}`);
@@ -289,11 +327,31 @@ export const dbHistoryCommand: CLICommand = {
       const rolledBack = annotatedHistory.filter(
         (m) => m.status === 'rolled_back',
       ).length;
+      const actionRequired = history.filter(
+        (m) =>
+          m.status === 'failed' &&
+          failedAssessmentsByName.get(m.name)?.resolution === 'action_required',
+      ).length;
+      const superseded = history.filter(
+        (m) =>
+          m.status === 'failed' &&
+          failedAssessmentsByName.get(m.name)?.resolution === 'superseded',
+      ).length;
+      const manualReview = history.filter(
+        (m) =>
+          m.status === 'failed' &&
+          failedAssessmentsByName.get(m.name)?.resolution === 'manual_review',
+      ).length;
 
       console.log('━'.repeat(50));
       console.log(
         `Summary: ${completed} completed, ${failed} failed (${failedUnresolved} unresolved, ${failedSuperseded} superseded, ${failedOther} other), ${rolledBack} rolled back`,
       );
+      if (failed > 0) {
+        console.log(
+          `         ${actionRequired} failed still require action, ${superseded} are superseded history, ${manualReview} need manual review`,
+        );
+      }
       console.log();
 
       console.log('💡 Commands:');

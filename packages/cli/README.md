@@ -24,11 +24,11 @@ pnpm add -D @happyvertical/smrt-cli
 
 | Command | Description |
 |---------|------------|
-| `smrt db:status` | Show pending schema changes |
+| `smrt db:status` | Show pending schema changes and classify failed migration history |
 | `smrt db:migrate` | Apply pending migrations |
 | `smrt db:diff --generate` | Generate migration from schema changes |
 | `smrt db:rollback` | Rollback last migration |
-| `smrt db:history` | Show migration history |
+| `smrt db:history` | Show migration history with active-vs-superseded failure classification |
 
 ### Code Generation
 

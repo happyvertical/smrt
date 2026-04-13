@@ -8,21 +8,37 @@
  */
 
 import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
+import type { SchemaDiff } from '@happyvertical/smrt-core/migrations';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   classifyTypeUpgradeSql,
-  type FailedMigrationBuckets,
-  type FailedMigrationSummaryItem,
   getUnresolvedAdditiveMigrationNames,
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
+import { assessFailedMigrations } from './migration-failure-analysis.js';
 
 type StatusDrift = {
   name: string;
   type: string;
   recommendation: string;
 };
+
+type FailedMigrationSummary = {
+  total: number;
+  actionRequired: number;
+  superseded: number;
+  manualReview: number;
+  details: Array<{
+    name: string;
+    resolution: 'action_required' | 'superseded' | 'manual_review';
+    kind: 'add_column' | 'add_index' | 'type_upgrade' | 'other';
+    reason: string;
+    errorMessage: string | null;
+  }>;
+};
+
+type FailedMigrationBuckets = ReturnType<typeof summarizeFailedMigrations>;
 
 export function summarizeSchemaDiff(diff: {
   added_tables: Array<{ tableName: string }>;
@@ -170,6 +186,7 @@ export const dbStatusCommand: CLICommand = {
 
       // 5. Get applied migrations
       const applied = await tracker.getAppliedMigrations();
+      const failed = await tracker.getHistory({ status: 'failed' });
 
       // 6. Auto-discover manifests to get current definitions
       const { discovered, totalObjects } = await autoDiscoverAndLoad();
@@ -187,6 +204,13 @@ export const dbStatusCommand: CLICommand = {
         },
         migrations: {
           applied: applied.length,
+          failed: {
+            total: failed.length,
+            actionRequired: 0,
+            superseded: 0,
+            manualReview: 0,
+            details: [],
+          } as FailedMigrationSummary,
           details: applied.map((m) => ({
             name: m.name,
             version: m.version,
@@ -198,15 +222,14 @@ export const dbStatusCommand: CLICommand = {
           })),
         },
         drift: [] as StatusDrift[],
-        failedMigrations: {
-          unresolved: [],
-          superseded: [],
-          other: [],
-        } as FailedMigrationBuckets,
+        failedMigrations: summarizeFailedMigrations(failed, null),
       };
-
-      const failedHistory = await tracker.getHistory({ status: 'failed' });
-      status.failedMigrations = summarizeFailedMigrations(failedHistory, null);
+      let diff: SchemaDiff = {
+        added_tables: [],
+        dropped_tables: [],
+        changes: [],
+        has_changes: false,
+      };
 
       // 8. Compare the current manifest schema against the live database.
       // This keeps db:status useful for shared Postgres databases where the
@@ -214,13 +237,31 @@ export const dbStatusCommand: CLICommand = {
       if (typeof db.getTableSchema === 'function') {
         const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
         const comparer = new SchemaComparer(db);
-        const diff = await comparer.compare(manifestSchemas);
+        diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
         status.failedMigrations = summarizeFailedMigrations(
-          failedHistory,
+          failed,
           getUnresolvedAdditiveMigrationNames(diff.changes),
         );
       }
+
+      const failedAssessments = assessFailedMigrations(
+        failed,
+        typeof db.getTableSchema === 'function' ? diff : null,
+      );
+      status.migrations.failed = {
+        total: failedAssessments.length,
+        actionRequired: failedAssessments.filter(
+          (item) => item.resolution === 'action_required',
+        ).length,
+        superseded: failedAssessments.filter(
+          (item) => item.resolution === 'superseded',
+        ).length,
+        manualReview: failedAssessments.filter(
+          (item) => item.resolution === 'manual_review',
+        ).length,
+        details: failedAssessments,
+      };
 
       // 9. Output results
       if (options.json) {
@@ -314,6 +355,22 @@ export const dbStatusCommand: CLICommand = {
         options.verbose,
       );
 
+      if (failedAssessments.length > 0) {
+        console.log(
+          `🧾 Failed migration history: ${status.migrations.failed.actionRequired} action required, ${status.migrations.failed.superseded} superseded, ${status.migrations.failed.manualReview} manual review`,
+        );
+        if (options.verbose) {
+          for (const item of failedAssessments) {
+            console.log(`   • ${item.name}: ${item.resolution}`);
+            console.log(`     ${item.reason}`);
+            if (item.errorMessage) {
+              console.log(`     Last error: ${item.errorMessage}`);
+            }
+          }
+        }
+        console.log();
+      }
+
       console.log('💡 Commands:');
       console.log('   smrt db:migrate   - Apply pending changes');
       console.log('   smrt db:history   - View migration history');
@@ -353,7 +410,11 @@ function getTimeAgo(date: Date): string {
 
 function printFailedMigrationGroup(
   title: string,
-  migrations: FailedMigrationSummaryItem[],
+  migrations: Array<{
+    name: string;
+    recommendation: string;
+    errorMessage: string | null;
+  }>,
   verbose: boolean,
 ): void {
   if (migrations.length === 0) {

@@ -216,6 +216,110 @@ describe('db:status', () => {
     });
   });
 
+  it('classifies failed additive migrations as superseded history when live drift is gone', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+    getHistoryMock.mockResolvedValue([
+      {
+        id: 'failed-1',
+        name: 'add_column_contents_script_text',
+        version: '1.0.0',
+        checksum: 'abc',
+        applied_checksum: null,
+        applied_at: new Date('2026-04-12T10:00:00Z'),
+        execution_time_ms: 1,
+        package_name: null,
+        source_file: null,
+        status: 'failed',
+        error_message: 'must be owner of table contents',
+        attempts: 1,
+        is_reversible: false,
+        rolled_back_at: null,
+        applied_by: null,
+        batch: 1,
+      },
+    ]);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+    expect(parsed.migrations.failed).toEqual({
+      total: 1,
+      actionRequired: 0,
+      superseded: 1,
+      manualReview: 0,
+      details: [
+        {
+          name: 'add_column_contents_script_text',
+          resolution: 'superseded',
+          kind: 'add_column',
+          reason:
+            'Current manifests no longer require this generated schema change, so the failed row is retained history rather than active drift.',
+          errorMessage: 'must be owner of table contents',
+        },
+      ],
+    });
+  });
+
+  it('keeps failed migrations actionable when the live diff still requires them', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'type_upgrade',
+          table: '_smrt_agent_schedules',
+          name: 'agent_config',
+          sql: 'ALTER TABLE _smrt_agent_schedules ALTER COLUMN agent_config TYPE JSONB USING agent_config::jsonb',
+        },
+      ],
+    });
+    getHistoryMock.mockResolvedValue([
+      {
+        id: 'failed-2',
+        name: 'type_upgrade__smrt_agent_schedules_agent_config',
+        version: '1.0.0',
+        checksum: 'def',
+        applied_checksum: null,
+        applied_at: new Date('2026-04-12T10:00:00Z'),
+        execution_time_ms: 1,
+        package_name: null,
+        source_file: null,
+        status: 'failed',
+        error_message:
+          'default for column "agent_config" cannot be cast automatically to type jsonb',
+        attempts: 1,
+        is_reversible: false,
+        rolled_back_at: null,
+        applied_by: null,
+        batch: 1,
+      },
+    ]);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+    expect(parsed.migrations.failed.actionRequired).toBe(1);
+    expect(parsed.migrations.failed.details[0]).toMatchObject({
+      name: 'type_upgrade__smrt_agent_schedules_agent_config',
+      resolution: 'action_required',
+      kind: 'type_upgrade',
+    });
+  });
+
   it('omits no-op type upgrades from drift output', () => {
     expect(
       summarizeSchemaDiff({

@@ -16,6 +16,35 @@ import { classnameToTablename, toSnakeCase } from '../utils';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
 
+function applyDecoratorSqlTypeOverrides(
+  className: string,
+  columns: Record<string, ColumnDefinition>,
+): Record<string, ColumnDefinition> {
+  const decorators = ObjectRegistry.getFieldDecorators(className);
+  if (!decorators.size) {
+    return columns;
+  }
+
+  for (const [fieldName, options] of decorators) {
+    if (!options?.sqlType) {
+      continue;
+    }
+
+    const columnName = toSnakeCase(fieldName);
+    const existing = columns[columnName];
+    if (!existing) {
+      continue;
+    }
+
+    columns[columnName] = {
+      ...existing,
+      type: options.sqlType,
+    };
+  }
+
+  return columns;
+}
+
 /**
  * Get cached schema definition for a registered class
  *
@@ -167,16 +196,15 @@ export function getAllSchemas(): Record<
 
       // Start with manifest columns, then merge in any field-derived columns that
       // were added or repaired at runtime (for example tenantScoped injections
-      // from external decorator config).
+      // or explicit sqlType overrides from decorator config).
       const columnsToUse = { ...(registered.schema.columns || {}) };
       if (registered.fields.size > 0) {
         const fieldColumns = fieldsToColumns(registered.fields);
         for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
-          if (!columnsToUse[columnName]) {
-            columnsToUse[columnName] = columnDef;
-          }
+          columnsToUse[columnName] = columnDef;
         }
       }
+      applyDecoratorSqlTypeOverrides(simpleName, columnsToUse);
 
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
@@ -357,16 +385,16 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
         }
       }
 
-      // Get columns from schema, or generate from fields if empty
+      // Get columns from schema, then repair/override them from runtime field
+      // metadata when decorators carry more precise storage intent.
       const columnsToUse = { ...(registered.schema.columns || {}) };
       if (registered.fields.size > 0) {
         const fieldColumns = fieldsToColumns(registered.fields);
         for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
-          if (!columnsToUse[columnName]) {
-            columnsToUse[columnName] = columnDef;
-          }
+          columnsToUse[columnName] = columnDef;
         }
       }
+      applyDecoratorSqlTypeOverrides(simpleName, columnsToUse);
 
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
@@ -622,7 +650,7 @@ export function fieldsToColumns(
     }
 
     // Map field type to SQL type
-    const sqlType = mapFieldTypeToSQL(fieldDef.type);
+    const sqlType = fieldDef._meta?.sqlType || mapFieldTypeToSQL(fieldDef.type);
 
     const column: ColumnDefinition = {
       type: sqlType,

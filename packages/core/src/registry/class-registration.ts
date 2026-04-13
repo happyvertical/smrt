@@ -18,7 +18,7 @@ import {
 import { SmrtObject } from '../object';
 import type { QualifiedClassName, SmrtVisibility } from '../scanner/types.js';
 import type { ColumnDefinition, SchemaDefinition } from '../schema/types.js';
-import { tableNameFromClass } from '../utils';
+import { tableNameFromClass, toSnakeCase } from '../utils';
 import {
   createQualifiedName,
   isQualifiedName,
@@ -732,6 +732,25 @@ export function register(
       version: '',
       packageName: undefined,
     };
+  }
+
+  if (schema.columns && decorators && decorators.size > 0) {
+    for (const [fieldName, decoratorOptions] of decorators) {
+      if (!decoratorOptions?.sqlType) {
+        continue;
+      }
+
+      const columnName = toSnakeCase(fieldName);
+      const existingColumn = schema.columns[columnName];
+      if (!existingColumn) {
+        continue;
+      }
+
+      schema.columns[columnName] = {
+        ...existingColumn,
+        type: decoratorOptions.sqlType,
+      };
+    }
   }
 
   // Use pre-computed validation rules from manifest if available (Issue #782)

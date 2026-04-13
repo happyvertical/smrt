@@ -6,7 +6,7 @@ Developer CLI with lazy-loaded commands, manifest discovery, and class introspec
 
 ```
 smrt introspect              # Discover SMRT objects in project
-smrt db:status               # Pending schema changes
+smrt db:status               # Pending schema changes + failed migration classification
 smrt db:migrate              # Apply migrations
 smrt db:diff --generate      # Generate migration from changes
 smrt db:rollback             # Rollback migrations
@@ -39,3 +39,4 @@ smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
 
 - **Test mode detection**: checks `NODE_ENV=test`, `VITEST=true`, `global.it`/`describe` — could conflict with other test runners
 - **External package load failures silenced**: one package failing doesn't prevent others from loading
+- **Schema history nuance**: `db:status` / `db:history` should distinguish active live drift from superseded failed additive migrations instead of treating all failed rows as current blockers
