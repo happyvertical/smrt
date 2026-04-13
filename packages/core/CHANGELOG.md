@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.21.46
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - Fix manifest upgrades and failed migration drift reporting
+  - @happyvertical/smrt-scanner@0.21.46
+  - @happyvertical/smrt-config@0.21.46
+  - @happyvertical/smrt-types@0.21.46
+
 ## 0.21.45
 
 ### Patch Changes
