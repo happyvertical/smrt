@@ -60,7 +60,7 @@ export class AgentSchedule extends SmrtObject {
   agentId: string | null = null;
 
   /** Agent configuration to pass when running */
-  @field({ type: 'json' })
+  @field({ type: 'json', sqlType: 'TEXT' })
   agentConfig: Record<string, unknown> = {};
 
   /** Cron expression (e.g., '0 2 * * *' for 2 AM daily) */
@@ -124,7 +124,7 @@ export class AgentSchedule extends SmrtObject {
   method: string = 'run';
 
   /** Arguments to pass to the method */
-  @field({ type: 'json' })
+  @field({ type: 'json', sqlType: 'TEXT' })
   methodArgs: Record<string, unknown> = {};
 
   /**

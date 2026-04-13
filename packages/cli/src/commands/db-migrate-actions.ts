@@ -144,7 +144,8 @@ export function classifyFailedMigration(
 ): FailedMigrationClassification {
   if (
     !migrationName.startsWith('add_column_') &&
-    !migrationName.startsWith('add_index_')
+    !migrationName.startsWith('add_index_') &&
+    !migrationName.startsWith('type_upgrade_')
   ) {
     return 'other';
   }
@@ -154,13 +155,24 @@ export function classifyFailedMigration(
     : 'superseded';
 }
 
-export function getUnresolvedAdditiveMigrationNames(
+export function getUnresolvedGeneratedMigrationNames(
   changes: SchemaChangeLike[],
 ): Set<string> {
   const names = new Set<string>();
 
   for (const change of changes) {
-    if (change.type !== 'add_column' && change.type !== 'add_index') {
+    if (
+      change.type !== 'add_column' &&
+      change.type !== 'add_index' &&
+      change.type !== 'type_upgrade'
+    ) {
+      continue;
+    }
+
+    if (
+      change.type === 'type_upgrade' &&
+      classifyTypeUpgradeSql(change.sql) === 'noop'
+    ) {
       continue;
     }
 
@@ -173,18 +185,21 @@ export function getUnresolvedAdditiveMigrationNames(
   return names;
 }
 
+export const getUnresolvedAdditiveMigrationNames =
+  getUnresolvedGeneratedMigrationNames;
+
 export function getFailedMigrationRecommendation(
   classification: FailedMigrationClassification,
   liveSchemaCompared: boolean = true,
 ): string {
   switch (classification) {
     case 'unresolved':
-      return 'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed additive migration no longer appears as unresolved.';
+      return 'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.';
     case 'superseded':
-      return 'No current live-schema drift maps to this failed additive migration. Keep the row for audit history, but it no longer blocks the current schema.';
+      return 'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.';
     default:
       return liveSchemaCompared
-        ? 'Inspect this failed migration directly. It is not a superseded additive repair and may still need manual attention.'
+        ? 'Inspect this failed migration directly. It is not a superseded generated schema repair and may still need manual attention.'
         : 'Inspect this failed migration directly. Live schema comparison was unavailable, so SMRT could not determine whether it has been superseded.';
   }
 }

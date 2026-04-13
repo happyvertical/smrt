@@ -6,6 +6,7 @@
  */
 
 import { ObjectRegistry } from '../registry.js';
+import type { SQLDataType } from '../schema/types.js';
 import {
   type CompatiblePropertyDecorator,
   type CompatiblePropertyDecoratorContext,
@@ -58,6 +59,8 @@ export type FieldType =
 export interface FieldOptions {
   /** Explicit field type for runtime-only registration paths */
   type?: FieldType;
+  /** Explicit SQL storage type when runtime and persistence contracts differ */
+  sqlType?: SQLDataType;
   /** Whether the field is required */
   required?: boolean;
   /** Default value for the field */

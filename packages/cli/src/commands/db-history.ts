@@ -9,11 +9,13 @@ import type { MigrationStatus } from '@happyvertical/smrt-core/migrations';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
-  classifyFailedMigration,
   type FailedMigrationClassification,
   getFailedMigrationRecommendation,
-  getUnresolvedAdditiveMigrationNames,
 } from './db-migrate-actions.js';
+import {
+  assessFailedMigrations,
+  type FailedMigrationAssessment,
+} from './migration-failure-analysis.js';
 
 type AnnotatedHistoryEntry = {
   id: string;
@@ -35,6 +37,19 @@ type AnnotatedHistoryEntry = {
   classification: FailedMigrationClassification | null;
   recommendation: string | null;
 };
+
+function getLegacyFailedMigrationClassification(
+  assessment: FailedMigrationAssessment,
+): FailedMigrationClassification {
+  switch (assessment.resolution) {
+    case 'action_required':
+      return 'unresolved';
+    case 'superseded':
+      return 'superseded';
+    default:
+      return 'other';
+  }
+}
 
 export const dbHistoryCommand: CLICommand = {
   name: 'db:history',
@@ -134,23 +149,28 @@ export const dbHistoryCommand: CLICommand = {
 
       // 6. Get history
       const history = await tracker.getHistory(queryOptions);
-      let unresolvedSyntheticMigrationNames: Set<string> | null = null;
+      const failedHistory = history.filter(
+        (migration) => migration.status === 'failed',
+      );
+      let liveSchemaCompared = false;
+      let failedAssessments = assessFailedMigrations(failedHistory, null);
 
-      if (
-        history.some((migration) => migration.status === 'failed') &&
-        typeof db.getTableSchema === 'function'
-      ) {
+      if (failedHistory.length > 0 && typeof db.getTableSchema === 'function') {
         try {
           await autoDiscoverAndLoad();
           const manifestSchemas = ObjectRegistry.getAllSchemasAsDefinitions();
           const comparer = new SchemaComparer(db);
           const diff = await comparer.compare(manifestSchemas);
-          unresolvedSyntheticMigrationNames =
-            getUnresolvedAdditiveMigrationNames(diff.changes);
+          liveSchemaCompared = true;
+          failedAssessments = assessFailedMigrations(failedHistory, diff);
         } catch {
-          unresolvedSyntheticMigrationNames = null;
+          liveSchemaCompared = false;
+          failedAssessments = assessFailedMigrations(failedHistory, null);
         }
       }
+      const failedAssessmentsByName = new Map(
+        failedAssessments.map((item) => [item.name, item]),
+      );
 
       const annotatedHistory: AnnotatedHistoryEntry[] = history.map((m) => {
         if (m.status !== 'failed') {
@@ -161,8 +181,9 @@ export const dbHistoryCommand: CLICommand = {
           };
         }
 
-        const classification = unresolvedSyntheticMigrationNames
-          ? classifyFailedMigration(m.name, unresolvedSyntheticMigrationNames)
+        const failedAssessment = failedAssessmentsByName.get(m.name);
+        const classification = failedAssessment
+          ? getLegacyFailedMigrationClassification(failedAssessment)
           : 'other';
 
         return {
@@ -170,7 +191,7 @@ export const dbHistoryCommand: CLICommand = {
           classification,
           recommendation: getFailedMigrationRecommendation(
             classification,
-            unresolvedSyntheticMigrationNames !== null,
+            liveSchemaCompared,
           ),
         };
       });
@@ -196,6 +217,16 @@ export const dbHistoryCommand: CLICommand = {
           sourceFile: m.source_file,
           classification: m.classification,
           recommendation: m.recommendation,
+          resolution:
+            m.status === 'failed'
+              ? (failedAssessmentsByName.get(m.name)?.resolution ??
+                'manual_review')
+              : null,
+          resolutionReason:
+            m.status === 'failed'
+              ? (failedAssessmentsByName.get(m.name)?.reason ??
+                'Review the failed migration directly.')
+              : null,
         }));
         console.log(JSON.stringify(jsonOutput, null, 2));
         return;
@@ -215,8 +246,13 @@ export const dbHistoryCommand: CLICommand = {
       for (const m of annotatedHistory) {
         const statusIcon = getStatusIcon(m.status);
         const timeStr = formatDateTime(m.applied_at);
+        const failedAssessment =
+          m.status === 'failed' ? failedAssessmentsByName.get(m.name) : null;
+        const resolutionSuffix = failedAssessment
+          ? ` [${failedAssessment.resolution.replace('_', ' ')}]`
+          : '';
 
-        console.log(`${statusIcon} ${m.name}`);
+        console.log(`${statusIcon} ${m.name}${resolutionSuffix}`);
         console.log(`   Applied: ${timeStr}`);
 
         if (options.verbose) {
@@ -244,6 +280,9 @@ export const dbHistoryCommand: CLICommand = {
             console.log(`   Failed state: ${m.classification}`);
             console.log(`   Recommendation: ${m.recommendation}`);
           }
+          if (failedAssessment) {
+            console.log(`   Resolution: ${failedAssessment.reason}`);
+          }
           if (m.rolled_back_at) {
             console.log(`   Rolled back: ${formatDateTime(m.rolled_back_at)}`);
           }
@@ -261,6 +300,9 @@ export const dbHistoryCommand: CLICommand = {
           }
           if (m.classification) {
             parts.push(m.classification);
+          }
+          if (failedAssessment) {
+            parts.push(failedAssessment.resolution.replace('_', ' '));
           }
           if (parts.length > 0) {
             console.log(`   ${parts.join(' | ')}`);
@@ -289,11 +331,24 @@ export const dbHistoryCommand: CLICommand = {
       const rolledBack = annotatedHistory.filter(
         (m) => m.status === 'rolled_back',
       ).length;
-
+      const actionRequired = failedAssessments.filter(
+        (item) => item.resolution === 'action_required',
+      ).length;
+      const superseded = failedAssessments.filter(
+        (item) => item.resolution === 'superseded',
+      ).length;
+      const manualReview = failedAssessments.filter(
+        (item) => item.resolution === 'manual_review',
+      ).length;
       console.log('━'.repeat(50));
       console.log(
         `Summary: ${completed} completed, ${failed} failed (${failedUnresolved} unresolved, ${failedSuperseded} superseded, ${failedOther} other), ${rolledBack} rolled back`,
       );
+      if (failed > 0) {
+        console.log(
+          `         ${actionRequired} failed still require action, ${superseded} are superseded history, ${manualReview} need manual review`,
+        );
+      }
       console.log();
 
       console.log('💡 Commands:');

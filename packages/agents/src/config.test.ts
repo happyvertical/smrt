@@ -70,6 +70,14 @@ describe('agent model runtime field registration', () => {
     expect(fields.get('enabled')?.type).toBe('boolean');
     expect(fields.get('nextRun')?.type).toBe('datetime');
     expect(fields.get('runningCount')?.type).toBe('integer');
+
+    const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
+    expect(schemas._smrt_agent_schedules?.columns.agent_config?.type).toBe(
+      'TEXT',
+    );
+    expect(schemas._smrt_agent_schedules?.columns.method_args?.type).toBe(
+      'TEXT',
+    );
   });
 
   it('registers TenantAgent JSON and text fields when loaded directly', async () => {

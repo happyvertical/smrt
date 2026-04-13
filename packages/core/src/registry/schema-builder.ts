@@ -16,6 +16,59 @@ import { classnameToTablename, toSnakeCase } from '../utils';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
 
+type ForeignKeyAction = NonNullable<
+  NonNullable<ColumnDefinition['foreignKey']>['onDelete']
+>;
+
+function applyDecoratorSqlTypeOverrides(
+  className: string,
+  columns: Record<string, ColumnDefinition>,
+): Record<string, ColumnDefinition> {
+  const decorators = ObjectRegistry.getFieldDecorators(className);
+  if (!decorators.size) {
+    return columns;
+  }
+
+  for (const [fieldName, options] of decorators) {
+    if (!options?.sqlType) {
+      continue;
+    }
+
+    const columnName = toSnakeCase(fieldName);
+    const existing = columns[columnName];
+    if (!existing) {
+      continue;
+    }
+
+    columns[columnName] = {
+      ...existing,
+      type: options.sqlType,
+    };
+  }
+
+  return columns;
+}
+
+function mergeRuntimeFieldColumns(
+  className: string,
+  schemaColumns: Record<string, ColumnDefinition> | undefined,
+  fields: Map<string, FieldDefinition>,
+): Record<string, ColumnDefinition> {
+  const columnsToUse = { ...(schemaColumns || {}) };
+
+  if (fields.size > 0) {
+    const fieldColumns = fieldsToColumns(fields);
+    for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
+      if (!columnsToUse[columnName]) {
+        columnsToUse[columnName] = columnDef;
+      }
+    }
+  }
+
+  applyDecoratorSqlTypeOverrides(className, columnsToUse);
+  return columnsToUse;
+}
+
 /**
  * Get cached schema definition for a registered class
  *
@@ -165,18 +218,16 @@ export function getAllSchemas(): Record<
         }
       }
 
-      // Start with manifest columns, then merge in any field-derived columns that
-      // were added or repaired at runtime (for example tenantScoped injections
-      // from external decorator config).
-      const columnsToUse = { ...(registered.schema.columns || {}) };
-      if (registered.fields.size > 0) {
-        const fieldColumns = fieldsToColumns(registered.fields);
-        for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
-          if (!columnsToUse[columnName]) {
-            columnsToUse[columnName] = columnDef;
-          }
-        }
-      }
+      // Start with manifest columns, then backfill any columns that only exist
+      // in runtime field metadata (for example tenantScoped injections). We do
+      // not replace existing manifest column metadata here, because the manifest
+      // is authoritative for foreign keys, defaults, and other schema details.
+      // Explicit decorator sqlType overrides are patched onto the merged column.
+      const columnsToUse = mergeRuntimeFieldColumns(
+        simpleName,
+        registered.schema.columns,
+        registered.fields,
+      );
 
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
@@ -357,16 +408,14 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
         }
       }
 
-      // Get columns from schema, or generate from fields if empty
-      const columnsToUse = { ...(registered.schema.columns || {}) };
-      if (registered.fields.size > 0) {
-        const fieldColumns = fieldsToColumns(registered.fields);
-        for (const [columnName, columnDef] of Object.entries(fieldColumns)) {
-          if (!columnsToUse[columnName]) {
-            columnsToUse[columnName] = columnDef;
-          }
-        }
-      }
+      // Manifest schema remains authoritative for existing columns. Runtime
+      // field metadata can backfill missing columns and apply explicit sqlType
+      // overrides without erasing richer manifest metadata.
+      const columnsToUse = mergeRuntimeFieldColumns(
+        simpleName,
+        registered.schema.columns,
+        registered.fields,
+      );
 
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
@@ -622,7 +671,7 @@ export function fieldsToColumns(
     }
 
     // Map field type to SQL type
-    const sqlType = mapFieldTypeToSQL(fieldDef.type);
+    const sqlType = fieldDef._meta?.sqlType || mapFieldTypeToSQL(fieldDef.type);
 
     const column: ColumnDefinition = {
       type: sqlType,
@@ -639,11 +688,17 @@ export function fieldsToColumns(
     // Handle foreign keys
     if (fieldDef.type === 'foreignKey' && fieldDef.related) {
       const [table, columnName = 'id'] = fieldDef.related.split('.');
+      const fieldMeta = fieldDef._meta as
+        | {
+            onDelete?: ForeignKeyAction;
+            onUpdate?: ForeignKeyAction;
+          }
+        | undefined;
       column.foreignKey = {
         table: classnameToTablename(table),
         column: columnName,
-        onDelete: 'CASCADE',
-        onUpdate: 'CASCADE',
+        onDelete: fieldMeta?.onDelete ?? 'CASCADE',
+        onUpdate: fieldMeta?.onUpdate ?? 'CASCADE',
       };
     }
 

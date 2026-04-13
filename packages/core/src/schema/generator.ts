@@ -134,7 +134,7 @@ export class SchemaGenerator {
       }
 
       const column: ColumnDefinition = {
-        type: this.mapFieldTypeToSQL(fieldDef.type),
+        type: fieldDef._meta?.sqlType || this.mapFieldTypeToSQL(fieldDef.type),
         // If _meta.nullable is true, the field can be null regardless of required
         // This handles field helpers like text({ required: true, nullable: true })
         notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
@@ -433,7 +433,8 @@ export class SchemaGenerator {
         continue;
       }
 
-      const sqlType = this.mapFieldTypeToSQL(field.type);
+      const sqlType =
+        field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
 
       const columnDef: ColumnDefinition = {
         type: sqlType,
@@ -700,7 +701,8 @@ export class SchemaGenerator {
           continue;
         }
 
-        const sqlType = this.mapFieldTypeToSQL(field.type);
+        const sqlType =
+          field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
 
         const columnDef: ColumnDefinition = {
           type: sqlType,
@@ -923,7 +925,8 @@ export class SchemaGenerator {
           continue;
         }
 
-        const sqlType = this.mapFieldTypeToSQL(field.type);
+        const sqlType =
+          field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
 
         const columnDef: ManifestColumnDefinition = {
           type: sqlType,
@@ -1078,7 +1081,8 @@ export class SchemaGenerator {
       }
 
       const columnName = this.toSnakeCase(fieldName);
-      const sqlType = this.mapFieldTypeToSQL(field.type);
+      const sqlType =
+        field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
 
       const columnDef: ManifestColumnDefinition = {
         type: sqlType,

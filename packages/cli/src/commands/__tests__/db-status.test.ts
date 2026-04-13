@@ -216,6 +216,110 @@ describe('db:status', () => {
     });
   });
 
+  it('classifies failed additive migrations as superseded history when live drift is gone', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+    getHistoryMock.mockResolvedValue([
+      {
+        id: 'failed-1',
+        name: 'add_column_contents_script_text',
+        version: '1.0.0',
+        checksum: 'abc',
+        applied_checksum: null,
+        applied_at: new Date('2026-04-12T10:00:00Z'),
+        execution_time_ms: 1,
+        package_name: null,
+        source_file: null,
+        status: 'failed',
+        error_message: 'must be owner of table contents',
+        attempts: 1,
+        is_reversible: false,
+        rolled_back_at: null,
+        applied_by: null,
+        batch: 1,
+      },
+    ]);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+    expect(parsed.migrations.failed).toEqual({
+      total: 1,
+      actionRequired: 0,
+      superseded: 1,
+      manualReview: 0,
+      details: [
+        {
+          name: 'add_column_contents_script_text',
+          resolution: 'superseded',
+          kind: 'add_column',
+          reason:
+            'Current manifests no longer require this generated schema change, so the failed row is retained history rather than active drift.',
+          errorMessage: 'must be owner of table contents',
+        },
+      ],
+    });
+  });
+
+  it('keeps failed migrations actionable when the live diff still requires them', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'type_upgrade',
+          table: '_smrt_agent_schedules',
+          name: 'agent_config',
+          sql: 'ALTER TABLE _smrt_agent_schedules ALTER COLUMN agent_config TYPE JSONB USING agent_config::jsonb',
+        },
+      ],
+    });
+    getHistoryMock.mockResolvedValue([
+      {
+        id: 'failed-2',
+        name: 'type_upgrade__smrt_agent_schedules_agent_config',
+        version: '1.0.0',
+        checksum: 'def',
+        applied_checksum: null,
+        applied_at: new Date('2026-04-12T10:00:00Z'),
+        execution_time_ms: 1,
+        package_name: null,
+        source_file: null,
+        status: 'failed',
+        error_message:
+          'default for column "agent_config" cannot be cast automatically to type jsonb',
+        attempts: 1,
+        is_reversible: false,
+        rolled_back_at: null,
+        applied_by: null,
+        batch: 1,
+      },
+    ]);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+    expect(parsed.migrations.failed.actionRequired).toBe(1);
+    expect(parsed.migrations.failed.details[0]).toMatchObject({
+      name: 'type_upgrade__smrt_agent_schedules_agent_config',
+      resolution: 'action_required',
+      kind: 'type_upgrade',
+    });
+  });
+
   it('omits no-op type upgrades from drift output', () => {
     expect(
       summarizeSchemaDiff({
@@ -243,6 +347,12 @@ describe('db:status', () => {
           table: 'contents',
           name: 'script_text',
           column: { type: 'TEXT' },
+        },
+        {
+          type: 'type_upgrade',
+          table: 'contents',
+          name: 'status',
+          sql: 'ALTER TABLE contents ALTER COLUMN status TYPE JSONB USING status::jsonb',
         },
       ],
     });
@@ -274,8 +384,15 @@ describe('db:status', () => {
           name: 'add_column_contents_script_text',
           classification: 'unresolved',
           recommendation:
-            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed additive migration no longer appears as unresolved.',
+            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
           errorMessage: 'column missing',
+        },
+        {
+          name: 'type_upgrade_contents_status',
+          classification: 'unresolved',
+          recommendation:
+            'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
+          errorMessage: 'cannot cast',
         },
       ],
       superseded: [
@@ -283,19 +400,11 @@ describe('db:status', () => {
           name: 'add_index_idx_contents_published_at',
           classification: 'superseded',
           recommendation:
-            'No current live-schema drift maps to this failed additive migration. Keep the row for audit history, but it no longer blocks the current schema.',
+            'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.',
           errorMessage: 'index already exists',
         },
       ],
-      other: [
-        {
-          name: 'type_upgrade_contents_status',
-          classification: 'other',
-          recommendation:
-            'Inspect this failed migration directly. It is not a superseded additive repair and may still need manual attention.',
-          errorMessage: 'cannot cast',
-        },
-      ],
+      other: [],
     });
   });
 });

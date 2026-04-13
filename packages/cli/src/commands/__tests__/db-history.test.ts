@@ -201,19 +201,20 @@ describe('db:history', () => {
         name: 'add_column_contents_script_text',
         classification: 'unresolved',
         recommendation:
-          'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed additive migration no longer appears as unresolved.',
+          'Run `smrt db:migrate` to reconcile the live schema, then confirm this failed generated schema repair no longer appears as unresolved.',
       }),
       expect.objectContaining({
         name: 'add_index_idx_contents_published_at',
         classification: 'superseded',
         recommendation:
-          'No current live-schema drift maps to this failed additive migration. Keep the row for audit history, but it no longer blocks the current schema.',
+          'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.',
       }),
       expect.objectContaining({
         name: 'type_upgrade_contents_status',
-        classification: 'other',
+        classification: 'superseded',
         recommendation:
-          'Inspect this failed migration directly. It is not a superseded additive repair and may still need manual attention.',
+          'No current live-schema drift maps to this failed generated schema repair. Keep the row for audit history, but it no longer blocks the current schema.',
+        resolution: 'superseded',
       }),
       expect.objectContaining({
         name: 'baseline_schema',
@@ -221,5 +222,25 @@ describe('db:history', () => {
         recommendation: null,
       }),
     ]);
+  });
+
+  it('counts manual-review failures when schema comparison is unavailable', async () => {
+    getDatabaseMock.mockResolvedValue({
+      url: 'postgresql://test:test@localhost:5432/test_db',
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbHistoryCommand.handler([], {});
+
+    const output = logSpy.mock.calls.map((call) => call.join('')).join('\n');
+
+    expect(autoDiscoverAndLoadMock).not.toHaveBeenCalled();
+    expect(output).toContain(
+      'Summary: 1 completed, 3 failed (0 unresolved, 0 superseded, 3 other), 0 rolled back',
+    );
+    expect(output).toContain(
+      '0 failed still require action, 0 are superseded history, 3 need manual review',
+    );
   });
 });
