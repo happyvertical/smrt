@@ -79,6 +79,8 @@ async function getExportableFields(
   const exportableFields: string[] = [];
 
   for (const [fieldName, fieldDef] of fields) {
+    if ((fieldDef as any)._meta?.__smrtSystemField === true) continue;
+
     // Skip transient and relationship fields
     if (fieldDef.transient) continue;
     if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany')
@@ -262,10 +264,12 @@ export async function queryWithProjection(
     const result = await db.query(sql, ...whereValues);
     return Array.isArray(result) ? result : (result?.rows ?? []);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      `Export query failed for ${tableName} (columns: ${selectFields}): ${message}`,
-    );
+    const contextMessage = `Export query failed for ${tableName} (columns: ${selectFields})`;
+    if (error instanceof Error) {
+      throw new Error(`${contextMessage}: ${error.message}`, { cause: error });
+    }
+
+    throw new Error(`${contextMessage}: ${String(error)}`);
   }
 }
 
