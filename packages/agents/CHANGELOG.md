@@ -1,5 +1,17 @@
 # @happyvertical/smrt-agents
 
+## 0.21.47
+
+### Patch Changes
+
+- 5c0d3eb: Align `AgentSchedule` manifest schema output with the runtime storage contract for `agentConfig` and `methodArgs`, and improve migration status/history reporting so superseded failed generated migrations are distinguished from active schema drift.
+- Updated dependencies [5c0d3eb]
+  - @happyvertical/smrt-core@0.21.47
+  - @happyvertical/smrt-secrets@0.21.47
+  - @happyvertical/smrt-tenancy@0.21.47
+  - @happyvertical/smrt-users@0.21.47
+  - @happyvertical/smrt-config@0.21.47
+
 ## 0.21.46
 
 ### Patch Changes
