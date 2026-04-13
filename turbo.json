@@ -82,7 +82,7 @@
     },
     "typecheck": {
       "dependsOn": ["^build", "generate:test"],
-      "inputs": ["src/**", "test/**", "**/*.ts", "tsconfig.json"],
+      "inputs": ["src/**", "test/**", "**/*.ts", "tsconfig*.json"],
       "cache": true
     },
     "dev": {

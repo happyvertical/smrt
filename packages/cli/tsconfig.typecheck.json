@@ -1,10 +1,6 @@
 {
-  "extends": "../../tsconfig.json",
+  "extends": "../../tsconfig.package-typecheck.json",
   "compilerOptions": {
-    "composite": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "types": ["node", "vitest/globals"]
   },
   "include": ["src/**/*"],
