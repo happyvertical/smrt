@@ -30,6 +30,10 @@ vi.mock('@happyvertical/smrt-core', () => ({
         baseFields.set('meetingId', { type: 'foreignKey' });
       }
 
+      if (typeName === 'SparseMeetingRecap') {
+        baseFields.set('meetingId', { type: 'foreignKey' });
+      }
+
       if (typeName === 'Council') {
         return new Map([
           ['id', { type: 'text', _meta: { __smrtSystemField: true } }],
@@ -49,6 +53,12 @@ vi.mock('@happyvertical/smrt-core', () => ({
     getTableStrategy: vi.fn((typeName: string) =>
       typeName === 'Council' ? 'cti' : 'sti',
     ),
+    getSTIBase: vi.fn((typeName: string) => {
+      if (typeName === 'SparseMeetingRecap') return 'Content';
+      if (typeName === 'MeetingRecap' || typeName === 'MeetingAnnouncement')
+        return 'Content';
+      return typeName === 'Council' ? null : typeName;
+    }),
     getSchema: vi.fn((typeName: string) => {
       if (typeName === 'Council') {
         return {
@@ -62,6 +72,27 @@ vi.mock('@happyvertical/smrt-core', () => ({
             meetings_url: { type: 'TEXT' },
             timezone: { type: 'TEXT' },
             logo_url: { type: 'TEXT' },
+          },
+        };
+      }
+
+      if (typeName === 'SparseMeetingRecap') {
+        return {
+          tableName: 'contents',
+          columns: {
+            meeting_id: { type: 'TEXT' },
+          },
+        };
+      }
+
+      if (typeName === 'Content') {
+        return {
+          tableName: 'contents',
+          columns: {
+            id: { type: 'TEXT' },
+            slug: { type: 'TEXT' },
+            _meta_type: { type: 'TEXT' },
+            _meta_data: { type: 'JSON' },
           },
         };
       }
@@ -130,6 +161,18 @@ describe('export command helpers', () => {
     expect(fields).not.toContain('context');
     expect(fields).not.toContain('created_at');
     expect(fields).not.toContain('updated_at');
+  });
+
+  it('keeps shared STI standard fields for sparse subclass schemas', async () => {
+    const fields = await getCommonFields(
+      ['SparseMeetingRecap'],
+      { types: ['SparseMeetingRecap'] },
+      true,
+    );
+
+    expect(fields).toEqual(
+      expect.arrayContaining(['id', 'slug', '_meta_type', '_meta_data']),
+    );
   });
 
   it('does not inject STI meta columns into CTI exports', async () => {

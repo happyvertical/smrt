@@ -63,11 +63,15 @@ async function getProjectionCapabilities(
 ): Promise<ExportProjectionCapabilities> {
   const { ObjectRegistry } = await import('@happyvertical/smrt-core');
 
-  const schema = ObjectRegistry.getSchema(typeName) as
+  const tableStrategy = ObjectRegistry.getTableStrategy(typeName);
+  const schemaOwner =
+    tableStrategy === 'sti'
+      ? ObjectRegistry.getSTIBase(typeName) || typeName
+      : typeName;
+  const schema = ObjectRegistry.getSchema(schemaOwner) as
     | { columns?: Record<string, unknown> }
     | undefined;
   const schemaColumns = new Set(Object.keys(schema?.columns ?? {}));
-  const tableStrategy = ObjectRegistry.getTableStrategy(typeName);
 
   return {
     includeMetaType: tableStrategy === 'sti' || schemaColumns.has('_meta_type'),
