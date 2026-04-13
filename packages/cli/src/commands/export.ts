@@ -62,8 +62,8 @@ async function getExportableFields(
 ): Promise<string[]> {
   const { ObjectRegistry } = await import('@happyvertical/smrt-core');
 
-  // Get fields from registry
-  const fields = ObjectRegistry.getFields(typeName);
+  // Export needs inherited STI/CTI fields as well as direct fields.
+  const fields = await ObjectRegistry.getAllFields(typeName);
   if (fields.size === 0) {
     console.warn(`⚠️  No fields found for type: ${typeName}`);
     return [];
@@ -79,6 +79,8 @@ async function getExportableFields(
   const exportableFields: string[] = [];
 
   for (const [fieldName, fieldDef] of fields) {
+    if ((fieldDef as any)._meta?.__smrtSystemField === true) continue;
+
     // Skip transient and relationship fields
     if (fieldDef.transient) continue;
     if (fieldDef.type === 'oneToMany' || fieldDef.type === 'manyToMany')
@@ -262,11 +264,12 @@ export async function queryWithProjection(
     const result = await db.query(sql, ...whereValues);
     return Array.isArray(result) ? result : (result?.rows ?? []);
   } catch (error) {
-    // If query fails (missing column, etc.), return empty
-    console.warn(
-      `⚠️  Query failed for ${tableName}: ${error instanceof Error ? error.message : error}`,
-    );
-    return [];
+    const contextMessage = `Export query failed for ${tableName} (columns: ${selectFields})`;
+    if (error instanceof Error) {
+      throw new Error(`${contextMessage}: ${error.message}`, { cause: error });
+    }
+
+    throw new Error(`${contextMessage}: ${String(error)}`);
   }
 }
 
@@ -339,7 +342,7 @@ async function resolveTableName(types: string[]): Promise<string> {
 /**
  * Get common fields across all types for an export file
  */
-async function getCommonFields(
+export async function getCommonFields(
   types: string[],
   fileConfig: ExportFileConfig,
   fieldExportDefault: boolean,
