@@ -161,7 +161,7 @@ async function defaultTenantHierarchyLoader(
   try {
     const usersModule = await importWorkspaceModule<FeatureUsersModule>({
       packageName: '@happyvertical/smrt-users',
-      sourceEntry: 'packages/users/src/index.ts',
+      sourceEntry: 'packages/users/src/collections/index.ts',
       purpose: 'tenant-aware feature flag resolution',
     });
 

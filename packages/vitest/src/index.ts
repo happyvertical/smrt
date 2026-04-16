@@ -141,6 +141,32 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
+function getWorkspaceSourceTsconfigPath(
+  startDir = process.cwd(),
+): string | null {
+  const workspaceRoot = findWorkspaceRoot(startDir);
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const tsconfigPath = join(workspaceRoot, 'tsconfig.package-build.json');
+  return existsSync(tsconfigPath) ? tsconfigPath : null;
+}
+
+async function importWorkspaceSourceModule<T>(href: string): Promise<T> {
+  const { register } = await import('tsx/esm/api');
+  const tsconfigPath = getWorkspaceSourceTsconfigPath();
+  const unregister = register(
+    tsconfigPath ? { tsconfig: tsconfigPath } : undefined,
+  );
+
+  try {
+    return (await import(href)) as T;
+  } finally {
+    await unregister();
+  }
+}
+
 function readWorkspacePackageRoots(root: string): Map<string, string> {
   const workspaceRoot = findWorkspaceRoot(root);
   if (!workspaceRoot) {
@@ -290,6 +316,61 @@ export function getWorkspaceViteAliases(
         '@happyvertical/smrt-core/schema/utils',
         join(packageRoot, 'src/schema/utils.ts'),
       );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/utils',
+        join(packageRoot, 'src/utils.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/utils/import-workspace-module',
+        join(packageRoot, 'src/utils/import-workspace-module.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/migrations',
+        join(packageRoot, 'src/migrations.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/runtime',
+        join(packageRoot, 'src/runtime.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/registry',
+        join(packageRoot, 'src/registry.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators',
+        join(packageRoot, 'src/generators.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators/cli',
+        join(packageRoot, 'src/generators/cli.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators/mcp',
+        join(packageRoot, 'src/generators/mcp.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators/rest',
+        join(packageRoot, 'src/generators/rest.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/prebuild',
+        join(packageRoot, 'src/prebuild.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/decorators',
+        join(packageRoot, 'src/decorators/index.ts'),
+      );
     }
 
     if (packageName === '@happyvertical/smrt-svelte') {
@@ -302,6 +383,11 @@ export function getWorkspaceViteAliases(
         aliases,
         '@happyvertical/smrt-svelte/registry',
         join(packageRoot, 'src/registry/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/ui',
+        join(packageRoot, 'src/components/ui/index.ts'),
       );
       addAliasIfPresent(
         aliases,
@@ -460,10 +546,9 @@ async function importSmrtCoreModule(): Promise<
   try {
     return await import(specifier);
   } catch {
-    const { tsImport } = await import('tsx/esm/api');
     const fallbackHref = new URL('../../core/src/index.ts', import.meta.url)
       .href;
-    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+    return await importWorkspaceSourceModule(fallbackHref);
   }
 }
 
@@ -475,12 +560,11 @@ async function importSmrtCoreManifestModule(): Promise<
   try {
     return await import(specifier);
   } catch {
-    const { tsImport } = await import('tsx/esm/api');
     const fallbackHref = new URL(
       '../../core/src/manifest/index.ts',
       import.meta.url,
     ).href;
-    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+    return await importWorkspaceSourceModule(fallbackHref);
   }
 }
 
@@ -492,12 +576,11 @@ async function importDiscoverBaseClassesModule(): Promise<
   try {
     return await import(specifier);
   } catch {
-    const { tsImport } = await import('tsx/esm/api');
     const fallbackHref = new URL(
       '../../core/src/manifest/discover-base-classes.ts',
       import.meta.url,
     ).href;
-    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+    return await importWorkspaceSourceModule(fallbackHref);
   }
 }
 

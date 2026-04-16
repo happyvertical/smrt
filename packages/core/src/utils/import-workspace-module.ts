@@ -71,11 +71,20 @@ export async function importWorkspaceModule<T = unknown>({
       );
     }
 
-    const { tsImport } = await import(
+    const { register } = await import(
       /* @vite-ignore */ pathToFileURL(tsxApiPath).href
     );
-    return (await tsImport(pathToFileURL(sourcePath).href, {
-      parentURL: import.meta.url,
-    })) as T;
+    const tsconfigPath = join(workspaceRoot, 'tsconfig.package-build.json');
+    const unregister = register(
+      existsSync(tsconfigPath) ? { tsconfig: tsconfigPath } : undefined,
+    );
+
+    try {
+      return (await import(
+        /* @vite-ignore */ pathToFileURL(sourcePath).href
+      )) as T;
+    } finally {
+      await unregister();
+    }
   }
 }

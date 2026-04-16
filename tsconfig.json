@@ -27,38 +27,7 @@
     "sourceMap": true,
 
     // Performance
-    "skipLibCheck": true, // Required for workspace packages from SDK
-
-    // Keep workspace dev/check tooling pointed at sibling package sources so
-    // config-time loaders (tsx, vite config bundling, svelte-check) do not
-    // require prebuilt dist artifacts from workspace dependencies.
-    "baseUrl": ".",
-    "paths": {
-      "@happyvertical/smrt-*": ["packages/*/src/index.ts"],
-      "@happyvertical/smrt-*/svelte": ["packages/*/src/svelte/index.ts"],
-      "@happyvertical/smrt-*/sveltekit": ["packages/*/src/sveltekit/index.ts"],
-      "@happyvertical/smrt-*/ui": ["packages/*/src/ui.ts"],
-      "@happyvertical/smrt-*/routes": ["packages/*/src/route-module.ts"],
-      "@happyvertical/smrt-*/playground": [
-        "packages/*/src/svelte/playground.ts",
-        "packages/*/src/playground.ts"
-      ],
-      "@happyvertical/smrt-*/manifest": ["packages/*/src/manifest/manifest.json"],
-      "@happyvertical/smrt-*/manifest.json": [
-        "packages/*/src/manifest/manifest.json"
-      ],
-      "@happyvertical/smrt-types": ["packages/types/src/index.ts"],
-      "@happyvertical/smrt-types/*": ["packages/types/src/*"],
-      "@happyvertical/smrt-core": ["packages/core/src/index.ts"],
-      "@happyvertical/smrt-core/*": ["packages/core/src/*"],
-      "@happyvertical/smrt-svelte": ["packages/smrt-svelte/src/index.ts"],
-      "@happyvertical/smrt-svelte/*": [
-        "packages/smrt-svelte/src/components/*/index.ts",
-        "packages/smrt-svelte/src/*/index.ts",
-        "packages/smrt-svelte/src/*"
-      ],
-      "@happyvertical/smrt-agents/ui": ["packages/agents/src/ui.ts"]
-    }
+    "skipLibCheck": true // Required for workspace packages from SDK
   },
   "include": ["vitest.config.ts"],
   "exclude": [
