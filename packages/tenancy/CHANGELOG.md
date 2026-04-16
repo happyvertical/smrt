@@ -1,5 +1,31 @@
 # @happyvertical/smrt-tenancy
 
+## 0.21.49
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.21.49
+  - @happyvertical/smrt-users@0.21.49
+  - @happyvertical/smrt-types@0.21.49
+
+## 0.21.48
+
+### Patch Changes
+
+- @happyvertical/smrt-core@0.21.48
+- @happyvertical/smrt-types@0.21.48
+- @happyvertical/smrt-users@0.21.48
+
+## 0.21.47
+
+### Patch Changes
+
+- Updated dependencies [5c0d3eb]
+  - @happyvertical/smrt-core@0.21.47
+  - @happyvertical/smrt-users@0.21.47
+  - @happyvertical/smrt-types@0.21.47
+
 ## 0.21.46
 
 ### Patch Changes

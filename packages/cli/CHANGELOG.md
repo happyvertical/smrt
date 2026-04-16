@@ -1,5 +1,39 @@
 # @happyvertical/smrt-cli
 
+## 0.21.49
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.21.49
+  - @happyvertical/smrt-agents@0.21.49
+  - @happyvertical/smrt-playground@0.21.49
+  - @happyvertical/smrt-config@0.21.49
+  - @happyvertical/smrt-types@0.21.49
+
+## 0.21.48
+
+### Patch Changes
+
+- 873af12: Fix static export to include inherited STI fields and fail loudly when projected export queries error instead of silently writing incomplete payloads.
+  - @happyvertical/smrt-agents@0.21.48
+  - @happyvertical/smrt-config@0.21.48
+  - @happyvertical/smrt-core@0.21.48
+  - @happyvertical/smrt-types@0.21.48
+  - @happyvertical/smrt-playground@0.21.48
+
+## 0.21.47
+
+### Patch Changes
+
+- 5c0d3eb: Align `AgentSchedule` manifest schema output with the runtime storage contract for `agentConfig` and `methodArgs`, and improve migration status/history reporting so superseded failed generated migrations are distinguished from active schema drift.
+- Updated dependencies [5c0d3eb]
+  - @happyvertical/smrt-core@0.21.47
+  - @happyvertical/smrt-agents@0.21.47
+  - @happyvertical/smrt-playground@0.21.47
+  - @happyvertical/smrt-config@0.21.47
+  - @happyvertical/smrt-types@0.21.47
+
 ## 0.21.46
 
 ### Patch Changes

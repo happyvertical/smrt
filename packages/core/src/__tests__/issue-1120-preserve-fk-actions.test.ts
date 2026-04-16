@@ -71,7 +71,6 @@ describe('Issue #1120 - runtime schema rebuild preserves manifest FK actions', (
       onUpdate: 'CASCADE',
     });
   });
-
   it('does not mutate manifest column objects when sqlType overrides are applied', () => {
     const manifestColumns = {
       agent_config: {
