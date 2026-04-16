@@ -22,6 +22,8 @@ function renderEditor(
     apiBaseUrl?: string;
     content?: any;
     contentId?: string;
+    hideActions?: boolean;
+    hideChat?: boolean;
     onChange?: (data: any) => void;
     onSave?: (data: any) => void;
     onCancel?: () => void;
@@ -36,6 +38,8 @@ function renderEditor(
       apiBaseUrl: props.apiBaseUrl,
       content: props.content,
       contentId: props.contentId ?? 'new',
+      hideActions: props.hideActions,
+      hideChat: props.hideChat,
       onChange: props.onChange ?? vi.fn(),
       onSave: props.onSave ?? vi.fn(),
       onCancel: props.onCancel ?? vi.fn(),
@@ -314,5 +318,41 @@ describe('ContentEditor component', () => {
         tags: ['news', 'tech', 'updates'],
       }),
     );
+  });
+
+  it('submits publish_date under the persisted field name', () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'Scheduled Article',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+        publish_date: '2026-04-15T12:30:00.000Z',
+      },
+      onSave,
+    });
+
+    const publishDateInput = target.querySelector(
+      '#publish-date-input',
+    ) as HTMLInputElement | null;
+    const form = target.querySelector('#content-edit-form');
+
+    expect(publishDateInput).not.toBeNull();
+
+    publishDateInput!.value = '2026-04-18T09:45';
+    publishDateInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        publish_date: new Date('2026-04-18T09:45').toISOString(),
+      }),
+    );
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('publishDate');
   });
 });

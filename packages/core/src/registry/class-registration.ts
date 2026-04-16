@@ -710,7 +710,7 @@ export function register(
       triggers: [],
       tableName: manifestEntry.schema.tableName || tableName,
       // Cast manifest columns to ColumnDefinition (same shape, TypeScript just needs help)
-      columns: manifestEntry.schema.columns as Record<string, ColumnDefinition>,
+      columns: cloneManifestSchemaColumns(manifestEntry.schema.columns),
       foreignKeys: [],
       dependencies: [],
       version: manifestEntry.schema.version || '',
@@ -735,22 +735,7 @@ export function register(
   }
 
   if (schema.columns && decorators && decorators.size > 0) {
-    for (const [fieldName, decoratorOptions] of decorators) {
-      if (!decoratorOptions?.sqlType) {
-        continue;
-      }
-
-      const columnName = toSnakeCase(fieldName);
-      const existingColumn = schema.columns[columnName];
-      if (!existingColumn) {
-        continue;
-      }
-
-      schema.columns[columnName] = {
-        ...existingColumn,
-        type: decoratorOptions.sqlType,
-      };
-    }
+    applySqlTypeOverrides(schema.columns, decorators.entries());
   }
 
   // Use pre-computed validation rules from manifest if available (Issue #782)
@@ -1010,6 +995,51 @@ function mergeIndexDefinitions(
   return merged;
 }
 
+function cloneManifestSchemaColumns(
+  columns: Record<string, unknown> | undefined,
+): Record<string, ColumnDefinition> {
+  return Object.fromEntries(
+    Object.entries(columns || {}).map(([columnName, column]) => {
+      const clonedColumn = {
+        ...(column as ColumnDefinition & Record<string, unknown>),
+      } as ColumnDefinition;
+
+      if (clonedColumn.foreignKey) {
+        clonedColumn.foreignKey = { ...clonedColumn.foreignKey };
+      }
+
+      return [columnName, clonedColumn];
+    }),
+  ) as Record<string, ColumnDefinition>;
+}
+
+function applySqlTypeOverrides(
+  columns: Record<string, ColumnDefinition>,
+  fieldEntries: Iterable<[string, any]> | undefined,
+): void {
+  if (!fieldEntries) {
+    return;
+  }
+
+  for (const [fieldName, fieldOptions] of fieldEntries) {
+    const sqlType = fieldOptions?.sqlType ?? fieldOptions?._meta?.sqlType;
+    if (!sqlType) {
+      continue;
+    }
+
+    const columnName = toSnakeCase(fieldName);
+    const existingColumn = columns[columnName];
+    if (!existingColumn) {
+      continue;
+    }
+
+    columns[columnName] = {
+      ...existingColumn,
+      type: sqlType,
+    };
+  }
+}
+
 function invalidateInheritanceEntries(existing: RegisteredClass): void {
   const cache = getInheritanceCache();
   const affectedNames = new Set<string>();
@@ -1113,12 +1143,14 @@ function mergeManifestIntoExistingRegistration(
         })) || [],
       triggers: [],
       tableName: objectDef.schema.tableName || manifestTableName,
-      columns: objectDef.schema.columns || {},
+      columns: cloneManifestSchemaColumns(objectDef.schema.columns),
       foreignKeys: [],
       dependencies: [],
       version: objectDef.schema.version || '',
       packageName: packageName,
     };
+
+    applySqlTypeOverrides(manifestSchema.columns, existing.fields.entries());
 
     existing.schema = {
       ...(existing.schema || {}),
@@ -1354,6 +1386,7 @@ export function registerFromManifest(
 
   // Convert manifest field definitions to Field objects
   const fields = new Map<string, any>();
+  const decorators = getFieldDecorators().get(simpleClassName);
   if (objectDef.fields) {
     for (const [fieldName, fieldDef] of Object.entries(
       objectDef.fields as any,
@@ -1393,12 +1426,13 @@ export function registerFromManifest(
         })) || [],
       triggers: [],
       tableName: objectDef.schema.tableName,
-      columns: objectDef.schema.columns,
+      columns: cloneManifestSchemaColumns(objectDef.schema.columns),
       foreignKeys: [],
       dependencies: [],
       version: objectDef.schema.version || '',
       packageName: packageName,
     };
+    applySqlTypeOverrides(schema.columns, decorators?.entries());
     verboseLog(
       `[registry] Loaded pre-generated schema for ${name} (${Object.keys(objectDef.schema.columns || {}).length} columns)`,
     );

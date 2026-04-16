@@ -1,7 +1,6 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
-import { slide } from 'svelte/transition';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
 import ContentAgentChat from './ContentAgentChat.svelte';
 
@@ -33,9 +32,55 @@ let {
   onCancel: () => void;
 }>();
 
+let editForm = $state<HTMLFormElement | null>(null);
+
+function formatDateTimeLocal(value: unknown): string {
+  if (!value) {
+    return '';
+  }
+
+  const date = value instanceof Date ? value : new Date(value as string);
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === 'string' ? value : '';
+  }
+
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function normalizePublishDate(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? trimmed : parsed.toISOString();
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  return null;
+}
+
+function getSavePayload(data: any) {
+  return {
+    ...data,
+    publish_date: normalizePublishDate(data.publish_date),
+  };
+}
+
 export function triggerSave() {
   if (saveDisabled) return;
-  onSave(formData);
+  if (editForm?.requestSubmit) {
+    editForm.requestSubmit();
+    return;
+  }
+
+  onSave(getSavePayload(formData));
 }
 
 function getInitialFormData(c: any) {
@@ -46,9 +91,7 @@ function getInitialFormData(c: any) {
         referenceIds: c.referenceIds || [],
         assetIds: c.assetIds || [],
         assets: c.assets || [],
-        publishDate: c.publishDate
-          ? new Date(c.publishDate).toISOString().slice(0, 16)
-          : '',
+        publish_date: formatDateTimeLocal(c.publish_date ?? c.publishDate),
       }
     : {
         title: '',
@@ -61,6 +104,7 @@ function getInitialFormData(c: any) {
         source: 'manual',
         url: '',
         fileKey: '',
+        publish_date: '',
         thumbnailAssetId: null,
         tags: [],
         referenceIds: [],
@@ -74,10 +118,24 @@ let lastContentKey = $state<string | undefined>(undefined);
 let currentEditorState = $derived(formData.body || '');
 let currentReferenceIds = $derived(formData.referenceIds || []);
 const editorSnapshot = $derived({
-  ...formData,
+  ...getSavePayload(formData),
+  tags: [...(formData.tags || [])],
   referenceIds: [...(formData.referenceIds || [])],
   assetIds: [...(formData.assetIds || [])],
   assets: [...(formData.assets || [])],
+});
+const showActions = $derived(!hideActions);
+const showChatSidebar = $derived(!hideChat);
+const showAgentChat = $derived(agentChatEnabled && showChatSidebar);
+const agentChatContentId = $derived(content?.id ?? contentId);
+const agentChatFields = $derived({
+  title: formData.title,
+  description: formData.description,
+  type: formData.type,
+  status: formData.status,
+  state: formData.state,
+  publish_date: normalizePublishDate(formData.publish_date) || '',
+  body: formData.body,
 });
 
 // Undo stack for AI field edits — each entry stores the old values of changed fields
@@ -149,9 +207,6 @@ let showImageUploader = $state(false);
 // Drag-and-drop state
 let imageDragOver = $state(false);
 let refDragOver = $state(false);
-
-let sidebarCollapsed = $state(false);
-let sidebarTab = $state<'chat' | 'review'>('chat');
 
 function autoResize(node: HTMLTextAreaElement, _content: string) {
   function resize() {
@@ -291,7 +346,15 @@ function handleSubmit(e: Event) {
   if (saveDisabled) {
     return;
   }
-  onSave(formData);
+  onSave(getSavePayload(formData));
+}
+
+function handleCancel() {
+  if (!showActions) {
+    return;
+  }
+
+  onCancel();
 }
 
 function parseTagsInput(value: string) {
@@ -394,11 +457,24 @@ function removeAsset(id: string) {
 </script>
 
 <div class="form-container">
-  <div id="content-edit-form" class="editor-grid">
+  <div class="editor-grid">
     <!-- LEFT COLUMN (Document Canvas) -->
-    <div class="editor-main-col">
+    <form
+      bind:this={editForm}
+      id="content-edit-form"
+      class="editor-main-col"
+      onsubmit={handleSubmit}
+    >
       <div class="editor-toolbar">
         <div class="editor-toolbar-left">
+          <div class="mui-field">
+            <select id="type-select" bind:value={formData.type} class="mui-input">
+              <option value="article">Article</option>
+              <option value="document">Document</option>
+              <option value="mirror">Mirror</option>
+            </select>
+            <label for="type-select">Type</label>
+          </div>
           <div class="mui-field">
             <select id="state-select" bind:value={formData.state} class="mui-input">
               <option value="active">Active</option>
@@ -416,16 +492,23 @@ function removeAsset(id: string) {
             <label for="status-select">Status</label>
           </div>
           <div class="mui-field">
-            <input id="publish-date-input" type="datetime-local" bind:value={formData.publishDate} class="mui-input" />
+            <input id="publish-date-input" type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
             <label for="publish-date-input">Publish Date</label>
           </div>
         </div>
-        {#if !hideActions}
+        {#if showActions}
           <div class="editor-toolbar-right">
-            <button type="button" onclick={handleSubmit} class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Save Content'}</button>
+            <button type="submit" class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Save Content'}</button>
+            <button type="button" class="cancel-button" onclick={handleCancel}>
+              Cancel
+            </button>
           </div>
         {/if}
       </div>
+
+      {#if saveNotice}
+        <p class="save-notice">{saveNotice}</p>
+      {/if}
 
       <input 
          type="text" 
@@ -599,7 +682,36 @@ function removeAsset(id: string) {
             </label>
           </div>
       </details>
-    </div>
+    </form>
+
+    {#if showChatSidebar}
+      <aside class="editor-sidebar-col">
+        <div class="chat-sidebar-section">
+          {#if showAgentChat}
+            <ContentAgentChat
+              {apiBaseUrl}
+              contentId={agentChatContentId}
+              {currentEditorState}
+              {currentReferenceIds}
+              formFields={agentChatFields}
+              onapplyfields={applyFieldUpdates}
+              onclose={() => {}}
+            />
+          {:else}
+            <div
+              class="chat-sidebar-empty-state"
+              data-testid="content-editor-agent-chat-disabled"
+            >
+              <h3>Agent chat unavailable</h3>
+              <p>
+                {agentChatNotice ||
+                  'Run the content package dev server to use the agent chat sidebar for this editor.'}
+              </p>
+            </div>
+          {/if}
+        </div>
+      </aside>
+    {/if}
   </div>
 </div>
 
@@ -739,13 +851,6 @@ function removeAsset(id: string) {
     top: 2rem;
   }
 
-  .sidebar-actions {
-    display: flex;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    justify-content: flex-end;
-  }
-
   .editor-drawer {
     margin: 0 0 2rem 0;
     padding: 0;
@@ -820,25 +925,10 @@ function removeAsset(id: string) {
     color: var(--smrt-color-on-surface);
     font-size: 1.5rem;
   }
-  
-  .header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-  }
-
-
 
   .form-container form {
     display: block;
     width: 100%;
-  }
-
-  .form-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.25rem;
   }
 
   .form-container label {
@@ -886,12 +976,6 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline-variant);
     padding: 1rem;
     border-radius: 0.5rem;
-  }
-
-  .section-label {
-    margin: 0;
-    font-weight: 600;
-    color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
   .references-list {
@@ -973,11 +1057,6 @@ function removeAsset(id: string) {
     border-color: var(--smrt-color-primary, #94a3b8);
     color: var(--smrt-color-on-surface, #1e293b);
     background: var(--smrt-color-surface-container-low, #f1f5f9);
-  }
-
-  .sidebar-actions {
-    display: flex;
-    gap: 1rem;
   }
 
   .save-button {
@@ -1181,13 +1260,6 @@ function removeAsset(id: string) {
   .drop-overlay svg {
     color: var(--smrt-color-primary, #3b82f6);
     opacity: 0.8;
-  }
-
-  .drop-overlay span {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--smrt-color-primary, #3b82f6);
-    letter-spacing: 0.02em;
   }
 
   @keyframes drop-pulse {
