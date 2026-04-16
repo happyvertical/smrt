@@ -1494,12 +1494,6 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     gap: 1rem;
   }
 
-  .workflow-section__header h4 {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--smrt-color-on-surface);
-  }
-
   .workflow-field-group {
     display: flex;
     flex-direction: column;
@@ -1548,8 +1542,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .fact-search button,
-  .review-actions button,
-  .workflow-section button {
+  .review-actions button {
     border: none;
     border-radius: 0.5rem;
     padding: 0.7rem 0.95rem;
@@ -1559,7 +1552,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     font-weight: 600;
   }
 
-  .workflow-section button:disabled {
+  .fact-search button:disabled,
+  .review-actions button:disabled {
     cursor: not-allowed;
     opacity: 0.65;
   }

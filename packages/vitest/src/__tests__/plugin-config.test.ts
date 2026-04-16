@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { setupSmrtManifests, smrtVitestPlugin } from '../index.js';
 
@@ -36,6 +37,10 @@ vi.mock('@happyvertical/smrt-core/manifest', () => ({
 }));
 
 describe('smrtVitestPlugin config', () => {
+  const defaultSetupFile = fileURLToPath(
+    new URL('../setup.ts', import.meta.url),
+  );
+
   beforeEach(() => {
     mockedModules.hasClass.mockReset();
     mockedModules.hasClass.mockReturnValue(false);
@@ -75,9 +80,14 @@ describe('smrtVitestPlugin config', () => {
     };
     const config = plugin.config?.(userConfig as any);
 
-    expect(config).toEqual({
+    expect(config).toMatchObject({
+      resolve: {
+        alias: expect.arrayContaining([
+          expect.objectContaining({ find: '@happyvertical/smrt-core' }),
+        ]),
+      },
       test: {
-        setupFiles: ['existing-root-setup', '@happyvertical/smrt-vitest/setup'],
+        setupFiles: ['existing-root-setup', defaultSetupFile],
       },
     });
 
@@ -86,15 +96,12 @@ describe('smrtVitestPlugin config', () => {
         projects: [
           {
             test: {
-              setupFiles: [
-                'existing-project-setup',
-                '@happyvertical/smrt-vitest/setup',
-              ],
+              setupFiles: ['existing-project-setup', defaultSetupFile],
             },
           },
           {
             test: {
-              setupFiles: ['@happyvertical/smrt-vitest/setup'],
+              setupFiles: [defaultSetupFile],
             },
           },
         ],
@@ -106,12 +113,12 @@ describe('smrtVitestPlugin config', () => {
     const plugin = smrtVitestPlugin();
     const userConfig = {
       test: {
-        setupFiles: ['@happyvertical/smrt-vitest/setup'],
+        setupFiles: [defaultSetupFile],
         projects: [
           {
             test: {
               name: 'sqlite',
-              setupFiles: ['@happyvertical/smrt-vitest/setup'],
+              setupFiles: [defaultSetupFile],
             },
           },
         ],
@@ -119,9 +126,14 @@ describe('smrtVitestPlugin config', () => {
     };
     const config = plugin.config?.(userConfig as any);
 
-    expect(config).toEqual({
+    expect(config).toMatchObject({
+      resolve: {
+        alias: expect.arrayContaining([
+          expect.objectContaining({ find: '@happyvertical/smrt-core' }),
+        ]),
+      },
       test: {
-        setupFiles: ['@happyvertical/smrt-vitest/setup'],
+        setupFiles: [defaultSetupFile],
       },
     });
 
@@ -130,7 +142,7 @@ describe('smrtVitestPlugin config', () => {
         projects: [
           {
             test: {
-              setupFiles: ['@happyvertical/smrt-vitest/setup'],
+              setupFiles: [defaultSetupFile],
             },
           },
         ],
