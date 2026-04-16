@@ -27,6 +27,8 @@ export interface Props {
   saveNotice?: string | null;
   agentChatEnabled?: boolean;
   agentChatNotice?: string | null;
+  hideActions?: boolean;
+  hideChat?: boolean;
   onSave: (data: GovernedContentEditorSaveData) => void;
   onCancel: () => void;
 }
@@ -45,6 +47,8 @@ let {
   saveNotice = null,
   agentChatEnabled = true,
   agentChatNotice = null,
+  hideActions = false,
+  hideChat = false,
   onSave,
   onCancel,
 }: Props = $props();
@@ -65,6 +69,22 @@ let lastResetKey = $state<string | null | undefined>(undefined);
 let draftContent = $state<ContentData | undefined>(undefined);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
 const resolvedContentId = $derived(content?.id ?? contentId);
+let innerEditor = $state<any>(null);
+
+export function triggerSave() {
+  if (publishSaveDisabled) return;
+  if (innerEditor && typeof innerEditor.triggerSave === 'function') {
+    innerEditor.triggerSave();
+  }
+}
+
+let governancePanel = $state<any>(null);
+
+export function triggerReview(actionKind: string) {
+  if (governancePanel && typeof governancePanel.triggerReview === 'function') {
+    governancePanel.triggerReview(actionKind);
+  }
+}
 
 $effect(() => {
   const nextResetKey = content?.id ?? contentId ?? null;
@@ -167,6 +187,7 @@ function handleSave(data: ContentData) {
   {/if}
 
   <ContentEditor
+    bind:this={innerEditor}
     {apiBaseUrl}
     content={governedContent}
     contentId={resolvedContentId}
@@ -174,12 +195,15 @@ function handleSave(data: ContentData) {
     saveNotice={resolvedSaveNotice}
     {agentChatEnabled}
     {agentChatNotice}
+    {hideActions}
+    {hideChat}
     onChange={handleEditorChange}
     onSave={handleSave}
     onCancel={onCancel}
   />
 
   <ContentGovernancePanel
+    bind:this={governancePanel}
     {apiBaseUrl}
     contentId={resolvedContentId}
     draftType={draftContent?.type || content?.type}
@@ -254,3 +278,4 @@ function handleSave(data: ContentData) {
     color: var(--smrt-color-on-surface-variant);
   }
 </style>
+

@@ -71,4 +71,54 @@ describe('Issue #1120 - runtime schema rebuild preserves manifest FK actions', (
       onUpdate: 'CASCADE',
     });
   });
+  it('does not mutate manifest column objects when sqlType overrides are applied', () => {
+    const manifestColumns = {
+      agent_config: {
+        type: 'JSON',
+        notNull: true,
+      },
+    };
+
+    ObjectRegistry.registerFieldDecorator(
+      'ManifestSafeSchedule',
+      'agentConfig',
+      {
+        type: 'json',
+        sqlType: 'TEXT',
+      },
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:ManifestSafeSchedule',
+      {
+        className: 'ManifestSafeSchedule',
+        fields: {
+          agentConfig: {
+            type: 'json',
+            nullable: false,
+          },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'manifest_safe_schedules',
+        },
+        schema: {
+          tableName: 'manifest_safe_schedules',
+          ddl: '',
+          columns: manifestColumns,
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: 'test-version',
+        },
+      },
+      '@test/pkg',
+    );
+
+    const registered = ObjectRegistry.getClass('ManifestSafeSchedule');
+
+    expect(registered?.schema.columns.agent_config?.type).toBe('TEXT');
+    expect(manifestColumns.agent_config.type).toBe('JSON');
+  });
 });

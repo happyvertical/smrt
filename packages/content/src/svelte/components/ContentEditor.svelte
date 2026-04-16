@@ -1,7 +1,6 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
-import { slide } from 'svelte/transition';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
 import ContentAgentChat from './ContentAgentChat.svelte';
 
@@ -13,6 +12,8 @@ let {
   saveNotice = null,
   agentChatEnabled = true,
   agentChatNotice = null,
+  hideActions = false,
+  hideChat = false,
   onChange = undefined,
   onSave,
   onCancel,
@@ -24,10 +25,63 @@ let {
   saveNotice?: string | null;
   agentChatEnabled?: boolean;
   agentChatNotice?: string | null;
+  hideActions?: boolean;
+  hideChat?: boolean;
   onChange?: (data: any) => void;
   onSave: (data: any) => void;
   onCancel: () => void;
 }>();
+
+let editForm = $state<HTMLFormElement | null>(null);
+
+function formatDateTimeLocal(value: unknown): string {
+  if (!value) {
+    return '';
+  }
+
+  const date = value instanceof Date ? value : new Date(value as string);
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === 'string' ? value : '';
+  }
+
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function normalizePublishDate(value: unknown): string | null {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const parsed = new Date(trimmed);
+    return Number.isNaN(parsed.getTime()) ? trimmed : parsed.toISOString();
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  return null;
+}
+
+function getSavePayload(data: any) {
+  return {
+    ...data,
+    publish_date: normalizePublishDate(data.publish_date),
+  };
+}
+
+export function triggerSave() {
+  if (saveDisabled) return;
+  if (editForm?.requestSubmit) {
+    editForm.requestSubmit();
+    return;
+  }
+
+  onSave(getSavePayload(formData));
+}
 
 function getInitialFormData(c: any) {
   return c
@@ -37,6 +91,7 @@ function getInitialFormData(c: any) {
         referenceIds: c.referenceIds || [],
         assetIds: c.assetIds || [],
         assets: c.assets || [],
+        publish_date: formatDateTimeLocal(c.publish_date ?? c.publishDate),
       }
     : {
         title: '',
@@ -49,6 +104,7 @@ function getInitialFormData(c: any) {
         source: 'manual',
         url: '',
         fileKey: '',
+        publish_date: '',
         thumbnailAssetId: null,
         tags: [],
         referenceIds: [],
@@ -62,10 +118,24 @@ let lastContentKey = $state<string | undefined>(undefined);
 let currentEditorState = $derived(formData.body || '');
 let currentReferenceIds = $derived(formData.referenceIds || []);
 const editorSnapshot = $derived({
-  ...formData,
+  ...getSavePayload(formData),
+  tags: [...(formData.tags || [])],
   referenceIds: [...(formData.referenceIds || [])],
   assetIds: [...(formData.assetIds || [])],
   assets: [...(formData.assets || [])],
+});
+const showActions = $derived(!hideActions);
+const showChatSidebar = $derived(!hideChat);
+const showAgentChat = $derived(agentChatEnabled && showChatSidebar);
+const agentChatContentId = $derived(content?.id ?? contentId);
+const agentChatFields = $derived({
+  title: formData.title,
+  description: formData.description,
+  type: formData.type,
+  status: formData.status,
+  state: formData.state,
+  publish_date: normalizePublishDate(formData.publish_date) || '',
+  body: formData.body,
 });
 
 // Undo stack for AI field edits — each entry stores the old values of changed fields
@@ -137,6 +207,19 @@ let showImageUploader = $state(false);
 // Drag-and-drop state
 let imageDragOver = $state(false);
 let refDragOver = $state(false);
+
+function autoResize(node: HTMLTextAreaElement, _content: string) {
+  function resize() {
+    node.style.height = 'auto';
+    node.style.height = `${node.scrollHeight}px`;
+  }
+  resize();
+  return {
+    update() {
+      resize();
+    },
+  };
+}
 
 function getImageRecord(payload: any) {
   return payload?.data ?? payload;
@@ -263,7 +346,15 @@ function handleSubmit(e: Event) {
   if (saveDisabled) {
     return;
   }
-  onSave(formData);
+  onSave(getSavePayload(formData));
+}
+
+function handleCancel() {
+  if (!showActions) {
+    return;
+  }
+
+  onCancel();
 }
 
 function parseTagsInput(value: string) {
@@ -366,55 +457,116 @@ function removeAsset(id: string) {
 </script>
 
 <div class="form-container">
-  <div class="header-row">
-    <h3>{content?.id ? 'Edit Content' : 'Add New Content'}</h3>
-    
-  </div>
-  
   <div class="editor-grid">
-    <!-- LEFT COLUMN -->
-    <div class="editor-main-col">
-      
+    <!-- LEFT COLUMN (Document Canvas) -->
+    <form
+      bind:this={editForm}
+      id="content-edit-form"
+      class="editor-main-col"
+      onsubmit={handleSubmit}
+    >
+      <div class="editor-toolbar">
+        <div class="editor-toolbar-left">
+          <div class="mui-field">
+            <select id="type-select" bind:value={formData.type} class="mui-input">
+              <option value="article">Article</option>
+              <option value="document">Document</option>
+              <option value="mirror">Mirror</option>
+            </select>
+            <label for="type-select">Type</label>
+          </div>
+          <div class="mui-field">
+            <select id="state-select" bind:value={formData.state} class="mui-input">
+              <option value="active">Active</option>
+              <option value="highlighted">Highlighted</option>
+              <option value="deprecated">Deprecated</option>
+            </select>
+            <label for="state-select">State</label>
+          </div>
+          <div class="mui-field">
+            <select id="status-select" bind:value={formData.status} class="mui-input">
+              <option value="draft">Draft</option>
+              <option value="published">Published</option>
+              <option value="archived">Archived</option>
+            </select>
+            <label for="status-select">Status</label>
+          </div>
+          <div class="mui-field">
+            <input id="publish-date-input" type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
+            <label for="publish-date-input">Publish Date</label>
+          </div>
+        </div>
+        {#if showActions}
+          <div class="editor-toolbar-right">
+            <button type="submit" class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Save Content'}</button>
+            <button type="button" class="cancel-button" onclick={handleCancel}>
+              Cancel
+            </button>
+          </div>
+        {/if}
+      </div>
+
+      {#if saveNotice}
+        <p class="save-notice">{saveNotice}</p>
+      {/if}
+
+      <input 
+         type="text" 
+         class="document-title-input" 
+         bind:value={formData.title} 
+         placeholder="Document title..."
+         required 
+      />
+
+      {#if showUndoBanner}
+        <div class="undo-banner">
+          <span class="undo-banner__text">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-1"/></svg>
+            AI updated {lastAppliedFields.length} field{lastAppliedFields.length !== 1 ? 's' : ''}: {lastAppliedFields.join(', ')}
+          </span>
+          <button type="button" class="undo-banner__btn" onclick={undoLastApply}>
+            Undo{fieldUndoStack.length > 1 ? ` (${fieldUndoStack.length})` : ''}
+          </button>
+        </div>
+      {/if}
+
+      <textarea 
+         id="content-body-input" 
+         class="document-body-input" 
+         bind:value={formData.body} 
+         use:autoResize={formData.body}
+         placeholder="Start writing..." 
+         style="overflow: hidden;"
+      ></textarea>
+
+      <!-- Metadata Panel -->
       <details class="editor-drawer" open>
-          <summary class="editor-drawer-header">
-            Main Content
-            <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </summary>
+        <summary class="editor-drawer-header">
+          Metadata
+          <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </summary>
         <div class="editor-drawer-content">
-          <form onsubmit={handleSubmit} id="content-edit-form">
-            <label class="form-row-block">
-              Title:
-              <input type="text" bind:value={formData.title} required />
-            </label>
-
-            {#if showUndoBanner}
-              <div class="undo-banner">
-                <span class="undo-banner__text">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-1"/></svg>
-                  AI updated {lastAppliedFields.length} field{lastAppliedFields.length !== 1 ? 's' : ''}: {lastAppliedFields.join(', ')}
-                </span>
-                <button type="button" class="undo-banner__btn" onclick={undoLastApply}>
-                  Undo{fieldUndoStack.length > 1 ? ` (${fieldUndoStack.length})` : ''}
-                </button>
-              </div>
-            {/if}
-
-            <label class="form-row-block">
-              Body:
-              <textarea id="content-body-input" bind:value={formData.body} rows="15"></textarea>
-            </label>
-            
-            <div class="form-actions" style="margin-top: 1.5rem; justify-content: flex-start;">
-              <button type="submit" class="save-button" disabled={saveDisabled}>{content ? 'Update Content' : 'Add Content'}</button>
-              <button type="button" onclick={onCancel} class="cancel-button">Cancel</button>
-            </div>
-            {#if saveNotice}
-              <p class="save-notice">{saveNotice}</p>
-            {/if}
-          </form>
+          <label>
+            Author:
+            <input type="text" bind:value={formData.author} placeholder="Author name" />
+          </label>
+          <label>
+            Description:
+            <textarea bind:value={formData.description} rows="2" placeholder="Brief summary..."></textarea>
+          </label>
+          <label>
+            Tags (Comma separated):
+            <input
+              type="text"
+              value={(formData.tags || []).join(', ')}
+              placeholder="e.g. news, tech"
+              oninput={(event) => parseTagsInput((event.currentTarget as HTMLInputElement).value)}
+            />
+          </label>
         </div>
       </details>
 
+      <!-- Images & Media -> Metadata Drawer -->
       <details class="editor-drawer" open>
           <summary class="editor-drawer-header">
             Images & Media
@@ -431,7 +583,6 @@ function removeAsset(id: string) {
              {#if imageDragOver}
                <div class="drop-overlay">
                  <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                 <span>Drop images here</span>
                </div>
              {/if}
              <div class="media-gallery">
@@ -457,7 +608,7 @@ function removeAsset(id: string) {
                     {/each}
                   </div>
                 {:else}
-                  <p class="no-media-text">No images attached. Drag & drop images here or use the button below.</p>
+                  <p class="no-media-text">No images attached.</p>
                 {/if}
                 {#if !showImageUploader}
                   <button type="button" class="add-image-btn" onclick={() => showImageUploader = true} style="margin-top: 1rem;">
@@ -471,7 +622,7 @@ function removeAsset(id: string) {
                 {/if}
 
                 {#if showImageUploader}
-                  <div class="inline-uploader-container" transition:slide>
+                  <div class="inline-uploader-container">
                     <ImageUploader 
                       apiBaseUrl={normalizeApiBaseUrl(apiBaseUrl)}
                       allowedTabs={['gallery', 'upload', 'external']} 
@@ -482,9 +633,10 @@ function removeAsset(id: string) {
                 {/if}
              </div>
           </div>
-        </details>
+      </details>
 
-        <details class="editor-drawer">
+      <!-- References Panel -->
+      <details class="editor-drawer" open>
           <summary class="editor-drawer-header">
             References
             <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -500,11 +652,9 @@ function removeAsset(id: string) {
             {#if refDragOver}
               <div class="drop-overlay">
                 <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-                <span>Drop reference files or URLs here</span>
               </div>
             {/if}
             <div class="references-section">
-               <p class="section-label">References (Source Material)</p>
                <div class="references-list">
                   {#each formData.referenceIds as refId}
                     <div class="reference-badge">
@@ -513,100 +663,39 @@ function removeAsset(id: string) {
                     </div>
                   {/each}
                   {#if formData.referenceIds.length === 0}
-                    <span class="no-refs">No references added. Drag & drop files or URLs here.</span>
+                    <span class="no-refs">No references.</span>
                   {/if}
                </div>
                <div class="add-reference-row">
-                  <input type="text" bind:value={newReferenceId} placeholder="Enter existing Content ID or URL" />
-                  <button type="button" onclick={addReference}>Add Reference</button>
+                  <input type="text" bind:value={newReferenceId} placeholder="Reference ID or URL" />
+                  <button type="button" onclick={addReference}>Add</button>
                </div>
             </div>
 
-            <div class="form-row">
-              <label>
-                URL:
-                <input type="url" bind:value={formData.url} />
-              </label>
-              <label>
-                File Key:
-                <input type="text" bind:value={formData.fileKey} />
-              </label>
-            </div>
+            <label>
+              URL:
+              <input type="url" bind:value={formData.url} />
+            </label>
+            <label>
+              File Key:
+              <input type="text" bind:value={formData.fileKey} />
+            </label>
           </div>
-        </details>
-
-        <details class="editor-drawer" open>
-          <summary class="editor-drawer-header">
-            Metadata
-            <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-          </summary>
-          <div class="editor-drawer-content">
-            <div class="form-row">
-              <label>
-                Type:
-                <select bind:value={formData.type}>
-                  <option value="article">Article</option>
-                  <option value="document">Document</option>
-                  <option value="mirror">Mirror</option>
-                </select>
-              </label>
-              <label>
-                Status:
-                <select bind:value={formData.status}>
-                  <option value="draft">Draft</option>
-                  <option value="published">Published</option>
-                  <option value="archived">Archived</option>
-                </select>
-              </label>
-              <label>
-                State:
-                <select bind:value={formData.state}>
-                  <option value="active">Active</option>
-                  <option value="highlighted">Highlighted</option>
-                  <option value="deprecated">Deprecated</option>
-                </select>
-              </label>
-              <label>
-                Author:
-                <input type="text" bind:value={formData.author} />
-              </label>
-            </div>
-
-            <label class="form-row-block">
-              Description:
-              <input type="text" bind:value={formData.description} />
-            </label>
-
-            <label class="form-row-block">
-              Tags (Comma separated):
-              <input
-                type="text"
-                value={(formData.tags || []).join(', ')}
-                placeholder="e.g. news, tech, updates"
-                oninput={(event) =>
-                  parseTagsInput(
-                    (event.currentTarget as HTMLInputElement).value,
-                  )}
-              />
-            </label>
-        </div>
       </details>
+    </form>
 
-    </div>
-
-    <!-- RIGHT COLUMN -->
-    <div class="editor-sidebar-col">
-
+    {#if showChatSidebar}
+      <aside class="editor-sidebar-col">
         <div class="chat-sidebar-section">
-          {#if agentChatEnabled}
+          {#if showAgentChat}
             <ContentAgentChat
               {apiBaseUrl}
-              {contentId}
+              contentId={agentChatContentId}
               {currentEditorState}
               {currentReferenceIds}
-              formFields={{ title: formData.title, description: formData.description, type: formData.type, status: formData.status, state: formData.state, body: formData.body }}
+              formFields={agentChatFields}
               onapplyfields={applyFieldUpdates}
-              onclose={() => { /* optional close handler */ }}
+              onclose={() => {}}
             />
           {:else}
             <div
@@ -621,18 +710,16 @@ function removeAsset(id: string) {
             </div>
           {/if}
         </div>
-      </div>
-    </div>
+      </aside>
+    {/if}
+  </div>
 </div>
 
 <style>
   .form-container {
-    background: var(--smrt-color-surface);
-    border-radius: 1rem;
-    padding: 2rem;
     width: 100%;
     margin: 0 auto;
-    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+    padding: 1rem 0;
   }
 
   .editor-grid {
@@ -645,14 +732,115 @@ function removeAsset(id: string) {
 
   @media (min-width: 1024px) {
     .editor-grid {
-      grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+      grid-template-columns: 1fr auto;
     }
+    .editor-sidebar-col {
+      width: 380px;
+    }
+  }
+
+  .document-title-input {
+    width: 100%;
+    font-size: 2.5rem;
+    font-weight: 800;
+    line-height: 1.2;
+    padding: 0;
+    margin-bottom: 2rem;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    resize: none;
+    font-family: inherit;
+  }
+
+  .document-title-input::placeholder {
+    color: var(--smrt-color-outline-variant);
+  }
+
+  .document-body-input {
+    width: 100%;
+    font-size: 1.125rem;
+    line-height: 1.6;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    resize: vertical;
+    font-family: inherit;
+    min-height: 60vh;
+  }
+
+  .document-body-input::placeholder {
+    color: var(--smrt-color-outline-variant);
+  }
+
+  .editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 1px solid var(--smrt-color-outline-variant);
+  }
+
+  .editor-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .editor-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .mui-field {
+    position: relative;
+    display: inline-flex;
+    margin-top: 0.5rem;
+  }
+
+  .mui-field label {
+    position: absolute;
+    top: -0.5rem;
+    left: 0.5rem;
+    background: var(--smrt-color-surface); /* Matches main surface background */
+    padding: 0 0.25rem;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: var(--smrt-color-outline);
+    pointer-events: none;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    z-index: 1;
+  }
+
+  .mui-input {
+    padding: 0.5rem 0.75rem;
+    border-radius: 0.375rem;
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: transparent;
+    color: var(--smrt-color-on-surface);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    width: auto;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+  }
+
+  .mui-input:focus {
+    outline: none;
+    border-color: var(--smrt-color-primary);
   }
 
   .editor-main-col {
     display: flex;
     flex-direction: column;
-    gap: 1.25rem;
+    background: transparent;
   }
 
   .editor-sidebar-col {
@@ -737,25 +925,10 @@ function removeAsset(id: string) {
     color: var(--smrt-color-on-surface);
     font-size: 1.5rem;
   }
-  
-  .header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1.5rem;
-  }
-
-
 
   .form-container form {
     display: block;
     width: 100%;
-  }
-
-  .form-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.25rem;
   }
 
   .form-container label {
@@ -803,12 +976,6 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline-variant);
     padding: 1rem;
     border-radius: 0.5rem;
-  }
-
-  .section-label {
-    margin: 0;
-    font-weight: 600;
-    color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
   .references-list {
@@ -892,14 +1059,6 @@ function removeAsset(id: string) {
     background: var(--smrt-color-surface-container-low, #f1f5f9);
   }
 
-  .form-actions {
-    display: flex;
-    gap: 1rem;
-    margin-top: 1rem;
-    padding-top: 1.5rem;
-    border-top: 1px solid #e5e7eb;
-  }
-
   .save-button {
     background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
     color: white;
@@ -917,35 +1076,16 @@ function removeAsset(id: string) {
   }
 
   .save-button:disabled {
-    cursor: not-allowed;
     opacity: 0.65;
     transform: none;
     box-shadow: none;
   }
 
-  .cancel-button {
-    background: white;
-    color: #475569;
-    border: 1px solid #cbd5e1;
-    padding: 0.75rem 1.5rem;
-    border-radius: 0.5rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .cancel-button:hover {
-    background: #f8fafc;
-    color: #1e293b;
-    border-color: #94a3b8;
-  }
-
   .save-notice {
-    margin: 0.75rem 0 0;
-    color: var(--smrt-color-on-surface-variant);
     font-size: 0.875rem;
+    color: var(--smrt-color-primary, #3b82f6);
   }
-  
+
   .inline-uploader-container {
     width: 100%;
     min-height: 400px; /* Reduced for inline view */
@@ -1092,8 +1232,9 @@ function removeAsset(id: string) {
   .drop-zone {
     position: relative;
     transition: border-color 0.2s, background 0.2s;
-    border: 2px dashed transparent;
+    border: 2px dashed var(--smrt-color-outline-variant, #e2e8f0);
     border-radius: 0.75rem;
+    padding: 1.5rem;
   }
 
   .drop-zone-active {
@@ -1119,13 +1260,6 @@ function removeAsset(id: string) {
   .drop-overlay svg {
     color: var(--smrt-color-primary, #3b82f6);
     opacity: 0.8;
-  }
-
-  .drop-overlay span {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--smrt-color-primary, #3b82f6);
-    letter-spacing: 0.02em;
   }
 
   @keyframes drop-pulse {
