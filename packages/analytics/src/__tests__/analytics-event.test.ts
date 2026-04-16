@@ -17,6 +17,7 @@ import {
 const pgAvailable = await isPostgresAvailable();
 const skipTests = getTestAdapter() === 'postgres' && !pgAvailable;
 const ANALYTICS_HEAVY_TEST_TIMEOUT_MS = 15_000;
+const ANALYTICS_EVENT_HOOK_TIMEOUT_MS = 20_000;
 
 describe('AnalyticsEvent', () => {
   describe('constructor', () => {
@@ -214,17 +215,18 @@ describe.skipIf(skipTests)(
     let collection: AnalyticsEventCollection;
     let cleanup: () => Promise<void>;
 
+    // CI can spend noticeable time initializing a fresh SQLite schema per test.
     beforeEach(async () => {
       const testDb = await createTestDb();
       cleanup = testDb.cleanup;
       collection = await AnalyticsEventCollection.create({
         persistence: testDb.config,
       });
-    });
+    }, ANALYTICS_EVENT_HOOK_TIMEOUT_MS);
 
     afterEach(async () => {
       await cleanup();
-    });
+    }, ANALYTICS_EVENT_HOOK_TIMEOUT_MS);
 
     it('should create and list events', async () => {
       const event = await collection.create({
