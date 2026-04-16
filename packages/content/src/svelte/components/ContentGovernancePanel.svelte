@@ -866,10 +866,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 <div class="factual-workflow">
   <details class="editor-drawer">
     <summary class="editor-drawer-header">
-      <div class="drawer-summary-title">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
         Facts
         {#if syncingFacts}
-          <span class="section-status section-status--muted">Saving links...</span>
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
         {/if}
       </div>
       <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -957,10 +957,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   <details class="editor-drawer">
     <summary class="editor-drawer-header">
-      <div class="drawer-summary-title">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
         Review
         {#if workflowLoading}
-          <span class="section-status section-status--muted">Loading...</span>
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
         {/if}
       </div>
       <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1144,10 +1144,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   <details class="editor-drawer">
     <summary class="editor-drawer-header">
-      <div class="drawer-summary-title">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
         Transparency
         {#if transparencyLoading}
-          <span class="section-status section-status--muted">Loading...</span>
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
         {/if}
       </div>
       <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1274,7 +1274,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   {#if savedContentId}
       <details class="editor-drawer">
         <summary class="editor-drawer-header">
-          <div class="drawer-summary-title">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
             Corrections
           </div>
           <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1355,9 +1355,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </details>
 
       <details class="editor-drawer">
-        <summary class="editor-drawer-header editor-drawer-header--with-action">
-          <div class="drawer-summary-row">
-            <div class="drawer-summary-title">
+        <summary class="editor-drawer-header">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex: 1;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
               Versions
             </div>
             <button
@@ -1369,7 +1369,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               {versionBusy ? 'Working...' : 'Create Snapshot'}
             </button>
           </div>
-          <svg class="drawer-icon drawer-icon--spaced" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          <svg class="drawer-icon" style="margin-left: 1rem;" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </summary>
         <div class="editor-drawer-content">
 
@@ -1460,30 +1460,44 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     gap: 1.5rem;
   }
 
-  .drawer-summary-title,
-  .drawer-summary-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .drawer-summary-row {
-    justify-content: space-between;
-    flex: 1;
-  }
-
-  .editor-drawer-header--with-action {
-    gap: 1rem;
-  }
-
-  .drawer-icon--spaced {
-    margin-left: 1rem;
-  }
-
   .factual-workflow {
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
+  }
+
+  .workflow-grid {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  @media (min-width: 900px) {
+    .workflow-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  .workflow-section {
+    background: var(--smrt-color-surface-container-low);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.75rem;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.9rem;
+  }
+
+  .workflow-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .workflow-section__header h4 {
+    margin: 0;
+    font-size: 1rem;
+    color: var(--smrt-color-on-surface);
   }
 
   .workflow-field-group {
@@ -1500,12 +1514,6 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .fact-chip span {
     color: var(--smrt-color-on-surface-variant);
     font-size: 0.85rem;
-  }
-
-  .section-status--muted {
-    font-size: 0.875rem;
-    font-weight: 400;
-    color: var(--smrt-color-outline);
   }
 
   .fact-search,
@@ -1539,7 +1547,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     font-weight: 500;
   }
 
-  .factual-workflow button {
+  .fact-search button,
+  .review-actions button,
+  .workflow-section button {
     border: none;
     border-radius: 0.5rem;
     padding: 0.7rem 0.95rem;
@@ -1549,7 +1559,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     font-weight: 600;
   }
 
-  .factual-workflow button:disabled {
+  .workflow-section button:disabled {
     cursor: not-allowed;
     opacity: 0.65;
   }
