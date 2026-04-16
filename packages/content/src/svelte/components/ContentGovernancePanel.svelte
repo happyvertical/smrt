@@ -624,6 +624,26 @@ async function loadSavedWorkflow() {
   }
 }
 
+export async function triggerReview(actionKind: string) {
+  const action = activeProfileReviewActions.find(
+    (a) =>
+      a.kind === actionKind ||
+      a.label.toLowerCase().includes(actionKind.toLowerCase()),
+  );
+  if (action) {
+    await runReview(action);
+  } else if (actionKind.toLowerCase() === 'custom') {
+    await runReview(
+      createReviewAction(
+        'custom',
+        activeCustomPolicy?.key || customReviewPolicyKey,
+        customReviewButtonLabel,
+        customReviewText || undefined,
+      ),
+    );
+  }
+}
+
 async function runReview(action: ReviewAction) {
   if (!savedContentId) {
     return;
@@ -844,13 +864,17 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 </script>
 
 <div class="factual-workflow">
-  <div class="workflow-section">
-    <div class="workflow-section__header">
-      <h4>Facts</h4>
-      {#if syncingFacts}
-        <span class="section-status">Saving links...</span>
-      {/if}
-    </div>
+  <details class="editor-drawer">
+    <summary class="editor-drawer-header">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        Facts
+        {#if syncingFacts}
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
+        {/if}
+      </div>
+      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </summary>
+    <div class="editor-drawer-content">
 
     {#if governanceState && !governanceState.factLinkingEnabled}
       <p class="empty-copy">
@@ -929,14 +953,19 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </div>
     {/if}
   </div>
+  </details>
 
-  <div class="workflow-section">
-    <div class="workflow-section__header">
-      <h4>Review</h4>
-      {#if workflowLoading}
-        <span class="section-status">Loading...</span>
-      {/if}
-    </div>
+  <details class="editor-drawer">
+    <summary class="editor-drawer-header">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        Review
+        {#if workflowLoading}
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
+        {/if}
+      </div>
+      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </summary>
+    <div class="editor-drawer-content">
 
     {#if workflowError}
       <p class="workflow-error">{workflowError}</p>
@@ -1111,14 +1140,19 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </div>
     {/if}
   </div>
+  </details>
 
-  <div class="workflow-section">
-    <div class="workflow-section__header">
-      <h4>Transparency</h4>
-      {#if transparencyLoading}
-        <span class="section-status">Loading...</span>
-      {/if}
-    </div>
+  <details class="editor-drawer">
+    <summary class="editor-drawer-header">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        Transparency
+        {#if transparencyLoading}
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Loading...</span>
+        {/if}
+      </div>
+      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </summary>
+    <div class="editor-drawer-content">
 
     {#if !savedContentId}
       <p class="empty-copy">
@@ -1235,13 +1269,17 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </div>
     {/if}
   </div>
+  </details>
 
   {#if savedContentId}
-    <div class="workflow-grid">
-      <div class="workflow-section">
-        <div class="workflow-section__header">
-          <h4>Corrections</h4>
-        </div>
+      <details class="editor-drawer">
+        <summary class="editor-drawer-header">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            Corrections
+          </div>
+          <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </summary>
+        <div class="editor-drawer-content">
 
         <label class="workflow-field">
           Summary
@@ -1313,20 +1351,27 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {/each}
           {/if}
         </div>
-      </div>
-
-      <div class="workflow-section">
-        <div class="workflow-section__header">
-          <h4>Versions</h4>
-          <button
-            type="button"
-            class="secondary-button"
-            disabled={versionBusy}
-            onclick={() => void createSnapshot()}
-          >
-            {versionBusy ? 'Working...' : 'Create Snapshot'}
-          </button>
         </div>
+      </details>
+
+      <details class="editor-drawer">
+        <summary class="editor-drawer-header">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex: 1;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              Versions
+            </div>
+            <button
+              type="button"
+              class="secondary-button"
+              disabled={versionBusy}
+              onclick={(e) => { e.preventDefault(); void createSnapshot(); }}
+            >
+              {versionBusy ? 'Working...' : 'Create Snapshot'}
+            </button>
+          </div>
+          <svg class="drawer-icon" style="margin-left: 1rem;" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </summary>
+        <div class="editor-drawer-content">
 
         {#if versions.length === 0}
           <p class="empty-copy">No versions saved yet.</p>
@@ -1365,11 +1410,56 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           </div>
         {/if}
       </div>
-    </div>
+    </details>
   {/if}
 </div>
 
 <style>
+  .editor-drawer {
+    margin: 0 0 2rem 0;
+    padding: 0;
+  }
+
+  .editor-drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 0 1.25rem 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--smrt-color-on-surface);
+    cursor: pointer;
+    list-style: none; /* Hide default triangle */
+    user-select: none;
+    transition: color 0.2s;
+    margin: 0;
+  }
+  
+  /* Hide the default details marker */
+  .editor-drawer-header::-webkit-details-marker {
+    display: none;
+  }
+
+  .editor-drawer-header:hover {
+    color: var(--smrt-color-primary);
+  }
+
+  .drawer-icon {
+    color: var(--smrt-color-outline);
+    transition: transform 0.3s ease;
+  }
+
+  .editor-drawer[open] .drawer-icon {
+    transform: rotate(180deg);
+  }
+
+  .editor-drawer-content {
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
   .factual-workflow {
     display: flex;
     flex-direction: column;
