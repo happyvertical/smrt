@@ -31,7 +31,17 @@ export default defineConfig(async ({ mode }) => {
   }
 
   // SvelteKit dev mode (used by `pnpm run dev`)
-  const { smrtPlugin } = await import('@happyvertical/smrt-core/vite-plugin');
+  const { importWorkspaceModule } = await import(
+    '../core/src/utils/import-workspace-module.js'
+  );
+  const { smrtPlugin } = await importWorkspaceModule<
+    typeof import('@happyvertical/smrt-core/vite-plugin')
+  >({
+    packageName: '@happyvertical/smrt-core/vite-plugin',
+    distEntry: 'packages/core/dist/vite-plugin.js',
+    sourceEntry: 'packages/core/src/vite-plugin/index.ts',
+    purpose: 'images package Vite config',
+  });
 
   return {
     resolve: {

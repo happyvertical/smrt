@@ -177,9 +177,17 @@ export function createPackageConfig(
     let smrtPlugin = null;
 
     if (shouldUseSmrtPlugin) {
-      const { smrtPlugin: plugin } = await import(
-        './packages/core/src/vite-plugin/index.js'
+      const { importWorkspaceModule } = await import(
+        './packages/core/src/utils/import-workspace-module.js'
       );
+      const { smrtPlugin: plugin } = await importWorkspaceModule<
+        typeof import('@happyvertical/smrt-core/vite-plugin')
+      >({
+        packageName: '@happyvertical/smrt-core/vite-plugin',
+        distEntry: 'packages/core/dist/vite-plugin.js',
+        sourceEntry: 'packages/core/src/vite-plugin/index.ts',
+        purpose: 'shared SMRT package build configuration',
+      });
       smrtPlugin = plugin;
     }
 

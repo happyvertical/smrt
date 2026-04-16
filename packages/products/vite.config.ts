@@ -93,9 +93,17 @@ const libEntries = {
 
 export default defineConfig(async () => {
 	// Import smrtPlugin for SMRT object scanning
-	const { smrtPlugin } = await import(
-		'../../packages/core/src/vite-plugin/index.js'
+	const { importWorkspaceModule } = await import(
+		'../core/src/utils/import-workspace-module.js'
 	);
+	const { smrtPlugin } = await importWorkspaceModule<
+		typeof import('@happyvertical/smrt-core/vite-plugin')
+	>({
+		packageName: '@happyvertical/smrt-core/vite-plugin',
+		distEntry: 'packages/core/dist/vite-plugin.js',
+		sourceEntry: 'packages/core/src/vite-plugin/index.ts',
+		purpose: 'products package Vite config',
+	});
 
 	return {
 		build: {

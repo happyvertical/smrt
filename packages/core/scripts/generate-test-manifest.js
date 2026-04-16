@@ -10,60 +10,58 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { register } from 'tsx/esm/api';
 
 async function generateTestManifest() {
   try {
     console.log('[smrt] Generating test manifest...');
 
-    // Use ManifestBuilder via the tsx loader to handle TypeScript imports
-    const tsCode = `
-import { ManifestBuilder } from './src/manifest/generator.js';
-
-const builder = new ManifestBuilder();
-
-await builder.generate({
-  // === FILE DISCOVERY ===
-  // Scan all source files including test files for test manifest
-  // Test classes defined inline need to be in the manifest for proper field detection
-  include: ['src/**/*.ts'],
-  exclude: ['src/**/*.d.ts', 'node_modules/**'],
-
-  // === SCANNER CONFIGURATION ===
-  baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
-  followImports: true,  // Needed for multi-package inheritance (e.g., Meeting extends Event from external package)
-  loadViteConfig: true,  // Use custom baseClasses from vite.config.ts if present
-  discoverExternalPackages: true,
-  includeExternalBaseClasses: true,  // Test manifest needs external base classes
-
-  // === OUTPUT CONFIGURATION ===
-  outputDir: 'src/manifest',
-  outputName: 'test-manifest.json',
-  generateTypeStub: true,
-  stubName: 'test-manifest-stub.ts',
-
-  // === METADATA ===
-  injectPackageInfo: true,
-  moduleType: 'smrt',
-});
-`;
-
-    // Write temporary TypeScript file with unique name to avoid race conditions
-    // when multiple builds run in parallel (see issue #631)
-    const { writeFileSync, unlinkSync } = await import('node:fs');
-    const tempFile = `temp-test-manifest-gen-${Date.now()}-${Math.random().toString(36).slice(2)}.ts`;
-    writeFileSync(tempFile, tsCode);
+    const workspaceTsconfigPath = resolve(
+      process.cwd(),
+      '../../tsconfig.package-build.json',
+    );
+    const unregister = register(
+      existsSync(workspaceTsconfigPath)
+        ? { tsconfig: workspaceTsconfigPath }
+        : undefined,
+    );
 
     try {
-      // Execute the temporary TypeScript module without shelling out through npm/npx.
-      execFileSync(process.execPath, ['--import', 'tsx', tempFile], {
-        stdio: 'inherit',
+      const { ManifestBuilder } = await import(
+        pathToFileURL(resolve(process.cwd(), 'src/manifest/generator.ts')).href
+      );
+
+      const builder = new ManifestBuilder();
+
+      await builder.generate({
+        // === FILE DISCOVERY ===
+        // Scan all source files including test files for test manifest
+        // Test classes defined inline need to be in the manifest for proper field detection
+        include: ['src/**/*.ts'],
+        exclude: ['src/**/*.d.ts', 'node_modules/**'],
+
+        // === SCANNER CONFIGURATION ===
+        baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
+        followImports: true, // Needed for multi-package inheritance (e.g., Meeting extends Event from external package)
+        loadViteConfig: true, // Use custom baseClasses from vite.config.ts if present
+        discoverExternalPackages: true,
+        includeExternalBaseClasses: true, // Test manifest needs external base classes
+
+        // === OUTPUT CONFIGURATION ===
+        outputDir: 'src/manifest',
+        outputName: 'test-manifest.json',
+        generateTypeStub: true,
+        stubName: 'test-manifest-stub.ts',
+
+        // === METADATA ===
+        injectPackageInfo: true,
+        moduleType: 'smrt',
       });
     } finally {
-      // Clean up temporary file
-      try {
-        unlinkSync(tempFile);
-      } catch {}
+      await unregister();
     }
   } catch (error) {
     console.error('[smrt] ❌ Failed to generate test manifest:', error);

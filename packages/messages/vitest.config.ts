@@ -1,11 +1,12 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vitest/config';
-import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
+import { smrtVitestPlugin } from '../vitest/src/index.ts';
 
 export default defineConfig({
   plugins: [smrtVitestPlugin()],
   test: {
     globals: true,
     environment: 'node',
-    setupFiles: ['@happyvertical/smrt-vitest/setup'],
+    setupFiles: [resolve(__dirname, '../vitest/src/setup.ts')],
   },
 });

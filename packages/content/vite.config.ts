@@ -30,7 +30,25 @@ export default defineConfig(async ({ mode }) => {
   }
 
   // SvelteKit dev mode (used by `pnpm run dev`)
-  const { smrtPlugin } = await import('../core/src/vite-plugin/index.js');
+  const { importWorkspaceModule } = await import(
+    '../core/src/utils/import-workspace-module.js'
+  );
+  const { smrtPlugin } = await importWorkspaceModule<
+    typeof import('@happyvertical/smrt-core/vite-plugin')
+  >({
+    packageName: '@happyvertical/smrt-core/vite-plugin',
+    distEntry: 'packages/core/dist/vite-plugin.js',
+    sourceEntry: 'packages/core/src/vite-plugin/index.ts',
+    purpose: 'content package Vite config',
+  });
+  const { smrtConsumer } = await importWorkspaceModule<
+    typeof import('@happyvertical/smrt-core/consumer-plugin')
+  >({
+    packageName: '@happyvertical/smrt-core/consumer-plugin',
+    distEntry: 'packages/core/dist/consumer-plugin.js',
+    sourceEntry: 'packages/core/src/consumer-plugin/index.ts',
+    purpose: 'content package consumer plugin',
+  });
 
   return {
     resolve: {
@@ -44,6 +62,10 @@ export default defineConfig(async ({ mode }) => {
     },
     plugins: [
       sveltekit(),
+      smrtConsumer({
+        projectRoot: process.cwd(),
+        svelteKit: true,
+      }),
       smrtPlugin({
         include: ['src/**/*.ts'],
         exclude: ['**/*.test.ts', '**/*.spec.ts', 'src/svelte/**/*', 'src/routes/**/*', '**/*.svelte'],

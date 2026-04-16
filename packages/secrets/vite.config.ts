@@ -5,9 +5,17 @@ import dts from 'vite-plugin-dts';
 const packageDir = resolve(__dirname);
 
 export default defineConfig(async () => {
-  const { smrtPlugin } = await import(
-    '../../packages/core/src/vite-plugin/index.js'
+  const { importWorkspaceModule } = await import(
+    '../core/src/utils/import-workspace-module.js'
   );
+  const { smrtPlugin } = await importWorkspaceModule<
+    typeof import('@happyvertical/smrt-core/vite-plugin')
+  >({
+    packageName: '@happyvertical/smrt-core/vite-plugin',
+    distEntry: 'packages/core/dist/vite-plugin.js',
+    sourceEntry: 'packages/core/src/vite-plugin/index.ts',
+    purpose: 'secrets package Vite config',
+  });
 
   return {
     build: {

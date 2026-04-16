@@ -19,6 +19,8 @@
  * @packageDocumentation
  */
 
+import { existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { afterAll, beforeAll, vi } from 'vitest';
 
 // Type alias for any to avoid conflicts with smrt-core's globalThis declarations
@@ -31,6 +33,41 @@ type VitestDatabaseOptions = Parameters<
 
 const preparedSchemasByDb = new WeakMap<object, string>();
 const preparedSchemasByConfig = new Map<string, string>();
+
+function findWorkspaceRoot(startDir: string): string | null {
+  let current = startDir;
+
+  while (true) {
+    if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+async function importWorkspaceSourceModule<T>(href: string): Promise<T> {
+  const { register } = await import('tsx/esm/api');
+  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const tsconfigPath =
+    workspaceRoot &&
+    existsSync(join(workspaceRoot, 'tsconfig.package-build.json'))
+      ? join(workspaceRoot, 'tsconfig.package-build.json')
+      : null;
+  const unregister = register(
+    tsconfigPath ? { tsconfig: tsconfigPath } : undefined,
+  );
+
+  try {
+    return (await import(href)) as T;
+  } finally {
+    await unregister();
+  }
+}
 
 function getSchemaPreparationKey(
   options: VitestDatabaseOptions | undefined,
@@ -76,8 +113,7 @@ async function loadSmrtCoreModule(): Promise<any> {
   try {
     const fallbackHref = new URL('../../core/src/index.ts', import.meta.url)
       .href;
-    const { tsImport } = await import('tsx/esm/api');
-    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+    return await importWorkspaceSourceModule(fallbackHref);
   } catch {
     throw new Error('Unable to load smrt-core schema helpers');
   }

@@ -12,6 +12,8 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-config', '../config/src/index.ts'],
   ['@happyvertical/smrt-core/scanner', '../core/src/scanner/index.ts'],
   ['@happyvertical/smrt-core/schema/utils', '../core/src/schema/utils.ts'],
+  ['@happyvertical/smrt-core/vite-plugin', '../core/src/vite-plugin.ts'],
+  ['@happyvertical/smrt-core/consumer-plugin', '../core/src/consumer-plugin.ts'],
   ['@happyvertical/smrt-core', '../core/src/index.ts'],
   ['@happyvertical/smrt-facts', '../facts/src/index.ts'],
   ['@happyvertical/smrt-images', '../images/src/index.ts'],
@@ -43,6 +45,7 @@ const workspaceAliasEntries = [
     '@happyvertical/smrt-svelte/themes',
     '../smrt-svelte/src/themes/index.ts',
   ],
+  ['@happyvertical/smrt-types', '../types/src/index.ts'],
 ];
 
 function getSortedWorkspaceAliasEntries() {

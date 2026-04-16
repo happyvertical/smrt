@@ -41,51 +41,70 @@ import '../../contents';
 
 // Re-register imported objects with explicit package names for bundled runtimes
 ObjectRegistry.register(ContentAsset, {
+  name: 'ContentAsset',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentContributionAttachment, {
+  name: 'ContentContributionAttachment',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentContributionRevision, {
+  name: 'ContentContributionRevision',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentContributionType, {
+  name: 'ContentContributionType',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentContribution, {
+  name: 'ContentContribution',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentContributor, {
+  name: 'ContentContributor',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentCorrection, {
+  name: 'ContentCorrection',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentGovernanceAssignment, {
+  name: 'ContentGovernanceAssignment',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentGovernancePolicy, {
+  name: 'ContentGovernancePolicy',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentGovernanceProfile, {
+  name: 'ContentGovernanceProfile',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentReference, {
+  name: 'ContentReference',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentReview, {
+  name: 'ContentReview',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(Article, {
+  name: 'Article',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentDocument, {
+  name: 'ContentDocument',
   packageName: '@happyvertical/smrt-content',
 });
-ObjectRegistry.register(Mirror, { packageName: '@happyvertical/smrt-content' });
+ObjectRegistry.register(Mirror, {
+  name: 'Mirror',
+  packageName: '@happyvertical/smrt-content',
+});
 ObjectRegistry.register(ContentVersion, {
+  name: 'ContentVersion',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(Content, {
+  name: 'Content',
   packageName: '@happyvertical/smrt-content',
 });

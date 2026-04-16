@@ -7,67 +7,64 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { register } from 'tsx/esm/api';
 
 async function generateManifest() {
   try {
     console.log('[smrt] Generating static manifest...');
 
-    // Use ManifestBuilder via the tsx loader to handle TypeScript imports
-    const tsCode = `
-import { ManifestBuilder } from './src/manifest/generator.js';
-
-const builder = new ManifestBuilder();
-
-await builder.generate({
-  // === FILE DISCOVERY ===
-  include: ['src/**/*.ts'],
-  exclude: [
-    'src/**/*.test.ts',
-    'src/**/*.spec.ts',
-    'src/**/__tests__/**/*.ts',
-    'src/**/*.d.ts',
-    'src/scanner/**/*.ts',
-    'src/vite-plugin/**/*.ts',
-    'src/pleb.ts',  // Test/prototype class - not a real framework object
-  ],
-
-  // === SCANNER CONFIGURATION ===
-  baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
-  followImports: false,
-  loadViteConfig: false,
-  discoverExternalPackages: true,
-  includeExternalBaseClasses: false,  // Build manifest doesn't need external base classes
-
-  // === OUTPUT CONFIGURATION ===
-  outputDir: 'src/manifest',
-  outputName: 'static-manifest.json',
-  generateTypeStub: true,
-  stubName: 'static-manifest.ts',
-
-  // === METADATA ===
-  injectPackageInfo: true,
-  moduleType: 'smrt',
-});
-`;
-
-    // Write temporary TypeScript file
-    const { writeFileSync, unlinkSync } = await import('node:fs');
-    writeFileSync('temp-manifest-gen.ts', tsCode);
+    const workspaceTsconfigPath = resolve(
+      process.cwd(),
+      '../../tsconfig.package-build.json',
+    );
+    const unregister = register(
+      existsSync(workspaceTsconfigPath)
+        ? { tsconfig: workspaceTsconfigPath }
+        : undefined,
+    );
 
     try {
-      // Execute the temporary TypeScript module without shelling out through npm/npx.
-      execFileSync(
-        process.execPath,
-        ['--import', 'tsx', 'temp-manifest-gen.ts'],
-        {
-          stdio: 'inherit',
-        },
+      const { ManifestBuilder } = await import(
+        pathToFileURL(resolve(process.cwd(), 'src/manifest/generator.ts')).href
       );
+
+      const builder = new ManifestBuilder();
+
+      await builder.generate({
+        // === FILE DISCOVERY ===
+        include: ['src/**/*.ts'],
+        exclude: [
+          'src/**/*.test.ts',
+          'src/**/*.spec.ts',
+          'src/**/__tests__/**/*.ts',
+          'src/**/*.d.ts',
+          'src/scanner/**/*.ts',
+          'src/vite-plugin/**/*.ts',
+          'src/pleb.ts', // Test/prototype class - not a real framework object
+        ],
+
+        // === SCANNER CONFIGURATION ===
+        baseClasses: ['SmrtObject', 'SmrtClass', 'SmrtCollection'],
+        followImports: false,
+        loadViteConfig: false,
+        discoverExternalPackages: true,
+        includeExternalBaseClasses: false, // Build manifest doesn't need external base classes
+
+        // === OUTPUT CONFIGURATION ===
+        outputDir: 'src/manifest',
+        outputName: 'static-manifest.json',
+        generateTypeStub: true,
+        stubName: 'static-manifest.ts',
+
+        // === METADATA ===
+        injectPackageInfo: true,
+        moduleType: 'smrt',
+      });
     } finally {
-      try {
-        unlinkSync('temp-manifest-gen.ts');
-      } catch {}
+      await unregister();
     }
   } catch (error) {
     console.error('[smrt] ❌ Failed to generate manifest:', error);
