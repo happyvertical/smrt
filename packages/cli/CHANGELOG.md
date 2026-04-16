@@ -1,5 +1,17 @@
 # @happyvertical/smrt-cli
 
+## 0.21.50
+
+### Patch Changes
+
+- dc274dd: Align `AgentSchedule` manifest schema output with the runtime storage contract for `agentConfig` and `methodArgs`, and improve migration status/history reporting so superseded failed generated migrations are distinguished from active schema drift.
+- Updated dependencies [dc274dd]
+  - @happyvertical/smrt-core@0.21.50
+  - @happyvertical/smrt-agents@0.21.50
+  - @happyvertical/smrt-playground@0.21.50
+  - @happyvertical/smrt-config@0.21.50
+  - @happyvertical/smrt-types@0.21.50
+
 ## 0.21.49
 
 ### Patch Changes
