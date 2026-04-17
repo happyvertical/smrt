@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.21.51
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - ensure publish date persistence, align drawers, and simplify toolbar actions (#1124) (content)
+
+  ### Merged Changes
+
+  - [codex] fix publish-time core manifest discovery imports
+  - @happyvertical/smrt-scanner@0.21.51
+  - @happyvertical/smrt-config@0.21.51
+  - @happyvertical/smrt-types@0.21.51
+
 ## 0.21.50
 
 ### Patch Changes
