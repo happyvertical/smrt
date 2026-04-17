@@ -17,7 +17,7 @@
         "scripts/generate-manifest.js",
         "scripts/generate-smrt-types.js",
         "package.json",
-        "tsconfig.json"
+        "tsconfig*.json"
       ],
       "outputs": [
         "src/manifest/static-manifest.ts",
@@ -34,7 +34,7 @@
         "src/**/*.spec.ts",
         "scripts/generate-test-manifest.js",
         "package.json",
-        "tsconfig.json"
+        "tsconfig*.json"
       ],
       "outputs": [
         "src/manifest/test-manifest.json",
@@ -45,12 +45,12 @@
     },
     "build": {
       "dependsOn": ["^build", "generate"],
-      "inputs": ["src/**", "package.json", "tsconfig.json", "vite.config.ts", "vite.config.js"],
+      "inputs": ["src/**", "package.json", "tsconfig*.json", "vite.config.ts", "vite.config.js"],
       "outputs": ["dist/**", ".next/**", "docs/**", "tsconfig.*.tsbuildinfo"],
       "cache": true
     },
     "prebuild": {
-      "inputs": ["src/**", "package.json", "tsconfig.json"],
+      "inputs": ["src/**", "package.json", "tsconfig*.json"],
       "outputs": ["src/runtime/**"],
       "cache": true
     },

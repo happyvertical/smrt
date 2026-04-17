@@ -27,10 +27,7 @@
     "sourceMap": true,
 
     // Performance
-    "skipLibCheck": true, // Required for workspace packages from SDK
-
-    // Let Node.js module resolution handle workspace packages through package.json exports
-    "baseUrl": "."
+    "skipLibCheck": true // Required for workspace packages from SDK
   },
   "include": ["vitest.config.ts"],
   "exclude": [

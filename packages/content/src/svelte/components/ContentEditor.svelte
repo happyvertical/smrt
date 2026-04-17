@@ -119,7 +119,6 @@ let currentEditorState = $derived(formData.body || '');
 let currentReferenceIds = $derived(formData.referenceIds || []);
 const editorSnapshot = $derived({
   ...getSavePayload(formData),
-  tags: [...(formData.tags || [])],
   referenceIds: [...(formData.referenceIds || [])],
   assetIds: [...(formData.assetIds || [])],
   assets: [...(formData.assets || [])],
@@ -1079,6 +1078,16 @@ function removeAsset(id: string) {
     opacity: 0.65;
     transform: none;
     box-shadow: none;
+  }
+
+  .cancel-button {
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.5rem;
+    font-weight: 600;
+    cursor: pointer;
   }
 
   .save-notice {

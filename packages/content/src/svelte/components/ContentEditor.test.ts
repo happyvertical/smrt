@@ -22,6 +22,10 @@ function renderEditor(
     apiBaseUrl?: string;
     content?: any;
     contentId?: string;
+    saveDisabled?: boolean;
+    saveNotice?: string | null;
+    agentChatEnabled?: boolean;
+    agentChatNotice?: string | null;
     hideActions?: boolean;
     hideChat?: boolean;
     onChange?: (data: any) => void;
@@ -38,6 +42,10 @@ function renderEditor(
       apiBaseUrl: props.apiBaseUrl,
       content: props.content,
       contentId: props.contentId ?? 'new',
+      saveDisabled: props.saveDisabled,
+      saveNotice: props.saveNotice,
+      agentChatEnabled: props.agentChatEnabled,
+      agentChatNotice: props.agentChatNotice,
       hideActions: props.hideActions,
       hideChat: props.hideChat,
       onChange: props.onChange ?? vi.fn(),
@@ -304,9 +312,12 @@ describe('ContentEditor component', () => {
     const form = target.querySelector('#content-edit-form');
 
     expect(tagsInput).toBeDefined();
+    if (!tagsInput) {
+      throw new Error('Expected tags input to be rendered');
+    }
 
-    tagsInput!.value = 'news, tech, updates';
-    tagsInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    tagsInput.value = 'news, tech, updates';
+    tagsInput.dispatchEvent(new Event('input', { bubbles: true }));
     flushSync();
 
     form?.dispatchEvent(
@@ -339,9 +350,12 @@ describe('ContentEditor component', () => {
     const form = target.querySelector('#content-edit-form');
 
     expect(publishDateInput).not.toBeNull();
+    if (!publishDateInput) {
+      throw new Error('Expected publish date input to be rendered');
+    }
 
-    publishDateInput!.value = '2026-04-18T09:45';
-    publishDateInput?.dispatchEvent(new Event('input', { bubbles: true }));
+    publishDateInput.value = '2026-04-18T09:45';
+    publishDateInput.dispatchEvent(new Event('input', { bubbles: true }));
     flushSync();
 
     form?.dispatchEvent(
@@ -354,5 +368,68 @@ describe('ContentEditor component', () => {
       }),
     );
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('publishDate');
+  });
+
+  it('preserves type changes in the save payload', () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'Reference Document',
+        type: 'article',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave,
+    });
+
+    const typeSelect = target.querySelector(
+      '#type-select',
+    ) as HTMLSelectElement | null;
+    const form = target.querySelector('#content-edit-form');
+
+    expect(typeSelect).not.toBeNull();
+    if (!typeSelect) {
+      throw new Error('Expected type select to be rendered');
+    }
+
+    typeSelect.value = 'document';
+    typeSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    flushSync();
+
+    form?.dispatchEvent(
+      new Event('submit', { bubbles: true, cancelable: true }),
+    );
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'document',
+      }),
+    );
+  });
+
+  it('renders the save notice when provided', () => {
+    const target = renderEditor({
+      saveDisabled: true,
+      saveNotice: 'Publish readiness is blocked until review passes.',
+    });
+
+    expect(target.textContent).toContain(
+      'Publish readiness is blocked until review passes.',
+    );
+  });
+
+  it('renders the disabled chat state when agent chat is unavailable', () => {
+    const target = renderEditor({
+      agentChatEnabled: false,
+      agentChatNotice: 'Agent chat is temporarily offline.',
+    });
+
+    const disabledState = target.querySelector(
+      '[data-testid="content-editor-agent-chat-disabled"]',
+    );
+
+    expect(disabledState).not.toBeNull();
+    expect(target.textContent).toContain('Agent chat is temporarily offline.');
   });
 });

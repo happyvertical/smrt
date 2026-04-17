@@ -26,9 +26,10 @@
  * @packageDocumentation
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { Plugin } from 'vitest/config';
 
 /**
@@ -103,6 +104,323 @@ export interface SmrtVitestPluginOptions {
    * at a local source file while still using the same plugin API.
    */
   setupFile?: string;
+}
+
+function resolveDefaultSetupFile(): string {
+  const sourceSetupPath = fileURLToPath(new URL('./setup.ts', import.meta.url));
+  if (existsSync(sourceSetupPath)) {
+    return sourceSetupPath;
+  }
+
+  const distSetupPath = fileURLToPath(new URL('./setup.js', import.meta.url));
+  if (existsSync(distSetupPath)) {
+    return distSetupPath;
+  }
+
+  return '@happyvertical/smrt-vitest/setup';
+}
+
+type ViteAliasEntry = {
+  find: string;
+  replacement: string;
+};
+
+function findWorkspaceRoot(startDir: string): string | null {
+  let current = startDir;
+
+  while (true) {
+    if (existsSync(join(current, 'pnpm-workspace.yaml'))) {
+      return current;
+    }
+
+    const parent = dirname(current);
+    if (parent === current) {
+      return null;
+    }
+    current = parent;
+  }
+}
+
+function getWorkspaceSourceTsconfigPath(
+  startDir = process.cwd(),
+): string | null {
+  const workspaceRoot = findWorkspaceRoot(startDir);
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const tsconfigPath = join(workspaceRoot, 'tsconfig.package-build.json');
+  return existsSync(tsconfigPath) ? tsconfigPath : null;
+}
+
+async function importWorkspaceSourceModule<T>(href: string): Promise<T> {
+  const { register } = await import('tsx/esm/api');
+  const tsconfigPath = getWorkspaceSourceTsconfigPath();
+  const unregister = register(
+    tsconfigPath ? { tsconfig: tsconfigPath } : undefined,
+  );
+
+  try {
+    return (await import(href)) as T;
+  } finally {
+    await unregister();
+  }
+}
+
+function readWorkspacePackageRoots(root: string): Map<string, string> {
+  const workspaceRoot = findWorkspaceRoot(root);
+  if (!workspaceRoot) {
+    return new Map();
+  }
+
+  const packagesDir = join(workspaceRoot, 'packages');
+  if (!existsSync(packagesDir)) {
+    return new Map();
+  }
+
+  const packageRoots = new Map<string, string>();
+
+  for (const entry of readdirSync(packagesDir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const packageRoot = join(packagesDir, entry.name);
+    const packageJsonPath = join(packageRoot, 'package.json');
+    if (!existsSync(packageJsonPath)) {
+      continue;
+    }
+
+    try {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+      if (typeof packageJson.name === 'string') {
+        packageRoots.set(packageJson.name, packageRoot);
+      }
+    } catch {
+      // Ignore invalid package manifests in the workspace scan.
+    }
+  }
+
+  return packageRoots;
+}
+
+function addAliasIfPresent(
+  aliases: ViteAliasEntry[],
+  find: string,
+  replacement: string,
+): void {
+  if (
+    aliases.some((entry) => entry.find === find) ||
+    !existsSync(replacement)
+  ) {
+    return;
+  }
+
+  if (existsSync(replacement)) {
+    aliases.push({ find, replacement });
+  }
+}
+
+export function getWorkspaceViteAliases(
+  root = process.cwd(),
+): ViteAliasEntry[] {
+  const packageRoots = readWorkspacePackageRoots(root);
+  const aliases: ViteAliasEntry[] = [];
+
+  for (const [packageName, packageRoot] of packageRoots.entries()) {
+    addAliasIfPresent(aliases, packageName, join(packageRoot, 'src/index.ts'));
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/svelte`,
+      join(packageRoot, 'src/svelte/index.ts'),
+    );
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/sveltekit`,
+      join(packageRoot, 'src/sveltekit/index.ts'),
+    );
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/ui`,
+      join(packageRoot, 'src/ui.ts'),
+    );
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/routes`,
+      join(packageRoot, 'src/route-module.ts'),
+    );
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/playground`,
+      join(packageRoot, 'src/playground.ts'),
+    );
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/playground`,
+      join(packageRoot, 'src/svelte/playground.ts'),
+    );
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/manifest`,
+      join(packageRoot, 'src/manifest/index.ts'),
+    );
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/manifest.json`,
+      join(packageRoot, 'src/manifest/manifest.json'),
+    );
+
+    if (packageName === '@happyvertical/smrt-core') {
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/testing',
+        join(packageRoot, 'src/testing.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/scanner',
+        join(packageRoot, 'src/scanner/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/vite-plugin',
+        join(packageRoot, 'src/vite-plugin/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/vite-plugin',
+        join(packageRoot, 'src/vite-plugin.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/consumer-plugin',
+        join(packageRoot, 'src/consumer-plugin/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/consumer-plugin',
+        join(packageRoot, 'src/consumer-plugin.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/manifest',
+        join(packageRoot, 'src/manifest/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/manifest/discover-base-classes',
+        join(packageRoot, 'src/manifest/discover-base-classes.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/schema/utils',
+        join(packageRoot, 'src/schema/utils.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/utils',
+        join(packageRoot, 'src/utils.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/utils/import-workspace-module',
+        join(packageRoot, 'src/utils/import-workspace-module.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/migrations',
+        join(packageRoot, 'src/migrations.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/runtime',
+        join(packageRoot, 'src/runtime.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/registry',
+        join(packageRoot, 'src/registry.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators',
+        join(packageRoot, 'src/generators.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators/cli',
+        join(packageRoot, 'src/generators/cli.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators/mcp',
+        join(packageRoot, 'src/generators/mcp.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/generators/rest',
+        join(packageRoot, 'src/generators/rest.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/prebuild',
+        join(packageRoot, 'src/prebuild.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-core/decorators',
+        join(packageRoot, 'src/decorators/index.ts'),
+      );
+    }
+
+    if (packageName === '@happyvertical/smrt-svelte') {
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/layout',
+        join(packageRoot, 'src/components/layout/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/registry',
+        join(packageRoot, 'src/registry/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/ui',
+        join(packageRoot, 'src/components/ui/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/themes',
+        join(packageRoot, 'src/themes/index.ts'),
+      );
+    }
+  }
+
+  return aliases.sort((left, right) => right.find.length - left.find.length);
+}
+
+function normalizeAliasEntries(
+  alias: unknown,
+): Array<{ find: string | RegExp; replacement: string }> {
+  if (Array.isArray(alias)) {
+    return alias.filter(
+      (entry): entry is { find: string | RegExp; replacement: string } =>
+        Boolean(entry) &&
+        typeof entry === 'object' &&
+        'find' in entry &&
+        'replacement' in entry,
+    );
+  }
+
+  if (alias && typeof alias === 'object') {
+    return Object.entries(alias).map(([find, replacement]) => ({
+      find,
+      replacement: String(replacement),
+    }));
+  }
+
+  return [];
 }
 
 /**
@@ -228,10 +546,9 @@ async function importSmrtCoreModule(): Promise<
   try {
     return await import(specifier);
   } catch {
-    const { tsImport } = await import('tsx/esm/api');
     const fallbackHref = new URL('../../core/src/index.ts', import.meta.url)
       .href;
-    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+    return await importWorkspaceSourceModule(fallbackHref);
   }
 }
 
@@ -243,12 +560,11 @@ async function importSmrtCoreManifestModule(): Promise<
   try {
     return await import(specifier);
   } catch {
-    const { tsImport } = await import('tsx/esm/api');
     const fallbackHref = new URL(
       '../../core/src/manifest/index.ts',
       import.meta.url,
     ).href;
-    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+    return await importWorkspaceSourceModule(fallbackHref);
   }
 }
 
@@ -260,12 +576,11 @@ async function importDiscoverBaseClassesModule(): Promise<
   try {
     return await import(specifier);
   } catch {
-    const { tsImport } = await import('tsx/esm/api');
     const fallbackHref = new URL(
       '../../core/src/manifest/discover-base-classes.ts',
       import.meta.url,
     ).href;
-    return await tsImport(fallbackHref, { parentURL: import.meta.url });
+    return await importWorkspaceSourceModule(fallbackHref);
   }
 }
 
@@ -517,11 +832,12 @@ export function smrtVitestPlugin(
     verbose = false,
     root = process.cwd(),
     generateManifest = true,
-    setupFile = '@happyvertical/smrt-vitest/setup',
+    setupFile = resolveDefaultSetupFile(),
   } = options;
 
   let manifestsLoaded = false;
   const setupFileId = setupFile;
+  const workspaceAliases = getWorkspaceViteAliases(root);
 
   const ensureSetupFiles = (value: string | string[] | undefined): string[] => {
     const setupFiles = Array.isArray(value) ? [...value] : value ? [value] : [];
@@ -556,8 +872,16 @@ export function smrtVitestPlugin(
     config(userConfig) {
       applySetupFilesToProjects(userConfig.test?.projects);
       const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);
+      const resolveConfig =
+        userConfig.resolve && typeof userConfig.resolve === 'object'
+          ? (userConfig.resolve as { alias?: unknown })
+          : undefined;
+      const alias = normalizeAliasEntries(resolveConfig?.alias);
 
       return {
+        resolve: {
+          alias: [...workspaceAliases, ...alias],
+        },
         test: {
           setupFiles,
         },
