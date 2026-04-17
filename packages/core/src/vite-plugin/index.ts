@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Plugin, ViteDevServer } from 'vite';
+import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import type { SmartObjectManifest } from '../scanner/types';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
@@ -682,10 +683,9 @@ export default testManifest;
       // Add moduleType identifier
       newManifest.moduleType = 'smrt';
 
-      // Discover external SMRT packages for cross-package STI inheritance
-      const { discoverSmrtPackages } = await import(
-        '../manifest/discover-smrt-packages.js'
-      );
+      // Keep this as a normal module import: dynamic source imports with a
+      // `.js` specifier do not reliably resolve through tsx during publish-time
+      // workspace builds, even though the compiled dist path exists.
       const smrtDependencies = discoverSmrtPackages({ baseDir: rootDir });
       if (smrtDependencies.length > 0) {
         newManifest.smrtDependencies = smrtDependencies;

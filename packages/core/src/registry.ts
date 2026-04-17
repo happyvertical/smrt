@@ -36,6 +36,7 @@ import type {
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
 import { ConfigurationError } from './errors';
+import { discoverSmrtPackages } from './manifest/discover-smrt-packages.js';
 import {
   discoverManifestEntry,
   discoverManifestSync,
@@ -705,10 +706,7 @@ export class ObjectRegistry {
    * @private
    */
   static async tryLoadFromExternalPackage(className: string): Promise<boolean> {
-    // Dynamically discover all SMRT packages in node_modules
-    const { discoverSmrtPackages } = await import(
-      './manifest/discover-smrt-packages.js'
-    );
+    // Discover all SMRT packages in node_modules
     const { loadExternalManifest } = await import(
       './manifest/manifest-loader.js'
     );
