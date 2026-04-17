@@ -36,10 +36,10 @@ import type {
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
 import { ConfigurationError } from './errors';
-import { discoverSmrtPackages } from './manifest/discover-smrt-packages.js';
 import {
   discoverManifestEntry,
   discoverManifestSync,
+  loadExternalManifest,
   loadExternalManifestSync,
   loadManifestFromPathSync,
 } from './manifest/manifest-loader.js';
@@ -141,6 +141,15 @@ export type {
 // to registry/types.ts and registry/shared-state.ts (Issue #1006).
 // The SmartObjectConfig, RelationshipType, and RelationshipMetadata types
 // are re-exported above for backward compatibility.
+
+async function discoverInstalledSmrtPackages(): Promise<string[]> {
+  const discoverSpecifier = import.meta.url.endsWith('.ts')
+    ? './manifest/discover-smrt-packages.ts'
+    : './manifest/discover-smrt-packages.js';
+
+  const { discoverSmrtPackages } = await import(discoverSpecifier);
+  return discoverSmrtPackages();
+}
 
 /**
  * Central registry for all SMRT objects
@@ -706,11 +715,6 @@ export class ObjectRegistry {
    * @private
    */
   static async tryLoadFromExternalPackage(className: string): Promise<boolean> {
-    // Discover all SMRT packages in node_modules
-    const { loadExternalManifest } = await import(
-      './manifest/manifest-loader.js'
-    );
-
     const requestedQualifiedName = isQualifiedName(className)
       ? parseQualifiedName(className)
       : null;
@@ -718,7 +722,7 @@ export class ObjectRegistry {
     const requestedPackageName = requestedQualifiedName?.packageName;
     const smrtPackages = requestedPackageName
       ? [requestedPackageName]
-      : discoverSmrtPackages();
+      : await discoverInstalledSmrtPackages();
 
     verboseLog(
       `[ObjectRegistry] Attempting to auto-load ${className} from ${smrtPackages.length} external packages...`,
