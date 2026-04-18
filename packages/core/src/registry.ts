@@ -115,7 +115,7 @@ import type {
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
-import type { SchemaDefinition } from './schema/types.js';
+import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { prependSmrtSystemFields } from './system-fields';
 import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
@@ -137,15 +137,42 @@ export type {
 // The SmartObjectConfig, RelationshipType, and RelationshipMetadata types
 // are re-exported above for backward compatibility.
 
-type ManifestLoaderModule = typeof import('./manifest/manifest-loader.js');
+type ManifestLoaderModule = typeof import('./manifest/index.js');
 type ManifestLoadOptions = {
   warn?: boolean;
 };
 
+function createEmptyStaticManifest(): SmartObjectManifest {
+  return {
+    version: '1.0.0',
+    timestamp: Date.now(),
+    objects: {},
+    packageName: '@happyvertical/smrt-core',
+  };
+}
+
+function cloneManifestSchemaColumns(
+  columns: Record<string, unknown> | undefined,
+): Record<string, ColumnDefinition> {
+  return Object.fromEntries(
+    Object.entries(columns || {}).map(([columnName, column]) => {
+      const clonedColumn = {
+        ...(column as ColumnDefinition & Record<string, unknown>),
+      } as ColumnDefinition;
+
+      if (clonedColumn.foreignKey) {
+        clonedColumn.foreignKey = { ...clonedColumn.foreignKey };
+      }
+
+      return [columnName, clonedColumn];
+    }),
+  ) as Record<string, ColumnDefinition>;
+}
+
 function getManifestLoaderSpecifier(): string {
   return import.meta.url.endsWith('.ts')
-    ? './manifest/manifest-loader.ts'
-    : './manifest/manifest-loader.js';
+    ? './manifest/index.ts'
+    : './manifest/index.js';
 }
 
 async function importManifestLoader(): Promise<ManifestLoaderModule> {
@@ -168,11 +195,14 @@ function lookupCachedManifestEntry(
     : className;
   const lowerClassName = requestedClassName.toLowerCase();
   const packageName = manifest.packageName;
+  const qualifiedKey =
+    requestedQualifiedName ||
+    (packageName
+      ? createQualifiedName(packageName, requestedClassName)
+      : undefined);
 
   return (
-    (requestedQualifiedName
-      ? manifest.objects[requestedQualifiedName]
-      : undefined) ||
+    (qualifiedKey ? manifest.objects[qualifiedKey] : undefined) ||
     manifest.objects[requestedClassName] ||
     manifest.objects[lowerClassName] ||
     Object.values(manifest.objects).find((entry) => {
@@ -194,11 +224,66 @@ function lookupCachedManifestEntry(
   );
 }
 
+function loadStaticManifestSyncWithNode(): SmartObjectManifest | null {
+  const manifestGlobals = globalThis as typeof globalThis & {
+    __smrtManifestStatic?: SmartObjectManifest | null;
+    __smrtManifestStaticLoadAttempted?: boolean;
+  };
+
+  if (manifestGlobals.__smrtManifestStatic !== undefined) {
+    return manifestGlobals.__smrtManifestStatic ?? null;
+  }
+
+  const builtins = getNodeBuiltins();
+  manifestGlobals.__smrtManifestStaticLoadAttempted = true;
+  if (!builtins) {
+    const fallbackManifest = createEmptyStaticManifest();
+    manifestGlobals.__smrtManifestStatic = fallbackManifest;
+    return fallbackManifest;
+  }
+
+  const candidates = import.meta.url.endsWith('.ts')
+    ? [
+        new URL('./manifest/static-manifest.json', import.meta.url),
+        new URL('../dist/manifest.json', import.meta.url),
+      ]
+    : [new URL('./manifest.json', import.meta.url)];
+
+  for (const candidate of candidates) {
+    try {
+      if (!builtins.fs.existsSync(candidate)) {
+        continue;
+      }
+
+      const manifest = JSON.parse(
+        builtins.fs.readFileSync(candidate, 'utf-8'),
+      ) as SmartObjectManifest;
+
+      if (!manifest.objects || typeof manifest.objects !== 'object') {
+        continue;
+      }
+
+      const cachedManifest = manifest.packageName
+        ? manifest
+        : { ...manifest, packageName: '@happyvertical/smrt-core' };
+      manifestGlobals.__smrtManifestStatic = cachedManifest;
+      return cachedManifest;
+    } catch {
+      // Try the next candidate and fall back to the empty manifest if needed.
+    }
+  }
+
+  const fallbackManifest = createEmptyStaticManifest();
+  manifestGlobals.__smrtManifestStatic = fallbackManifest;
+  return fallbackManifest;
+}
+
 function discoverCachedManifestSync(
   className: string,
 ): SmartObjectDefinition | undefined {
   const manifestGlobals = globalThis as typeof globalThis & {
     __smrtManifestLocalTest?: SmartObjectManifest | null;
+    __smrtManifestStatic?: SmartObjectManifest | null;
     __smrtManifestTest?: SmartObjectManifest | null;
     __smrtManifestCache?: Map<string, SmartObjectManifest>;
   };
@@ -206,6 +291,7 @@ function discoverCachedManifestSync(
   const manifests: Array<SmartObjectManifest | null | undefined> = [
     manifestGlobals.__smrtManifestLocalTest,
     manifestGlobals.__smrtManifestTest,
+    loadStaticManifestSyncWithNode(),
     ...(manifestGlobals.__smrtManifestCache?.values() || []),
   ];
 
@@ -1820,6 +1906,29 @@ export class ObjectRegistry {
         )) {
           registered.methods.set(methodName, methodDef);
         }
+        didHydrate = true;
+      }
+
+      if (manifestEntry.schema) {
+        registered.schema = {
+          ddl: manifestEntry.schema.ddl,
+          tableName:
+            manifestEntry.schema.tableName ||
+            registered.schema?.tableName ||
+            classnameToTablename(registered.name),
+          columns: cloneManifestSchemaColumns(manifestEntry.schema.columns),
+          indexes:
+            manifestEntry.schema.indexes?.map((indexDef) => ({
+              ...indexDef,
+              columns: [...(indexDef.columns || [])],
+            })) || [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: manifestEntry.schema.version || '',
+          packageName: manifestEntry.packageName,
+          baseClass: registered.schema?.baseClass,
+        };
         didHydrate = true;
       }
 

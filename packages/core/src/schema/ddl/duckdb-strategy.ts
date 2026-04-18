@@ -11,9 +11,9 @@
  * not with separate UNIQUE indexes. This is a known DuckDB limitation.
  */
 
-import type { SchemaDefinition, SQLDataType } from '../types';
-import { BaseDDLStrategy } from './base-strategy';
-import type { DatabaseEngine } from './types';
+import type { SchemaDefinition, SQLDataType } from '../types.js';
+import { BaseDDLStrategy } from './base-strategy.js';
+import type { DatabaseEngine } from './types.js';
 
 export class DuckDBStrategy extends BaseDDLStrategy {
   readonly engine: DatabaseEngine = 'duckdb';

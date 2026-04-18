@@ -11,7 +11,7 @@ import type {
   ManifestSchema,
   SmartObjectDefinition,
   SmartObjectManifest,
-} from '../scanner/types';
+} from '../scanner/types.js';
 import type {
   ColumnDefinition,
   ForeignKeyDefinition,
@@ -19,7 +19,7 @@ import type {
   SchemaDefinition,
   SQLDataType,
   TriggerDefinition,
-} from './types';
+} from './types.js';
 
 export class SchemaGenerator {
   /**
@@ -591,7 +591,7 @@ export class SchemaGenerator {
     tableName: string,
     _fields: Map<string, any>,
   ): Promise<SchemaDefinition> {
-    const { ObjectRegistry } = await import('../registry');
+    const { ObjectRegistry } = await import('../registry.js');
     const columns: Record<string, ColumnDefinition> = {};
 
     // Add default SMRT fields

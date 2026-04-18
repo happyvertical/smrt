@@ -81,6 +81,16 @@ async function importScanner() {
   });
 }
 
+async function importBuildAwareModule<T>({
+  source,
+  dist,
+}: {
+  source: string;
+  dist: string;
+}): Promise<T> {
+  return (await import(import.meta.url.endsWith('.ts') ? source : dist)) as T;
+}
+
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   const {
     include = ['src/**/*.ts', 'src/**/*.js'],
@@ -695,7 +705,12 @@ export default testManifest;
       }
 
       // Run all manifest generation passes (same as TypeScript scanner path)
-      const { ManifestGenerator } = await import('../scanner/index.js');
+      const { ManifestGenerator } = await importBuildAwareModule<
+        typeof import('../scanner/index.js')
+      >({
+        source: '../scanner/index.ts',
+        dist: '../scanner.js',
+      });
       const manifestGen = new ManifestGenerator();
       // IMPORTANT: Must merge inherited fields BEFORE generating schemas
       // This ensures STI subclasses inherit tableName from their base class
@@ -762,7 +777,12 @@ async function generateRoutesModule(
   manifest: SmartObjectManifest,
 ): Promise<string> {
   try {
-    const { ManifestGenerator } = await import('../scanner/index.js');
+    const { ManifestGenerator } = await importBuildAwareModule<
+      typeof import('../scanner/index.js')
+    >({
+      source: '../scanner/index.ts',
+      dist: '../scanner.js',
+    });
     const generator = new ManifestGenerator();
     const routes = generator.generateRestEndpoints(manifest);
 
@@ -885,7 +905,12 @@ async function generateMCPModule(
   manifest: SmartObjectManifest,
 ): Promise<string> {
   try {
-    const { ManifestGenerator } = await import('../scanner/index.js');
+    const { ManifestGenerator } = await importBuildAwareModule<
+      typeof import('../scanner/index.js')
+    >({
+      source: '../scanner/index.ts',
+      dist: '../scanner.js',
+    });
     const generator = new ManifestGenerator();
     const tools = generator.generateMCPTools(manifest);
 
@@ -1003,7 +1028,12 @@ async function generateTypesModule(
   try {
     // Only use scanner in server mode to avoid Node.js dependencies in browser builds
     if (mode !== 'client') {
-      const { ManifestGenerator } = await import('../scanner/index.js');
+      const { ManifestGenerator } = await importBuildAwareModule<
+        typeof import('../scanner/index.js')
+      >({
+        source: '../scanner/index.ts',
+        dist: '../scanner.js',
+      });
       const generator = new ManifestGenerator();
       interfaces = generator.generateTypeDefinitions(manifest);
     } else {
@@ -1680,7 +1710,12 @@ async function generateSchemaModule(
   manifest: SmartObjectManifest,
 ): Promise<string> {
   try {
-    const { SchemaGenerator } = await import('../schema/index.js');
+    const { SchemaGenerator } = await importBuildAwareModule<
+      typeof import('../schema/generator.js')
+    >({
+      source: '../schema/generator.ts',
+      dist: '../schema/generator.js',
+    });
 
     const schemaGenerator = new SchemaGenerator();
     const schemas: Record<string, any> = {};

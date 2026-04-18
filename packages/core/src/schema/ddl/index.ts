@@ -5,22 +5,22 @@
  * SMRT handles ALL database maintenance directly - SDK SQL remains a pure query/CRUD layer.
  */
 
-export { BaseDDLStrategy } from './base-strategy';
-export { DuckDBStrategy } from './duckdb-strategy';
-export { PostgresStrategy } from './postgres-strategy';
-export { SQLiteStrategy } from './sqlite-strategy';
-export * from './types';
+export { BaseDDLStrategy } from './base-strategy.js';
+export { DuckDBStrategy } from './duckdb-strategy.js';
+export { PostgresStrategy } from './postgres-strategy.js';
+export { SQLiteStrategy } from './sqlite-strategy.js';
+export * from './types.js';
 
-import type { SchemaDefinition } from '../types';
-import { DuckDBStrategy } from './duckdb-strategy';
-import { PostgresStrategy } from './postgres-strategy';
-import { SQLiteStrategy } from './sqlite-strategy';
+import type { SchemaDefinition } from '../types.js';
+import { DuckDBStrategy } from './duckdb-strategy.js';
+import { PostgresStrategy } from './postgres-strategy.js';
+import { SQLiteStrategy } from './sqlite-strategy.js';
 import type {
   DatabaseEngine,
   DDLStrategy,
   EngineSpecificDDL,
   MultiEngineDDL,
-} from './types';
+} from './types.js';
 
 // Singleton instances for each strategy
 const strategies: Record<DatabaseEngine, DDLStrategy> = {

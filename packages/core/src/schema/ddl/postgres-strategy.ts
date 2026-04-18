@@ -9,9 +9,9 @@
  * - Supports CAST in DEFAULT values
  */
 
-import type { SQLDataType, TriggerDefinition } from '../types';
-import { BaseDDLStrategy } from './base-strategy';
-import type { DatabaseEngine } from './types';
+import type { SQLDataType, TriggerDefinition } from '../types.js';
+import { BaseDDLStrategy } from './base-strategy.js';
+import type { DatabaseEngine } from './types.js';
 
 export class PostgresStrategy extends BaseDDLStrategy {
   readonly engine: DatabaseEngine = 'postgres';

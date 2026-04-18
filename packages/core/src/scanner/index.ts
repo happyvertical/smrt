@@ -8,7 +8,7 @@
  *   import { OxcScanner, ManifestAdapter } from '@happyvertical/smrt-scanner';
  */
 
-export { generateManifest, ManifestGenerator } from './manifest-generator';
+export { generateManifest, ManifestGenerator } from './manifest-generator.js';
 export type {
   AgentAdminRouteManifest,
   AgentComponentDeclaration,
@@ -23,4 +23,4 @@ export type {
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
-} from './types';
+} from './types.js';

@@ -3,8 +3,8 @@
  * Generates getSchema() static methods for SMRT objects
  */
 
-import type { SmartObjectDefinition } from '../scanner/types';
-import type { SchemaDefinition } from './types';
+import type { SmartObjectDefinition } from '../scanner/types.js';
+import type { SchemaDefinition } from './types.js';
 
 export class SchemaCodeGenerator {
   /**

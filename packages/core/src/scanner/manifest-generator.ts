@@ -7,7 +7,7 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
-import { generateToolManifest } from '../tools/tool-generator';
+import { generateToolManifest } from '../tools/tool-generator.js';
 import { createQualifiedName } from '../utils/qualified-names.js';
 import { classnameToTablename, toSnakeCase } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
@@ -24,7 +24,7 @@ import type {
   SmartObjectManifest,
   SmrtVisibility,
   ValidationRule,
-} from './types';
+} from './types.js';
 
 // Create require function for synchronous module loading in ESM context
 const require = createRequire(import.meta.url);
