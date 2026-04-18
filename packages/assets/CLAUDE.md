@@ -17,6 +17,41 @@ Provider-agnostic asset management with versioning, type classification, and gen
 - **AssetStore**: abstraction for provider-agnostic file I/O (S3, local, etc.).
 - **Ownership rule**: base/domain-owned asset relationships should live on noun join tables such as `content_assets`, `profile_assets`, `event_assets`, `place_assets`, and `product_assets`; keep `AssetAssociation` for generic/provenance links like image derivation.
 
+## Runtime surface
+
+Apps and agents should depend on the public **asset runtime** rather than hand-wiring a collection + store per-package (#1128).
+
+- `createAssetRuntime({ db, storage })` → `AssetRuntime` bundling `AssetCollection`, `AssetAssociationCollection`, and an initialized `AssetStore`.
+- `AssetRuntime.storeSourceAsset(name, data, opts)` — create a new source asset (record + bytes).
+- `AssetRuntime.storeDerivedAsset(source, name, data, opts)` — create a derivative with `parentId` set and (by default) a provenance `AssetAssociation` under a chosen role.
+- `AssetRuntime.linkDerivation(source, derivative, { role })` — record provenance without touching bytes.
+- `AssetRuntime.setExtractionStatus(asset, status, { error?, extractedAt? })` — write canonical extraction metadata into the asset's description JSON sidecar.
+
+Agents that need asset I/O should accept an `AssetRuntimeLike` in their options rather than asking callers to pass a store + collection separately.
+
+## Serving contract
+
+- `serveAsset({ runtime, asset, tenantId?, disposition?, canAccess?, headers? })` → standard Web `Response`.
+  - `404` when the id/tenant mismatch, `403` when `canAccess` denies, `500` on store read errors, `200` otherwise with `Content-Type`, `Content-Length`, and `Content-Disposition` set.
+  - Works in SvelteKit `+server.ts` endpoints, Hono, and any runtime with a global `Response` (Node 18+). Pass `responseCtor` for older runtimes.
+- `resolveAssetForServing(options)` → `{ asset, data, contentType, filename, size }` when callers want to render their own framework response. Throws `AssetServeError(status)` on the same failure modes.
+
+## Source/derived vocabulary
+
+The following roles are exported as `ASSET_ROLES` and should be preferred over ad-hoc strings when apps want cross-package tooling (serving, UI pickers) to agree on meaning:
+
+| Role | Use |
+|------|-----|
+| `source_document` | original upstream document (agenda PDF, minutes) |
+| `document_image` | page/extracted image derived from a source document |
+| `thumbnail` | preview rendition of another asset |
+| `proof` | non-canonical evidence asset backing a fact |
+| `derivation_source` | "came from" link on generated media |
+| `attachment` | generic owner-join link |
+| `hero` | primary/featured asset on an owner |
+
+Canonical metadata keys are exported as `ASSET_METADATA_KEYS`: `extractionStatus`, `extractionError`, `extractedAt`, `sourceUrl`, `sourceHash`, `pageNumber`. Extraction status values live in `ASSET_EXTRACTION_STATUS` (`pending | running | succeeded | failed`).
+
 ## Gotchas
 
 - **Version history manual**: `findVersions()` chaining required — no ORM shortcut
