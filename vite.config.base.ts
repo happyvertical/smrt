@@ -34,6 +34,21 @@ interface PackageConfigOptions {
    * publishable library types.
    */
   dtsExclude?: string[];
+  /**
+   * When true, abort the build if `vite-plugin-dts` surfaces any
+   * TypeScript error-level diagnostics while generating `.d.ts` files.
+   *
+   * Without this, the dts plugin prints errors to stderr but Vite still
+   * exits 0, so broken types can ship to npm (see PR #1129 / #1130).
+   *
+   * Off by default so the repo-wide latent TS errors in other packages
+   * (e.g. virtual `@smrt/*` modules, pre-existing type mismatches) do
+   * not regress existing builds. Enable per-package as each package is
+   * cleaned up.
+   *
+   * @default false
+   */
+  strictDts?: boolean;
 }
 
 interface WorkspacePackageInfo {
@@ -377,6 +392,26 @@ export function createPackageConfig(
           // Prefer a package-specific build tsconfig when present so workspace
           // source resolution stays clean without requiring sibling dist output.
           tsconfigPath,
+          // Fail the build on TS error-level diagnostics during dts
+          // generation when opted in. Without this, `vite-plugin-dts`
+          // prints errors to stderr but still emits and exits 0, which
+          // means TS errors in package source can ship to npm (see PR
+          // #1129 / #1130).
+          ...(options.strictDts
+            ? {
+                afterDiagnostic: (diagnostics) => {
+                  // 1 === ts.DiagnosticCategory.Error; inlined so this
+                  // file does not need to import `typescript` for a
+                  // single numeric enum.
+                  const errors = diagnostics.filter((d) => d.category === 1);
+                  if (errors.length > 0) {
+                    throw new Error(
+                      `vite-plugin-dts: ${errors.length} TypeScript error(s) during declaration generation. See log above.`,
+                    );
+                  }
+                },
+              }
+            : {}),
           beforeWriteFile: (filePath, content) => ({
             filePath,
             content: rewriteWorkspaceDeclarationImports(
