@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.21.52
+
+### Patch Changes
+
+- ### Features
+
+  - public asset runtime + generic serving contract (#1128) (#1129) (assets)
+
+  ### Bug Fixes
+
+  - avoid DOM-only BodyInit cast in asset-serving (#1130) (assets)
+
+  ### Merged Changes
+
+  - [codex] split browser-safe registry runtime
+  - @happyvertical/smrt-scanner@0.21.52
+  - @happyvertical/smrt-config@0.21.52
+  - @happyvertical/smrt-types@0.21.52
+
 ## 0.21.51
 
 ### Patch Changes
