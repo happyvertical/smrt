@@ -25,7 +25,7 @@ Apps and agents should depend on the public **asset runtime** rather than hand-w
 - `AssetRuntime.storeSourceAsset(name, data, opts)` — create a new source asset (record + bytes).
 - `AssetRuntime.storeDerivedAsset(source, name, data, opts)` — create a derivative with `parentId` set and (by default) a provenance `AssetAssociation` under a chosen role.
 - `AssetRuntime.linkDerivation(source, derivative, { role })` — record provenance without touching bytes.
-- `AssetRuntime.setExtractionStatus(asset, status, { error?, extractedAt? })` — write canonical extraction metadata into the asset's description JSON sidecar.
+- `AssetRuntime.setExtractionStatus(asset, status, { error?, extractedAt? })` — write canonical extraction metadata into the asset's description JSON sidecar. Non-destructive: if `description` is free-form prose or non-object JSON, the original value is preserved under the reserved `text` key instead of being overwritten. Existing JSON objects are merged into.
 
 Agents that need asset I/O should accept an `AssetRuntimeLike` in their options rather than asking callers to pass a store + collection separately.
 

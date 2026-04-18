@@ -280,5 +280,57 @@ describe('AssetRuntime', () => {
       const parsed = JSON.parse(source.description);
       expect(parsed.extractionError).toBe('second');
     });
+
+    it('preserves free-form description prose under the text key', async () => {
+      const runtime = await createAssetRuntime({ db, storage: storageDir });
+      const source = await runtime.storeSourceAsset(
+        'agenda.pdf',
+        Buffer.from('PDF'),
+        {
+          mimeType: 'application/pdf',
+          typeSlug: 'document',
+          description: 'City council agenda, regular session, 2026-04-16',
+        },
+      );
+      expect(source.description).toBe(
+        'City council agenda, regular session, 2026-04-16',
+      );
+
+      await runtime.setExtractionStatus(source, 'running');
+
+      const parsed = JSON.parse(source.description);
+      expect(parsed.extractionStatus).toBe('running');
+      expect(parsed.text).toBe(
+        'City council agenda, regular session, 2026-04-16',
+      );
+
+      // A subsequent update should keep the prose around too.
+      await runtime.setExtractionStatus(source, 'succeeded');
+      const afterSuccess = JSON.parse(source.description);
+      expect(afterSuccess.extractionStatus).toBe('succeeded');
+      expect(afterSuccess.text).toBe(
+        'City council agenda, regular session, 2026-04-16',
+      );
+    });
+
+    it('leaves an existing JSON object description intact apart from extraction keys', async () => {
+      const runtime = await createAssetRuntime({ db, storage: storageDir });
+      const source = await runtime.storeSourceAsset(
+        'agenda.pdf',
+        Buffer.from('PDF'),
+        {
+          mimeType: 'application/pdf',
+          typeSlug: 'document',
+          description: JSON.stringify({ author: 'city-clerk', pageCount: 42 }),
+        },
+      );
+
+      await runtime.setExtractionStatus(source, 'succeeded');
+
+      const parsed = JSON.parse(source.description);
+      expect(parsed.author).toBe('city-clerk');
+      expect(parsed.pageCount).toBe(42);
+      expect(parsed.extractionStatus).toBe('succeeded');
+    });
   });
 });

@@ -232,13 +232,18 @@ export class AssetRuntime implements AssetRuntimeLike {
    * convention in `asset-conventions.ts` — callers that store
    * metadata elsewhere can ignore it.
    *
-   * **Important**: this helper treats `asset.description` as a JSON
-   * object sidecar. If the description is free-form text (or any
-   * non-object JSON), the previous value is discarded and replaced
-   * with a fresh JSON object. Callers that need to keep human-readable
-   * prose on `description` should stash it into a reserved key first
-   * (e.g. `{ text: "...", extractionStatus: "..." }`) or store
-   * extraction state on a different surface.
+   * **How existing descriptions are handled**:
+   * - Empty / unset → fresh JSON object.
+   * - Valid JSON object → merged into; existing keys preserved.
+   * - Free-form prose or non-object JSON → preserved under the
+   *   reserved `text` key of the resulting object (e.g.
+   *   `{ text: "original prose", extractionStatus: "..." }`). No prose
+   *   is discarded.
+   *
+   * Callers that already use `text` for something else, or that need
+   * an entirely separate metadata surface, should either round-trip
+   * the JSON themselves or skip this helper — its only job is the
+   * `extractionStatus` / `extractionError` / `extractedAt` triple.
    *
    * Error handling: when `status` transitions away from `failed`
    * without a new `extra.error`, the stale `extractionError` is
@@ -251,7 +256,7 @@ export class AssetRuntime implements AssetRuntimeLike {
     status: AssetExtractionStatus,
     extra: { error?: string; extractedAt?: Date } = {},
   ): Promise<void> {
-    const existing = safeParseMetadata(asset.description);
+    const existing = parseDescriptionSidecar(asset.description);
     const next: Record<string, unknown> = {
       ...existing,
       extractionStatus: status,
@@ -308,14 +313,25 @@ export async function createAssetRuntime(
   return new AssetRuntime(collection, associations, store);
 }
 
-function safeParseMetadata(description: string): Record<string, unknown> {
+/**
+ * Parse the `description` field as a JSON sidecar object used by
+ * `setExtractionStatus()`. Free-form prose and non-object JSON values
+ * are preserved under the reserved `text` key so the helper is
+ * non-destructive on assets whose descriptions were authored as
+ * human-readable text.
+ */
+function parseDescriptionSidecar(description: string): Record<string, unknown> {
   if (!description) return {};
   try {
     const parsed = JSON.parse(description);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    // Non-object JSON (number, string, array, null) — treat the whole
+    // value as prose-equivalent and stash it under `text`.
+    return { text: description };
   } catch {
-    return {};
+    // Not JSON — preserve the original prose under `text`.
+    return { text: description };
   }
 }
