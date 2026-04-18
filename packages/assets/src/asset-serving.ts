@@ -71,6 +71,29 @@ export interface ServeAssetOptions {
   canAccess?: (asset: Asset) => boolean | Promise<boolean>;
 
   /**
+   * How to handle assets whose `sourceUri` is an `http(s)` URL rather
+   * than a store-backed path.
+   *
+   * - `'proxy'` (default): fetch the bytes via `globalThis.fetch` and
+   *   return them inline. Keeps the origin URL hidden from the client
+   *   and preserves the same tenant/access checks the local path gets.
+   * - `'redirect'`: return a `302` to `sourceUri` instead of fetching.
+   *   Skips the byte round-trip but exposes the origin URL.
+   * - `'error'`: treat a remote URI as an error (`500`). Use this when
+   *   you expect every asset to live in the local store.
+   *
+   * Anything that does not look like `http://` or `https://` is read
+   * through the store as usual.
+   */
+  remoteMode?: 'proxy' | 'redirect' | 'error';
+
+  /**
+   * Custom `fetch` implementation for the `remoteMode: 'proxy'` path.
+   * Defaults to `globalThis.fetch` (Node 18+).
+   */
+  fetchImpl?: typeof fetch;
+
+  /**
    * Custom `Response`-like constructor, for runtimes that don't have
    * a global `Response` (pre-Node-18, workers with a custom shim).
    * Defaults to `globalThis.Response`.
@@ -79,6 +102,10 @@ export interface ServeAssetOptions {
 }
 
 type ResponseConstructor = typeof Response;
+
+function isRemoteUri(uri: string): boolean {
+  return /^https?:\/\//i.test(uri);
+}
 
 /**
  * Resolve an asset + bytes for serving, enforcing the same tenant
@@ -123,17 +150,53 @@ export async function resolveAssetForServing(
     }
   }
 
+  const remoteMode = options.remoteMode ?? 'proxy';
   let data: Buffer;
-  try {
-    data = await runtime.store.read(asset);
-  } catch (err) {
-    throw new AssetServeError(
-      `Failed to read asset bytes: ${(err as Error).message}`,
-      500,
-    );
+  let remoteContentType: string | undefined;
+
+  if (isRemoteUri(asset.sourceUri)) {
+    if (remoteMode === 'error') {
+      throw new AssetServeError('Remote asset not supported', 500);
+    }
+    if (remoteMode === 'redirect') {
+      throw new RedirectToSourceUri(asset.sourceUri);
+    }
+    // Proxy — fetch the bytes from the origin URL.
+    const fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    if (!fetchImpl) {
+      throw new AssetServeError(
+        'No fetch implementation available for remote asset',
+        500,
+      );
+    }
+    try {
+      const response = await fetchImpl(asset.sourceUri);
+      if (!response.ok) {
+        throw new AssetServeError(
+          `Remote asset returned ${response.status}`,
+          502,
+        );
+      }
+      data = Buffer.from(await response.arrayBuffer());
+      remoteContentType = response.headers.get('content-type') ?? undefined;
+    } catch (err) {
+      if (err instanceof AssetServeError) throw err;
+      // Log the underlying error so operators can debug without
+      // leaking paths/bucket names to the HTTP client.
+      console.error('serveAsset: remote fetch failed', err);
+      throw new AssetServeError('Failed to fetch remote asset', 502);
+    }
+  } else {
+    try {
+      data = await runtime.store.read(asset);
+    } catch (err) {
+      console.error('serveAsset: store read failed', err);
+      throw new AssetServeError('Failed to read asset bytes', 500);
+    }
   }
 
-  const contentType = asset.mimeType || 'application/octet-stream';
+  const contentType =
+    asset.mimeType || remoteContentType || 'application/octet-stream';
   const filename = options.filename ?? deriveFilename(asset);
 
   return {
@@ -146,11 +209,26 @@ export async function resolveAssetForServing(
 }
 
 /**
+ * Internal signal for `remoteMode: 'redirect'`. Caught by `serveAsset`
+ * and turned into a 302; `resolveAssetForServing` re-throws so direct
+ * callers can inspect it via `err.location`.
+ */
+class RedirectToSourceUri extends Error {
+  constructor(public readonly location: string) {
+    super('Asset stored at remote URL');
+    this.name = 'RedirectToSourceUri';
+  }
+}
+
+/**
  * Serve an asset as a standard Web `Response`.
  *
  * Returns:
  *  - `404` when the asset id doesn't resolve
- *  - `403` when the tenant or `canAccess` check fails
+ *  - `403` when the tenant mismatches or `canAccess` denies
+ *  - `302` when `remoteMode: 'redirect'` and the asset's `sourceUri`
+ *    is an `http(s)` URL
+ *  - `502` when `remoteMode: 'proxy'` and the origin fetch fails
  *  - `500` when bytes fail to read (file missing, provider error)
  *  - `200` with the raw bytes, `Content-Type`, `Content-Length`, and
  *    `Content-Disposition` set otherwise.
@@ -188,14 +266,22 @@ export async function serveAsset(
     // runtimes; Buffer is a Uint8Array subclass so this is safe in Node.
     return new Ctor(data as unknown as BodyInit, { status: 200, headers });
   } catch (err) {
+    if (err instanceof RedirectToSourceUri) {
+      return new Ctor(null, {
+        status: 302,
+        headers: { Location: err.location },
+      });
+    }
     if (err instanceof AssetServeError) {
       return new Ctor(err.message, {
         status: err.status,
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       });
     }
-    const message = (err as Error).message ?? 'Internal error serving asset';
-    return new Ctor(message, {
+    // Don't surface the underlying error to clients — it can leak
+    // paths/bucket names/provider details. Log for operators.
+    console.error('serveAsset: unexpected error', err);
+    return new Ctor('Internal error serving asset', {
       status: 500,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });
@@ -230,11 +316,27 @@ function extractBasename(uri: string): string {
   return last;
 }
 
+function sanitizeDispositionFilename(filename: string): string {
+  // Strip control characters (C0 + DEL) first — they make the header
+  // invalid in Node's Response constructor and could enable CRLF
+  // injection. Then replace quotes, backslashes, and path separators
+  // so the quoted-string form is safe.
+  let stripped = '';
+  for (const ch of filename) {
+    const code = ch.charCodeAt(0);
+    if (code > 0x1f && code !== 0x7f) {
+      stripped += ch;
+    }
+  }
+  const safe = stripped.replace(/["\\/]/g, '_').trim();
+  return safe || 'asset';
+}
+
 function buildContentDisposition(
   disposition: 'inline' | 'attachment',
   filename: string,
 ): string {
-  const safe = filename.replace(/["\\]/g, '_');
-  const encoded = encodeURIComponent(filename);
-  return `${disposition}; filename="${safe}"; filename*=UTF-8''${encoded}`;
+  const sanitized = sanitizeDispositionFilename(filename);
+  const encoded = encodeURIComponent(sanitized);
+  return `${disposition}; filename="${sanitized}"; filename*=UTF-8''${encoded}`;
 }

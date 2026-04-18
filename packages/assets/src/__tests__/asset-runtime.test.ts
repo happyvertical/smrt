@@ -110,6 +110,35 @@ describe('AssetRuntime', () => {
       expect(links).toHaveLength(1);
       expect(links[0].metaId).toBe(derived.id);
       expect(links[0].role).toBe('document_image');
+      // metaType describes the derivative object (target of metaId),
+      // not the source. Default is 'Asset'.
+      expect(links[0].metaType).toBe('Asset');
+    });
+
+    it('records derivativeMetaType on the association for STI subtypes', async () => {
+      const runtime = await createAssetRuntime({ db, storage: storageDir });
+      const source = await runtime.storeSourceAsset(
+        'agenda.pdf',
+        Buffer.from('PDF'),
+        { mimeType: 'application/pdf', typeSlug: 'document' },
+      );
+
+      const derived = await runtime.storeDerivedAsset(
+        source,
+        'agenda-page-1.png',
+        Buffer.from('PNG'),
+        {
+          mimeType: 'image/png',
+          typeSlug: 'image',
+          role: ASSET_ROLES.DOCUMENT_IMAGE,
+          derivativeMetaType: 'Image',
+        },
+      );
+
+      const links = await runtime.associations.getForAsset(source.id!);
+      expect(links).toHaveLength(1);
+      expect(links[0].metaId).toBe(derived.id);
+      expect(links[0].metaType).toBe('Image');
     });
 
     it('skips the association when linkAssociation is false', async () => {
@@ -166,11 +195,13 @@ describe('AssetRuntime', () => {
 
       const link = await runtime.linkDerivation(source, derivative, {
         role: ASSET_ROLES.DOCUMENT_IMAGE,
+        derivativeMetaType: 'Image',
       });
 
       expect(link.assetId).toBe(source.id);
       expect(link.metaId).toBe(derivative.id);
       expect(link.role).toBe('document_image');
+      expect(link.metaType).toBe('Image');
     });
   });
 
@@ -206,6 +237,48 @@ describe('AssetRuntime', () => {
       expect(parsed.extractionStatus).toBe('failed');
       expect(parsed.extractionError).toBe('pdf parse error');
       expect(parsed.extractedAt).toBeUndefined();
+    });
+
+    it('clears a stale extractionError when transitioning out of failed', async () => {
+      const runtime = await createAssetRuntime({ db, storage: storageDir });
+      const source = await runtime.storeSourceAsset(
+        'agenda.pdf',
+        Buffer.from('PDF'),
+        { mimeType: 'application/pdf', typeSlug: 'document' },
+      );
+
+      await runtime.setExtractionStatus(source, 'failed', {
+        error: 'pdf parse error',
+      });
+      expect(JSON.parse(source.description).extractionError).toBe(
+        'pdf parse error',
+      );
+
+      await runtime.setExtractionStatus(source, 'running');
+      const afterRetry = JSON.parse(source.description);
+      expect(afterRetry.extractionStatus).toBe('running');
+      expect(afterRetry.extractionError).toBeUndefined();
+
+      await runtime.setExtractionStatus(source, 'succeeded');
+      const afterSuccess = JSON.parse(source.description);
+      expect(afterSuccess.extractionStatus).toBe('succeeded');
+      expect(afterSuccess.extractionError).toBeUndefined();
+      expect(typeof afterSuccess.extractedAt).toBe('string');
+    });
+
+    it('preserves a caller-provided error on repeated failures', async () => {
+      const runtime = await createAssetRuntime({ db, storage: storageDir });
+      const source = await runtime.storeSourceAsset(
+        'agenda.pdf',
+        Buffer.from('PDF'),
+        { mimeType: 'application/pdf', typeSlug: 'document' },
+      );
+
+      await runtime.setExtractionStatus(source, 'failed', { error: 'first' });
+      await runtime.setExtractionStatus(source, 'failed', { error: 'second' });
+
+      const parsed = JSON.parse(source.description);
+      expect(parsed.extractionError).toBe('second');
     });
   });
 });

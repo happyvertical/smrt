@@ -129,6 +129,159 @@ describe('serveAsset', () => {
     expect(response.status).toBe(403);
   });
 
+  it('does not leak underlying error details in the 500 body', async () => {
+    const asset = await runtime.storeSourceAsset(
+      'broken.txt',
+      Buffer.from('bytes'),
+      { mimeType: 'text/plain', typeSlug: 'document' },
+    );
+    asset.sourceUri = 'file:///definitely/not/real/absolute-path.txt';
+    await asset.save();
+
+    const response = await serveAsset({ runtime, asset: asset.id! });
+
+    expect(response.status).toBe(500);
+    const body = await response.text();
+    expect(body).toBe('Failed to read asset bytes');
+    expect(body).not.toContain('absolute-path');
+  });
+
+  it('sanitises control characters out of Content-Disposition', async () => {
+    const asset = await runtime.storeSourceAsset(
+      'bad\r\nname.txt',
+      Buffer.from('x'),
+      { mimeType: 'text/plain', typeSlug: 'document' },
+    );
+
+    const response = await serveAsset({ runtime, asset: asset.id! });
+
+    expect(response.status).toBe(200);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    // The critical property: no raw control characters (prevents
+    // CRLF header injection and Response-constructor errors).
+    const hasControl = [...disposition].some((ch) => {
+      const code = ch.charCodeAt(0);
+      return code <= 0x1f || code === 0x7f;
+    });
+    expect(hasControl).toBe(false);
+    // The trailing text and extension should survive sanitisation.
+    expect(disposition).toContain('badname.txt');
+  });
+
+  it('replaces quotes and path separators in filename', async () => {
+    const asset = await runtime.storeSourceAsset(
+      'normal.txt',
+      Buffer.from('x'),
+      { mimeType: 'text/plain', typeSlug: 'document' },
+    );
+
+    const response = await serveAsset({
+      runtime,
+      asset: asset.id!,
+      filename: 'a"weird\\/name.txt',
+    });
+
+    expect(response.status).toBe(200);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    expect(disposition).toContain('filename="a_weird__name.txt"');
+    expect(disposition).not.toMatch(/filename="[^"]*["\\/][^"]*"/);
+  });
+
+  describe('remote sourceUri handling', () => {
+    it('proxies bytes from an http(s) origin by default', async () => {
+      const asset = await runtime.storeSourceAsset(
+        'manifest.json',
+        Buffer.from('ignored local'),
+        { mimeType: 'application/json', typeSlug: 'document' },
+      );
+      asset.sourceUri = 'https://example.com/docs/manifest.json';
+      await asset.save();
+
+      const calls: string[] = [];
+      const fetchImpl: typeof fetch = async (input) => {
+        calls.push(String(input));
+        return new Response(
+          Buffer.from('REMOTE BYTES') as unknown as BodyInit,
+          {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+          },
+        );
+      };
+
+      const response = await serveAsset({
+        runtime,
+        asset: asset.id!,
+        fetchImpl,
+      });
+
+      expect(calls).toEqual(['https://example.com/docs/manifest.json']);
+      expect(response.status).toBe(200);
+      const body = Buffer.from(await response.arrayBuffer());
+      expect(body.toString()).toBe('REMOTE BYTES');
+    });
+
+    it('returns 302 Location when remoteMode is redirect', async () => {
+      const asset = await runtime.storeSourceAsset(
+        'doc.pdf',
+        Buffer.from('ignored'),
+        { mimeType: 'application/pdf', typeSlug: 'document' },
+      );
+      asset.sourceUri = 'https://example.com/agenda.pdf';
+      await asset.save();
+
+      const response = await serveAsset({
+        runtime,
+        asset: asset.id!,
+        remoteMode: 'redirect',
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get('location')).toBe(
+        'https://example.com/agenda.pdf',
+      );
+    });
+
+    it('returns 502 when the proxied fetch fails', async () => {
+      const asset = await runtime.storeSourceAsset(
+        'bad.json',
+        Buffer.from('ignored'),
+        { mimeType: 'application/json', typeSlug: 'document' },
+      );
+      asset.sourceUri = 'https://example.com/missing.json';
+      await asset.save();
+
+      const fetchImpl: typeof fetch = async () =>
+        new Response('', { status: 404 });
+
+      const response = await serveAsset({
+        runtime,
+        asset: asset.id!,
+        fetchImpl,
+      });
+
+      expect(response.status).toBe(502);
+    });
+
+    it('treats remote URIs as errors when remoteMode is error', async () => {
+      const asset = await runtime.storeSourceAsset(
+        'whatever.bin',
+        Buffer.from('ignored'),
+        { mimeType: 'application/octet-stream', typeSlug: 'document' },
+      );
+      asset.sourceUri = 'https://example.com/thing.bin';
+      await asset.save();
+
+      const response = await serveAsset({
+        runtime,
+        asset: asset.id!,
+        remoteMode: 'error',
+      });
+
+      expect(response.status).toBe(500);
+    });
+  });
+
   describe('resolveAssetForServing', () => {
     it('throws AssetServeError(404) for unknown ids', async () => {
       await expect(

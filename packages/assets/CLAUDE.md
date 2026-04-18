@@ -31,8 +31,11 @@ Agents that need asset I/O should accept an `AssetRuntimeLike` in their options 
 
 ## Serving contract
 
-- `serveAsset({ runtime, asset, tenantId?, disposition?, canAccess?, headers? })` → standard Web `Response`.
-  - `404` when the id/tenant mismatch, `403` when `canAccess` denies, `500` on store read errors, `200` otherwise with `Content-Type`, `Content-Length`, and `Content-Disposition` set.
+- `serveAsset({ runtime, asset, tenantId?, disposition?, canAccess?, headers?, remoteMode? })` → standard Web `Response`.
+  - `404` when the id doesn't resolve; `403` when the tenant mismatches or `canAccess` denies; `302` when `remoteMode: 'redirect'` and the asset's `sourceUri` is `http(s)`; `502` when `remoteMode: 'proxy'` and the origin fetch fails; `500` on store read errors or unexpected failures; `200` otherwise with `Content-Type`, `Content-Length`, and `Content-Disposition` set.
+  - Assets whose `sourceUri` is `http(s)` are supported via `remoteMode`: `'proxy'` (default, fetch and return bytes), `'redirect'` (302 to the origin), or `'error'` (treat as misconfiguration). Pass `fetchImpl` to swap the fetch client.
+  - `Content-Disposition` filenames are sanitised (control characters stripped, `"` / `\` / `/` replaced) to prevent header injection on untrusted asset names.
+  - The 500 body is a generic `'Internal error serving asset'`; the underlying error is logged via `console.error` so operators can debug without leaking paths/bucket names to clients.
   - Works in SvelteKit `+server.ts` endpoints, Hono, and any runtime with a global `Response` (Node 18+). Pass `responseCtor` for older runtimes.
 - `resolveAssetForServing(options)` → `{ asset, data, contentType, filename, size }` when callers want to render their own framework response. Throws `AssetServeError(status)` on the same failure modes.
 

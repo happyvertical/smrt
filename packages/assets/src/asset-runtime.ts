@@ -97,20 +97,25 @@ export interface StoreDerivedAssetOptions
 
   /**
    * If true (default), also create an `AssetAssociation` record with
-   * `assetId=source.id`, `metaType=<sourceMetaType>`, `metaId=<newId>`,
-   * `role=<role>` so the provenance link is queryable independent of
-   * `parentId`.
+   * `assetId=source.id`, `metaType=<derivativeMetaType>`,
+   * `metaId=<newAssetId>`, `role=<role>` so the provenance link is
+   * queryable independent of `parentId`.
    *
    * Set to `false` if you only want the hierarchical `parentId` link.
    */
   linkAssociation?: boolean;
 
   /**
-   * `metaType` string to use when creating the association. Defaults to
-   * `'Asset'`. Callers with STI subclasses (e.g. `Image`) should pass
-   * the subclass name here.
+   * `metaType` string stored on the `AssetAssociation`. This describes
+   * the *derivative* object (the target of `metaId`), not the source.
+   *
+   * Defaults to `'Asset'`. Callers whose derivatives are STI subclasses
+   * — e.g. an `Image` produced from a PDF — should pass the subclass
+   * name here so consumers can distinguish subtype derivatives from
+   * plain assets. This matches the convention used by
+   * `smrt-images`' `ImageDeriver.deriveWithAssociations()`.
    */
-  sourceMetaType?: string;
+  derivativeMetaType?: string;
 }
 
 /**
@@ -118,7 +123,11 @@ export interface StoreDerivedAssetOptions
  */
 export interface LinkDerivationOptions {
   role?: AssetRole | string;
-  sourceMetaType?: string;
+  /**
+   * `metaType` describing the derivative object (target of `metaId`).
+   * See `StoreDerivedAssetOptions.derivativeMetaType`.
+   */
+  derivativeMetaType?: string;
 }
 
 /**
@@ -171,7 +180,7 @@ export class AssetRuntime implements AssetRuntimeLike {
     const {
       role: rawRole,
       linkAssociation = true,
-      sourceMetaType = 'Asset',
+      derivativeMetaType = 'Asset',
       ...storeOpts
     } = opts;
     const role = rawRole ?? ASSET_ROLES.DERIVATION_SOURCE;
@@ -184,7 +193,7 @@ export class AssetRuntime implements AssetRuntimeLike {
     if (linkAssociation && derived.id) {
       await this.associations.associate(
         source.id,
-        sourceMetaType,
+        derivativeMetaType,
         derived.id,
         role,
       );
@@ -208,10 +217,10 @@ export class AssetRuntime implements AssetRuntimeLike {
       );
     }
     const role = opts.role ?? ASSET_ROLES.DERIVATION_SOURCE;
-    const sourceMetaType = opts.sourceMetaType ?? 'Asset';
+    const derivativeMetaType = opts.derivativeMetaType ?? 'Asset';
     return this.associations.associate(
       source.id,
-      sourceMetaType,
+      derivativeMetaType,
       derivative.id,
       role,
     );
@@ -222,6 +231,20 @@ export class AssetRuntime implements AssetRuntimeLike {
    * `description` JSON sidecar. This is a thin convenience over the
    * convention in `asset-conventions.ts` — callers that store
    * metadata elsewhere can ignore it.
+   *
+   * **Important**: this helper treats `asset.description` as a JSON
+   * object sidecar. If the description is free-form text (or any
+   * non-object JSON), the previous value is discarded and replaced
+   * with a fresh JSON object. Callers that need to keep human-readable
+   * prose on `description` should stash it into a reserved key first
+   * (e.g. `{ text: "...", extractionStatus: "..." }`) or store
+   * extraction state on a different surface.
+   *
+   * Error handling: when `status` transitions away from `failed`
+   * without a new `extra.error`, the stale `extractionError` is
+   * cleared so downstream consumers don't misread the current state.
+   * When `status === 'succeeded'`, `extractedAt` is stamped to now
+   * unless the caller provides one.
    */
   async setExtractionStatus(
     asset: Asset,
@@ -235,6 +258,10 @@ export class AssetRuntime implements AssetRuntimeLike {
     };
     if (extra.error !== undefined) {
       next.extractionError = extra.error;
+    } else if (status !== 'failed') {
+      // Transitioning out of a prior failure — drop the stale error
+      // so consumers don't misread it as still-failing.
+      delete next.extractionError;
     }
     if (status === 'succeeded') {
       next.extractedAt = (extra.extractedAt ?? new Date()).toISOString();
