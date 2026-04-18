@@ -9,8 +9,8 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { ObjectRegistry } from '../registry';
-import { tableNameFromClass } from '../utils';
+import { ObjectRegistry } from '../registry.js';
+import { tableNameFromClass } from '../utils.js';
 import { SchemaManager } from './schema-manager.js';
 
 /**

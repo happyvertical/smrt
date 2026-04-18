@@ -11,8 +11,8 @@ import type {
   SchemaDefinition,
   SQLDataType,
   TriggerDefinition,
-} from '../types';
-import type { DatabaseEngine, DDLStrategy } from './types';
+} from '../types.js';
+import type { DatabaseEngine, DDLStrategy } from './types.js';
 
 /**
  * Abstract base class for DDL strategies

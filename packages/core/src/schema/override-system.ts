@@ -8,7 +8,7 @@ import type {
   ColumnDefinition,
   SchemaDefinition,
   SchemaOverride,
-} from './types';
+} from './types.js';
 
 export class SchemaOverrideSystem {
   /**

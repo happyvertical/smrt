@@ -6,7 +6,7 @@
  */
 
 import type { AITool } from '@happyvertical/ai';
-import type { MethodDefinition } from '../scanner/types';
+import type { MethodDefinition } from '../scanner/types.js';
 
 /**
  * Configuration for AI-callable methods

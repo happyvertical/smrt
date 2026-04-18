@@ -28,8 +28,6 @@ export type {
 // Global configuration (callable function)
 export { config } from './config';
 export * from './errors';
-// Static manifest (generated at build time - browser-safe)
-export * from './manifest/index';
 export * from './object';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';

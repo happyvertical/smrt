@@ -14,8 +14,8 @@ import {
   detectEngine,
   type EngineSpecificDDL,
   getDDLStrategy,
-} from './ddl';
-import type { SchemaDefinition } from './types';
+} from './ddl/index.js';
+import type { SchemaDefinition } from './types.js';
 
 /**
  * Schema Manager Options

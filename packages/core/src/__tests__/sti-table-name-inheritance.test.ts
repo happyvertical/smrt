@@ -9,16 +9,24 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
+
+const manifestGlobals = globalThis as typeof globalThis & {
+  __smrtManifestStatic?: Record<string, unknown> | null;
+  __smrtManifestStaticLoadAttempted?: boolean;
+};
 
 describe('STI Table Name Inheritance', () => {
   beforeEach(() => {
     ObjectRegistry.clear();
+    clearManifestCache();
   });
 
   afterEach(() => {
     ObjectRegistry.clear();
+    clearManifestCache();
   });
 
   it('should use parent table name when parent has explicit STI strategy', () => {
@@ -57,6 +65,33 @@ describe('STI Table Name Inheritance', () => {
     expect(ObjectRegistry.getTableName('Event')).toBe('events');
     expect(ObjectRegistry.getTableName('SportingEvent')).toBe('events');
     expect(ObjectRegistry.getTableName('HockeyGame')).toBe('events');
+  });
+
+  it('should honor static manifest table names before manifest-loader is imported', () => {
+    manifestGlobals.__smrtManifestStatic = {
+      version: '1.0.0',
+      timestamp: Date.now(),
+      packageName: '@happyvertical/smrt-core',
+      objects: {
+        '@happyvertical/smrt-core:StaticManifestMeeting': {
+          className: 'StaticManifestMeeting',
+          decoratorConfig: {
+            tableName: 'static_manifest_events',
+            tableStrategy: 'sti',
+          },
+        },
+      },
+    };
+    manifestGlobals.__smrtManifestStaticLoadAttempted = true;
+
+    @smrt({ tableStrategy: 'sti' })
+    class StaticManifestMeeting extends SmrtObject {
+      title: string = '';
+    }
+
+    expect(ObjectRegistry.getTableName('StaticManifestMeeting')).toBe(
+      'static_manifest_events',
+    );
   });
 
   it('should use own table name when using CTI (default)', () => {

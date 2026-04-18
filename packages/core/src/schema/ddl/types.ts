@@ -8,7 +8,7 @@
  * - PostgreSQL: JSONB type, full trigger support
  */
 
-import type { SchemaDefinition, SQLDataType } from '../types';
+import type { SchemaDefinition, SQLDataType } from '../types.js';
 
 /**
  * Supported database engines

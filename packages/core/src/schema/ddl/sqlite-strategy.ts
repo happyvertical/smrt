@@ -9,9 +9,9 @@
  * - UNIQUE can be inline or separate indexes
  */
 
-import type { SQLDataType } from '../types';
-import { BaseDDLStrategy } from './base-strategy';
-import type { DatabaseEngine } from './types';
+import type { SQLDataType } from '../types.js';
+import { BaseDDLStrategy } from './base-strategy.js';
+import type { DatabaseEngine } from './types.js';
 
 export class SQLiteStrategy extends BaseDDLStrategy {
   readonly engine: DatabaseEngine = 'sqlite';

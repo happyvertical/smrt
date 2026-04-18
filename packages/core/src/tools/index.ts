@@ -11,11 +11,11 @@ export {
   type ToolCall,
   type ToolCallResult,
   validateToolCall,
-} from './tool-executor';
+} from './tool-executor.js';
 export {
   type AiConfig,
   convertTypeToJsonSchema,
   generateToolFromMethod,
   generateToolManifest,
   shouldIncludeMethod,
-} from './tool-generator';
+} from './tool-generator.js';

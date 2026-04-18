@@ -36,13 +36,6 @@ import type {
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
 import { ConfigurationError } from './errors';
-import {
-  discoverManifestEntry,
-  discoverManifestSync,
-  loadExternalManifest,
-  loadExternalManifestSync,
-  loadManifestFromPathSync,
-} from './manifest/manifest-loader.js';
 import type { SmrtObject } from './object';
 import {
   register as _register,
@@ -117,10 +110,12 @@ import type {
 import { compileValidators as _compileValidators } from './registry/validator';
 import type {
   QualifiedClassName,
+  SmartObjectDefinition,
+  SmartObjectManifest,
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
-import type { SchemaDefinition } from './schema/types.js';
+import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { prependSmrtSystemFields } from './system-fields';
 import { classnameToTablename } from './utils';
 import { LRUCache } from './utils/lru-cache';
@@ -141,6 +136,495 @@ export type {
 // to registry/types.ts and registry/shared-state.ts (Issue #1006).
 // The SmartObjectConfig, RelationshipType, and RelationshipMetadata types
 // are re-exported above for backward compatibility.
+
+type ManifestLoaderModule = typeof import('./manifest/index.js');
+type ManifestLoadOptions = {
+  warn?: boolean;
+};
+
+function createEmptyStaticManifest(): SmartObjectManifest {
+  return {
+    version: '1.0.0',
+    timestamp: Date.now(),
+    objects: {},
+    packageName: '@happyvertical/smrt-core',
+  };
+}
+
+function cloneManifestSchemaColumns(
+  columns: Record<string, unknown> | undefined,
+): Record<string, ColumnDefinition> {
+  return Object.fromEntries(
+    Object.entries(columns || {}).map(([columnName, column]) => {
+      const clonedColumn = {
+        ...(column as ColumnDefinition & Record<string, unknown>),
+      } as ColumnDefinition;
+
+      if (clonedColumn.foreignKey) {
+        clonedColumn.foreignKey = { ...clonedColumn.foreignKey };
+      }
+
+      return [columnName, clonedColumn];
+    }),
+  ) as Record<string, ColumnDefinition>;
+}
+
+function getManifestLoaderSpecifier(): string {
+  return import.meta.url.endsWith('.ts')
+    ? './manifest/index.ts'
+    : './manifest/index.js';
+}
+
+async function importManifestLoader(): Promise<ManifestLoaderModule> {
+  return (await import(getManifestLoaderSpecifier())) as ManifestLoaderModule;
+}
+
+function lookupCachedManifestEntry(
+  manifest: SmartObjectManifest | null | undefined,
+  className: string,
+): SmartObjectDefinition | undefined {
+  if (!manifest?.objects) {
+    return undefined;
+  }
+
+  const requestedQualifiedName = isQualifiedName(className)
+    ? className
+    : undefined;
+  const requestedClassName = requestedQualifiedName
+    ? parseQualifiedName(requestedQualifiedName).className
+    : className;
+  const lowerClassName = requestedClassName.toLowerCase();
+  const packageName = manifest.packageName;
+  const qualifiedKey =
+    requestedQualifiedName ||
+    (packageName
+      ? createQualifiedName(packageName, requestedClassName)
+      : undefined);
+
+  return (
+    (qualifiedKey ? manifest.objects[qualifiedKey] : undefined) ||
+    manifest.objects[requestedClassName] ||
+    manifest.objects[lowerClassName] ||
+    Object.values(manifest.objects).find((entry) => {
+      if (!entry) {
+        return false;
+      }
+
+      if (entry.className?.toLowerCase() === lowerClassName) {
+        return true;
+      }
+
+      return (
+        requestedQualifiedName !== undefined &&
+        packageName !== undefined &&
+        createQualifiedName(packageName, entry.className || '') ===
+          requestedQualifiedName
+      );
+    })
+  );
+}
+
+function loadStaticManifestSyncWithNode(): SmartObjectManifest | null {
+  const manifestGlobals = globalThis as typeof globalThis & {
+    __smrtManifestStatic?: SmartObjectManifest | null;
+    __smrtManifestStaticLoadAttempted?: boolean;
+  };
+
+  if (manifestGlobals.__smrtManifestStatic !== undefined) {
+    return manifestGlobals.__smrtManifestStatic ?? null;
+  }
+
+  const builtins = getNodeBuiltins();
+  manifestGlobals.__smrtManifestStaticLoadAttempted = true;
+  if (!builtins) {
+    const fallbackManifest = createEmptyStaticManifest();
+    manifestGlobals.__smrtManifestStatic = fallbackManifest;
+    return fallbackManifest;
+  }
+
+  const candidates = import.meta.url.endsWith('.ts')
+    ? [
+        new URL('./manifest/static-manifest.json', import.meta.url),
+        new URL('../dist/manifest.json', import.meta.url),
+      ]
+    : [new URL('./manifest.json', import.meta.url)];
+
+  for (const candidate of candidates) {
+    try {
+      if (!builtins.fs.existsSync(candidate)) {
+        continue;
+      }
+
+      const manifest = JSON.parse(
+        builtins.fs.readFileSync(candidate, 'utf-8'),
+      ) as SmartObjectManifest;
+
+      if (!manifest.objects || typeof manifest.objects !== 'object') {
+        continue;
+      }
+
+      const cachedManifest = manifest.packageName
+        ? manifest
+        : { ...manifest, packageName: '@happyvertical/smrt-core' };
+      manifestGlobals.__smrtManifestStatic = cachedManifest;
+      return cachedManifest;
+    } catch {
+      // Try the next candidate and fall back to the empty manifest if needed.
+    }
+  }
+
+  const fallbackManifest = createEmptyStaticManifest();
+  manifestGlobals.__smrtManifestStatic = fallbackManifest;
+  return fallbackManifest;
+}
+
+function discoverCachedManifestSync(
+  className: string,
+): SmartObjectDefinition | undefined {
+  const manifestGlobals = globalThis as typeof globalThis & {
+    __smrtManifestLocalTest?: SmartObjectManifest | null;
+    __smrtManifestStatic?: SmartObjectManifest | null;
+    __smrtManifestTest?: SmartObjectManifest | null;
+    __smrtManifestCache?: Map<string, SmartObjectManifest>;
+  };
+
+  const manifests: Array<SmartObjectManifest | null | undefined> = [
+    manifestGlobals.__smrtManifestLocalTest,
+    manifestGlobals.__smrtManifestTest,
+    loadStaticManifestSyncWithNode(),
+    ...(manifestGlobals.__smrtManifestCache?.values() || []),
+  ];
+
+  for (const manifest of manifests) {
+    const entry = lookupCachedManifestEntry(manifest, className);
+    if (entry) {
+      return entry;
+    }
+  }
+
+  return undefined;
+}
+
+function getNodeBuiltins() {
+  const getBuiltinModule = (
+    process as typeof process & {
+      getBuiltinModule?: (id: string) => unknown;
+    }
+  ).getBuiltinModule;
+  if (typeof getBuiltinModule !== 'function') {
+    return null;
+  }
+
+  const fs = getBuiltinModule('node:fs') as
+    | typeof import('node:fs')
+    | undefined;
+  const path = getBuiltinModule('node:path') as
+    | typeof import('node:path')
+    | undefined;
+
+  if (!fs || !path) {
+    return null;
+  }
+
+  return { fs, path };
+}
+
+function findWorkspaceRootSync(startDir: string): string | null {
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  let currentDir = startDir;
+
+  while (true) {
+    if (
+      builtins.fs.existsSync(
+        builtins.path.join(currentDir, 'pnpm-workspace.yaml'),
+      )
+    ) {
+      return currentDir;
+    }
+
+    const parentDir = builtins.path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
+function resolveInstalledPackageJsonPathSync(
+  packageName: string,
+): string | null {
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  let currentDir = process.cwd();
+
+  while (true) {
+    const packageJsonPath = builtins.path.join(
+      currentDir,
+      'node_modules',
+      packageName,
+      'package.json',
+    );
+
+    if (builtins.fs.existsSync(packageJsonPath)) {
+      return packageJsonPath;
+    }
+
+    const parentDir = builtins.path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
+function resolveWorkspacePackageJsonPathSync(
+  packageName: string,
+): string | null {
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  const workspaceRoot = findWorkspaceRootSync(process.cwd());
+  if (!workspaceRoot) {
+    return null;
+  }
+
+  const workspacePackagesDir = builtins.path.join(workspaceRoot, 'packages');
+  if (!builtins.fs.existsSync(workspacePackagesDir)) {
+    return null;
+  }
+
+  for (const packageDirName of builtins.fs.readdirSync(workspacePackagesDir)) {
+    const packageJsonPath = builtins.path.join(
+      workspacePackagesDir,
+      packageDirName,
+      'package.json',
+    );
+    if (!builtins.fs.existsSync(packageJsonPath)) {
+      continue;
+    }
+
+    try {
+      const packageJson = JSON.parse(
+        builtins.fs.readFileSync(packageJsonPath, 'utf-8'),
+      ) as { name?: string };
+      if (packageJson.name === packageName) {
+        return packageJsonPath;
+      }
+    } catch {
+      // Ignore unreadable workspace package metadata and continue scanning.
+    }
+  }
+
+  return null;
+}
+
+function resolveWorkspaceSourceManifestPathSync(
+  packageDir: string,
+): string | null {
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  const candidates = [
+    builtins.path.join(packageDir, 'src', 'manifest', 'manifest.json'),
+    builtins.path.join(packageDir, '.smrt', 'manifest.json'),
+  ];
+
+  for (const candidate of candidates) {
+    if (builtins.fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function resolveManifestExportPathSync(
+  packageName: string,
+  options: ManifestLoadOptions = {},
+): string | null {
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  const shouldWarn = options.warn ?? true;
+  const packageJsonPath =
+    resolveInstalledPackageJsonPathSync(packageName) ||
+    resolveWorkspacePackageJsonPathSync(packageName);
+
+  if (!packageJsonPath) {
+    return null;
+  }
+
+  const packageDir = builtins.path.dirname(packageJsonPath);
+  const packageJson = JSON.parse(
+    builtins.fs.readFileSync(packageJsonPath, 'utf-8'),
+  ) as {
+    exports?: Record<
+      string,
+      string | { default?: string; import?: string; require?: string }
+    >;
+  };
+  const manifestExports = ['./manifest.json', './manifest'];
+
+  for (const exportKey of manifestExports) {
+    const manifestExport = packageJson.exports?.[exportKey];
+    if (!manifestExport) {
+      continue;
+    }
+
+    const manifestRelativePath =
+      typeof manifestExport === 'string'
+        ? manifestExport
+        : manifestExport.import ||
+          manifestExport.default ||
+          manifestExport.require;
+
+    if (!manifestRelativePath) {
+      if (shouldWarn) {
+        console.warn(
+          `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
+        );
+      }
+      return null;
+    }
+
+    if (!manifestRelativePath.endsWith('.json')) {
+      if (shouldWarn) {
+        console.warn(
+          `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
+        );
+      }
+      return null;
+    }
+
+    const manifestPath = builtins.path.join(packageDir, manifestRelativePath);
+    if (builtins.fs.existsSync(manifestPath)) {
+      return manifestPath;
+    }
+
+    const workspaceSourceManifest =
+      resolveWorkspaceSourceManifestPathSync(packageDir);
+    if (workspaceSourceManifest) {
+      return workspaceSourceManifest;
+    }
+
+    if (shouldWarn) {
+      console.warn(
+        `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
+      );
+    }
+    return null;
+  }
+
+  return null;
+}
+
+function loadExternalManifestSyncWithNode(
+  packageName: string,
+  options: ManifestLoadOptions = {},
+): SmartObjectManifest | null {
+  const manifestGlobals = globalThis as typeof globalThis & {
+    __smrtManifestCache?: Map<string, SmartObjectManifest>;
+  };
+
+  if (manifestGlobals.__smrtManifestCache?.has(packageName)) {
+    return manifestGlobals.__smrtManifestCache.get(packageName) || null;
+  }
+
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  const manifestPath = resolveManifestExportPathSync(packageName, options);
+  if (!manifestPath) {
+    return null;
+  }
+
+  try {
+    const manifest = JSON.parse(
+      builtins.fs.readFileSync(manifestPath, 'utf-8'),
+    ) as SmartObjectManifest;
+
+    if (!manifest.objects || typeof manifest.objects !== 'object') {
+      if (options.warn ?? true) {
+        console.warn(`Invalid manifest structure for package ${packageName}`);
+      }
+      return null;
+    }
+
+    const cachedManifest = manifest.packageName
+      ? manifest
+      : { ...manifest, packageName };
+
+    if (!manifestGlobals.__smrtManifestCache) {
+      manifestGlobals.__smrtManifestCache = new Map();
+    }
+    manifestGlobals.__smrtManifestCache.set(packageName, cachedManifest);
+
+    return cachedManifest;
+  } catch (error) {
+    if (options.warn ?? true) {
+      console.warn(
+        `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,
+      );
+    }
+    return null;
+  }
+}
+
+function loadManifestFromPathSyncWithNode(
+  manifestPath: string,
+): SmartObjectManifest | null {
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  try {
+    const manifest = JSON.parse(
+      builtins.fs.readFileSync(manifestPath, 'utf-8'),
+    ) as SmartObjectManifest;
+
+    if (!manifest.objects || typeof manifest.objects !== 'object') {
+      console.warn(`Invalid manifest structure at ${manifestPath}`);
+      return null;
+    }
+
+    const manifestGlobals = globalThis as typeof globalThis & {
+      __smrtManifestCache?: Map<string, SmartObjectManifest>;
+    };
+    if (!manifestGlobals.__smrtManifestCache) {
+      manifestGlobals.__smrtManifestCache = new Map();
+    }
+
+    manifestGlobals.__smrtManifestCache.set(
+      manifest.packageName || manifestPath,
+      manifest,
+    );
+
+    return manifest;
+  } catch (error) {
+    console.warn(
+      `Failed to load manifest from path ${manifestPath}: ${error instanceof Error ? error.message : error}`,
+    );
+    return null;
+  }
+}
 
 async function discoverInstalledSmrtPackages(): Promise<string[]> {
   const discoverSpecifier = import.meta.url.endsWith('.ts')
@@ -723,6 +1207,7 @@ export class ObjectRegistry {
     const smrtPackages = requestedPackageName
       ? [requestedPackageName]
       : await discoverInstalledSmrtPackages();
+    const { loadExternalManifest } = await importManifestLoader();
 
     verboseLog(
       `[ObjectRegistry] Attempting to auto-load ${className} from ${smrtPackages.length} external packages...`,
@@ -902,7 +1387,7 @@ export class ObjectRegistry {
       // Explicit paths — used by integration tests
       for (const manifestPath of options.manifestPaths) {
         try {
-          const manifest = loadManifestFromPathSync(manifestPath);
+          const manifest = loadManifestFromPathSyncWithNode(manifestPath);
           if (!manifest?.objects) continue;
           const packageName = manifest.packageName as string | undefined;
 
@@ -925,18 +1410,31 @@ export class ObjectRegistry {
       // Auto-discover via loadExternalManifestSync for each @happyvertical package
       const packagePrefixes = ['@happyvertical/smrt-'];
       try {
-        const { readdirSync } = require('node:fs') as typeof import('node:fs');
-        const { join } = require('node:path') as typeof import('node:path');
-        const scopeDir = join(process.cwd(), 'node_modules', '@happyvertical');
-        const packages = readdirSync(scopeDir).filter((name: string) =>
-          packagePrefixes.some((prefix) =>
-            `@happyvertical/${name}`.startsWith(prefix),
-          ),
+        const builtins = getNodeBuiltins();
+        if (!builtins) {
+          return { packagesLoaded, objectsRegistered };
+        }
+
+        const scopeDir = builtins.path.join(
+          process.cwd(),
+          'node_modules',
+          '@happyvertical',
         );
+        if (!builtins.fs.existsSync(scopeDir)) {
+          return { packagesLoaded, objectsRegistered };
+        }
+
+        const packages = builtins.fs
+          .readdirSync(scopeDir)
+          .filter((name) =>
+            packagePrefixes.some((prefix) =>
+              `@happyvertical/${name}`.startsWith(prefix),
+            ),
+          );
 
         for (const pkgDir of packages) {
           const packageName = `@happyvertical/${pkgDir}`;
-          const manifest = loadExternalManifestSync(packageName);
+          const manifest = loadExternalManifestSyncWithNode(packageName);
           if (!manifest?.objects) continue;
 
           for (const [_key, objectDef] of Object.entries(manifest.objects)) {
@@ -1320,6 +1818,7 @@ export class ObjectRegistry {
     // This handles cases where AST scanner missed optional fields without initializers
     const existingFieldCount = registered.fields.size;
 
+    const { discoverManifestEntry } = await importManifestLoader();
     const manifestEntry = await discoverManifestEntry(
       registered.constructor,
       className,
@@ -1407,6 +1906,29 @@ export class ObjectRegistry {
         )) {
           registered.methods.set(methodName, methodDef);
         }
+        didHydrate = true;
+      }
+
+      if (manifestEntry.schema) {
+        registered.schema = {
+          ddl: manifestEntry.schema.ddl,
+          tableName:
+            manifestEntry.schema.tableName ||
+            registered.schema?.tableName ||
+            classnameToTablename(registered.name),
+          columns: cloneManifestSchemaColumns(manifestEntry.schema.columns),
+          indexes:
+            manifestEntry.schema.indexes?.map((indexDef) => ({
+              ...indexDef,
+              columns: [...(indexDef.columns || [])],
+            })) || [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: manifestEntry.schema.version || '',
+          packageName: manifestEntry.packageName,
+          baseClass: registered.schema?.baseClass,
+        };
         didHydrate = true;
       }
 
@@ -2892,7 +3414,7 @@ export function smrt(config: SmartObjectConfig = {}) {
         // First, check manifest for tableName (manifest generator correctly handles STI inheritance)
         // This handles the case where a child class sets tableStrategy: 'sti' explicitly
         // but should still inherit the parent's table name
-        const manifestEntry = discoverManifestSync(ctor.name);
+        const manifestEntry = discoverCachedManifestSync(ctor.name);
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
         } else if (config.tableStrategy === 'sti') {
