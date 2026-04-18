@@ -262,9 +262,18 @@ export async function serveAsset(
       ...options.headers,
     };
 
-    // new Response(body) requires Uint8Array / ArrayBuffer / string in most
-    // runtimes; Buffer is a Uint8Array subclass so this is safe in Node.
-    return new Ctor(data as unknown as BodyInit, { status: 200, headers });
+    // `new Response(body)` accepts Buffer at runtime (it's a Uint8Array
+    // subclass), but the strongly-typed `BodyInit` name lives in
+    // `lib.dom.d.ts`, which the package-build tsconfig doesn't pull in.
+    // Cast through `unknown` instead of referencing a DOM type so `.d.ts`
+    // generation works without needing DOM lib.
+    return new Ctor(
+      data as unknown as ConstructorParameters<ResponseConstructor>[0],
+      {
+        status: 200,
+        headers,
+      },
+    );
   } catch (err) {
     if (err instanceof RedirectToSourceUri) {
       return new Ctor(null, {
