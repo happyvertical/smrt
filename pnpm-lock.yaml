@@ -1378,6 +1378,9 @@ importers:
         specifier: ^0.71.20
         version: 0.71.20
     devDependencies:
+      '@happyvertical/smrt-cli':
+        specifier: workspace:*
+        version: link:../cli
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

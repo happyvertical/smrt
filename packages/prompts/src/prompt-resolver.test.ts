@@ -263,7 +263,7 @@ describe('@happyvertical/smrt-prompts', () => {
     });
     expect(initial.text).toBe('Code Will');
 
-    await (db as any).upsert('prompt_overrides', ['key', 'context'], {
+    await (db as any).upsert('_smrt_prompt_overrides', ['key', 'context'], {
       id: crypto.randomUUID(),
       slug: 'test-ttl-app',
       context: '__app__',

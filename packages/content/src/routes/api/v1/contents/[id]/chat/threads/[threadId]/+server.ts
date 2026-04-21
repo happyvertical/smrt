@@ -2,6 +2,10 @@ import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import { ChatService } from '@happyvertical/smrt-chat';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
+import {
+  getContentChatAISelection,
+  resolveContentChatModelSelection,
+} from '../../../../../../../../content-chat-session.js';
 
 type ContentChatLocals = {
   tenantId?: string | null;
@@ -10,18 +14,6 @@ type ContentChatLocals = {
     id?: string | null;
   } | null;
 };
-
-function inferProviderFromModel(model: string): string {
-  if (model.includes('claude')) {
-    return 'anthropic';
-  }
-
-  if (model.includes('gemini')) {
-    return 'gemini';
-  }
-
-  return 'openai';
-}
 
 export const GET: RequestHandler = async ({ params, locals }) => {
   const smrtLocals = locals as ContentChatLocals;
@@ -210,21 +202,14 @@ RULES:
     const env = process.env;
 
     const ctx = session.getSessionContext();
-    const storedModel =
-      typeof ctx.model === 'string' && ctx.model.length > 0 ? ctx.model : null;
-    const storedProvider =
-      typeof ctx.provider === 'string' && ctx.provider.length > 0
-        ? ctx.provider
-        : null;
-    const defaultModel = storedModel ?? 'gemini-2.5-pro';
-    const aiModel = model || defaultModel;
-    const provider =
-      storedProvider && storedModel && aiModel === storedModel
-        ? storedProvider
-        : inferProviderFromModel(aiModel);
-    const temperature =
-      typeof ctx.temperature === 'number' ? ctx.temperature : 0.7;
-    const maxTokens = typeof ctx.maxTokens === 'number' ? ctx.maxTokens : 2000;
+    const storedSelection = getContentChatAISelection(ctx);
+    const { model: aiModel, provider } = resolveContentChatModelSelection(
+      ctx,
+      model,
+      storedSelection.model ?? 'gemini-2.5-pro',
+    );
+    const temperature = storedSelection.temperature ?? 0.7;
+    const maxTokens = storedSelection.maxTokens ?? 2000;
 
     // Explicitly fallback to env vars if config lacks them
     const apiKey =

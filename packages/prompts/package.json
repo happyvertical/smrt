@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-prompts",
-  "version": "0.21.52",
+  "version": "0.22.0",
   "description": "Typed prompt registry, override resolution, and tenant-aware prompt settings for SMRT",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,8 +21,11 @@
     "build": "vite build --mode library",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
+    "dev": "vite dev",
+    "prepack": "npm run build && npm run verify:pack",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
     "@happyvertical/smrt-config": "workspace:*",
@@ -31,6 +34,7 @@
     "@happyvertical/sql": "catalog:"
   },
   "devDependencies": {
+    "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@types/node": "25.0.9",
     "typescript": "^5.9.3",

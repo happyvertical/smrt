@@ -3,6 +3,10 @@ import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import { contentEditorSessionPrompt } from '../../../../../../content-chat-prompts.js';
+import {
+  buildContentEditorSessionContext,
+  resolveContentChatModelSelection,
+} from '../../../../../../content-chat-session.js';
 
 type ContentChatLocals = {
   tenantId?: string | null;
@@ -11,18 +15,6 @@ type ContentChatLocals = {
     id?: string | null;
   } | null;
 };
-
-function inferProviderFromModel(model: string): string {
-  if (model.includes('claude')) {
-    return 'anthropic';
-  }
-
-  if (model.includes('gemini')) {
-    return 'gemini';
-  }
-
-  return 'openai';
-}
 
 export const GET: RequestHandler = async ({ params, locals }) => {
   const smrtLocals = locals as ContentChatLocals;
@@ -79,22 +71,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
         participantProfileId: profileId,
         systemPrompt: resolvedPrompt.text,
       });
-      await session.updateSessionContext({
-        contentId: id,
-        ...(resolvedPrompt.ai.profile
-          ? { profile: resolvedPrompt.ai.profile }
-          : {}),
-        ...(resolvedPrompt.ai.provider
-          ? { provider: resolvedPrompt.ai.provider }
-          : {}),
-        ...(resolvedPrompt.ai.model ? { model: resolvedPrompt.ai.model } : {}),
-        ...(resolvedPrompt.ai.temperature !== undefined
-          ? { temperature: resolvedPrompt.ai.temperature }
-          : {}),
-        ...(resolvedPrompt.ai.maxTokens !== undefined
-          ? { maxTokens: resolvedPrompt.ai.maxTokens }
-          : {}),
-      });
+      await session.updateSessionContext(
+        buildContentEditorSessionContext(id, resolvedPrompt),
+      );
       activeSession = session;
     }
 
@@ -200,18 +179,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     // If model changed, update context
     if (model) {
       const ctx = session.getSessionContext();
-      const storedModel =
-        typeof ctx.model === 'string' && ctx.model.length > 0
-          ? ctx.model
-          : null;
-      const storedProvider =
-        typeof ctx.provider === 'string' && ctx.provider.length > 0
-          ? ctx.provider
-          : null;
-      const provider =
-        storedProvider && storedModel && model === storedModel
-          ? storedProvider
-          : inferProviderFromModel(model);
+      const { provider } = resolveContentChatModelSelection(ctx, model, model);
       if (ctx.model !== model || ctx.provider !== provider) {
         await session.updateSessionContext({
           model,

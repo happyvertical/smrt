@@ -40,10 +40,13 @@ function getPromptConfig(): PromptPackageConfig {
 
 @TenantScoped({ mode: 'optional', autoPopulate: false })
 @smrt({
-  tableName: 'prompt_overrides',
+  tableName: '_smrt_prompt_overrides',
   conflictColumns: ['key', 'context'],
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  cli: true,
+  cli: {
+    include: ['list', 'get', 'create', 'update', 'delete'],
+    exclude: ['getParams', 'setParams', 'toPromptLayer'],
+  },
   mcp: { include: [] },
 })
 export class PromptOverride extends SmrtObject {
@@ -103,7 +106,8 @@ export class PromptOverride extends SmrtObject {
     const previousIdentity = await this.getPersistedIdentity();
     this.normalizeParamsForPersistence();
     await this.validatePromptOverride();
-    // Use context as the uniqueness scope so app-level rows remain unique when tenantId is null.
+    // Use context as the uniqueness scope so app-level rows remain unique even
+    // though tenantId is nullable and would otherwise allow multiple NULL rows.
     this.context = this.tenantId ?? '__app__';
     const identityChanged =
       previousIdentity &&
