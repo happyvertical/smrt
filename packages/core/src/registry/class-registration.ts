@@ -30,12 +30,10 @@ import {
   mergeManifestField,
 } from './manifest-field-merge.js';
 import {
-  addToClassNameMap,
   findClass,
   getCanonicalClassName,
   hasClassCaseInsensitive,
   qualifyExtendsName,
-  removeFromClassNameMap,
 } from './name-resolver';
 import {
   getClasses,
@@ -150,9 +148,7 @@ export function register(
       }
 
       classes.delete(existingKey);
-      removeFromClassNameMap(oldName.toLowerCase(), existingKey);
       classes.set(nextKey, existing);
-      addToClassNameMap(name.toLowerCase(), nextKey);
     }
 
     getConstructorIndex().set(ctor, nextKey);
@@ -805,9 +801,8 @@ export function register(
     // decorator-registered and manifest-loaded classes.
   });
 
-  // Track this class name for case-insensitive lookups
-  // Maps lowercase simple name → array of qualified keys
-  addToClassNameMap(name.toLowerCase(), registrationKey);
+  // Release B (#1133): case-insensitive lookups iterate the classes Map
+  // directly instead of maintaining a parallel classNameMap index.
 
   // Index constructor for O(1) reverse lookups (Issue #713: constructor-based lookup)
   getConstructorIndex().set(ctor, registrationKey);
@@ -1241,7 +1236,6 @@ export function registerFromManifest(
       if (resolution === 'child-wins') {
         // Remove old entry so the child can be registered below
         getClasses().delete(existingCanonical);
-        removeFromClassNameMap(existing.name.toLowerCase(), existingCanonical);
       } else {
         // 'skip' — existing wins (parent after child, same file, or true collision)
         const allowCoexistingQualifiedRegistration =
@@ -1286,11 +1280,6 @@ export function registerFromManifest(
             if (registrationKey !== existingCanonical) {
               const classes = getClasses();
               classes.set(registrationKey, existing);
-              removeFromClassNameMap(
-                existing.name.toLowerCase(),
-                existingCanonical,
-              );
-              addToClassNameMap(existing.name.toLowerCase(), registrationKey);
               getConstructorIndex().set(existing.constructor, registrationKey);
             }
 
@@ -1342,25 +1331,25 @@ export function registerFromManifest(
     );
     if (resolution === 'child-wins') {
       getClasses().delete(registrationKey);
-      removeFromClassNameMap(existing.name.toLowerCase(), registrationKey);
     } else {
       mergeManifestIntoExistingRegistration(existing, objectDef, packageName);
       return;
     }
   }
 
-  // Issue #1004: Qualify the extends value BEFORE adding to classNameMap.
-  // This must happen first to avoid self-reference: if we add the child to
-  // classNameMap first, qualifyExtendsName would find the child's own entry
-  // and create a circular extends (e.g., @test/sports:TestEvent extends itself).
+  // Issue #1004: Qualify the `extends` value BEFORE inserting this class
+  // into the classes Map. Otherwise qualifyExtendsName would iterate and
+  // find the child's own entry, creating a circular extends chain
+  // (e.g., @test/sports:TestEvent extends itself). Release B (#1133) swapped
+  // the underlying classNameMap lookup for an iteration over `classes`, but
+  // the ordering invariant still holds.
   const qualifiedExtends =
     objectDef.extends && packageName
       ? qualifyExtendsName(objectDef.extends, packageName)
       : objectDef.extends;
 
-  // Track this class name for case-insensitive lookups
-  // Maps lowercase simple name → array of registration keys
-  addToClassNameMap(simpleClassName.toLowerCase(), registrationKey);
+  // Release B (#1133): case-insensitive lookups iterate the classes Map
+  // directly; no parallel classNameMap index to maintain.
 
   // Create stub constructor - not needed for CLI command generation
   // The CLI only needs metadata (fields, methods, config)

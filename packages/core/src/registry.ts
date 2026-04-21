@@ -101,7 +101,6 @@ import {
 } from './registry/schema-builder';
 import {
   getClasses,
-  getClassNameMap,
   getCollectionCache,
   getCollections,
   getCollectionTableNames,
@@ -280,17 +279,12 @@ export class ObjectRegistry {
   }
 
   /**
-   * Map lowercase class names to their canonical (registered) names
-   * Used for case-insensitive duplicate detection to prevent
-   * both 'praeco' and 'Praeco' from being registered separately
-   */
-  private static get classNameMap(): Map<string, string[]> {
-    return getClassNameMap();
-  }
-
-  /**
    * Check if a class is already registered (case-insensitive)
-   * Returns the canonical name if found, undefined otherwise
+   * Returns the canonical name if found, undefined otherwise.
+   *
+   * Release B (#1133): iteration over `classes` replaces the old eagerly-
+   * maintained classNameMap index. Negligible cost at production scale and
+   * removes an entire class of cache-sync bugs.
    */
   static getCanonicalClassName(name: string): string | undefined {
     return _getCanonicalClassName(name);
@@ -1182,7 +1176,9 @@ export class ObjectRegistry {
     ObjectRegistry.getDiscoveryAttemptCache().clear();
     ObjectRegistry.fieldDecorators.clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
-    ObjectRegistry.classNameMap.clear();
+    // Release B (#1133) dropped classNameMap — case-insensitive lookups
+    // iterate the classes Map directly, so there's no secondary index to
+    // clear here.
     // Note: dbInstanceIds WeakMap and constructorIndex WeakMap will be
     // garbage collected automatically when classes are no longer referenced
     // Reset the counter for clean test state

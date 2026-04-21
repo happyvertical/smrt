@@ -132,10 +132,9 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     entry.qualifiedName = undefined;
     // @ts-expect-error - accessing private property for verification
     ObjectRegistry.classes.set('QualifiedTestCSource', entry);
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classNameMap.set('qualifiedtestcsource', [
-      'QualifiedTestCSource',
-    ]);
+    // Release B (#1133): classNameMap is gone — case-insensitive lookups
+    // iterate `classes` directly, so inserting into the classes Map is
+    // sufficient to set up this scenario.
 
     const resolved = ObjectRegistry.getClass('@test/pkg:QualifiedTestCSource');
     expect(resolved).toBeDefined();
@@ -170,10 +169,8 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     entry.qualifiedName = undefined;
     // @ts-expect-error - accessing private property for verification
     ObjectRegistry.classes.set('QualifiedTestCPromoted', entry);
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classNameMap.set('qualifiedtestcpromoted', [
-      'QualifiedTestCPromoted',
-    ]);
+    // Release B (#1133): classNameMap is gone — `classes` is the single
+    // source of truth for case-insensitive lookups.
 
     ObjectRegistry.registerFromManifest(
       'QualifiedTestCPromoted',
@@ -202,10 +199,13 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
         ?.qualifiedName,
     ).toBe('@test/pkg:QualifiedTestCPromoted');
 
-    // @ts-expect-error - accessing private property for verification
-    expect(ObjectRegistry.classNameMap.get('qualifiedtestcpromoted')).toEqual([
-      '@test/pkg:QualifiedTestCPromoted',
-    ]);
+    // Release B (#1133) replaced the classNameMap assertion with a direct
+    // dedup-by-qualifiedName check: the promoted entry's qualifiedName
+    // resolves to a single unique registration (the simple-name key and the
+    // qualified-name key point at the same RegisteredClass object).
+    const matches = ObjectRegistry.findClassesByName('QualifiedTestCPromoted');
+    const uniqueQualified = new Set(matches.map((m) => m.qualifiedName));
+    expect([...uniqueQualified]).toEqual(['@test/pkg:QualifiedTestCPromoted']);
   });
 
   it('should return simple names from getClassNames()', () => {
@@ -341,8 +341,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     entry.qualifiedName = undefined;
     // @ts-expect-error - accessing private property for verification
     ObjectRegistry.classes.set('QualifiedTestH', entry);
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classNameMap.set('qualifiedtesth', ['QualifiedTestH']);
+    // Release B (#1133): no classNameMap to seed — iteration reads `classes`.
 
     ObjectRegistry.register(QualifiedTestH, {
       name: 'QualifiedTestH',
@@ -389,8 +388,7 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     entry.qualifiedName = undefined;
     // @ts-expect-error - accessing private property for verification
     ObjectRegistry.classes.set('QualifiedTestI', entry);
-    // @ts-expect-error - accessing private property for verification
-    ObjectRegistry.classNameMap.set('qualifiedtesti', ['QualifiedTestI']);
+    // Release B (#1133): no classNameMap to seed — iteration reads `classes`.
 
     ObjectRegistry.register(QualifiedTestICollision, {
       name: 'QualifiedTestICollision',

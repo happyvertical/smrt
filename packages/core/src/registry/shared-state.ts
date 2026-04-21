@@ -41,8 +41,10 @@ declare global {
   var __smrtRegistryStiSiblingsLoaded: Set<string> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollectionTableNames: Map<string, string> | undefined;
-  // eslint-disable-next-line no-var
-  var __smrtRegistryClassNameMap: Map<string, string[]> | undefined;
+  // Release B (#1133) removed __smrtRegistryClassNameMap — case-insensitive
+  // lookups now iterate the `classes` Map directly. The globalThis slot is
+  // left undeclared so any leftover code that reaches for it gets a clean
+  // TS error instead of silently stale data.
   // eslint-disable-next-line no-var
   var __smrtRegistrySchemasInitialized: WeakSet<object> | undefined;
   // eslint-disable-next-line no-var
@@ -209,12 +211,11 @@ export function getStiSiblingsLoaded(): Set<string> {
   return globalThis.__smrtRegistryStiSiblingsLoaded;
 }
 
-export function getClassNameMap(): Map<string, string[]> {
-  if (!globalThis.__smrtRegistryClassNameMap) {
-    globalThis.__smrtRegistryClassNameMap = new Map<string, string[]>();
-  }
-  return globalThis.__smrtRegistryClassNameMap;
-}
+// getClassNameMap removed in Release B (#1133). The eagerly-maintained
+// lowercase-simple-name → qualified-key[] index was replaced by on-demand
+// iteration over the `classes` Map in name-resolver.ts. Any remaining
+// consumer should switch to `findClassesByName`, `getCanonicalClassName`,
+// or `findClass`.
 
 export function getSchemasInitialized(): WeakSet<object> {
   if (!globalThis.__smrtRegistrySchemasInitialized) {

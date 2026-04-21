@@ -15,7 +15,6 @@ export {
 } from './embedding-manager';
 // Name resolution
 export {
-  addToClassNameMap,
   findClass,
   findClassesByName,
   findClassStrict,
@@ -32,7 +31,6 @@ export {
   hasClass,
   hasClassCaseInsensitive,
   qualifyExtendsName,
-  removeFromClassNameMap,
   resolveType,
 } from './name-resolver';
 // Relationship graph
@@ -40,7 +38,6 @@ export { getDependencyGraph, getRelationshipMap } from './relationship-graph';
 // Shared state accessors
 export {
   getClasses,
-  getClassNameMap,
   getCollectionCache,
   getCollections,
   getCollectionTableNames,
