@@ -435,7 +435,13 @@ export function register(
     const nextKey = nextPackageName
       ? createQualifiedName(nextPackageName, name)
       : name;
-    const oldName = existing.name;
+    // Capture pre-mutation identity so descendants whose `extends` still
+    // references the old name/qualifiedName are caught by the post-mutation
+    // invalidation sweep (#1139 Gap 2).
+    const previousIdentity = {
+      name: existing.name,
+      qualifiedName: existing.qualifiedName as string | undefined,
+    };
 
     existing.name = name;
     existing.packageName = nextPackageName;
@@ -489,6 +495,16 @@ export function register(
     }
 
     getConstructorIndex().set(ctor, nextKey);
+
+    // Release C follow-up #1139 Gap 2: we just mutated `existing.name`,
+    // `existing.packageName`, `existing.qualifiedName`, `existing.config`,
+    // `existing.constructor`, and `existing.schema.tableName`. Any
+    // descendant whose cached `inheritedFields` was computed against the
+    // prior identity now carries stale data. Invalidate `existing` and
+    // every descendant whose `extends` matches the pre- or post-mutation
+    // identity so the next field read re-merges from the current state.
+    invalidateInheritanceEntries(existing, previousIdentity);
+
     return nextKey;
   }
 
@@ -1127,7 +1143,33 @@ function applySqlTypeOverrides(
   }
 }
 
-function invalidateInheritanceEntries(existing: RegisteredClass): void {
+/**
+ * Invalidate cached inheritance state (chain + inheritedFields +
+ * inheritedMethods) on `existing` AND every descendant whose `extends` or
+ * `inheritanceChain` references it.
+ *
+ * This covers both simple-name and qualified-name `extends` matches, which
+ * is why `ObjectRegistry.invalidateInheritanceCache` delegates here (Release
+ * C follow-up #1139 Gap 1 — the old recursive public helper only matched
+ * `extends === className` by exact string, silently missing qualified
+ * descendants like `@pkg:Parent`).
+ *
+ * `previousIdentity` is used by `upsertExistingEntry` (Gap 2): when a class
+ * is promoted (its name/packageName/qualifiedName are mutated in place),
+ * descendants registered against the pre-mutation identity need to be
+ * invalidated too. Pass the pre-mutation `{ name, qualifiedName }` so this
+ * sweep matches against both the old and new identity.
+ *
+ * Exported for the public `ObjectRegistry.invalidateInheritanceCache`
+ * shim in registry.ts.
+ */
+export function invalidateInheritanceEntries(
+  existing: RegisteredClass,
+  previousIdentity?: {
+    name?: string;
+    qualifiedName?: string;
+  },
+): void {
   const cache = getInheritanceCache();
   const affectedNames = new Set<string>();
 
@@ -1137,18 +1179,27 @@ function invalidateInheritanceEntries(existing: RegisteredClass): void {
     }
   };
 
-  remember(existing.name);
-  remember(existing.qualifiedName);
+  const matchNames = new Set<string>();
+  const rememberMatch = (name: string | undefined): void => {
+    if (name) matchNames.add(name);
+  };
+  rememberMatch(existing.name);
+  rememberMatch(existing.qualifiedName);
+  rememberMatch(previousIdentity?.name);
+  rememberMatch(previousIdentity?.qualifiedName);
+
+  for (const name of matchNames) {
+    remember(name);
+  }
 
   for (const [key, candidate] of getClasses()) {
-    if (
-      candidate === existing ||
-      candidate.extends === existing.name ||
-      candidate.extends === existing.qualifiedName ||
-      candidate.inheritanceChain?.includes(existing.name) ||
-      (existing.qualifiedName &&
-        candidate.inheritanceChain?.includes(existing.qualifiedName))
-    ) {
+    const extendsMatches =
+      !!candidate.extends && matchNames.has(candidate.extends);
+    const chainMatches =
+      !!candidate.inheritanceChain &&
+      candidate.inheritanceChain.some((n) => matchNames.has(n));
+
+    if (candidate === existing || extendsMatches || chainMatches) {
       candidate.inheritanceChain = undefined;
       candidate.inheritedFields = undefined;
       candidate.inheritedMethods = undefined;
