@@ -38,6 +38,9 @@ function baseline(overrides: Partial<CollisionInputs> = {}): CollisionInputs {
     sameName: false,
     hasNewQualifiedKey: false,
     existingKeyIsQualified: false,
+    hasManifestContent: false,
+    registrationKeyDiffersFromExistingKey: false,
+    existingHasNoPackage: false,
     ...overrides,
   };
 }
@@ -129,17 +132,32 @@ describe('decideCollisionPolicy', () => {
       );
     });
 
-    it('manifest-same-package-merge → merge-manifest', () => {
+    it('manifest-same-package-merge → merge-manifest (when there is content to merge)', () => {
       // Issue #1000 + #951:144-200: same-package manifest arriving for an
       // existing source registration; merge fields + alias the qualified key.
       const result = decideCollisionPolicy(
         baseline({
           origin: 'manifest',
           samePackage: true,
+          hasManifestContent: true,
         }),
       );
       expect(result.policy).toBe('merge-manifest');
       expect(result.scenario).toBe('manifest-same-package-merge');
+    });
+
+    it('manifest-same-package without content → skip (merge has nothing to fold in)', () => {
+      // Guards the `hasManifestContent` gate: empty manifest entries must
+      // NOT trigger a merge-manifest policy, otherwise the caller would
+      // alias a qualified key and incorrectly report a merge.
+      const result = decideCollisionPolicy(
+        baseline({
+          origin: 'manifest',
+          samePackage: true,
+          hasManifestContent: false,
+        }),
+      );
+      expect(result.scenario).toBe('manifest-default-skip');
     });
 
     it('manifest-default-skip → skip (pre-Release-C resolveManifestCollision default)', () => {

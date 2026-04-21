@@ -137,6 +137,31 @@ export interface CollisionInputs {
    * (old code required both).
    */
   readonly existingKeyIsQualified: boolean;
+
+  /**
+   * Manifest-origin only: the incoming `objectDef` carries at least one of
+   * `fields`, `methods`, `schema`, or `decoratorConfig`. Without that, the
+   * merge path has nothing to fold in and the caller should skip the
+   * merge-manifest policy entirely.
+   */
+  readonly hasManifestContent: boolean;
+
+  /**
+   * Manifest-origin only: the new registration's qualified key differs
+   * from the existing entry's canonical key. When true and the policy is
+   * `merge-manifest`, the caller MUST also alias the existing entry under
+   * the new qualified key (step 2 of the merge-manifest contract).
+   */
+  readonly registrationKeyDiffersFromExistingKey: boolean;
+
+  /**
+   * Existing registration has no `packageName` set. Distinct from
+   * `!samePackage`: this specifically means the existing entry is a bare
+   * source registration waiting for a package manifest to promote it. When
+   * true and the new registration carries a packageName, merge-manifest
+   * treats it as promotion rather than collision.
+   */
+  readonly existingHasNoPackage: boolean;
 }
 
 export interface PolicyDecision {
@@ -175,8 +200,15 @@ const ROWS: readonly Row[] = [
   },
 
   {
+    // Decorator-only: the decorator fires after a manifest builder
+    // pre-registered a stub placeholder under this name. The real class
+    // takes over. Manifest-origin stub-to-stub arrivals fall through to
+    // the source-file / STI rows instead.
     scenario: 'manifest-stub-replacement',
-    match: (i) => i.existingIsManifestStub && !i.sameConstructor,
+    match: (i) =>
+      i.origin === 'decorator' &&
+      i.existingIsManifestStub &&
+      !i.sameConstructor,
     policy: 'replace',
     reason: () =>
       'Existing entry is a manifest stub placeholder; the real implementation takes over.',
@@ -223,12 +255,23 @@ const ROWS: readonly Row[] = [
   },
 
   {
+    // Covers two related scenarios:
+    //   (a) `samePackage`          — decorator + manifest from the same
+    //       package land on the same class; merge fields (issue #1000).
+    //   (b) `existingHasNoPackage` — source registration hasn't been
+    //       promoted to a qualified key yet and a manifest now provides
+    //       the package identity (issue #951:144-200). The merge runs
+    //       AND the caller aliases the existing entry under the new
+    //       qualified key.
     scenario: 'manifest-same-package-merge',
     match: (i) =>
-      i.origin === 'manifest' && i.samePackage && !i.existingIsManifestStub,
+      i.origin === 'manifest' &&
+      (i.samePackage || (i.existingHasNoPackage && i.hasNewQualifiedKey)) &&
+      !i.existingIsManifestStub &&
+      i.hasManifestContent,
     policy: 'merge-manifest',
     reason: () =>
-      'Manifest arriving for an existing same-package source registration; fold fields in and alias the qualified key.',
+      'Manifest arriving for an existing same-package or unqualified source registration; fold fields in and alias the qualified key if keys differ.',
   },
 
   {
