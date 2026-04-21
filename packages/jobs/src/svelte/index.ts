@@ -7,6 +7,10 @@
  * @packageDocumentation
  */
 
+// Self-register this package's manifest for consumers that import via this
+// subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
+import '../__smrt-register__.js';
+
 import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
 import type { ComponentProps } from 'svelte';
 import { JOBS_MODULE_META } from '../ui.js';

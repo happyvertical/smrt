@@ -328,12 +328,15 @@ function getNodeBuiltins() {
   const path = getBuiltinModule('node:path') as
     | typeof import('node:path')
     | undefined;
+  const url = getBuiltinModule('node:url') as
+    | typeof import('node:url')
+    | undefined;
 
-  if (!fs || !path) {
+  if (!fs || !path || !url) {
     return null;
   }
 
-  return { fs, path };
+  return { fs, path, url };
 }
 
 function findWorkspaceRootSync(startDir: string): string | null {
@@ -1528,13 +1531,28 @@ export class ObjectRegistry {
 
     let manifest: SmartObjectManifest | null = null;
     try {
+      // Decode file URLs via fileURLToPath() rather than `new URL(...).pathname`:
+      // pathname leaves percent-encoding intact and on Windows yields paths like
+      // `/C:/foo` that fs rejects. Either failure mode would otherwise make
+      // self-registration silently no-op and reintroduce #1132.
       const urlString =
         manifestUrl instanceof URL ? manifestUrl.href : manifestUrl;
-      const filePath = urlString.startsWith('file:')
-        ? builtins.path.normalize(new URL(urlString).pathname)
-        : urlString;
+      let filePath: string;
+      if (manifestUrl instanceof URL) {
+        filePath = builtins.url.fileURLToPath(manifestUrl);
+      } else if (urlString.startsWith('file:')) {
+        filePath = builtins.url.fileURLToPath(urlString);
+      } else {
+        filePath = urlString;
+      }
 
       if (!builtins.fs.existsSync(filePath)) {
+        recordRegistryDiagnostic(
+          'warn',
+          'PACKAGE_MANIFEST_NOT_FOUND',
+          `Package manifest not found at ${filePath}. Self-registration is a no-op; the vitest plugin may still populate this manifest via its own path.`,
+          { manifestUrl: String(manifestUrl), filePath },
+        );
         return { loaded: false, objectsRegistered: 0 };
       }
 

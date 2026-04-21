@@ -8,7 +8,7 @@
 // Self-register this package's manifest before any @smrt() decorator fires
 // downstream. Must come first so the side effect runs ahead of the class
 // module loads below. See __smrt-register__.ts for issue #1132 context.
-import './__smrt-register__';
+import './__smrt-register__.js';
 
 export type { ContentOptions } from './content';
 export { Content } from './content';

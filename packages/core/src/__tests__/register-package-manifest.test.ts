@@ -187,12 +187,53 @@ describe('ObjectRegistry.registerPackageManifest', () => {
 
   it('silently no-ops when the manifest file is missing', () => {
     const missingPath = join(tempRoot, 'does-not-exist.json');
+    ObjectRegistry.clearDiagnostics();
+
     const result = ObjectRegistry.registerPackageManifest(
       pathToFileURL(missingPath),
     );
 
     expect(result.loaded).toBe(false);
     expect(result.objectsRegistered).toBe(0);
+
+    // Not-found is no longer fully silent — it records a diagnostic so
+    // consumers can discover drops via ObjectRegistry.getDiagnostics(). This
+    // was the P1 review feedback on #1135.
+    const diagnostics = ObjectRegistry.getDiagnostics();
+    const notFound = diagnostics.find(
+      (d) => d.code === 'PACKAGE_MANIFEST_NOT_FOUND',
+    );
+    expect(notFound).toBeDefined();
+    expect(notFound?.context?.filePath).toBe(missingPath);
+  });
+
+  it('decodes percent-encoded file URLs (paths with spaces/unicode)', () => {
+    // Regression for PR #1135 review: `new URL(...).pathname` left `%20`
+    // encodings in place, so existsSync() rejected the valid path and
+    // self-registration silently no-opped. fileURLToPath() fixes it.
+    const packageName =
+      '@happyvertical/smrt-self-register-fixture-encoded-path';
+    const spacedDir = join(tempRoot, 'dir with spaces');
+    mkdirSync(spacedDir, { recursive: true });
+    const manifestPath = writeManifest(spacedDir, packageName, {
+      FixtureEncodedWidget: {
+        decoratorConfig: {
+          tableName: 'fixture_encoded_widgets',
+          api: false,
+          cli: false,
+          mcp: false,
+        },
+        fields: { label: { type: 'text' } },
+      },
+    });
+
+    const result = ObjectRegistry.registerPackageManifest(
+      pathToFileURL(manifestPath),
+    );
+
+    expect(result.loaded).toBe(true);
+    expect(result.packageName).toBe(packageName);
+    expect(result.objectsRegistered).toBe(1);
   });
 
   it('silently no-ops when the manifest has no objects key', () => {
