@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-sites",
-  "version": "0.21.52",
+  "version": "0.22.0",
   "description": "Site lifecycle management for multi-tenant SMRT networks",
   "type": "module",
   "main": "./dist/index.js",

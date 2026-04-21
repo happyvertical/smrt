@@ -1,5 +1,16 @@
 # @happyvertical/smrt-svelte
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies [9284b1c]
+  - @happyvertical/smrt-agents@1.0.0
+  - @happyvertical/smrt-jobs@1.0.0
+  - @happyvertical/smrt-profiles@1.0.0
+  - @happyvertical/smrt-users@1.0.0
+  - @happyvertical/smrt-types@1.0.0
+
 ## 0.21.52
 
 ### Patch Changes

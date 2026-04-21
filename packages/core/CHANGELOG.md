@@ -1,5 +1,57 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- 9284b1c: **Release A — close #1132: self-registering package manifests**
+
+  Consumer runtimes (tsx, SvelteKit SSR, plain `vite dev`) no longer silently drop declared model fields. Every `@happyvertical/smrt-*` domain package now loads its own build-time manifest as a top-of-entry side effect, so `@smrt()` decorators find their fields before any class module evaluates. `place.save()` / `list({ where: { externalId } })` now round-trip declared fields from a fresh `pnpm add @happyvertical/smrt-places` — no vitest plugin required.
+
+  **New in @happyvertical/smrt-core**:
+
+  - `ObjectRegistry.registerPackageManifest(url)` — the primitive each package calls at import time.
+  - `ObjectRegistry.getDiagnostics()` / `flushDiagnostics()` / `clearDiagnostics()` — opt-in collector for registry load failures that previously surfaced only as `console.warn`. Passive in this release; Release C (#1134) flips `SMRT_STRICT_REGISTRY` on by default.
+  - `SMRT_SKIP_STI_REHYDRATE=true` env flag — opts out of the unconditional STI descendant re-hydration added in #1131, now redundant for consumers on the new builds. The flag is removed in Release C (#1134) once the self-registration rollout is proven stable.
+
+  **Per-package change**: each listed package gains a one-line `src/__smrt-register__.ts` shim that runs before its class modules load. No consumer-facing API change.
+
+- 8a0311a: **Release C — collision-policy decision table + strict-mode default + retire SKIP_STI_REHYDRATE (#1134)**
+
+  Third and final release of the ObjectRegistry / SmrtObject review thread.
+
+  **Internal refactor (no consumer API change):**
+
+  - `register()` and `registerFromManifest()` now share a single 16-row decision table at `packages/core/src/registry/collision-policy.ts`. The 11-branch exact-match + case-insensitive collision tree in `register()` and the 3-branch `resolveManifestCollision()` it mirrored are all collapsed onto `decideCollisionPolicy()`. Every row corresponds to a named scenario (`manifest-stub-replacement`, `sti-child-wins`, `decorator-case-insensitive-pnpm-duplicate`, etc.) that maps 1:1 to the existing issue-specific test suite (#531, #555, #584, #847, #950, #951, #1000). `resolveManifestCollision()` is deleted.
+
+  **Breaking changes (minor):**
+
+  - **`SMRT_STRICT_REGISTRY` is now on by default.** Severity-`'error'` diagnostics throw at record time instead of being silently collected. Affected codes: `MANIFEST_EXPORT_INVALID`, `MANIFEST_EXPORT_NOT_JSON`, `MANIFEST_EXPORT_NOT_FOUND`, `PACKAGE_MANIFEST_READ_FAILED`. Warn-severity codes are unchanged. To restore the pre-Release-C permissive behavior set `SMRT_STRICT_REGISTRY=false`.
+  - **`SMRT_SKIP_STI_REHYDRATE` removed.** The env flag disappears. PR #1131's unconditional STI descendant rehydration on save is now the only behavior, preserving the stale-cache repair contract from `external-runtime-hydration.test.ts:1071`. Further optimizing the loop away is tracked in [#1139](https://github.com/happyvertical/smrt/issues/1139).
+  - Collision error messages carry a stable scenario identifier in the verbose-log output. Text in end-user `throw` messages is unchanged.
+
+  **Migration:**
+
+  - Run your test suite with the new default. If `MANIFEST_EXPORT_*` or `PACKAGE_MANIFEST_READ_FAILED` start throwing, the underlying manifest misconfiguration is the thing to fix; if you genuinely need to keep shipping despite a broken manifest, set `SMRT_STRICT_REGISTRY=false` in your runtime env.
+  - Remove any `SMRT_SKIP_STI_REHYDRATE=true` setting from your env; it's now a no-op.
+
+### Patch Changes
+
+- 84b2430: Rehydrate STI descendants before save-time serialization so stale external runtime field caches do not coerce sibling integer fields to empty strings.
+- bdd4979: **Release B — consolidate ObjectRegistry manifest discovery (#1133)**
+
+  Internal refactor. Public `ObjectRegistry.*` API unchanged; no consumer impact.
+
+  - Extract `packages/core/src/manifest/store.ts` — leaf module holding globalThis cache accessors and pure fs/URL helpers with no `ObjectRegistry` dependency. Breaks the historical `registry.ts → class-registration.ts → manifest-loader.ts → registry.ts` cycle.
+  - Introduce `ManifestSource` interface with six implementations (`LocalTestManifestSource`, `TestManifestSource`, `StaticManifestSource`, `EmbeddedManifestSource`, `NodeModulesFallbackSource`, `ExplicitPathsManifestSource`) and a `CompositeManifestSource` that queries them in the same priority order as the historical `discoverCachedManifestSync`.
+  - `ManifestLookupQuery` carries optional `packageName` / `qualifiedName` context so multi-package same-simple-name scenarios (issue #951) resolve to the right manifest when the caller has package identity available.
+  - `discoverManifestSync` and `loadAllManifests({ manifestPaths })` now delegate through `CompositeManifestSource` / `ExplicitPathsManifestSource`. Test-env gating moved into the sources themselves.
+  - Drop the eagerly-maintained `__smrtRegistryClassNameMap` index; case-insensitive lookups iterate the `classes` Map with object-identity de-duplication. Removes a class of cache-sync bugs (#584, #847, #951) at negligible runtime cost in realistic SMRT apps (low-hundreds of classes).
+  - Consolidate manifest-cache getters across `manifest-loader.ts` onto the `store.ts` leaf.
+  - @happyvertical/smrt-scanner@1.0.0
+  - @happyvertical/smrt-config@1.0.0
+  - @happyvertical/smrt-types@1.0.0
+
 ## 0.21.52
 
 ### Patch Changes

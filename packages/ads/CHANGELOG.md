@@ -1,5 +1,32 @@
 # @happyvertical/smrt-ads
 
+## 1.0.0
+
+### Patch Changes
+
+- 9284b1c: **Release A — close #1132: self-registering package manifests**
+
+  Consumer runtimes (tsx, SvelteKit SSR, plain `vite dev`) no longer silently drop declared model fields. Every `@happyvertical/smrt-*` domain package now loads its own build-time manifest as a top-of-entry side effect, so `@smrt()` decorators find their fields before any class module evaluates. `place.save()` / `list({ where: { externalId } })` now round-trip declared fields from a fresh `pnpm add @happyvertical/smrt-places` — no vitest plugin required.
+
+  **New in @happyvertical/smrt-core**:
+
+  - `ObjectRegistry.registerPackageManifest(url)` — the primitive each package calls at import time.
+  - `ObjectRegistry.getDiagnostics()` / `flushDiagnostics()` / `clearDiagnostics()` — opt-in collector for registry load failures that previously surfaced only as `console.warn`. Passive in this release; Release C (#1134) flips `SMRT_STRICT_REGISTRY` on by default.
+  - `SMRT_SKIP_STI_REHYDRATE=true` env flag — opts out of the unconditional STI descendant re-hydration added in #1131, now redundant for consumers on the new builds. The flag is removed in Release C (#1134) once the self-registration rollout is proven stable.
+
+  **Per-package change**: each listed package gains a one-line `src/__smrt-register__.ts` shim that runs before its class modules load. No consumer-facing API change.
+
+- Updated dependencies [84b2430]
+- Updated dependencies [9284b1c]
+- Updated dependencies [bdd4979]
+- Updated dependencies [8a0311a]
+  - @happyvertical/smrt-core@1.0.0
+  - @happyvertical/smrt-assets@1.0.0
+  - @happyvertical/smrt-commerce@1.0.0
+  - @happyvertical/smrt-properties@1.0.0
+  - @happyvertical/smrt-tags@1.0.0
+  - @happyvertical/smrt-tenancy@1.0.0
+
 ## 0.21.52
 
 ### Patch Changes
