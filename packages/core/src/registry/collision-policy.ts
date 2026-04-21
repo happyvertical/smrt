@@ -113,9 +113,20 @@ export interface CollisionInputs {
 
   /**
    * `existing.packageName?.startsWith('@')` — existing entry came from a
-   * scoped package manifest (i.e., is externally identified).
+   * **scoped** package manifest (e.g. `@happyvertical/smrt-core`). Used by
+   * the external-package-replace (#584) and bundled-context scenarios
+   * that were gated on `@` in pre-Release-C code.
    */
   readonly existingIsPackageQualified: boolean;
+
+  /**
+   * Existing entry carries any packageName, scoped or not. Broader than
+   * `existingIsPackageQualified`. Used for the different-packages
+   * coexistence scenario where pre-Release-C code only required both
+   * packageNames to be present and different (unscoped manifests like
+   * `smrt-profiles` count here).
+   */
+  readonly existingHasAnyPackage: boolean;
 
   /**
    * Case-sensitive equality between `new.name` and `existing.name`.
@@ -243,19 +254,25 @@ const ROWS: readonly Row[] = [
   },
 
   {
+    // Uses `existingHasAnyPackage` not `existingIsPackageQualified`: the
+    // pre-Release-C `allowCoexistingQualifiedRegistration` check only
+    // required both packages to be present and differ, regardless of
+    // whether they were scoped (`@scope/pkg`) or unscoped (`smrt-profiles`).
+    // Narrowing to scoped would silently drop coexistence for unscoped
+    // manifests. See PR #1140 review (willgriffin P2 at line 251).
     scenario: 'manifest-different-packages-qualified-coexist',
     match: (i) =>
       i.origin === 'manifest' &&
       !i.samePackage &&
       i.hasNewQualifiedKey &&
-      i.existingIsPackageQualified,
+      i.existingHasAnyPackage,
     policy: 'coexist-qualified',
     reason: () =>
       'Different packages share a simple name; both registrations live under their qualified keys (issue #951).',
   },
 
   {
-    // Covers two related scenarios:
+    // Covers three related scenarios:
     //   (a) `samePackage`          — decorator + manifest from the same
     //       package land on the same class; merge fields (issue #1000).
     //   (b) `existingHasNoPackage` — source registration hasn't been
@@ -263,11 +280,19 @@ const ROWS: readonly Row[] = [
     //       the package identity (issue #951:144-200). The merge runs
     //       AND the caller aliases the existing entry under the new
     //       qualified key.
+    //   (c) The same scenarios when the existing entry is a manifest
+    //       stub from an earlier unqualified/local manifest registration
+    //       — the pre-Release-C code merged whenever
+    //       `!existing.packageName || packageName === existing.packageName`
+    //       regardless of stub status. Release C preserves that: removing
+    //       the `!existingIsManifestStub` gate lets a later
+    //       package-qualified manifest upgrade a stub's fields + alias
+    //       under the qualified key. See PR #1140 review (willgriffin P1
+    //       at line 270).
     scenario: 'manifest-same-package-merge',
     match: (i) =>
       i.origin === 'manifest' &&
       (i.samePackage || (i.existingHasNoPackage && i.hasNewQualifiedKey)) &&
-      !i.existingIsManifestStub &&
       i.hasManifestContent,
     policy: 'merge-manifest',
     reason: () =>
@@ -298,12 +323,15 @@ const ROWS: readonly Row[] = [
   },
 
   {
+    // pnpm-dup allows unscoped package names (old code didn't gate on
+    // scoped-only). `samePackage` already requires both sides to have a
+    // packageName and match, so no extra existingHasAnyPackage check
+    // is needed.
     scenario: 'decorator-case-insensitive-pnpm-duplicate',
     match: (i) =>
       i.origin === 'decorator' &&
       i.matchKind === 'case-insensitive' &&
       i.existingKeyIsQualified &&
-      i.existingIsPackageQualified &&
       i.samePackage &&
       i.sameName &&
       !i.sameConstructor,

@@ -135,6 +135,7 @@ function buildDecoratorCollisionInputs(args: {
     sameName: name === existing.name,
     hasNewQualifiedKey,
     existingKeyIsQualified,
+    existingHasAnyPackage: !!existing.packageName,
     // Manifest-only fields; filled with safe defaults for decorator origin.
     hasManifestContent: false,
     registrationKeyDiffersFromExistingKey: false,
@@ -246,6 +247,19 @@ function buildManifestCollisionInputs(args: {
   const newClassName = objectDef.className || name;
   const newExtends = objectDef.extends as string | undefined;
 
+  // When an incoming manifest's `extends` points at the existing entry,
+  // OR the existing entry's `extends` points at the incoming class, we
+  // have an STI inheritance relationship. Each side checks:
+  //   - the simple name of the other
+  //   - the key under which the other is registered
+  //   - a case-insensitive fallback
+  //
+  // The `existingKey` comparison is load-bearing for cross-package STI:
+  // `existing.extends` is stored post-`qualifyExtendsName()`, so it may
+  // be the fully-qualified parent key like `@pkg:Parent`. Without this
+  // comparison, `existingExtendsNew` falsely reads as false and the
+  // arriving parent manifest would be registered as a duplicate instead
+  // of skipped. See the deep-review report on #1140 for the fix rationale.
   const newExtendsExisting = !!(
     newExtends &&
     (newExtends === existing.name ||
@@ -256,6 +270,7 @@ function buildManifestCollisionInputs(args: {
     existing.extends &&
     (existing.extends === newClassName ||
       existing.extends === name ||
+      existing.extends === registrationKey ||
       existing.extends.toLowerCase() === newClassName.toLowerCase())
   );
 
@@ -284,8 +299,9 @@ function buildManifestCollisionInputs(args: {
     samePackage,
     existingIsPackageQualified,
     sameName: newClassName === existing.name,
-    hasNewQualifiedKey: !!packageName,
+    hasNewQualifiedKey: isQualifiedName(registrationKey),
     existingKeyIsQualified: isQualifiedName(existingKey),
+    existingHasAnyPackage: !!existing.packageName,
     hasManifestContent: !!(
       objectDef.fields ||
       objectDef.methods ||
@@ -295,6 +311,11 @@ function buildManifestCollisionInputs(args: {
     registrationKeyDiffersFromExistingKey: registrationKey !== existingKey,
     existingHasNoPackage: !existing.packageName,
   };
+  // Note: manifest-origin sets hasNewQualifiedKey from the final
+  // registrationKey (not packageName) because registerFromManifest accepts
+  // an objectDef.qualifiedName fallback when packageName is omitted —
+  // deriving from packageName alone would miss that case and misroute the
+  // coexistence rows. See PR #1140 review (Copilot P1 at line 287).
 }
 
 /**

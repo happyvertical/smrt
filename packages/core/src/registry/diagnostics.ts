@@ -84,7 +84,13 @@ export function recordRegistryDiagnostic(
 
   if (severity === 'error' && strictModeEnabled()) {
     const suffix = context ? ` (${JSON.stringify(context)})` : '';
-    throw new Error(`[smrt:${code}] ${message}${suffix}`);
+    // The opt-out hint is load-bearing when this throw propagates out of a
+    // `__smrt-register__.ts` side effect at module-import time — the
+    // consumer may have no other recovery path visible in the stack.
+    throw new Error(
+      `[smrt:${code}] ${message}${suffix} — set SMRT_STRICT_REGISTRY=false ` +
+        `to record this diagnostic without throwing.`,
+    );
   }
 }
 

@@ -41,6 +41,7 @@ function baseline(overrides: Partial<CollisionInputs> = {}): CollisionInputs {
     hasManifestContent: false,
     registrationKeyDiffersFromExistingKey: false,
     existingHasNoPackage: false,
+    existingHasAnyPackage: false,
     ...overrides,
   };
 }
@@ -123,13 +124,52 @@ describe('decideCollisionPolicy', () => {
           origin: 'manifest',
           samePackage: false,
           hasNewQualifiedKey: true,
-          existingIsPackageQualified: true,
+          existingHasAnyPackage: true,
         }),
       );
       expect(result.policy).toBe('coexist-qualified');
       expect(result.scenario).toBe(
         'manifest-different-packages-qualified-coexist',
       );
+    });
+
+    it('manifest-different-packages-qualified-coexist works for unscoped package names', () => {
+      // Unscoped manifests like `smrt-profiles` (no leading `@scope/`) must
+      // also coexist. Pre-Release-C allowCoexistingQualifiedRegistration
+      // only required both packages to be present and different; narrowing
+      // to scoped names via `existingIsPackageQualified` would silently
+      // drop these. PR #1140 review, willgriffin P2 at line 251.
+      const result = decideCollisionPolicy(
+        baseline({
+          origin: 'manifest',
+          samePackage: false,
+          hasNewQualifiedKey: true,
+          existingHasAnyPackage: true,
+          existingIsPackageQualified: false, // unscoped — no `@` prefix
+        }),
+      );
+      expect(result.scenario).toBe(
+        'manifest-different-packages-qualified-coexist',
+      );
+    });
+
+    it('manifest-same-package-merge upgrades a manifest stub when content arrives', () => {
+      // Pre-Release-C: merge ran whenever `!existing.packageName ||
+      // packageName === existing.packageName`, regardless of stub status.
+      // Release C preserves that: a stub from an earlier unqualified
+      // manifest should still be upgraded by a later package-qualified
+      // manifest. PR #1140 review, willgriffin P1 at line 270.
+      const result = decideCollisionPolicy(
+        baseline({
+          origin: 'manifest',
+          existingIsManifestStub: true,
+          existingHasNoPackage: true,
+          hasNewQualifiedKey: true,
+          hasManifestContent: true,
+        }),
+      );
+      expect(result.policy).toBe('merge-manifest');
+      expect(result.scenario).toBe('manifest-same-package-merge');
     });
 
     it('manifest-same-package-merge → merge-manifest (when there is content to merge)', () => {

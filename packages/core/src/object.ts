@@ -75,6 +75,27 @@ function getSTIHierarchyMembers(className: string): string[] {
 }
 
 /**
+ * Warn once per process if a consumer has SMRT_SKIP_STI_REHYDRATE set.
+ * The env variable is a no-op since Release C (#1134); without this
+ * diagnostic anyone who followed the Release A changeset note would
+ * silently lose the behavior they opted into.
+ */
+let didWarnSkipRehydrate = false;
+function warnIfSkipRehydrateSet(): void {
+  if (didWarnSkipRehydrate) return;
+  didWarnSkipRehydrate = true;
+  if (process.env.SMRT_SKIP_STI_REHYDRATE !== undefined) {
+    console.warn(
+      '[smrt] SMRT_SKIP_STI_REHYDRATE is set but has no effect since ' +
+        'Release C (#1134). The flag is retired; unconditional STI ' +
+        'descendant rehydration is the only behavior. Remove the env ' +
+        'variable from your configuration. See issue #1139 for the perf ' +
+        'follow-up.',
+    );
+  }
+}
+
+/**
  * Options for SmrtObject initialization
  */
 export interface SmrtObjectOptions extends SmrtClassOptions {
@@ -1139,6 +1160,7 @@ export class SmrtObject extends SmrtClass {
         // external-runtime-hydration.test.ts:1071). Further optimizing
         // this loop away via eager invalidation at re-registration time
         // is tracked as a separate follow-up (#1139).
+        warnIfSkipRehydrateSet();
         const classesNeedingFreshSTIFieldState = Array.from(
           new Set([className, ...getSTIHierarchyMembers(className)]),
         );
