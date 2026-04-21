@@ -1132,19 +1132,21 @@ export class SmrtObject extends SmrtClass {
       }
 
       if (tableStrategy === 'sti') {
-        const descendants = getSTIHierarchyMembers(className);
-        const descendantsNeedingHydration = descendants.filter((descendant) => {
-          const registeredDescendant = ObjectRegistry.getClass(descendant);
-          return registeredDescendant && !registeredDescendant.inheritedFields;
-        });
+        const classesNeedingFreshSTIFieldState = [
+          className,
+          ...getSTIHierarchyMembers(className),
+        ];
 
-        if (descendantsNeedingHydration.length > 0) {
-          await Promise.all(
-            descendantsNeedingHydration.map((descendant) =>
-              ObjectRegistry.getAllFields(descendant),
-            ),
-          );
-        }
+        await Promise.all(
+          classesNeedingFreshSTIFieldState.map(async (stiClassName) => {
+            await ObjectRegistry.ensureManifestLoaded(stiClassName);
+
+            const registeredSTIClass = ObjectRegistry.getClass(stiClassName);
+            if (!registeredSTIClass?.inheritedFields) {
+              await ObjectRegistry.getAllFields(stiClassName);
+            }
+          }),
+        );
       }
 
       const jsonData = this.toJSON();
