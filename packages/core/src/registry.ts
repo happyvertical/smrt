@@ -42,6 +42,14 @@ import {
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
 } from './registry/class-registration';
+// ── Extracted modules (Issue #1006) ──────────────────────────────────────
+import {
+  clearRegistryDiagnostics,
+  flushRegistryDiagnostics,
+  getRegistryDiagnostics,
+  type RegistryDiagnostic,
+  recordRegistryDiagnostic,
+} from './registry/diagnostics';
 import {
   getEmbeddingClasses as _getEmbeddingClasses,
   getEmbeddingConfig as _getEmbeddingConfig,
@@ -76,7 +84,6 @@ import {
   getDependencyGraph as _getDependencyGraph,
   getRelationshipMap as _getRelationshipMap,
 } from './registry/relationship-graph';
-// ── Extracted modules (Issue #1006) ──────────────────────────────────────
 import {
   getAllSchemas as _getAllSchemas,
   getAllSchemasAsDefinitions as _getAllSchemasAsDefinitions,
@@ -494,6 +501,12 @@ function resolveManifestExportPathSync(
           manifestExport.require;
 
     if (!manifestRelativePath) {
+      recordRegistryDiagnostic(
+        'error',
+        'MANIFEST_EXPORT_INVALID',
+        `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
+        { packageName, exportKey },
+      );
       if (shouldWarn) {
         console.warn(
           `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
@@ -503,6 +516,12 @@ function resolveManifestExportPathSync(
     }
 
     if (!manifestRelativePath.endsWith('.json')) {
+      recordRegistryDiagnostic(
+        'error',
+        'MANIFEST_EXPORT_NOT_JSON',
+        `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
+        { packageName, exportKey, manifestRelativePath },
+      );
       if (shouldWarn) {
         console.warn(
           `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
@@ -522,6 +541,12 @@ function resolveManifestExportPathSync(
       return workspaceSourceManifest;
     }
 
+    recordRegistryDiagnostic(
+      'error',
+      'MANIFEST_EXPORT_NOT_FOUND',
+      `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
+      { packageName, exportKey, manifestRelativePath },
+    );
     if (shouldWarn) {
       console.warn(
         `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
@@ -1518,15 +1543,27 @@ export class ObjectRegistry {
       ) as SmartObjectManifest;
 
       if (!parsed?.objects || typeof parsed.objects !== 'object') {
+        recordRegistryDiagnostic(
+          'warn',
+          'PACKAGE_MANIFEST_INVALID_SHAPE',
+          `Package manifest at ${String(manifestUrl)} is missing an "objects" record`,
+          { manifestUrl: String(manifestUrl) },
+        );
         return { loaded: false, objectsRegistered: 0 };
       }
 
       manifest = parsed;
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      recordRegistryDiagnostic(
+        'error',
+        'PACKAGE_MANIFEST_READ_FAILED',
+        `registerPackageManifest: failed to read manifest at ${String(manifestUrl)}: ${errorMessage}`,
+        { manifestUrl: String(manifestUrl), errorMessage },
+      );
       verboseLog(
-        `[ObjectRegistry] registerPackageManifest: failed to read manifest at ${String(manifestUrl)}: ${
-          error instanceof Error ? error.message : error
-        }`,
+        `[ObjectRegistry] registerPackageManifest: failed to read manifest at ${String(manifestUrl)}: ${errorMessage}`,
       );
       return { loaded: false, objectsRegistered: 0 };
     }
@@ -1561,6 +1598,36 @@ export class ObjectRegistry {
     );
 
     return { loaded: true, packageName, objectsRegistered };
+  }
+
+  /**
+   * Snapshot of diagnostics collected from registry load paths.
+   *
+   * Registry paths that previously `console.warn(...); return null` now also
+   * record a structured diagnostic. Apps can inspect this buffer at startup
+   * or from an error route to surface failures that would otherwise be silent.
+   *
+   * Set `SMRT_STRICT_REGISTRY=true` to make severity-`'error'` diagnostics
+   * throw at record time instead of being collected silently.
+   *
+   * @see https://github.com/happyvertical/smrt/issues/1132
+   * @see https://github.com/happyvertical/smrt/issues/1134
+   */
+  static getDiagnostics(): readonly RegistryDiagnostic[] {
+    return getRegistryDiagnostics();
+  }
+
+  /** Clear the diagnostic buffer. Primarily for tests. */
+  static clearDiagnostics(): void {
+    clearRegistryDiagnostics();
+  }
+
+  /**
+   * Pretty-print the diagnostic buffer via `console.warn` / `console.error`.
+   * No-op when the buffer is empty.
+   */
+  static flushDiagnostics(): void {
+    flushRegistryDiagnostics();
   }
 
   /**

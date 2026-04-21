@@ -1132,12 +1132,42 @@ export class SmrtObject extends SmrtClass {
       }
 
       if (tableStrategy === 'sti') {
-        const classesNeedingFreshSTIFieldState = Array.from(
-          new Set([className, ...getSTIHierarchyMembers(className)]),
-        );
+        // PR #1131 added unconditional re-hydration of every descendant on
+        // every save to fix stale field caches that stem from consumer-runtime
+        // manifest drops (#1132). With the self-registration shim landing in
+        // this same release, those caches are no longer stale to begin with —
+        // but #1131's behavior remains the default for safety. Opt out by
+        // setting `SMRT_SKIP_STI_REHYDRATE=true` once you've verified your
+        // consumers are on the new builds; the flag goes away in Release C
+        // (see #1134) when the unconditional loop is removed.
+        const skipRehydrate = process.env.SMRT_SKIP_STI_REHYDRATE === 'true';
 
-        for (const stiClassName of classesNeedingFreshSTIFieldState) {
-          await ObjectRegistry.getAllFields(stiClassName);
+        if (skipRehydrate) {
+          // Only hydrate descendants that have never had inheritedFields
+          // computed — matches the pre-#1131 conservative behavior.
+          const descendants = getSTIHierarchyMembers(className);
+          const descendantsNeedingHydration = descendants.filter(
+            (descendant) => {
+              const registeredDescendant = ObjectRegistry.getClass(descendant);
+              return (
+                registeredDescendant && !registeredDescendant.inheritedFields
+              );
+            },
+          );
+          if (descendantsNeedingHydration.length > 0) {
+            await Promise.all(
+              descendantsNeedingHydration.map((descendant) =>
+                ObjectRegistry.getAllFields(descendant),
+              ),
+            );
+          }
+        } else {
+          const classesNeedingFreshSTIFieldState = Array.from(
+            new Set([className, ...getSTIHierarchyMembers(className)]),
+          );
+          for (const stiClassName of classesNeedingFreshSTIFieldState) {
+            await ObjectRegistry.getAllFields(stiClassName);
+          }
         }
       }
 
