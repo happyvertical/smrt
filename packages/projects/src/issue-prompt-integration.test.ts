@@ -24,6 +24,7 @@ describe('Issue prompt integration', () => {
     clearPromptCache();
     PromptRegistry.clear();
     PromptRegistry.register(issueIncorporateFeedbackPrompt as any);
+    vi.mocked(getAI).mockReset();
 
     setConfig({
       packages: {
@@ -124,5 +125,38 @@ describe('Issue prompt integration', () => {
       '- alice: Please add analytics instrumentation.',
     );
     expect(promptText).toContain('- bob: Clarify the rollout plan.');
+  });
+
+  it('keeps an explicitly injected AI client as the highest-precedence runtime override', async () => {
+    await overrides.create({
+      key: issueIncorporateFeedbackPrompt.key,
+      tenantId: null,
+      profile: 'deep',
+    });
+
+    const explicitMessage = vi.fn(async () => 'Explicit client synthesis');
+    const issue = new Issue({
+      db,
+      tenantId: null,
+      body: 'Current specification body',
+      ai: {
+        embed: vi.fn(),
+        message: explicitMessage,
+      } as any,
+    });
+
+    vi.spyOn(issue, 'getComments').mockResolvedValue([
+      {
+        author: 'alice',
+        body: 'Please add analytics instrumentation.',
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ] as any);
+
+    const result = await issue.incorporateFeedback();
+
+    expect(result.synthesized).toBe('Explicit client synthesis');
+    expect(explicitMessage).toHaveBeenCalledTimes(1);
+    expect(getAI).not.toHaveBeenCalled();
   });
 });

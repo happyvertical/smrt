@@ -1,5 +1,4 @@
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { PromptOverride } from '../models/PromptOverride.js';
 
 export class PromptOverrideCollection extends SmrtCollection<PromptOverride> {
@@ -9,12 +8,10 @@ export class PromptOverrideCollection extends SmrtCollection<PromptOverride> {
     key: string,
     options: { excludeId?: string } = {},
   ): Promise<PromptOverride[]> {
-    return withSystemContext(async () => {
-      const items = await this.list({ where: { key } });
-      return items.filter((item) =>
-        options.excludeId ? item.id !== options.excludeId : true,
-      );
-    });
+    const items = await this.list({ where: { key } });
+    return items.filter((item) =>
+      options.excludeId ? item.id !== options.excludeId : true,
+    );
   }
 
   async getAppOverride(

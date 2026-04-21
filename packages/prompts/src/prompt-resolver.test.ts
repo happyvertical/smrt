@@ -1,5 +1,10 @@
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { getTestDatabase } from '@happyvertical/smrt-core';
+import {
+  resetTenancy,
+  setupTestTenancy,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearPromptCache, getPromptCacheTtlMs } from './cache.js';
@@ -12,6 +17,7 @@ describe('@happyvertical/smrt-prompts', () => {
   let overrides: PromptOverrideCollection;
 
   beforeEach(async () => {
+    setupTestTenancy();
     PromptRegistry.clear();
     clearPromptCache();
     clearCache();
@@ -38,6 +44,7 @@ describe('@happyvertical/smrt-prompts', () => {
     clearPromptCache();
     PromptRegistry.clear();
     clearCache();
+    resetTenancy();
     vi.useRealTimers();
 
     if (typeof (db as any)?.close === 'function') {
@@ -374,5 +381,43 @@ describe('@happyvertical/smrt-prompts', () => {
         model: 'not-allowed',
       }),
     ).rejects.toThrow('is not in the allowed model list');
+  });
+
+  it('keeps app-level overrides visible through normal CRUD inside a tenant context', async () => {
+    definePrompt({
+      key: 'test.crud.scope',
+      template: 'Scoped',
+      editable: {
+        template: true,
+        profile: true,
+        model: true,
+        params: true,
+      },
+    });
+
+    const appOverride = await overrides.create({
+      key: 'test.crud.scope',
+      tenantId: null,
+      template: 'App override',
+    });
+    await overrides.create({
+      key: 'test.crud.scope',
+      tenantId: 'tenant-a',
+      template: 'Tenant override',
+    });
+
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const visible = await overrides.list({
+        where: { key: 'test.crud.scope' },
+        orderBy: 'createdAt ASC',
+      });
+
+      expect(visible.map((item) => item.tenantId)).toEqual([null, 'tenant-a']);
+
+      const loadedAppOverride = await overrides.get({
+        id: appOverride.id as string,
+      });
+      expect(loadedAppOverride?.tenantId).toBeNull();
+    });
   });
 });

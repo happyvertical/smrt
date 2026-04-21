@@ -4,8 +4,8 @@ import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import { contentEditorSessionPrompt } from '../../../../../../content-chat-prompts.js';
 import {
+  buildContentChatModelUpdates,
   buildContentEditorSessionContext,
-  resolveContentChatModelSelection,
 } from '../../../../../../content-chat-session.js';
 
 type ContentChatLocals = {
@@ -179,12 +179,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     // If model changed, update context
     if (model) {
       const ctx = session.getSessionContext();
-      const { provider } = resolveContentChatModelSelection(ctx, model, model);
-      if (ctx.model !== model || ctx.provider !== provider) {
-        await session.updateSessionContext({
-          model,
-          provider,
-        });
+      const updates = buildContentChatModelUpdates(ctx, model, model);
+      if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
+        await session.updateSessionContext(updates);
       }
     }
 

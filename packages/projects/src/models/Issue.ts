@@ -395,8 +395,13 @@ export class Issue extends SmrtObject {
     provider: string,
     options: Record<string, unknown>,
   ): Promise<string> {
-    const globalAiConfig = smrtConfig.toJSON().ai || {};
     const aiOption = this.options.ai as Record<string, unknown> | undefined;
+    if (this.isExplicitAiClientOption(aiOption)) {
+      const ai = await this.getAiClient();
+      return this.sendPromptMessage(ai, instructions, options);
+    }
+
+    const globalAiConfig = smrtConfig.toJSON().ai || {};
     const instanceAiConfig =
       aiOption &&
       typeof aiOption === 'object' &&
@@ -443,6 +448,14 @@ export class Issue extends SmrtObject {
       apiKey,
     } as any);
 
+    return this.sendPromptMessage(ai, instructions, options);
+  }
+
+  private async sendPromptMessage(
+    ai: { message: (prompt: string, options?: unknown) => Promise<string> },
+    instructions: string,
+    options: Record<string, unknown>,
+  ): Promise<string> {
     const prompt = `--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
     const tools = this.getAvailableTools();
 
@@ -450,6 +463,18 @@ export class Issue extends SmrtObject {
       ...options,
       tools: tools.length > 0 ? tools : undefined,
     } as any)) as string;
+  }
+
+  private isExplicitAiClientOption(
+    aiOption: Record<string, unknown> | undefined,
+  ): boolean {
+    return !!(
+      aiOption &&
+      typeof aiOption === 'object' &&
+      typeof aiOption.embed === 'function' &&
+      !aiOption.provider &&
+      !aiOption.type
+    );
   }
 
   /**

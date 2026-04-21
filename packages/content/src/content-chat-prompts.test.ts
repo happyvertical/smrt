@@ -239,6 +239,7 @@ describe('content chat prompt integration', () => {
     });
     await session.updateSessionContext({
       contentId: content.id,
+      profile: 'deep',
       provider: 'openai',
       model: 'gpt-4o',
     });
@@ -265,6 +266,7 @@ describe('content chat prompt integration', () => {
       contentId: content.id,
       model: 'claude-3-5-haiku-latest',
       provider: 'anthropic',
+      profile: null,
     });
   });
 
@@ -384,5 +386,78 @@ describe('content chat prompt integration', () => {
         model: 'gpt-4o',
       }),
     );
+  });
+
+  it('clears a stored prompt profile when a thread request switches to a different model', async () => {
+    const content = await currentContents?.create({
+      tenantId: 'tenant-a',
+      name: 'draft-5',
+      title: 'Draft 5',
+      body: 'Body',
+    });
+
+    const chatService = await ChatService.create({ tenantId: 'tenant-a', db });
+    await chatService.initialize();
+
+    const { session } = await chatService.createAgentSession({
+      tenantId: 'tenant-a',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-a',
+      systemPrompt: 'Provider-aware prompt',
+    });
+    await session.updateSessionContext({
+      contentId: content.id,
+      profile: 'deep',
+      provider: 'openai',
+      model: 'gpt-4o',
+      temperature: 0.2,
+      maxTokens: 321,
+    });
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      throw new Error('Expected content editor session to create a chat room');
+    }
+
+    const thread = await chatService.threads.create({
+      tenantId: 'tenant-a',
+      roomId: chatRoomId,
+      title: 'General',
+      messageCount: 0,
+    });
+
+    getAIMock.mockResolvedValue({
+      chat: vi.fn(async () => ({ content: 'Assistant reply' })),
+    });
+
+    const response = await postContentChatThread({
+      params: { id: content.id, threadId: thread.id },
+      request: {
+        json: async () => ({
+          content: 'Please rewrite this.',
+          sessionId: session.id,
+          model: 'claude-3-5-haiku-latest',
+          currentEditorState: content.body,
+          referenceIds: [],
+          formFields: {
+            title: content.title,
+            body: content.body,
+          },
+        }),
+      },
+      locals: {
+        tenantId: 'tenant-a',
+        profileId: 'profile-a',
+      },
+    } as any);
+
+    expect(response.status).toBe(200);
+
+    const updated = await chatService.agentSessions.get(session.id as string);
+    expect(updated?.getSessionContext()).toMatchObject({
+      contentId: content.id,
+      model: 'claude-3-5-haiku-latest',
+      provider: 'anthropic',
+      profile: null,
+    });
   });
 });

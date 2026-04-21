@@ -5,7 +5,6 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { invalidatePromptCache } from '../cache.js';
 import { PromptRegistry } from '../prompt-registry.js';
 import type {
@@ -38,7 +37,6 @@ function getPromptConfig(): PromptPackageConfig {
   });
 }
 
-@TenantScoped({ mode: 'optional', autoPopulate: false })
 @smrt({
   tableName: '_smrt_prompt_overrides',
   conflictColumns: ['key', 'context'],
@@ -53,7 +51,7 @@ export class PromptOverride extends SmrtObject {
   @field({ required: true })
   key: string = '';
 
-  @tenantId({ nullable: true })
+  @field({ type: 'text', nullable: true })
   tenantId: string | null = null;
 
   @field({ type: 'text', nullable: true })

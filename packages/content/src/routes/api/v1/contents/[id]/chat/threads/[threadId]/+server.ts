@@ -3,6 +3,7 @@ import { ChatService } from '@happyvertical/smrt-chat';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
 import {
+  buildContentChatModelUpdates,
   getContentChatAISelection,
   resolveContentChatModelSelection,
 } from '../../../../../../../../content-chat-session.js';
@@ -252,8 +253,13 @@ RULES:
     });
 
     // If model changed, update context
-    if (ctx.model !== aiModel || ctx.provider !== provider) {
-      await session.updateSessionContext({ model: aiModel, provider });
+    const updates = buildContentChatModelUpdates(
+      ctx,
+      model,
+      storedSelection.model ?? 'gemini-2.5-pro',
+    );
+    if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
+      await session.updateSessionContext(updates);
     }
 
     const userJson = userMessage.toJSON();

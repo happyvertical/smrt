@@ -65,6 +65,27 @@ export function resolveContentChatModelSelection(
   return { model, provider };
 }
 
+export function buildContentChatModelUpdates(
+  context: SessionContext,
+  requestedModel: string | null | undefined,
+  fallbackModel: string,
+): Record<string, string | null> {
+  const stored = getContentChatAISelection(context);
+  const { model, provider } = resolveContentChatModelSelection(
+    context,
+    requestedModel,
+    fallbackModel,
+  );
+
+  return {
+    model,
+    provider,
+    ...(stored.profile && stored.model && model !== stored.model
+      ? { profile: null }
+      : {}),
+  };
+}
+
 export function buildContentEditorSessionContext(
   contentId: string,
   prompt: ResolvedPrompt,
