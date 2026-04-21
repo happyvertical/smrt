@@ -818,6 +818,8 @@ describe('external runtime field hydration', () => {
     const upserts: Array<Record<string, unknown>> = [];
     const db = {
       url: ':memory:',
+      query: async () => [],
+      execute: async () => undefined,
       tableExists: async () => true,
       get: async () => null,
       upsert: async (
@@ -830,7 +832,6 @@ describe('external runtime field hydration', () => {
     };
 
     const forecast = await new FixtureForecast({ db: db as any }).initialize();
-    (forecast as any)._db = db;
     (forecast as any).verifyStorageReady = async () => {};
     await forecast.save();
 
@@ -1167,6 +1168,8 @@ describe('external runtime field hydration', () => {
     const upserts: Array<Record<string, unknown>> = [];
     const db = {
       url: ':memory:',
+      query: async () => [],
+      execute: async () => undefined,
       tableExists: async () => true,
       get: async () => null,
       upsert: async (
@@ -1183,7 +1186,6 @@ describe('external runtime field hydration', () => {
       name: 'Blackfalds agenda asset',
       sourceType: 'remote',
     }).initialize();
-    (asset as any)._db = db;
     (asset as any).verifyStorageReady = async () => {};
 
     await asset.save();
