@@ -1132,12 +1132,14 @@ export class ObjectRegistry {
   /**
    * Snapshot of diagnostics collected from registry load paths.
    *
-   * Registry paths that previously `console.warn(...); return null` now also
+   * Registry paths that previously `console.warn(...); return null` also
    * record a structured diagnostic. Apps can inspect this buffer at startup
    * or from an error route to surface failures that would otherwise be silent.
    *
-   * Set `SMRT_STRICT_REGISTRY=true` to make severity-`'error'` diagnostics
-   * throw at record time instead of being collected silently.
+   * Strict mode is **on by default** since Release C (#1134): severity
+   * `'error'` diagnostics throw at record time. Set
+   * `SMRT_STRICT_REGISTRY=false` to restore the pre-Release-C permissive
+   * behavior where only the diagnostic is recorded and nothing throws.
    *
    * @see https://github.com/happyvertical/smrt/issues/1132
    * @see https://github.com/happyvertical/smrt/issues/1134
