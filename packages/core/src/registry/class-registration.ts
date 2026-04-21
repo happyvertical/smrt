@@ -15,6 +15,7 @@ import {
   getPackageName,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { cloneManifestSchemaColumns } from '../manifest/store.js';
 import { SmrtObject } from '../object';
 import type { QualifiedClassName, SmrtVisibility } from '../scanner/types.js';
 import type { ColumnDefinition, SchemaDefinition } from '../schema/types.js';
@@ -995,23 +996,8 @@ function mergeIndexDefinitions(
   return merged;
 }
 
-function cloneManifestSchemaColumns(
-  columns: Record<string, unknown> | undefined,
-): Record<string, ColumnDefinition> {
-  return Object.fromEntries(
-    Object.entries(columns || {}).map(([columnName, column]) => {
-      const clonedColumn = {
-        ...(column as ColumnDefinition & Record<string, unknown>),
-      } as ColumnDefinition;
-
-      if (clonedColumn.foreignKey) {
-        clonedColumn.foreignKey = { ...clonedColumn.foreignKey };
-      }
-
-      return [columnName, clonedColumn];
-    }),
-  ) as Record<string, ColumnDefinition>;
-}
+// cloneManifestSchemaColumns lives in ../manifest/store.ts — imported above.
+// (Hoisted out of the duplicate definition here and in registry.ts.)
 
 function applySqlTypeOverrides(
   columns: Record<string, ColumnDefinition>,
