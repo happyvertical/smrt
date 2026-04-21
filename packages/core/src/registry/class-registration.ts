@@ -24,6 +24,11 @@ import {
   createQualifiedName,
   isQualifiedName,
 } from '../utils/qualified-names.js';
+import {
+  type CollisionInputs,
+  decideCollisionPolicy,
+  type MatchKind,
+} from './collision-policy.js';
 import { buildInheritanceChain } from './inheritance-resolver';
 import {
   createFieldFromManifest,
@@ -51,6 +56,164 @@ import type {
   ValidatorFunction,
 } from './types.js';
 import { compileValidators } from './validator';
+
+/**
+ * Shared bundled-context detector. Source files in these output
+ * directories come from a bundler (Vite library mode, webpack, Next.js,
+ * Nuxt, svelte-kit) that can duplicate module code across chunks.
+ */
+function isBundledOutputPath(sourceFile: string | undefined): boolean {
+  if (!sourceFile) return false;
+  return (
+    sourceFile.includes('.svelte-kit/output/') ||
+    sourceFile.includes('/dist/') ||
+    sourceFile.includes('/build/') ||
+    sourceFile.includes('.next/') ||
+    sourceFile.includes('.nuxt/')
+  );
+}
+
+/**
+ * Build `CollisionInputs` for the decorator-origin path (`register()`).
+ * Manifest-origin inputs are built separately inside `registerFromManifest`.
+ */
+function buildDecoratorCollisionInputs(args: {
+  ctor: typeof SmrtObject;
+  name: string;
+  newPackageName: string | undefined;
+  newSourceFile: string | undefined;
+  newInBundledContext: boolean;
+  existing: RegisteredClass;
+  existingKey: string;
+  matchKind: MatchKind;
+}): CollisionInputs {
+  const {
+    ctor,
+    name,
+    newPackageName,
+    newSourceFile,
+    newInBundledContext,
+    existing,
+    existingKey,
+    matchKind,
+  } = args;
+
+  let newExtendsExisting = false;
+  let existingExtendsNew = false;
+  try {
+    newExtendsExisting = ctor.prototype instanceof existing.constructor;
+    existingExtendsNew = existing.constructor.prototype instanceof ctor;
+  } catch {
+    // `instanceof` can throw for non-function constructors. Keep both false.
+  }
+
+  const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
+  const sameSourceFile =
+    bothSourceFilesKnown && newSourceFile === existing.sourceFilePath;
+  const existingIsPackageQualified = !!existing.packageName?.startsWith('@');
+  const samePackage =
+    !!newPackageName &&
+    !!existing.packageName &&
+    newPackageName === existing.packageName;
+  const hasNewQualifiedKey = !!newPackageName;
+  const existingKeyIsQualified = isQualifiedName(existingKey);
+
+  return {
+    origin: 'decorator',
+    matchKind,
+    sameConstructor: existing.constructor === ctor,
+    sameSourceFile,
+    bothSourceFilesKnown,
+    existingIsManifestStub:
+      (existing.constructor as { _isManifestStub?: boolean })
+        ._isManifestStub === true,
+    newInBundledContext,
+    newExtendsExisting,
+    existingExtendsNew,
+    samePackage,
+    existingIsPackageQualified,
+    sameName: name === existing.name,
+    hasNewQualifiedKey,
+    existingKeyIsQualified,
+  };
+}
+
+/**
+ * Execute the collision policy for `register()`. Returns `true` if the
+ * policy resolved the collision (caller should return from `register`);
+ * `false` means no policy match (the decision table is exhaustive so
+ * that never actually happens — the default row throws).
+ *
+ * All state mutation (`upsertExistingEntry`, verboseLog) stays in this
+ * caller-side helper; the policy function itself is pure.
+ */
+function applyRegisterCollisionPolicy(args: {
+  ctor: typeof SmrtObject;
+  name: string;
+  newPackageName: string | undefined;
+  newSourceFile: string | undefined;
+  newInBundledContext: boolean;
+  existing: RegisteredClass;
+  existingKey: string;
+  matchKind: MatchKind;
+  upsertExistingEntry: (
+    existingKey: string,
+    existing: RegisteredClass,
+  ) => string;
+}): boolean {
+  const inputs = buildDecoratorCollisionInputs(args);
+  const decision = decideCollisionPolicy(inputs);
+
+  switch (decision.policy) {
+    case 'accept':
+    case 'replace': {
+      // Both map to the same operation for the decorator path:
+      // update the existing slot's constructor + metadata. `replace`
+      // only differs in verboseLog flavor so a reviewer reading the log
+      // can tell which scenario fired.
+      const newKey = args.upsertExistingEntry(args.existingKey, args.existing);
+      if (
+        decision.scenario === 'sti-child-wins' ||
+        decision.scenario === 'manifest-stub-replacement'
+      ) {
+        verboseLog(
+          `[registry] ${decision.scenario}: '${args.name}' → key='${newKey}' (${decision.reason})`,
+        );
+      }
+      return true;
+    }
+    case 'skip':
+      verboseLog(
+        `[registry] ${decision.scenario}: skipping '${args.name}' (${decision.reason})`,
+      );
+      return true;
+    case 'throw': {
+      const matchSuffix =
+        args.matchKind === 'case-insensitive'
+          ? ` (case-insensitive match with "${args.existingKey}")`
+          : '';
+      throw new Error(
+        `SMRT Class Name Collision: "${args.name}"${matchSuffix}\n\n` +
+          `A class with this name is already registered, but with a different constructor.\n` +
+          `This usually happens when:\n` +
+          `  1. Multiple test files define classes with the same name\n` +
+          `  2. Different packages export classes with the same name\n\n` +
+          `The collision will cause the wrong field definitions to be used,\n` +
+          `leading to properties not being initialized correctly.\n\n` +
+          `To fix:\n` +
+          `  - Use unique class names (e.g., ${args.name}_UniqueId)\n` +
+          `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
+      );
+    }
+    case 'merge-manifest':
+    case 'coexist-qualified':
+      // These policies are only reachable from the manifest path; if we
+      // somehow get here from `register()`, something is miswired.
+      throw new Error(
+        `decideCollisionPolicy returned '${decision.policy}' for decorator origin (scenario: ${decision.scenario}). This is a bug.`,
+      );
+  }
+}
 
 function resolveTableName(
   ctor: typeof SmrtObject,
@@ -155,7 +318,15 @@ export function register(
     return nextKey;
   }
 
-  // Prevent duplicate registrations - check exact match first
+  // Release C (#1134): collision resolution for both exact-match and
+  // case-insensitive paths now routes through decideCollisionPolicy, which
+  // consolidates the 11-branch if/else tree from pre-C.
+  const newSourceFile = getSourceFileFromStack();
+  const newPackageName =
+    explicitPackageName || getPackageName(ctor, true) || undefined;
+  const newInBundledContext = isBundledOutputPath(newSourceFile);
+
+  // 1. Exact-match check (existingKey === name)
   if (getClasses().has(name)) {
     const existing = getClasses().get(name);
     if (!existing) {
@@ -164,230 +335,40 @@ export function register(
       );
     }
 
-    // Check if this is the exact same constructor (re-registration is OK)
-    if (existing.constructor === ctor) {
-      upsertExistingEntry(name, existing);
-      return;
-    }
-
-    // Check if existing is a manifest stub that should be replaced by the real class
-    // This happens when:
-    // 1. `smrt test` generates a manifest which registers classes via registerFromManifest()
-    // 2. Test file imports the real class, triggering the @smrt() decorator
-    // 3. The real class should replace the stub (same name, different constructor)
-    if ((existing.constructor as any)._isManifestStub === true) {
-      upsertExistingEntry(name, existing);
-      verboseLog(`[registry] Replaced manifest stub with real class: ${name}`);
-      return;
-    }
-
-    // Check if existing entry was registered from external package manifest data
-    // (Issue #584: Registry collision when real class tries to replace manifest-loaded entry)
-    // This happens when:
-    // 1. CLI loads manifest and registers classes using manifest data via register()
-    // 2. Later, register.js imports the real class, triggering the @smrt() decorator
-    // 3. The real class should replace the manifest-loaded entry
-    // We detect this by checking if existing has packageName from an external package
-    const newPackageName = explicitPackageName || getPackageName(ctor, true);
-    if (existing.packageName?.startsWith('@')) {
-      // If the new class is from the same package, allow replacement
-      if (newPackageName === existing.packageName) {
-        upsertExistingEntry(name, existing);
-        return;
-      }
-    }
-
-    // Check if this is the same class being re-registered from module re-evaluation
-    // This happens during vitest test collection when modules are re-evaluated for isolation
-    // (Issue #555: Test isolation - class name collision during vitest collection)
-    const newSourceFile = getSourceFileFromStack();
-
-    // Detect bundled context: source file is in a build output directory
-    // Bundlers (Vite, webpack, etc.) can duplicate module code into multiple chunks,
-    // causing the same class to be registered multiple times with different source paths
-    const isBundledContext =
-      newSourceFile &&
-      (newSourceFile.includes('.svelte-kit/output/') ||
-        newSourceFile.includes('/dist/') ||
-        newSourceFile.includes('/build/') ||
-        newSourceFile.includes('.next/') ||
-        newSourceFile.includes('.nuxt/'));
-
-    // In bundled contexts, allow re-registration if the existing entry came from a manifest
-    // (which means it's a known package class that the bundler duplicated)
-    if (isBundledContext && existing.packageName?.startsWith('@')) {
-      upsertExistingEntry(name, existing);
-      return;
-    }
-
-    // Allow re-registration if:
-    // 1. Both source files are defined and match (same file being re-evaluated)
-    // 2. Either source file is unavailable (can't do proper comparison, allow as fallback)
-    const sourceFilesMatch =
-      newSourceFile &&
-      existing.sourceFilePath &&
-      newSourceFile === existing.sourceFilePath;
-    const cannotCompareSourceFiles = !newSourceFile || !existing.sourceFilePath;
-
-    if (sourceFilesMatch || cannotCompareSourceFiles) {
-      // Same source file or can't compare = allow constructor update
-      upsertExistingEntry(name, existing);
-      return;
-    }
-
-    // Allow subclass to replace parent class with the same name (STI child-wins).
-    // This happens when a downstream package extends a base class with the same
-    // name to customize behavior (e.g., histrio's Character extends smrt-video's Character).
-    try {
-      if (ctor.prototype instanceof existing.constructor) {
-        // New class extends existing — child wins
-        upsertExistingEntry(name, existing);
-        verboseLog(
-          `[registry] Subclass '${name}' from ${newPackageName || 'unknown'} replaced parent from ${existing.packageName || 'unknown'}`,
-        );
-        return;
-      }
-      if (existing.constructor.prototype instanceof ctor) {
-        // Existing class extends new — existing (child) already wins, skip
-        verboseLog(
-          `[registry] Skipping parent '${name}' — subclass already registered`,
-        );
-        return;
-      }
-    } catch {
-      // instanceof can throw if constructors are not proper functions — fall through to collision error
-    }
-
-    // Different constructors with same name from different source files - this is a collision!
-    // This will cause silent bugs where the wrong fields are used
-    throw new Error(
-      `SMRT Class Name Collision: "${name}"\n\n` +
-        `A class with this name is already registered, but with a different constructor.\n` +
-        `This usually happens when:\n` +
-        `  1. Multiple test files define classes with the same name\n` +
-        `  2. Different packages export classes with the same name\n\n` +
-        `The collision will cause the wrong field definitions to be used,\n` +
-        `leading to properties not being initialized correctly.\n\n` +
-        `To fix:\n` +
-        `  - Use unique class names (e.g., ${name}_UniqueId)\n` +
-        `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
-    );
+    const handled = applyRegisterCollisionPolicy({
+      ctor,
+      name,
+      newPackageName,
+      newSourceFile,
+      newInBundledContext,
+      existing,
+      existingKey: name,
+      matchKind: 'exact-key',
+      upsertExistingEntry,
+    });
+    if (handled) return;
   }
 
-  // Case-insensitive check for manifest stubs (Issue #531, #847)
-  // Manifest keys can be:
-  // - lowercase simple names (e.g., 'praeco')
-  // - qualified names (e.g., '@happyvertical/praeco:Council')
-  // When the real class is loaded via @smrt() decorator, we need to find and replace the stub.
-  // Issue #847: Also check the entry's `name` property which contains the simple class name.
+  // 2. Case-insensitive check for manifest stubs (Issue #531, #847) and
+  //    other same-name-different-case collisions.
   const lowerName = name.toLowerCase();
   for (const [existingKey, existing] of getClasses().entries()) {
-    // Match by key (original behavior) OR by the entry's simple name property (Issue #847)
     const keyMatches = existingKey.toLowerCase() === lowerName;
     const nameMatches = existing.name?.toLowerCase() === lowerName;
-    if ((keyMatches || nameMatches) && existingKey !== name) {
-      // Found case-insensitive match with different casing
-      if ((existing.constructor as any)._isManifestStub === true) {
-        const newKey = upsertExistingEntry(existingKey, existing);
-        verboseLog(
-          `[registry] Replaced manifest stub '${existingKey}' with real class '${name}' (key: ${newKey})`,
-        );
-        return;
-      }
+    if (!(keyMatches || nameMatches) || existingKey === name) continue;
 
-      // Non-stub case-insensitive collision - same constructor is OK
-      if (existing.constructor === ctor) {
-        upsertExistingEntry(existingKey, existing);
-        return;
-      }
-
-      // Same package, different pnpm store copy — harmless duplicate
-      // This happens when pnpm installs multiple physical copies of the same package
-      // due to different peer dependency resolutions. Each copy has a distinct constructor
-      // but they are semantically the same class.
-      // Requirements: existing entry has a qualified key, same package, AND same class name
-      // (case-sensitive). A case-insensitive-only match with different exact names indicates
-      // genuinely different classes, not pnpm duplicates.
-      const newPackageName = explicitPackageName || getPackageName(ctor, true);
-      if (
-        isQualifiedName(existingKey) &&
-        newPackageName &&
-        existing.packageName &&
-        newPackageName === existing.packageName &&
-        name === existing.name
-      ) {
-        upsertExistingEntry(existingKey, existing);
-        return;
-      }
-
-      // Check if this is the same class being re-registered from module re-evaluation
-      // (Issue #555: Test isolation - class name collision during vitest collection)
-      const newSourceFile = getSourceFileFromStack();
-
-      // Bundled context: source file is in a build output directory
-      // Mirrors the exact-match bundled context check above
-      const isBundledContext =
-        newSourceFile &&
-        (newSourceFile.includes('.svelte-kit/output/') ||
-          newSourceFile.includes('/dist/') ||
-          newSourceFile.includes('/build/') ||
-          newSourceFile.includes('.next/') ||
-          newSourceFile.includes('.nuxt/'));
-
-      if (isBundledContext && existing.packageName?.startsWith('@')) {
-        upsertExistingEntry(existingKey, existing);
-        return;
-      }
-
-      // Allow re-registration if:
-      // 1. Both source files are defined and match (same file being re-evaluated)
-      // 2. Either source file is unavailable (can't do proper comparison, allow as fallback)
-      const sourceFilesMatch =
-        newSourceFile &&
-        existing.sourceFilePath &&
-        newSourceFile === existing.sourceFilePath;
-      const cannotCompareSourceFiles =
-        !newSourceFile || !existing.sourceFilePath;
-
-      if (sourceFilesMatch || cannotCompareSourceFiles) {
-        // Same source file or can't compare = allow constructor update
-        upsertExistingEntry(existingKey, existing);
-        return;
-      }
-
-      // Allow subclass to replace parent class (STI child-wins, case-insensitive)
-      try {
-        if (ctor.prototype instanceof existing.constructor) {
-          const stiKey = upsertExistingEntry(existingKey, existing);
-          verboseLog(
-            `[registry] Subclass '${name}' replaced parent '${existingKey}' (key: ${stiKey})`,
-          );
-          return;
-        }
-        if (existing.constructor.prototype instanceof ctor) {
-          verboseLog(
-            `[registry] Skipping parent '${name}' — subclass '${existingKey}' already registered`,
-          );
-          return;
-        }
-      } catch {
-        // instanceof can throw if constructors are not proper functions — fall through
-      }
-
-      // Different constructors with case-insensitive name match from different source files
-      throw new Error(
-        `SMRT Class Name Collision: "${name}" (case-insensitive match with "${existingKey}")\n\n` +
-          `A class with this name is already registered, but with a different constructor.\n` +
-          `This usually happens when:\n` +
-          `  1. Multiple test files define classes with the same name\n` +
-          `  2. Different packages export classes with the same name\n\n` +
-          `The collision will cause the wrong field definitions to be used,\n` +
-          `leading to properties not being initialized correctly.\n\n` +
-          `To fix:\n` +
-          `  - Use unique class names (e.g., ${name}_UniqueId)\n` +
-          `  - Or use @smrt({ name: 'unique_name' }) to override the registration name`,
-      );
-    }
+    const handled = applyRegisterCollisionPolicy({
+      ctor,
+      name,
+      newPackageName,
+      newSourceFile,
+      newInBundledContext,
+      existing,
+      existingKey,
+      matchKind: 'case-insensitive',
+      upsertExistingEntry,
+    });
+    if (handled) return;
   }
 
   // CRITICAL: Capture package name NOW, while stack trace still shows external package
