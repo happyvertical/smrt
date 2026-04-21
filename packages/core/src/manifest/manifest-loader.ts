@@ -39,6 +39,12 @@ import {
 } from '../utils/qualified-names.js';
 import { ManifestManager } from './manager.js';
 import { getDefaultCompositeSource } from './sources/composite.js';
+import {
+  getLocalTestManifestCache as getLocalTestManifestCacheFromStore,
+  getManifestCache as getManifestCacheFromStore,
+  getStaticManifestCache as getStaticManifestCacheFromStore,
+  getTestManifestCache as getTestManifestCacheFromStore,
+} from './store.js';
 
 /**
  * Extend globalThis to include manifest loader state.
@@ -84,12 +90,16 @@ declare global {
 // Use globalThis for cross-module state sharing
 // This ensures loadConfig() in one module instance affects all packages
 
-/**
- * Get/set staticManifest from globalThis
- */
-function getStaticManifestCache(): SmartObjectManifest | null {
-  return globalThis.__smrtManifestStatic ?? null;
-}
+// ── Cache access (delegates to manifest/store.ts — the single source of
+// truth added in Release B #1133 for globalThis manifest state).
+// manifest-loader.ts keeps its own setters + load-attempted flags below
+// because those are internal to this module's async loader state machine;
+// the read-only getters just forward to store.ts to eliminate drift.
+
+const getStaticManifestCache = getStaticManifestCacheFromStore;
+const getTestManifestCache = getTestManifestCacheFromStore;
+const getLocalTestManifestCache = getLocalTestManifestCacheFromStore;
+const getManifestCacheMap = getManifestCacheFromStore;
 
 function setStaticManifestCache(
   manifest: SmartObjectManifest | null | undefined,
@@ -105,13 +115,6 @@ function setStaticManifestLoadAttempted(value: boolean): void {
   globalThis.__smrtManifestStaticLoadAttempted = value;
 }
 
-/**
- * Get/set testManifest from globalThis
- */
-function getTestManifestCache(): SmartObjectManifest | null {
-  return globalThis.__smrtManifestTest ?? null;
-}
-
 function setTestManifestCache(
   manifest: SmartObjectManifest | null | undefined,
 ): void {
@@ -124,23 +127,6 @@ function getTestManifestLoadAttempted(): boolean {
 
 function setTestManifestLoadAttempted(value: boolean): void {
   globalThis.__smrtManifestTestLoadAttempted = value;
-}
-
-/**
- * Get the manifest cache Map from globalThis
- */
-function getManifestCacheMap(): Map<string, SmartObjectManifest> {
-  if (!globalThis.__smrtManifestCache) {
-    globalThis.__smrtManifestCache = new Map<string, SmartObjectManifest>();
-  }
-  return globalThis.__smrtManifestCache;
-}
-
-/**
- * Get/set localTestManifest from globalThis
- */
-function getLocalTestManifestCache(): SmartObjectManifest | null | undefined {
-  return globalThis.__smrtManifestLocalTest;
 }
 
 function setLocalTestManifestCache(
