@@ -4,10 +4,6 @@
  * Reusable Asset Manager UI for embedding in downstream SMRT sites.
  */
 
-// Self-register this package's manifest for consumers that import via this
-// subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
-import '../__smrt-register__.js';
-
 // Components
 export { default as ActionBar } from './ActionBar.svelte';
 export { default as AssetDetail } from './AssetDetail.svelte';
