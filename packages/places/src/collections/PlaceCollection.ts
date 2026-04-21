@@ -5,7 +5,7 @@
  * lookupOrCreate method that integrates with @happyvertical/geo.
  */
 
-import type { Location } from '@happyvertical/geo';
+import type { GeoAdapter, Location } from '@happyvertical/geo';
 import { getGeoAdapter } from '@happyvertical/geo';
 import type { Asset } from '@happyvertical/smrt-assets';
 import {
@@ -15,7 +15,13 @@ import {
 } from '@happyvertical/smrt-assets';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Place } from '../models/Place';
-import type { LookupOrCreateOptions } from '../types';
+import type {
+  DiscoverNearbyOptions,
+  LookupOrCreateOptions,
+  ResolveTrackPlacesOptions,
+  TrackPlacesResult,
+  TrackPoint,
+} from '../types';
 import { PlaceTypeCollection } from './PlaceTypeCollection';
 
 export class PlaceCollection extends SmrtCollection<Place> {
@@ -198,6 +204,39 @@ export class PlaceCollection extends SmrtCollection<Place> {
   }
 
   /**
+   * Find a place by the provider's native id (Google place_id, OSM
+   * osm-node-N, etc.). Used as the primary idempotency key by
+   * `discoverNearby` so repeat POI searches don't create duplicate rows.
+   */
+  private async findByExternalId(externalId: string): Promise<Place | null> {
+    if (!externalId) return null;
+    const matches = await this.list({
+      where: { externalId },
+      limit: 1,
+    });
+    return matches[0] ?? null;
+  }
+
+  /**
+   * Idempotent "find or create" for a geo Location. Keyed purely on the
+   * provider's externalId (Google place_id, osm-node-*, etc.), which is
+   * stable per POI across repeat searches. The older `lookupOrCreate`
+   * keeps its own fallback chain (name/address/coordinate matching) for
+   * address-style workflows where externalId isn't reliable.
+   */
+  private async ensureFromLocation(
+    location: Location,
+    typeSlug?: string,
+    parentId?: string,
+  ): Promise<Place> {
+    if (location.id) {
+      const existing = await this.findByExternalId(location.id);
+      if (existing) return existing;
+    }
+    return await this.createFromLocation(location, typeSlug, parentId);
+  }
+
+  /**
    * Create place from @happyvertical/geo Location data
    *
    * @param location - Location from geocoding
@@ -244,6 +283,211 @@ export class PlaceCollection extends SmrtCollection<Place> {
       externalId: location.id,
       source: location.raw?.provider || 'unknown',
       metadata: JSON.stringify({ raw: location.raw ?? null }),
+    });
+  }
+
+  /**
+   * Discover POIs near a coordinate and persist them as Place rows.
+   *
+   * Composes `@happyvertical/geo`'s `findPoisNear` with `ensureFromLocation`
+   * so every returned POI is either reused from the local DB (matched by
+   * provider externalId or coordinate proximity) or created as a fresh
+   * Place. The cache is effectively automatic because the provider's own
+   * place_id becomes the Place row's `externalId`, so calling
+   * `discoverNearby` twice for the same area on the same provider is a
+   * no-op after the first run.
+   *
+   * Requires a geo provider that implements `findPoisNear`. Throws a clear
+   * error otherwise so consumers can fall back to `lookupOrCreate` or
+   * switch providers.
+   */
+  async discoverNearby(
+    latitude: number,
+    longitude: number,
+    radiusMeters: number,
+    options: DiscoverNearbyOptions = {},
+  ): Promise<Place[]> {
+    const {
+      geoProvider = 'openstreetmap',
+      types,
+      keyword,
+      limit,
+      language,
+      typeSlug,
+      parentId,
+    } = options;
+
+    const geo = await this.getGeoAdapter(geoProvider);
+    if (typeof geo.findPoisNear !== 'function') {
+      throw new Error(
+        `Geo provider '${geoProvider}' does not implement findPoisNear`,
+      );
+    }
+
+    const results = await geo.findPoisNear(latitude, longitude, radiusMeters, {
+      types,
+      keyword,
+      limit,
+      language,
+    });
+
+    const places: Place[] = [];
+    for (const result of results) {
+      const place = await this.ensureFromLocation(result, typeSlug, parentId);
+      places.push(place);
+    }
+    return places;
+  }
+
+  /**
+   * Resolve POIs along a GPS track (e.g. a video's per-frame path).
+   *
+   * Naively walking every point would hammer the provider with redundant
+   * requests — consecutive samples are usually within a few meters. This
+   * method buckets points into a `bucketMeters`-wide grid, calls
+   * `discoverNearby` once per distinct bucket, and throttles requests per
+   * `throttleMs` so free tiers (Overpass, Nominatim) stay inside their
+   * community rate limits without the caller having to manage a queue.
+   *
+   * The returned `places` are deduped across buckets by Place id, so a
+   * POI that falls within several overlapping search radii appears once.
+   */
+  async resolveTrackPlaces(
+    points: ReadonlyArray<TrackPoint>,
+    options: ResolveTrackPlacesOptions = {},
+  ): Promise<TrackPlacesResult> {
+    const radiusMeters = options.radiusMeters ?? 50;
+    const bucketMeters = options.bucketMeters ?? 50;
+    const throttleMs = options.throttleMs ?? 1100;
+
+    // Collapse points into buckets keyed by rounded-grid coordinate; use
+    // the first point that lands in each bucket as the query center so the
+    // radius still covers the points that were collapsed into it.
+    const bucketCenters = new Map<string, TrackPoint>();
+    for (const point of points) {
+      if (!Number.isFinite(point.lat) || !Number.isFinite(point.lng)) continue;
+      const key = this.bucketKey(point.lat, point.lng, bucketMeters);
+      if (!bucketCenters.has(key)) bucketCenters.set(key, point);
+    }
+
+    const result: TrackPlacesResult = {
+      places: [],
+      requestCount: 0,
+      cacheHitCount: 0,
+      bucketCount: bucketCenters.size,
+    };
+    const seen = new Map<string, Place>();
+
+    let lastCallAt = 0;
+    for (const center of bucketCenters.values()) {
+      const wait = lastCallAt + throttleMs - Date.now();
+      if (wait > 0) {
+        await new Promise((resolve) => setTimeout(resolve, wait));
+      }
+
+      const before = await this.countExistingNearby(
+        center.lat,
+        center.lng,
+        radiusMeters,
+      );
+      const places = await this.discoverNearby(
+        center.lat,
+        center.lng,
+        radiusMeters,
+        options,
+      );
+      lastCallAt = Date.now();
+      result.requestCount += 1;
+
+      // If no new Places were created (all matched existing externalIds or
+      // coordinates), count this bucket as a cache hit. This is a
+      // best-effort signal for observability, not a correctness guarantee.
+      const createdAny = places.some(
+        (place) =>
+          !place.createdAt ||
+          Date.now() - new Date(place.createdAt).getTime() < throttleMs * 2,
+      );
+      if (!createdAny && before > 0 && places.length > 0) {
+        result.cacheHitCount += 1;
+      }
+
+      for (const place of places) {
+        if (place.id && !seen.has(place.id)) seen.set(place.id, place);
+      }
+    }
+
+    result.places = [...seen.values()];
+    return result;
+  }
+
+  /**
+   * Count existing Places within `radiusMeters` of a point. Used by
+   * `resolveTrackPlaces` to classify buckets as cache hits vs fresh
+   * provider work.
+   *
+   * Uses an in-memory scan rather than `searchByProximity`, which relies
+   * on `where: { latitude: { $ne: null } }`. The `$ne: null` operator
+   * doesn't round-trip cleanly through every SQL adapter's parameter
+   * binding (SQL wants `IS NOT NULL`, not `!= NULL`). The scan is
+   * inexpensive at realistic Place-table sizes and `resolveTrackPlaces`
+   * only calls this once per unique bucket.
+   */
+  private async countExistingNearby(
+    latitude: number,
+    longitude: number,
+    radiusMeters: number,
+  ): Promise<number> {
+    const all = await this.list({});
+    const radiusKm = radiusMeters / 1000;
+    let count = 0;
+    for (const place of all) {
+      if (place.latitude == null || place.longitude == null) continue;
+      const distance = this.calculateDistance(
+        latitude,
+        longitude,
+        place.latitude,
+        place.longitude,
+      );
+      if (distance <= radiusKm) count += 1;
+    }
+    return count;
+  }
+
+  /**
+   * Rounded-grid bucket key. Two points within `bucketMeters` of each
+   * other map to the same key; longitude shrinks by cos(lat) at high
+   * latitudes to keep bucket cells roughly square on the ground.
+   */
+  private bucketKey(
+    latitude: number,
+    longitude: number,
+    bucketMeters: number,
+  ): string {
+    const latStep = bucketMeters / 111_000;
+    const cosLat = Math.cos((latitude * Math.PI) / 180);
+    const lngStep = bucketMeters / (111_000 * Math.max(cosLat, 0.01));
+    const latCell = Math.round(latitude / latStep);
+    const lngCell = Math.round(longitude / lngStep);
+    return `${latCell}:${lngCell}`;
+  }
+
+  /**
+   * Build a geo adapter configured for this call. Factored out of
+   * `geocode` so `discoverNearby` can reuse the same env + key wiring
+   * without having to pipe options through the lookupOrCreate path.
+   */
+  private async getGeoAdapter(
+    provider: 'google' | 'openstreetmap',
+  ): Promise<GeoAdapter> {
+    if (provider === 'google') {
+      return getGeoAdapter({
+        provider: 'google',
+        apiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+      });
+    }
+    return getGeoAdapter({
+      provider: 'openstreetmap',
+      userAgent: '@have/places',
     });
   }
 
