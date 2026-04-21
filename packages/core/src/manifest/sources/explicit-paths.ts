@@ -32,6 +32,17 @@ export class ExplicitPathsManifestSource implements ManifestSource {
       .filter((m): m is SmartObjectManifest => m !== null);
   }
 
+  /**
+   * Number of manifest files that loaded successfully at construction.
+   * Preserves the historical semantics of `loadAllManifests({ manifestPaths })`
+   * where `packagesLoaded` counted each successfully read manifest path,
+   * NOT the number of distinct `packageName` values (two paths pointing at
+   * the same package count as two).
+   */
+  get loadedCount(): number {
+    return this.manifests.length;
+  }
+
   lookup(query: ManifestLookupQuery): ManifestEntry | undefined {
     for (const manifest of this.manifests) {
       const def = matchManifest(manifest, query);

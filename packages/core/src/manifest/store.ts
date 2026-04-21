@@ -124,9 +124,21 @@ export function getTestManifestCache(): SmartObjectManifest | null {
   return getManifestGlobals().__smrtManifestTest ?? null;
 }
 
-/** Read-only snapshot of the local (domain package) test manifest, if cached. */
-export function getLocalTestManifestCache(): SmartObjectManifest | null {
-  return getManifestGlobals().__smrtManifestLocalTest ?? null;
+/**
+ * Read-only snapshot of the local (domain package) test manifest.
+ *
+ * Preserves the three-state semantics that `discoverManifestEntry()` relies
+ * on: `undefined` means "never attempted to load" and triggers the lazy
+ * loader; `null` means "attempted but no local test manifest in this
+ * package"; a manifest object means "loaded". Do not collapse `undefined`
+ * to `null` here — the async-discovery lazy-load path keys off the
+ * distinction (see manifest-loader.ts:`if (getLocalTestManifestCache() === undefined) loadLocalTestManifestSync()`).
+ */
+export function getLocalTestManifestCache():
+  | SmartObjectManifest
+  | null
+  | undefined {
+  return getManifestGlobals().__smrtManifestLocalTest;
 }
 
 // ── Manifest shape helpers ───────────────────────────────────────────────

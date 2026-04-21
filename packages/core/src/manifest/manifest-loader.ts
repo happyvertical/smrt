@@ -44,6 +44,7 @@ import {
   getManifestCache as getManifestCacheFromStore,
   getStaticManifestCache as getStaticManifestCacheFromStore,
   getTestManifestCache as getTestManifestCacheFromStore,
+  isTestEnvironment as isTestEnvFromStore,
 } from './store.js';
 
 /**
@@ -247,25 +248,26 @@ function getClassNameIndex(
 }
 
 /**
- * Detect if we're running in a test environment
- * Test manifests should ONLY be loaded during tests to avoid collisions with production classes
+ * Test-environment detection with optional DEBUG_TEST_ENV logging.
+ *
+ * Delegates to the single source of truth in `store.ts` so the
+ * ManifestSource implementations (which also gate on test-env) cannot
+ * drift from the legacy sync loader. The logging wrapper stays here
+ * because the trace is specific to this module's loader state machine.
  */
 function isTestEnvironment(): boolean {
-  const isTest =
-    process.env.NODE_ENV === 'test' ||
-    process.env.VITEST === 'true' ||
-    process.env.JEST_WORKER_ID !== undefined;
+  const result = isTestEnvFromStore();
 
   if (process.env.DEBUG_TEST_ENV) {
     console.log('[manifest-loader] isTestEnvironment check:', {
       NODE_ENV: process.env.NODE_ENV,
       VITEST: process.env.VITEST,
       JEST_WORKER_ID: process.env.JEST_WORKER_ID,
-      result: isTest,
+      result,
     });
   }
 
-  return isTest;
+  return result;
 }
 
 function getStaticManifest(): SmartObjectManifest {
@@ -878,15 +880,37 @@ export function discoverManifestSync(
   debugLog(`[manifest-loader] discoverManifestSync called for: ${className}`);
 
   // Ensure test-env caches are seeded before the composite queries them.
-  // Historically, step 1 did this; hoisted out because the composite only
-  // reads from caches that were already populated.
-  if (isTestEnvironment() && !getLocalTestManifestCache()) {
-    loadLocalTestManifestSync();
+  // Historically, steps 1-2 of discoverManifestSync did this inline. The
+  // composite's TestManifestSource and LocalTestManifestSource read directly
+  // from cache state — without this seeding the first sync lookup in a
+  // clean test process would miss core test classes on their first access
+  // (regression noted in #1138 review).
+  if (isTestEnvironment()) {
+    if (!getLocalTestManifestCache()) {
+      loadLocalTestManifestSync();
+    }
+    if (!getTestManifestCache()) {
+      getTestManifest();
+    }
   }
+
+  // Carry qualified-name / package context into the composite lookup so
+  // multi-package same-simple-name scenarios (issue #951) resolve to the
+  // right manifest even via the sync path.
+  const query = isQualifiedName(className)
+    ? (() => {
+        const parsed = parseQualifiedName(className);
+        return {
+          className: parsed.className,
+          packageName: parsed.packageName,
+          qualifiedName: className,
+        };
+      })()
+    : { className };
 
   // Steps 1-4 (local-test → test → static → embedded cache) now live in
   // CompositeManifestSource at the exact same priority order.
-  const compositeHit = getDefaultCompositeSource().lookup({ className });
+  const compositeHit = getDefaultCompositeSource().lookup(query);
   if (compositeHit) {
     debugLog(
       `[manifest-loader] ✅ Found ${className} via ${compositeHit.source} source`,

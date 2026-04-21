@@ -918,7 +918,6 @@ export class ObjectRegistry {
       // Explicit paths → ExplicitPathsManifestSource. Preserves the
       // full-registry-integration.test.ts:72-76 contract.
       const source = new ExplicitPathsManifestSource(options.manifestPaths);
-      const seenPackages = new Set<string>();
       for (const entry of source.entries()) {
         if (!ObjectRegistry.hasClassCaseInsensitive(entry.className)) {
           ObjectRegistry.registerFromManifest(
@@ -928,9 +927,12 @@ export class ObjectRegistry {
           );
           objectsRegistered++;
         }
-        if (entry.packageName) seenPackages.add(entry.packageName);
       }
-      packagesLoaded = seenPackages.size;
+      // Preserve historical semantics: packagesLoaded counts each
+      // successfully-read manifest path (not distinct packageName values).
+      // Two paths pointing at the same package counted as two before Release
+      // B and must continue to do so.
+      packagesLoaded = source.loadedCount;
     } else {
       // Auto-discover: seed the embedded cache from every installed
       // @happyvertical/smrt-* package, then iterate composite.entries() —

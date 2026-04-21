@@ -129,6 +129,41 @@ describe('discovery parity (Release B)', () => {
     expect(ObjectRegistry.findClass('WidgetB')).toBeDefined();
   });
 
+  it('discoverManifestSync disambiguates qualified names across packages (review #1138)', () => {
+    // Regression for PR #1138 review P1: discoverManifestSync previously
+    // passed only `{ className }` to the composite, dropping the
+    // qualified-name context. A query like `@pkg/b:Widget` could fall back
+    // to a simple-name match in package A's manifest. Fixed by parsing
+    // qualified names at the entry point before delegating.
+    const pkgA = '@acme/parity-discover-qualified-a';
+    const pkgB = '@acme/parity-discover-qualified-b';
+    const subA = join(tempRoot, 'disc-a');
+    const subB = join(tempRoot, 'disc-b');
+    mkdirSync(subA);
+    mkdirSync(subB);
+    const pathA = writeManifestFile(
+      subA,
+      fixtureManifest(pkgA, { Widget: { fields: { a: { type: 'text' } } } }),
+    );
+    const pathB = writeManifestFile(
+      subB,
+      fixtureManifest(pkgB, { Widget: { fields: { b: { type: 'text' } } } }),
+    );
+
+    ObjectRegistry.registerPackageManifest(pathToFileURL(pathA));
+    ObjectRegistry.registerPackageManifest(pathToFileURL(pathB));
+
+    const hitA = discoverManifestSync(`${pkgA}:Widget`);
+    const hitB = discoverManifestSync(`${pkgB}:Widget`);
+
+    expect(hitA?.packageName).toBe(pkgA);
+    expect(hitB?.packageName).toBe(pkgB);
+    expect(hitA?.fields?.a).toBeDefined();
+    expect(hitA?.fields?.b).toBeUndefined();
+    expect(hitB?.fields?.b).toBeDefined();
+    expect(hitB?.fields?.a).toBeUndefined();
+  });
+
   it('package-scoped queries disambiguate same-simple-name collisions across packages', () => {
     // Two packages each define a `Widget`. A lookup with a qualified name
     // must resolve to the correct package's manifest even when both are
