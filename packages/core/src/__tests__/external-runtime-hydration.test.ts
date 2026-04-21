@@ -818,6 +818,8 @@ describe('external runtime field hydration', () => {
     const upserts: Array<Record<string, unknown>> = [];
     const db = {
       url: ':memory:',
+      query: async () => [],
+      execute: async () => undefined,
       tableExists: async () => true,
       get: async () => null,
       upsert: async (
@@ -830,7 +832,6 @@ describe('external runtime field hydration', () => {
     };
 
     const forecast = await new FixtureForecast({ db: db as any }).initialize();
-    (forecast as any)._db = db;
     (forecast as any).verifyStorageReady = async () => {};
     await forecast.save();
 
@@ -1065,5 +1066,139 @@ describe('external runtime field hydration', () => {
     expect(
       ObjectRegistry.getClassByQualifiedName(childQualifiedName),
     ).toBeDefined();
+  });
+
+  it('rehydrates stale STI descendant caches before serializing sibling integer fields on save', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-assets';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureRuntimeAsset: {
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_runtime_assets',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            name: { type: 'text' },
+            sourceType: { type: 'text' },
+          },
+        },
+        FixtureRuntimeImage: {
+          extends: 'FixtureRuntimeAsset',
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            tableName: 'fixture_runtime_assets',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            width: { type: 'integer', default: 0 },
+            height: { type: 'integer', default: 0 },
+            alt: { type: 'text', default: '' },
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_assets',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeAsset extends SmrtObject {
+      @field()
+      name: string = '';
+
+      @field()
+      sourceType: string = '';
+    }
+
+    @smrt({
+      tableStrategy: 'sti',
+      tableName: 'fixture_runtime_assets',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureRuntimeImage extends FixtureRuntimeAsset {
+      @field()
+      width: number = 0;
+
+      @field()
+      height: number = 0;
+
+      @field()
+      alt: string = '';
+    }
+
+    const baseRegistered = ObjectRegistry.findClass('FixtureRuntimeAsset');
+    const imageRegistered = ObjectRegistry.findClass('FixtureRuntimeImage');
+
+    expect(baseRegistered).toBeDefined();
+    expect(imageRegistered).toBeDefined();
+
+    baseRegistered!.packageName = packageName;
+    baseRegistered!.qualifiedName = createQualifiedName(
+      packageName,
+      'FixtureRuntimeAsset',
+    );
+
+    imageRegistered!.packageName = packageName;
+    imageRegistered!.qualifiedName = createQualifiedName(
+      packageName,
+      'FixtureRuntimeImage',
+    );
+
+    // Simulate the stale external-runtime cache we saw in production: the child
+    // already has inheritedFields, but only from undecorated runtime metadata.
+    imageRegistered!.inheritedFields = new Map(imageRegistered?.fields);
+
+    const staleWidthField =
+      imageRegistered?.inheritedFields.get('width')?.type || null;
+    expect(staleWidthField).toBe('text');
+
+    const upserts: Array<Record<string, unknown>> = [];
+    const db = {
+      url: ':memory:',
+      query: async () => [],
+      execute: async () => undefined,
+      tableExists: async () => true,
+      get: async () => null,
+      upsert: async (
+        _tableName: string,
+        _conflictColumns: string[],
+        data: Record<string, unknown>,
+      ) => {
+        upserts.push(data);
+      },
+    };
+
+    const asset = await new FixtureRuntimeAsset({
+      db: db as any,
+      name: 'Blackfalds agenda asset',
+      sourceType: 'remote',
+    }).initialize();
+    (asset as any).verifyStorageReady = async () => {};
+
+    await asset.save();
+
+    expect(upserts).toHaveLength(1);
+    expect(upserts[0]?.width).toBeUndefined();
+    expect(upserts[0]?.height).toBeUndefined();
+    expect(upserts[0]?.alt).toBe('');
+
+    const hydratedWidthField =
+      ObjectRegistry.getClass('FixtureRuntimeImage')?.inheritedFields?.get(
+        'width',
+      )?.type || null;
+    expect(hydratedWidthField).toBe('integer');
   });
 });

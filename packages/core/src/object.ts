@@ -1132,18 +1132,12 @@ export class SmrtObject extends SmrtClass {
       }
 
       if (tableStrategy === 'sti') {
-        const descendants = getSTIHierarchyMembers(className);
-        const descendantsNeedingHydration = descendants.filter((descendant) => {
-          const registeredDescendant = ObjectRegistry.getClass(descendant);
-          return registeredDescendant && !registeredDescendant.inheritedFields;
-        });
+        const classesNeedingFreshSTIFieldState = Array.from(
+          new Set([className, ...getSTIHierarchyMembers(className)]),
+        );
 
-        if (descendantsNeedingHydration.length > 0) {
-          await Promise.all(
-            descendantsNeedingHydration.map((descendant) =>
-              ObjectRegistry.getAllFields(descendant),
-            ),
-          );
+        for (const stiClassName of classesNeedingFreshSTIFieldState) {
+          await ObjectRegistry.getAllFields(stiClassName);
         }
       }
 
