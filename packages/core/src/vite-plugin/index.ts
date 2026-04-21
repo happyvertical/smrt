@@ -11,6 +11,7 @@ import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import type { SmartObjectManifest } from '../scanner/types';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
+import { importBuildAwareModule } from './import-build-aware.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 export type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -79,16 +80,6 @@ async function importScanner() {
     sourceEntry: 'packages/scanner/src/index.ts',
     purpose: 'Vite manifest scanning',
   });
-}
-
-async function importBuildAwareModule<T>({
-  source,
-  dist,
-}: {
-  source: string;
-  dist: string;
-}): Promise<T> {
-  return (await import(import.meta.url.endsWith('.ts') ? source : dist)) as T;
 }
 
 export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
