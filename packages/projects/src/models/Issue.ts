@@ -5,14 +5,19 @@
  * Uses @happyvertical/repos SDK for actual API calls.
  */
 
+import { getAI } from '@happyvertical/ai';
 import {
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
+  config as smrtConfig,
 } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { loadEnvConfig } from '@happyvertical/utils';
 import { SYNC_THROTTLE_MS } from '../constants';
+import { issueIncorporateFeedbackPrompt } from '../prompts';
 import type {
   IncorporateFeedbackOptions,
   IncorporateFeedbackResult,
@@ -323,26 +328,37 @@ export class Issue extends SmrtObject {
       };
     }
 
-    // Build the synthesis prompt
-    const defaultPrompt = `You are updating a specification document based on team feedback.
+    const resolvedPrompt = await resolvePrompt(
+      issueIncorporateFeedbackPrompt.key,
+      {
+        db: this.options.db ?? this.options.persistence,
+        tenantId: this.tenantId,
+        variables: {
+          body: this.body,
+          comments: relevantComments
+            .map((c) => `- ${c.author}: ${c.body}`)
+            .join('\n'),
+        },
+        override: options.prompt ? { template: options.prompt } : undefined,
+      },
+    );
 
-Current specification:
-${this.body}
+    const aiOptions = {
+      ...resolvedPrompt.ai.params,
+      ...(resolvedPrompt.ai.model ? { model: resolvedPrompt.ai.model } : {}),
+    };
 
-Team comments and feedback:
-${relevantComments.map((c) => `- ${c.author}: ${c.body}`).join('\n')}
+    let synthesized: string;
 
-Instructions:
-1. Analyze the comments for consensus, changes, and new requirements
-2. Update the specification to reflect the agreed-upon changes
-3. Maintain the original structure and formatting where possible
-4. Mark any conflicting feedback that needs resolution
-5. Return ONLY the updated specification text, no additional commentary`;
-
-    const prompt = options.prompt || defaultPrompt;
-
-    // Use AI to synthesize the feedback
-    const synthesized = await this.do(prompt);
+    if (resolvedPrompt.ai.provider) {
+      synthesized = await this.runPromptWithResolvedAI(
+        resolvedPrompt.text,
+        resolvedPrompt.ai.provider,
+        aiOptions,
+      );
+    } else {
+      synthesized = await this.do(resolvedPrompt.text, aiOptions);
+    }
 
     const result: IncorporateFeedbackResult = {
       synthesized,
@@ -372,6 +388,68 @@ Instructions:
     }
 
     return result;
+  }
+
+  private async runPromptWithResolvedAI(
+    instructions: string,
+    provider: string,
+    options: Record<string, unknown>,
+  ): Promise<string> {
+    const globalAiConfig = smrtConfig.toJSON().ai || {};
+    const aiOption = this.options.ai as Record<string, unknown> | undefined;
+    const instanceAiConfig =
+      aiOption &&
+      typeof aiOption === 'object' &&
+      typeof aiOption.embed === 'function' &&
+      !aiOption.provider &&
+      !aiOption.type
+        ? {}
+        : (aiOption ?? {});
+    const aiConfig = loadEnvConfig<any>(
+      {
+        ...globalAiConfig,
+        ...instanceAiConfig,
+      },
+      {
+        packageName: 'ai',
+        prefix: 'SMRT',
+        schema: {
+          provider: 'string',
+          model: 'string',
+          apiKey: 'string',
+          timeout: 'number',
+          maxRetries: 'number',
+          temperature: 'number',
+          maxTokens: 'number',
+        },
+      },
+    );
+
+    const env = process.env;
+    const apiKey =
+      aiConfig.apiKey ||
+      (provider === 'anthropic'
+        ? env.ANTHROPIC_API_KEY
+        : provider === 'gemini'
+          ? env.GEMINI_API_KEY
+          : env.OPENAI_API_KEY);
+
+    const ai = await getAI({
+      ...aiConfig,
+      provider,
+      type: provider,
+      model: options.model ?? aiConfig.model,
+      defaultModel: options.model ?? aiConfig.model,
+      apiKey,
+    } as any);
+
+    const prompt = `--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
+    const tools = this.getAvailableTools();
+
+    return (await ai.message(prompt, {
+      ...options,
+      tools: tools.length > 0 ? tools : undefined,
+    } as any)) as string;
   }
 
   /**

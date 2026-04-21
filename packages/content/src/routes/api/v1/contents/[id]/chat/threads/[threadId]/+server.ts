@@ -11,6 +11,18 @@ type ContentChatLocals = {
   } | null;
 };
 
+function inferProviderFromModel(model: string): string {
+  if (model.includes('claude')) {
+    return 'anthropic';
+  }
+
+  if (model.includes('gemini')) {
+    return 'gemini';
+  }
+
+  return 'openai';
+}
+
 export const GET: RequestHandler = async ({ params, locals }) => {
   const smrtLocals = locals as ContentChatLocals;
   const { threadId } = params;
@@ -105,10 +117,18 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       return json({ error: 'Thread not found' }, { status: 404 });
     }
 
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      return json(
+        { error: 'Active session is missing a chat room' },
+        { status: 500 },
+      );
+    }
+
     // Save user message attached to thread
     const userMessage = await chatService.sendMessage({
       tenantId,
-      roomId: session.chatRoomId!,
+      roomId: chatRoomId,
       threadId: thread.id,
       senderProfileId: profileId,
       content: messageContent,
@@ -189,13 +209,22 @@ RULES:
     // Get SvelteKit environment variables for SSR
     const env = process.env;
 
-    // If a model is provided in the request, we use it, otherwise fallback
-    const aiModel = model || 'gemini-2.5-pro'; // default to gemini since that's what we have
-    const provider = aiModel.includes('claude')
-      ? 'anthropic'
-      : aiModel.includes('gemini')
-        ? 'gemini'
-        : 'openai';
+    const ctx = session.getSessionContext();
+    const storedModel =
+      typeof ctx.model === 'string' && ctx.model.length > 0 ? ctx.model : null;
+    const storedProvider =
+      typeof ctx.provider === 'string' && ctx.provider.length > 0
+        ? ctx.provider
+        : null;
+    const defaultModel = storedModel ?? 'gemini-2.5-pro';
+    const aiModel = model || defaultModel;
+    const provider =
+      storedProvider && storedModel && aiModel === storedModel
+        ? storedProvider
+        : inferProviderFromModel(aiModel);
+    const temperature =
+      typeof ctx.temperature === 'number' ? ctx.temperature : 0.7;
+    const maxTokens = typeof ctx.maxTokens === 'number' ? ctx.maxTokens : 2000;
 
     // Explicitly fallback to env vars if config lacks them
     const apiKey =
@@ -222,14 +251,14 @@ RULES:
 
     const response = await ai.chat(conversation, {
       model: aiModel,
-      temperature: 0.7,
-      maxTokens: 2000,
+      temperature,
+      maxTokens,
     });
 
     // Save agent message
     const agentMessage = await chatService.sendMessage({
       tenantId,
-      roomId: session.chatRoomId!,
+      roomId: chatRoomId,
       agentSessionId: session.id as string,
       threadId: thread.id,
       senderProfileId: session.agentId,
@@ -238,9 +267,8 @@ RULES:
     });
 
     // If model changed, update context
-    const ctx = session.getSessionContext();
-    if (ctx.model !== aiModel) {
-      await session.updateSessionContext({ model: aiModel });
+    if (ctx.model !== aiModel || ctx.provider !== provider) {
+      await session.updateSessionContext({ model: aiModel, provider });
     }
 
     const userJson = userMessage.toJSON();
