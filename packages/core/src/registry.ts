@@ -46,6 +46,7 @@ import {
 } from './manifest/store.js';
 import type { SmrtObject } from './object';
 import {
+  invalidateInheritanceEntries as _invalidateInheritanceEntries,
   register as _register,
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
@@ -1203,22 +1204,22 @@ export class ObjectRegistry {
    * ```
    */
   static invalidateInheritanceCache(className: string): void {
-    // Clear inheritance chain cache
-    ObjectRegistry.getInheritanceCache().delete(className);
-
-    // Clear merged fields/methods cache
+    // Delegate to the stronger sweep in class-registration.ts. The previous
+    // implementation here recursed via `childClass.extends === className`
+    // — a simple-string exact match — so qualified-extends descendants
+    // (e.g. a child whose `extends` is stored as `@pkg:Parent` after
+    // `qualifyExtendsName`) were silently missed. The shared sweep checks
+    // both `extends === existing.name` and `extends === existing.qualifiedName`,
+    // plus transitive descendants via the inheritance-chain cache. See
+    // #1139 Gap 1.
     const registered = ObjectRegistry.findClass(className);
-    if (registered) {
-      registered.inheritedFields = undefined;
-      registered.inheritedMethods = undefined;
+    if (!registered) {
+      // Class not found: still clear any stray chain-cache entry keyed on
+      // this name so a future lookup rebuilds from scratch.
+      ObjectRegistry.getInheritanceCache().delete(className);
+      return;
     }
-
-    // Also invalidate all descendants (they depend on this class's fields)
-    for (const [_key, childClass] of ObjectRegistry.classes) {
-      if (childClass.extends === className) {
-        ObjectRegistry.invalidateInheritanceCache(childClass.name || _key);
-      }
-    }
+    _invalidateInheritanceEntries(registered);
   }
 
   /**
