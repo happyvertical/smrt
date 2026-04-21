@@ -1462,6 +1462,108 @@ export class ObjectRegistry {
   }
 
   /**
+   * Register a package's own bundled manifest, called by the package itself at
+   * import time to eliminate the consumer-runtime field-drop bug (issue #1132).
+   *
+   * Packages ship a `dist/manifest.json` next to their compiled entry. A small
+   * `__smrt-register__.js` side-effect module imports that file URL and calls
+   * this method *before* any `@smrt()` decorator in the package fires, so the
+   * decorator's synchronous manifest lookup hits a populated cache instead of
+   * registering classes with zero fields.
+   *
+   * Silently no-ops if the URL can't be read — in dev/test the vitest plugin
+   * populates manifests through a different path, and this fallback is expected
+   * to miss in those contexts.
+   *
+   * @param manifestUrl - File URL (or string) pointing to the package's
+   *   manifest.json. Typical call site:
+   *   `new URL('./manifest.json', import.meta.url)`
+   * @returns Summary with loaded status, package name, and object count
+   *
+   * @example
+   * ```typescript
+   * // packages/smrt-places/src/__smrt-register__.ts
+   * import { ObjectRegistry } from '@happyvertical/smrt-core';
+   * ObjectRegistry.registerPackageManifest(
+   *   new URL('./manifest.json', import.meta.url),
+   * );
+   * ```
+   *
+   * @see https://github.com/happyvertical/smrt/issues/1132
+   */
+  static registerPackageManifest(manifestUrl: string | URL): {
+    loaded: boolean;
+    packageName?: string;
+    objectsRegistered: number;
+  } {
+    const builtins = getNodeBuiltins();
+    if (!builtins) {
+      return { loaded: false, objectsRegistered: 0 };
+    }
+
+    let manifest: SmartObjectManifest | null = null;
+    try {
+      const urlString =
+        manifestUrl instanceof URL ? manifestUrl.href : manifestUrl;
+      const filePath = urlString.startsWith('file:')
+        ? builtins.path.normalize(new URL(urlString).pathname)
+        : urlString;
+
+      if (!builtins.fs.existsSync(filePath)) {
+        return { loaded: false, objectsRegistered: 0 };
+      }
+
+      const parsed = JSON.parse(
+        builtins.fs.readFileSync(filePath, 'utf-8'),
+      ) as SmartObjectManifest;
+
+      if (!parsed?.objects || typeof parsed.objects !== 'object') {
+        return { loaded: false, objectsRegistered: 0 };
+      }
+
+      manifest = parsed;
+    } catch (error) {
+      verboseLog(
+        `[ObjectRegistry] registerPackageManifest: failed to read manifest at ${String(manifestUrl)}: ${
+          error instanceof Error ? error.message : error
+        }`,
+      );
+      return { loaded: false, objectsRegistered: 0 };
+    }
+
+    const packageName = manifest.packageName;
+
+    // Seed the manifest cache so discoverManifestSync() finds entries when
+    // @smrt() decorators run for classes in this package.
+    const manifestGlobals = globalThis as typeof globalThis & {
+      __smrtManifestCache?: Map<string, SmartObjectManifest>;
+    };
+    if (!manifestGlobals.__smrtManifestCache) {
+      manifestGlobals.__smrtManifestCache = new Map();
+    }
+    const cacheKey = packageName || String(manifestUrl);
+    manifestGlobals.__smrtManifestCache.set(cacheKey, manifest);
+
+    // Merge manifest fields into any already-registered classes. This covers
+    // the case where class modules were evaluated before the package's
+    // self-register shim (e.g., a consumer imported a deep subpath that
+    // bypassed the main entry).
+    let objectsRegistered = 0;
+    for (const [key, def] of Object.entries(manifest.objects)) {
+      const objectDef = def as any;
+      const className = objectDef.className || key;
+      ObjectRegistry.registerFromManifest(className, objectDef, packageName);
+      objectsRegistered++;
+    }
+
+    verboseLog(
+      `[ObjectRegistry] registerPackageManifest: loaded ${objectsRegistered} objects from ${packageName || String(manifestUrl)}`,
+    );
+
+    return { loaded: true, packageName, objectsRegistered };
+  }
+
+  /**
    * Check if a class is registered (case-insensitive)
    */
   static hasClass(name: string): boolean {
