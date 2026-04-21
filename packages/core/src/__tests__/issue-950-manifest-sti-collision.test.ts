@@ -177,6 +177,73 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       expect(stillChild?.packageName).toBe('@test/agent');
     });
 
+    it('keeps cross-package STI child when a parent with a qualified extends key arrives (PR #1140 review)', () => {
+      // Scenario from the deep-review on #1140: when a child class
+      // extends a parent that is ALREADY registered at the time the
+      // child loads, `qualifyExtendsName()` resolves the child's
+      // `extends` to the parent's fully-qualified key — not the simple
+      // parent name. Later, when the parent manifest arrives for the
+      // same canonical name, `existingExtendsNew` must recognize the
+      // qualified value as pointing at the new parent's key and skip.
+      //
+      // Pre-fix, the comparison only checked the simple name / manifest
+      // key and missed the qualified form, silently registering a
+      // duplicate parent entry. The `registrationKey` comparison added
+      // to buildManifestCollisionInputs at class-registration.ts:260
+      // closes that gap.
+      const parentDef = {
+        className: 'StiQualifiedParent',
+        fields: { name: { type: 'text', _meta: {} } },
+        methods: {},
+        decoratorConfig: {},
+        filePath: '/packages/events/src/models/Parent.ts',
+      };
+
+      // Register the parent first so qualifyExtendsName can resolve the
+      // child's `extends` string to the qualified parent key.
+      ObjectRegistry.registerFromManifest(
+        'StiQualifiedParent',
+        parentDef,
+        '@test/events',
+      );
+
+      const childDef = {
+        className: 'StiQualifiedChild',
+        fields: { title: { type: 'text', _meta: {} } },
+        methods: {},
+        decoratorConfig: {},
+        extends: 'StiQualifiedParent',
+        filePath: '/packages/sports/src/models/Child.ts',
+      };
+
+      ObjectRegistry.registerFromManifest(
+        'StiQualifiedChild',
+        childDef,
+        '@test/sports',
+      );
+
+      // Confirm the child stored the parent's QUALIFIED key, not the
+      // simple name — this is what makes the regression possible.
+      const child = ObjectRegistry.findClass('StiQualifiedChild');
+      expect(child?.extends).toBe('@test/events:StiQualifiedParent');
+
+      // Now the parent manifest arrives again, e.g. via STI sibling
+      // auto-load. Pre-fix, `existingExtendsNew` returned false and the
+      // parent would register a duplicate entry. With the fix, the
+      // child's qualified `extends` matches the parent's registrationKey
+      // → `manifest-sti-parent-skip` → skip.
+      ObjectRegistry.registerFromManifest(
+        'StiQualifiedParent',
+        parentDef,
+        '@test/events',
+      );
+
+      // Only one parent entry exists; not duplicated.
+      const parents = ObjectRegistry.findClassesByName('StiQualifiedParent');
+      expect(parents).toHaveLength(1);
+      expect(parents[0].packageName).toBe('@test/events');
+    });
+
     it('should skip re-export with same source file', () => {
       const def = {
         className: 'TestWidget950',

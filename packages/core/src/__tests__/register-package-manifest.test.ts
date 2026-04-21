@@ -248,16 +248,46 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     expect(result.objectsRegistered).toBe(0);
   });
 
-  it('silently no-ops when the manifest is malformed JSON', () => {
+  it('throws in strict mode when the manifest is malformed JSON', () => {
+    // Release C (#1134) flipped SMRT_STRICT_REGISTRY to on-by-default, so
+    // PACKAGE_MANIFEST_READ_FAILED (severity 'error') now throws at record
+    // time instead of recording silently. Consumers who want the pre-C
+    // permissive behavior opt out via SMRT_STRICT_REGISTRY=false — see the
+    // next test.
     const badPath = join(tempRoot, 'bad.json');
     writeFileSync(badPath, '{ not valid json');
 
-    const result = ObjectRegistry.registerPackageManifest(
-      pathToFileURL(badPath),
-    );
+    expect(() =>
+      ObjectRegistry.registerPackageManifest(pathToFileURL(badPath)),
+    ).toThrow(/PACKAGE_MANIFEST_READ_FAILED/);
+  });
 
-    expect(result.loaded).toBe(false);
-    expect(result.objectsRegistered).toBe(0);
+  it('opt-out: SMRT_STRICT_REGISTRY=false restores permissive malformed-JSON behavior', () => {
+    const badPath = join(tempRoot, 'bad-optout.json');
+    writeFileSync(badPath, '{ still not valid');
+
+    const originalEnv = process.env.SMRT_STRICT_REGISTRY;
+    process.env.SMRT_STRICT_REGISTRY = 'false';
+    try {
+      const result = ObjectRegistry.registerPackageManifest(
+        pathToFileURL(badPath),
+      );
+      expect(result.loaded).toBe(false);
+      expect(result.objectsRegistered).toBe(0);
+
+      // The diagnostic is still recorded — strict mode only controls
+      // whether it throws, not whether it's collected.
+      const diagnostics = ObjectRegistry.getDiagnostics();
+      expect(
+        diagnostics.some((d) => d.code === 'PACKAGE_MANIFEST_READ_FAILED'),
+      ).toBe(true);
+    } finally {
+      if (originalEnv === undefined) {
+        delete process.env.SMRT_STRICT_REGISTRY;
+      } else {
+        process.env.SMRT_STRICT_REGISTRY = originalEnv;
+      }
+    }
   });
 
   it('accepts a plain string path as well as a URL', () => {

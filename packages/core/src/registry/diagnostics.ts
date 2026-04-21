@@ -1,20 +1,23 @@
 /**
  * Registry diagnostic collector.
  *
- * Currently ObjectRegistry's manifest-loading paths swallow a number of
- * failure modes with `console.warn(...); return null`. That is fine for the
- * average case — a missing or malformed manifest from one package shouldn't
- * crash the whole app — but it makes #1132-style debugging hard: the only
- * evidence of the problem is fields silently missing at save time.
+ * ObjectRegistry's manifest-loading paths previously swallowed failure
+ * modes with `console.warn(...); return null`. That was fine for the
+ * average case but made #1132-style debugging hard: the only evidence of
+ * the problem was fields silently missing at save time.
  *
- * This module provides an opt-in collection point for those silent failures.
- * Callers `record()` a diagnostic when they would otherwise `console.warn`;
- * apps and tests can later call `ObjectRegistry.getDiagnostics()` to inspect
- * what was missed.
+ * This module is the collection point for those failures. Callers
+ * `record()` a diagnostic when they would otherwise `console.warn`; apps
+ * and tests can call `ObjectRegistry.getDiagnostics()` to inspect what
+ * was missed.
  *
- * Release A ships this as **passive** — diagnostics accumulate but never
- * throw. Release C (see #1134) flips `SMRT_STRICT_REGISTRY` on by default,
- * at which point severity `'error'` diagnostics will throw at record time.
+ * Release A shipped the collector as passive (off-by-default strict).
+ * Release C (#1134) flips strict mode to **on by default**: severity
+ * `'error'` diagnostics now throw at record time so misconfiguration
+ * surfaces at registration rather than at silent field-drop time. Opt
+ * out with `SMRT_STRICT_REGISTRY=false` if you have manifest-loading
+ * paths that must stay permissive (fix the underlying manifest issue
+ * instead when you can).
  *
  * @see https://github.com/happyvertical/smrt/issues/1132
  * @see https://github.com/happyvertical/smrt/issues/1134
@@ -46,8 +49,15 @@ function getBuffer(): RegistryDiagnostic[] {
   return globalThis.__smrtRegistryDiagnostics;
 }
 
+/**
+ * Strict mode: ON by default (Release C, #1134).
+ *
+ * When true, severity `'error'` diagnostics throw at record time instead
+ * of just appending to the buffer. Set `SMRT_STRICT_REGISTRY=false` to
+ * restore the pre-Release-C permissive behavior.
+ */
 function strictModeEnabled(): boolean {
-  return process.env.SMRT_STRICT_REGISTRY === 'true';
+  return process.env.SMRT_STRICT_REGISTRY !== 'false';
 }
 
 /**
@@ -74,7 +84,13 @@ export function recordRegistryDiagnostic(
 
   if (severity === 'error' && strictModeEnabled()) {
     const suffix = context ? ` (${JSON.stringify(context)})` : '';
-    throw new Error(`[smrt:${code}] ${message}${suffix}`);
+    // The opt-out hint is load-bearing when this throw propagates out of a
+    // `__smrt-register__.ts` side effect at module-import time — the
+    // consumer may have no other recovery path visible in the stack.
+    throw new Error(
+      `[smrt:${code}] ${message}${suffix} — set SMRT_STRICT_REGISTRY=false ` +
+        `to record this diagnostic without throwing.`,
+    );
   }
 }
 
