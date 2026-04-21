@@ -34,6 +34,20 @@ export type ManifestLoadOptions = {
   warn?: boolean;
 };
 
+// ── Runtime environment detection ────────────────────────────────────────
+
+/**
+ * Detect whether we're running inside a test runner. Test manifests must
+ * never load in production to avoid test classes colliding with real ones.
+ */
+export function isTestEnvironment(): boolean {
+  return (
+    process.env.NODE_ENV === 'test' ||
+    process.env.VITEST === 'true' ||
+    process.env.JEST_WORKER_ID !== undefined
+  );
+}
+
 // ── Node builtins access ─────────────────────────────────────────────────
 
 /**

@@ -7,7 +7,7 @@
  * @see https://github.com/happyvertical/smrt/issues/1133
  */
 
-import { getTestManifestCache } from '../store.js';
+import { getTestManifestCache, isTestEnvironment } from '../store.js';
 import {
   type ManifestEntry,
   type ManifestLookupQuery,
@@ -21,6 +21,7 @@ export class TestManifestSource implements ManifestSource {
   readonly name = 'test';
 
   lookup(query: ManifestLookupQuery): ManifestEntry | undefined {
+    if (!isTestEnvironment()) return undefined;
     const manifest = getTestManifestCache();
     if (!manifest) return undefined;
 
@@ -30,6 +31,7 @@ export class TestManifestSource implements ManifestSource {
   }
 
   *entries(): Iterable<ManifestEntry> {
+    if (!isTestEnvironment()) return;
     yield* manifestEntriesOf(getTestManifestCache(), this.name);
   }
 }

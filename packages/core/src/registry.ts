@@ -36,12 +36,13 @@ import type {
   ResolvedEmbeddingConfig,
 } from './embeddings/types';
 import { ConfigurationError } from './errors';
+import { getDefaultCompositeSource } from './manifest/sources/composite.js';
+import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.js';
 import {
   cloneManifestSchemaColumns,
   discoverCachedManifestSync,
   getNodeBuiltins,
   loadExternalManifestSyncWithNode,
-  loadManifestFromPathSyncWithNode,
 } from './manifest/store.js';
 import type { SmrtObject } from './object';
 import {
@@ -920,30 +921,28 @@ export class ObjectRegistry {
     let objectsRegistered = 0;
 
     if (options?.manifestPaths) {
-      // Explicit paths — used by integration tests
-      for (const manifestPath of options.manifestPaths) {
-        try {
-          const manifest = loadManifestFromPathSyncWithNode(manifestPath);
-          if (!manifest?.objects) continue;
-          const packageName = manifest.packageName as string | undefined;
-
-          for (const [_key, objectDef] of Object.entries(manifest.objects)) {
-            const def = objectDef as any;
-            const className = def.className || _key;
-            if (!ObjectRegistry.hasClassCaseInsensitive(className)) {
-              ObjectRegistry.registerFromManifest(className, def, packageName);
-              objectsRegistered++;
-            }
-          }
-          packagesLoaded++;
-        } catch (err) {
-          verboseLog(
-            `[ObjectRegistry] Failed to load manifest from ${manifestPath}: ${err}`,
+      // Explicit paths → ExplicitPathsManifestSource. Preserves the
+      // full-registry-integration.test.ts:72-76 contract.
+      const source = new ExplicitPathsManifestSource(options.manifestPaths);
+      const seenPackages = new Set<string>();
+      for (const entry of source.entries()) {
+        if (!ObjectRegistry.hasClassCaseInsensitive(entry.className)) {
+          ObjectRegistry.registerFromManifest(
+            entry.className,
+            entry.def,
+            entry.packageName,
           );
+          objectsRegistered++;
         }
+        if (entry.packageName) seenPackages.add(entry.packageName);
       }
+      packagesLoaded = seenPackages.size;
     } else {
-      // Auto-discover via loadExternalManifestSync for each @happyvertical package
+      // Auto-discover: seed the embedded cache from every installed
+      // @happyvertical/smrt-* package, then iterate composite.entries() —
+      // LocalTest/Test sources gate themselves on isTestEnvironment() and
+      // NodeModulesFallback is a no-op on `.lookup()`, so the iteration
+      // yields exactly the same set of entries as the old manual scan.
       const packagePrefixes = ['@happyvertical/smrt-'];
       try {
         const builtins = getNodeBuiltins();
@@ -968,21 +967,29 @@ export class ObjectRegistry {
             ),
           );
 
+        const seenPackages = new Set<string>();
         for (const pkgDir of packages) {
           const packageName = `@happyvertical/${pkgDir}`;
           const manifest = loadExternalManifestSyncWithNode(packageName);
           if (!manifest?.objects) continue;
-
-          for (const [_key, objectDef] of Object.entries(manifest.objects)) {
-            const def = objectDef as any;
-            const className = def.className || _key;
-            if (!ObjectRegistry.hasClassCaseInsensitive(className)) {
-              ObjectRegistry.registerFromManifest(className, def, packageName);
-              objectsRegistered++;
-            }
-          }
-          packagesLoaded++;
+          seenPackages.add(packageName);
         }
+
+        const composite = getDefaultCompositeSource();
+        for (const entry of composite.entries()) {
+          if (!entry.packageName || !seenPackages.has(entry.packageName)) {
+            continue;
+          }
+          if (!ObjectRegistry.hasClassCaseInsensitive(entry.className)) {
+            ObjectRegistry.registerFromManifest(
+              entry.className,
+              entry.def,
+              entry.packageName,
+            );
+            objectsRegistered++;
+          }
+        }
+        packagesLoaded = seenPackages.size;
       } catch (err) {
         verboseLog(
           `[ObjectRegistry] Auto-discovery of manifests failed: ${err}`,

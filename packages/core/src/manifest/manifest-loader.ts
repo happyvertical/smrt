@@ -38,6 +38,7 @@ import {
   parseQualifiedName,
 } from '../utils/qualified-names.js';
 import { ManifestManager } from './manager.js';
+import { getDefaultCompositeSource } from './sources/composite.js';
 
 /**
  * Extend globalThis to include manifest loader state.
@@ -888,66 +889,27 @@ export function loadManifestFromPathSync(
 export function discoverManifestSync(
   className: string,
 ): ManifestEntry | undefined {
-  const name = className.toLowerCase();
-
   debugLog(`[manifest-loader] discoverManifestSync called for: ${className}`);
 
-  // 1. Check localTestManifest (domain package classes) - ONLY in test environment
-  // This prevents test classes from polluting production code
-  if (isTestEnvironment()) {
-    if (!getLocalTestManifestCache()) {
-      loadLocalTestManifestSync();
-    }
-
-    const localManifest = getLocalTestManifestCache();
-    if (localManifest) {
-      // Use lookupInManifest for qualified name support (Issue #713)
-      const entry = lookupInManifest(localManifest, className);
-      if (entry) {
-        debugLog(
-          `[manifest-loader] ✅ Found ${className} in localTestManifest`,
-        );
-        return entry;
-      }
-    }
+  // Ensure test-env caches are seeded before the composite queries them.
+  // Historically, step 1 did this; hoisted out because the composite only
+  // reads from caches that were already populated.
+  if (isTestEnvironment() && !getLocalTestManifestCache()) {
+    loadLocalTestManifestSync();
   }
 
-  // 2. Check testManifest (core test classes) - ONLY in test environment
-  if (isTestEnvironment()) {
-    const manifest = getTestManifest();
-    if (manifest) {
-      // Use lookupInManifest for qualified name support (Issue #713)
-      const entry = lookupInManifest(manifest, className);
-      if (entry) {
-        debugLog(`[manifest-loader] ✅ Found ${className} in testManifest`);
-        return entry;
-      }
+  // Steps 1-4 (local-test → test → static → embedded cache) now live in
+  // CompositeManifestSource at the exact same priority order.
+  const compositeHit = getDefaultCompositeSource().lookup({ className });
+  if (compositeHit) {
+    debugLog(
+      `[manifest-loader] ✅ Found ${className} via ${compositeHit.source} source`,
+    );
+    const entry = compositeHit.def;
+    if (!entry.packageName && compositeHit.packageName) {
+      return { ...entry, packageName: compositeHit.packageName };
     }
-  }
-
-  // 3. Check staticManifest (core framework classes)
-  const staticManifest = getStaticManifest();
-  // Use lookupInManifest for qualified name support (Issue #713)
-  const staticEntry = lookupInManifest(staticManifest, className);
-  if (staticEntry) {
-    debugLog(`[manifest-loader] ✅ Found ${className} in staticManifest`);
-    return staticEntry;
-  }
-
-  // 4. Check cached external manifests
-  for (const manifest of getManifestCacheMap().values()) {
-    // Use lookupInManifest for qualified name support (Issue #713)
-    const entry = lookupInManifest(manifest, className);
-    if (entry) {
-      debugLog(
-        `[manifest-loader] ✅ Found ${className} in external manifest cache`,
-      );
-      // Enrich entry with packageName from manifest if not already present
-      if (!entry.packageName && manifest.packageName) {
-        return { ...entry, packageName: manifest.packageName };
-      }
-      return entry;
-    }
+    return entry;
   }
 
   // 5. Try loading from explicitly declared external SMRT package dependencies.
@@ -958,7 +920,7 @@ export function discoverManifestSync(
   const pendingPackages = collectDeclaredSmrtDependencies([
     getLocalTestManifestCache(),
     isTestEnvironment() ? getTestManifest() : null,
-    staticManifest,
+    getStaticManifest(),
     ...getManifestCacheMap().values(),
   ]);
 
