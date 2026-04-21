@@ -4,8 +4,15 @@
  * Handles class lookup, disambiguation, and qualified name resolution.
  * All functions operate on the shared globalThis state.
  *
+ * Release B (#1133): classNameMap is gone — the eagerly-maintained
+ * lowercase-simple-name → qualified-key[] index was removed in favor of
+ * on-demand iteration over the `classes` Map. Production SMRT apps carry
+ * a few hundred classes at most, so the linear scan is negligible and
+ * removes an entire class of cache-sync bugs (#584, #847, #951).
+ *
  * Extracted from registry.ts as part of issue #1006.
  * @see https://github.com/happyvertical/smrt/issues/1006
+ * @see https://github.com/happyvertical/smrt/issues/1133
  */
 
 import { ConfigurationError } from '../errors';
@@ -15,60 +22,61 @@ import {
   isQualifiedName,
   parseQualifiedName,
 } from '../utils/qualified-names.js';
-import {
-  getClasses,
-  getClassNameMap,
-  getConstructorIndex,
-  verboseLog,
-} from './shared-state';
+import { getClasses, getConstructorIndex, verboseLog } from './shared-state';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
-// ── Class name map helpers ─────────────────────────────────
+// ── Simple-name iteration (replaces classNameMap reads) ─────────────
 
 /**
- * Add a mapping from a lowercase simple name to a qualified key in classNameMap.
- * Supports multiple qualified keys per simple name (for ambiguity detection).
+ * Return every registry key whose registered class has the given simple
+ * name (case-insensitive). Replaces the old eagerly-maintained
+ * `__smrtRegistryClassNameMap` lookup: we iterate `classes` instead.
+ *
+ * Cost is O(n) over the classes map; production SMRT apps hold low-
+ * hundreds of entries so this is trivially fast. Returned keys preserve
+ * insertion order, which makes the "first match wins" behavior of the old
+ * map-based lookup deterministic in the same way.
+ *
+ * De-duplicates by RegisteredClass object identity so a class registered
+ * under both a simple key and a promoted qualified key (a transitional
+ * state during manifest merge) counts as a single entry — matching the
+ * old classNameMap's behavior of storing each canonical qualified key once.
+ * When that happens, the qualified key wins over the simple one.
  */
-export function addToClassNameMap(
-  simpleNameLower: string,
-  qualifiedKey: string,
-): void {
-  const map = getClassNameMap();
-  const existing = map.get(simpleNameLower) || [];
-  if (!existing.includes(qualifiedKey)) {
-    existing.push(qualifiedKey);
-    map.set(simpleNameLower, existing);
-  }
-}
+function registryKeysBySimpleName(simpleName: string): string[] {
+  const lower = simpleName.toLowerCase();
+  const classes = getClasses();
+  const seen = new Map<unknown, string>();
 
-/**
- * Remove a qualified key from a classNameMap entry.
- * Cleans up empty arrays.
- */
-export function removeFromClassNameMap(
-  simpleNameLower: string,
-  qualifiedKey: string,
-): void {
-  const map = getClassNameMap();
-  const existing = map.get(simpleNameLower);
-  if (existing) {
-    const idx = existing.indexOf(qualifiedKey);
-    if (idx !== -1) existing.splice(idx, 1);
-    if (existing.length === 0) map.delete(simpleNameLower);
+  for (const [key, value] of classes.entries()) {
+    if (value.name?.toLowerCase() !== lower) continue;
+
+    const existing = seen.get(value);
+    if (!existing) {
+      seen.set(value, key);
+      continue;
+    }
+
+    // Two keys for the same object: prefer the qualified form.
+    if (key.includes(':') && !existing.includes(':')) {
+      seen.set(value, key);
+    }
   }
+
+  return [...seen.values()];
 }
 
 // ── Lookup functions ────────────────────────────────────────
 
 /**
  * Check if a class is already registered (case-insensitive).
- * Returns the canonical name if found, undefined otherwise.
+ * Returns the canonical name if found, undefined otherwise. Returns
+ * undefined if the simple name is ambiguous across multiple packages.
  */
 export function getCanonicalClassName(name: string): string | undefined {
-  const entries = getClassNameMap().get(name.toLowerCase());
-  if (!entries || entries.length === 0) return undefined;
-  if (entries.length === 1) return entries[0];
-  // Ambiguous — multiple entries, return undefined
+  const keys = registryKeysBySimpleName(name);
+  if (keys.length === 1) return keys[0];
+  // Zero matches, or ambiguous with >1 entries
   return undefined;
 }
 
@@ -76,8 +84,11 @@ export function getCanonicalClassName(name: string): string | undefined {
  * Check if a class exists by name (case-insensitive).
  */
 export function hasClassCaseInsensitive(name: string): boolean {
-  const entries = getClassNameMap().get(name.toLowerCase());
-  return !!entries && entries.length > 0;
+  const lower = name.toLowerCase();
+  for (const value of getClasses().values()) {
+    if (value.name?.toLowerCase() === lower) return true;
+  }
+  return false;
 }
 
 /**
@@ -85,13 +96,12 @@ export function hasClassCaseInsensitive(name: string): boolean {
  *
  * Lookup priority:
  * 1. Direct hit on classes map (works for qualified names as keys)
- * 2. If input contains ':', prefer direct qualified lookup, then fall back to
- *    an exact/simple registration when runtime source imports registered the
- *    class before package-qualified promotion happened
- * 3. classNameMap lookup by simple name (lowercase)
- *    - Unambiguous (1 entry) → return it
- *    - Ambiguous (>1 entry) → log warning, return first match
- * 4. Case-insensitive iteration fallback (backward compat)
+ * 2. If input contains ':', prefer direct qualified lookup, then fall back
+ *    to an exact/simple registration when runtime source imports registered
+ *    the class before package-qualified promotion happened
+ * 3. Simple-name iteration by lowercase
+ *    - Unambiguous (1 match) → return it
+ *    - Ambiguous (>1 matches) → log warning, return first
  */
 export function findClass(name: string): RegisteredClass | undefined {
   const classes = getClasses();
@@ -110,19 +120,19 @@ export function findClass(name: string): RegisteredClass | undefined {
   // discovery.
   if (isQualifiedName(name)) {
     const { packageName, className } = parseQualifiedName(name);
-    const entries = getClassNameMap().get(className.toLowerCase());
+    const keys = registryKeysBySimpleName(className);
 
-    if (entries && entries.length > 0) {
-      const exactPackageMatch = entries
-        .map((entry) => classes.get(entry))
+    if (keys.length > 0) {
+      const exactPackageMatch = keys
+        .map((key) => classes.get(key))
         .find((candidate) => candidate?.packageName === packageName);
 
       if (exactPackageMatch) {
         return exactPackageMatch;
       }
 
-      if (entries.length === 1) {
-        const fallback = classes.get(entries[0]);
+      if (keys.length === 1) {
+        const fallback = classes.get(keys[0]);
         if (fallback && !fallback.packageName) {
           return fallback;
         }
@@ -132,29 +142,19 @@ export function findClass(name: string): RegisteredClass | undefined {
     return undefined;
   }
 
-  // 3. classNameMap lookup by simple name
-  const entries = getClassNameMap().get(name.toLowerCase());
-  if (entries && entries.length > 0) {
-    if (entries.length === 1) {
-      // Unambiguous — return the single match
-      return classes.get(entries[0]);
+  // 3. Simple-name lookup
+  const keys = registryKeysBySimpleName(name);
+  if (keys.length > 0) {
+    if (keys.length === 1) {
+      return classes.get(keys[0]);
     }
     // Ambiguous — multiple packages define this class name
     // Return first match but log a warning (use resolveType() for strict behavior)
     verboseLog(
-      `[registry] findClass("${name}") is ambiguous — ${entries.length} matches. ` +
-        `Use qualified name (e.g., ${entries[0]}) for precision.`,
+      `[registry] findClass("${name}") is ambiguous — ${keys.length} matches. ` +
+        `Use qualified name (e.g., ${keys[0]}) for precision.`,
     );
-    return classes.get(entries[0]);
-  }
-
-  // 4. Case-insensitive iteration fallback (backward compat for simple names)
-  const lowerName = name.toLowerCase();
-  for (const [key, value] of classes.entries()) {
-    // Only match by the registered simple name, not by the full key
-    if (value.name?.toLowerCase() === lowerName) {
-      return value;
-    }
+    return classes.get(keys[0]);
   }
 
   return undefined;
@@ -196,31 +196,21 @@ export function findClassStrict(
     }
   }
 
-  // 4. classNameMap lookup by simple name
-  const entries = getClassNameMap().get(name.toLowerCase());
-  if (entries && entries.length > 0) {
-    if (entries.length === 1) {
-      // Unambiguous — return the single match
-      return classes.get(entries[0]);
+  // 4. Simple-name lookup
+  const keys = registryKeysBySimpleName(name);
+  if (keys.length > 0) {
+    if (keys.length === 1) {
+      return classes.get(keys[0]);
     }
     // Ambiguous — multiple packages define this class name
     // In strict mode, throw instead of silently returning first match
     throw new ConfigurationError(
-      `Ambiguous class name "${name}" — found in ${entries.length} packages: ` +
-        `${entries.join(', ')}. ` +
-        `Use a qualified name (e.g., ${entries[0]}) to disambiguate.`,
+      `Ambiguous class name "${name}" — found in ${keys.length} packages: ` +
+        `${keys.join(', ')}. ` +
+        `Use a qualified name (e.g., ${keys[0]}) to disambiguate.`,
       'CONFIG_AMBIGUOUS_CLASS',
-      { className: name, candidates: entries },
+      { className: name, candidates: keys },
     );
-  }
-
-  // 5. Case-insensitive iteration fallback (backward compat for simple names)
-  const lowerName = name.toLowerCase();
-  for (const [key, value] of classes.entries()) {
-    // Only match by the registered simple name, not by the full key
-    if (value.name?.toLowerCase() === lowerName) {
-      return value;
-    }
   }
 
   return undefined;
@@ -261,10 +251,9 @@ export function qualifyExtendsName(
   }
 
   // Try to find the parent in any registered package
-  const entries = getClassNameMap().get(extendsValue.toLowerCase());
-  if (entries && entries.length === 1) {
-    // Unambiguous — use the single match's qualified key
-    return entries[0];
+  const keys = registryKeysBySimpleName(extendsValue);
+  if (keys.length === 1) {
+    return keys[0];
   }
 
   // Fallback: return unmodified (backward compat)

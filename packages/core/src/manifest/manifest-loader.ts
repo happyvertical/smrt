@@ -38,6 +38,14 @@ import {
   parseQualifiedName,
 } from '../utils/qualified-names.js';
 import { ManifestManager } from './manager.js';
+import { getDefaultCompositeSource } from './sources/composite.js';
+import {
+  getLocalTestManifestCache as getLocalTestManifestCacheFromStore,
+  getManifestCache as getManifestCacheFromStore,
+  getStaticManifestCache as getStaticManifestCacheFromStore,
+  getTestManifestCache as getTestManifestCacheFromStore,
+  isTestEnvironment as isTestEnvFromStore,
+} from './store.js';
 
 /**
  * Extend globalThis to include manifest loader state.
@@ -83,12 +91,16 @@ declare global {
 // Use globalThis for cross-module state sharing
 // This ensures loadConfig() in one module instance affects all packages
 
-/**
- * Get/set staticManifest from globalThis
- */
-function getStaticManifestCache(): SmartObjectManifest | null {
-  return globalThis.__smrtManifestStatic ?? null;
-}
+// ── Cache access (delegates to manifest/store.ts — the single source of
+// truth added in Release B #1133 for globalThis manifest state).
+// manifest-loader.ts keeps its own setters + load-attempted flags below
+// because those are internal to this module's async loader state machine;
+// the read-only getters just forward to store.ts to eliminate drift.
+
+const getStaticManifestCache = getStaticManifestCacheFromStore;
+const getTestManifestCache = getTestManifestCacheFromStore;
+const getLocalTestManifestCache = getLocalTestManifestCacheFromStore;
+const getManifestCacheMap = getManifestCacheFromStore;
 
 function setStaticManifestCache(
   manifest: SmartObjectManifest | null | undefined,
@@ -104,13 +116,6 @@ function setStaticManifestLoadAttempted(value: boolean): void {
   globalThis.__smrtManifestStaticLoadAttempted = value;
 }
 
-/**
- * Get/set testManifest from globalThis
- */
-function getTestManifestCache(): SmartObjectManifest | null {
-  return globalThis.__smrtManifestTest ?? null;
-}
-
 function setTestManifestCache(
   manifest: SmartObjectManifest | null | undefined,
 ): void {
@@ -123,23 +128,6 @@ function getTestManifestLoadAttempted(): boolean {
 
 function setTestManifestLoadAttempted(value: boolean): void {
   globalThis.__smrtManifestTestLoadAttempted = value;
-}
-
-/**
- * Get the manifest cache Map from globalThis
- */
-function getManifestCacheMap(): Map<string, SmartObjectManifest> {
-  if (!globalThis.__smrtManifestCache) {
-    globalThis.__smrtManifestCache = new Map<string, SmartObjectManifest>();
-  }
-  return globalThis.__smrtManifestCache;
-}
-
-/**
- * Get/set localTestManifest from globalThis
- */
-function getLocalTestManifestCache(): SmartObjectManifest | null | undefined {
-  return globalThis.__smrtManifestLocalTest;
 }
 
 function setLocalTestManifestCache(
@@ -260,25 +248,26 @@ function getClassNameIndex(
 }
 
 /**
- * Detect if we're running in a test environment
- * Test manifests should ONLY be loaded during tests to avoid collisions with production classes
+ * Test-environment detection with optional DEBUG_TEST_ENV logging.
+ *
+ * Delegates to the single source of truth in `store.ts` so the
+ * ManifestSource implementations (which also gate on test-env) cannot
+ * drift from the legacy sync loader. The logging wrapper stays here
+ * because the trace is specific to this module's loader state machine.
  */
 function isTestEnvironment(): boolean {
-  const isTest =
-    process.env.NODE_ENV === 'test' ||
-    process.env.VITEST === 'true' ||
-    process.env.JEST_WORKER_ID !== undefined;
+  const result = isTestEnvFromStore();
 
   if (process.env.DEBUG_TEST_ENV) {
     console.log('[manifest-loader] isTestEnvironment check:', {
       NODE_ENV: process.env.NODE_ENV,
       VITEST: process.env.VITEST,
       JEST_WORKER_ID: process.env.JEST_WORKER_ID,
-      result: isTest,
+      result,
     });
   }
 
-  return isTest;
+  return result;
 }
 
 function getStaticManifest(): SmartObjectManifest {
@@ -888,66 +877,49 @@ export function loadManifestFromPathSync(
 export function discoverManifestSync(
   className: string,
 ): ManifestEntry | undefined {
-  const name = className.toLowerCase();
-
   debugLog(`[manifest-loader] discoverManifestSync called for: ${className}`);
 
-  // 1. Check localTestManifest (domain package classes) - ONLY in test environment
-  // This prevents test classes from polluting production code
+  // Ensure test-env caches are seeded before the composite queries them.
+  // Historically, steps 1-2 of discoverManifestSync did this inline. The
+  // composite's TestManifestSource and LocalTestManifestSource read directly
+  // from cache state — without this seeding the first sync lookup in a
+  // clean test process would miss core test classes on their first access
+  // (regression noted in #1138 review).
   if (isTestEnvironment()) {
     if (!getLocalTestManifestCache()) {
       loadLocalTestManifestSync();
     }
-
-    const localManifest = getLocalTestManifestCache();
-    if (localManifest) {
-      // Use lookupInManifest for qualified name support (Issue #713)
-      const entry = lookupInManifest(localManifest, className);
-      if (entry) {
-        debugLog(
-          `[manifest-loader] ✅ Found ${className} in localTestManifest`,
-        );
-        return entry;
-      }
+    if (!getTestManifestCache()) {
+      getTestManifest();
     }
   }
 
-  // 2. Check testManifest (core test classes) - ONLY in test environment
-  if (isTestEnvironment()) {
-    const manifest = getTestManifest();
-    if (manifest) {
-      // Use lookupInManifest for qualified name support (Issue #713)
-      const entry = lookupInManifest(manifest, className);
-      if (entry) {
-        debugLog(`[manifest-loader] ✅ Found ${className} in testManifest`);
-        return entry;
-      }
-    }
-  }
+  // Carry qualified-name / package context into the composite lookup so
+  // multi-package same-simple-name scenarios (issue #951) resolve to the
+  // right manifest even via the sync path.
+  const query = isQualifiedName(className)
+    ? (() => {
+        const parsed = parseQualifiedName(className);
+        return {
+          className: parsed.className,
+          packageName: parsed.packageName,
+          qualifiedName: className,
+        };
+      })()
+    : { className };
 
-  // 3. Check staticManifest (core framework classes)
-  const staticManifest = getStaticManifest();
-  // Use lookupInManifest for qualified name support (Issue #713)
-  const staticEntry = lookupInManifest(staticManifest, className);
-  if (staticEntry) {
-    debugLog(`[manifest-loader] ✅ Found ${className} in staticManifest`);
-    return staticEntry;
-  }
-
-  // 4. Check cached external manifests
-  for (const manifest of getManifestCacheMap().values()) {
-    // Use lookupInManifest for qualified name support (Issue #713)
-    const entry = lookupInManifest(manifest, className);
-    if (entry) {
-      debugLog(
-        `[manifest-loader] ✅ Found ${className} in external manifest cache`,
-      );
-      // Enrich entry with packageName from manifest if not already present
-      if (!entry.packageName && manifest.packageName) {
-        return { ...entry, packageName: manifest.packageName };
-      }
-      return entry;
+  // Steps 1-4 (local-test → test → static → embedded cache) now live in
+  // CompositeManifestSource at the exact same priority order.
+  const compositeHit = getDefaultCompositeSource().lookup(query);
+  if (compositeHit) {
+    debugLog(
+      `[manifest-loader] ✅ Found ${className} via ${compositeHit.source} source`,
+    );
+    const entry = compositeHit.def;
+    if (!entry.packageName && compositeHit.packageName) {
+      return { ...entry, packageName: compositeHit.packageName };
     }
+    return entry;
   }
 
   // 5. Try loading from explicitly declared external SMRT package dependencies.
@@ -958,7 +930,7 @@ export function discoverManifestSync(
   const pendingPackages = collectDeclaredSmrtDependencies([
     getLocalTestManifestCache(),
     isTestEnvironment() ? getTestManifest() : null,
-    staticManifest,
+    getStaticManifest(),
     ...getManifestCacheMap().values(),
   ]);
 

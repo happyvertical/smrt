@@ -9,7 +9,8 @@ import { vi } from 'vitest';
 import { ObjectRegistry } from './registry.js';
 
 type RegistryTestState = {
-  classNameMap: Map<string, string[]>;
+  // Release B (#1133) removed classNameMap — the `classes` Map below is the
+  // single source of truth for every case-insensitive lookup.
   classes: Map<string, any>;
   collectionTableNames: Map<string, string>;
   collections: Map<string, any>;
@@ -17,12 +18,6 @@ type RegistryTestState = {
   nextDbId: number;
   stiSiblingsLoaded: Set<string>;
 };
-
-function cloneMapOfArrays(
-  source: Map<string, string[]>,
-): Map<string, string[]> {
-  return new Map(Array.from(source, ([key, value]) => [key, [...value]]));
-}
 
 function cloneNestedMap(
   source: Map<string, Map<string, any>>,
@@ -41,7 +36,6 @@ function getRegistryForTests() {
 export function snapshotObjectRegistryState(): () => void {
   const registry = getRegistryForTests();
   const snapshot: RegistryTestState = {
-    classNameMap: cloneMapOfArrays(registry.classNameMap),
     classes: new Map(registry.classes),
     collectionTableNames: new Map(registry.collectionTableNames),
     collections: new Map(registry.collections),
@@ -63,10 +57,6 @@ export function snapshotObjectRegistryState(): () => void {
 
     for (const [key, value] of snapshot.collectionTableNames) {
       registry.collectionTableNames.set(key, value);
-    }
-
-    for (const [key, value] of snapshot.classNameMap) {
-      registry.classNameMap.set(key, [...value]);
     }
 
     for (const [key, value] of snapshot.fieldDecorators) {
