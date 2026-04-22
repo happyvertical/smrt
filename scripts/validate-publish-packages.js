@@ -14,10 +14,18 @@ function readOptionValue(flagName) {
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
     if (arg === flagName) {
-      return args[index + 1];
+      const nextArg = args[index + 1];
+      if (nextArg === undefined || nextArg.startsWith('-')) {
+        fail(`Missing value for ${flagName}`);
+      }
+      return nextArg;
     }
     if (arg.startsWith(`${flagName}=`)) {
-      return arg.slice(flagName.length + 1);
+      const value = arg.slice(flagName.length + 1);
+      if (value === '') {
+        fail(`Missing value for ${flagName}`);
+      }
+      return value;
     }
   }
   return undefined;

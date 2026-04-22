@@ -46,6 +46,11 @@ if (!buildScript) {
 const verifyScripts = ['verify:pack', 'verify:exports'].filter(
   (scriptName) => typeof scripts[scriptName] === 'string',
 );
+const buildScriptCommand =
+  typeof scripts[buildScript] === 'string' ? scripts[buildScript] : '';
+const verifyScriptsHandledByBuild = new Set(
+  verifyScripts.filter((scriptName) => buildScriptCommand.includes(scriptName)),
+);
 
 const runningInCi = process.env.CI === 'true' || process.env.CI === '1';
 const hasDistArtifacts = existsSync(resolve('dist'));
@@ -68,5 +73,8 @@ if (runningInCi && hasDistArtifacts && verifyScripts.length > 0) {
 runScript(buildScript);
 
 for (const scriptName of verifyScripts) {
+  if (verifyScriptsHandledByBuild.has(scriptName)) {
+    continue;
+  }
   runScript(scriptName);
 }
