@@ -1,5 +1,16 @@
 # @happyvertical/smrt-places
 
+## 0.22.4
+
+### Patch Changes
+
+- 4e1dc83: Fix the `@happyvertical/smrt-places` release packaging so the published `dist/`
+  always includes the POI discovery APIs from `discoverNearby` and
+  `resolveTrackPlaces`.
+  - @happyvertical/smrt-assets@0.22.4
+  - @happyvertical/smrt-core@0.22.4
+  - @happyvertical/smrt-tenancy@0.22.4
+
 ## 0.22.3
 
 ### Patch Changes
