@@ -15,7 +15,7 @@ import {
   assertValidOwnedAssetSortOrder,
   resolveOwnedAssetsById,
 } from '@happyvertical/smrt-assets';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { GeoData, PlaceOptions } from '../types';
 
@@ -40,7 +40,9 @@ export class Place extends SmrtObject {
   description = ''; // Optional description
 
   // Optional geo fields (all nullable for abstract places)
+  @field({ sqlType: 'REAL' })
   latitude: number | null = null;
+  @field({ sqlType: 'REAL' })
   longitude: number | null = null;
   streetNumber = '';
   streetName = '';
