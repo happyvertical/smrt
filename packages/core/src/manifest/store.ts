@@ -101,9 +101,9 @@ export function shouldLoadCoreTestManifest(): boolean {
     return false;
   }
 
-  const explicitPackageName = process.env.npm_package_name;
-  if (explicitPackageName) {
-    return explicitPackageName === '@happyvertical/smrt-core';
+  const currentPackageName = getCurrentPackageName();
+  if (currentPackageName) {
+    return currentPackageName === '@happyvertical/smrt-core';
   }
 
   const builtins = getNodeBuiltins();
@@ -119,28 +119,8 @@ export function shouldLoadCoreTestManifest(): boolean {
     return false;
   }
 
-  const corePackageJsonPath = builtins.path.join(
-    workspaceRoot,
-    'packages',
-    'core',
-    'package.json',
-  );
-  if (!builtins.fs.existsSync(corePackageJsonPath)) {
-    return false;
-  }
-
-  try {
-    const packageJson = JSON.parse(
-      builtins.fs.readFileSync(corePackageJsonPath, 'utf-8'),
-    ) as { name?: string };
-    if (packageJson.name !== '@happyvertical/smrt-core') {
-      return false;
-    }
-  } catch {
-    return false;
-  }
-
-  const relative = builtins.path.relative(workspaceRoot, process.cwd());
+  const corePackageDir = builtins.path.join(workspaceRoot, 'packages', 'core');
+  const relative = builtins.path.relative(corePackageDir, process.cwd());
   return (
     relative === '' ||
     (!relative.startsWith('..') && !builtins.path.isAbsolute(relative))

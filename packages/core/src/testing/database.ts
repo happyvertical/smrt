@@ -64,6 +64,66 @@ export interface TestDatabaseOptions {
   includeSystemTables?: boolean;
 }
 
+function resolveRequestedSchemaClassName(className: string): string {
+  const registered = ObjectRegistry.getClass(className);
+  if (!registered || registered.extends !== 'SmrtCollection') {
+    return className;
+  }
+
+  const tableName =
+    registered.schema?.tableName ||
+    registered.config.tableName ||
+    ObjectRegistry.getTableName(className);
+  if (!tableName) {
+    return className;
+  }
+
+  const collectionPackage = registered.packageName;
+
+  for (const candidate of ObjectRegistry.getAllClasses().values()) {
+    if (candidate === registered || candidate.extends === 'SmrtCollection') {
+      continue;
+    }
+
+    const candidateTableName =
+      candidate.schema?.tableName || candidate.config.tableName;
+    if (candidateTableName !== tableName) {
+      continue;
+    }
+
+    if (
+      collectionPackage &&
+      candidate.packageName &&
+      candidate.packageName !== collectionPackage
+    ) {
+      continue;
+    }
+
+    const candidateLookupName = candidate.qualifiedName || candidate.name;
+    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
+    return stiBase || candidateLookupName;
+  }
+
+  return className;
+}
+
+function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+
+  for (const className of classNames) {
+    const schemaClassName = resolveRequestedSchemaClassName(className);
+    if (seen.has(schemaClassName)) {
+      continue;
+    }
+
+    seen.add(schemaClassName);
+    resolved.push(schemaClassName);
+  }
+
+  return resolved;
+}
+
 /**
  * Creates an in-memory test database with schemas pre-created
  *
@@ -128,7 +188,9 @@ export async function getTestDatabase(
   }
 
   // Get class names to setup
-  const classNames = classes ?? ObjectRegistry.getClassNames();
+  const classNames = resolveRequestedSchemaClassNames(
+    classes ?? ObjectRegistry.getClassNames(),
+  );
 
   // Skip if no classes registered
   if (classNames.length === 0) {
@@ -142,17 +204,6 @@ export async function getTestDatabase(
   const createdTables = new Set<string>();
 
   for (const className of classNames) {
-    const registered = ObjectRegistry.getClass(className);
-
-    // Collection classes can share the same table name as their item class
-    // (for example `Meetings` -> `events`) but do not own the authoritative
-    // schema. If we create the table from the collection manifest first, we
-    // can miss STI columns like `_meta_type` and then skip the real item class
-    // because the table name is already marked created.
-    if (registered?.extends === 'SmrtCollection') {
-      continue;
-    }
-
     // Skip STI children - their schema is part of the base class table
     const stiBase = ObjectRegistry.getSTIBase(className);
     if (stiBase && stiBase !== className) {

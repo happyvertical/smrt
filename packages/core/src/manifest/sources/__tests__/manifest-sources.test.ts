@@ -218,7 +218,62 @@ describe('ManifestSource implementations', () => {
         } else {
           delete process.env.npm_package_name;
         }
-        process.env.NODE_ENV = originalNodeEnv;
+        if (originalNodeEnv) {
+          process.env.NODE_ENV = originalNodeEnv;
+        } else {
+          delete process.env.NODE_ENV;
+        }
+        if (originalVitest) {
+          process.env.VITEST = originalVitest;
+        } else {
+          delete process.env.VITEST;
+        }
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('does not treat sibling workspace packages as core test environments', () => {
+      const tmp = mkdtempSync(join(tmpdir(), 'smrt-workspace-'));
+      const coreDir = join(tmp, 'packages', 'core');
+      const consumerDir = join(tmp, 'packages', 'consumer');
+      const originalPackageName = process.env.npm_package_name;
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalVitest = process.env.VITEST;
+
+      mkdirSync(coreDir, { recursive: true });
+      mkdirSync(consumerDir, { recursive: true });
+      writeFileSync(
+        join(tmp, 'pnpm-workspace.yaml'),
+        'packages:\n  - packages/*\n',
+      );
+      writeFileSync(
+        join(coreDir, 'package.json'),
+        JSON.stringify({ name: '@happyvertical/smrt-core', type: 'module' }),
+      );
+      writeFileSync(
+        join(consumerDir, 'package.json'),
+        JSON.stringify({ name: '@acme/consumer-app', type: 'module' }),
+      );
+
+      try {
+        process.chdir(consumerDir);
+        delete process.env.npm_package_name;
+        process.env.NODE_ENV = 'test';
+        process.env.VITEST = 'true';
+
+        expect(shouldLoadCoreTestManifest()).toBe(false);
+      } finally {
+        process.chdir(originalCwd);
+        if (originalPackageName) {
+          process.env.npm_package_name = originalPackageName;
+        } else {
+          delete process.env.npm_package_name;
+        }
+        if (originalNodeEnv) {
+          process.env.NODE_ENV = originalNodeEnv;
+        } else {
+          delete process.env.NODE_ENV;
+        }
         if (originalVitest) {
           process.env.VITEST = originalVitest;
         } else {
