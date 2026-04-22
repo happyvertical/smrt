@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.6
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: sync sdk packages to v0.71.32 (#1149) (deps)
+  - @happyvertical/smrt-scanner@0.22.6
+  - @happyvertical/smrt-config@0.22.6
+  - @happyvertical/smrt-types@0.22.6
+
 ## 0.22.5
 
 ### Patch Changes
