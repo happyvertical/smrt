@@ -23,11 +23,15 @@ export { PlaceType } from './models/PlaceType';
 
 // Export types
 export type {
+  DiscoverNearbyOptions,
   GeoData,
   LookupOrCreateOptions,
   PlaceHierarchy,
   PlaceOptions,
   PlaceTypeOptions,
+  ResolveTrackPlacesOptions,
+  TrackPlacesResult,
+  TrackPoint,
 } from './types';
 
 // Export utilities
