@@ -125,6 +125,15 @@ jobs:
 
           echo "should_validate=true" >> "$GITHUB_OUTPUT"
 
+      - name: Create versioned workspace archive
+        if: steps.prepare.outputs.should_validate == 'true'
+        run: |
+          {
+            printf '%s\n' package.json
+            find packages -type f \( -name 'package.json' -o -name 'CHANGELOG.md' -o -path '*/dist/*' \) -print
+          } | sort -u > publish-dry-run-workspace-files
+          tar -cf publish-dry-run-workspace.tar -T publish-dry-run-workspace-files
+
       - name: Upload versioned workspace and build outputs
         if: steps.prepare.outputs.should_validate == 'true'
         uses: actions/upload-artifact@v4
@@ -132,11 +141,7 @@ jobs:
           name: publish-dry-run-workspace
           retention-days: 1
           if-no-files-found: error
-          path: |
-            package.json
-            packages/**/package.json
-            packages/**/CHANGELOG.md
-            packages/**/dist/**
+          path: publish-dry-run-workspace.tar
 
   validate-publish-shards:
     name: Pack Validation (Shard ${{ matrix.shard-label }})
@@ -167,7 +172,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: publish-dry-run-workspace
-          path: .
+          path: release-artifacts
+
+      - name: Extract versioned workspace and build outputs
+        run: tar -xf release-artifacts/publish-dry-run-workspace.tar
 
       - name: Setup Environment
         uses: ./.github/actions/setup-environment

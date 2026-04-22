@@ -16,6 +16,7 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  PUBLISH_PACK_SHARD_COUNT: '4'
 
 permissions:
   contents: write
@@ -26,13 +27,14 @@ permissions:
   pages: write
 
 jobs:
-  release:
-    name: Version and Publish
+  prepare-release:
+    name: Prepare Release
     runs-on: arc-happyvertical
     timeout-minutes: 20
     outputs:
-      published: ${{ steps.publish.outputs.published }}
-      version: ${{ steps.get_version.outputs.version }}
+      previous-version: ${{ steps.prepare.outputs.previous_version }}
+      should-publish: ${{ steps.prepare.outputs.should_publish }}
+      version: ${{ steps.prepare.outputs.version }}
 
     steps:
       - name: Generate token from GitHub App
@@ -57,25 +59,20 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email \
-            "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Run Changesets release
-        id: changesets_release
+      - name: Prepare versioned release workspace
+        id: prepare
         env:
           CI: true
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🚀 Running Changesets release..."
+          echo "🚀 Preparing Changesets release..."
 
           # Use packages/core as source of truth for version
           BEFORE_VERSION=$(node -p "require('./packages/core/package.json').version")
           echo "Version before release: $BEFORE_VERSION"
+          echo "previous_version=$BEFORE_VERSION" >> "$GITHUB_OUTPUT"
 
           pnpm run changeset:auto
           pnpm run changeset:version
@@ -139,83 +136,269 @@ jobs:
             exit 1
           fi
 
-          if [ "$BEFORE_VERSION" != "$AFTER_VERSION" ]; then
-            echo "📦 Version changed from $BEFORE_VERSION to $AFTER_VERSION"
-
-            git add .
-            git commit -m "chore(release): v$AFTER_VERSION [skip ci]"
-
-            # Force clean rebuild to avoid stale turbo cache
-            # This ensures all packages are rebuilt with latest source code
-            echo "🔨 Running clean build (bypassing turbo cache)..."
-            rm -rf .turbo
-            TURBO_FORCE=true pnpm run build
-
-            echo "🧹 Running release safety checks..."
-            pnpm run format-check
-            node scripts/validate-publish-packages.js
-
-            echo "🔍 Validating workflow files before push..."
-            for file in .github/workflows/*.yml .github/workflows/*.yaml; do
-              [ -f "$file" ] || continue
-              yamllint "$file"
-              if command -v actionlint >/dev/null 2>&1; then
-                actionlint "$file"
-              fi
-            done
-
-            pnpm run changeset:publish
-
-            git tag -f "v$AFTER_VERSION"
-            # Skip developer hooks in CI. Release builds can generate source
-            # artifacts, and those hooks should not block the automation push
-            # after the equivalent safety checks have already run above.
-            git push --no-verify -f origin "v$AFTER_VERSION"
-            git push --no-verify origin main
-
-            RELEASE_NOTES="## Published Packages"$'\n\n'
-            RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
-            RELEASE_NOTES="${RELEASE_NOTES} GitHub Packages"
-            RELEASE_NOTES="${RELEASE_NOTES} at version $AFTER_VERSION."
-            RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
-            RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
-            RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
-            RELEASE_NOTES="${RELEASE_NOTES}v$BEFORE_VERSION...v$AFTER_VERSION"
-
-            gh release create "v$AFTER_VERSION" \
-              --title "v$AFTER_VERSION" \
-              --notes "$RELEASE_NOTES" \
-              --latest
-
-            echo "published=true" >> "$GITHUB_OUTPUT"
-            echo "version=$AFTER_VERSION" >> "$GITHUB_OUTPUT"
-            echo "✅ Published version: v$AFTER_VERSION"
-          else
+          if [ "$BEFORE_VERSION" = "$AFTER_VERSION" ]; then
             echo "ℹ️  No version changes - no release needed"
-            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            echo "version=" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
-      - name: Check if version was published
-        id: check_published
-        run: |
-          cs_pub="${{ steps.changesets_release.outputs.published }}"
-          published="${cs_pub:-false}"
-          cs_ver="${{ steps.changesets_release.outputs.version }}"
-          version="${cs_ver:-}"
-          echo "published=$published" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "📦 Version changed from $BEFORE_VERSION to $AFTER_VERSION"
+          echo "should_publish=true" >> "$GITHUB_OUTPUT"
+          echo "version=$AFTER_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Set outputs
-        id: publish
-        run: |
-          published="${{ steps.check_published.outputs.published }}"
-          echo "published=$published" >> "$GITHUB_OUTPUT"
+          # Preserve the exact versioned tree so later jobs can publish
+          # what they validated without rerunning changeset versioning.
+          git diff --binary > release-version.patch
 
-      - name: Set version output
-        id: get_version
+          # Force clean rebuild to avoid stale turbo cache
+          # This ensures all packages are rebuilt with latest source code
+          echo "🔨 Running clean build (bypassing turbo cache)..."
+          rm -rf .turbo
+          TURBO_FORCE=true pnpm run build
+
+          echo "🧹 Running release safety checks..."
+          pnpm run format-check
+
+          echo "🔍 Validating workflow files before push..."
+          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
+            [ -f "$file" ] || continue
+            yamllint "$file"
+            if command -v actionlint >/dev/null 2>&1; then
+              actionlint "$file"
+            fi
+          done
+
+      - name: Create versioned workspace archive
+        if: steps.prepare.outputs.should_publish == 'true'
         run: |
-          version="${{ steps.check_published.outputs.version }}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          {
+            printf '%s\n' package.json
+            find packages -type f \( -name 'package.json' -o -name 'CHANGELOG.md' -o -path '*/dist/*' \) -print
+          } | sort -u > publish-release-workspace-files
+          tar -cf publish-release-workspace.tar -T publish-release-workspace-files
+
+      - name: Upload release version patch
+        if: steps.prepare.outputs.should_publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-release-version-patch
+          retention-days: 1
+          if-no-files-found: error
+          path: release-version.patch
+
+      - name: Upload versioned workspace and build outputs
+        if: steps.prepare.outputs.should_publish == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-release-workspace
+          retention-days: 1
+          if-no-files-found: error
+          path: publish-release-workspace.tar
+
+  validate-release-shards:
+    name: Release Pack Validation (Shard ${{ matrix.shard-label }})
+    needs: prepare-release
+    if: needs.prepare-release.outputs.should-publish == 'true'
+    runs-on: arc-happyvertical
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard-index: 1
+            shard-label: 1/4
+          - shard-index: 2
+            shard-label: 2/4
+          - shard-index: 3
+            shard-label: 3/4
+          - shard-index: 4
+            shard-label: 4/4
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore versioned workspace and build outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-release-workspace
+          path: release-artifacts
+
+      - name: Extract versioned workspace and build outputs
+        run: tar -xf release-artifacts/publish-release-workspace.tar
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate publish pack shard
+        env:
+          CI: true
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
+          PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
+        run: node scripts/validate-publish-packages.js
+
+  publish-release:
+    name: Publish Release
+    needs:
+      - prepare-release
+      - validate-release-shards
+    if: |
+      needs.prepare-release.outputs.should-publish == 'true' &&
+      needs.validate-release-shards.result == 'success'
+    runs-on: arc-happyvertical
+    timeout-minutes: 20
+
+    steps:
+      - name: Generate token from GitHub App
+        id: generate_token
+        uses: tibdex/github-app-token@v2
+        with:
+          app_id: ${{ secrets.HAVE_RELEASE_APP_ID }}
+          private_key: ${{ secrets.HAVE_RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Download release version patch
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-release-version-patch
+          path: release-artifacts
+
+      - name: Apply version patch
+        run: git apply --binary release-artifacts/release-version.patch
+
+      - name: Restore versioned workspace and build outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-release-workspace
+          path: release-artifacts
+
+      - name: Extract versioned workspace and build outputs
+        run: tar -xf release-artifacts/publish-release-workspace.tar
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email \
+            "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Publish validated release
+        env:
+          CI: true
+          GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+        run: |
+          echo "🚀 Publishing validated release $RELEASE_VERSION"
+
+          node - <<'NODE'
+          const { existsSync, readFileSync, readdirSync } = require('fs');
+          const { join } = require('path');
+
+          const changesetConfig = JSON.parse(readFileSync('.changeset/config.json', 'utf8'));
+          const releasePackageNames = new Set(
+            (changesetConfig.fixed ?? []).flatMap((group) =>
+              Array.isArray(group) ? group : [],
+            ),
+          );
+
+          const packageJsonFiles = ['package.json'];
+          for (const entry of readdirSync('packages', { withFileTypes: true })) {
+            if (!entry.isDirectory()) {
+              continue;
+            }
+
+            const file = join('packages', entry.name, 'package.json');
+            if (!existsSync(file)) {
+              continue;
+            }
+
+            const packageJson = JSON.parse(readFileSync(file, 'utf8'));
+            const packageName = packageJson.name ?? entry.name;
+            const isReleasePackage = releasePackageNames.has(packageName);
+            const isExplicitlyPublishable = Boolean(packageJson.publishConfig);
+
+            if (packageJson.private === true || (!isReleasePackage && !isExplicitlyPublishable)) {
+              continue;
+            }
+
+            packageJsonFiles.push(file);
+          }
+
+          const offenders = [];
+          for (const file of packageJsonFiles) {
+            const version = JSON.parse(readFileSync(file, 'utf8')).version;
+            const major = Number.parseInt(String(version).split('.')[0] ?? '0', 10);
+            if (Number.isInteger(major) && major >= 1) {
+              offenders.push(`${file}: ${version}`);
+            }
+          }
+
+          if (offenders.length > 0) {
+            console.error('❌ Refusing to publish a major version release:');
+            for (const offender of offenders) {
+              console.error(`- ${offender}`);
+            }
+            process.exit(1);
+          }
+          NODE
+
+          mapfile -t release_files < <(find packages \( -name 'package.json' -o -name 'CHANGELOG.md' \) -print | sort)
+          git add package.json
+          git add -A .changeset
+          if [ "${#release_files[@]}" -gt 0 ]; then
+            git add "${release_files[@]}"
+          fi
+          git commit -m "chore(release): v$RELEASE_VERSION [skip ci]"
+
+          pnpm run changeset:publish
+
+          git tag -f "v$RELEASE_VERSION"
+          # Skip developer hooks in CI. Release builds can generate source
+          # artifacts, and those hooks should not block the automation push
+          # after the equivalent safety checks have already run above.
+          git push --no-verify -f origin "v$RELEASE_VERSION"
+          git push --no-verify origin main
+
+          RELEASE_NOTES="## Published Packages"$'\n\n'
+          RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
+          RELEASE_NOTES="${RELEASE_NOTES} GitHub Packages"
+          RELEASE_NOTES="${RELEASE_NOTES} at version $RELEASE_VERSION."
+          RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
+          RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
+          RELEASE_NOTES="${RELEASE_NOTES}${GITHUB_REPOSITORY}/compare/"
+          RELEASE_NOTES="${RELEASE_NOTES}v$PREVIOUS_VERSION...v$RELEASE_VERSION"
+
+          gh release create "v$RELEASE_VERSION" \
+            --title "v$RELEASE_VERSION" \
+            --notes "$RELEASE_NOTES" \
+            --latest
 
   # Note: Downstream dependency updates are handled by Renovate CE.
   # When SMRT publishes, Renovate detects the new version and creates
@@ -243,19 +426,16 @@ jobs:
         uses: ./.github/actions/setup-environment
         with:
           node-version: '24'
-          install-deps: 'true'
+          install-deps: 'false'
           setup-playwright: 'false'
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install docs dependencies
-        run: |
-          cd docs
-          npm install
-          cd ..
+        run: npm ci --prefix docs
 
       - name: Build documentation site
-        run: pnpm run docs:site:build
+        run: npm run --prefix docs build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
