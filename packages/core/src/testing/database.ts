@@ -64,6 +64,66 @@ export interface TestDatabaseOptions {
   includeSystemTables?: boolean;
 }
 
+function resolveRequestedSchemaClassName(className: string): string {
+  const registered = ObjectRegistry.getClass(className);
+  if (!registered || registered.extends !== 'SmrtCollection') {
+    return className;
+  }
+
+  const tableName =
+    registered.schema?.tableName ||
+    registered.config.tableName ||
+    ObjectRegistry.getTableName(className);
+  if (!tableName) {
+    return className;
+  }
+
+  const collectionPackage = registered.packageName;
+
+  for (const candidate of ObjectRegistry.getAllClasses().values()) {
+    if (candidate === registered || candidate.extends === 'SmrtCollection') {
+      continue;
+    }
+
+    const candidateTableName =
+      candidate.schema?.tableName || candidate.config.tableName;
+    if (candidateTableName !== tableName) {
+      continue;
+    }
+
+    if (
+      collectionPackage &&
+      candidate.packageName &&
+      candidate.packageName !== collectionPackage
+    ) {
+      continue;
+    }
+
+    const candidateLookupName = candidate.qualifiedName || candidate.name;
+    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
+    return stiBase || candidateLookupName;
+  }
+
+  return className;
+}
+
+function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
+  const resolved: string[] = [];
+  const seen = new Set<string>();
+
+  for (const className of classNames) {
+    const schemaClassName = resolveRequestedSchemaClassName(className);
+    if (seen.has(schemaClassName)) {
+      continue;
+    }
+
+    seen.add(schemaClassName);
+    resolved.push(schemaClassName);
+  }
+
+  return resolved;
+}
+
 /**
  * Creates an in-memory test database with schemas pre-created
  *
@@ -128,7 +188,9 @@ export async function getTestDatabase(
   }
 
   // Get class names to setup
-  const classNames = classes ?? ObjectRegistry.getClassNames();
+  const classNames = resolveRequestedSchemaClassNames(
+    classes ?? ObjectRegistry.getClassNames(),
+  );
 
   // Skip if no classes registered
   if (classNames.length === 0) {
