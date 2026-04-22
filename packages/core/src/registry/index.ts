@@ -57,6 +57,7 @@ export {
 } from './shared-state';
 // Types
 export type {
+  ApiConfig,
   RegisteredClass,
   RelationshipMetadata,
   RelationshipType,

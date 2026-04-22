@@ -24,6 +24,20 @@ import type {
 } from '../types';
 import { PlaceTypeCollection } from './PlaceTypeCollection';
 
+type PoiSearchOptions = Pick<
+  DiscoverNearbyOptions,
+  'types' | 'keyword' | 'limit' | 'language'
+>;
+
+type GeoAdapterWithPoiSearch = GeoAdapter & {
+  findPoisNear?: (
+    latitude: number,
+    longitude: number,
+    radiusMeters: number,
+    options?: PoiSearchOptions,
+  ) => Promise<Location[]>;
+};
+
 export class PlaceCollection extends SmrtCollection<Place> {
   static readonly _itemClass = Place;
 
@@ -490,7 +504,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
    */
   private async getGeoAdapter(
     provider: 'google' | 'openstreetmap',
-  ): Promise<GeoAdapter> {
+  ): Promise<GeoAdapterWithPoiSearch> {
     return getGeoAdapter(this.getGeoAdapterOptions(provider));
   }
 
