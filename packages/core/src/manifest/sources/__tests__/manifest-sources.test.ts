@@ -21,7 +21,7 @@ import {
   it,
 } from 'vitest';
 import type { SmartObjectManifest } from '../../../scanner/types.js';
-import { getManifestCache } from '../../store.js';
+import { getManifestCache, shouldLoadCoreTestManifest } from '../../store.js';
 import { CompositeManifestSource } from '../composite.js';
 import { EmbeddedManifestSource } from '../embedded.js';
 import { ExplicitPathsManifestSource } from '../explicit-paths.js';
@@ -84,6 +84,8 @@ function restoreCaches(snapshot: ReturnType<typeof snapshotCaches>) {
 
 describe('ManifestSource implementations', () => {
   let originalSnapshot: ReturnType<typeof snapshotCaches>;
+  const originalPackageName = process.env.npm_package_name;
+  const originalCwd = process.cwd();
 
   beforeAll(() => {
     originalSnapshot = snapshotCaches();
@@ -99,6 +101,12 @@ describe('ManifestSource implementations', () => {
   });
 
   afterAll(() => {
+    if (originalPackageName) {
+      process.env.npm_package_name = originalPackageName;
+    } else {
+      delete process.env.npm_package_name;
+    }
+    process.chdir(originalCwd);
     restoreCaches(originalSnapshot);
   });
 
@@ -138,15 +146,86 @@ describe('ManifestSource implementations', () => {
 
   describe('TestManifestSource', () => {
     it('activates only when __smrtManifestTest is populated', () => {
-      const source = new TestManifestSource();
-      expect(source.lookup({ className: 'Anything' })).toBeUndefined();
+      const originalPackageName = process.env.npm_package_name;
+      process.env.npm_package_name = '@happyvertical/smrt-core';
 
-      (globalThis as ManifestGlobals).__smrtManifestTest = manifest(
-        '@acme/pkg',
-        { Widget: {} },
+      const source = new TestManifestSource();
+      try {
+        expect(source.lookup({ className: 'Anything' })).toBeUndefined();
+
+        (globalThis as ManifestGlobals).__smrtManifestTest = manifest(
+          '@acme/pkg',
+          { Widget: {} },
+        );
+        const hit = source.lookup({ className: 'Widget' });
+        expect(hit?.source).toBe('test');
+      } finally {
+        if (originalPackageName) {
+          process.env.npm_package_name = originalPackageName;
+        } else {
+          delete process.env.npm_package_name;
+        }
+      }
+    });
+
+    it('stays inert in consumer package test environments', () => {
+      const originalPackageName = process.env.npm_package_name;
+      process.env.npm_package_name = 'consumer-app';
+
+      try {
+        (globalThis as ManifestGlobals).__smrtManifestTest = manifest(
+          '@happyvertical/smrt-core',
+          { TestObject: {} },
+        );
+
+        const source = new TestManifestSource();
+        expect(source.lookup({ className: 'TestObject' })).toBeUndefined();
+        expect([...source.entries()]).toEqual([]);
+      } finally {
+        if (originalPackageName) {
+          process.env.npm_package_name = originalPackageName;
+        } else {
+          delete process.env.npm_package_name;
+        }
+      }
+    });
+
+    it('does not treat non-smrt workspaces as core test environments', () => {
+      const tmp = mkdtempSync(join(tmpdir(), 'smrt-consumer-workspace-'));
+      const workspacePath = join(tmp, 'pnpm-workspace.yaml');
+      const packagePath = join(tmp, 'package.json');
+      const originalPackageName = process.env.npm_package_name;
+      const originalNodeEnv = process.env.NODE_ENV;
+      const originalVitest = process.env.VITEST;
+
+      writeFileSync(workspacePath, 'packages: []\n');
+      writeFileSync(
+        packagePath,
+        JSON.stringify({ name: 'consumer-app', type: 'module' }),
       );
-      const hit = source.lookup({ className: 'Widget' });
-      expect(hit?.source).toBe('test');
+
+      try {
+        process.chdir(tmp);
+        delete process.env.npm_package_name;
+        process.env.NODE_ENV = 'test';
+        process.env.VITEST = 'true';
+
+        expect(shouldLoadCoreTestManifest()).toBe(false);
+      } finally {
+        process.chdir(originalCwd);
+        if (originalPackageName) {
+          process.env.npm_package_name = originalPackageName;
+        } else {
+          delete process.env.npm_package_name;
+        }
+        process.env.NODE_ENV = originalNodeEnv;
+        if (originalVitest) {
+          process.env.VITEST = originalVitest;
+        } else {
+          delete process.env.VITEST;
+        }
+        rmSync(tmp, { recursive: true, force: true });
+      }
     });
   });
 

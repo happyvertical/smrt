@@ -114,4 +114,119 @@ describe('getTestDatabase manifest schemas', () => {
       'relationship',
     ]);
   });
+
+  it('prefers the STI item schema over collection manifest stubs that share the same table', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:Meetings',
+      {
+        className: 'Meetings',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Event',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'events',
+        },
+        schema: {
+          tableName: 'events',
+          ddl: `CREATE TABLE IF NOT EXISTS "events" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp
+)`,
+          columns: {
+            id: { type: 'TEXT', notNull: true, primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT', notNull: true, default: '' },
+            created_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            updated_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+          },
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/pkg',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:Event',
+      {
+        className: 'Event',
+        fields: {
+          name: { type: 'text', required: false, default: '' },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'events',
+          tableStrategy: 'sti',
+        },
+        schema: {
+          tableName: 'events',
+          ddl: `CREATE TABLE IF NOT EXISTS "events" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "_meta_type" TEXT NOT NULL,
+  "_meta_data" JSON,
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "name" TEXT DEFAULT ''
+)`,
+          columns: {
+            id: { type: 'TEXT', notNull: true, primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT', notNull: true, default: '' },
+            _meta_type: { type: 'TEXT', notNull: true },
+            _meta_data: { type: 'JSON', notNull: false },
+            created_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            updated_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            name: { type: 'TEXT', notNull: false, default: '' },
+          },
+          indexes: [
+            {
+              name: 'events_meta_type_idx',
+              columns: ['_meta_type'],
+              unique: false,
+            },
+          ],
+          version: 'test-version',
+        },
+      },
+      '@test/pkg',
+    );
+
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['Meetings', 'Event'],
+    });
+
+    const columnsResult = await db.query(`PRAGMA table_info('events')`);
+    const columns = Array.isArray(columnsResult)
+      ? columnsResult
+      : columnsResult.rows;
+    const columnNames = columns.map((row: { name: string }) => row.name);
+
+    expect(columnNames).toContain('_meta_type');
+    expect(columnNames).toContain('_meta_data');
+    expect(columnNames).toContain('name');
+  });
 });

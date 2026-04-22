@@ -45,6 +45,7 @@ import {
   getStaticManifestCache as getStaticManifestCacheFromStore,
   getTestManifestCache as getTestManifestCacheFromStore,
   isTestEnvironment as isTestEnvFromStore,
+  shouldLoadCoreTestManifest,
 } from './store.js';
 
 /**
@@ -291,18 +292,19 @@ function getStaticManifest(): SmartObjectManifest {
 }
 
 /**
- * Lazy-load test manifest ONLY when in test environment
- * This prevents test classes from being loaded in production and causing collisions
+ * Lazy-load smrt-core's internal test manifest only for smrt-core's own tests.
+ * Consumer packages should never see these fixtures, or they can collide with
+ * real external classes during downstream test runs.
  */
 function getTestManifest(): SmartObjectManifest | null {
   if (!getTestManifestLoadAttempted()) {
     setTestManifestLoadAttempted(true);
 
-    // CRITICAL: Only load test manifest in test environment
-    if (!isTestEnvironment()) {
+    // CRITICAL: Scope the core test manifest to smrt-core's own test suite.
+    if (!shouldLoadCoreTestManifest()) {
       if (process.env.DEBUG_TEST_ENV) {
         console.log(
-          '[manifest-loader] ⚠️  Skipping test manifest load (not in test environment)',
+          '[manifest-loader] ⚠️  Skipping core test manifest load (not smrt-core test environment)',
         );
       }
       setTestManifestCache(null);

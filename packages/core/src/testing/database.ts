@@ -142,6 +142,17 @@ export async function getTestDatabase(
   const createdTables = new Set<string>();
 
   for (const className of classNames) {
+    const registered = ObjectRegistry.getClass(className);
+
+    // Collection classes can share the same table name as their item class
+    // (for example `Meetings` -> `events`) but do not own the authoritative
+    // schema. If we create the table from the collection manifest first, we
+    // can miss STI columns like `_meta_type` and then skip the real item class
+    // because the table name is already marked created.
+    if (registered?.extends === 'SmrtCollection') {
+      continue;
+    }
+
     // Skip STI children - their schema is part of the base class table
     const stiBase = ObjectRegistry.getSTIBase(className);
     if (stiBase && stiBase !== className) {

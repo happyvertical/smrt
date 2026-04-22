@@ -48,6 +48,105 @@ export function isTestEnvironment(): boolean {
   );
 }
 
+/**
+ * Best-effort detection of the current package under test.
+ *
+ * In workspace consumers, `process.cwd()` points at the consuming app/package,
+ * while in smrt-core's own tests it points at `packages/core`. We use that
+ * distinction to keep smrt-core's internal test manifest scoped to its own
+ * test suite instead of leaking those fixtures into every consumer test run.
+ */
+export function getCurrentPackageName(): string | null {
+  const explicitPackageName = process.env.npm_package_name;
+  if (explicitPackageName) {
+    return explicitPackageName;
+  }
+
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return null;
+  }
+
+  let currentDir = process.cwd();
+
+  while (true) {
+    const packageJsonPath = builtins.path.join(currentDir, 'package.json');
+    if (builtins.fs.existsSync(packageJsonPath)) {
+      try {
+        const packageJson = JSON.parse(
+          builtins.fs.readFileSync(packageJsonPath, 'utf-8'),
+        ) as { name?: string };
+        return packageJson.name ?? null;
+      } catch {
+        return null;
+      }
+    }
+
+    const parentDir = builtins.path.dirname(currentDir);
+    if (parentDir === currentDir) {
+      return null;
+    }
+
+    currentDir = parentDir;
+  }
+}
+
+/**
+ * smrt-core's committed test manifest is for smrt-core's own tests only.
+ * Consumer packages should expose only their local test manifest plus real
+ * published manifests from dependencies.
+ */
+export function shouldLoadCoreTestManifest(): boolean {
+  if (!isTestEnvironment()) {
+    return false;
+  }
+
+  const explicitPackageName = process.env.npm_package_name;
+  if (explicitPackageName) {
+    return explicitPackageName === '@happyvertical/smrt-core';
+  }
+
+  const builtins = getNodeBuiltins();
+  if (!builtins) {
+    return false;
+  }
+
+  const moduleDir = builtins.path.dirname(
+    builtins.url.fileURLToPath(import.meta.url),
+  );
+  const workspaceRoot = findWorkspaceRootSync(moduleDir);
+  if (!workspaceRoot) {
+    return false;
+  }
+
+  const corePackageJsonPath = builtins.path.join(
+    workspaceRoot,
+    'packages',
+    'core',
+    'package.json',
+  );
+  if (!builtins.fs.existsSync(corePackageJsonPath)) {
+    return false;
+  }
+
+  try {
+    const packageJson = JSON.parse(
+      builtins.fs.readFileSync(corePackageJsonPath, 'utf-8'),
+    ) as { name?: string };
+    if (packageJson.name !== '@happyvertical/smrt-core') {
+      return false;
+    }
+  } catch {
+    return false;
+  }
+
+  const relative = builtins.path.relative(workspaceRoot, process.cwd());
+  return (
+    relative === '' ||
+    (!relative.startsWith('..') && !builtins.path.isAbsolute(relative))
+  );
+}
+
 // ── Node builtins access ─────────────────────────────────────────────────
 
 /**
