@@ -1,3 +1,4 @@
+import type { ApiConfig } from '@happyvertical/smrt-core';
 import { describe, expect, it } from 'vitest';
 import { buildRouteMap, resolveAPIRoute } from '../api-routes.js';
 import type { PackageManifest } from '../manifest-utils.js';
@@ -35,12 +36,13 @@ describe('buildRouteMap', () => {
   });
 
   it('prefers api.path over table name', () => {
+    const videoApiConfig: ApiConfig = { include: ['list'], path: 'videos' };
     const manifest = makeManifest({
       VideoShot: {
         className: 'VideoShot',
         decoratorConfig: {
           tableName: 'video_shots',
-          api: { include: ['list'], path: 'videos' },
+          api: videoApiConfig,
         },
       },
     });
