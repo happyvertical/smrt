@@ -94,7 +94,7 @@
     "start:standalone": "node dist/app/main.js",
     "start:federation": "node dist/federation/main.js",
     "preview": "vite preview",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",

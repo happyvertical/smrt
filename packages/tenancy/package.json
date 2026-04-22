@@ -43,7 +43,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
