@@ -6,16 +6,19 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+  PUBLISH_PACK_SHARD_COUNT: '4'
 
 permissions:
   contents: read
   packages: read
 
 jobs:
-  validate-publish:
-    name: Version And Pack Validation
+  prepare-publish:
+    name: Prepare Publish Validation
     runs-on: arc-happyvertical
     timeout-minutes: 20
+    outputs:
+      should-validate: ${{ steps.prepare.outputs.should_validate }}
 
     steps:
       - name: Checkout repository
@@ -33,6 +36,7 @@ jobs:
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate release lifecycle without publishing
+        id: prepare
         env:
           CI: true
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,6 +103,7 @@ jobs:
 
           if [ "$BEFORE_VERSION" = "$AFTER_VERSION" ]; then
             echo "ℹ️  No version changes - no publish validation needed"
+            echo "should_validate=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
@@ -118,4 +123,67 @@ jobs:
             fi
           done
 
+          echo "should_validate=true" >> "$GITHUB_OUTPUT"
+
+      - name: Upload versioned workspace and build outputs
+        if: steps.prepare.outputs.should_validate == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: publish-dry-run-workspace
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            package.json
+            packages/**/package.json
+            packages/**/CHANGELOG.md
+            packages/**/dist/**
+
+  validate-publish-shards:
+    name: Pack Validation (Shard ${{ matrix.shard-label }})
+    needs: prepare-publish
+    if: needs.prepare-publish.outputs.should-validate == 'true'
+    runs-on: arc-happyvertical
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard-index: 1
+            shard-label: 1/4
+          - shard-index: 2
+            shard-label: 2/4
+          - shard-index: 3
+            shard-label: 3/4
+          - shard-index: 4
+            shard-label: 4/4
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore versioned workspace and build outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: publish-dry-run-workspace
+          path: .
+
+      - name: Setup Environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Validate publish pack shard
+        env:
+          CI: true
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
+          PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
+        run: |
           node scripts/validate-publish-packages.js
