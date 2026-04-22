@@ -195,3 +195,36 @@ jobs:
           PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
         run: |
           node scripts/validate-publish-packages.js
+
+  publish-dry-run-summary:
+    name: Version And Pack Validation
+    needs:
+      - prepare-publish
+      - validate-publish-shards
+    if: always()
+    runs-on: arc-happyvertical
+    timeout-minutes: 5
+
+    steps:
+      - name: Finalize publish dry-run status
+        env:
+          PREPARE_RESULT: ${{ needs.prepare-publish.result }}
+          SHOULD_VALIDATE: ${{ needs.prepare-publish.outputs.should-validate }}
+          SHARDS_RESULT: ${{ needs.validate-publish-shards.result }}
+        run: |
+          if [ "$PREPARE_RESULT" != "success" ]; then
+            echo "❌ Prepare publish validation failed"
+            exit 1
+          fi
+
+          if [ "$SHOULD_VALIDATE" != "true" ]; then
+            echo "✅ No publish validation needed"
+            exit 0
+          fi
+
+          if [ "$SHARDS_RESULT" != "success" ]; then
+            echo "❌ One or more publish validation shards failed"
+            exit 1
+          fi
+
+          echo "✅ Publish dry-run validation passed"
