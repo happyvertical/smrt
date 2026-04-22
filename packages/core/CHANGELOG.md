@@ -1,5 +1,14 @@
 # @happyvertical/smrt-core
 
+## 0.22.3
+
+### Patch Changes
+
+- 3bad5df: Fix test manifest loading so downstream consumers do not register core-only test classes, and skip `SmrtCollection` manifest stubs when building test database schemas.
+  - @happyvertical/smrt-scanner@0.22.3
+  - @happyvertical/smrt-config@0.22.3
+  - @happyvertical/smrt-types@0.22.3
+
 ## 0.22.2
 
 ### Patch Changes
