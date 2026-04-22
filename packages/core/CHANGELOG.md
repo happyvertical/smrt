@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - restore api path typing (#1151) (core)
+  - @happyvertical/smrt-scanner@0.22.5
+  - @happyvertical/smrt-config@0.22.5
+  - @happyvertical/smrt-types@0.22.5
+
 ## 0.22.4
 
 ### Patch Changes
