@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.22.2
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - make vite-plugin sibling-module loader deterministic (#1142) (core)
+
+  ### Merged Changes
+
+  - [codex] Fix places coordinate SQL types
+  - @happyvertical/smrt-scanner@0.22.2
+  - @happyvertical/smrt-config@0.22.2
+  - @happyvertical/smrt-types@0.22.2
+
 ## 0.22.1
 
 ### Patch Changes

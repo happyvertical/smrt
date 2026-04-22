@@ -1,5 +1,7 @@
 # @happyvertical/smrt-template-sveltekit
 
+## 0.22.2
+
 ## 0.22.1
 
 ### Patch Changes
