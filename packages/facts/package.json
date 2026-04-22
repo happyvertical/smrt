@@ -22,7 +22,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",

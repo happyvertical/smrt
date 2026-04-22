@@ -36,7 +36,7 @@
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
