@@ -18,7 +18,7 @@
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { importBuildAwareModule } from '../import-build-aware.js';
@@ -57,6 +57,12 @@ describe('importBuildAwareModule — deterministic loader', () => {
     );
   }
 
+  function writeModule(relativePath: string, contents: string): void {
+    const absolutePath = join(pkgRoot, relativePath);
+    mkdirSync(dirname(absolutePath), { recursive: true });
+    writeFileSync(absolutePath, contents, 'utf-8');
+  }
+
   it('loads dist when dist exists (the publish-time path)', async () => {
     writeScannerCopy('dist', 'from-dist');
 
@@ -90,6 +96,27 @@ describe('importBuildAwareModule — deterministic loader', () => {
       callerUrl,
     });
     expect(mod.SENTINEL).toBe('from-src');
+  });
+
+  it('falls back to the src tree even when the caller is the dist copy', async () => {
+    const distCallerUrl = pathToFileURL(
+      join(pkgRoot, 'dist', 'vite-plugin', 'index.js'),
+    ).href;
+    writeModule(
+      'src/scanner/index.ts',
+      `export { SENTINEL } from './manifest-generator.js';\n`,
+    );
+    writeModule(
+      'src/scanner/manifest-generator.ts',
+      `export const SENTINEL = 'from-src-tree';\n`,
+    );
+
+    const mod = await importBuildAwareModule<{ SENTINEL: string }>({
+      source: '../scanner/index.ts',
+      dist: '../scanner.js',
+      callerUrl: distCallerUrl,
+    });
+    expect(mod.SENTINEL).toBe('from-src-tree');
   });
 
   it('propagates the underlying error when neither dist nor source exists', async () => {
