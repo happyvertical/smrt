@@ -23,9 +23,11 @@
   },
   "scripts": {
     "build": "vite build --mode library",
+    "build:fresh": "npm run clean && npm run build",
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -35,7 +35,7 @@
     "dev": "npm run build:watch & npm run test:watch",
     "verify:exports": "node --input-type=module -e \"import { readFileSync, existsSync } from 'fs'; const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')); Object.entries(pkg.exports).forEach(([key, path]) => { if (typeof path === 'string' && existsSync(path)) { console.log('✅', key, '→', path); } else if (typeof path === 'object' && path.import && existsSync(path.import)) { console.log('✅', key, '→', path.import); } else { console.error('❌', key, '→', path, '(missing)'); process.exit(1); } });\"",
     "build:fresh": "npm run clean && npm run build && npm run verify:exports",
-    "prepack": "npm run build:fresh"
+    "prepack": "node ../../scripts/prepack-package.js"
   },
   "devDependencies": {
     "@types/node": "25.0.9",
