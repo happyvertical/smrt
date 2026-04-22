@@ -267,20 +267,14 @@
           "default": ""
         },
         "latitude": {
-          "type": "integer",
+          "type": "decimal",
           "required": false,
-          "default": null,
-          "_meta": {
-            "sqlType": "REAL"
-          }
+          "_meta": {}
         },
         "longitude": {
-          "type": "integer",
+          "type": "decimal",
           "required": false,
-          "default": null,
-          "_meta": {
-            "sqlType": "REAL"
-          }
+          "_meta": {}
         },
         "streetNumber": {
           "type": "text",

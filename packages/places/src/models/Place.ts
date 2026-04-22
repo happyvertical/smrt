@@ -40,9 +40,9 @@ export class Place extends SmrtObject {
   description = ''; // Optional description
 
   // Optional geo fields (all nullable for abstract places)
-  @field({ sqlType: 'REAL' })
+  @field({ type: 'decimal' })
   latitude: number | null = null;
-  @field({ sqlType: 'REAL' })
+  @field({ type: 'decimal' })
   longitude: number | null = null;
   streetNumber = '';
   streetName = '';

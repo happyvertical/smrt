@@ -4,11 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { Place } from './Place';
 
 describe('Place coordinate schema', () => {
-  it('preserves REAL sqlType metadata for coordinates', async () => {
+  it('preserves decimal logical types for coordinates', async () => {
     const fields = await fieldsFromClass(Place);
 
-    expect(fields.latitude?._meta?.sqlType).toBe('REAL');
-    expect(fields.longitude?._meta?.sqlType).toBe('REAL');
+    expect(fields.latitude?.type).toBe('decimal');
+    expect(fields.longitude?.type).toBe('decimal');
   });
 
   it('generates REAL columns for latitude and longitude', async () => {
