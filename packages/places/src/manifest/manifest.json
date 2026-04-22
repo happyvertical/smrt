@@ -269,12 +269,12 @@
         "latitude": {
           "type": "decimal",
           "required": false,
-          "default": null
+          "_meta": {}
         },
         "longitude": {
           "type": "decimal",
           "required": false,
-          "default": null
+          "_meta": {}
         },
         "streetNumber": {
           "type": "text",
