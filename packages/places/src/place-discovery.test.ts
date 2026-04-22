@@ -174,6 +174,83 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
     );
   });
 
+  it('collapses boundary-straddling points into one bucket (regression guard for grid-rounding)', async () => {
+    // With the old `Math.round`-on-grid scheme, two points ~0.2m apart
+    // could land in different cells if they straddled a boundary — e.g.
+    // 53.5000002 and 53.4999998 with a 50m bucket. Greedy proximity
+    // bucketing must collapse them into a single query.
+    findPoisNearMock.mockResolvedValue([
+      makePoi('osm-node-x', 'X', 53.5, -113.5),
+    ]);
+
+    const places = await PlaceCollection.create({
+      db: { type: 'sqlite', url: getTestDbUrl('track-boundary') },
+    });
+
+    const result = await places.resolveTrackPlaces(
+      [
+        { lat: 53.5000002, lng: -113.5 },
+        { lat: 53.4999998, lng: -113.5 },
+      ],
+      { radiusMeters: 50, bucketMeters: 50, throttleMs: 0 },
+    );
+
+    expect(result.bucketCount).toBe(1);
+    expect(result.requestCount).toBe(1);
+    expect(findPoisNearMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('classifies a bucket as a cache hit when every returned place already exists', async () => {
+    // First call creates the row; second call must see it as `created: false`
+    // and therefore register as a cache hit (no full table rescan needed).
+    findPoisNearMock.mockResolvedValue([
+      makePoi('osm-node-cached', 'Cached POI', 53.5, -113.5),
+    ]);
+
+    const places = await PlaceCollection.create({
+      db: { type: 'sqlite', url: getTestDbUrl('track-cachehit') },
+    });
+
+    const first = await places.resolveTrackPlaces(
+      [{ lat: 53.5, lng: -113.5 }],
+      { radiusMeters: 50, bucketMeters: 50, throttleMs: 0 },
+    );
+    expect(first.cacheHitCount).toBe(0);
+
+    const second = await places.resolveTrackPlaces(
+      [{ lat: 53.5, lng: -113.5 }],
+      { radiusMeters: 50, bucketMeters: 50, throttleMs: 0 },
+    );
+    expect(second.cacheHitCount).toBe(1);
+  });
+
+  it.each([
+    { label: 'radiusMeters=0', opts: { radiusMeters: 0, bucketMeters: 50 } },
+    { label: 'radiusMeters=-1', opts: { radiusMeters: -1, bucketMeters: 50 } },
+    { label: 'bucketMeters=0', opts: { radiusMeters: 50, bucketMeters: 0 } },
+    { label: 'bucketMeters=-1', opts: { radiusMeters: 50, bucketMeters: -1 } },
+    {
+      label: 'throttleMs=-1',
+      opts: { radiusMeters: 50, bucketMeters: 50, throttleMs: -1 },
+    },
+    {
+      label: 'throttleMs=Infinity',
+      opts: {
+        radiusMeters: 50,
+        bucketMeters: 50,
+        throttleMs: Number.POSITIVE_INFINITY,
+      },
+    },
+  ])('rejects invalid options: $label', async ({ opts }) => {
+    const places = await PlaceCollection.create({
+      db: { type: 'sqlite', url: getTestDbUrl('track-invalid') },
+    });
+
+    await expect(
+      places.resolveTrackPlaces([{ lat: 0, lng: 0 }], opts),
+    ).rejects.toThrow();
+  });
+
   it('honors throttleMs between provider calls', async () => {
     findPoisNearMock.mockResolvedValue([]);
 
@@ -181,15 +258,35 @@ describe('PlaceCollection.resolveTrackPlaces', () => {
       db: { type: 'sqlite', url: getTestDbUrl('track-throttle') },
     });
 
-    const start = Date.now();
-    await places.resolveTrackPlaces(
-      [
-        { lat: 53.5461, lng: -113.4938 },
-        { lat: 53.547, lng: -113.495 },
-      ],
-      { radiusMeters: 50, bucketMeters: 50, throttleMs: 300 },
-    );
-    const elapsed = Date.now() - start;
-    expect(elapsed).toBeGreaterThanOrEqual(280); // allow a small jitter
+    // Fake timers keep this assertion deterministic: under CI load the
+    // real-time variant can trip over event-loop scheduling jitter and
+    // fire the second call a few ms early. With vi.advanceTimersByTimeAsync
+    // we can pin the behavior to "second call fires exactly when the
+    // throttle window elapses, not a tick before".
+    vi.useFakeTimers();
+    try {
+      const promise = places.resolveTrackPlaces(
+        [
+          { lat: 53.5461, lng: -113.4938 },
+          { lat: 53.547, lng: -113.495 },
+        ],
+        { radiusMeters: 50, bucketMeters: 50, throttleMs: 300 },
+      );
+
+      // Let the first bucket fire.
+      await vi.advanceTimersByTimeAsync(0);
+      expect(findPoisNearMock).toHaveBeenCalledTimes(1);
+
+      // One tick short of the window — second call must still be pending.
+      await vi.advanceTimersByTimeAsync(299);
+      expect(findPoisNearMock).toHaveBeenCalledTimes(1);
+
+      // Crossing the window releases the second call.
+      await vi.advanceTimersByTimeAsync(1);
+      await promise;
+      expect(findPoisNearMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
