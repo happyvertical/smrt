@@ -43,8 +43,56 @@
  */
 
 import { existsSync } from 'node:fs';
-import { dirname, resolve as resolvePath } from 'node:path';
+import { createRequire } from 'node:module';
+import { dirname, extname, resolve as resolvePath } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const require = createRequire(import.meta.url);
+const TS_SOURCE_EXTENSIONS = new Set(['.ts', '.mts', '.tsx']);
+
+async function importSourceFallback<T>(
+  sourceAbs: string,
+  packageRoot: string,
+): Promise<T> {
+  const ext = extname(sourceAbs);
+  if (!TS_SOURCE_EXTENSIONS.has(ext)) {
+    return (await import(
+      /* @vite-ignore */ pathToFileURL(sourceAbs).href
+    )) as T;
+  }
+
+  let unregister: (() => Promise<void>) | undefined;
+  try {
+    const tsxApiPath = require.resolve('tsx/esm/api');
+    const { register } = await import(
+      /* @vite-ignore */ pathToFileURL(tsxApiPath).href
+    );
+    const workspaceTsconfigPath = resolvePath(
+      packageRoot,
+      '..',
+      '..',
+      'tsconfig.package-build.json',
+    );
+    unregister = register(
+      existsSync(workspaceTsconfigPath)
+        ? { tsconfig: workspaceTsconfigPath }
+        : undefined,
+    );
+  } catch (error) {
+    throw new Error(
+      `[smrt] Failed to register tsx source fallback for ${sourceAbs}. Ensure "tsx" is installed or keep dist artifacts available before invoking the SMRT Vite plugin.`,
+      { cause: error },
+    );
+  }
+
+  try {
+    return (await import(
+      /* @vite-ignore */ pathToFileURL(sourceAbs).href
+    )) as T;
+  } finally {
+    await unregister?.();
+  }
+}
 
 export interface ImportBuildAwareOptions {
   /**
@@ -91,11 +139,16 @@ export async function importBuildAwareModule<T>({
     return (await import(/* @vite-ignore */ pathToFileURL(distAbs).href)) as T;
   }
 
-  // Dist missing → fresh clone before first build. Resolve source to an
-  // absolute URL against the caller's directory too, so tsx's loader sees
-  // a concrete path and handles the `.ts` transpilation. Using an absolute
-  // URL here also means the test harness can synthesize a different
-  // caller location without having to juggle relative-to-helper paths.
-  const sourceAbs = resolvePath(thisDir, source);
-  return (await import(/* @vite-ignore */ pathToFileURL(sourceAbs).href)) as T;
+  // Dist missing → fresh clone before first build or a publish-time rebuild
+  // window. Source paths are defined relative to `src/vite-plugin/`, not to
+  // whichever copy of this helper happens to be loaded, so always anchor the
+  // fallback under the source tree explicitly.
+  const sourceAbs = resolvePath(packageRoot, 'src', 'vite-plugin', source);
+  if (!existsSync(sourceAbs)) {
+    throw new Error(
+      `[smrt] Build-aware import fallback could not find source module ${sourceAbs} after dist module ${distAbs} was unavailable.`,
+    );
+  }
+
+  return importSourceFallback<T>(sourceAbs, packageRoot);
 }
