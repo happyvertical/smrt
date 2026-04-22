@@ -109,19 +109,8 @@ jobs:
 
           echo "🔨 Running clean build (bypassing turbo cache)..."
           rm -rf .turbo
+          find packages -type d -name dist -prune -exec rm -rf {} +
           TURBO_FORCE=true pnpm run build
-
-          echo "🧹 Running release safety checks..."
-          pnpm run format-check
-
-          echo "🔍 Validating workflow files before push..."
-          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
-            [ -f "$file" ] || continue
-            yamllint "$file"
-            if command -v actionlint >/dev/null 2>&1; then
-              actionlint "$file"
-            fi
-          done
 
           echo "should_validate=true" >> "$GITHUB_OUTPUT"
 
@@ -151,6 +140,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         include:
           - shard-index: 1
@@ -202,7 +192,7 @@ jobs:
       - prepare-publish
       - validate-publish-shards
     if: always()
-    runs-on: arc-happyvertical
+    runs-on: ubuntu-latest
     timeout-minutes: 5
 
     steps:

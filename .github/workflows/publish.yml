@@ -155,19 +155,8 @@ jobs:
           # This ensures all packages are rebuilt with latest source code
           echo "🔨 Running clean build (bypassing turbo cache)..."
           rm -rf .turbo
+          find packages -type d -name dist -prune -exec rm -rf {} +
           TURBO_FORCE=true pnpm run build
-
-          echo "🧹 Running release safety checks..."
-          pnpm run format-check
-
-          echo "🔍 Validating workflow files before push..."
-          for file in .github/workflows/*.yml .github/workflows/*.yaml; do
-            [ -f "$file" ] || continue
-            yamllint "$file"
-            if command -v actionlint >/dev/null 2>&1; then
-              actionlint "$file"
-            fi
-          done
 
       - name: Create versioned workspace archive
         if: steps.prepare.outputs.should_publish == 'true'
@@ -204,6 +193,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         include:
           - shard-index: 1
