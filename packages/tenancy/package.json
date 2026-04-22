@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-tenancy",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "description": "Production-ready multi-tenancy framework for SMRT with automatic tenant isolation and enforcement",
   "type": "module",
   "main": "./dist/index.js",
@@ -43,7 +43,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",

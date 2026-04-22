@@ -85,6 +85,15 @@ export interface ApiSerializersConfig {
 
 export interface ApiConfig {
   /**
+   * Optional collection path override for generated CRUD routes.
+   *
+   * When omitted, SMRT derives the path from `tableName` by replacing `_` with `-`.
+   * This remains the supported way to keep legacy/public route shapes stable when
+   * the storage table name differs from the desired URL segment.
+   */
+  path?: string;
+
+  /**
    * Exclude specific endpoints (supports both standard CRUD actions and custom methods)
    */
   exclude?: string[];

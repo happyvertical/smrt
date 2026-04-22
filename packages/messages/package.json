@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
   "main": "./dist/index.js",
@@ -36,7 +36,7 @@
     "clean": "rm -rf dist",
     "dev": "vite",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",

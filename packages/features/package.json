@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-features",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "description": "Code-first feature flags and tenant-aware overrides for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,7 +22,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "vite dev",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-chat",
-  "version": "0.22.3",
+  "version": "0.22.4",
   "description": "Chat rooms, DMs, threads, and agent conversations for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,7 +31,7 @@
     "build:watch": "vite build --mode library --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",

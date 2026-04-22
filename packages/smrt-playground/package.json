@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-playground",
-  "version": "0.21.56",
+  "version": "0.21.57",
   "description": "Shared playground discovery, runtime, and host components for SMRT UI packages",
   "type": "module",
   "main": "./dist/index.js",
@@ -30,7 +30,7 @@
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "prepack": "npm run build && npm run verify:pack",
+    "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run --passWithNoTests",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
