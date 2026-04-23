@@ -1,3 +1,6 @@
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
@@ -15,12 +18,14 @@ import { resolvePrompt } from './prompt-resolver.js';
 describe('@happyvertical/smrt-prompts', () => {
   let db: DatabaseInterface;
   let overrides: PromptOverrideCollection;
+  let tempDbPaths: string[];
 
   beforeEach(async () => {
     setupTestTenancy();
     PromptRegistry.clear();
     clearPromptCache();
     clearCache();
+    tempDbPaths = [];
 
     setConfig({
       packages: {
@@ -50,6 +55,10 @@ describe('@happyvertical/smrt-prompts', () => {
     if (typeof (db as any)?.close === 'function') {
       await (db as any).close();
     }
+
+    await Promise.all(
+      tempDbPaths.map((path) => rm(path, { force: true }).catch(() => {})),
+    );
   });
 
   it('resolves prompts with code, config, app, tenant, and runtime precedence', async () => {
@@ -252,6 +261,63 @@ describe('@happyvertical/smrt-prompts', () => {
 
     expect(sourceAfterMove.text).toBe('Source Will');
     expect(targetAfterMove.text).toBe('Tenant Target Will');
+  });
+
+  it('invalidates cache entries when callers resolve through a database config object', async () => {
+    definePrompt({
+      key: 'test.config.cache',
+      template: 'Code {name}',
+      editable: {
+        template: true,
+        profile: true,
+        model: true,
+        params: true,
+      },
+    });
+
+    const dbPath = join(
+      tmpdir(),
+      `smrt-prompts-cache-${Date.now()}-${crypto.randomUUID()}.db`,
+    );
+    tempDbPaths.push(dbPath);
+    const dbConfig = { type: 'sqlite' as const, url: dbPath };
+    const schemaDb = await getTestDatabase({
+      ...dbConfig,
+      classes: ['PromptOverride'],
+    });
+    if (typeof (schemaDb as any).close === 'function') {
+      await (schemaDb as any).close();
+    }
+
+    const configOverrides = await PromptOverrideCollection.create({
+      db: dbConfig,
+    });
+
+    try {
+      const initial = await resolvePrompt('test.config.cache', {
+        db: dbConfig,
+        tenantId: 'tenant-a',
+        variables: { name: 'Will' },
+      });
+      expect(initial.text).toBe('Code Will');
+
+      await configOverrides.create({
+        key: 'test.config.cache',
+        tenantId: null,
+        template: 'App {name}',
+      });
+
+      const afterWrite = await resolvePrompt('test.config.cache', {
+        db: dbConfig,
+        tenantId: 'tenant-a',
+        variables: { name: 'Will' },
+      });
+      expect(afterWrite.text).toBe('App Will');
+    } finally {
+      if (typeof (configOverrides.db as any).close === 'function') {
+        await (configOverrides.db as any).close();
+      }
+    }
   });
 
   it('expires stale cache entries after the ttl when storage changes without invalidation', async () => {

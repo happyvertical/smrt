@@ -34,7 +34,20 @@ async function loadPromptBase(
 
   const tenantId =
     options.tenantId !== undefined ? options.tenantId : (getTenantId() ?? null);
-  const cached = getCachedPromptBase(key, tenantId, options.db);
+
+  let collection: PromptOverrideCollection | null = null;
+  let cacheDb: ResolvePromptOptions['db'] | undefined = options.db;
+  if (options.db) {
+    const initializedCollection = await (
+      PromptOverrideCollection as any
+    ).create({
+      db: options.db,
+    });
+    collection = initializedCollection;
+    cacheDb = initializedCollection.db as ResolvePromptOptions['db'];
+  }
+
+  const cached = getCachedPromptBase(key, tenantId, cacheDb);
   if (cached) {
     return cached;
   }
@@ -50,10 +63,7 @@ async function loadPromptBase(
     normalizePromptLayer(config.prompts?.[key]),
   ];
 
-  if (options.db) {
-    const collection = await (PromptOverrideCollection as any).create({
-      db: options.db,
-    });
+  if (collection) {
     const stored = await collection.getResolutionLayers(key, tenantId);
 
     if (stored.app) {
@@ -72,7 +82,7 @@ async function loadPromptBase(
     ai: merged.ai,
   };
 
-  setCachedPromptBase(key, tenantId, options.db, value);
+  setCachedPromptBase(key, tenantId, cacheDb, value);
   return value;
 }
 
