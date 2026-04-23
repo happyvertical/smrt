@@ -278,7 +278,11 @@ export function buildResolvedAI(
 
   if (ai.profile) {
     validateProfileName(ai.profile, config);
-    const profileConfig = normalizeProfileConfig(config.profiles?.[ai.profile]);
+    const configuredProfile = config.profiles?.[ai.profile];
+    if (!configuredProfile) {
+      throw new Error(`Prompt profile "${ai.profile}" is not configured`);
+    }
+    const profileConfig = normalizeProfileConfig(configuredProfile);
     provider = profileConfig.provider;
     model = model ?? profileConfig.model;
     params = mergePromptParams(profileConfig.params, params);

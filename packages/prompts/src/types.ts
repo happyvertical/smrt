@@ -57,6 +57,7 @@ export interface PromptPackageConfig {
   prompts?: Record<string, PromptConfigOverrideInput>;
   allowedProfileNames?: string[];
   allowedModels?: string[];
+  [key: string]: unknown;
 }
 
 export interface PromptLayer {
