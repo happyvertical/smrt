@@ -401,6 +401,8 @@ export class SchemaComparer {
    *
    * SMRT controls the data lifecycle for these columns, so we know:
    * - TEXT→JSON: The column stores JSON data serialized as text (arrays, objects)
+   * - TEXT/JSON→TIMESTAMP: Legacy system columns stored timestamp strings
+   *   before newer manifests normalized the column type.
    * - INTEGER→REAL: Safe widening of integer to floating point
    *
    * @param manifestType - The abstract type from the manifest (e.g., 'JSON')
@@ -427,6 +429,12 @@ export class SchemaComparer {
 
     // INTEGER → REAL is safe (widening)
     if (manifest === 'REAL' && db === 'INTEGER') {
+      return true;
+    }
+
+    // TEXT/JSON → TIMESTAMP is a legacy-drift repair. Invalid values fail
+    // explicitly during migration rather than being silently coerced.
+    if (manifest === 'TIMESTAMP' && (db === 'TEXT' || db === 'JSON')) {
       return true;
     }
 
@@ -487,6 +495,11 @@ export class SchemaComparer {
           typeClause += ` USING ${quotedCol}::${targetType.toLowerCase()}`;
         } else if (manifestNormalized === 'TEXT' && dbNormalized === 'JSON') {
           typeClause += ` USING ${quotedCol}::text`;
+        } else if (
+          manifestNormalized === 'TIMESTAMP' &&
+          (dbNormalized === 'TEXT' || dbNormalized === 'JSON')
+        ) {
+          typeClause += ` USING NULLIF(NULLIF(trim(both '"' from ${quotedCol}::text), ''), 'null')::timestamp`;
         }
         clauses.push(typeClause);
 

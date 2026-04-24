@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { closeDatabaseConnection } from './db-command-utils.js';
 
 export const dbDiffCommand: CLICommand = {
   name: 'db:diff',
@@ -59,6 +60,8 @@ export const dbDiffCommand: CLICommand = {
     },
   },
   handler: async (_args: string[], options: any) => {
+    let db: any;
+
     try {
       // 1. Load CLI config
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -106,7 +109,7 @@ export const dbDiffCommand: CLICommand = {
 
       // 4. Connect to database
       const { getDatabase } = await import('@happyvertical/sql');
-      const db = await getDatabase({ type: dbType, url: dbUrl });
+      db = await getDatabase({ type: dbType, url: dbUrl });
 
       // 5. Get all merged schemas
       const allSchemas = ObjectRegistry.getAllSchemas();
@@ -222,7 +225,8 @@ export const dbDiffCommand: CLICommand = {
           console.error(
             'Usage: smrt db:diff --generate --name add_users_table\n',
           );
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
 
         // Get existing migrations to determine sequence
@@ -299,7 +303,10 @@ export const dbDiffCommand: CLICommand = {
           console.error(`   ${error.message}`);
         }
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
+    } finally {
+      await closeDatabaseConnection(db);
     }
   },
 };

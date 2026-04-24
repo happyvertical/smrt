@@ -8,6 +8,7 @@ import { ObjectRegistry, SchemaComparer } from '@happyvertical/smrt-core';
 import type { MigrationStatus } from '@happyvertical/smrt-core/migrations';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
+import { closeDatabaseConnection } from './db-command-utils.js';
 import {
   type FailedMigrationClassification,
   getFailedMigrationRecommendation,
@@ -87,6 +88,8 @@ export const dbHistoryCommand: CLICommand = {
     },
   },
   handler: async (_args: string[], options: any) => {
+    let db: any;
+
     try {
       // 1. Load CLI config
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -113,7 +116,7 @@ export const dbHistoryCommand: CLICommand = {
 
       // 3. Connect to database
       const { getDatabase } = await import('@happyvertical/sql');
-      const db = await getDatabase({ type: dbType, url: dbUrl });
+      db = await getDatabase({ type: dbType, url: dbUrl });
 
       // 4. Import MigrationTracker
       const { MigrationTracker } = await import(
@@ -368,7 +371,10 @@ export const dbHistoryCommand: CLICommand = {
           console.error(`   ${error.message}`);
         }
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
+    } finally {
+      await closeDatabaseConnection(db);
     }
   },
 };

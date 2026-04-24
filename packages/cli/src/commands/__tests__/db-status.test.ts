@@ -6,6 +6,7 @@ const {
   getDatabaseMock,
   getAllSchemasAsDefinitionsMock,
   compareMock,
+  closeMock,
   initializeMock,
   getAppliedMigrationsMock,
   getHistoryMock,
@@ -14,6 +15,7 @@ const {
   MigrationTrackerMock,
 } = vi.hoisted(() => {
   const compare = vi.fn();
+  const close = vi.fn();
   const initialize = vi.fn();
   const getAppliedMigrations = vi.fn();
   const getHistory = vi.fn();
@@ -36,6 +38,7 @@ const {
     getDatabaseMock: vi.fn(),
     getAllSchemasAsDefinitionsMock: vi.fn(),
     compareMock: compare,
+    closeMock: close,
     initializeMock: initialize,
     getAppliedMigrationsMock: getAppliedMigrations,
     getHistoryMock: getHistory,
@@ -84,6 +87,7 @@ describe('db:status', () => {
     getDatabaseMock.mockResolvedValue({
       url: 'postgresql://test:test@localhost:5432/test_db',
       getTableSchema: vi.fn(),
+      close: closeMock,
     });
 
     autoDiscoverAndLoadMock.mockResolvedValue({
@@ -195,6 +199,9 @@ describe('db:status', () => {
     const parsed = JSON.parse(output);
 
     expect(parsed.manifests.objects).toBe(3);
+    expect(parsed.database.url).toBe(
+      'postgresql://test:***@localhost:5432/test_db',
+    );
     expect(parsed.drift).toEqual([
       {
         name: 'contents.script_text',
@@ -214,6 +221,7 @@ describe('db:status', () => {
       superseded: [],
       other: [],
     });
+    expect(closeMock).toHaveBeenCalledOnce();
   });
 
   it('classifies failed additive migrations as superseded history when live drift is gone', async () => {

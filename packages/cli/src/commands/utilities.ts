@@ -17,6 +17,10 @@ import {
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { configExportCommand } from './config-export.js';
+import {
+  closeDatabaseConnection,
+  formatDatabaseDisplayUrl,
+} from './db-command-utils.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
@@ -540,6 +544,8 @@ export default testManifest;
       );
       console.log('🔍 Discovering SMRT objects...\n');
 
+      let db: any;
+
       try {
         // 1. Load CLI config
         const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -568,7 +574,9 @@ export default testManifest;
 
         if (options.verbose) {
           console.log(`Database type: ${dbType}`);
-          console.log(`Database URL:  ${dbUrl}\n`);
+          console.log(
+            `Database URL:  ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`,
+          );
         }
 
         // 3. Auto-discover and load manifests
@@ -648,11 +656,11 @@ export default testManifest;
         console.log('🗄️  Connecting to database...\n');
 
         const { getDatabase } = await import('@happyvertical/sql');
-        const db = await getDatabase({ type: dbType, url: dbUrl });
+        db = await getDatabase({ type: dbType, url: dbUrl });
 
-        // Mask password in URL for logging
-        const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':***@');
-        console.log(`✓ Connected to ${maskedUrl}\n`);
+        console.log(
+          `✓ Connected to ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`,
+        );
 
         // 7. Drop tables if requested
         if (options.drop) {
@@ -666,7 +674,8 @@ export default testManifest;
             console.error(
               '   Set interactive: true in config or run without --drop\n',
             );
-            process.exit(1);
+            process.exitCode = 1;
+            return;
           }
 
           // Prompt for confirmation
@@ -681,7 +690,7 @@ export default testManifest;
 
           if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
             console.log('\n❌ Cancelled by user\n');
-            process.exit(0);
+            return;
           }
 
           console.log('\n🗑️  Dropping existing tables...\n');
@@ -771,7 +780,10 @@ export default testManifest;
         } else {
           console.error(error);
         }
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
@@ -1062,6 +1074,8 @@ export default testManifest;
     handler: async (_args: string[], options: any) => {
       console.log('\n🔄 Migrating database schema...\n');
 
+      let db: any;
+
       try {
         // 1. Load CLI config
         const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -1090,7 +1104,9 @@ export default testManifest;
 
         if (options.verbose) {
           console.log(`Database type: ${dbType}`);
-          console.log(`Database URL:  ${dbUrl}\n`);
+          console.log(
+            `Database URL:  ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`,
+          );
         }
 
         // 3. Check for JSON adapter (limited support)
@@ -1154,7 +1170,7 @@ export default testManifest;
         console.log('🗄️  Connecting to database...\n');
 
         const { getDatabase } = await import('@happyvertical/sql');
-        const db = await getDatabase({ type: dbType, url: dbUrl });
+        db = await getDatabase({ type: dbType, url: dbUrl });
 
         // Check if adapter supports schema introspection
         if (!db.getTableSchema || !db.alterTable) {
@@ -1163,12 +1179,13 @@ export default testManifest;
           );
           console.error('   Required methods: getTableSchema, alterTable');
           console.error('\n   Supported adapters: sqlite, postgres, duckdb\n');
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
 
-        // Mask password in URL for logging
-        const maskedUrl = dbUrl.replace(/:([^:@]+)@/, ':***@');
-        console.log(`✓ Connected to ${maskedUrl}\n`);
+        console.log(
+          `✓ Connected to ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`,
+        );
 
         // 7.5. Initialize MigrationTracker for tracking applied migrations
         const { MigrationTracker, shortChecksum } = await import(
@@ -1666,7 +1683,10 @@ export default testManifest;
         } else {
           console.error(error);
         }
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
