@@ -49,7 +49,12 @@ export { AssetStatus } from './asset-status';
 export { AssetStatusCollection } from './asset-statuses';
 // Utilities
 export {
+  type AssetStorageOperation,
+  type AssetStorageResolution,
+  type AssetStorageResolveRequest,
+  type AssetStorageResolver,
   AssetStore,
+  type AssetStoreOptions,
   type ProviderOptions,
   type StoreOptions,
 } from './asset-store';
