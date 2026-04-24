@@ -77,6 +77,14 @@ export interface FailedMigrationBuckets {
   other: FailedMigrationSummaryItem[];
 }
 
+export interface DbMigrateFailureState {
+  manualInterventionCount?: number;
+  tableErrorCount?: number;
+  migrationErrorCount?: number;
+  stiErrorCount?: number;
+  dryRun?: boolean;
+}
+
 export function classifyTypeUpgradeSql(sql?: string): TypeUpgradeExecutionKind {
   const trimmed = sql?.trim();
 
@@ -138,6 +146,21 @@ export function getSyntheticMigrationNameForChange(
     default:
       return null;
   }
+}
+
+export function shouldFailDbMigrate(state: DbMigrateFailureState): boolean {
+  return (
+    (state.tableErrorCount ?? 0) > 0 ||
+    (state.migrationErrorCount ?? 0) > 0 ||
+    (state.stiErrorCount ?? 0) > 0 ||
+    (!state.dryRun && (state.manualInterventionCount ?? 0) > 0)
+  );
+}
+
+export function shouldApplySchemaMigrations(state: {
+  dryRun?: boolean;
+}): boolean {
+  return !state.dryRun;
 }
 
 export function classifyFailedMigration(

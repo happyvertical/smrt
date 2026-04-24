@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   getUnresolvedGeneratedMigrationNames,
   partitionSchemaChanges,
+  shouldApplySchemaMigrations,
+  shouldFailDbMigrate,
   summarizeFailedMigrations,
 } from '../db-migrate-actions.js';
 
@@ -176,6 +178,48 @@ describe('partitionSchemaChanges', () => {
         },
       },
     ]);
+  });
+});
+
+describe('shouldFailDbMigrate', () => {
+  it('fails non-dry-run migrations when manual drift remains', () => {
+    expect(shouldFailDbMigrate({ manualInterventionCount: 1 })).toBe(true);
+  });
+
+  it('allows dry-run previews of manual drift', () => {
+    expect(
+      shouldFailDbMigrate({ manualInterventionCount: 1, dryRun: true }),
+    ).toBe(false);
+  });
+
+  it('fails when table creation or tracking fails', () => {
+    expect(shouldFailDbMigrate({ tableErrorCount: 1 })).toBe(true);
+  });
+
+  it('fails when STI upgrade has errors', () => {
+    expect(shouldFailDbMigrate({ stiErrorCount: 1 })).toBe(true);
+  });
+
+  it('passes when no blocking migration work remains', () => {
+    expect(
+      shouldFailDbMigrate({
+        manualInterventionCount: 0,
+        tableErrorCount: 0,
+        migrationErrorCount: 0,
+        stiErrorCount: 0,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('shouldApplySchemaMigrations', () => {
+  it('does not apply schema migrations during dry-run', () => {
+    expect(shouldApplySchemaMigrations({ dryRun: true })).toBe(false);
+  });
+
+  it('applies schema migrations when dry-run is not requested', () => {
+    expect(shouldApplySchemaMigrations({ dryRun: false })).toBe(true);
+    expect(shouldApplySchemaMigrations({})).toBe(true);
   });
 });
 

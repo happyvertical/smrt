@@ -29,6 +29,8 @@ import {
   type MigrationAction,
   partitionSchemaChanges,
   type SchemaChangeLike,
+  shouldApplySchemaMigrations,
+  shouldFailDbMigrate,
 } from './db-migrate-actions.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
@@ -1213,6 +1215,11 @@ export default testManifest;
         // This uses the same comparison logic as core (including equivalent index detection)
         const migrations: MigrationAction[] = [];
         const manualInterventions: MigrationAction[] = [];
+        let tableErrorCount = 0;
+        const isDryRun = options['dry-run'] ?? false;
+        const applySchemaMigrations = shouldApplySchemaMigrations({
+          dryRun: isDryRun,
+        });
 
         console.log('🔍 Comparing schemas...\n');
 
@@ -1239,7 +1246,7 @@ export default testManifest;
           for (const schema of diff.added_tables) {
             const className = getClassForTable(schema.tableName);
 
-            if (options['dry-run']) {
+            if (isDryRun) {
               const fields = Object.keys(schema.columns).length;
               console.log(
                 `  📦 ${schema.tableName} (${className}): Would create table (${fields} columns)`,
@@ -1277,8 +1284,20 @@ export default testManifest;
                   console.log(
                     `  ✓ Created table ${schema.tableName} (${fields} columns, ${shortChecksum(result.checksum)})`,
                   );
+                } else {
+                  tableErrorCount++;
+                  const errorMsg =
+                    result.error instanceof Error
+                      ? result.error.message
+                      : String(
+                          result.error || 'Unknown migration tracking error',
+                        );
+                  console.error(
+                    `  ✗ Failed to track ${schema.tableName}: ${errorMsg}`,
+                  );
                 }
               } catch (error) {
+                tableErrorCount++;
                 const errorMsg =
                   error instanceof Error ? error.message : String(error);
                 console.error(
@@ -1334,7 +1353,7 @@ export default testManifest;
 
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
-        if (options['dry-run']) {
+        if (isDryRun) {
           if (schemaUpToDate && !options['upgrade-sti']) {
             console.log(
               '✅ Database schema is up to date - no migrations needed\n',
@@ -1383,104 +1402,111 @@ export default testManifest;
             console.log('   Run without --dry-run to apply migrations\n');
             return;
           }
-          // If --upgrade-sti is requested, fall through to STI upgrade section
-          // which handles its own dry-run mode
+          // If --upgrade-sti is requested, skip schema execution and continue
+          // to the STI upgrade section, which handles its own dry-run mode.
         }
 
         // 13. Execute migrations with tracking
         let successCount = 0;
         let skippedCount = 0;
         let errorCount = 0;
+        let stiErrorCount = 0;
 
         // Only show migration execution header if there are migrations to apply
-        if (migrations.length > 0) {
+        if (applySchemaMigrations && migrations.length > 0) {
           console.log(`🔨 Applying ${migrations.length} migration(s)...\n`);
         }
 
-        for (const migration of migrations) {
-          try {
-            // Generate a unique migration name based on the action
-            const migrationName = getSyntheticMigrationNameForAction(migration);
-            if (!migrationName) {
-              continue;
-            }
-            let migrationSql: string;
-            let actionDesc: string;
-
-            if (migration.type === 'add_column' && migration.column) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
-            } else if (migration.type === 'type_upgrade' && migration.column) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
-            } else if (migration.type === 'add_index' && migration.index) {
-              migrationSql = migration.sql || '';
-              actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
-            } else {
-              continue;
-            }
-            const migrationSqlStatements =
-              migration.sqlStatements ?? (migrationSql ? [migrationSql] : []);
-
-            // Create migration definition - tracker handles idempotency
-            const migrationDef = {
-              id: migrationName,
-              description:
-                migration.type === 'add_column'
-                  ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                  : migration.type === 'type_upgrade'
-                    ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
-                    : `Add index ${migration.index?.name} on ${migration.tableName}`,
-              version: '1.0.0',
-              up: migrationSqlStatements,
-              down: [], // Auto-migrations don't have rollback by default
-            };
-
-            // Apply migration - tracker handles checksum validation and idempotency
-            const result = await tracker.apply(migrationDef, {
-              postgresSafe: options['postgres-safe'] ?? false,
-              force: options.force ?? false,
-              // The diff was computed from the live schema moments earlier, so
-              // missing columns/indexes must be repaired even if a previous
-              // synthetic migration record says "completed".
-              reconcile: true,
-            });
-
-            if (result.success) {
-              // Check if this was already applied (execution_time_ms = 0 means skipped)
-              if (result.execution_time_ms === 0) {
-                if (options.verbose) {
-                  console.log(
-                    `  ⊙ ${migrationName} already applied (${shortChecksum(result.checksum)})`,
-                  );
-                }
-                skippedCount++;
-              } else {
-                console.log(
-                  `  ✓ ${actionDesc} (${shortChecksum(result.checksum)})`,
-                );
-                successCount++;
+        if (applySchemaMigrations) {
+          for (const migration of migrations) {
+            try {
+              // Generate a unique migration name based on the action
+              const migrationName =
+                getSyntheticMigrationNameForAction(migration);
+              if (!migrationName) {
+                continue;
               }
-            } else if (result.error) {
-              throw result.error;
-            }
-          } catch (error) {
-            errorCount++;
-            const errorMsg =
-              error instanceof Error ? error.message : String(error);
-            console.error(`  ✗ ${migration.type} failed: ${errorMsg}`);
-            // Show underlying database error if available
-            if (
-              error instanceof Error &&
-              'context' in error &&
-              (error as any).context?.originalError
-            ) {
-              console.error(
-                `     Cause: ${(error as any).context.originalError}`,
-              );
-            }
-            if (options.verbose && error instanceof Error && error.stack) {
-              console.error(`\n${error.stack}\n`);
+              let migrationSql: string;
+              let actionDesc: string;
+
+              if (migration.type === 'add_column' && migration.column) {
+                migrationSql = migration.sql || '';
+                actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+              } else if (
+                migration.type === 'type_upgrade' &&
+                migration.column
+              ) {
+                migrationSql = migration.sql || '';
+                actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
+              } else if (migration.type === 'add_index' && migration.index) {
+                migrationSql = migration.sql || '';
+                actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
+              } else {
+                continue;
+              }
+              const migrationSqlStatements =
+                migration.sqlStatements ?? (migrationSql ? [migrationSql] : []);
+
+              // Create migration definition - tracker handles idempotency
+              const migrationDef = {
+                id: migrationName,
+                description:
+                  migration.type === 'add_column'
+                    ? `Add column ${migration.column?.name} to ${migration.tableName}`
+                    : migration.type === 'type_upgrade'
+                      ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                      : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                version: '1.0.0',
+                up: migrationSqlStatements,
+                down: [], // Auto-migrations don't have rollback by default
+              };
+
+              // Apply migration - tracker handles checksum validation and idempotency
+              const result = await tracker.apply(migrationDef, {
+                postgresSafe: options['postgres-safe'] ?? false,
+                force: options.force ?? false,
+                // The diff was computed from the live schema moments earlier, so
+                // missing columns/indexes must be repaired even if a previous
+                // synthetic migration record says "completed".
+                reconcile: true,
+              });
+
+              if (result.success) {
+                // Check if this was already applied (execution_time_ms = 0 means skipped)
+                if (result.execution_time_ms === 0) {
+                  if (options.verbose) {
+                    console.log(
+                      `  ⊙ ${migrationName} already applied (${shortChecksum(result.checksum)})`,
+                    );
+                  }
+                  skippedCount++;
+                } else {
+                  console.log(
+                    `  ✓ ${actionDesc} (${shortChecksum(result.checksum)})`,
+                  );
+                  successCount++;
+                }
+              } else if (result.error) {
+                throw result.error;
+              }
+            } catch (error) {
+              errorCount++;
+              const errorMsg =
+                error instanceof Error ? error.message : String(error);
+              console.error(`  ✗ ${migration.type} failed: ${errorMsg}`);
+              // Show underlying database error if available
+              if (
+                error instanceof Error &&
+                'context' in error &&
+                (error as any).context?.originalError
+              ) {
+                console.error(
+                  `     Cause: ${(error as any).context.originalError}`,
+                );
+              }
+              if (options.verbose && error instanceof Error && error.stack) {
+                console.error(`\n${error.stack}\n`);
+              }
             }
           }
         }
@@ -1528,7 +1554,7 @@ export default testManifest;
 
             let stiSuccessCount = 0;
             let stiSkippedCount = 0;
-            let stiErrorCount = 0;
+            stiErrorCount = 0;
 
             for (const tableName of stiTables) {
               // Get distinct _meta_type values that are NOT qualified
@@ -1572,7 +1598,7 @@ export default testManifest;
                 // Generate UPDATE statement (? placeholders are converted to $1, $2 by sql package)
                 const updateSql = `UPDATE ${quoteIdentifier(tableName)} SET ${quoteIdentifier('_meta_type')} = ? WHERE ${quoteIdentifier('_meta_type')} = ?`;
 
-                if (options['dry-run']) {
+                if (isDryRun) {
                   console.log(`  [DRY RUN] ${updateSql}`);
                   console.log(
                     `            params: ['${qualifiedName}', '${metaType}']`,
@@ -1633,7 +1659,10 @@ export default testManifest;
 
         // 14. Report summary (only for schema migrations, not STI upgrades)
         // STI upgrades have their own summary printed above
-        if (migrations.length > 0 || errorCount > 0 || skippedCount > 0) {
+        if (
+          applySchemaMigrations &&
+          (migrations.length > 0 || errorCount > 0 || skippedCount > 0)
+        ) {
           console.log();
           if (errorCount > 0) {
             console.log(
@@ -1660,6 +1689,18 @@ export default testManifest;
               'ℹ️  No schema migrations were applied (none matched expected types)\n',
             );
           }
+        }
+
+        if (
+          shouldFailDbMigrate({
+            manualInterventionCount: manualInterventions.length,
+            tableErrorCount,
+            migrationErrorCount: errorCount,
+            stiErrorCount,
+            dryRun: isDryRun,
+          })
+        ) {
+          process.exitCode = 1;
         }
 
         console.log('💡 Next steps:');
