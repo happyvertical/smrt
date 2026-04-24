@@ -61,6 +61,7 @@ export { Label, type LabelOptions } from './models/Label';
 export { Project, type ProjectOptions } from './models/Project';
 export { PullRequest, type PullRequestOptions } from './models/PullRequest';
 export { Repository, type RepositoryOptions } from './models/Repository';
+export { issueIncorporateFeedbackPrompt } from './prompts';
 
 // Export types
 export type {

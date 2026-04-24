@@ -1,6 +1,12 @@
 import { ChatService } from '@happyvertical/smrt-chat';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
+import { contentEditorSessionPrompt } from '../../../../../../content-chat-prompts.js';
+import {
+  buildContentChatModelUpdates,
+  buildContentEditorSessionContext,
+} from '../../../../../../content-chat-session.js';
 
 type ContentChatLocals = {
   tenantId?: string | null;
@@ -52,21 +58,33 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     }
 
     if (!activeSession) {
+      const resolvedPrompt = await resolvePrompt(
+        contentEditorSessionPrompt.key,
+        {
+          db,
+          tenantId,
+        },
+      );
       const { session } = await chatService.createAgentSession({
         tenantId,
         agentId: 'content_editor',
         participantProfileId: profileId,
-        systemPrompt:
-          'You are an AI assistant collaborating with the user to edit and improve a specific piece of content.',
+        systemPrompt: resolvedPrompt.text,
       });
-      await session.updateSessionContext({ contentId: id });
+      await session.updateSessionContext(
+        buildContentEditorSessionContext(id, resolvedPrompt),
+      );
       activeSession = session;
     }
 
     let threads: any[] = [];
     try {
+      const chatRoomId = activeSession.chatRoomId;
+      if (!chatRoomId) {
+        throw new Error('Agent session is missing a chat room');
+      }
       threads = await chatService.threads.list({
-        where: { roomId: activeSession.chatRoomId! },
+        where: { roomId: chatRoomId },
         orderBy: 'createdAt DESC',
       });
     } catch {
@@ -142,10 +160,18 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       return json({ error: 'Active session not found' }, { status: 404 });
     }
 
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      return json(
+        { error: 'Active session is missing a chat room' },
+        { status: 500 },
+      );
+    }
+
     // Create a new thread directly in the collection
     const thread = await chatService.threads.create({
       tenantId,
-      roomId: session.chatRoomId!,
+      roomId: chatRoomId,
       title,
       messageCount: 0,
     });
@@ -153,8 +179,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     // If model changed, update context
     if (model) {
       const ctx = session.getSessionContext();
-      if (ctx.model !== model) {
-        await session.updateSessionContext({ model: model });
+      const updates = buildContentChatModelUpdates(ctx, model, model);
+      if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
+        await session.updateSessionContext(updates);
       }
     }
 

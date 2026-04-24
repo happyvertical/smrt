@@ -15,6 +15,7 @@ export { Content } from './content';
 export type { ContentAssetOptions } from './content-asset';
 export { ContentAsset } from './content-asset';
 export { ContentAssetCollection } from './content-assets';
+export { contentEditorSessionPrompt } from './content-chat-prompts';
 export type {
   AppendContentContributionRevisionOptions,
   ApproveContentContributionOptions,

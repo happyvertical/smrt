@@ -1,0 +1,1 @@
+# @happyvertical/smrt-prompts
