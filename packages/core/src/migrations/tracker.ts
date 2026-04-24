@@ -301,7 +301,7 @@ export class MigrationTracker {
           break;
 
         case 'failed':
-          if (!options.force) {
+          if (!options.force && !options.reconcile) {
             return {
               success: false,
               applied: false,
@@ -336,6 +336,17 @@ export class MigrationTracker {
       }
     }
 
+    if (options.dryRun) {
+      return {
+        success: true,
+        applied: false,
+        skipped: false,
+        name: definition.id,
+        checksum,
+        execution_time_ms: Date.now() - startTime,
+      };
+    }
+
     // Get batch number
     if (this.currentBatch === null) {
       this.currentBatch = await this.getNextBatch();
@@ -349,7 +360,7 @@ export class MigrationTracker {
       // Update existing record to 'running'
       await this.db.query(
         `UPDATE _smrt_schema_migrations
-         SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?
+         SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         checksum,
         attempts,
@@ -373,36 +384,6 @@ export class MigrationTracker {
         hostname(),
         this.currentBatch,
       );
-    }
-
-    if (options.dryRun) {
-      if (existing) {
-        // Restore the existing record to its previous state
-        await this.db.query(
-          `UPDATE _smrt_schema_migrations
-           SET status = ?, checksum = ?, attempts = ?, error_message = ?
-           WHERE id = ?`,
-          existing.status,
-          existing.checksum,
-          existing.attempts,
-          existing.error_message,
-          id,
-        );
-      } else {
-        // Remove the newly inserted running record
-        await this.db.query(
-          `DELETE FROM _smrt_schema_migrations WHERE id = ?`,
-          id,
-        );
-      }
-      return {
-        success: true,
-        applied: false,
-        skipped: false,
-        name: definition.id,
-        checksum,
-        execution_time_ms: Date.now() - startTime,
-      };
     }
 
     try {

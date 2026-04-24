@@ -12,6 +12,10 @@ import type { SchemaDiff } from '@happyvertical/smrt-core/migrations';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
+  closeDatabaseConnection,
+  formatDatabaseDisplayUrl,
+} from './db-command-utils.js';
+import {
   classifyTypeUpgradeSql,
   getUnresolvedGeneratedMigrationNames,
   summarizeFailedMigrations,
@@ -144,6 +148,8 @@ export const dbStatusCommand: CLICommand = {
     },
   },
   handler: async (_args: string[], options: any) => {
+    let db: any;
+
     try {
       // 1. Load CLI config
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -166,15 +172,12 @@ export const dbStatusCommand: CLICommand = {
 
       if (!options.json) {
         console.log('\n📊 Migration Status\n');
-        const displayUrl = /^[a-z]+:\/\//.test(dbUrl)
-          ? dbUrl
-          : `${dbType}://${dbUrl}`;
-        console.log(`Database: ${displayUrl}\n`);
+        console.log(`Database: ${formatDatabaseDisplayUrl(dbType, dbUrl)}\n`);
       }
 
       // 3. Connect to database
       const { getDatabase } = await import('@happyvertical/sql');
-      const db = await getDatabase({ type: dbType, url: dbUrl });
+      db = await getDatabase({ type: dbType, url: dbUrl });
 
       // 4. Import MigrationTracker
       const { MigrationTracker } = await import(
@@ -195,7 +198,7 @@ export const dbStatusCommand: CLICommand = {
       const status = {
         database: {
           type: dbType,
-          url: dbUrl,
+          url: formatDatabaseDisplayUrl(dbType, dbUrl),
           engine: tracker.getEngine(),
         },
         manifests: {
@@ -389,7 +392,10 @@ export const dbStatusCommand: CLICommand = {
           console.error(`   ${error.message}`);
         }
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
+    } finally {
+      await closeDatabaseConnection(db);
     }
   },
 };

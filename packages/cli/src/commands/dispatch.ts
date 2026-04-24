@@ -5,6 +5,7 @@
  */
 
 import type { CLICommand } from '../cli-generator.js';
+import { closeDatabaseConnection } from './db-command-utils.js';
 
 /**
  * Get dispatch bus with database from config
@@ -12,6 +13,7 @@ import type { CLICommand } from '../cli-generator.js';
 async function getDispatchBus() {
   const { createDispatchBus } = await import('@happyvertical/smrt-core');
   const { getPackageConfig } = await import('@happyvertical/smrt-config');
+  const { getDatabase } = await import('@happyvertical/sql');
   const { DEFAULT_CLI_CONFIG } = await import('../config.js');
 
   const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
@@ -23,12 +25,21 @@ async function getDispatchBus() {
     );
   }
 
-  return createDispatchBus({
-    db: {
+  let db: any;
+
+  try {
+    db = await getDatabase({
       type: dbConfig.type || 'sqlite',
       url: dbConfig.url,
-    },
-  });
+    });
+
+    const bus = await createDispatchBus({ db });
+
+    return { bus, db };
+  } catch (error) {
+    await closeDatabaseConnection(db);
+    throw error;
+  }
 }
 
 /**
@@ -68,8 +79,12 @@ export const dispatchCommands: Record<string, CLICommand> = {
       },
     },
     handler: async (_args: string[], options: any) => {
+      let db: any;
+
       try {
-        const bus = await getDispatchBus();
+        const context = await getDispatchBus();
+        db = context.db;
+        const { bus } = context;
         const dispatches = await bus.list({
           status: options.status,
           source: options.source,
@@ -112,7 +127,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
           'Error listing dispatches:',
           error instanceof Error ? error.message : error,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
@@ -145,8 +163,12 @@ export const dispatchCommands: Record<string, CLICommand> = {
         process.exit(1);
       }
 
+      let db: any;
+
       try {
-        const bus = await getDispatchBus();
+        const context = await getDispatchBus();
+        db = context.db;
+        const { bus } = context;
 
         if (options.dry) {
           // Dry run - just show what would be processed
@@ -201,7 +223,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
           'Error processing dispatches:',
           error instanceof Error ? error.message : error,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
@@ -224,8 +249,12 @@ export const dispatchCommands: Record<string, CLICommand> = {
       },
     },
     handler: async (_args: string[], options: any) => {
+      let db: any;
+
       try {
-        const bus = await getDispatchBus();
+        const context = await getDispatchBus();
+        db = context.db;
+        const { bus } = context;
 
         const retryOptions: any = {
           maxAttempts: options['max-attempts'] || 3,
@@ -242,7 +271,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
           'Error retrying dispatches:',
           error instanceof Error ? error.message : error,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
@@ -270,21 +302,18 @@ export const dispatchCommands: Record<string, CLICommand> = {
       },
     },
     handler: async (_args: string[], options: any) => {
+      let db: any;
+
       try {
-        const bus = await getDispatchBus();
+        const context = await getDispatchBus();
+        db = context.db;
+        const { bus } = context;
 
         if (options.dry) {
           // Just show counts
           const { DispatchCollection } = await import(
             '@happyvertical/smrt-core'
           );
-          const { getDatabase } = await import('@happyvertical/sql');
-          const { getPackageConfig } = await import(
-            '@happyvertical/smrt-config'
-          );
-          const { DEFAULT_CLI_CONFIG } = await import('../config.js');
-          const config = getPackageConfig('cli', DEFAULT_CLI_CONFIG);
-          const db = await getDatabase(config.database);
 
           const completed = await DispatchCollection.countByStatus(
             db,
@@ -320,7 +349,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
           'Error cleaning up dispatches:',
           error instanceof Error ? error.message : error,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
@@ -343,8 +375,12 @@ export const dispatchCommands: Record<string, CLICommand> = {
       },
     },
     handler: async (_args: string[], options: any) => {
+      let db: any;
+
       try {
-        const bus = await getDispatchBus();
+        const context = await getDispatchBus();
+        db = context.db;
+        const { bus } = context;
         const subscriptions = await bus.listSubscriptions(options.subscriber);
 
         if (options.json) {
@@ -380,7 +416,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
           'Error listing subscriptions:',
           error instanceof Error ? error.message : error,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
@@ -406,9 +445,12 @@ export const dispatchCommands: Record<string, CLICommand> = {
       }
 
       const [signalType, subscriber] = args;
+      let db: any;
 
       try {
-        const bus = await getDispatchBus();
+        const context = await getDispatchBus();
+        db = context.db;
+        const { bus } = context;
         await bus.subscribe({
           signalType,
           subscriber,
@@ -423,7 +465,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
           'Error creating subscription:',
           error instanceof Error ? error.message : error,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },
@@ -442,9 +487,12 @@ export const dispatchCommands: Record<string, CLICommand> = {
       }
 
       const [signalType, subscriber] = args;
+      let db: any;
 
       try {
-        const bus = await getDispatchBus();
+        const context = await getDispatchBus();
+        db = context.db;
+        const { bus } = context;
         await bus.unsubscribe(signalType, subscriber);
 
         console.log(`Removed subscription: "${subscriber}" ← ${signalType}`);
@@ -453,7 +501,10 @@ export const dispatchCommands: Record<string, CLICommand> = {
           'Error removing subscription:',
           error instanceof Error ? error.message : error,
         );
-        process.exit(1);
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
       }
     },
   },

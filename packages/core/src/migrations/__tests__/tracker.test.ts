@@ -306,22 +306,86 @@ describe('MigrationTracker', () => {
       expect(result.error).toContain('--force');
     });
 
-    it('should still block failed migrations during reconcile without --force', async () => {
+    it('should retry failed migrations during reconcile', async () => {
+      await db.query(
+        `INSERT INTO _smrt_schema_migrations (id, name, version, checksum, status, attempts, is_reversible, batch, error_message)
+         VALUES ('failed-id', '0001_failed_reconcile', '1.0.0', 'old-checksum', 'failed', 1, 0, 1, 'previous failure')`,
+      );
+
       const migration: MigrationDefinition = {
-        id: '0001_bad_sql',
-        description: 'Bad SQL',
+        id: '0001_failed_reconcile',
+        description: 'Failed reconcile',
         version: '1.0.0',
-        up: ['THIS IS NOT VALID SQL;'],
+        up: ['CREATE TABLE failed_reconcile_test (id TEXT PRIMARY KEY);'],
         down: [],
       };
 
-      await tracker.apply(migration);
-
       const result = await tracker.apply(migration, { reconcile: true });
 
-      expect(result.success).toBe(false);
-      expect(result.error).toContain('previously failed');
-      expect(result.error).toContain('--force');
+      expect(result.success).toBe(true);
+      expect(result.applied).toBe(true);
+
+      const tables = await db.query<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='failed_reconcile_test'`,
+      );
+      expect(tables.rows).toHaveLength(1);
+
+      const history = await tracker.getHistory();
+      expect(history).toHaveLength(1);
+      expect(history[0].status).toBe('completed');
+      expect(history[0].attempts).toBe(2);
+    });
+
+    it('should not mutate migration history during dry-run', async () => {
+      const migration: MigrationDefinition = {
+        id: '0001_dry_run_existing',
+        description: 'Dry-run existing migration',
+        version: '1.0.0',
+        up: ['CREATE TABLE dry_run_existing (id TEXT PRIMARY KEY);'],
+        down: [],
+      };
+
+      const applied = await tracker.apply(migration);
+      expect(applied.success).toBe(true);
+
+      const [before] = await tracker.getHistory();
+      const dryRun = await tracker.apply(migration, {
+        dryRun: true,
+        reconcile: true,
+      });
+      const [after] = await tracker.getHistory();
+
+      expect(dryRun.success).toBe(true);
+      expect(dryRun.applied).toBe(false);
+      expect(after.status).toBe(before.status);
+      expect(after.checksum).toBe(before.checksum);
+      expect(after.attempts).toBe(before.attempts);
+      expect(after.batch).toBe(before.batch);
+      expect(after.applied_by).toBe(before.applied_by);
+      expect(after.applied_at.toISOString()).toBe(
+        before.applied_at.toISOString(),
+      );
+    });
+
+    it('should not create migration records during dry-run', async () => {
+      const migration: MigrationDefinition = {
+        id: '0001_dry_run_new',
+        description: 'Dry-run new migration',
+        version: '1.0.0',
+        up: ['CREATE TABLE dry_run_new (id TEXT PRIMARY KEY);'],
+        down: [],
+      };
+
+      const dryRun = await tracker.apply(migration, { dryRun: true });
+
+      expect(dryRun.success).toBe(true);
+      expect(dryRun.applied).toBe(false);
+      expect(await tracker.getHistory()).toHaveLength(0);
+
+      const tables = await db.query<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='dry_run_new'`,
+      );
+      expect(tables.rows).toHaveLength(0);
     });
 
     it('should allow retry of failed migration with --force', async () => {
@@ -387,7 +451,7 @@ describe('MigrationTracker', () => {
       expect(result.error).toContain('--force');
     });
 
-    it('should still block running migrations during reconcile without --force', async () => {
+    it('should block running migrations during reconcile without --force', async () => {
       await db.query(
         `INSERT INTO _smrt_schema_migrations (id, name, version, checksum, status, attempts, is_reversible, batch)
          VALUES ('stuck-id', '0001_stuck', '1.0.0', 'abc123', 'running', 1, 0, 1)`,

@@ -8,6 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { CLICommand } from '../cli-generator.js';
+import { closeDatabaseConnection } from './db-command-utils.js';
 
 export const configExportCommand: CLICommand = {
   name: 'config:export',
@@ -50,6 +51,8 @@ export const configExportCommand: CLICommand = {
     },
   },
   handler: async (_args: string[], options: any) => {
+    let db: any;
+
     try {
       // 0. Validate required agent option
       if (!options.agent) {
@@ -84,7 +87,7 @@ export const configExportCommand: CLICommand = {
 
       // 3. Connect to database
       const { getDatabase } = await import('@happyvertical/sql');
-      const db = await getDatabase({ type: dbType, url: dbUrl });
+      db = await getDatabase({ type: dbType, url: dbUrl });
 
       // 4. Import AgentConfig
       const { AgentConfigCollection } = await import(
@@ -112,7 +115,7 @@ export const configExportCommand: CLICommand = {
             console.log(`   Slot filter: ${options.slot}`);
           }
         }
-        process.exit(0);
+        return;
       }
 
       // 6. Build export object
@@ -201,7 +204,10 @@ export const configExportCommand: CLICommand = {
           console.error(`   ${error.message}`);
         }
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
+    } finally {
+      await closeDatabaseConnection(db);
     }
   },
 };

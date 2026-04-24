@@ -414,6 +414,49 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(typeUpgrades[0].sql).toContain("SET DEFAULT '{}'::jsonb");
   });
 
+  it('should generate PostgreSQL USING clause for legacy JSON→TIMESTAMP drift', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'analytics_events' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          created_at: { type: 'JSON', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      analytics_events: {
+        tableName: 'analytics_events',
+        ddl: 'CREATE TABLE analytics_events (id TEXT PRIMARY KEY, created_at TIMESTAMP);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          created_at: { type: 'TIMESTAMP' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('TYPE TIMESTAMP');
+    expect(typeUpgrades[0].sql).toContain(
+      `USING NULLIF(NULLIF(trim(both '"' from "created_at"::text), ''), 'null')::timestamp`,
+    );
+  });
+
   it('should generate DuckDB ALTER COLUMN TYPE for TEXT→JSON', async () => {
     // Create a mock database interface that identifies as DuckDB
     const mockDuckDb = {
