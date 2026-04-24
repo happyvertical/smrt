@@ -1636,6 +1636,7 @@ export default testManifest;
             console.log(
               `⚠️  Migration completed with errors: ${successCount} succeeded, ${errorCount} failed`,
             );
+            process.exitCode = 1;
             if (skippedCount > 0) {
               console.log(`   (${skippedCount} already applied, skipped)`);
             }

@@ -129,16 +129,11 @@ export interface ApplyMigrationsOptions {
    * independently determined the change is still required. Completed
    * migrations still require a checksum match. Failed migrations may be retried
    * with the current definition because they were never applied successfully.
-   * Running migrations may only be retried once they are stale, which lets
-   * repair flows recover from interrupted generated migrations without racing
-   * an active migration process.
+   * Running migrations still require `force` because SMRT does not currently
+   * have a heartbeat or lock-owner check that can prove the original process
+   * is dead.
    */
   reconcile?: boolean;
-  /**
-   * Age threshold before a running migration is considered interrupted during
-   * reconcile mode. Defaults to 15 minutes.
-   */
-  staleRunningAfterMs?: number;
   /** Use PostgreSQL-safe operations (CONCURRENTLY, lock timeout) */
   postgresSafe?: boolean;
 }

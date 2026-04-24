@@ -55,8 +55,6 @@ const DEFAULT_OPTIONS = {
   useConcurrentIndexes: true,
 };
 
-const DEFAULT_STALE_RUNNING_AFTER_MS = 15 * 60 * 1000;
-
 /**
  * MigrationTracker class
  *
@@ -318,7 +316,7 @@ export class MigrationTracker {
           break;
 
         case 'running':
-          if (!options.force && !options.reconcile) {
+          if (!options.force) {
             return {
               success: false,
               applied: false,
@@ -329,21 +327,6 @@ export class MigrationTracker {
               error: `Migration ${definition.id} is currently running or was interrupted. Use --force to retry if the previous run crashed.`,
             };
           }
-
-          if (
-            !options.force &&
-            !this.isRunningMigrationStale(existing, options)
-          ) {
-            return {
-              success: false,
-              applied: false,
-              skipped: false,
-              name: definition.id,
-              checksum,
-              execution_time_ms: 0,
-              error: `Migration ${definition.id} is still marked running and is not stale enough to reconcile. Wait for the active run to finish or use --force if the previous run crashed.`,
-            };
-          }
           // Will retry below
           break;
 
@@ -351,6 +334,17 @@ export class MigrationTracker {
           // Rolled back migrations can be re-applied without --force
           break;
       }
+    }
+
+    if (options.dryRun) {
+      return {
+        success: true,
+        applied: false,
+        skipped: false,
+        name: definition.id,
+        checksum,
+        execution_time_ms: Date.now() - startTime,
+      };
     }
 
     // Get batch number
@@ -364,12 +358,9 @@ export class MigrationTracker {
 
     if (existing) {
       // Update existing record to 'running'
-      const appliedAtClause = options.dryRun
-        ? ''
-        : ', applied_at = CURRENT_TIMESTAMP';
       await this.db.query(
         `UPDATE _smrt_schema_migrations
-         SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?${appliedAtClause}
+         SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
          WHERE id = ?`,
         checksum,
         attempts,
@@ -393,36 +384,6 @@ export class MigrationTracker {
         hostname(),
         this.currentBatch,
       );
-    }
-
-    if (options.dryRun) {
-      if (existing) {
-        // Restore the existing record to its previous state
-        await this.db.query(
-          `UPDATE _smrt_schema_migrations
-           SET status = ?, checksum = ?, attempts = ?, error_message = ?
-           WHERE id = ?`,
-          existing.status,
-          existing.checksum,
-          existing.attempts,
-          existing.error_message,
-          id,
-        );
-      } else {
-        // Remove the newly inserted running record
-        await this.db.query(
-          `DELETE FROM _smrt_schema_migrations WHERE id = ?`,
-          id,
-        );
-      }
-      return {
-        success: true,
-        applied: false,
-        skipped: false,
-        name: definition.id,
-        checksum,
-        execution_time_ms: Date.now() - startTime,
-      };
     }
 
     try {
@@ -491,21 +452,6 @@ export class MigrationTracker {
 
     this.currentBatch = null;
     return results;
-  }
-
-  private isRunningMigrationStale(
-    record: SchemaMigrationRecord,
-    options: ApplyMigrationsOptions,
-  ): boolean {
-    const staleAfterMs =
-      options.staleRunningAfterMs ?? DEFAULT_STALE_RUNNING_AFTER_MS;
-    const appliedAtMs = record.applied_at.getTime();
-
-    if (!Number.isFinite(appliedAtMs)) {
-      return false;
-    }
-
-    return Date.now() - appliedAtMs >= staleAfterMs;
   }
 
   /**

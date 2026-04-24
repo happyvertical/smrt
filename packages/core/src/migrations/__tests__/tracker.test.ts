@@ -336,6 +336,58 @@ describe('MigrationTracker', () => {
       expect(history[0].attempts).toBe(2);
     });
 
+    it('should not mutate migration history during dry-run', async () => {
+      const migration: MigrationDefinition = {
+        id: '0001_dry_run_existing',
+        description: 'Dry-run existing migration',
+        version: '1.0.0',
+        up: ['CREATE TABLE dry_run_existing (id TEXT PRIMARY KEY);'],
+        down: [],
+      };
+
+      const applied = await tracker.apply(migration);
+      expect(applied.success).toBe(true);
+
+      const [before] = await tracker.getHistory();
+      const dryRun = await tracker.apply(migration, {
+        dryRun: true,
+        reconcile: true,
+      });
+      const [after] = await tracker.getHistory();
+
+      expect(dryRun.success).toBe(true);
+      expect(dryRun.applied).toBe(false);
+      expect(after.status).toBe(before.status);
+      expect(after.checksum).toBe(before.checksum);
+      expect(after.attempts).toBe(before.attempts);
+      expect(after.batch).toBe(before.batch);
+      expect(after.applied_by).toBe(before.applied_by);
+      expect(after.applied_at.toISOString()).toBe(
+        before.applied_at.toISOString(),
+      );
+    });
+
+    it('should not create migration records during dry-run', async () => {
+      const migration: MigrationDefinition = {
+        id: '0001_dry_run_new',
+        description: 'Dry-run new migration',
+        version: '1.0.0',
+        up: ['CREATE TABLE dry_run_new (id TEXT PRIMARY KEY);'],
+        down: [],
+      };
+
+      const dryRun = await tracker.apply(migration, { dryRun: true });
+
+      expect(dryRun.success).toBe(true);
+      expect(dryRun.applied).toBe(false);
+      expect(await tracker.getHistory()).toHaveLength(0);
+
+      const tables = await db.query<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='dry_run_new'`,
+      );
+      expect(tables.rows).toHaveLength(0);
+    });
+
     it('should allow retry of failed migration with --force', async () => {
       // First, create a migration that will fail
       const badMigration: MigrationDefinition = {
@@ -399,7 +451,7 @@ describe('MigrationTracker', () => {
       expect(result.error).toContain('--force');
     });
 
-    it('should block fresh running migrations during reconcile without --force', async () => {
+    it('should block running migrations during reconcile without --force', async () => {
       await db.query(
         `INSERT INTO _smrt_schema_migrations (id, name, version, checksum, status, attempts, is_reversible, batch)
          VALUES ('stuck-id', '0001_stuck', '1.0.0', 'abc123', 'running', 1, 0, 1)`,
@@ -416,32 +468,8 @@ describe('MigrationTracker', () => {
       const result = await tracker.apply(migration, { reconcile: true });
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain('not stale enough to reconcile');
-    });
-
-    it('should retry stale running migrations during reconcile', async () => {
-      await db.query(
-        `INSERT INTO _smrt_schema_migrations (id, name, version, checksum, applied_at, status, attempts, is_reversible, batch)
-         VALUES ('stale-id', '0001_stale', '1.0.0', 'old-checksum', '2000-01-01T00:00:00.000Z', 'running', 1, 0, 1)`,
-      );
-
-      const migration: MigrationDefinition = {
-        id: '0001_stale',
-        description: 'Stale migration',
-        version: '1.0.0',
-        up: ['CREATE TABLE stale_reconcile_test (id TEXT PRIMARY KEY);'],
-        down: [],
-      };
-
-      const result = await tracker.apply(migration, { reconcile: true });
-
-      expect(result.success).toBe(true);
-      expect(result.applied).toBe(true);
-
-      const history = await tracker.getHistory();
-      expect(history).toHaveLength(1);
-      expect(history[0].status).toBe('completed');
-      expect(history[0].attempts).toBe(2);
+      expect(result.error).toContain('currently running or was interrupted');
+      expect(result.error).toContain('--force');
     });
 
     it('should allow re-applying rolled back migration without --force', async () => {
