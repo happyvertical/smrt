@@ -8,6 +8,7 @@
  */
 
 import {
+  FileNotFoundError,
   type FilesystemInterface,
   type GetFilesystemOptions,
   getFilesystem,
@@ -260,6 +261,16 @@ export class AssetStore {
           defaultFilesystem,
         })
       : undefined;
+    if (
+      request.operation === 'write' &&
+      resolution?.filesystem &&
+      !resolution.providerOptions &&
+      !resolution.sourceUri
+    ) {
+      throw new Error(
+        'Asset storage resolver must return providerOptions or sourceUri when overriding filesystem for write operations.',
+      );
+    }
     const providerOptions = resolution?.providerOptions
       ? normalizeProviderOptions(resolution.providerOptions)
       : this.fsOptions;
@@ -474,15 +485,18 @@ export class AssetStore {
     // Delete the file if it exists
     if (asset.sourceUri) {
       const filePath = AssetStore.pathFromUri(asset.sourceUri);
+      const target = await this.resolveStorage({
+        operation: 'delete',
+        asset,
+        path: AssetStore.providerRelativePath(filePath, this.fsOptions),
+        sourceUri: asset.sourceUri,
+      });
       try {
-        const target = await this.resolveStorage({
-          operation: 'delete',
-          asset,
-          path: AssetStore.providerRelativePath(filePath, this.fsOptions),
-          sourceUri: asset.sourceUri,
-        });
         await target.filesystem.delete(target.path);
-      } catch {
+      } catch (err) {
+        if (!(err instanceof FileNotFoundError)) {
+          throw err;
+        }
         // File may not exist on disk — still delete the record
       }
     }

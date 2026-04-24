@@ -25,6 +25,7 @@ import {
 } from './asset-conventions';
 import {
   AssetStore,
+  type AssetStoreOptions,
   type ProviderOptions,
   type StoreOptions,
 } from './asset-store';
@@ -55,6 +56,14 @@ export interface AssetRuntimeOptions {
    * forwarded to `@happyvertical/files`.
    */
   storage: ProviderOptions;
+
+  /**
+   * Optional behavior for the underlying `AssetStore`.
+   *
+   * Use this to provide a storage resolver while keeping the convenience
+   * runtime factory.
+   */
+  storeOptions?: AssetStoreOptions;
 
   /**
    * Optional collection instance. If omitted, one is created from `db`.
@@ -309,7 +318,11 @@ export async function createAssetRuntime(
   const associations =
     options.associations ??
     (await AssetAssociationCollection.create({ db: options.db }));
-  const store = await new AssetStore(options.storage, collection).initialize();
+  const store = await new AssetStore(
+    options.storage,
+    collection,
+    options.storeOptions,
+  ).initialize();
   return new AssetRuntime(collection, associations, store);
 }
 

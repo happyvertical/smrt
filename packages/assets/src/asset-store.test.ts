@@ -1,7 +1,10 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { FilesystemInterface } from '@happyvertical/files';
+import {
+  FileNotFoundError,
+  type FilesystemInterface,
+} from '@happyvertical/files';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Asset } from './asset.js';
 import { AssetStore } from './asset-store.js';
@@ -91,6 +94,25 @@ describe('AssetStore storage resolver', () => {
     );
   });
 
+  it('rejects filesystem-only write resolutions without a source URI', async () => {
+    const defaultBasePath = await createDefaultBasePath();
+    const resolvedFilesystem = createMemoryFilesystem();
+    const collection = {} as AssetCollection;
+    const store = new AssetStore(defaultBasePath, collection, {
+      resolver: async () => ({ filesystem: resolvedFilesystem }),
+    });
+    await store.initialize();
+
+    await expect(
+      store.storeFile(
+        { id: 'asset-ambiguous' } as Asset,
+        Buffer.from('ambiguous destination'),
+        { mimeType: 'text/plain', typeSlug: 'document' },
+      ),
+    ).rejects.toThrow(/providerOptions or sourceUri/);
+    expect(resolvedFilesystem.files.size).toBe(0);
+  });
+
   it('lets reads choose a resolved location for the logical asset', async () => {
     const defaultBasePath = await createDefaultBasePath();
     const resolvedFilesystem = createMemoryFilesystem({
@@ -140,6 +162,52 @@ describe('AssetStore storage resolver', () => {
     } as unknown as Asset);
 
     expect(resolvedFilesystem.deleted).toEqual(['replicas/delete-me.bin']);
+    expect(deleteRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not delete the asset record when delete resolution fails', async () => {
+    const defaultBasePath = await createDefaultBasePath();
+    const collection = {} as AssetCollection;
+    const deleteRecord = vi.fn(async () => {});
+    const store = new AssetStore(defaultBasePath, collection, {
+      resolver: async () => {
+        throw new Error('node-local store is offline');
+      },
+    });
+    await store.initialize();
+
+    await expect(
+      store.remove({
+        sourceUri: `file://${defaultBasePath}/file/delete-me.bin`,
+        delete: deleteRecord,
+      } as unknown as Asset),
+    ).rejects.toThrow('node-local store is offline');
+    expect(deleteRecord).not.toHaveBeenCalled();
+  });
+
+  it('still deletes the asset record when the resolved file is already gone', async () => {
+    const defaultBasePath = await createDefaultBasePath();
+    const resolvedFilesystem = createMemoryFilesystem();
+    const deleteFile = vi.fn(async (path: string) => {
+      throw new FileNotFoundError(path, 'memory');
+    });
+    resolvedFilesystem.delete = deleteFile;
+    const collection = {} as AssetCollection;
+    const store = new AssetStore(defaultBasePath, collection, {
+      resolver: async () => ({
+        filesystem: resolvedFilesystem,
+        path: 'replicas/missing.bin',
+      }),
+    });
+    await store.initialize();
+    const deleteRecord = vi.fn(async () => {});
+
+    await store.remove({
+      sourceUri: `file://${defaultBasePath}/file/missing.bin`,
+      delete: deleteRecord,
+    } as unknown as Asset);
+
+    expect(deleteFile).toHaveBeenCalledWith('replicas/missing.bin');
     expect(deleteRecord).toHaveBeenCalledTimes(1);
   });
 });
