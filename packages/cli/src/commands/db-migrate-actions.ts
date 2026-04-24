@@ -157,6 +157,12 @@ export function shouldFailDbMigrate(state: DbMigrateFailureState): boolean {
   );
 }
 
+export function shouldApplySchemaMigrations(state: {
+  dryRun?: boolean;
+}): boolean {
+  return !state.dryRun;
+}
+
 export function classifyFailedMigration(
   migrationName: string,
   unresolvedSyntheticMigrationNames: Set<string>,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getUnresolvedGeneratedMigrationNames,
   partitionSchemaChanges,
+  shouldApplySchemaMigrations,
   shouldFailDbMigrate,
   summarizeFailedMigrations,
 } from '../db-migrate-actions.js';
@@ -208,6 +209,17 @@ describe('shouldFailDbMigrate', () => {
         stiErrorCount: 0,
       }),
     ).toBe(false);
+  });
+});
+
+describe('shouldApplySchemaMigrations', () => {
+  it('does not apply schema migrations during dry-run', () => {
+    expect(shouldApplySchemaMigrations({ dryRun: true })).toBe(false);
+  });
+
+  it('applies schema migrations when dry-run is not requested', () => {
+    expect(shouldApplySchemaMigrations({ dryRun: false })).toBe(true);
+    expect(shouldApplySchemaMigrations({})).toBe(true);
   });
 });
 
