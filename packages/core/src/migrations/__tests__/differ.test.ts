@@ -494,12 +494,19 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('DO $$ BEGIN IF EXISTS');
-    expect(typeUpgrades[0].sql).toContain(
-      `trim("sort_order"::text) !~ '^[+-]?[0-9]+$'`,
-    );
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
     expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
     expect(typeUpgrades[0].sql).toContain(
+      'USING trim("sort_order"::text)::integer',
+    );
+    expect(typeUpgrades[0].sqlStatements).toHaveLength(2);
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      'DO $$ BEGIN IF EXISTS',
+    );
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      `trim("sort_order"::text) !~ '^[+-]?[0-9]+$'`,
+    );
+    expect(typeUpgrades[0].sqlStatements?.[1]).toContain(
       'USING trim("sort_order"::text)::integer',
     );
   });
@@ -541,12 +548,19 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('DO $$ BEGIN IF EXISTS');
-    expect(typeUpgrades[0].sql).toContain(
-      '"target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")',
-    );
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
     expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
     expect(typeUpgrades[0].sql).toContain('USING "target_clicks"::integer');
+    expect(typeUpgrades[0].sqlStatements).toHaveLength(2);
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      'DO $$ BEGIN IF EXISTS',
+    );
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      '"target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")',
+    );
+    expect(typeUpgrades[0].sqlStatements?.[1]).toContain(
+      'USING "target_clicks"::integer',
+    );
   });
 
   it('should generate DuckDB ALTER COLUMN TYPE for TEXT→JSON', async () => {
@@ -835,6 +849,33 @@ describe('getSQLFromDiff', () => {
     expect(sql).toHaveLength(1);
     expect(sql[0]).toContain('ALTER TABLE');
     expect(sql[0]).toContain('TYPE JSONB');
+  });
+
+  it('should flatten multi-step SQL statements for executable changes', () => {
+    const diff: SchemaDiff = {
+      has_changes: true,
+      added_tables: [],
+      dropped_tables: [],
+      changes: [
+        {
+          type: 'type_upgrade',
+          table: 'ad_campaigns',
+          name: 'target_clicks',
+          mismatch: { expected: 'INTEGER', actual: 'REAL' },
+          sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+          sqlStatements: [
+            'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\'; END IF; END $$',
+            'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+          ],
+        },
+      ],
+    };
+
+    const sql = getSQLFromDiff(diff);
+
+    expect(sql).toHaveLength(2);
+    expect(sql[0]).toContain('DO $$ BEGIN IF EXISTS');
+    expect(sql[1]).toContain('ALTER TABLE');
   });
 
   it('should return empty arrays for no changes', () => {

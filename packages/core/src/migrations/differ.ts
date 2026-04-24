@@ -30,6 +30,11 @@ const VALID_SQL_DATA_TYPES: Set<SQLDataType> = new Set([
   'TIMESTAMP',
 ]);
 
+interface GeneratedTypeUpgradeSQL {
+  sql: string;
+  statements?: string[];
+}
+
 /**
  * Check if a string is a valid SQLDataType
  */
@@ -196,7 +201,7 @@ export class SchemaComparer {
           // Since SMRT owns the data lifecycle, we know the intent from the manifest
           if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
             // Generate type upgrade SQL
-            const sql = this.generateTypeUpgradeSQL(
+            const generatedSQL = this.generateTypeUpgradeSQL(
               tableName,
               colName,
               colDef,
@@ -211,7 +216,10 @@ export class SchemaComparer {
                 expected: colDef.type,
                 actual: dbCol.type,
               },
-              sql,
+              sql: generatedSQL.sql,
+              ...(generatedSQL.statements
+                ? { sqlStatements: generatedSQL.statements }
+                : {}),
             });
           } else if (!this.options.ignoreTypeMismatches) {
             changes.push({
@@ -466,7 +474,7 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
     dbType: string,
-  ): string {
+  ): GeneratedTypeUpgradeSQL {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
     const manifestType = colDef.type;
@@ -485,10 +493,14 @@ export class SchemaComparer {
           this.normalizeType(manifestType) === 'JSON' &&
           this.normalizeType(dbType) === 'TEXT'
         ) {
-          return `-- SQLite: ${quotedCol} already stores JSON as TEXT (no change needed)`;
+          return {
+            sql: `-- SQLite: ${quotedCol} already stores JSON as TEXT (no change needed)`,
+          };
         }
         // For other type upgrades, SQLite requires recreating the table
-        return `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`;
+        return {
+          sql: `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`,
+        };
 
       case 'postgres': {
         // PostgreSQL defaults must be dropped/reset around some type changes
@@ -551,18 +563,24 @@ export class SchemaComparer {
 
         const alterSql = `ALTER TABLE ${quotedTable} ${clauses.join(', ')}`;
 
-        return preflightSQL ? `${preflightSQL}; ${alterSql}` : alterSql;
+        return preflightSQL
+          ? { sql: alterSql, statements: [preflightSQL, alterSql] }
+          : { sql: alterSql };
       }
 
       case 'duckdb':
         // DuckDB supports ALTER COLUMN TYPE for type conversions
-        return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+        return {
+          sql: `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`,
+        };
 
       default: {
         // Escape special characters in type names for safe comment generation
         const safeDbType = dbType.replace(/[^\w]/g, '_');
         const safeManifestType = manifestType.replace(/[^\w]/g, '_');
-        return `-- Type upgrade for ${quotedCol}: ${safeDbType} → ${safeManifestType}`;
+        return {
+          sql: `-- Type upgrade for ${quotedCol}: ${safeDbType} → ${safeManifestType}`,
+        };
       }
     }
   }
@@ -677,8 +695,10 @@ export function getSQLFromDiff(diff: SchemaDiff): string[] {
 
   // Add column and index changes
   for (const change of diff.changes) {
-    if (change.sql && change.type !== 'type_mismatch') {
-      statements.push(change.sql);
+    if (change.type !== 'type_mismatch') {
+      statements.push(
+        ...(change.sqlStatements ?? (change.sql ? [change.sql] : [])),
+      );
     }
   }
 
