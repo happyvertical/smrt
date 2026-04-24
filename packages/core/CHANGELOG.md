@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve package names in generated registers (#1157) (cli)
+  - @happyvertical/smrt-scanner@0.22.12
+  - @happyvertical/smrt-config@0.22.12
+  - @happyvertical/smrt-types@0.22.12
+
 ## 0.22.11
 
 ### Patch Changes
