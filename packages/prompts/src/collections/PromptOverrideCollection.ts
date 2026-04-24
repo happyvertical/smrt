@@ -11,14 +11,6 @@ export class PromptOverrideCollection extends SmrtCollection<PromptOverride> {
     return items.filter((item) => (excludeId ? item.id !== excludeId : true));
   }
 
-  async listForKey(
-    key: string,
-    options: { excludeId?: string } = {},
-  ): Promise<PromptOverride[]> {
-    const items = await this.list({ where: { key } });
-    return this.excludeOverrideId(items, options.excludeId);
-  }
-
   async getAppOverride(
     key: string,
     options: { excludeId?: string } = {},
