@@ -144,6 +144,12 @@ describe('generate-register', () => {
       /ObjectRegistry\.register\(Profile/g,
     );
     expect(profileRegistrations).toHaveLength(1);
+    expect(content).toContain(
+      'ObjectRegistry.register(Profile, { name: "Profile", packageName: "@happyvertical/smrt-profiles" });',
+    );
+    expect(content).not.toContain(
+      'name: "@happyvertical/smrt-profiles:Profile"',
+    );
   });
 
   it('filters out test-visibility objects', async () => {
@@ -198,6 +204,39 @@ describe('generate-register', () => {
     // Test objects should NOT be present
     expect(content).not.toContain('PerfTestUser');
     expect(content).not.toContain('Issue144TestProfile');
+  });
+
+  it('keeps package names separate when manifest keys are qualified', async () => {
+    mockedAutoDiscover.mockResolvedValue({
+      discovered: [
+        {
+          path: '/fake/agents/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/smrt-agents',
+        },
+      ],
+    } as any);
+
+    mockedLoadManifest.mockResolvedValue({
+      objects: {
+        '@happyvertical/smrt-agents:Agent': {
+          exportName: 'Agent',
+          packageName: '@happyvertical/smrt-agents',
+          qualifiedName: '@happyvertical/smrt-agents:Agent',
+          hasCollection: false,
+          visibility: 'public',
+        },
+      },
+    });
+
+    await handler([], { 'output-path': outputPath });
+
+    const content = await readFile(outputPath, 'utf-8');
+
+    expect(content).toContain(
+      'ObjectRegistry.register(Agent, { name: "Agent", packageName: "@happyvertical/smrt-agents" });',
+    );
+    expect(content).not.toContain('name: "@happyvertical/smrt-agents:Agent"');
   });
 
   it('imports from canonical packageName, not the manifest package', async () => {
@@ -370,8 +409,12 @@ describe('generate-register', () => {
     expect(content).toContain("import { Gadget } from '@happyvertical/pkg-b'");
 
     // Both objects should be registered
-    expect(content).toContain('ObjectRegistry.register(Widget');
-    expect(content).toContain('ObjectRegistry.register(Gadget');
+    expect(content).toContain(
+      'ObjectRegistry.register(Widget, { name: "Widget", packageName: "@happyvertical/pkg-a" });',
+    );
+    expect(content).toContain(
+      'ObjectRegistry.register(Gadget, { name: "Gadget", packageName: "@happyvertical/pkg-b" });',
+    );
 
     // ItemCollection should only appear once (from Widget's package)
     const collectionImports = content.match(/ItemCollection/g);
