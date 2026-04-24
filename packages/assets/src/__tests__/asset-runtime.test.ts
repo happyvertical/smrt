@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join as pathJoin } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Asset } from '../asset';
 import { AssetAssociationCollection } from '../asset-associations';
 import { ASSET_ROLES } from '../asset-conventions';
@@ -61,6 +61,38 @@ describe('AssetRuntime', () => {
 
       expect(runtime.collection).toBe(collection);
       expect(runtime.associations).toBe(associations);
+    });
+
+    it('passes store options through to the underlying AssetStore', async () => {
+      const resolver = vi.fn(async (request) =>
+        request.operation === 'write'
+          ? { path: `resolved/${request.path}` }
+          : undefined,
+      );
+      const runtime = await createAssetRuntime({
+        db,
+        storage: storageDir,
+        storeOptions: { resolver },
+      });
+
+      const asset = await runtime.storeSourceAsset(
+        'resolved-notes.txt',
+        Buffer.from('routed through factory'),
+        { mimeType: 'text/plain', typeSlug: 'document' },
+      );
+
+      expect(resolver).toHaveBeenCalledWith(
+        expect.objectContaining({
+          operation: 'write',
+          path: `document/${asset.id}.txt`,
+        }),
+      );
+      expect(asset.sourceUri).toBe(
+        `file://${storageDir}/resolved/document/${asset.id}.txt`,
+      );
+      await expect(runtime.store.read(asset)).resolves.toEqual(
+        Buffer.from('routed through factory'),
+      );
     });
   });
 

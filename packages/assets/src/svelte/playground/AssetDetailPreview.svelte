@@ -10,10 +10,21 @@ let previewAsset = $state<PersistedAsset | null>(null);
 let statusMessage = $state<string | null>(null);
 let lastAsset: PersistedAsset | null = null;
 
+function clonePersistedAsset(
+  source: PersistedAsset,
+  updates: AssetDetailUpdates = {},
+): PersistedAsset {
+  return Object.assign(
+    Object.create(Object.getPrototypeOf(source)) as PersistedAsset,
+    source,
+    updates,
+  );
+}
+
 $effect(() => {
   if (asset !== lastAsset) {
     lastAsset = asset;
-    previewAsset = { ...asset };
+    previewAsset = clonePersistedAsset(asset);
     statusMessage = null;
     isOpen = false;
   }
@@ -33,10 +44,7 @@ function handleSave(_asset: PersistedAsset, updates: AssetDetailUpdates) {
     return;
   }
 
-  previewAsset = {
-    ...previewAsset,
-    ...updates,
-  };
+  previewAsset = clonePersistedAsset(previewAsset, updates);
   statusMessage = 'Saved changes in the preview harness.';
 }
 

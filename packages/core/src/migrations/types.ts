@@ -125,11 +125,13 @@ export interface ApplyMigrationsOptions {
   /**
    * Reconcile migration history with live schema drift.
    *
-   * When true, the tracker may re-run a completed migration with the same
-   * checksum if the caller has already independently determined the change is
-   * still required. This keeps live schema state authoritative for repair
-   * flows such as `db:migrate` without bypassing checksum, failed, or running
-   * migration safeguards.
+   * When true, the tracker may re-run a migration if the caller has already
+   * independently determined the change is still required. Completed
+   * migrations still require a checksum match. Failed migrations may be retried
+   * with the current definition because they were never applied successfully.
+   * Running migrations still require `force` because SMRT does not currently
+   * have a heartbeat or lock-owner check that can prove the original process
+   * is dead.
    */
   reconcile?: boolean;
   /** Use PostgreSQL-safe operations (CONCURRENTLY, lock timeout) */

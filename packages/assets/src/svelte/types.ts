@@ -121,12 +121,20 @@ export interface AssetToolbarProps {
   sort: AssetSort;
   /** Callback when view changes */
   onViewChange: (view: AssetViewMode) => void;
+  /** @deprecated Use onViewChange */
+  onviewchange?: (view: AssetViewMode) => void;
   /** Callback when filters change */
   onFilterChange: (filters: AssetFilters) => void;
+  /** @deprecated Use onFilterChange */
+  onfilterchange?: (filters: AssetFilters) => void;
   /** Callback when sort changes */
   onSortChange: (sort: AssetSort) => void;
+  /** @deprecated Use onSortChange */
+  onsortchange?: (sort: AssetSort) => void;
   /** Callback when upload is requested */
   onUpload: () => void;
+  /** @deprecated Use onUpload */
+  onupload?: () => void;
 }
 
 /** Props for AssetGrid */
@@ -171,6 +179,10 @@ export interface ActionBarProps {
   customActions?: AssetAction[];
   /** Callback to clear selection */
   onClearSelection: () => void;
+  /** @deprecated Use onClearSelection */
+  onclearselection?: () => void;
   /** Callback for delete action */
   onDelete: (assets: PersistedAsset[]) => void | Promise<void>;
+  /** @deprecated Use onDelete */
+  ondelete?: (assets: PersistedAsset[]) => void | Promise<void>;
 }

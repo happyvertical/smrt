@@ -5,6 +5,7 @@
  */
 
 import type { CLICommand } from '../cli-generator.js';
+import { closeDatabaseConnection } from './db-command-utils.js';
 
 export const dbRollbackCommand: CLICommand = {
   name: 'db:rollback',
@@ -48,6 +49,8 @@ export const dbRollbackCommand: CLICommand = {
     },
   },
   handler: async (_args: string[], options: any) => {
+    let db: any;
+
     try {
       // 1. Load CLI config
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -74,7 +77,7 @@ export const dbRollbackCommand: CLICommand = {
 
       // 3. Connect to database
       const { getDatabase } = await import('@happyvertical/sql');
-      const db = await getDatabase({ type: dbType, url: dbUrl });
+      db = await getDatabase({ type: dbType, url: dbUrl });
 
       // 4. Initialize MigrationTracker
       const { MigrationTracker, shortChecksum } = await import(
@@ -113,7 +116,8 @@ export const dbRollbackCommand: CLICommand = {
               `❌ Migration "${options.to}" not found in history\n`,
             );
           }
-          process.exit(1);
+          process.exitCode = 1;
+          return;
         }
         // Rollback all migrations after the target
         migrationsToRollback = applied.slice(0, targetIndex);
@@ -186,7 +190,7 @@ export const dbRollbackCommand: CLICommand = {
 
         if (answer.toLowerCase() !== 'y' && answer.toLowerCase() !== 'yes') {
           console.log('\n❌ Cancelled by user\n');
-          process.exit(0);
+          return;
         }
         console.log();
       }
@@ -340,7 +344,10 @@ export const dbRollbackCommand: CLICommand = {
           console.error(`   ${error.message}`);
         }
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
+    } finally {
+      await closeDatabaseConnection(db);
     }
   },
 };

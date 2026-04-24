@@ -20,6 +20,7 @@ export interface MigrationAction {
     actual: string;
   };
   sql?: string;
+  sqlStatements?: string[];
 }
 
 export interface SchemaChangeLike {
@@ -50,6 +51,7 @@ export interface SchemaChangeLike {
     actual: string;
   };
   sql?: string;
+  sqlStatements?: string[];
 }
 
 export type TypeUpgradeExecutionKind = 'executable' | 'manual' | 'noop';
@@ -267,6 +269,9 @@ export function partitionSchemaChanges(
             unique: col.unique,
           },
           sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
         });
         break;
       }
@@ -284,6 +289,9 @@ export function partitionSchemaChanges(
             unique: idx.unique,
           },
           sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
         });
         break;
       }
@@ -325,6 +333,9 @@ export function partitionSchemaChanges(
             actual: mm.actual,
           },
           sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
         };
         const executionKind = classifyTypeUpgradeSql(change.sql);
 

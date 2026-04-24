@@ -49,6 +49,37 @@ describe('partitionSchemaChanges', () => {
     ]);
   });
 
+  it('preserves ordered multi-statement SQL for executable type upgrades', () => {
+    const { migrations, manualInterventions } = partitionSchemaChanges(
+      [
+        {
+          type: 'type_upgrade',
+          table: 'ad_campaigns',
+          name: 'target_clicks',
+          column: {
+            type: 'INTEGER',
+          },
+          mismatch: {
+            expected: 'INTEGER',
+            actual: 'REAL',
+          },
+          sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+          sqlStatements: [
+            'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\'; END IF; END $$',
+            'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+          ],
+        },
+      ],
+      () => 'AdCampaign',
+    );
+
+    expect(manualInterventions).toEqual([]);
+    expect(migrations).toHaveLength(1);
+    expect(migrations[0].sqlStatements).toHaveLength(2);
+    expect(migrations[0].sqlStatements?.[0]).toContain('DO $$ BEGIN IF EXISTS');
+    expect(migrations[0].sqlStatements?.[1]).toContain('ALTER TABLE');
+  });
+
   it('keeps comment-only SQLite type upgrades in the manual intervention set', () => {
     const { migrations, manualInterventions } = partitionSchemaChanges(
       [

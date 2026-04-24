@@ -414,6 +414,155 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(typeUpgrades[0].sql).toContain("SET DEFAULT '{}'::jsonb");
   });
 
+  it('should generate PostgreSQL USING clause for legacy JSON→TIMESTAMP drift', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'analytics_events' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          created_at: { type: 'JSON', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      analytics_events: {
+        tableName: 'analytics_events',
+        ddl: 'CREATE TABLE analytics_events (id TEXT PRIMARY KEY, created_at TIMESTAMP);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          created_at: { type: 'TIMESTAMP' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('TYPE TIMESTAMP');
+    expect(typeUpgrades[0].sql).toContain(
+      `USING NULLIF(NULLIF(trim(both '"' from "created_at"::text), ''), 'null')::timestamp`,
+    );
+  });
+
+  it('should generate PostgreSQL guarded USING clause for legacy TEXT→INTEGER drift', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'asset_associations' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          sort_order: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      asset_associations: {
+        tableName: 'asset_associations',
+        ddl: 'CREATE TABLE asset_associations (id TEXT PRIMARY KEY, sort_order INTEGER);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          sort_order: { type: 'INTEGER' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
+    expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
+    expect(typeUpgrades[0].sql).toContain(
+      'USING trim("sort_order"::text)::integer',
+    );
+    expect(typeUpgrades[0].sqlStatements).toHaveLength(2);
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      'DO $$ BEGIN IF EXISTS',
+    );
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      `trim("sort_order"::text) !~ '^[+-]?[0-9]+$'`,
+    );
+    expect(typeUpgrades[0].sqlStatements?.[1]).toContain(
+      'USING trim("sort_order"::text)::integer',
+    );
+  });
+
+  it('should generate PostgreSQL guarded USING clause for legacy REAL→INTEGER drift', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'ad_campaigns' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          target_clicks: { type: 'REAL', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      ad_campaigns: {
+        tableName: 'ad_campaigns',
+        ddl: 'CREATE TABLE ad_campaigns (id TEXT PRIMARY KEY, target_clicks INTEGER);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          target_clicks: { type: 'INTEGER' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
+    expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
+    expect(typeUpgrades[0].sql).toContain('USING "target_clicks"::integer');
+    expect(typeUpgrades[0].sqlStatements).toHaveLength(2);
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      'DO $$ BEGIN IF EXISTS',
+    );
+    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
+      '"target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")',
+    );
+    expect(typeUpgrades[0].sqlStatements?.[1]).toContain(
+      'USING "target_clicks"::integer',
+    );
+  });
+
   it('should generate DuckDB ALTER COLUMN TYPE for TEXT→JSON', async () => {
     // Create a mock database interface that identifies as DuckDB
     const mockDuckDb = {
@@ -700,6 +849,33 @@ describe('getSQLFromDiff', () => {
     expect(sql).toHaveLength(1);
     expect(sql[0]).toContain('ALTER TABLE');
     expect(sql[0]).toContain('TYPE JSONB');
+  });
+
+  it('should flatten multi-step SQL statements for executable changes', () => {
+    const diff: SchemaDiff = {
+      has_changes: true,
+      added_tables: [],
+      dropped_tables: [],
+      changes: [
+        {
+          type: 'type_upgrade',
+          table: 'ad_campaigns',
+          name: 'target_clicks',
+          mismatch: { expected: 'INTEGER', actual: 'REAL' },
+          sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+          sqlStatements: [
+            'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\'; END IF; END $$',
+            'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+          ],
+        },
+      ],
+    };
+
+    const sql = getSQLFromDiff(diff);
+
+    expect(sql).toHaveLength(2);
+    expect(sql[0]).toContain('DO $$ BEGIN IF EXISTS');
+    expect(sql[1]).toContain('ALTER TABLE');
   });
 
   it('should return empty arrays for no changes', () => {

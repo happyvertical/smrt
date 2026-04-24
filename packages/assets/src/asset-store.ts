@@ -8,6 +8,7 @@
  */
 
 import {
+  FileNotFoundError,
   type FilesystemInterface,
   type GetFilesystemOptions,
   getFilesystem,
@@ -62,6 +63,66 @@ export interface StoreOptions {
 export type ProviderOptions = GetFilesystemOptions | string;
 
 /**
+ * Asset storage operation currently being resolved.
+ */
+export type AssetStorageOperation = 'read' | 'write' | 'delete';
+
+/**
+ * Context passed to an AssetStore resolver.
+ *
+ * Downstream apps can use this hook to route a logical Asset to whichever
+ * storage backend is appropriate for the current operation.
+ */
+export interface AssetStorageResolveRequest {
+  operation: AssetStorageOperation;
+  asset: Asset;
+  path: string;
+  sourceUri: string;
+  mimeType?: string;
+  typeSlug?: string;
+  defaultProviderOptions: GetFilesystemOptions;
+  defaultFilesystem: FilesystemInterface;
+}
+
+/**
+ * Resolved storage target for an AssetStore operation.
+ */
+export interface AssetStorageResolution {
+  filesystem?: FilesystemInterface;
+  providerOptions?: ProviderOptions;
+  path?: string;
+  sourceUri?: string;
+}
+
+export type AssetStorageResolver = (
+  request: AssetStorageResolveRequest,
+) =>
+  | AssetStorageResolution
+  | null
+  | undefined
+  | Promise<AssetStorageResolution | null | undefined>;
+
+export interface AssetStoreOptions {
+  resolver?: AssetStorageResolver;
+}
+
+interface ResolvedAssetStorageTarget {
+  filesystem: FilesystemInterface;
+  providerOptions: GetFilesystemOptions;
+  path: string;
+  sourceUri: string;
+}
+
+function normalizeProviderOptions(
+  providerOrBasePath: ProviderOptions,
+): GetFilesystemOptions {
+  if (typeof providerOrBasePath === 'string') {
+    return { type: 'local', basePath: providerOrBasePath };
+  }
+  return providerOrBasePath;
+}
+
+/**
  * AssetStore manages file storage and Asset record creation.
  *
  * Files are stored using @happyvertical/files with the convention:
@@ -95,21 +156,21 @@ export type ProviderOptions = GetFilesystemOptions | string;
 export class AssetStore {
   private fs: FilesystemInterface | null = null;
   private readonly fsOptions: GetFilesystemOptions;
+  private readonly fsCache = new Map<string, FilesystemInterface>();
+  private readonly resolver?: AssetStorageResolver;
 
   constructor(
     providerOrBasePath: ProviderOptions,
     private readonly collection: AssetCollection,
+    options: AssetStoreOptions = {},
   ) {
-    if (typeof providerOrBasePath === 'string') {
-      this.fsOptions = { type: 'local', basePath: providerOrBasePath };
-    } else {
-      this.fsOptions = providerOrBasePath;
-    }
+    this.fsOptions = normalizeProviderOptions(providerOrBasePath);
+    this.resolver = options.resolver;
   }
 
   /** The base path for local storage, or empty string for non-local providers */
   get basePath(): string {
-    return (this.fsOptions as any).basePath ?? '';
+    return this.fsOptions.basePath ?? '';
   }
 
   /**
@@ -118,6 +179,7 @@ export class AssetStore {
    */
   async initialize(): Promise<this> {
     this.fs = await getFilesystem(this.fsOptions);
+    this.fsCache.set(this.providerCacheKey(this.fsOptions), this.fs);
     return this;
   }
 
@@ -131,18 +193,131 @@ export class AssetStore {
     return this.fs;
   }
 
+  private providerCacheKey(providerOptions: GetFilesystemOptions): string {
+    return JSON.stringify(providerOptions);
+  }
+
+  private async getFilesystemForOptions(
+    providerOptions: GetFilesystemOptions,
+  ): Promise<FilesystemInterface> {
+    const key = this.providerCacheKey(providerOptions);
+    const cached = this.fsCache.get(key);
+    if (cached) return cached;
+
+    const filesystem = await getFilesystem(providerOptions);
+    this.fsCache.set(key, filesystem);
+    return filesystem;
+  }
+
   /**
    * Build a sourceUri for the given file path based on the provider type.
    */
   private buildSourceUri(filePath: string): string {
-    const type = this.fsOptions.type;
+    return AssetStore.buildSourceUriForProvider(filePath, this.fsOptions);
+  }
+
+  private static buildSourceUriForProvider(
+    filePath: string,
+    providerOptions: GetFilesystemOptions,
+  ): string {
+    const type = providerOptions.type;
     if (type === 's3') {
-      const bucket = (this.fsOptions as any).bucket ?? '';
+      const bucket = providerOptions.bucket ?? '';
       return `s3://${bucket}/${filePath}`;
     }
     // Default to file:// for local and other types
-    const base = this.basePath;
+    const base = providerOptions.basePath ?? '';
     return base ? `file://${base}/${filePath}` : `file://${filePath}`;
+  }
+
+  private static providerRelativePath(
+    filePath: string,
+    providerOptions: GetFilesystemOptions,
+  ): string {
+    const base = providerOptions.basePath ?? '';
+    return base && filePath.startsWith(base)
+      ? filePath.slice(base.length + 1)
+      : filePath;
+  }
+
+  private static requireAssetId(asset: Asset): string {
+    if (!asset.id) {
+      throw new Error('Asset must be saved before storing file data.');
+    }
+    return asset.id;
+  }
+
+  private async resolveStorage(
+    request: Omit<
+      AssetStorageResolveRequest,
+      'defaultProviderOptions' | 'defaultFilesystem'
+    >,
+  ): Promise<ResolvedAssetStorageTarget> {
+    const defaultFilesystem = this.getFs();
+    const resolution = this.resolver
+      ? await this.resolver({
+          ...request,
+          defaultProviderOptions: this.fsOptions,
+          defaultFilesystem,
+        })
+      : undefined;
+    if (
+      request.operation === 'write' &&
+      resolution?.filesystem &&
+      !resolution.providerOptions &&
+      !resolution.sourceUri
+    ) {
+      throw new Error(
+        'Asset storage resolver must return providerOptions or sourceUri when overriding filesystem for write operations.',
+      );
+    }
+    const providerOptions = resolution?.providerOptions
+      ? normalizeProviderOptions(resolution.providerOptions)
+      : this.fsOptions;
+    const path = AssetStore.providerRelativePath(
+      resolution?.path ?? request.path,
+      providerOptions,
+    );
+    const sourceUri =
+      resolution?.sourceUri ??
+      (resolution?.path || resolution?.providerOptions
+        ? AssetStore.buildSourceUriForProvider(path, providerOptions)
+        : request.sourceUri);
+    const filesystem =
+      resolution?.filesystem ??
+      (providerOptions === this.fsOptions
+        ? defaultFilesystem
+        : await this.getFilesystemForOptions(providerOptions));
+
+    return {
+      filesystem,
+      providerOptions,
+      path,
+      sourceUri,
+    };
+  }
+
+  private async writeAssetData(
+    asset: Asset,
+    data: Buffer,
+    opts: { mimeType: string; typeSlug?: string },
+  ): Promise<string> {
+    const ext = MIME_TO_EXT[opts.mimeType] ?? 'bin';
+    const typeSlug = opts.typeSlug ?? 'file';
+    const assetId = AssetStore.requireAssetId(asset);
+    const filePath = `${typeSlug}/${assetId}.${ext}`;
+    const sourceUri = this.buildSourceUri(filePath);
+    const target = await this.resolveStorage({
+      operation: 'write',
+      asset,
+      path: filePath,
+      sourceUri,
+      mimeType: opts.mimeType,
+      typeSlug,
+    });
+
+    await target.filesystem.write(target.path, data, { createParents: true });
+    return target.sourceUri;
   }
 
   /**
@@ -161,13 +336,7 @@ export class AssetStore {
     data: Buffer,
     opts: { mimeType: string; typeSlug?: string },
   ): Promise<string> {
-    const fs = this.getFs();
-    const ext = MIME_TO_EXT[opts.mimeType] ?? 'bin';
-    const typeSlug = opts.typeSlug ?? 'file';
-    const filePath = `${typeSlug}/${asset.id}.${ext}`;
-    const sourceUri = this.buildSourceUri(filePath);
-    await fs.write(filePath, data, { createParents: true });
-    return sourceUri;
+    return this.writeAssetData(asset, data, opts);
   }
 
   /**
@@ -179,8 +348,6 @@ export class AssetStore {
    * @returns Created Asset instance
    */
   async store(name: string, data: Buffer, opts: StoreOptions): Promise<Asset> {
-    const fs = this.getFs();
-    const ext = MIME_TO_EXT[opts.mimeType] ?? 'bin';
     const typeSlug = opts.typeSlug ?? 'file';
 
     // Create the Asset record first to get an ID
@@ -194,13 +361,12 @@ export class AssetStore {
       sourceUri: '', // Will be updated after file write
     })) as Asset;
 
-    // Build file path: {typeSlug}/{assetId}.{ext}
-    const filePath = `${typeSlug}/${asset.id}.${ext}`;
-    const sourceUri = this.buildSourceUri(filePath);
-
     try {
       // Write file to storage
-      await fs.write(filePath, data, { createParents: true });
+      asset.sourceUri = await this.writeAssetData(asset, data, {
+        mimeType: opts.mimeType,
+        typeSlug,
+      });
     } catch (err) {
       // Clean up orphaned Asset record on file write failure
       await asset.delete();
@@ -208,7 +374,6 @@ export class AssetStore {
     }
 
     // Update the Asset with the file URI
-    asset.sourceUri = sourceUri;
     await asset.save();
 
     return asset;
@@ -227,28 +392,27 @@ export class AssetStore {
     data: Buffer,
     opts: Partial<StoreOptions> = {},
   ): Promise<Asset> {
-    const primaryVersionId = asset.primaryVersionId ?? asset.id!;
+    const primaryVersionId =
+      asset.primaryVersionId ?? AssetStore.requireAssetId(asset);
     const newVersion = await this.collection.createNewVersion(
       primaryVersionId,
       '', // sourceUri will be set by store
       { ...opts },
     );
 
-    const fs = this.getFs();
     const mimeType = opts.mimeType ?? asset.mimeType;
-    const ext = MIME_TO_EXT[mimeType] ?? 'bin';
     const typeSlug = opts.typeSlug ?? asset.typeSlug ?? 'file';
-    const filePath = `${typeSlug}/${newVersion.id}.${ext}`;
-    const sourceUri = this.buildSourceUri(filePath);
 
     try {
-      await fs.write(filePath, data, { createParents: true });
+      newVersion.sourceUri = await this.writeAssetData(newVersion, data, {
+        mimeType,
+        typeSlug,
+      });
     } catch (err) {
       await newVersion.delete();
       throw err;
     }
 
-    newVersion.sourceUri = sourceUri;
     if (opts.mimeType) newVersion.mimeType = opts.mimeType;
     await newVersion.save();
 
@@ -263,7 +427,8 @@ export class AssetStore {
    * @returns File data as a Buffer
    */
   async readVersion(asset: Asset, version: number): Promise<Buffer> {
-    const primaryVersionId = asset.primaryVersionId ?? asset.id!;
+    const primaryVersionId =
+      asset.primaryVersionId ?? AssetStore.requireAssetId(asset);
     const versions = await this.collection.listVersions(primaryVersionId);
     const targetVersion = versions.find((v) => v.version === version);
 
@@ -283,14 +448,14 @@ export class AssetStore {
    * @returns File data as a Buffer
    */
   async read(asset: Asset): Promise<Buffer> {
-    const fs = this.getFs();
     const filePath = AssetStore.pathFromUri(asset.sourceUri);
-    const base = this.basePath;
-    const relativePath =
-      base && filePath.startsWith(base)
-        ? filePath.slice(base.length + 1)
-        : filePath;
-    return (await fs.read(relativePath, { raw: true })) as Buffer;
+    const target = await this.resolveStorage({
+      operation: 'read',
+      asset,
+      path: AssetStore.providerRelativePath(filePath, this.fsOptions),
+      sourceUri: asset.sourceUri,
+    });
+    return (await target.filesystem.read(target.path, { raw: true })) as Buffer;
   }
 
   /**
@@ -317,19 +482,21 @@ export class AssetStore {
    * @param asset - Asset to remove
    */
   async remove(asset: Asset): Promise<void> {
-    const fs = this.getFs();
-
     // Delete the file if it exists
     if (asset.sourceUri) {
       const filePath = AssetStore.pathFromUri(asset.sourceUri);
-      const base = this.basePath;
-      const relativePath =
-        base && filePath.startsWith(base)
-          ? filePath.slice(base.length + 1)
-          : filePath;
+      const target = await this.resolveStorage({
+        operation: 'delete',
+        asset,
+        path: AssetStore.providerRelativePath(filePath, this.fsOptions),
+        sourceUri: asset.sourceUri,
+      });
       try {
-        await fs.delete(relativePath);
-      } catch {
+        await target.filesystem.delete(target.path);
+      } catch (err) {
+        if (!(err instanceof FileNotFoundError)) {
+          throw err;
+        }
         // File may not exist on disk — still delete the record
       }
     }

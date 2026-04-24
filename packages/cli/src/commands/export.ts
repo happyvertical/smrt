@@ -15,6 +15,7 @@ import type {
   ExportFilterValue,
 } from '@happyvertical/smrt-config';
 import type { CLICommand } from '../cli-generator.js';
+import { closeDatabaseConnection } from './db-command-utils.js';
 
 function toSnakeCase(str: string): string {
   return str
@@ -458,6 +459,8 @@ export const exportCommand: CLICommand = {
     },
   },
   handler: async (_args: string[], options: any) => {
+    let db: any;
+
     try {
       // 1. Load config
       const { getConfig, getPackageConfig } = await import(
@@ -524,7 +527,7 @@ export const exportCommand: CLICommand = {
 
       // 3. Connect to database
       const { getDatabase } = await import('@happyvertical/sql');
-      const db = await getDatabase({
+      db = await getDatabase({
         type: cliConfig.database.type || 'sqlite',
         url: cliConfig.database.url,
       });
@@ -694,7 +697,10 @@ export const exportCommand: CLICommand = {
           }
         }
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
+    } finally {
+      await closeDatabaseConnection(db);
     }
   },
 };

@@ -6,12 +6,14 @@ const {
   getDatabaseMock,
   getAllSchemasAsDefinitionsMock,
   compareMock,
+  closeMock,
   initializeMock,
   getHistoryMock,
   SchemaComparerMock,
   MigrationTrackerMock,
 } = vi.hoisted(() => {
   const compare = vi.fn();
+  const close = vi.fn();
   const initialize = vi.fn();
   const getHistory = vi.fn();
 
@@ -30,6 +32,7 @@ const {
     getDatabaseMock: vi.fn(),
     getAllSchemasAsDefinitionsMock: vi.fn(),
     compareMock: compare,
+    closeMock: close,
     initializeMock: initialize,
     getHistoryMock: getHistory,
     SchemaComparerMock: MockSchemaComparer,
@@ -76,6 +79,7 @@ describe('db:history', () => {
     getDatabaseMock.mockResolvedValue({
       url: 'postgresql://test:test@localhost:5432/test_db',
       getTableSchema: vi.fn(),
+      close: closeMock,
     });
 
     autoDiscoverAndLoadMock.mockResolvedValue({
@@ -222,6 +226,7 @@ describe('db:history', () => {
         recommendation: null,
       }),
     ]);
+    expect(closeMock).toHaveBeenCalledOnce();
   });
 
   it('counts manual-review failures when schema comparison is unavailable', async () => {
