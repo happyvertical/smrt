@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - repair safe integer schema drift (#1155) (core)
+  - @happyvertical/smrt-scanner@0.22.9
+  - @happyvertical/smrt-config@0.22.9
+  - @happyvertical/smrt-types@0.22.9
+
 ## 0.22.8
 
 ### Patch Changes
