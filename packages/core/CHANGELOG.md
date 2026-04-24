@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.10
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] Add smrt-prompts with provider-aware integrations
+  - @happyvertical/smrt-scanner@0.22.10
+  - @happyvertical/smrt-config@0.22.10
+  - @happyvertical/smrt-types@0.22.10
+
 ## 0.22.9
 
 ### Patch Changes
