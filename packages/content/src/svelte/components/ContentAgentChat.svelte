@@ -16,6 +16,7 @@ const AI_MODELS = [
   { id: 'gpt-4o', label: 'GPT-4o' },
   { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
 ];
+const DEFAULT_MODEL_ID = AI_MODELS[0].id;
 
 let {
   apiBaseUrl = '/api/v1',
@@ -53,7 +54,7 @@ let newTopicTitle = $state('');
 let showNewTopicInput = $state(false);
 
 // Active model selected
-let selectedModelId = $state(AI_MODELS[0].id);
+let selectedModelId = $state(DEFAULT_MODEL_ID);
 let loadedContentId = $state<string | null>(null);
 let loadedApiBaseUrl = $state<string | null>(null);
 
@@ -80,6 +81,7 @@ $effect(() => {
 
   loadedContentId = contentId;
   loadedApiBaseUrl = apiBaseUrl;
+  selectedModelId = DEFAULT_MODEL_ID;
   session = null;
   threads = [];
   activeThreadId = null;
@@ -103,6 +105,25 @@ function normalizeMessage(msg: any): any {
       : [],
     createdAt: msg.createdAt || msg.created_at || new Date().toISOString(),
   };
+}
+
+function applySessionModelPreference(sessionValue: any): void {
+  if (!sessionValue?.sessionContext) {
+    return;
+  }
+
+  try {
+    const ctx = JSON.parse(
+      typeof sessionValue.sessionContext === 'string'
+        ? sessionValue.sessionContext
+        : '{}',
+    );
+    if (ctx.model) {
+      selectedModelId = ctx.model;
+    }
+  } catch {
+    // Ignore malformed session context and keep the UI default.
+  }
 }
 
 async function loadSession() {
@@ -132,6 +153,7 @@ async function loadSession() {
     data.session.agentName = data.session.agentName || 'AI Assistant';
 
     session = data.session;
+    applySessionModelPreference(session);
     threads = data.threads || [];
 
     // Select latest thread if exists
@@ -173,18 +195,7 @@ async function loadThread(threadId: string) {
     messages = (data.messages || []).map(normalizeMessage);
 
     // Check if there is a saved model preference on the session context
-    if (session?.sessionContext) {
-      try {
-        const ctx = JSON.parse(
-          typeof session.sessionContext === 'string'
-            ? session.sessionContext
-            : '{}',
-        );
-        if (ctx.model) selectedModelId = ctx.model;
-      } catch (err) {
-        // ignore parsing error
-      }
-    }
+    applySessionModelPreference(session);
   } catch (err: any) {
     console.error(`[loadThread] Failed for thread ${threadId}:`, err);
     error = err.message;

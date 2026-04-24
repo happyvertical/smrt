@@ -2,6 +2,11 @@ import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import { ChatService } from '@happyvertical/smrt-chat';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
+import {
+  buildContentChatModelUpdates,
+  getContentChatAISelection,
+  resolveContentChatModelSelection,
+} from '../../../../../../../../content-chat-session.js';
 
 type ContentChatLocals = {
   tenantId?: string | null;
@@ -105,10 +110,18 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       return json({ error: 'Thread not found' }, { status: 404 });
     }
 
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      return json(
+        { error: 'Active session is missing a chat room' },
+        { status: 500 },
+      );
+    }
+
     // Save user message attached to thread
     const userMessage = await chatService.sendMessage({
       tenantId,
-      roomId: session.chatRoomId!,
+      roomId: chatRoomId,
       threadId: thread.id,
       senderProfileId: profileId,
       content: messageContent,
@@ -189,13 +202,15 @@ RULES:
     // Get SvelteKit environment variables for SSR
     const env = process.env;
 
-    // If a model is provided in the request, we use it, otherwise fallback
-    const aiModel = model || 'gemini-2.5-pro'; // default to gemini since that's what we have
-    const provider = aiModel.includes('claude')
-      ? 'anthropic'
-      : aiModel.includes('gemini')
-        ? 'gemini'
-        : 'openai';
+    const ctx = session.getSessionContext();
+    const storedSelection = getContentChatAISelection(ctx);
+    const { model: aiModel, provider } = resolveContentChatModelSelection(
+      ctx,
+      model,
+      storedSelection.model ?? 'gemini-2.5-pro',
+    );
+    const temperature = storedSelection.temperature ?? 0.7;
+    const maxTokens = storedSelection.maxTokens ?? 2000;
 
     // Explicitly fallback to env vars if config lacks them
     const apiKey =
@@ -222,14 +237,14 @@ RULES:
 
     const response = await ai.chat(conversation, {
       model: aiModel,
-      temperature: 0.7,
-      maxTokens: 2000,
+      temperature,
+      maxTokens,
     });
 
     // Save agent message
     const agentMessage = await chatService.sendMessage({
       tenantId,
-      roomId: session.chatRoomId!,
+      roomId: chatRoomId,
       agentSessionId: session.id as string,
       threadId: thread.id,
       senderProfileId: session.agentId,
@@ -238,9 +253,13 @@ RULES:
     });
 
     // If model changed, update context
-    const ctx = session.getSessionContext();
-    if (ctx.model !== aiModel) {
-      await session.updateSessionContext({ model: aiModel });
+    const updates = buildContentChatModelUpdates(
+      ctx,
+      model,
+      storedSelection.model ?? 'gemini-2.5-pro',
+    );
+    if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
+      await session.updateSessionContext(updates);
     }
 
     const userJson = userMessage.toJSON();
