@@ -24,6 +24,7 @@ const TOP_LEVEL_RESERVED_KEYS = new Set([
   'template',
   'ai',
   'profile',
+  'provider',
   'model',
   'params',
   'temperature',
@@ -32,10 +33,19 @@ const TOP_LEVEL_RESERVED_KEYS = new Set([
 
 const AI_RESERVED_KEYS = new Set([
   'profile',
+  'provider',
   'model',
   'params',
   'temperature',
   'maxTokens',
+]);
+
+const AI_ROUTING_PARAM_KEYS = new Set([
+  'profile',
+  'provider',
+  'type',
+  'model',
+  'defaultModel',
 ]);
 
 export function isPlainObject(
@@ -62,7 +72,7 @@ function extractPromptParams(
   const params: PromptParams = {};
 
   if (isPlainObject(source.params)) {
-    Object.assign(params, source.params);
+    Object.assign(params, sanitizePromptParams(source.params));
   }
 
   if ('temperature' in source && source.temperature !== undefined) {
@@ -77,10 +87,38 @@ function extractPromptParams(
     if (reservedKeys.has(key) || value === undefined) {
       continue;
     }
-    params[key] = value;
+    assignPromptParam(params, key, value);
   }
 
   return params;
+}
+
+function assignPromptParam(
+  params: PromptParams,
+  key: string,
+  value: unknown,
+): void {
+  if (AI_ROUTING_PARAM_KEYS.has(key) || value === undefined) {
+    return;
+  }
+
+  params[key] = value;
+}
+
+export function sanitizePromptParams(
+  params: PromptParams | null | undefined,
+): PromptParams {
+  const sanitized: PromptParams = {};
+
+  if (!params) {
+    return sanitized;
+  }
+
+  for (const [key, value] of Object.entries(params)) {
+    assignPromptParam(sanitized, key, value);
+  }
+
+  return sanitized;
 }
 
 export function mergePromptParams(
@@ -94,9 +132,7 @@ export function mergePromptParams(
     }
 
     for (const [key, value] of Object.entries(layer)) {
-      if (value !== undefined) {
-        merged[key] = value;
-      }
+      assignPromptParam(merged, key, value);
     }
   }
 
@@ -303,11 +339,11 @@ export function buildResolvedAI(
   }
 
   const resolved: ResolvedPromptAI = {
+    ...params,
     profile: ai.profile,
     provider,
     model,
     params,
-    ...params,
   };
 
   if (typeof params.temperature === 'number') {
@@ -362,7 +398,7 @@ export function parsePromptParams(
 
   try {
     const parsed = JSON.parse(raw);
-    return isPlainObject(parsed) ? parsed : {};
+    return isPlainObject(parsed) ? sanitizePromptParams(parsed) : {};
   } catch {
     return {};
   }
@@ -375,5 +411,5 @@ export function serializePromptParams(
     return null;
   }
 
-  return JSON.stringify(params);
+  return JSON.stringify(sanitizePromptParams(params));
 }

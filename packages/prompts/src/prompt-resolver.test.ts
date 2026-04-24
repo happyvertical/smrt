@@ -130,6 +130,65 @@ describe('@happyvertical/smrt-prompts', () => {
     expect(resolved.ai.maxTokens).toBe(900);
   });
 
+  it('prevents params from overriding validated AI routing fields', async () => {
+    definePrompt({
+      key: 'test.routing.params',
+      template: 'Route',
+      ai: {
+        profile: 'deep',
+        params: {
+          provider: 'evil-provider',
+          model: 'evil-model',
+          type: 'evil-type',
+          defaultModel: 'evil-default',
+          temperature: 0.2,
+        },
+      },
+      editable: {
+        template: true,
+        profile: true,
+        model: true,
+        params: true,
+      },
+    });
+
+    await overrides.create({
+      key: 'test.routing.params',
+      tenantId: null,
+      params: {
+        profile: 'evil-profile',
+        provider: 'evil-app-provider',
+        model: 'evil-app-model',
+        type: 'evil-app-type',
+        defaultModel: 'evil-app-default',
+        maxTokens: 400,
+      },
+    });
+
+    const resolved = await resolvePrompt('test.routing.params', {
+      db,
+      override: {
+        params: {
+          provider: 'evil-runtime-provider',
+          model: 'evil-runtime-model',
+          type: 'evil-runtime-type',
+          defaultModel: 'evil-runtime-default',
+          temperature: 0.7,
+        },
+      },
+    });
+
+    expect(resolved.ai.profile).toBe('deep');
+    expect(resolved.ai.provider).toBe('openai');
+    expect(resolved.ai.model).toBe('gpt-4o');
+    expect(resolved.ai.temperature).toBe(0.7);
+    expect(resolved.ai.maxTokens).toBe(400);
+    expect(resolved.ai.params).toEqual({
+      temperature: 0.7,
+      maxTokens: 400,
+    });
+  });
+
   it('supports model-only tenant overrides and invalidates cached app-layer entries for every tenant', async () => {
     definePrompt({
       key: 'test.fanout',
@@ -261,6 +320,64 @@ describe('@happyvertical/smrt-prompts', () => {
 
     expect(sourceAfterMove.text).toBe('Source Will');
     expect(targetAfterMove.text).toBe('Tenant Target Will');
+  });
+
+  it('preserves the previous row when an identity-change save fails', async () => {
+    definePrompt({
+      key: 'test.safe-move.source',
+      template: 'Source {name}',
+      editable: {
+        template: true,
+        profile: true,
+        model: true,
+        params: true,
+      },
+    });
+    definePrompt({
+      key: 'test.safe-move.target',
+      template: 'Target {name}',
+      editable: {
+        template: true,
+        profile: true,
+        model: true,
+        params: true,
+      },
+    });
+
+    const override = await overrides.create({
+      key: 'test.safe-move.source',
+      tenantId: null,
+      template: 'App Source {name}',
+    });
+    const previousId = override.id as string;
+    const originalBeginTransaction = (db as any).beginTransaction;
+    const upsertSpy = vi.spyOn(db, 'upsert').mockImplementation(async () => {
+      throw new Error('synthetic upsert failure');
+    });
+
+    try {
+      (db as any).beginTransaction = undefined;
+      override.key = 'test.safe-move.target';
+      override.tenantId = 'tenant-a';
+
+      await expect(override.save()).rejects.toThrow();
+    } finally {
+      upsertSpy.mockRestore();
+      (db as any).beginTransaction = originalBeginTransaction;
+    }
+
+    const sourceOverride = await overrides.getAppOverride(
+      'test.safe-move.source',
+    );
+    const targetOverride = await overrides.getTenantOverride(
+      'test.safe-move.target',
+      'tenant-a',
+    );
+
+    expect(sourceOverride?.id).toBe(previousId);
+    expect(sourceOverride?.template).toBe('App Source {name}');
+    expect(targetOverride).toBeNull();
+    expect(override.id).toBe(previousId);
   });
 
   it('invalidates cache entries when callers resolve through a database config object', async () => {

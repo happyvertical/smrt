@@ -402,14 +402,7 @@ export class Issue extends SmrtObject {
     }
 
     const globalAiConfig = smrtConfig.toJSON().ai || {};
-    const instanceAiConfig =
-      aiOption &&
-      typeof aiOption === 'object' &&
-      typeof aiOption.embed === 'function' &&
-      !aiOption.provider &&
-      !aiOption.type
-        ? {}
-        : (aiOption ?? {});
+    const instanceAiConfig = aiOption ?? {};
     const aiConfig = loadEnvConfig<any>(
       {
         ...globalAiConfig,
@@ -452,7 +445,7 @@ export class Issue extends SmrtObject {
   }
 
   private async sendPromptMessage(
-    ai: { message: (prompt: string, options?: unknown) => Promise<string> },
+    ai: { message: (prompt: string, options?: any) => Promise<string> },
     instructions: string,
     options: Record<string, unknown>,
   ): Promise<string> {

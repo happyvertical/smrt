@@ -5,6 +5,7 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { invalidatePromptCache } from '../cache.js';
 import { PromptRegistry } from '../prompt-registry.js';
 import type {
@@ -29,6 +30,16 @@ export interface PromptOverrideOptions extends SmrtObjectOptions {
   model?: string | null;
   params?: string | PromptParams | null;
 }
+
+type PromptOverrideIdentity = {
+  key: string;
+  tenantId: string | null;
+};
+
+type PromptTransactionHandle = DatabaseInterface & {
+  commit: () => Promise<void>;
+  rollback: () => Promise<void>;
+};
 
 function getPromptConfig(): PromptPackageConfig {
   return getPackageConfig<PromptPackageConfig>('prompts', {
@@ -112,11 +123,11 @@ export class PromptOverride extends SmrtObject {
       (previousIdentity.key !== this.key ||
         previousIdentity.tenantId !== this.tenantId);
 
-    if (identityChanged) {
-      await super.delete();
-    }
+    const result =
+      identityChanged && previousIdentity
+        ? await this.saveAfterIdentityChange()
+        : await super.save();
 
-    const result = await super.save();
     if (identityChanged && previousIdentity) {
       invalidatePromptCache(
         previousIdentity.key,
@@ -126,6 +137,74 @@ export class PromptOverride extends SmrtObject {
     }
     invalidatePromptCache(this.key, this.tenantId, this.db);
     return result;
+  }
+
+  private async saveAfterIdentityChange(): Promise<this> {
+    if (typeof this.db.beginTransaction === 'function') {
+      return this.saveAfterIdentityChangeInTransaction();
+    }
+
+    return this.saveAfterIdentityChangeWithDeferredDelete();
+  }
+
+  private async saveAfterIdentityChangeInTransaction(): Promise<this> {
+    const originalDb = this._db;
+    const originalOptionsDb = this.options.db;
+    const tx = (await this.db.beginTransaction?.()) as
+      | PromptTransactionHandle
+      | undefined;
+
+    if (!tx) {
+      return this.saveAfterIdentityChangeWithDeferredDelete();
+    }
+
+    try {
+      this._db = tx;
+      this.options.db = tx;
+      await super.delete();
+      const result = await super.save();
+      await tx.commit();
+      return result;
+    } catch (error) {
+      try {
+        await tx.rollback();
+      } catch {
+        // Preserve the original save error; rollback failures are secondary.
+      }
+      throw error;
+    } finally {
+      this._db = originalDb;
+      this.options.db = originalOptionsDb;
+    }
+  }
+
+  private async saveAfterIdentityChangeWithDeferredDelete(): Promise<this> {
+    const previousId = this.id;
+    if (!previousId) {
+      return super.save();
+    }
+
+    const replacementId = crypto.randomUUID();
+    let replacementSaved = false;
+    this.id = replacementId;
+
+    try {
+      const result = await super.save();
+      replacementSaved = true;
+      await this.db.delete(this.tableName, { id: previousId });
+      return result;
+    } catch (error) {
+      if (replacementSaved) {
+        try {
+          await this.db.delete(this.tableName, { id: replacementId });
+        } catch {
+          // Best effort cleanup keeps the original row as the source of truth.
+        }
+      }
+
+      this.id = previousId;
+      throw error;
+    }
   }
 
   override async delete(): Promise<void> {
@@ -256,10 +335,7 @@ export class PromptOverride extends SmrtObject {
     );
   }
 
-  private async getPersistedIdentity(): Promise<{
-    key: string;
-    tenantId: string | null;
-  } | null> {
+  private async getPersistedIdentity(): Promise<PromptOverrideIdentity | null> {
     if (!this.id) {
       return null;
     }
