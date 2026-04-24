@@ -29,6 +29,7 @@ import {
   type MigrationAction,
   partitionSchemaChanges,
   type SchemaChangeLike,
+  shouldFailDbMigrate,
 } from './db-migrate-actions.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
@@ -1213,6 +1214,7 @@ export default testManifest;
         // This uses the same comparison logic as core (including equivalent index detection)
         const migrations: MigrationAction[] = [];
         const manualInterventions: MigrationAction[] = [];
+        let tableErrorCount = 0;
 
         console.log('🔍 Comparing schemas...\n');
 
@@ -1277,8 +1279,20 @@ export default testManifest;
                   console.log(
                     `  ✓ Created table ${schema.tableName} (${fields} columns, ${shortChecksum(result.checksum)})`,
                   );
+                } else {
+                  tableErrorCount++;
+                  const errorMsg =
+                    result.error instanceof Error
+                      ? result.error.message
+                      : String(
+                          result.error || 'Unknown migration tracking error',
+                        );
+                  console.error(
+                    `  ✗ Failed to track ${schema.tableName}: ${errorMsg}`,
+                  );
                 }
               } catch (error) {
+                tableErrorCount++;
                 const errorMsg =
                   error instanceof Error ? error.message : String(error);
                 console.error(
@@ -1391,6 +1405,7 @@ export default testManifest;
         let successCount = 0;
         let skippedCount = 0;
         let errorCount = 0;
+        let stiErrorCount = 0;
 
         // Only show migration execution header if there are migrations to apply
         if (migrations.length > 0) {
@@ -1528,7 +1543,7 @@ export default testManifest;
 
             let stiSuccessCount = 0;
             let stiSkippedCount = 0;
-            let stiErrorCount = 0;
+            stiErrorCount = 0;
 
             for (const tableName of stiTables) {
               // Get distinct _meta_type values that are NOT qualified
@@ -1660,6 +1675,18 @@ export default testManifest;
               'ℹ️  No schema migrations were applied (none matched expected types)\n',
             );
           }
+        }
+
+        if (
+          shouldFailDbMigrate({
+            manualInterventionCount: manualInterventions.length,
+            tableErrorCount,
+            migrationErrorCount: errorCount,
+            stiErrorCount,
+            dryRun: options['dry-run'] ?? false,
+          })
+        ) {
+          process.exitCode = 1;
         }
 
         console.log('💡 Next steps:');
