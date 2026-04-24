@@ -582,7 +582,7 @@ async function generateRegistrationFile(
  * Auto-generated SMRT object registration
  * DO NOT EDIT - changes will be overwritten
  *
- * Importing these modules triggers their @smrt() decorators, which performs
+ * Importing these modules triggers their @smrt() decorators, which perform
  * the initial registration. The explicit re-registration below is intentional:
  * it upgrades bundled runtimes to deterministic qualified registrations.
  */

@@ -398,6 +398,9 @@ export const generateCommands: Record<string, CLICommand> = {
             const importPath = def.importPath || def.packageName || packageName;
             const hasCollection = def.hasCollection && !skipCollection;
             const tableName = def.collection || objectName.toLowerCase();
+            const registrationName =
+              def.className || objectName.split(':').pop() || objectName;
+            const registrationPackageName = def.packageName || packageName;
 
             // Generate import statement
             if (hasCollection && collectionExportName) {
@@ -408,9 +411,14 @@ export const generateCommands: Record<string, CLICommand> = {
               imports.push(`import { ${exportName} } from '${importPath}';`);
             }
 
-            // Generate registration calls
+            // Generate registration calls. Keep the class name and package name
+            // separate so ObjectRegistry can use package-aware collision policy.
+            const registrationOptions = [
+              `name: ${JSON.stringify(registrationName)}`,
+              `packageName: ${JSON.stringify(registrationPackageName)}`,
+            ].join(', ');
             registrations.push(
-              `ObjectRegistry.register(${exportName}, { name: '${objectName}' });`,
+              `ObjectRegistry.register(${exportName}, { ${registrationOptions} });`,
             );
 
             if (hasCollection && collectionExportName) {
