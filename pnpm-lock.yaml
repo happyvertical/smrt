@@ -1375,8 +1375,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.71.20
-        version: 0.71.20
+        specifier: ^0.71.32
+        version: 0.71.32
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
