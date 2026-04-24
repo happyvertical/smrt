@@ -404,6 +404,8 @@ export class SchemaComparer {
    * - TEXT/JSON→TIMESTAMP: Legacy system columns stored timestamp strings
    *   before newer manifests normalized the column type.
    * - INTEGER→REAL: Safe widening of integer to floating point
+   * - TEXT/REAL→INTEGER on PostgreSQL: explicit data-checked repairs for
+   *   legacy integer columns that were previously stored as text/real.
    *
    * @param manifestType - The abstract type from the manifest (e.g., 'JSON')
    * @param dbType - The actual type in the database (e.g., 'TEXT')
@@ -429,6 +431,16 @@ export class SchemaComparer {
 
     // INTEGER → REAL is safe (widening)
     if (manifest === 'REAL' && db === 'INTEGER') {
+      return true;
+    }
+
+    // PostgreSQL can safely repair legacy integer columns when the generated
+    // migration validates that every existing value is already an integer.
+    if (
+      this.engine === 'postgres' &&
+      manifest === 'INTEGER' &&
+      (db === 'TEXT' || db === 'REAL')
+    ) {
       return true;
     }
 
@@ -484,6 +496,17 @@ export class SchemaComparer {
         // be cast automatically to the target type.
         const manifestNormalized = this.normalizeType(manifestType);
         const dbNormalized = this.normalizeType(dbType);
+        const preflightSQL =
+          manifestNormalized === 'INTEGER' &&
+          (dbNormalized === 'TEXT' || dbNormalized === 'REAL')
+            ? this.generatePostgresIntegerPreflightSQL(
+                quotedTable,
+                quotedCol,
+                tableName,
+                colName,
+                dbNormalized,
+              )
+            : null;
         const clauses: string[] = [];
 
         if (colDef.defaultValue !== undefined) {
@@ -496,11 +519,22 @@ export class SchemaComparer {
         } else if (manifestNormalized === 'TEXT' && dbNormalized === 'JSON') {
           typeClause += ` USING ${quotedCol}::text`;
         } else if (
+          manifestNormalized === 'INTEGER' &&
+          dbNormalized === 'TEXT'
+        ) {
+          typeClause += ` USING trim(${quotedCol}::text)::integer`;
+        } else if (
+          manifestNormalized === 'INTEGER' &&
+          dbNormalized === 'REAL'
+        ) {
+          typeClause += ` USING ${quotedCol}::integer`;
+        } else if (
           manifestNormalized === 'TIMESTAMP' &&
           (dbNormalized === 'TEXT' || dbNormalized === 'JSON')
         ) {
           typeClause += ` USING NULLIF(NULLIF(trim(both '"' from ${quotedCol}::text), ''), 'null')::timestamp`;
         }
+
         clauses.push(typeClause);
 
         if (colDef.defaultValue !== undefined) {
@@ -515,7 +549,9 @@ export class SchemaComparer {
           clauses.push(`ALTER COLUMN ${quotedCol} SET DEFAULT ${defaultSql}`);
         }
 
-        return `ALTER TABLE ${quotedTable} ${clauses.join(', ')}`;
+        const alterSql = `ALTER TABLE ${quotedTable} ${clauses.join(', ')}`;
+
+        return preflightSQL ? `${preflightSQL}; ${alterSql}` : alterSql;
       }
 
       case 'duckdb':
@@ -536,6 +572,31 @@ export class SchemaComparer {
    */
   private quoteIdentifier(name: string): string {
     return `"${name.replace(/"/g, '""')}"`;
+  }
+
+  /**
+   * Generate a PostgreSQL preflight guard for narrowing legacy columns to
+   * INTEGER. PostgreSQL's REAL→INTEGER cast rounds fractional values, so the
+   * generated migration must fail before the ALTER can silently change data.
+   */
+  private generatePostgresIntegerPreflightSQL(
+    quotedTable: string,
+    quotedCol: string,
+    tableName: string,
+    colName: string,
+    dbNormalized: string,
+  ): string {
+    const invalidCondition =
+      dbNormalized === 'REAL'
+        ? `${quotedCol} IS NOT NULL AND ${quotedCol} <> trunc(${quotedCol})`
+        : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
+    const message = `Cannot convert ${tableName}.${colName} to INTEGER: found non-integer values`;
+
+    return `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
+  }
+
+  private quoteLiteral(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`;
   }
 
   /**

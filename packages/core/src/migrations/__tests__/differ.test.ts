@@ -457,6 +457,98 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     );
   });
 
+  it('should generate PostgreSQL guarded USING clause for legacy TEXT→INTEGER drift', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'asset_associations' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          sort_order: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      asset_associations: {
+        tableName: 'asset_associations',
+        ddl: 'CREATE TABLE asset_associations (id TEXT PRIMARY KEY, sort_order INTEGER);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          sort_order: { type: 'INTEGER' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('DO $$ BEGIN IF EXISTS');
+    expect(typeUpgrades[0].sql).toContain(
+      `trim("sort_order"::text) !~ '^[+-]?[0-9]+$'`,
+    );
+    expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
+    expect(typeUpgrades[0].sql).toContain(
+      'USING trim("sort_order"::text)::integer',
+    );
+  });
+
+  it('should generate PostgreSQL guarded USING clause for legacy REAL→INTEGER drift', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'ad_campaigns' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          target_clicks: { type: 'REAL', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
+      ignoreTypeMismatches: false,
+    });
+
+    const manifest: Record<string, SchemaDefinition> = {
+      ad_campaigns: {
+        tableName: 'ad_campaigns',
+        ddl: 'CREATE TABLE ad_campaigns (id TEXT PRIMARY KEY, target_clicks INTEGER);',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          target_clicks: { type: 'INTEGER' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('DO $$ BEGIN IF EXISTS');
+    expect(typeUpgrades[0].sql).toContain(
+      '"target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")',
+    );
+    expect(typeUpgrades[0].sql).toContain('TYPE INTEGER');
+    expect(typeUpgrades[0].sql).toContain('USING "target_clicks"::integer');
+  });
+
   it('should generate DuckDB ALTER COLUMN TYPE for TEXT→JSON', async () => {
     // Create a mock database interface that identifies as DuckDB
     const mockDuckDb = {
