@@ -241,6 +241,11 @@ export interface SchemaChange {
   };
   /** Generated SQL statement */
   sql?: string;
+  /**
+   * Generated SQL statements for changes that require multiple ordered steps.
+   * When omitted, callers should use the single `sql` statement.
+   */
+  sqlStatements?: string[];
 }
 
 /**

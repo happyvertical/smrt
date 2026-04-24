@@ -30,6 +30,11 @@ const VALID_SQL_DATA_TYPES: Set<SQLDataType> = new Set([
   'TIMESTAMP',
 ]);
 
+interface GeneratedTypeUpgradeSQL {
+  sql: string;
+  statements?: string[];
+}
+
 /**
  * Check if a string is a valid SQLDataType
  */
@@ -196,7 +201,7 @@ export class SchemaComparer {
           // Since SMRT owns the data lifecycle, we know the intent from the manifest
           if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
             // Generate type upgrade SQL
-            const sql = this.generateTypeUpgradeSQL(
+            const generatedSQL = this.generateTypeUpgradeSQL(
               tableName,
               colName,
               colDef,
@@ -211,7 +216,10 @@ export class SchemaComparer {
                 expected: colDef.type,
                 actual: dbCol.type,
               },
-              sql,
+              sql: generatedSQL.sql,
+              ...(generatedSQL.statements
+                ? { sqlStatements: generatedSQL.statements }
+                : {}),
             });
           } else if (!this.options.ignoreTypeMismatches) {
             changes.push({
@@ -404,6 +412,8 @@ export class SchemaComparer {
    * - TEXT/JSON→TIMESTAMP: Legacy system columns stored timestamp strings
    *   before newer manifests normalized the column type.
    * - INTEGER→REAL: Safe widening of integer to floating point
+   * - TEXT/REAL→INTEGER on PostgreSQL: explicit data-checked repairs for
+   *   legacy integer columns that were previously stored as text/real.
    *
    * @param manifestType - The abstract type from the manifest (e.g., 'JSON')
    * @param dbType - The actual type in the database (e.g., 'TEXT')
@@ -432,6 +442,16 @@ export class SchemaComparer {
       return true;
     }
 
+    // PostgreSQL can safely repair legacy integer columns when the generated
+    // migration validates that every existing value is already an integer.
+    if (
+      this.engine === 'postgres' &&
+      manifest === 'INTEGER' &&
+      (db === 'TEXT' || db === 'REAL')
+    ) {
+      return true;
+    }
+
     // TEXT/JSON → TIMESTAMP is a legacy-drift repair. Invalid values fail
     // explicitly during migration rather than being silently coerced.
     if (manifest === 'TIMESTAMP' && (db === 'TEXT' || db === 'JSON')) {
@@ -454,7 +474,7 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
     dbType: string,
-  ): string {
+  ): GeneratedTypeUpgradeSQL {
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
     const manifestType = colDef.type;
@@ -473,10 +493,14 @@ export class SchemaComparer {
           this.normalizeType(manifestType) === 'JSON' &&
           this.normalizeType(dbType) === 'TEXT'
         ) {
-          return `-- SQLite: ${quotedCol} already stores JSON as TEXT (no change needed)`;
+          return {
+            sql: `-- SQLite: ${quotedCol} already stores JSON as TEXT (no change needed)`,
+          };
         }
         // For other type upgrades, SQLite requires recreating the table
-        return `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`;
+        return {
+          sql: `-- SQLite: Type upgrade for ${quotedCol} requires table recreation`,
+        };
 
       case 'postgres': {
         // PostgreSQL defaults must be dropped/reset around some type changes
@@ -484,6 +508,17 @@ export class SchemaComparer {
         // be cast automatically to the target type.
         const manifestNormalized = this.normalizeType(manifestType);
         const dbNormalized = this.normalizeType(dbType);
+        const preflightSQL =
+          manifestNormalized === 'INTEGER' &&
+          (dbNormalized === 'TEXT' || dbNormalized === 'REAL')
+            ? this.generatePostgresIntegerPreflightSQL(
+                quotedTable,
+                quotedCol,
+                tableName,
+                colName,
+                dbNormalized,
+              )
+            : null;
         const clauses: string[] = [];
 
         if (colDef.defaultValue !== undefined) {
@@ -496,11 +531,22 @@ export class SchemaComparer {
         } else if (manifestNormalized === 'TEXT' && dbNormalized === 'JSON') {
           typeClause += ` USING ${quotedCol}::text`;
         } else if (
+          manifestNormalized === 'INTEGER' &&
+          dbNormalized === 'TEXT'
+        ) {
+          typeClause += ` USING trim(${quotedCol}::text)::integer`;
+        } else if (
+          manifestNormalized === 'INTEGER' &&
+          dbNormalized === 'REAL'
+        ) {
+          typeClause += ` USING ${quotedCol}::integer`;
+        } else if (
           manifestNormalized === 'TIMESTAMP' &&
           (dbNormalized === 'TEXT' || dbNormalized === 'JSON')
         ) {
           typeClause += ` USING NULLIF(NULLIF(trim(both '"' from ${quotedCol}::text), ''), 'null')::timestamp`;
         }
+
         clauses.push(typeClause);
 
         if (colDef.defaultValue !== undefined) {
@@ -515,18 +561,26 @@ export class SchemaComparer {
           clauses.push(`ALTER COLUMN ${quotedCol} SET DEFAULT ${defaultSql}`);
         }
 
-        return `ALTER TABLE ${quotedTable} ${clauses.join(', ')}`;
+        const alterSql = `ALTER TABLE ${quotedTable} ${clauses.join(', ')}`;
+
+        return preflightSQL
+          ? { sql: alterSql, statements: [preflightSQL, alterSql] }
+          : { sql: alterSql };
       }
 
       case 'duckdb':
         // DuckDB supports ALTER COLUMN TYPE for type conversions
-        return `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
+        return {
+          sql: `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE ${targetType}`,
+        };
 
       default: {
         // Escape special characters in type names for safe comment generation
         const safeDbType = dbType.replace(/[^\w]/g, '_');
         const safeManifestType = manifestType.replace(/[^\w]/g, '_');
-        return `-- Type upgrade for ${quotedCol}: ${safeDbType} → ${safeManifestType}`;
+        return {
+          sql: `-- Type upgrade for ${quotedCol}: ${safeDbType} → ${safeManifestType}`,
+        };
       }
     }
   }
@@ -536,6 +590,31 @@ export class SchemaComparer {
    */
   private quoteIdentifier(name: string): string {
     return `"${name.replace(/"/g, '""')}"`;
+  }
+
+  /**
+   * Generate a PostgreSQL preflight guard for narrowing legacy columns to
+   * INTEGER. PostgreSQL's REAL→INTEGER cast rounds fractional values, so the
+   * generated migration must fail before the ALTER can silently change data.
+   */
+  private generatePostgresIntegerPreflightSQL(
+    quotedTable: string,
+    quotedCol: string,
+    tableName: string,
+    colName: string,
+    dbNormalized: string,
+  ): string {
+    const invalidCondition =
+      dbNormalized === 'REAL'
+        ? `${quotedCol} IS NOT NULL AND ${quotedCol} <> trunc(${quotedCol})`
+        : `${quotedCol} IS NOT NULL AND trim(${quotedCol}::text) !~ '^[+-]?[0-9]+$'`;
+    const message = `Cannot convert ${tableName}.${colName} to INTEGER: found non-integer values`;
+
+    return `DO $$ BEGIN IF EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${invalidCondition}) THEN RAISE EXCEPTION ${this.quoteLiteral(message)}; END IF; END $$`;
+  }
+
+  private quoteLiteral(value: string): string {
+    return `'${value.replace(/'/g, "''")}'`;
   }
 
   /**
@@ -616,8 +695,10 @@ export function getSQLFromDiff(diff: SchemaDiff): string[] {
 
   // Add column and index changes
   for (const change of diff.changes) {
-    if (change.sql && change.type !== 'type_mismatch') {
-      statements.push(change.sql);
+    if (change.type !== 'type_mismatch') {
+      statements.push(
+        ...(change.sqlStatements ?? (change.sql ? [change.sql] : [])),
+      );
     }
   }
 

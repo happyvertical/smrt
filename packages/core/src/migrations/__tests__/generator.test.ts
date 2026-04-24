@@ -298,6 +298,43 @@ describe('MigrationGenerator', () => {
       expect(migration.up[0]).toContain('TYPE JSONB');
     });
 
+    it('should keep multi-step type upgrades as separate statements', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [],
+        dropped_tables: [],
+        changes: [
+          {
+            type: 'type_upgrade',
+            table: 'ad_campaigns',
+            name: 'target_clicks',
+            mismatch: { expected: 'INTEGER', actual: 'REAL' },
+            sql: 'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+            sqlStatements: [
+              'DO $$ BEGIN IF EXISTS (SELECT 1 FROM "ad_campaigns" WHERE "target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")) THEN RAISE EXCEPTION \'Cannot convert ad_campaigns.target_clicks to INTEGER: found non-integer values\'; END IF; END $$',
+              'ALTER TABLE "ad_campaigns" ALTER COLUMN "target_clicks" TYPE INTEGER USING "target_clicks"::integer',
+            ],
+          },
+        ],
+      };
+
+      const generator = new MigrationGenerator({
+        engine: 'postgres',
+        format: 'sql',
+        includeDown: true,
+      });
+
+      const migration = generator.generateFromDiff(diff, {
+        name: '0001_upgrade_integer_counts',
+        description: 'Upgrade REAL counts to INTEGER',
+      });
+
+      expect(migration.up).toHaveLength(2);
+      expect(migration.up[0]).toContain('DO $$ BEGIN IF EXISTS');
+      expect(migration.up[1]).toContain('ALTER TABLE');
+      expect(migration.up[1]).toContain('TYPE INTEGER');
+    });
+
     it('should skip comment-only SQL for no-op type upgrades', () => {
       const diff: SchemaDiff = {
         has_changes: true,

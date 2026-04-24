@@ -1371,8 +1371,9 @@ export default testManifest;
 
           console.log('  SQL Statements:\n');
           for (const m of migrations) {
-            if (m.sql) {
-              console.log(`    ${m.sql};`);
+            const sqlStatements = m.sqlStatements ?? (m.sql ? [m.sql] : []);
+            for (const sql of sqlStatements) {
+              console.log(`    ${sql};`);
             }
           }
           console.log();
@@ -1418,6 +1419,8 @@ export default testManifest;
             } else {
               continue;
             }
+            const migrationSqlStatements =
+              migration.sqlStatements ?? (migrationSql ? [migrationSql] : []);
 
             // Create migration definition - tracker handles idempotency
             const migrationDef = {
@@ -1429,7 +1432,7 @@ export default testManifest;
                     ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
                     : `Add index ${migration.index?.name} on ${migration.tableName}`,
               version: '1.0.0',
-              up: [migrationSql],
+              up: migrationSqlStatements,
               down: [], // Auto-migrations don't have rollback by default
             };
 
