@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.11
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - fail db migrate on unrepaired drift (#1156) (cli)
+  - @happyvertical/smrt-scanner@0.22.11
+  - @happyvertical/smrt-config@0.22.11
+  - @happyvertical/smrt-types@0.22.11
+
 ## 0.22.10
 
 ### Patch Changes
