@@ -47,6 +47,14 @@ export default defineConfig(async ({ mode }) => {
     sourceEntry: 'packages/core/src/vite-plugin/index.ts',
     purpose: 'assets package Vite config',
   });
+  const { smrtConsumer } = await importWorkspaceModule<
+    typeof import('@happyvertical/smrt-core/consumer-plugin')
+  >({
+    packageName: '@happyvertical/smrt-core/consumer-plugin',
+    distEntry: 'packages/core/dist/consumer-plugin.js',
+    sourceEntry: 'packages/core/src/consumer-plugin/index.ts',
+    purpose: 'assets package consumer plugin',
+  });
 
   return {
     resolve: {
@@ -60,6 +68,10 @@ export default defineConfig(async ({ mode }) => {
     },
     plugins: [
       sveltekit(),
+      smrtConsumer({
+        projectRoot: process.cwd(),
+        svelteKit: true,
+      }),
       smrtPlugin({
         include: ['src/**/*.ts'],
         exclude: ['**/*.test.ts', '**/*.spec.ts', 'src/svelte/**/*', 'src/routes/**/*', '**/*.svelte'],
