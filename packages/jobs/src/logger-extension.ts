@@ -11,6 +11,36 @@ export interface JobContext {
   method: string;
 }
 
+export interface JobEventInput {
+  type?: string;
+  level?: 'debug' | 'info' | 'warn' | 'error';
+  stage?: string | null;
+  progress?: number | null;
+  message?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface JobProgressInput {
+  stage: string;
+  progress: number;
+  message?: string;
+  detail?: string;
+  source?: string;
+  data?: Record<string, unknown>;
+}
+
+export interface JobExecutionContext {
+  job: JobContext & { tenantId?: string | null };
+  logger: Logger;
+  event(input: JobEventInput): Promise<void>;
+  progress(input: JobProgressInput): Promise<void>;
+  log(
+    level: 'debug' | 'info' | 'warn' | 'error',
+    message: string,
+    data?: Record<string, unknown>,
+  ): Promise<void>;
+}
+
 /**
  * Logger extension that auto-injects job context into all log entries
  *

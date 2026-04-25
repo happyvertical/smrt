@@ -9,8 +9,14 @@ import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
 import { TenantContext } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
-import { JobContextLogger } from './logger-extension.js';
+import {
+  JobContextLogger,
+  type JobEventInput,
+  type JobExecutionContext,
+  type JobProgressInput,
+} from './logger-extension.js';
 import { type SmrtJob, SmrtJobCollection } from './smrt-job.js';
+import { type SmrtJobEvent, SmrtJobEventCollection } from './smrt-job-event.js';
 import {
   DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
   getEffectiveStaleJobThresholdMs,
@@ -41,6 +47,8 @@ export interface TaskRunnerConfig {
  */
 export interface TaskRunnerEvents {
   'job:started': (job: SmrtJob) => void;
+  'job:event': (job: SmrtJob, event: SmrtJobEvent) => void;
+  'job:progress': (job: SmrtJob, event: SmrtJobEvent) => void;
   'job:completed': (job: SmrtJob, result: unknown) => void;
   'job:failed': (job: SmrtJob, error: Error) => void;
   'job:retrying': (job: SmrtJob, error: Error, delay: number) => void;
@@ -76,6 +84,7 @@ export class TaskRunner extends EventEmitter {
   readonly id: string;
   private readonly config: Required<TaskRunnerConfig>;
   private collection: SmrtJobCollection | null = null;
+  private eventCollection: SmrtJobEventCollection | null = null;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
   private pollTimer: NodeJS.Timeout | null = null;
@@ -98,11 +107,8 @@ export class TaskRunner extends EventEmitter {
    */
   async initialize(db: DatabaseInterface): Promise<void> {
     this.db = db;
-    this.collection = await SmrtJobCollection.create({
-      db: { type: 'sqlite', url: ':memory:' }, // Placeholder, overridden
-    });
-    // Override the internal db reference
-    (this.collection as unknown as { _db: DatabaseInterface })._db = db;
+    this.collection = await SmrtJobCollection.create({ db });
+    this.eventCollection = await SmrtJobEventCollection.create({ db });
   }
 
   /**
@@ -240,6 +246,13 @@ export class TaskRunner extends EventEmitter {
 
     this.activeJobs.set(jobId, job);
     this.emit('job:started', job);
+    await this.appendJobEvent(job, {
+      type: 'status',
+      level: 'info',
+      stage: 'started',
+      progress: 0,
+      message: `Started job: ${job.getDescription()}`,
+    });
 
     try {
       // Set up timeout
@@ -258,6 +271,13 @@ export class TaskRunner extends EventEmitter {
       job.resultPointer = result?.resultPointer ?? null;
       await job.save();
 
+      await this.appendJobEvent(job, {
+        type: 'progress',
+        level: 'info',
+        stage: 'completed',
+        progress: 100,
+        message: `Completed job: ${job.getDescription()}`,
+      });
       this.emit('job:completed', job, result);
     } catch (error) {
       await this.handleJobError(job, error as Error);
@@ -330,19 +350,23 @@ export class TaskRunner extends EventEmitter {
 
       // Log job start
       contextLogger.info(`Starting job: ${job.getDescription()}`);
+      const executionContext = this.createExecutionContext(job, contextLogger);
 
       // Invoke the method with cleaned args (no internal keys)
       const method = (
         instance as unknown as Record<
           string,
-          (args: unknown) => Promise<unknown>
+          (
+            args: unknown,
+            context?: JobExecutionContext,
+          ) => Promise<unknown> | unknown
         >
       )[job.method];
       if (typeof method !== 'function') {
         throw new Error(`Method not found: ${job.objectType}.${job.method}`);
       }
 
-      const result = await method.call(instance, methodArgs);
+      const result = await method.call(instance, methodArgs, executionContext);
 
       return { result };
     };
@@ -375,6 +399,13 @@ export class TaskRunner extends EventEmitter {
       job.workerHeartbeat = null;
       await job.save();
 
+      await this.appendJobEvent(job, {
+        type: 'status',
+        level: 'warn',
+        stage: 'retrying',
+        message: `Retrying job after failure: ${error.message}`,
+        data: { delay: decision.delay, attempts: job.attempts },
+      });
       this.emit('job:retrying', job, error, decision.delay);
     } else {
       // Job failed permanently
@@ -383,7 +414,109 @@ export class TaskRunner extends EventEmitter {
       job.lastError = error.message;
       await job.save();
 
+      await this.appendJobEvent(job, {
+        type: 'error',
+        level: 'error',
+        stage: 'failed',
+        message: error.message,
+        data: { attempts: job.attempts },
+      });
       this.emit('job:failed', job, error);
+    }
+  }
+
+  private createExecutionContext(
+    job: SmrtJob,
+    contextLogger: JobContextLogger,
+  ): JobExecutionContext {
+    const jobContext = {
+      jobId: job.id ?? '',
+      tenantId: job.tenantId ?? null,
+      attempt: job.attempts,
+      queue: job.queue,
+      objectType: job.objectType,
+      method: job.method,
+    };
+
+    return {
+      job: jobContext,
+      logger: contextLogger,
+      event: async (input: JobEventInput) => {
+        await this.appendJobEvent(job, input);
+      },
+      progress: async (input: JobProgressInput) => {
+        const data = {
+          ...(input.data ?? {}),
+          ...(input.detail ? { detail: input.detail } : {}),
+          ...(input.source ? { source: input.source } : {}),
+        };
+        await this.appendJobEvent(job, {
+          type: 'progress',
+          level: 'info',
+          stage: input.stage,
+          progress: input.progress,
+          message:
+            input.message ??
+            input.detail ??
+            `${input.stage} ${Math.round(input.progress)}%`,
+          data,
+        });
+      },
+      log: async (
+        level: 'debug' | 'info' | 'warn' | 'error',
+        message: string,
+        data?: Record<string, unknown>,
+      ) => {
+        contextLogger[level](message, data);
+        await this.appendJobEvent(job, {
+          type: level === 'error' ? 'error' : 'log',
+          level,
+          message,
+          data,
+        });
+      },
+    };
+  }
+
+  private async appendJobEvent(
+    job: SmrtJob,
+    input: JobEventInput,
+  ): Promise<SmrtJobEvent | null> {
+    if (!this.eventCollection || !job.id) {
+      return null;
+    }
+
+    try {
+      const event = await this.eventCollection.append({
+        tenantId: job.tenantId ?? null,
+        jobId: job.id,
+        type: input.type ?? 'log',
+        level: input.level ?? 'info',
+        stage: input.stage ?? null,
+        progress: input.progress ?? null,
+        message: input.message ?? '',
+        data: input.data ?? {},
+      });
+
+      this.emit('job:event', job, event);
+      if (event.type === 'progress') {
+        this.emit('job:progress', job, event);
+      }
+
+      return event;
+    } catch (error) {
+      const telemetryError =
+        error instanceof Error
+          ? error
+          : new Error(`Failed to append job telemetry: ${String(error)}`);
+
+      try {
+        this.emit('runner:error', telemetryError);
+      } catch {
+        // Telemetry is best-effort and must not change job outcomes.
+      }
+
+      return null;
     }
   }
 
@@ -450,6 +583,12 @@ export class TaskRunner extends EventEmitter {
       job.workerId = null;
       job.workerHeartbeat = null;
       const error = new Error(errorMessage);
+      await this.appendJobEvent(job, {
+        type: 'error',
+        level: 'error',
+        stage: 'stale-recovery',
+        message: errorMessage,
+      });
       this.emit('job:failed', job, error);
     }
   }
