@@ -131,6 +131,160 @@ describe('job telemetry', () => {
     expect(latest.get('job-1')?.stage).toBe('process');
   });
 
+  it('treats tenantId undefined as ambient tenant context', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const events = await SmrtJobEventCollection.create({ db });
+
+    await events.append({
+      tenantId: 'tenant-a',
+      jobId: 'job-undefined-tenant',
+      type: 'progress',
+      level: 'info',
+      stage: 'download',
+      progress: 10,
+      message: 'Tenant A',
+    });
+    await events.append({
+      tenantId: 'tenant-b',
+      jobId: 'job-undefined-tenant',
+      type: 'progress',
+      level: 'info',
+      stage: 'process',
+      progress: 90,
+      message: 'Tenant B',
+    });
+
+    const tenantEvents = await withTenant({ tenantId: 'tenant-a' }, async () =>
+      events.listByJob('job-undefined-tenant', { tenantId: undefined }),
+    );
+    expect(tenantEvents.map((event) => event.message)).toEqual(['Tenant A']);
+
+    const latest = await withTenant({ tenantId: 'tenant-b' }, async () =>
+      events.latestProgressByJobIds(['job-undefined-tenant'], {
+        tenantId: undefined,
+      }),
+    );
+    expect(latest.get('job-undefined-tenant')?.message).toBe('Tenant B');
+  });
+
+  it('requires explicit tenant scope for raw event list helpers', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const events = await SmrtJobEventCollection.create({ db });
+
+    await events.append({
+      tenantId: 'tenant-a',
+      jobId: 'job-scope-required',
+      type: 'progress',
+      level: 'info',
+      stage: 'download',
+      progress: 10,
+      message: 'Tenant A',
+    });
+
+    await expect(events.listByJob('job-scope-required')).rejects.toThrow(
+      /require tenantId/,
+    );
+    await expect(
+      events.latestProgressByJobIds(['job-scope-required']),
+    ).rejects.toThrow(/require tenantId/);
+  });
+
+  it('supports explicit global tenant scope', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const events = await SmrtJobEventCollection.create({ db });
+
+    await events.append({
+      tenantId: null,
+      jobId: 'job-global',
+      type: 'progress',
+      level: 'info',
+      stage: 'global',
+      progress: 30,
+      message: 'Global event',
+    });
+    await events.append({
+      tenantId: 'tenant-a',
+      jobId: 'job-global',
+      type: 'progress',
+      level: 'info',
+      stage: 'tenant',
+      progress: 90,
+      message: 'Tenant event',
+    });
+
+    const globalEvents = await events.listByJob('job-global', {
+      tenantId: null,
+    });
+    expect(globalEvents.map((event) => event.message)).toEqual([
+      'Global event',
+    ]);
+
+    const latest = await events.latestProgressByJobIds(['job-global'], {
+      tenantId: null,
+    });
+    expect(latest.get('job-global')?.stage).toBe('global');
+  });
+
+  it('paginates across legacy SQLite timestamp formats', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const events = await SmrtJobEventCollection.create({ db });
+
+    await db.query(
+      `INSERT INTO _smrt_job_events (
+         id, slug, context, created_at, updated_at, tenant_id, job_id, type,
+         level, stage, progress, message, data
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      'legacy-event',
+      'legacy-event',
+      '',
+      '2026-04-25 12:00:00',
+      '2026-04-25 12:00:00',
+      'tenant-a',
+      'job-legacy-cursor',
+      'progress',
+      'info',
+      'legacy',
+      10,
+      'Legacy timestamp',
+      '{}',
+    );
+    await db.query(
+      `INSERT INTO _smrt_job_events (
+         id, slug, context, created_at, updated_at, tenant_id, job_id, type,
+         level, stage, progress, message, data
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      'iso-event',
+      'iso-event',
+      '',
+      '2026-04-25T12:00:01.000Z',
+      '2026-04-25T12:00:01.000Z',
+      'tenant-a',
+      'job-legacy-cursor',
+      'progress',
+      'info',
+      'iso',
+      20,
+      'ISO timestamp',
+      '{}',
+    );
+
+    const allEvents = await events.listByJob('job-legacy-cursor', {
+      tenantId: 'tenant-a',
+    });
+    expect(allEvents.map((event) => event.message)).toEqual([
+      'Legacy timestamp',
+      'ISO timestamp',
+    ]);
+
+    const afterLegacy = await events.listByJob('job-legacy-cursor', {
+      tenantId: 'tenant-a',
+      cursor: allEvents[0]?.toCursor(),
+    });
+    expect(afterLegacy.map((event) => event.message)).toEqual([
+      'ISO timestamp',
+    ]);
+  });
+
   it('passes an optional execution context without breaking one-arg methods', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const jobs = await SmrtJobCollection.create({ db });

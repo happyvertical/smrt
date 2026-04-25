@@ -40,6 +40,22 @@ export interface ListJobEventsOptions {
   cursor?: string | JobEventCursor;
 }
 
+const JOB_EVENT_STORAGE_COLUMNS = [
+  'id',
+  'slug',
+  'context',
+  'created_at',
+  'updated_at',
+  'tenant_id',
+  'job_id',
+  'type',
+  'level',
+  'stage',
+  'progress',
+  'message',
+  'data',
+].join(', ');
+
 @smrt({
   tableName: '_smrt_job_events',
   api: { include: ['list', 'get'] },
@@ -109,6 +125,34 @@ function parseCursor(cursor: string | JobEventCursor): JobEventCursor {
   };
 }
 
+function normalizeCursorDate(value: string | Date): string {
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+
+  const parsed = new Date(value);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString();
+  }
+
+  return value;
+}
+
+function usesSqliteDateFunctions(dbUrl: string): boolean {
+  const normalized = dbUrl.toLowerCase();
+  return !(
+    normalized.startsWith('postgres:') || normalized.startsWith('postgresql:')
+  );
+}
+
+function getQueryRows(result: unknown): Record<string, unknown>[] {
+  if (Array.isArray(result)) {
+    return result as Record<string, unknown>[];
+  }
+
+  return (result as { rows?: Record<string, unknown>[] }).rows ?? [];
+}
+
 export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
   static readonly _itemClass = SmrtJobEvent;
 
@@ -153,36 +197,19 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
       params.push(options.jobId);
     }
 
-    if ('tenantId' in options) {
-      if (options.tenantId === null) {
-        where.push('tenant_id IS NULL');
-      } else if (typeof options.tenantId === 'string') {
-        where.push('tenant_id = ?');
-        params.push(options.tenantId);
-      }
-    } else {
-      const contextTenantId = getTenantId();
-      if (contextTenantId) {
-        where.push('tenant_id = ?');
-        params.push(contextTenantId);
-      }
-    }
+    this.addTenantPredicate(where, params, options);
 
     if (options.cursor) {
       const cursor = parseCursor(options.cursor);
-      const createdAt =
-        cursor.createdAt instanceof Date
-          ? cursor.createdAt.toISOString()
-          : String(cursor.createdAt);
-      where.push('(created_at > ? OR (created_at = ? AND id > ?))');
+      const createdAt = await this.resolveCursorCreatedAt(cursor, options);
+      const createdAtExpression = this.createdAtComparableExpression();
+      where.push(
+        `(${createdAtExpression} > ? OR (${createdAtExpression} = ? AND id > ?))`,
+      );
       params.push(createdAt, createdAt, cursor.id);
     } else if (options.since) {
-      where.push('created_at > ?');
-      params.push(
-        options.since instanceof Date
-          ? options.since.toISOString()
-          : String(options.since),
-      );
+      where.push(`${this.createdAtComparableExpression()} > ?`);
+      params.push(normalizeCursorDate(options.since));
     }
 
     if (options.afterId) {
@@ -194,10 +221,10 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
 
     const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
     return this.query(
-      `SELECT *
+      `SELECT ${JOB_EVENT_STORAGE_COLUMNS}
          FROM _smrt_job_events
         ${whereSql}
-        ORDER BY created_at ASC, id ASC
+        ORDER BY ${this.createdAtComparableExpression()} ASC, id ASC
         LIMIT ?`,
       params,
       { allowRawOnTenantScoped: true },
@@ -219,37 +246,94 @@ export class SmrtJobEventCollection extends SmrtCollection<SmrtJobEvent> {
     ];
     const params: unknown[] = [...uniqueJobIds];
 
-    if ('tenantId' in options) {
-      if (options.tenantId === null) {
-        where.push('tenant_id IS NULL');
-      } else if (typeof options.tenantId === 'string') {
-        where.push('tenant_id = ?');
-        params.push(options.tenantId);
-      }
-    } else {
-      const contextTenantId = getTenantId();
-      if (contextTenantId) {
-        where.push('tenant_id = ?');
-        params.push(contextTenantId);
-      }
-    }
+    this.addTenantPredicate(where, params, options);
+    const createdAtExpression = this.createdAtComparableExpression();
 
     const events = await this.query(
-      `SELECT *
-         FROM _smrt_job_events
-        WHERE ${where.join(' AND ')}
-        ORDER BY created_at DESC, id DESC`,
+      `SELECT ${JOB_EVENT_STORAGE_COLUMNS}
+         FROM (
+           SELECT ${JOB_EVENT_STORAGE_COLUMNS},
+                  ${createdAtExpression} AS smrt_created_at_sort,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY job_id
+                    ORDER BY ${createdAtExpression} DESC, id DESC
+                  ) AS smrt_rank
+             FROM _smrt_job_events
+            WHERE ${where.join(' AND ')}
+         ) ranked
+        WHERE smrt_rank = 1
+        ORDER BY smrt_created_at_sort DESC, id DESC`,
       params,
       { allowRawOnTenantScoped: true },
     );
 
     for (const event of events) {
-      if (!latestByJobId.has(event.jobId)) {
-        latestByJobId.set(event.jobId, event);
-      }
+      latestByJobId.set(event.jobId, event);
     }
 
     return latestByJobId;
+  }
+
+  private addTenantPredicate(
+    where: string[],
+    params: unknown[],
+    options: { tenantId?: string | null },
+  ): void {
+    if (options.tenantId === null) {
+      where.push('tenant_id IS NULL');
+      return;
+    }
+
+    const tenantId =
+      typeof options.tenantId === 'string' ? options.tenantId : getTenantId();
+
+    if (tenantId) {
+      where.push('tenant_id = ?');
+      params.push(tenantId);
+      return;
+    }
+
+    throw new Error(
+      'Tenant-scoped job event queries require tenantId, tenantId: null, or an ambient tenant context.',
+    );
+  }
+
+  private createdAtComparableExpression(): string {
+    if (usesSqliteDateFunctions(this.db.url)) {
+      return "strftime('%Y-%m-%dT%H:%M:%fZ', created_at)";
+    }
+
+    return 'created_at';
+  }
+
+  private async resolveCursorCreatedAt(
+    cursor: JobEventCursor,
+    options: ListJobEventsOptions & { jobId?: string },
+  ): Promise<string> {
+    if (!cursor.id) {
+      return normalizeCursorDate(cursor.createdAt);
+    }
+
+    const where = ['id = ?'];
+    const params: unknown[] = [cursor.id];
+    if (options.jobId) {
+      where.push('job_id = ?');
+      params.push(options.jobId);
+    }
+    this.addTenantPredicate(where, params, options);
+
+    const result = await this.db.query(
+      `SELECT ${this.createdAtComparableExpression()} AS cursor_created_at
+         FROM _smrt_job_events
+        WHERE ${where.join(' AND ')}
+        LIMIT 1`,
+      ...params,
+    );
+    const cursorCreatedAt = getQueryRows(result)[0]?.cursor_created_at;
+
+    return typeof cursorCreatedAt === 'string' && cursorCreatedAt.trim()
+      ? cursorCreatedAt
+      : normalizeCursorDate(cursor.createdAt);
   }
 }
 
