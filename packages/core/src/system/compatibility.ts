@@ -203,10 +203,45 @@ export async function ensureJobsSystemTableCompatibility(
   );
 }
 
+export async function ensureJobEventsSystemTableCompatibility(
+  db: DatabaseInterface,
+): Promise<void> {
+  if (!(await tableExists(db, '_smrt_job_events'))) {
+    return;
+  }
+
+  await addColumnIfMissing(db, '_smrt_job_events', 'tenant_id', 'TEXT');
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_job_events_tenant_id',
+    '_smrt_job_events',
+    'tenant_id',
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_job_events_job_id',
+    '_smrt_job_events',
+    'job_id',
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_job_events_type',
+    '_smrt_job_events',
+    'type',
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_job_events_created_at',
+    '_smrt_job_events',
+    'created_at',
+  );
+}
+
 export async function ensureLegacySystemTableCompatibility(
   db: DatabaseInterface,
 ): Promise<void> {
   await ensureDispatchSystemTableCompatibility(db);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db);
   await ensureJobsSystemTableCompatibility(db);
+  await ensureJobEventsSystemTableCompatibility(db);
 }

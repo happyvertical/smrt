@@ -1,12 +1,12 @@
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import {
+  ensureJobsSystemTableCompatibility,
   field,
   SmrtCollection,
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
 import { getTenantId, tenantId } from '@happyvertical/smrt-tenancy';
-import { ensureJobsSystemTableCompatibility } from '../../core/src/system/compatibility.js';
 
 /**
  * Job status type

@@ -55,6 +55,9 @@ export {
 export {
   type JobContext,
   JobContextLogger,
+  type JobEventInput,
+  type JobExecutionContext,
+  type JobProgressInput,
 } from './logger-extension.js';
 // Object extension (mixin)
 export {
@@ -87,3 +90,14 @@ export {
   type SmrtJobData,
   type TimeoutBehavior,
 } from './smrt-job.js';
+
+// Durable job telemetry
+export {
+  type JobEventCursor,
+  type ListJobEventsOptions,
+  SmrtJobEvent,
+  SmrtJobEventCollection,
+  type SmrtJobEventData,
+  type SmrtJobEventLevel,
+  type SmrtJobEventType,
+} from './smrt-job-event.js';
