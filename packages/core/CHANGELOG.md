@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.13
+
+### Patch Changes
+
+- ### Features
+
+  - add durable job telemetry (#1158) (jobs)
+  - @happyvertical/smrt-scanner@0.22.13
+  - @happyvertical/smrt-config@0.22.13
+  - @happyvertical/smrt-types@0.22.13
+
 ## 0.22.12
 
 ### Patch Changes
