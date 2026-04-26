@@ -2,6 +2,7 @@ import type { AIClientOptions } from '@happyvertical/ai';
 import { createLogger, type Logger } from '@happyvertical/logger';
 import { sanitizeConfig } from '@happyvertical/smrt-config';
 import {
+  type ConfigResolver,
   createDispatchBus,
   type DispatchBus,
   type DispatchMetadata,
@@ -203,6 +204,34 @@ export abstract class Agent extends SmrtObject {
    * ```
    */
   static signalSubscriptions: string[] = [];
+
+  /**
+   * Execute-time resolvers for `agent_config` fields that should be computed
+   * lazily rather than snapshotted at sync time.
+   *
+   * Each entry is keyed by the agent_config field it produces. The runtime
+   * (see {@link resolveLazyConfig}) calls every resolver and overlays the
+   * results on top of the persisted config before constructing the agent.
+   * That means env-derived values like asset storage paths, S3 buckets, AI
+   * provider keys, or tenant-scoped DB URLs stay live: rotating an env var
+   * is reflected on the next scheduled run without rewriting the schedule
+   * row.
+   *
+   * Resolvers may be sync or async. Returning `undefined` leaves the
+   * persisted value in place; throwing falls back to the persisted value
+   * (or to whatever {@link ResolveLazyConfigOptions.onError} dictates).
+   *
+   * @example
+   * ```typescript
+   * class Praeco extends Agent {
+   *   static override configResolvers = {
+   *     assetStorage: () => resolveSharedAssetStorage(),
+   *     aiKey: async () => loadAIKeyFromSecretsManager(),
+   *   };
+   * }
+   * ```
+   */
+  static configResolvers: Record<string, ConfigResolver> = {};
 
   /**
    * Current agent status

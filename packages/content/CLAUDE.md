@@ -117,6 +117,23 @@ await content.addReference(otherContent);
 await content.getReferences();
 ```
 
+## API Contracts
+
+`Content` implements `AssetAssociable` and `MetadataAccessor` (issue #1162). Consumers can type their parameters as `Content` (or the interfaces directly) and rely on the methods existing without `typeof === 'function'` defensive checks:
+
+```typescript
+import type { AssetAssociable, MetadataAccessor } from '@happyvertical/smrt-content';
+
+async function attachThumbnail(doc: AssetAssociable, asset: Asset) {
+  await doc.addAsset(asset, 'thumbnail', 0); // contract guaranteed
+}
+
+function bumpRevision(doc: MetadataAccessor) {
+  const meta = doc.getMetadata();
+  doc.updateMetadata({ revision: (meta.revision ?? 0) + 1 });
+}
+```
+
 ## Category Navigation
 
 `getCategorySegments()`, `getParentCategory()`, `getRootCategory()`, `getAncestorPaths()`, `isInCategory(path, includeChildren?)`

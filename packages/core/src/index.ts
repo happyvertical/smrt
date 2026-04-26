@@ -66,6 +66,23 @@ export * from './errors';
 export * from './generators/index';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
+// Lazy / execute-time config resolvers (for agent_config and similar
+// snapshot-prone payloads — see issue #1161)
+export type {
+  ConfigResolver,
+  LazyConfigSentinel,
+  ResolveLazyConfigOptions,
+} from './lazy-config';
+export {
+  getClassConfigResolvers,
+  getConfigResolver,
+  isLazyConfigSentinel,
+  listConfigResolvers,
+  registerConfigResolver,
+  resetConfigResolvers,
+  resolveLazyConfig,
+  unregisterConfigResolver,
+} from './lazy-config';
 // Static manifest (generated at build time)
 export * from './manifest/index';
 export type { DiffOptions } from './migrations/differ';
