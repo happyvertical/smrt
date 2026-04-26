@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { resolveLocalTransformersModule } from '../embeddings/provider';
+import {
+  DEFAULT_EMBEDDING_CONFIG,
+  EmbeddingProvider,
+  resolveLocalTransformersModule,
+} from '../embeddings/provider';
 
 describe('EmbeddingProvider transformer resolution', () => {
   it('prefers @huggingface/transformers when both packages are available', async () => {
@@ -54,5 +58,41 @@ describe('EmbeddingProvider transformer resolution', () => {
     await expect(resolveLocalTransformersModule(importModule)).rejects.toThrow(
       'sharp native module failed to load',
     );
+  });
+});
+
+describe('EmbeddingProvider auto provider', () => {
+  it('uses configured AI embeddings before local transformers', async () => {
+    const ai = {
+      embed: vi.fn(async () => ({ embeddings: [[1, 2, 3]] })),
+    };
+    const provider = new EmbeddingProvider(
+      {
+        ...DEFAULT_EMBEDDING_CONFIG,
+        provider: 'auto',
+        aiModel: 'test-ai-model',
+        localModel: 'test-local-model',
+        dimensions: 3,
+      },
+      ai,
+    );
+
+    await expect(provider.embed('hello')).resolves.toEqual([[1, 2, 3]]);
+    expect(ai.embed).toHaveBeenCalledWith(['hello'], {
+      model: 'test-ai-model',
+      dimensions: 3,
+    });
+    expect(provider.getModelName()).toBe('test-ai-model');
+  });
+
+  it('keeps local model naming when auto has no AI client', () => {
+    const provider = new EmbeddingProvider({
+      ...DEFAULT_EMBEDDING_CONFIG,
+      provider: 'auto',
+      aiModel: 'test-ai-model',
+      localModel: 'test-local-model',
+    });
+
+    expect(provider.getModelName()).toBe('test-local-model');
   });
 });

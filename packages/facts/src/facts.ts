@@ -293,6 +293,7 @@ export class FactCollection extends SmrtCollection<Fact> {
           sourceCount: source ? 1 : 0,
           avgSourceCredibility: source?.credibility ?? 0.5,
         }),
+        _skipAutoEmbeddings: true,
       });
 
       // Generate embeddings for the new fact
@@ -448,6 +449,7 @@ Based ONLY on the semantic relationship between the existing fact and the new in
       parentId,
       evolutionType,
       status: data.status || 'active',
+      _skipAutoEmbeddings: true,
     } as any);
 
     // Generate embeddings for the child fact

@@ -63,7 +63,7 @@ export function getProjectEmbeddingConfig(): ProjectEmbeddingConfig {
 
   return {
     dimensions: embeddingConfig?.dimensions ?? 768,
-    provider: embeddingConfig?.provider ?? 'local',
+    provider: embeddingConfig?.provider ?? 'auto',
     localModel: embeddingConfig?.localModel ?? 'Xenova/bge-base-en-v1.5',
     aiModel: embeddingConfig?.aiModel ?? 'text-embedding-3-small',
     fallbackToAI: embeddingConfig?.fallbackToAI ?? true,

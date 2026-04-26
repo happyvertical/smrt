@@ -135,6 +135,14 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
   _skipLoad?: boolean;
 
   /**
+   * Flag to skip save-time embedding auto-generation (internal use).
+   *
+   * This is used when framework code will generate embeddings explicitly after
+   * saving and wants to avoid racing a duplicate background generation.
+   */
+  _skipAutoEmbeddings?: boolean;
+
+  /**
    * Allow arbitrary field values to be passed
    */
   [key: string]: any;
@@ -1237,27 +1245,33 @@ export class SmrtObject extends SmrtClass {
       // Execute afterSave interceptors (e.g., tenant audit logging)
       await GlobalInterceptors.executeAfterSave(this, interceptorContext);
 
-      // Auto-generate embeddings if configured
-      const embeddingConfig = ObjectRegistry.getEmbeddingConfig(className);
-      const aiClient =
-        embeddingConfig && embeddingConfig.autoGenerate !== false
-          ? await this.getOptionalAiClient()
-          : undefined;
+      // Auto-generate embeddings if configured. Default/auto embeddings prefer
+      // a configured AI provider; local background generation only runs when a
+      // class/project explicitly asks for provider: "local".
+      const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(className);
+      const skipAutoEmbeddings =
+        (this.options as any)._skipAutoEmbeddings === true;
       if (
         embeddingConfig &&
         embeddingConfig.autoGenerate !== false &&
-        aiClient
+        !skipAutoEmbeddings
       ) {
+        const aiClient = await this.getOptionalAiClient();
+        const canAutoGenerate =
+          embeddingConfig.provider === 'local' || Boolean(aiClient);
+
         // Check if any embedding field content has changed
-        const isStale = await this.hasStaleEmbeddings();
-        if (isStale) {
-          // Generate embeddings in background to avoid blocking save
-          this.generateEmbeddings().catch((error) => {
-            console.warn(
-              `Failed to auto-generate embeddings for ${this.constructor.name}:`,
-              error instanceof Error ? error.message : error,
-            );
-          });
+        if (canAutoGenerate) {
+          const isStale = await this.hasStaleEmbeddings();
+          if (isStale) {
+            // Generate embeddings in background to avoid blocking save
+            this.generateEmbeddings().catch((error) => {
+              console.warn(
+                `Failed to auto-generate embeddings for ${this.constructor.name}:`,
+                error instanceof Error ? error.message : error,
+              );
+            });
+          }
         }
       }
 

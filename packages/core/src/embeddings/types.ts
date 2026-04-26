@@ -21,10 +21,12 @@ export interface ProjectEmbeddingConfig {
 
   /**
    * Embedding provider type
-   * - 'local': Use local Node.js model (@xenova/transformers)
+   * - 'local': Use local Node.js model (@huggingface/transformers or
+   *   @xenova/transformers)
    * - 'ai': Use AI library (OpenAI, etc.)
-   * - 'auto': Try local first, fallback to AI
-   * @default 'local'
+   * - 'auto': Prefer configured AI embeddings, otherwise use local embeddings
+   *   when explicitly invoked
+   * @default 'auto'
    */
   provider: EmbeddingProviderType;
 

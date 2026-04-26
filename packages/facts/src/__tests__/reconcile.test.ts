@@ -167,6 +167,23 @@ describe('reconcile()', () => {
       expect(result.source?.sourceUrl).toBe('https://example.com/article');
       expect(result.source?.credibility).toBe(0.9);
     });
+
+    it('generates embeddings once when creating facts explicitly', async () => {
+      const embedSpy = vi.spyOn(EmbeddingProvider.prototype, 'embed');
+
+      await collection.reconcile({
+        rawInput: 'The mayor announced a budget update',
+        type: 'event',
+        domain: 'politics',
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // One query embedding for semantic search, then Fact's configured field
+      // and combined field. Save-time auto-generation is suppressed here so
+      // reconcile owns the explicit fact embedding work.
+      expect(embedSpy).toHaveBeenCalledTimes(3);
+    });
   });
 
   describe('MERGE action', () => {
