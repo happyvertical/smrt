@@ -70,6 +70,7 @@ type SmrtInternalKeys =
   | '_className'
   | 'options'
   | '_skipLoad'
+  | '_skipAutoEmbeddings'
   | '_extractingFields'
   | 'initialize'
   | 'save'
@@ -110,6 +111,8 @@ export type SmrtCreateInput<T extends SmrtObject> = Partial<
   _meta_type?: string;
   /** Skip database loading (framework internal) */
   _skipLoad?: boolean;
+  /** Skip save-time embedding auto-generation (framework internal) */
+  _skipAutoEmbeddings?: boolean;
   /** Allow arbitrary additional fields for dynamic usage */
   [key: string]: unknown;
 };
@@ -2168,11 +2171,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
     }
 
-    // Get project config for embedding provider
-    const projectConfig = ObjectRegistry.getProjectEmbeddingConfig();
-
-    // Create embedding provider
-    const provider = new EmbeddingProvider(projectConfig, this.ai);
+    // Create embedding provider from the resolved class/project config so
+    // query embeddings use the same model as stored object embeddings.
+    const provider = new EmbeddingProvider(
+      {
+        dimensions: embeddingConfig.dimensions,
+        provider: embeddingConfig.provider,
+        localModel: embeddingConfig.localModel,
+        aiModel: embeddingConfig.aiModel,
+        fallbackToAI: embeddingConfig.fallbackToAI,
+      },
+      this.ai,
+    );
 
     // Generate embedding for query
     const [queryEmbedding] = await provider.embed(query);

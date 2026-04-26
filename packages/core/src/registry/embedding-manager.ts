@@ -66,7 +66,7 @@ export function getProjectEmbeddingConfig(): ProjectEmbeddingConfig {
     provider: embeddingConfig?.provider ?? 'local',
     localModel: embeddingConfig?.localModel ?? 'Xenova/bge-base-en-v1.5',
     aiModel: embeddingConfig?.aiModel ?? 'text-embedding-3-small',
-    fallbackToAI: embeddingConfig?.fallbackToAI ?? true,
+    fallbackToAI: embeddingConfig?.fallbackToAI ?? false,
     storage: embeddingConfig?.storage ?? 'json',
   };
 }
@@ -92,7 +92,7 @@ export function resolveEmbeddingConfig(
     provider: classConfig.provider ?? projectConfig.provider,
     localModel: projectConfig.localModel ?? 'Xenova/bge-base-en-v1.5',
     aiModel: projectConfig.aiModel ?? 'text-embedding-3-small',
-    fallbackToAI: projectConfig.fallbackToAI ?? true,
+    fallbackToAI: projectConfig.fallbackToAI ?? false,
     autoGenerate: classConfig.autoGenerate ?? true,
     regenerateOnChange: classConfig.regenerateOnChange ?? true,
   };

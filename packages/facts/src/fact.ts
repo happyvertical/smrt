@@ -21,6 +21,7 @@ import type {
   tableStrategy: 'sti',
   embeddings: {
     fields: ['textRefined'],
+    provider: 'auto',
     autoGenerate: true,
     combinedField: {
       name: 'full_context',

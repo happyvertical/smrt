@@ -2,7 +2,8 @@
  * Embedding Provider
  *
  * Unified interface for generating embeddings using local models or AI APIs.
- * Supports transformers.js packages for local inference and @happyvertical/ai for cloud.
+ * Supports transformers.js packages for local inference and @happyvertical/ai
+ * for cloud embeddings.
  */
 
 import type { EmbeddingProviderType, ProjectEmbeddingConfig } from './types';
@@ -85,7 +86,12 @@ type FeatureExtractionPipeline = (
 ) => Promise<{ tolist: () => number[][] }>;
 
 /**
- * Embedding provider that supports both local and AI-based embedding generation
+ * Embedding provider that supports both local and AI-based embedding generation.
+ *
+ * The "auto" provider prefers an already-configured AI embedding client.
+ * Local transformer models are still available via provider: "local", but should
+ * be an explicit choice for server workloads because model initialization can be
+ * CPU and memory intensive.
  */
 export class EmbeddingProvider {
   private localPipeline: FeatureExtractionPipeline | null = null;
@@ -132,18 +138,15 @@ export class EmbeddingProvider {
       return this.embedWithAI(texts);
     }
 
-    // 'auto' - try local first, fallback to AI
-    try {
-      return await this.embedLocal(texts);
-    } catch (error) {
-      if (this.config.fallbackToAI && this.ai) {
-        console.warn(
-          `Local embedding failed, falling back to AI: ${error instanceof Error ? error.message : error}`,
-        );
-        return this.embedWithAI(texts);
-      }
-      throw error;
+    // 'auto' - use the configured AI client when present. This avoids
+    // unexpectedly loading a large local transformer model inside app workers.
+    // Local embeddings remain the explicit no-AI fallback for callers that
+    // invoke embedding generation without an AI client.
+    if (this.ai) {
+      return this.embedWithAI(texts);
     }
+
+    return this.embedLocal(texts);
   }
 
   /**
@@ -217,7 +220,10 @@ export class EmbeddingProvider {
    * Get the model name being used
    */
   getModelName(): string {
-    if (this.config.provider === 'ai') {
+    if (
+      this.config.provider === 'ai' ||
+      (this.config.provider === 'auto' && this.ai)
+    ) {
       return this.config.aiModel || 'text-embedding-3-small';
     }
     return this.config.localModel || 'Xenova/bge-base-en-v1.5';
@@ -258,5 +264,4 @@ export const DEFAULT_EMBEDDING_CONFIG: ProjectEmbeddingConfig = {
   provider: 'local',
   localModel: 'Xenova/bge-base-en-v1.5',
   aiModel: 'text-embedding-3-small',
-  fallbackToAI: true,
 };

@@ -24,6 +24,12 @@ function createMockEmbeddings(text: string): number[] {
   return [Math.sin(hash), Math.cos(hash), Math.sin(hash * 2)];
 }
 
+async function flushBackgroundTasks(): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+}
+
 // Test document with auto-generation ENABLED
 @smrt({
   embeddings: {
@@ -212,6 +218,35 @@ describe('Embedding Auto-Generation Hook', () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // embed should have been called (content changed)
+      expect(embedSpy).toHaveBeenCalled();
+    });
+
+    it('uses _skipAutoEmbeddings only for the first save', async () => {
+      const collection = await AutoGenDocumentCollection.create({
+        db: { type: 'sqlite', url: dbPath },
+        ai: {
+          embed: async (texts: string | string[]) => {
+            const textArray = Array.isArray(texts) ? texts : [texts];
+            return {
+              embeddings: textArray.map((t) => createMockEmbeddings(t)),
+            };
+          },
+        } as any,
+      });
+
+      const doc = await collection.create({
+        title: 'One Shot Skip Test',
+        content: 'Initial content skips automatic embeddings',
+        _skipAutoEmbeddings: true,
+      });
+
+      await flushBackgroundTasks();
+      expect(embedSpy).not.toHaveBeenCalled();
+
+      doc.content = 'Updated content should trigger embeddings';
+      await doc.save();
+      await flushBackgroundTasks();
+
       expect(embedSpy).toHaveBeenCalled();
     });
   });
