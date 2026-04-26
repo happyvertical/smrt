@@ -1245,23 +1245,20 @@ export class SmrtObject extends SmrtClass {
       // Execute afterSave interceptors (e.g., tenant audit logging)
       await GlobalInterceptors.executeAfterSave(this, interceptorContext);
 
-      // Auto-generate embeddings if configured. Default/auto embeddings prefer
-      // a configured AI provider; local background generation only runs when a
-      // class/project explicitly asks for provider: "local".
+      // Auto-generate embeddings only when an AI client is configured. Manual
+      // generation can still use local embeddings, but save-time background
+      // work should not unexpectedly load a local transformer model.
       const embeddingConfig = ObjectRegistry.resolveEmbeddingConfig(className);
-      const skipAutoEmbeddings =
-        (this.options as any)._skipAutoEmbeddings === true;
+      const skipAutoEmbeddings = this.options._skipAutoEmbeddings === true;
       if (
         embeddingConfig &&
         embeddingConfig.autoGenerate !== false &&
         !skipAutoEmbeddings
       ) {
         const aiClient = await this.getOptionalAiClient();
-        const canAutoGenerate =
-          embeddingConfig.provider === 'local' || Boolean(aiClient);
 
         // Check if any embedding field content has changed
-        if (canAutoGenerate) {
+        if (aiClient) {
           const isStale = await this.hasStaleEmbeddings();
           if (isStale) {
             // Generate embeddings in background to avoid blocking save
@@ -1273,6 +1270,9 @@ export class SmrtObject extends SmrtClass {
             });
           }
         }
+      }
+      if (skipAutoEmbeddings) {
+        this.options._skipAutoEmbeddings = false;
       }
 
       return this;
@@ -2349,6 +2349,7 @@ export class SmrtObject extends SmrtClass {
     // Determine which fields to process
     const fieldsToProcess = options.fields || config.fields;
     const provider = options.provider || config.provider;
+    const aiClient = await this.getOptionalAiClient();
 
     // Create embedding provider
     const embeddingProvider = new EmbeddingProvider(
@@ -2359,7 +2360,7 @@ export class SmrtObject extends SmrtClass {
         aiModel: config.aiModel,
         fallbackToAI: config.fallbackToAI,
       },
-      this._ai,
+      aiClient,
     );
 
     // Resolve vector capabilities for native storage
@@ -2501,6 +2502,7 @@ export class SmrtObject extends SmrtClass {
         this.constructor.name,
       );
       if (config) {
+        const aiClient = await this.getOptionalAiClient();
         // Create EmbeddingProvider to get consistent model name
         const provider = new EmbeddingProvider(
           {
@@ -2510,7 +2512,7 @@ export class SmrtObject extends SmrtClass {
             aiModel: config.aiModel,
             fallbackToAI: config.fallbackToAI,
           },
-          this._ai,
+          aiClient,
         );
         modelName = provider.getModelName();
       } else {
@@ -2555,6 +2557,19 @@ export class SmrtObject extends SmrtClass {
       return false;
     }
 
+    const aiClient = await this.getOptionalAiClient();
+    const embeddingProvider = new EmbeddingProvider(
+      {
+        dimensions: config.dimensions,
+        provider: config.provider,
+        localModel: config.localModel,
+        aiModel: config.aiModel,
+        fallbackToAI: config.fallbackToAI,
+      },
+      aiClient,
+    );
+    const modelName = embeddingProvider.getModelName();
+
     // Get stored embeddings for this object
     const storedEmbeddings = await EmbeddingStorage.getForObject(
       this.systemDb,
@@ -2570,10 +2585,12 @@ export class SmrtObject extends SmrtClass {
       }
 
       const currentHash = ContentHasher.hash(content);
-      const stored = storedEmbeddings.find((e) => e.field_name === fieldName);
+      const stored = storedEmbeddings.find(
+        (e) => e.field_name === fieldName && e.model === modelName,
+      );
 
       if (!stored) {
-        return true; // No embedding exists
+        return true; // No embedding exists for the current provider/model
       }
 
       if (stored.content_hash !== currentHash) {
@@ -2594,7 +2611,8 @@ export class SmrtObject extends SmrtClass {
 
       const currentHash = ContentHasher.hash(combinedContent);
       const stored = storedEmbeddings.find(
-        (e) => e.field_name === config.combinedField?.name,
+        (e) =>
+          e.field_name === config.combinedField?.name && e.model === modelName,
       );
 
       if (!stored || stored.content_hash !== currentHash) {

@@ -386,6 +386,25 @@ describe('Semantic Search', () => {
       expect(stats.skipped).toBe(1);
     });
 
+    it('should regenerate embeddings when the resolved model changes', async () => {
+      const getModelName = vi.mocked(EmbeddingProvider.prototype.getModelName);
+      getModelName.mockReturnValue('legacy-model');
+
+      const doc = await collection.create({
+        title: 'Migrated Model',
+        content: 'This document has embeddings from an older model',
+      });
+      await doc.save();
+      await doc.generateEmbeddings();
+
+      getModelName.mockReturnValue('current-model');
+
+      const stats = await collection.generateMissingEmbeddings();
+
+      expect(stats.generated).toBe(1);
+      expect(stats.skipped).toBe(0);
+    });
+
     it('should report progress', async () => {
       // Create documents
       for (let i = 0; i < 3; i++) {

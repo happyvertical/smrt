@@ -2944,7 +2944,7 @@ export class ObjectRegistry {
    * //   provider: 'local',
    * //   localModel: 'Xenova/bge-base-en-v1.5',
    * //   aiModel: 'text-embedding-3-small',
-   * //   fallbackToAI: true
+   * //   fallbackToAI: false
    * // }
    * ```
    */

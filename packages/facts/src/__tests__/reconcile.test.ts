@@ -169,7 +169,8 @@ describe('reconcile()', () => {
     });
 
     it('generates embeddings once when creating facts explicitly', async () => {
-      const embedSpy = vi.spyOn(EmbeddingProvider.prototype, 'embed');
+      const embedSpy = vi.mocked(EmbeddingProvider.prototype.embed);
+      embedSpy.mockClear();
 
       await collection.reconcile({
         rawInput: 'The mayor announced a budget update',
@@ -177,7 +178,7 @@ describe('reconcile()', () => {
         domain: 'politics',
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setImmediate(resolve));
 
       // One query embedding for semantic search, then Fact's configured field
       // and combined field. Save-time auto-generation is suppressed here so

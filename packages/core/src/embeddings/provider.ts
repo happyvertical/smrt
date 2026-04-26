@@ -88,7 +88,7 @@ type FeatureExtractionPipeline = (
 /**
  * Embedding provider that supports both local and AI-based embedding generation.
  *
- * The default "auto" provider prefers an already-configured AI embedding client.
+ * The "auto" provider prefers an already-configured AI embedding client.
  * Local transformer models are still available via provider: "local", but should
  * be an explicit choice for server workloads because model initialization can be
  * CPU and memory intensive.
@@ -140,6 +140,8 @@ export class EmbeddingProvider {
 
     // 'auto' - use the configured AI client when present. This avoids
     // unexpectedly loading a large local transformer model inside app workers.
+    // Local embeddings remain the explicit no-AI fallback for callers that
+    // invoke embedding generation without an AI client.
     if (this.ai) {
       return this.embedWithAI(texts);
     }
@@ -259,8 +261,7 @@ export class EmbeddingProvider {
  */
 export const DEFAULT_EMBEDDING_CONFIG: ProjectEmbeddingConfig = {
   dimensions: 768,
-  provider: 'auto',
+  provider: 'local',
   localModel: 'Xenova/bge-base-en-v1.5',
   aiModel: 'text-embedding-3-small',
-  fallbackToAI: true,
 };

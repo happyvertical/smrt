@@ -3,4 +3,4 @@
 "@happyvertical/smrt-facts": patch
 ---
 
-Prefer configured AI embeddings for automatic embedding generation and avoid duplicate fact embedding work during reconciliation.
+Prefer configured AI embeddings for fact embedding work and avoid duplicate fact embedding generation during reconciliation.

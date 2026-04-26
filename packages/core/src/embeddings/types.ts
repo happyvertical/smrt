@@ -26,7 +26,7 @@ export interface ProjectEmbeddingConfig {
    * - 'ai': Use AI library (OpenAI, etc.)
    * - 'auto': Prefer configured AI embeddings, otherwise use local embeddings
    *   when explicitly invoked
-   * @default 'auto'
+   * @default 'local'
    */
   provider: EmbeddingProviderType;
 
@@ -43,8 +43,11 @@ export interface ProjectEmbeddingConfig {
   aiModel?: string;
 
   /**
-   * Whether to fallback to AI if local fails
-   * @default true
+   * Legacy local-first auto fallback option.
+   *
+   * @deprecated `auto` now selects AI first when available and otherwise uses
+   * local embeddings. This option is accepted for backwards compatibility but
+   * no longer changes provider selection.
    */
   fallbackToAI?: boolean;
 
@@ -124,7 +127,7 @@ export interface ResolvedEmbeddingConfig extends ClassEmbeddingConfig {
   aiModel: string;
 
   /**
-   * Fallback behavior
+   * Legacy fallback behavior retained for compatibility
    */
   fallbackToAI: boolean;
 }
