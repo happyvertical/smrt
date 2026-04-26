@@ -1,5 +1,14 @@
 # @happyvertical/smrt-facts
 
+## 0.22.14
+
+### Patch Changes
+
+- f81fc02: Prefer configured AI embeddings for fact embedding work and avoid duplicate fact embedding generation during reconciliation.
+- Updated dependencies [f81fc02]
+  - @happyvertical/smrt-core@0.22.14
+  - @happyvertical/smrt-tenancy@0.22.14
+
 ## 0.22.13
 
 ### Patch Changes
