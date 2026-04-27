@@ -324,9 +324,17 @@ export class TaskRunner extends EventEmitter {
       // operators can rotate env vars without rewriting persisted schedule
       // rows (issue #1161). Class-level `static configResolvers` are layered
       // on top so live values always win over snapshotted ones.
+      //
+      // `onError: 'throw'` so a misconfigured deployment fails fast at the
+      // job boundary with a clear "unknown resolver X" error, rather than
+      // silently spreading a `{ $env: '...' }` sentinel object into the
+      // agent constructor (where it would surface much later as a confusing
+      // downstream failure — e.g. `[object Object]` masquerading as a
+      // bucket name).
       const classResolvers = getClassConfigResolvers(ObjectClass);
       const agentConfig = await resolveLazyConfig(persistedAgentConfig, {
         classResolvers,
+        onError: 'throw',
       });
 
       // Create or load the object instance

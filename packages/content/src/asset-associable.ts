@@ -92,3 +92,61 @@ export interface MetadataAccessor<
    */
   updateMetadata(patch: Partial<TMetadata>): TMetadata;
 }
+
+/**
+ * Runtime type guard for {@link AssetAssociable}.
+ *
+ * The interface exists primarily so that statically-typed consumers can drop
+ * defensive `typeof === 'function'` checks. This guard is for the rare cases
+ * where a value enters the system as `unknown` (deserialised payload, plugin
+ * input, etc.) and the caller needs to confirm shape before delegating.
+ *
+ * @example
+ * ```ts
+ * if (isAssetAssociable(input)) {
+ *   await input.addAsset(asset, 'attachment');
+ * }
+ * ```
+ */
+export function isAssetAssociable(value: unknown): value is AssetAssociable {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<AssetAssociable>;
+  return (
+    typeof candidate.getAssets === 'function' &&
+    typeof candidate.addAsset === 'function' &&
+    typeof candidate.removeAsset === 'function'
+  );
+}
+
+/**
+ * Runtime type guard for {@link MetadataAccessor}.
+ *
+ * Mirrors {@link isAssetAssociable} for the metadata-accessor contract.
+ */
+export function isMetadataAccessor(value: unknown): value is MetadataAccessor {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<MetadataAccessor>;
+  return (
+    typeof candidate.getMetadata === 'function' &&
+    typeof candidate.setMetadata === 'function' &&
+    typeof candidate.updateMetadata === 'function'
+  );
+}
+
+/**
+ * Returns `true` if `value` is a plain object (not an array, not `null`,
+ * not a class instance with a custom prototype). Used by `Content`'s metadata
+ * accessors to enforce the "record-shaped" contract — arrays and other
+ * non-record objects are normalised to `{}` rather than silently leaked
+ * through.
+ *
+ * @internal
+ */
+export function isPlainMetadataRecord(
+  value: unknown,
+): value is Record<string, any> {
+  if (!value || typeof value !== 'object') return false;
+  if (Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === null || proto === Object.prototype;
+}

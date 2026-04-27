@@ -217,9 +217,12 @@ export abstract class Agent extends SmrtObject {
    * is reflected on the next scheduled run without rewriting the schedule
    * row.
    *
-   * Resolvers may be sync or async. Returning `undefined` leaves the
-   * persisted value in place; throwing falls back to the persisted value
-   * (or to whatever {@link ResolveLazyConfigOptions.onError} dictates).
+   * Resolvers may be sync or async. Returning `undefined` or `null` leaves
+   * the persisted value in place — both are treated as "no overlay" so the
+   * common `() => process.env.X ?? null` pattern is safe and won't clobber
+   * a snapshotted value when the env var is unset. Throwing falls back to
+   * the persisted value (or to whatever
+   * {@link ResolveLazyConfigOptions.onError} dictates).
    *
    * @example
    * ```typescript

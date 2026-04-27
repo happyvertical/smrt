@@ -130,6 +130,40 @@ describe('TaskRunner — lazy agent_config resolution (issue #1161)', () => {
     expect(observed.keepThis).toBe('persisted-keep');
   });
 
+  it('preserves persisted value when class resolver returns null (env unset)', async () => {
+    // No LAZY_AGENT_CLASS_VAR in env, so the class resolver returns null.
+    // The persisted value must NOT be clobbered with null.
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const jobs = await SmrtJobCollection.create({ db });
+
+    await jobs.create({
+      objectType: 'LazyConfigProbe',
+      method: 'ping',
+      args: {
+        _agentConfig: { classOverlay: 'must-survive' },
+      },
+    });
+
+    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    await runner.initialize(db);
+
+    const completed = new Promise<void>((resolve, reject) => {
+      runner.once('job:completed', () => resolve());
+      runner.once('job:failed', (_job, error) => reject(error));
+    });
+
+    await runner.start();
+    try {
+      await completed;
+    } finally {
+      await runner.stop();
+    }
+
+    expect(LazyConfigProbe.lastConstructorOptions?.classOverlay).toBe(
+      'must-survive',
+    );
+  });
+
   it('leaves persisted values untouched when no resolver is registered', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const jobs = await SmrtJobCollection.create({ db });
@@ -158,5 +192,45 @@ describe('TaskRunner — lazy agent_config resolution (issue #1161)', () => {
     }
 
     expect(LazyConfigProbe.lastConstructorOptions?.plain).toBe('value');
+  });
+
+  it('fails the job fast when a sentinel references an unknown resolver', async () => {
+    // Issue #1161 + Copilot review: TaskRunner uses `onError: 'throw'` so a
+    // missing resolver (e.g. forgotten `registerConfigResolver` at boot)
+    // surfaces as a clear error at the job boundary rather than spreading a
+    // sentinel object into the agent constructor.
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const jobs = await SmrtJobCollection.create({ db });
+
+    await jobs.create({
+      objectType: 'LazyConfigProbe',
+      method: 'ping',
+      args: {
+        _agentConfig: {
+          assetStorage: { $env: 'definitelyNotRegistered' },
+        },
+      },
+      maxAttempts: 1,
+    });
+
+    const runner = createTaskRunner({ concurrency: 1, pollInterval: 10 });
+    await runner.initialize(db);
+
+    const failure = new Promise<Error>((resolve, reject) => {
+      runner.once('job:failed', (_job, error) => resolve(error as Error));
+      runner.once('job:completed', () =>
+        reject(new Error('job should have failed')),
+      );
+    });
+
+    await runner.start();
+    let error: Error;
+    try {
+      error = await failure;
+    } finally {
+      await runner.stop();
+    }
+
+    expect(error.message).toMatch(/unknown resolver "definitelyNotRegistered"/);
   });
 });

@@ -1,6 +1,7 @@
 import type { Asset } from '@happyvertical/smrt-assets';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import type { AssetAssociable, MetadataAccessor } from './asset-associable';
+import { isAssetAssociable, isMetadataAccessor } from './asset-associable';
 import { Content } from './content';
 
 /**
@@ -48,15 +49,56 @@ describe('AssetAssociable contract — issue #1162', () => {
   });
 });
 
+describe('runtime type guards', () => {
+  it('isAssetAssociable returns true for Content instances', () => {
+    expect(isAssetAssociable(new Content({ name: 'x' }))).toBe(true);
+  });
+
+  it('isAssetAssociable rejects unrelated objects, primitives, and null', () => {
+    expect(isAssetAssociable(null)).toBe(false);
+    expect(isAssetAssociable(undefined)).toBe(false);
+    expect(isAssetAssociable('string')).toBe(false);
+    expect(isAssetAssociable({})).toBe(false);
+    expect(isAssetAssociable({ getAssets: () => Promise.resolve([]) })).toBe(
+      false,
+    );
+  });
+
+  it('isMetadataAccessor returns true for Content and rejects others', () => {
+    expect(isMetadataAccessor(new Content({ name: 'x' }))).toBe(true);
+    expect(isMetadataAccessor({})).toBe(false);
+    expect(isMetadataAccessor({ getMetadata: () => ({}) })).toBe(false);
+  });
+});
+
 describe('MetadataAccessor implementation on Content', () => {
-  it('getMetadata returns an object even when metadata was nulled out', () => {
+  it('getMetadata returns an empty object when metadata is null — without mutating the field', () => {
+    // Read-only accessor must not silently normalise `null` to `{}` on the
+    // instance, or SmrtObject's save lifecycle could write `{}` back over a
+    // legitimately NULL column on the next save.
     const c = new Content({ name: 'x' });
     (c as unknown as { metadata: unknown }).metadata = null;
 
     const m = c.getMetadata();
     expect(m).toEqual({});
-    // Subsequent calls return the same normalised object.
-    expect(c.getMetadata()).toBe(m);
+    // The field itself is still null — the read did not mutate it.
+    expect((c as unknown as { metadata: unknown }).metadata).toBeNull();
+  });
+
+  it('getMetadata returns {} for arrays without leaking the array through', () => {
+    // Arrays are technically `typeof === 'object'` so the naive guard would
+    // pass them through. The accessor contract is "record-shaped".
+    const c = new Content({ name: 'x' });
+    (c as unknown as { metadata: unknown }).metadata = ['not', 'a', 'record'];
+
+    expect(c.getMetadata()).toEqual({});
+    expect(Array.isArray(c.getMetadata())).toBe(false);
+  });
+
+  it('setMetadata normalises arrays to {} (rejects non-record input)', () => {
+    const c = new Content({ name: 'x' });
+    c.setMetadata(['array', 'input'] as unknown as Record<string, any>);
+    expect(c.getMetadata()).toEqual({});
   });
 
   it('setMetadata replaces the field and clones the input', () => {

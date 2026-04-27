@@ -184,53 +184,87 @@ function normalizeResolverMap(
 
 const REMOVE = Symbol('LazyConfig.REMOVE');
 
+/**
+ * Maximum traversal depth before {@link resolveValue} bails out. Real
+ * `agent_config` payloads are shallow (2–3 levels); a high cap here exists
+ * solely to prevent stack overflow from a malicious or buggy persisted
+ * config without rejecting any legitimate input. When the cap is hit the
+ * value is returned verbatim — same fail-soft as for a missing resolver.
+ */
+const MAX_DEPTH = 64;
+
+interface ResolveContext {
+  resolvers: Map<string, ConfigResolver>;
+  onError: NonNullable<ResolveLazyConfigOptions['onError']>;
+  /**
+   * Map from input object/array to its resolved replacement. Serves two
+   * purposes simultaneously:
+   *   1. Cycle protection — without it, a self-referential config would
+   *      recurse forever.
+   *   2. DAG fidelity — a sub-tree referenced from two places gets cloned
+   *      once and the same clone is reused for every reference, preserving
+   *      structure and ensuring sentinels under shared references are still
+   *      resolved.
+   */
+  resolved: WeakMap<object, unknown>;
+}
+
 async function resolveValue(
   value: unknown,
-  resolvers: Map<string, ConfigResolver>,
-  onError: NonNullable<ResolveLazyConfigOptions['onError']>,
-  seen: WeakSet<object>,
+  ctx: ResolveContext,
+  depth: number,
 ): Promise<unknown> {
   if (isLazyConfigSentinel(value)) {
     const name = getSentinelName(value);
-    const resolver = resolvers.get(name);
+    const resolver = ctx.resolvers.get(name);
     if (!resolver) {
-      if (onError === 'throw') {
+      if (ctx.onError === 'throw') {
         throw new Error(
           `Lazy config sentinel references unknown resolver "${name}"`,
         );
       }
-      if (onError === 'omit') return REMOVE;
+      if (ctx.onError === 'omit') return REMOVE;
       return value;
     }
 
     try {
       return await resolver();
     } catch (error) {
-      if (onError === 'throw') throw error;
-      if (onError === 'omit') return REMOVE;
+      if (ctx.onError === 'throw') throw error;
+      if (ctx.onError === 'omit') return REMOVE;
       return value;
     }
   }
 
+  if (depth > MAX_DEPTH) {
+    // Defensive: refuse to recurse further. The original sub-tree is
+    // returned as-is; sentinels beyond this point will stay unresolved.
+    return value;
+  }
+
   if (Array.isArray(value)) {
-    if (seen.has(value)) return value;
-    seen.add(value);
+    const cached = ctx.resolved.get(value);
+    if (cached !== undefined) return cached;
     const next: unknown[] = [];
+    // Register the placeholder *before* descending so that a cycle pointing
+    // back at this array sees the in-progress array (and stops recursing).
+    ctx.resolved.set(value, next);
     for (const entry of value) {
-      const resolved = await resolveValue(entry, resolvers, onError, seen);
+      const resolved = await resolveValue(entry, ctx, depth + 1);
       if (resolved !== REMOVE) next.push(resolved);
     }
     return next;
   }
 
   if (value && typeof value === 'object') {
-    if (seen.has(value)) return value;
-    seen.add(value);
+    const cached = ctx.resolved.get(value);
+    if (cached !== undefined) return cached;
     const next: Record<string, unknown> = {};
+    ctx.resolved.set(value, next);
     for (const [key, entry] of Object.entries(
       value as Record<string, unknown>,
     )) {
-      const resolved = await resolveValue(entry, resolvers, onError, seen);
+      const resolved = await resolveValue(entry, ctx, depth + 1);
       if (resolved !== REMOVE) next[key] = resolved;
     }
     return next;
@@ -273,13 +307,15 @@ export async function resolveLazyConfig<T extends Record<string, unknown>>(
     ? normalizeResolverMap(options.resolvers)
     : globalResolvers;
 
-  const seen = new WeakSet<object>();
-  const sentinelResolved = (await resolveValue(
-    config,
+  const ctx: ResolveContext = {
     resolvers,
     onError,
-    seen,
-  )) as Record<string, unknown>;
+    resolved: new WeakMap<object, unknown>(),
+  };
+  const sentinelResolved = (await resolveValue(config, ctx, 0)) as Record<
+    string,
+    unknown
+  >;
 
   const result: Record<string, unknown> = { ...sentinelResolved };
 
@@ -287,7 +323,11 @@ export async function resolveLazyConfig<T extends Record<string, unknown>>(
     for (const [key, resolver] of Object.entries(options.classResolvers)) {
       try {
         const value = await resolver();
-        if (typeof value !== 'undefined') {
+        // Both `undefined` and `null` are treated as "no overlay value" —
+        // the persisted record's existing value (if any) is preserved.
+        // This matches the documented contract on `Agent.configResolvers`
+        // and makes the common pattern `() => process.env.X ?? null` safe.
+        if (value !== undefined && value !== null) {
           result[key] = value;
         }
       } catch (error) {

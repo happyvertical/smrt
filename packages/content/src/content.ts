@@ -11,6 +11,7 @@ import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociable, MetadataAccessor } from './asset-associable';
+import { isPlainMetadataRecord } from './asset-associable';
 import { ContentAssetCollection } from './content-assets';
 import {
   buildContentGovernanceAssignmentKey,
@@ -2227,33 +2228,36 @@ ${correctedText}
   // ============================================
 
   /**
-   * Get the full metadata record. Always returns an object — never `null` —
-   * so callers can safely read nested keys without defensive checks.
+   * Get the full metadata record. Always returns a plain object — never
+   * `null`, never an array — so callers can safely read nested keys without
+   * defensive checks.
    *
-   * The returned reference is the live `metadata` object; callers should not
-   * mutate it directly. Use {@link Content.setMetadata} or
-   * {@link Content.updateMetadata} for safe writes.
+   * Pure read with no side-effect on `this.metadata`: if the field is
+   * currently `null` (e.g. fresh from the DB) or non-record-shaped, an
+   * empty object is returned but the field is **not** mutated. This avoids
+   * accidentally marking the object dirty during a read, which would
+   * otherwise cause SmrtObject's save lifecycle to write `{}` back over a
+   * NULL column on the next save. Callers that want to normalise the
+   * stored field should use {@link Content.setMetadata}.
    */
   getMetadata(): Record<string, any> {
-    if (!this.metadata || typeof this.metadata !== 'object') {
-      this.metadata = {};
-    }
-    return this.metadata;
+    return isPlainMetadataRecord(this.metadata) ? this.metadata : {};
   }
 
   /**
-   * Replace the full metadata record. Passing `null`/`undefined` clears it
-   * to an empty object so downstream readers can rely on the field always
-   * being a plain object.
+   * Replace the full metadata record. Passing `null`/`undefined` (or any
+   * non-record value such as an array) clears it to an empty object so
+   * downstream readers can rely on the field always being a plain object.
    */
   setMetadata(metadata: Record<string, any> | null | undefined): void {
-    this.metadata =
-      metadata && typeof metadata === 'object' ? { ...metadata } : {};
+    this.metadata = isPlainMetadataRecord(metadata) ? { ...metadata } : {};
   }
 
   /**
    * Shallow-merge a patch over the current metadata. Returns the resulting
-   * record so callers can chain reads without re-reading the field.
+   * record so callers can chain reads without re-reading the field. Unlike
+   * {@link Content.getMetadata}, this method does intentionally write back
+   * to `this.metadata` because the merge is a write.
    */
   updateMetadata(patch: Partial<Record<string, any>>): Record<string, any> {
     const next = { ...this.getMetadata(), ...(patch ?? {}) };

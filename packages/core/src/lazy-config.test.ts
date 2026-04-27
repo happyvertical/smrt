@@ -178,6 +178,54 @@ describe('lazy-config', () => {
 
       const resolved = await resolveLazyConfig(cyclic);
       expect(resolved.a).toBe(1);
+      // Cycle is preserved internally: `resolved.self` points back at the
+      // inner sentinel-resolved tree (not at the original `cyclic` input).
+      // We verify by walking one step deeper — `resolved.self.self` should
+      // be the same node as `resolved.self`, proving no aliasing leak.
+      const inner = resolved.self as Record<string, unknown>;
+      expect(inner.a).toBe(1);
+      expect(inner.self).toBe(inner);
+      // And the original input is untouched.
+      expect(cyclic.self).toBe(cyclic);
+    });
+
+    it('preserves DAG structure: shared sub-objects produce shared clones with sentinels resolved', async () => {
+      registerConfigResolver('apiKey', () => 'live-key');
+
+      const shared: Record<string, unknown> = {
+        nested: { key: { $env: 'apiKey' } },
+      };
+      const input = { left: shared, right: shared };
+
+      const resolved = await resolveLazyConfig(input);
+
+      // Both branches resolved the sentinel — the bug we'd guard against
+      // is one branch keeping `{ $env: 'apiKey' }` because traversal
+      // bailed on revisit.
+      const left = resolved.left as Record<string, any>;
+      const right = resolved.right as Record<string, any>;
+      expect(left.nested.key).toBe('live-key');
+      expect(right.nested.key).toBe('live-key');
+
+      // Same shared input → same shared clone in the output (DAG fidelity).
+      expect(left).toBe(right);
+
+      // And the input is not mutated: original sentinel is intact.
+      expect((shared.nested as any).key).toEqual({ $env: 'apiKey' });
+    });
+
+    it('caps recursion at MAX_DEPTH to prevent stack overflow from buggy persisted configs', async () => {
+      // Build a chain 100 levels deep — beyond the depth cap.
+      const root: Record<string, unknown> = {};
+      let current = root;
+      for (let i = 0; i < 100; i++) {
+        const next: Record<string, unknown> = {};
+        current.deeper = next;
+        current = next;
+      }
+      // Should not throw or stack-overflow; deep tail is left as-is.
+      const resolved = await resolveLazyConfig(root);
+      expect(resolved).toBeTypeOf('object');
     });
   });
 
@@ -200,6 +248,33 @@ describe('lazy-config', () => {
         { classResolvers: { foo: () => undefined } },
       );
       expect(resolved.foo).toBe('persisted');
+    });
+
+    it('preserves persisted value when class resolver returns null', async () => {
+      // Real-world resolvers often look like `() => process.env.X ?? null`.
+      // Treating `null` as "no overlay" prevents that pattern from silently
+      // clobbering a snapshotted value when the env var is unset.
+      const resolved = await resolveLazyConfig(
+        { foo: 'persisted' },
+        { classResolvers: { foo: () => null } },
+      );
+      expect(resolved.foo).toBe('persisted');
+    });
+
+    it('overlays falsy-but-real values from class resolvers (0, "", false)', async () => {
+      // null/undefined are sentinels for "no overlay"; other falsy values
+      // are legitimate config values and must overlay normally.
+      const resolved = await resolveLazyConfig(
+        { count: 99, label: 'old', flag: true },
+        {
+          classResolvers: {
+            count: () => 0,
+            label: () => '',
+            flag: () => false,
+          },
+        },
+      );
+      expect(resolved).toEqual({ count: 0, label: '', flag: false });
     });
 
     it('preserves persisted value when class resolver throws (default)', async () => {
