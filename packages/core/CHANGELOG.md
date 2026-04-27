@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.15
+
+### Patch Changes
+
+- ### Features
+
+  - asset-associable contract & lazy agent_config (#1161, #1162) (#1163) (content,agents)
+  - @happyvertical/smrt-scanner@0.22.15
+  - @happyvertical/smrt-config@0.22.15
+  - @happyvertical/smrt-types@0.22.15
+
 ## 0.22.14
 
 ### Patch Changes
