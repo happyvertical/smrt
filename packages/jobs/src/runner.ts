@@ -5,7 +5,12 @@ import './__smrt-register__.js';
 import { EventEmitter } from 'node:events';
 import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
-import { ObjectRegistry, type SmrtObject } from '@happyvertical/smrt-core';
+import {
+  getClassConfigResolvers,
+  ObjectRegistry,
+  resolveLazyConfig,
+  type SmrtObject,
+} from '@happyvertical/smrt-core';
 import { TenantContext } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
@@ -309,11 +314,28 @@ export class TaskRunner extends EventEmitter {
 
       // Extract internal keys from args before passing to constructor/method
       const rawArgs = (job.args ?? {}) as Record<string, unknown>;
-      const agentConfig = (rawArgs._agentConfig ?? {}) as Record<
+      const persistedAgentConfig = (rawArgs._agentConfig ?? {}) as Record<
         string,
         unknown
       >;
       const { _agentConfig: _, _scheduleId: __, ...methodArgs } = rawArgs;
+
+      // Resolve any lazy / env-derived config sentinels at execute time so
+      // operators can rotate env vars without rewriting persisted schedule
+      // rows (issue #1161). Class-level `static configResolvers` are layered
+      // on top so live values always win over snapshotted ones.
+      //
+      // `onError: 'throw'` so a misconfigured deployment fails fast at the
+      // job boundary with a clear "unknown resolver X" error, rather than
+      // silently spreading a `{ $env: '...' }` sentinel object into the
+      // agent constructor (where it would surface much later as a confusing
+      // downstream failure — e.g. `[object Object]` masquerading as a
+      // bucket name).
+      const classResolvers = getClassConfigResolvers(ObjectClass);
+      const agentConfig = await resolveLazyConfig(persistedAgentConfig, {
+        classResolvers,
+        onError: 'throw',
+      });
 
       // Create or load the object instance
       let instance: SmrtObject;

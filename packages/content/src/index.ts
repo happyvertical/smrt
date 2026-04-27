@@ -10,6 +10,11 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export type {
+  AssetAssociable,
+  MetadataAccessor,
+} from './asset-associable';
+export { isAssetAssociable, isMetadataAccessor } from './asset-associable';
 export type { ContentOptions } from './content';
 export { Content } from './content';
 export type { ContentAssetOptions } from './content-asset';

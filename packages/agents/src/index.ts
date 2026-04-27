@@ -70,6 +70,23 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Re-export core lazy-config primitives for discoverability — agents are the
+// primary use case for `agent_config` snapshot resolution (issue #1161).
+export type {
+  ConfigResolver,
+  LazyConfigSentinel,
+  ResolveLazyConfigOptions,
+} from '@happyvertical/smrt-core';
+export {
+  getClassConfigResolvers,
+  getConfigResolver,
+  isLazyConfigSentinel,
+  listConfigResolvers,
+  registerConfigResolver,
+  resetConfigResolvers,
+  resolveLazyConfig,
+  unregisterConfigResolver,
+} from '@happyvertical/smrt-core';
 export { Agent, type AgentOptions } from './agent.js';
 export {
   type AgentAIOptions,

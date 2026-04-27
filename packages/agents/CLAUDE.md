@@ -61,6 +61,30 @@ Junction table (`tenant_agents`) binding agents to tenants with permission overr
 
 Cron-based scheduling stored in `_smrt_agent_schedules`. Fields: `agentType`, `cron`, `method` (default: 'run'), `maxConcurrent`, `timeout`. Executed by ScheduleRunner from smrt-jobs.
 
+## Lazy agent_config Resolution (issue #1161)
+
+Persisted `agent_config` snapshots env-derived values at sync time, so rotated env vars don't reach already-stored schedule rows. Two complementary mechanisms unfreeze them:
+
+1. **`$env` sentinels in persisted config** — register a global resolver and reference it from the JSON:
+
+   ```ts
+   import { registerConfigResolver } from '@happyvertical/smrt-agents';
+   registerConfigResolver('sharedAssetStorage', () => resolveSharedAssetStorage());
+   // persisted: { "assetStorage": { "$env": "sharedAssetStorage" } }
+   ```
+
+2. **`static configResolvers` on the agent class** — declarative, discoverable via the class itself:
+
+   ```ts
+   class Praeco extends Agent {
+     static override configResolvers = {
+       assetStorage: () => resolveSharedAssetStorage(),
+     };
+   }
+   ```
+
+The TaskRunner calls `resolveLazyConfig()` immediately before constructing the agent, so live values always win over snapshotted ones. Re-exported from `@happyvertical/smrt-core` (`resolveLazyConfig`, `registerConfigResolver`, `getClassConfigResolvers`, …) for cases where agents isn't on the import path.
+
 ## Key Files
 
 | File | Purpose |
