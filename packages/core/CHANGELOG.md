@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.16
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - repair index drift in db:migrate (#1165) (#1166) (core,cli)
+  - @happyvertical/smrt-scanner@0.22.16
+  - @happyvertical/smrt-config@0.22.16
+  - @happyvertical/smrt-types@0.22.16
+
 ## 0.22.15
 
 ### Patch Changes
