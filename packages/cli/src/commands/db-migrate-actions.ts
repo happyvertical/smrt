@@ -1,5 +1,10 @@
 export interface MigrationAction {
-  type: 'add_column' | 'add_index' | 'type_mismatch' | 'type_upgrade';
+  type:
+    | 'add_column'
+    | 'add_index'
+    | 'drop_index'
+    | 'type_mismatch'
+    | 'type_upgrade';
   tableName: string;
   className: string;
   column?: {
@@ -14,6 +19,13 @@ export interface MigrationAction {
     columns: string[];
     unique?: boolean;
   };
+  /**
+   * Set on `drop_index` actions — the index name being dropped. We track
+   * this separately from `index` because the differ does not (and cannot,
+   * for the orphan-drop case) always know the original column list of a
+   * DB-side index that's being removed.
+   */
+  indexName?: string;
   mismatch?: {
     column: string;
     expected: string;
@@ -118,6 +130,13 @@ export function getSyntheticMigrationNameForAction(
     case 'add_index':
       return action.index ? `add_index_${action.index.name}` : null;
 
+    case 'drop_index':
+      // Drops are emitted as part of shape-drift repair (paired with an
+      // add_index of the same name) or as orphan cleanups. The synthetic
+      // name needs to differ from the paired add_index so the tracker
+      // doesn't treat them as the same migration. Issue #1165.
+      return action.indexName ? `drop_index_${action.indexName}` : null;
+
     case 'type_upgrade':
       return action.column
         ? `type_upgrade_${action.tableName}_${action.column.name}`
@@ -139,6 +158,9 @@ export function getSyntheticMigrationNameForChange(
       const indexName = change.index?.name ?? change.name;
       return indexName ? `add_index_${indexName}` : null;
     }
+
+    case 'drop_index':
+      return change.name ? `drop_index_${change.name}` : null;
 
     case 'type_upgrade':
       return change.name ? `type_upgrade_${change.table}_${change.name}` : null;
@@ -170,6 +192,7 @@ export function classifyFailedMigration(
   if (
     !migrationName.startsWith('add_column_') &&
     !migrationName.startsWith('add_index_') &&
+    !migrationName.startsWith('drop_index_') &&
     !migrationName.startsWith('type_upgrade_')
   ) {
     return 'other';
@@ -189,6 +212,7 @@ export function getUnresolvedGeneratedMigrationNames(
     if (
       change.type !== 'add_column' &&
       change.type !== 'add_index' &&
+      change.type !== 'drop_index' &&
       change.type !== 'type_upgrade'
     ) {
       continue;
@@ -311,6 +335,28 @@ export function partitionSchemaChanges(
             columns: idx.columns,
             unique: idx.unique,
           },
+          sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
+        });
+        break;
+      }
+
+      case 'drop_index': {
+        // Issue #1165: shape-drift repair pushes `drop_index` then
+        // `add_index` for the same name in change-order. We preserve that
+        // order in `migrations` by pushing here, so the drop runs before
+        // the add and the recreate actually happens (otherwise the add's
+        // `IF NOT EXISTS` silently no-ops against the wrong-shape index).
+        // Orphan-index drops (opt-in via includeDroppedIndexes) flow
+        // through the same path.
+        if (!change.name) continue;
+        migrations.push({
+          type: 'drop_index',
+          tableName: change.table,
+          className,
+          indexName: change.name,
           sql: change.sql,
           ...(change.sqlStatements
             ? { sqlStatements: change.sqlStatements }

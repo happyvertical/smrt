@@ -617,17 +617,30 @@ export class MigrationTracker {
    *
    * - CONCURRENTLY statements run outside transaction
    * - Regular statements run in transaction with lock_timeout
+   *
+   * Both CREATE and DROP variants of CONCURRENTLY must be detected — Postgres
+   * forbids `DROP INDEX CONCURRENTLY` inside a transaction block, just like
+   * the create variant. Issue #1165: the migration generator emits
+   * `DROP INDEX CONCURRENTLY` for shape-drift recreates and orphan-index
+   * cleanups, so the regex needs to cover both keywords.
    */
   private async executePostgresStatements(statements: string[]): Promise<void> {
+    const concurrentRegex =
+      /(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY/i;
+
     // Separate CONCURRENTLY statements (cannot be in transaction)
     const concurrentStatements = statements.filter((s) =>
-      /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(s),
+      concurrentRegex.test(s),
     );
     const regularStatements = statements.filter(
-      (s) => !/CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(s),
+      (s) => !concurrentRegex.test(s),
     );
 
-    // Transform regular CREATE INDEX to CONCURRENTLY if enabled
+    // Transform regular CREATE INDEX to CONCURRENTLY if enabled.
+    // Note: we don't transform DROP INDEX → DROP INDEX CONCURRENTLY because
+    // the migration generator already emits CONCURRENTLY explicitly for
+    // PostgreSQL drops, and forcing it on user-provided statements would be
+    // surprising.
     const transformedStatements = this.options.useConcurrentIndexes
       ? regularStatements.map((s) => {
           if (/CREATE\s+(UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY)/i.test(s)) {
@@ -642,10 +655,10 @@ export class MigrationTracker {
 
     // Re-separate after transformation
     const finalConcurrent = transformedStatements.filter((s) =>
-      /CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(s),
+      concurrentRegex.test(s),
     );
     const finalRegular = transformedStatements.filter(
-      (s) => !/CREATE\s+(UNIQUE\s+)?INDEX\s+CONCURRENTLY/i.test(s),
+      (s) => !concurrentRegex.test(s),
     );
 
     // Execute regular statements in transaction with timeouts

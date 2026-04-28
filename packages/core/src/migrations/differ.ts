@@ -50,8 +50,31 @@ export interface DiffOptions {
   includeDroppedTables?: boolean;
   /** Include dropped columns in diff (default: false for safety) */
   includeDroppedColumns?: boolean;
+  /**
+   * Drop indexes that exist in the database but are absent from the manifest
+   * AND are not functionally equivalent to anything in the manifest. Default:
+   * false. The differ always skips primary-key indexes (`*_pkey`) and the
+   * implicit indexes that PostgreSQL creates from inline UNIQUE constraints
+   * (`*_key`) — those are owned by table-level constraints, not by the
+   * index list, and dropping them here would break the constraint.
+   */
+  includeDroppedIndexes?: boolean;
   /** Ignore type mismatches (just log warnings) */
   ignoreTypeMismatches?: boolean;
+}
+
+/**
+ * Suffix patterns for indexes that the differ refuses to drop.
+ * - `_pkey`: PostgreSQL primary key implicit index.
+ * - `_key`: PostgreSQL implicit index for inline `UNIQUE (...)` table
+ *   constraints. Dropping these by name does not drop the underlying
+ *   constraint, and dropping the constraint requires a separate DDL path
+ *   (`ALTER TABLE ... DROP CONSTRAINT`) the differ does not emit today.
+ */
+const PROTECTED_INDEX_SUFFIXES = ['_pkey', '_key'];
+
+function isProtectedDbIndexName(name: string): boolean {
+  return PROTECTED_INDEX_SUFFIXES.some((suffix) => name.endsWith(suffix));
 }
 
 /**
@@ -68,6 +91,7 @@ export class SchemaComparer {
     this.options = {
       includeDroppedTables: false,
       includeDroppedColumns: false,
+      includeDroppedIndexes: false,
       ignoreTypeMismatches: false,
       ...options,
     };
@@ -257,10 +281,26 @@ export class SchemaComparer {
   /**
    * Compare indexes between manifest and database
    *
-   * Issue #741: Also checks for functionally equivalent indexes to avoid
-   * detecting indexes as "missing" when a different-named index with the
-   * same columns already exists. This is critical for STI tables where
-   * child classes may generate indexes with different name prefixes.
+   * Three classes of drift the differ now detects:
+   *
+   * 1. **Missing index** — manifest has an index neither the DB has by name
+   *    nor any equivalent-by-signature. Emit `add_index`. (Issue #741: the
+   *    signature check protects against creating duplicates when STI child
+   *    classes register indexes with different name prefixes.)
+   *
+   * 2. **Same-name shape drift** — DB has an index with the manifest's name,
+   *    but its columns or uniqueness flag differ. This is the failure mode
+   *    in issue #1165: `tenants_slug_context_meta_type_idx` exists but is
+   *    non-unique, while the manifest declares it unique. Emit
+   *    `drop_index` + `add_index` so the next migrate cycle recreates it
+   *    with the correct shape.
+   *
+   * 3. **Orphan in DB** — DB has an index with no manifest counterpart by
+   *    name and no signature equivalent. Emit `drop_index` *only* when the
+   *    caller opts in via `includeDroppedIndexes`, and even then never for
+   *    PostgreSQL implicit indexes (`*_pkey`, `*_key`) — those are owned by
+   *    table-level constraints and need a separate `DROP CONSTRAINT` path
+   *    that the differ does not emit yet.
    */
   private compareIndexes(
     tableName: string,
@@ -268,41 +308,81 @@ export class SchemaComparer {
     dbSchema: SqlTableSchemaInfo,
   ): SchemaChange[] {
     const changes: SchemaChange[] = [];
-    const dbIndexNames = new Set(dbSchema.indexes.map((idx) => idx.name));
 
-    // Build a map of existing index signatures for functional equivalence checking
-    // Signature format: "col1,col2:unique" with columns in their defined order
+    // Index DB indexes by name and by signature for fast lookup.
+    const dbIndexesByName = new Map<
+      string,
+      { columns: string[]; unique: boolean }
+    >();
     const dbIndexSignatures = new Map<string, string>();
     for (const idx of dbSchema.indexes) {
-      const signature = this.getIndexSignature(
-        idx.columns,
-        idx.unique ?? false,
+      const unique = idx.unique ?? false;
+      dbIndexesByName.set(idx.name, { columns: idx.columns, unique });
+      dbIndexSignatures.set(
+        this.getIndexSignature(idx.columns, unique),
+        idx.name,
       );
-      dbIndexSignatures.set(signature, idx.name);
     }
 
-    // Check for new indexes
-    for (const idx of manifest.indexes) {
-      // First, check by exact name match
-      if (dbIndexNames.has(idx.name)) {
-        continue; // Index exists with same name
-      }
+    // Track which DB indexes a manifest entry has claimed, so the orphan
+    // pass below doesn't re-flag indexes that match by signature alone.
+    const claimedDbIndexes = new Set<string>();
 
-      // Second, check for functionally equivalent index (same columns, same uniqueness)
-      // This prevents creating redundant indexes with different names
+    for (const idx of manifest.indexes) {
+      const manifestUnique = idx.unique ?? false;
       const manifestSignature = this.getIndexSignature(
         idx.columns,
-        idx.unique ?? false,
+        manifestUnique,
       );
-      const equivalentIndexName = dbIndexSignatures.get(manifestSignature);
 
-      if (equivalentIndexName) {
-        // A functionally equivalent index already exists
-        // Skip this index to avoid PostgreSQL "relation already exists" errors
+      // (a) Same name in DB — verify shape matches.
+      const dbByName = dbIndexesByName.get(idx.name);
+      if (dbByName) {
+        claimedDbIndexes.add(idx.name);
+        const dbSignature = this.getIndexSignature(
+          dbByName.columns,
+          dbByName.unique,
+        );
+        if (dbSignature === manifestSignature) {
+          continue; // Same name, same shape — nothing to do.
+        }
+
+        // Same name, drifted shape. Most often this is a uniqueness flip
+        // (issue #1165: 3-column index materialized non-unique). Recreate.
+        //
+        // Rollback caveat: the auto-generated DOWN script for the
+        // `add_index` half drops the (newly correct) index, and the
+        // `drop_index` half has no DOWN. Rolling back a recreate leaves
+        // the table without the index entirely instead of restoring the
+        // wrong-shape original. Capturing the original shape would
+        // require richer DB introspection than the differ currently has,
+        // so this asymmetry is accepted — the failure mode after an
+        // un-rolled-back recreate is "missing index" rather than
+        // "permanently broken UPSERT," which is recoverable.
+        changes.push({
+          type: 'drop_index',
+          table: tableName,
+          name: idx.name,
+          sql: this.generateDropIndexSQL(idx.name),
+        });
+        changes.push({
+          type: 'add_index',
+          table: tableName,
+          name: idx.name,
+          index: idx,
+          sql: this.generateAddIndexSQL(tableName, idx),
+        });
         continue;
       }
 
-      // No equivalent index found - this is genuinely missing
+      // (b) Different name in DB but functionally equivalent — keep as-is.
+      const equivalentIndexName = dbIndexSignatures.get(manifestSignature);
+      if (equivalentIndexName) {
+        claimedDbIndexes.add(equivalentIndexName);
+        continue;
+      }
+
+      // (c) Genuinely missing — add it.
       changes.push({
         type: 'add_index',
         table: tableName,
@@ -310,6 +390,21 @@ export class SchemaComparer {
         index: idx,
         sql: this.generateAddIndexSQL(tableName, idx),
       });
+    }
+
+    // Orphan-index sweep (opt-in via includeDroppedIndexes).
+    if (this.options.includeDroppedIndexes) {
+      for (const idx of dbSchema.indexes) {
+        if (claimedDbIndexes.has(idx.name)) continue;
+        if (isProtectedDbIndexName(idx.name)) continue;
+
+        changes.push({
+          type: 'drop_index',
+          table: tableName,
+          name: idx.name,
+          sql: this.generateDropIndexSQL(idx.name),
+        });
+      }
     }
 
     return changes;
@@ -660,6 +755,16 @@ export class SchemaComparer {
       .map((c) => this.quoteIdentifier(c))
       .join(', ');
     return `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${quotedColumns})`;
+  }
+
+  /**
+   * Generate SQL for dropping an index. Note that the migration-level
+   * generator emits `CONCURRENTLY` for PostgreSQL; the differ's preview SQL
+   * is fine without it because the differ is the diff source, not the
+   * applier — `MigrationGenerator.generateDropIndex` is what actually runs.
+   */
+  private generateDropIndexSQL(indexName: string): string {
+    return `DROP INDEX IF EXISTS ${this.quoteIdentifier(indexName)}`;
   }
 }
 

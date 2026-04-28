@@ -58,6 +58,12 @@ export const dbDiffCommand: CLICommand = {
       default: false,
       short: 'v',
     },
+    'drop-indexes': {
+      type: 'boolean',
+      description:
+        'Include orphan-index drops in the diff (indexes in DB but not in the manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default for safety.',
+      default: false,
+    },
   },
   handler: async (_args: string[], options: any) => {
     let db: any;
@@ -144,6 +150,7 @@ export const dbDiffCommand: CLICommand = {
       const comparer = new SchemaComparer(db, {
         includeDroppedTables: false,
         includeDroppedColumns: false,
+        includeDroppedIndexes: Boolean(options['drop-indexes']),
         ignoreTypeMismatches: !options.verbose,
       });
 
