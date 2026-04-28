@@ -36,7 +36,7 @@ export {
   MigrationGenerator,
 } from './generator.js';
 // Core classes
-export { MigrationTracker } from './tracker.js';
+export { MigrationTracker, planPostgresStatements } from './tracker.js';
 
 // Types
 export type {

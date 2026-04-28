@@ -1066,6 +1066,12 @@ export default testManifest;
           'Upgrade STI discriminators from simple class names to qualified names (@pkg:Class)',
         default: false,
       },
+      'drop-indexes': {
+        type: 'boolean',
+        description:
+          'Drop orphan indexes (in DB but not in manifest, excluding *_pkey/*_key implicit-from-constraint indexes). Off by default.',
+        default: false,
+      },
       verbose: {
         type: 'boolean',
         description: 'Show detailed output',
@@ -1223,8 +1229,13 @@ export default testManifest;
 
         console.log('🔍 Comparing schemas...\n');
 
-        // Use SchemaComparer from core for consistent schema diff
-        const comparer = new SchemaComparer(db);
+        // Use SchemaComparer from core for consistent schema diff. The
+        // same-name shape drift detection is always on (unblocks issue
+        // #1165 automatically); orphan-index drops are gated behind
+        // --drop-indexes for safety.
+        const comparer = new SchemaComparer(db, {
+          includeDroppedIndexes: Boolean(options['drop-indexes']),
+        });
         const diff = await comparer.compare(manifestSchemas);
 
         // Helper to get class name for a table (for reporting)
@@ -1369,6 +1380,7 @@ export default testManifest;
           const indexMigrations = migrations.filter(
             (m) => m.type === 'add_index',
           );
+          const indexDrops = migrations.filter((m) => m.type === 'drop_index');
 
           if (columnMigrations.length > 0) {
             console.log(`  📊 Columns to add: ${columnMigrations.length}`);
@@ -1376,6 +1388,17 @@ export default testManifest;
               console.log(
                 `     ${m.tableName}.${m.column?.name} (${m.column?.type})`,
               );
+            }
+            console.log();
+          }
+
+          if (indexDrops.length > 0) {
+            // Drops are listed before adds because that's the execution
+            // order (a shape-drift recreate emits drop+add for the same
+            // name; the drop must precede the add).
+            console.log(`  🗑️  Indexes to drop: ${indexDrops.length}`);
+            for (const m of indexDrops) {
+              console.log(`     ${m.indexName} on ${m.tableName}`);
             }
             console.log();
           }
@@ -1441,6 +1464,12 @@ export default testManifest;
               } else if (migration.type === 'add_index' && migration.index) {
                 migrationSql = migration.sql || '';
                 actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
+              } else if (
+                migration.type === 'drop_index' &&
+                migration.indexName
+              ) {
+                migrationSql = migration.sql || '';
+                actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
               } else {
                 continue;
               }
@@ -1455,10 +1484,18 @@ export default testManifest;
                     ? `Add column ${migration.column?.name} to ${migration.tableName}`
                     : migration.type === 'type_upgrade'
                       ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
-                      : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                      : migration.type === 'drop_index'
+                        ? `Drop index ${migration.indexName} on ${migration.tableName}`
+                        : `Add index ${migration.index?.name} on ${migration.tableName}`,
                 version: '1.0.0',
+                // Auto-migrations don't carry a DOWN script. For shape-drift
+                // index recreates (drop_index + add_index), this means a
+                // rollback would leave the table without the index entirely.
+                // Issue #1165 — surfaced and accepted: the alternative is
+                // capturing the DB-side index shape we just dropped, which
+                // we don't have the introspection wiring for yet.
                 up: migrationSqlStatements,
-                down: [], // Auto-migrations don't have rollback by default
+                down: [],
               };
 
               // Apply migration - tracker handles checksum validation and idempotency

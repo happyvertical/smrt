@@ -2613,6 +2613,12 @@ export class ObjectRegistry {
    * - CTI: ['slug', 'context']
    * - STI: ['slug', 'context', '_meta_type']
    *
+   * STI subclasses share a table, so the discriminator participates in
+   * identity — two subtypes can coexist with the same (slug, context). The
+   * matching unique constraint on `(slug, context, _meta_type)` must exist
+   * in the live schema; if a deployment carries a stale 2-column unique
+   * instead, run `smrt db:migrate` to repair it (see issue #1165).
+   *
    * @param className - Name of the class to get conflict columns for
    * @returns Array of column names to use for conflict detection
    *

@@ -149,6 +149,64 @@ describe('partitionSchemaChanges', () => {
     expect(manualInterventions).toEqual([]);
   });
 
+  it('preserves drop_index changes (issue #1165 shape-drift repair)', () => {
+    // The shape-drift repair emits drop_index + add_index in change order.
+    // partitionSchemaChanges must surface BOTH in the executable migration
+    // set with the drop preceding the add — otherwise the add's IF NOT
+    // EXISTS silently no-ops against the wrong-shape index that's still
+    // there, and the migration looks "successful" but changes nothing.
+    const { migrations, manualInterventions } = partitionSchemaChanges(
+      [
+        {
+          type: 'drop_index',
+          table: 'tenants',
+          name: 'tenants_slug_context_meta_type_idx',
+          sql: 'DROP INDEX IF EXISTS "tenants_slug_context_meta_type_idx"',
+        },
+        {
+          type: 'add_index',
+          table: 'tenants',
+          name: 'tenants_slug_context_meta_type_idx',
+          index: {
+            name: 'tenants_slug_context_meta_type_idx',
+            columns: ['slug', 'context', '_meta_type'],
+            unique: true,
+          },
+          sql: 'CREATE UNIQUE INDEX "tenants_slug_context_meta_type_idx" ON "tenants" ("slug", "context", "_meta_type")',
+        },
+      ],
+      () => 'Tenant',
+    );
+
+    expect(manualInterventions).toEqual([]);
+    expect(migrations).toHaveLength(2);
+    expect(migrations[0]).toEqual({
+      type: 'drop_index',
+      tableName: 'tenants',
+      className: 'Tenant',
+      indexName: 'tenants_slug_context_meta_type_idx',
+      sql: 'DROP INDEX IF EXISTS "tenants_slug_context_meta_type_idx"',
+    });
+    expect(migrations[1].type).toBe('add_index');
+    expect(migrations[1].index?.unique).toBe(true);
+  });
+
+  it('skips drop_index when name is missing', () => {
+    const { migrations } = partitionSchemaChanges(
+      [
+        {
+          type: 'drop_index',
+          table: 'tenants',
+          // no name — invalid input, must be skipped not crashed
+          sql: 'DROP INDEX IF EXISTS ""',
+        },
+      ],
+      () => 'Tenant',
+    );
+
+    expect(migrations).toHaveLength(0);
+  });
+
   it('separates incompatible type mismatches from executable repairs', () => {
     const { migrations, manualInterventions } = partitionSchemaChanges(
       [
@@ -286,6 +344,97 @@ describe('failed migration classification', () => {
       ],
       other: [],
     });
+  });
+
+  it('tracks drop_index changes as unresolved when present in the live diff', () => {
+    // Issue #1165 — synthetic name for a drop must roundtrip through the
+    // unresolved/superseded classifier so a failed shape-drift drop shows
+    // up in the right bucket on `smrt db:status`.
+    //
+    // The synthetic name now embeds a short SQL fingerprint to avoid
+    // checksum collisions when an index is recreated under the same name
+    // with a different shape across migrate runs. The classifier matches
+    // by `drop_index_` prefix, so the fingerprint suffix doesn't change
+    // routing — but assertions on exact names must use the same name on
+    // both sides of the comparison (i.e., feed the SAME `change.sql` into
+    // both the unresolved-set builder and the failed-migration record).
+    const failedSql =
+      'DROP INDEX IF EXISTS "tenants_slug_context_meta_type_idx"';
+    const unresolvedNames = getUnresolvedGeneratedMigrationNames([
+      {
+        type: 'drop_index',
+        table: 'tenants',
+        name: 'tenants_slug_context_meta_type_idx',
+        sql: failedSql,
+      },
+    ]);
+
+    // The unresolved set should contain exactly one drop_index_* entry.
+    const dropEntries = [...unresolvedNames].filter((n) =>
+      n.startsWith('drop_index_tenants_slug_context_meta_type_idx_'),
+    );
+    expect(dropEntries).toHaveLength(1);
+    const failedMigrationName = dropEntries[0];
+
+    const summary = summarizeFailedMigrations(
+      [
+        {
+          name: failedMigrationName,
+          error_message: 'transient pg lock failure',
+        },
+      ],
+      unresolvedNames,
+    );
+    expect(summary.unresolved).toHaveLength(1);
+    expect(summary.unresolved[0].name).toBe(failedMigrationName);
+  });
+
+  it('emits the same synthetic id for the same SQL across runs and a different one when the SQL changes', () => {
+    // Same shape twice → same id. Different shape (drift) → different id.
+    // This is the property that lets MigrationTracker apply repeat repairs
+    // without "checksum mismatch" errors.
+    const idA = getUnresolvedGeneratedMigrationNames([
+      {
+        type: 'add_index',
+        table: 'tenants',
+        name: 'tenants_slug_context_meta_type_idx',
+        index: {
+          name: 'tenants_slug_context_meta_type_idx',
+          columns: ['slug', 'context', '_meta_type'],
+          unique: true,
+        },
+        sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
+      },
+    ]);
+    const idASame = getUnresolvedGeneratedMigrationNames([
+      {
+        type: 'add_index',
+        table: 'tenants',
+        name: 'tenants_slug_context_meta_type_idx',
+        index: {
+          name: 'tenants_slug_context_meta_type_idx',
+          columns: ['slug', 'context', '_meta_type'],
+          unique: true,
+        },
+        sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
+      },
+    ]);
+    const idDrifted = getUnresolvedGeneratedMigrationNames([
+      {
+        type: 'add_index',
+        table: 'tenants',
+        name: 'tenants_slug_context_meta_type_idx',
+        index: {
+          name: 'tenants_slug_context_meta_type_idx',
+          columns: ['slug', 'context', '_meta_type'],
+          unique: false, // ← shape drifted
+        },
+        sql: 'CREATE INDEX "x" ON "y" ("a", "b", "c")',
+      },
+    ]);
+
+    expect([...idA]).toEqual([...idASame]);
+    expect([...idA]).not.toEqual([...idDrifted]);
   });
 
   it('falls back to direct-review classification when live drift comparison is unavailable', () => {
