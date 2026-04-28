@@ -310,17 +310,34 @@ export class SchemaComparer {
     const changes: SchemaChange[] = [];
 
     // Index DB indexes by name and by signature for fast lookup.
+    // dbIndexSignatures groups *all* DB index names sharing a signature so
+    // duplicates under different names all get claimed by a single matching
+    // manifest entry — otherwise the orphan sweep would drop the un-claimed
+    // siblings even though they are functionally equivalent to the manifest.
     const dbIndexesByName = new Map<
       string,
       { columns: string[]; unique: boolean }
     >();
-    const dbIndexSignatures = new Map<string, string>();
+    const dbIndexSignatures = new Map<string, Set<string>>();
     for (const idx of dbSchema.indexes) {
       const unique = idx.unique ?? false;
       dbIndexesByName.set(idx.name, { columns: idx.columns, unique });
-      dbIndexSignatures.set(
-        this.getIndexSignature(idx.columns, unique),
-        idx.name,
+      const signature = this.getIndexSignature(idx.columns, unique);
+      let bucket = dbIndexSignatures.get(signature);
+      if (!bucket) {
+        bucket = new Set();
+        dbIndexSignatures.set(signature, bucket);
+      }
+      bucket.add(idx.name);
+    }
+
+    // Manifest signatures — used during the orphan sweep to skip DB indexes
+    // that match a manifest entry's signature even if no specific manifest
+    // entry "claimed" them by name.
+    const manifestSignatureSet = new Set<string>();
+    for (const idx of manifest.indexes) {
+      manifestSignatureSet.add(
+        this.getIndexSignature(idx.columns, idx.unique ?? false),
       );
     }
 
@@ -376,9 +393,14 @@ export class SchemaComparer {
       }
 
       // (b) Different name in DB but functionally equivalent — keep as-is.
-      const equivalentIndexName = dbIndexSignatures.get(manifestSignature);
-      if (equivalentIndexName) {
-        claimedDbIndexes.add(equivalentIndexName);
+      // Claim *every* DB name sharing this signature so duplicate-shape
+      // indexes (e.g., a stale `<name>_idx` plus the implicit `<name>_key`
+      // from the same constraint) all survive the orphan sweep.
+      const equivalentIndexNames = dbIndexSignatures.get(manifestSignature);
+      if (equivalentIndexNames && equivalentIndexNames.size > 0) {
+        for (const name of equivalentIndexNames) {
+          claimedDbIndexes.add(name);
+        }
         continue;
       }
 
@@ -397,6 +419,18 @@ export class SchemaComparer {
       for (const idx of dbSchema.indexes) {
         if (claimedDbIndexes.has(idx.name)) continue;
         if (isProtectedDbIndexName(idx.name)) continue;
+
+        // Belt-and-suspenders: even if a DB index wasn't formally claimed
+        // by a manifest entry (e.g., shape-drift recreate consumed the
+        // claim slot), don't drop it if its signature still matches
+        // something the manifest declares. That would contradict the
+        // option doc ("not functionally equivalent to anything in the
+        // manifest") and risk dropping a still-needed index.
+        const idxSignature = this.getIndexSignature(
+          idx.columns,
+          idx.unique ?? false,
+        );
+        if (manifestSignatureSet.has(idxSignature)) continue;
 
         changes.push({
           type: 'drop_index',
@@ -758,10 +792,21 @@ export class SchemaComparer {
   }
 
   /**
-   * Generate SQL for dropping an index. Note that the migration-level
-   * generator emits `CONCURRENTLY` for PostgreSQL; the differ's preview SQL
-   * is fine without it because the differ is the diff source, not the
-   * applier — `MigrationGenerator.generateDropIndex` is what actually runs.
+   * Generate SQL for dropping an index.
+   *
+   * This SQL is consumed by *both* execution paths:
+   *
+   * - `db:diff --generate` writes a migration file using the SQL produced
+   *   by `MigrationGenerator.generateDropIndex` (which adds CONCURRENTLY
+   *   for PostgreSQL).
+   * - `db:migrate` runs the SQL we put in `change.sql` directly, with the
+   *   tracker's `executePostgresStatements` adding CONCURRENTLY when
+   *   `--postgres-safe` is on.
+   *
+   * Either way, PostgreSQL ends up with `CONCURRENTLY` when it should.
+   * Keeping this method engine-agnostic also means the diff preview text
+   * stays readable (no engine-specific noise) for engines like SQLite
+   * where CONCURRENTLY isn't a thing.
    */
   private generateDropIndexSQL(indexName: string): string {
     return `DROP INDEX IF EXISTS ${this.quoteIdentifier(indexName)}`;

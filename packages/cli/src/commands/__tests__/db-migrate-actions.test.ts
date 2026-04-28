@@ -350,31 +350,91 @@ describe('failed migration classification', () => {
     // Issue #1165 — synthetic name for a drop must roundtrip through the
     // unresolved/superseded classifier so a failed shape-drift drop shows
     // up in the right bucket on `smrt db:status`.
+    //
+    // The synthetic name now embeds a short SQL fingerprint to avoid
+    // checksum collisions when an index is recreated under the same name
+    // with a different shape across migrate runs. The classifier matches
+    // by `drop_index_` prefix, so the fingerprint suffix doesn't change
+    // routing — but assertions on exact names must use the same name on
+    // both sides of the comparison (i.e., feed the SAME `change.sql` into
+    // both the unresolved-set builder and the failed-migration record).
+    const failedSql =
+      'DROP INDEX IF EXISTS "tenants_slug_context_meta_type_idx"';
     const unresolvedNames = getUnresolvedGeneratedMigrationNames([
       {
         type: 'drop_index',
         table: 'tenants',
         name: 'tenants_slug_context_meta_type_idx',
+        sql: failedSql,
       },
     ]);
 
-    expect(
-      unresolvedNames.has('drop_index_tenants_slug_context_meta_type_idx'),
-    ).toBe(true);
+    // The unresolved set should contain exactly one drop_index_* entry.
+    const dropEntries = [...unresolvedNames].filter((n) =>
+      n.startsWith('drop_index_tenants_slug_context_meta_type_idx_'),
+    );
+    expect(dropEntries).toHaveLength(1);
+    const failedMigrationName = dropEntries[0];
 
     const summary = summarizeFailedMigrations(
       [
         {
-          name: 'drop_index_tenants_slug_context_meta_type_idx',
+          name: failedMigrationName,
           error_message: 'transient pg lock failure',
         },
       ],
       unresolvedNames,
     );
     expect(summary.unresolved).toHaveLength(1);
-    expect(summary.unresolved[0].name).toBe(
-      'drop_index_tenants_slug_context_meta_type_idx',
-    );
+    expect(summary.unresolved[0].name).toBe(failedMigrationName);
+  });
+
+  it('emits the same synthetic id for the same SQL across runs and a different one when the SQL changes', () => {
+    // Same shape twice → same id. Different shape (drift) → different id.
+    // This is the property that lets MigrationTracker apply repeat repairs
+    // without "checksum mismatch" errors.
+    const idA = getUnresolvedGeneratedMigrationNames([
+      {
+        type: 'add_index',
+        table: 'tenants',
+        name: 'tenants_slug_context_meta_type_idx',
+        index: {
+          name: 'tenants_slug_context_meta_type_idx',
+          columns: ['slug', 'context', '_meta_type'],
+          unique: true,
+        },
+        sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
+      },
+    ]);
+    const idASame = getUnresolvedGeneratedMigrationNames([
+      {
+        type: 'add_index',
+        table: 'tenants',
+        name: 'tenants_slug_context_meta_type_idx',
+        index: {
+          name: 'tenants_slug_context_meta_type_idx',
+          columns: ['slug', 'context', '_meta_type'],
+          unique: true,
+        },
+        sql: 'CREATE UNIQUE INDEX "x" ON "y" ("a", "b", "c")',
+      },
+    ]);
+    const idDrifted = getUnresolvedGeneratedMigrationNames([
+      {
+        type: 'add_index',
+        table: 'tenants',
+        name: 'tenants_slug_context_meta_type_idx',
+        index: {
+          name: 'tenants_slug_context_meta_type_idx',
+          columns: ['slug', 'context', '_meta_type'],
+          unique: false, // ← shape drifted
+        },
+        sql: 'CREATE INDEX "x" ON "y" ("a", "b", "c")',
+      },
+    ]);
+
+    expect([...idA]).toEqual([...idASame]);
+    expect([...idA]).not.toEqual([...idDrifted]);
   });
 
   it('falls back to direct-review classification when live drift comparison is unavailable', () => {

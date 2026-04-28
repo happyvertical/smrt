@@ -259,6 +259,39 @@ describe('SchemaComparer index drift', () => {
         ),
       ).toHaveLength(0);
     });
+
+    it('keeps multiple DB indexes that share a signature with a manifest index', async () => {
+      // Pathological-but-legal case: two indexes with the same columns
+      // and uniqueness under different names. Earlier the comparer's
+      // signature map only remembered ONE, so the other got swept by
+      // the orphan pass. Both must survive when their signature matches
+      // the manifest. (Copilot review on PR #1166.)
+      await db.query('CREATE INDEX dup_a ON tenants(slug, context);');
+      await db.query('CREATE INDEX dup_b ON tenants(slug, context);');
+
+      const comparer = new SchemaComparer(db, {
+        includeDroppedIndexes: true,
+      });
+      const diff = await comparer.compare({
+        tenants: tableSchema({
+          indexes: [
+            {
+              name: 'tenants_slug_context_idx',
+              columns: ['slug', 'context'],
+              unique: false,
+            },
+          ],
+        }),
+      });
+
+      const dropped = diff.changes
+        .filter((c) => c.type === 'drop_index')
+        .map((c) => c.name);
+
+      // Neither dup_a nor dup_b — both share the manifest signature.
+      expect(dropped).not.toContain('dup_a');
+      expect(dropped).not.toContain('dup_b');
+    });
   });
 
   describe('issue #1165 anytown.ai scenario', () => {

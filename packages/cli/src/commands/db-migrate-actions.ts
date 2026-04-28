@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 export interface MigrationAction {
   type:
     | 'add_column'
@@ -97,6 +99,44 @@ export interface DbMigrateFailureState {
   dryRun?: boolean;
 }
 
+/**
+ * Short stable fingerprint of the SQL we'd execute for an action, used
+ * to disambiguate index synthetic ids when an index's shape changes
+ * across migrations.
+ *
+ * Issue #1165: when shape-drift repair recreates an index under the same
+ * name (e.g., `tenants_slug_context_meta_type_idx` flipped non-unique →
+ * unique), the new `add_index_<name>` migration carries different SQL
+ * than the previous run's record. The MigrationTracker rejects "Already
+ * applied with different checksum" even under `reconcile: true`. By
+ * including this fingerprint in the synthetic id, each distinct shape
+ * gets its own tracker row and the repair always applies cleanly.
+ */
+function sqlShapeFingerprint(action: {
+  sql?: string;
+  sqlStatements?: string[];
+  index?: { name: string; columns: string[]; unique?: boolean };
+}): string {
+  const parts: string[] = [];
+  if (action.sqlStatements && action.sqlStatements.length > 0) {
+    parts.push(...action.sqlStatements);
+  } else if (action.sql) {
+    parts.push(action.sql);
+  } else if (action.index) {
+    // Fallback: derive a fingerprint from the structural index shape so
+    // callers without SQL still get distinct ids for distinct shapes.
+    parts.push(
+      `${action.index.name}|${(action.index.unique ?? false) ? 'U' : 'N'}|${action.index.columns.join(',')}`,
+    );
+  }
+  if (parts.length === 0) {
+    return '';
+  }
+  // Normalize whitespace so trivial reformatting doesn't churn the hash.
+  const normalized = parts.map((s) => s.replace(/\s+/g, ' ').trim()).join(';');
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 8);
+}
+
 export function classifyTypeUpgradeSql(sql?: string): TypeUpgradeExecutionKind {
   const trimmed = sql?.trim();
 
@@ -127,15 +167,24 @@ export function getSyntheticMigrationNameForAction(
         ? `add_column_${action.tableName}_${action.column.name}`
         : null;
 
-    case 'add_index':
-      return action.index ? `add_index_${action.index.name}` : null;
+    case 'add_index': {
+      if (!action.index) return null;
+      // The 8-char fingerprint dodges checksum collisions when the same
+      // index name is recreated with a different shape across migrate
+      // runs. Issue #1165.
+      const fingerprint = sqlShapeFingerprint(action);
+      return fingerprint
+        ? `add_index_${action.index.name}_${fingerprint}`
+        : `add_index_${action.index.name}`;
+    }
 
-    case 'drop_index':
-      // Drops are emitted as part of shape-drift repair (paired with an
-      // add_index of the same name) or as orphan cleanups. The synthetic
-      // name needs to differ from the paired add_index so the tracker
-      // doesn't treat them as the same migration. Issue #1165.
-      return action.indexName ? `drop_index_${action.indexName}` : null;
+    case 'drop_index': {
+      if (!action.indexName) return null;
+      const fingerprint = sqlShapeFingerprint(action);
+      return fingerprint
+        ? `drop_index_${action.indexName}_${fingerprint}`
+        : `drop_index_${action.indexName}`;
+    }
 
     case 'type_upgrade':
       return action.column
@@ -156,11 +205,27 @@ export function getSyntheticMigrationNameForChange(
 
     case 'add_index': {
       const indexName = change.index?.name ?? change.name;
-      return indexName ? `add_index_${indexName}` : null;
+      if (!indexName) return null;
+      const fingerprint = sqlShapeFingerprint({
+        sql: change.sql,
+        sqlStatements: change.sqlStatements,
+        index: change.index,
+      });
+      return fingerprint
+        ? `add_index_${indexName}_${fingerprint}`
+        : `add_index_${indexName}`;
     }
 
-    case 'drop_index':
-      return change.name ? `drop_index_${change.name}` : null;
+    case 'drop_index': {
+      if (!change.name) return null;
+      const fingerprint = sqlShapeFingerprint({
+        sql: change.sql,
+        sqlStatements: change.sqlStatements,
+      });
+      return fingerprint
+        ? `drop_index_${change.name}_${fingerprint}`
+        : `drop_index_${change.name}`;
+    }
 
     case 'type_upgrade':
       return change.name ? `type_upgrade_${change.table}_${change.name}` : null;

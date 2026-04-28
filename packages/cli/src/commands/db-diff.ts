@@ -195,9 +195,23 @@ export const dbDiffCommand: CLICommand = {
       const indexChanges = diff.changes.filter(
         (c: any) => c.type === 'add_index',
       );
+      const indexDrops = diff.changes.filter(
+        (c: any) => c.type === 'drop_index',
+      );
       const typeMismatches = diff.changes.filter(
         (c: any) => c.type === 'type_mismatch',
       );
+
+      // Identify shape-drift recreate pairs (drop+add on same name) so the
+      // operator sees them as a single repair action rather than two
+      // disconnected events. Issue #1165.
+      const recreateNames = new Set<string>();
+      const dropNames = new Set(indexDrops.map((c: any) => c.name));
+      for (const add of indexChanges) {
+        if (add.name && dropNames.has(add.name)) {
+          recreateNames.add(add.name);
+        }
+      }
 
       if (columnChanges.length > 0) {
         console.log(`  📊 New columns (${columnChanges.length}):`);
@@ -207,9 +221,36 @@ export const dbDiffCommand: CLICommand = {
         console.log();
       }
 
-      if (indexChanges.length > 0) {
-        console.log(`  🗂️  New indexes (${indexChanges.length}):`);
-        for (const change of indexChanges) {
+      if (recreateNames.size > 0) {
+        console.log(`  ♻️  Indexes to recreate (${recreateNames.size}):`);
+        for (const name of recreateNames) {
+          const add = indexChanges.find((c: any) => c.name === name);
+          const cols = add?.index?.columns?.join(', ') ?? '?';
+          const unique = add?.index?.unique ? 'UNIQUE ' : '';
+          console.log(`     ↻ ${name} → ${unique}(${cols})`);
+        }
+        console.log(
+          '     (each recreate is a drop_index followed by add_index)\n',
+        );
+      }
+
+      const orphanDrops = indexDrops.filter(
+        (c: any) => !recreateNames.has(c.name),
+      );
+      if (orphanDrops.length > 0) {
+        console.log(`  🗑️  Indexes to drop (${orphanDrops.length}):`);
+        for (const change of orphanDrops) {
+          console.log(`     - ${change.name} on ${change.table}`);
+        }
+        console.log();
+      }
+
+      const newIndexes = indexChanges.filter(
+        (c: any) => !recreateNames.has(c.name),
+      );
+      if (newIndexes.length > 0) {
+        console.log(`  🗂️  New indexes (${newIndexes.length}):`);
+        for (const change of newIndexes) {
           console.log(`     + ${change.name} on ${change.table}`);
         }
         console.log();

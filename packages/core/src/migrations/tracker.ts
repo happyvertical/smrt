@@ -625,41 +625,13 @@ export class MigrationTracker {
    * cleanups, so the regex needs to cover both keywords.
    */
   private async executePostgresStatements(statements: string[]): Promise<void> {
-    const concurrentRegex =
-      /(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY/i;
+    const { concurrent: finalConcurrent, regular: finalRegular } =
+      planPostgresStatements(statements, !!this.options.useConcurrentIndexes);
 
-    // Separate CONCURRENTLY statements (cannot be in transaction)
-    const concurrentStatements = statements.filter((s) =>
-      concurrentRegex.test(s),
-    );
-    const regularStatements = statements.filter(
-      (s) => !concurrentRegex.test(s),
-    );
-
-    // Transform regular CREATE INDEX to CONCURRENTLY if enabled.
-    // Note: we don't transform DROP INDEX → DROP INDEX CONCURRENTLY because
-    // the migration generator already emits CONCURRENTLY explicitly for
-    // PostgreSQL drops, and forcing it on user-provided statements would be
-    // surprising.
-    const transformedStatements = this.options.useConcurrentIndexes
-      ? regularStatements.map((s) => {
-          if (/CREATE\s+(UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY)/i.test(s)) {
-            return s.replace(
-              /CREATE\s+(UNIQUE\s+)?INDEX\s+/i,
-              'CREATE $1INDEX CONCURRENTLY ',
-            );
-          }
-          return s;
-        })
-      : regularStatements;
-
-    // Re-separate after transformation
-    const finalConcurrent = transformedStatements.filter((s) =>
-      concurrentRegex.test(s),
-    );
-    const finalRegular = transformedStatements.filter(
-      (s) => !concurrentRegex.test(s),
-    );
+    // CONCURRENTLY statements come from `planPostgresStatements`, which
+    // also pushes any post-transform CREATE/DROP CONCURRENTLY into the
+    // outside-transaction set. The original `concurrentStatements` list
+    // is folded in there too so callers below see one merged stream.
 
     // Execute regular statements in transaction with timeouts
     if (finalRegular.length > 0 && this.db.transaction) {
@@ -683,11 +655,64 @@ export class MigrationTracker {
     }
 
     // Execute CONCURRENTLY statements outside transaction
-    const allConcurrent = [...concurrentStatements, ...finalConcurrent];
-    for (const sql of allConcurrent) {
+    for (const sql of finalConcurrent) {
       // Set lock timeout for the session
       await this.db.query(`SET lock_timeout = '${this.options.lockTimeout}ms'`);
       await this.db.query(sql);
     }
   }
+}
+
+/**
+ * Split a batch of SQL statements into a transaction-safe set and a
+ * concurrent set, applying `--postgres-safe` rewriting if requested.
+ *
+ * Exported for unit testing and to give external callers a way to
+ * reason about what the tracker would execute in PostgreSQL safe mode.
+ *
+ * Rules:
+ * - Statements already containing `CONCURRENTLY` (CREATE or DROP) always
+ *   go to the concurrent set — Postgres rejects them inside transactions.
+ * - When `useConcurrentIndexes` is true, plain `CREATE INDEX` and plain
+ *   `DROP INDEX` are rewritten to use `CONCURRENTLY`, then routed to
+ *   the concurrent set. This is what the CLI `--postgres-safe` flag and
+ *   the auto-migrate path rely on for issue #1165's shape-drift drops.
+ * - All other statements stay in the regular (transaction) set.
+ */
+export function planPostgresStatements(
+  statements: string[],
+  useConcurrentIndexes: boolean,
+): { concurrent: string[]; regular: string[] } {
+  const concurrentRegex =
+    /(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY/i;
+
+  const concurrent: string[] = [];
+  const regular: string[] = [];
+
+  for (const sql of statements) {
+    if (concurrentRegex.test(sql)) {
+      concurrent.push(sql);
+      continue;
+    }
+    if (useConcurrentIndexes) {
+      if (/CREATE\s+(UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY)/i.test(sql)) {
+        concurrent.push(
+          sql.replace(
+            /CREATE\s+(UNIQUE\s+)?INDEX\s+/i,
+            'CREATE $1INDEX CONCURRENTLY ',
+          ),
+        );
+        continue;
+      }
+      if (/DROP\s+INDEX\s+(?!CONCURRENTLY)/i.test(sql)) {
+        concurrent.push(
+          sql.replace(/DROP\s+INDEX\s+/i, 'DROP INDEX CONCURRENTLY '),
+        );
+        continue;
+      }
+    }
+    regular.push(sql);
+  }
+
+  return { concurrent, regular };
 }
