@@ -768,7 +768,12 @@ export class SchemaGenerator {
       description: 'Primary key index',
     });
 
-    // Unique index for slug, context, and type (STI variation)
+    // Unique index for slug, context, and type (STI variation).
+    // STI subclasses share a table, so the discriminator participates in
+    // identity — two subtypes can share the same (slug, context). PostgreSQL
+    // UPSERT requires the live schema to carry a matching unique index; the
+    // migration differ repairs older deployments where this index was created
+    // non-unique or never created at all (issue #1165).
     indexes.push({
       name: `${tableName}_slug_context_meta_type_idx`,
       columns: ['slug', 'context', '_meta_type'],
@@ -957,7 +962,8 @@ export class SchemaGenerator {
       columns: ['id'],
     });
 
-    // Unique index for slug, context, and type (STI variation)
+    // Unique index for slug, context, and type (STI variation) — see
+    // generateSTISchemaFromRegistry for the rationale.
     indexes.push({
       name: `${tableName}_slug_context_meta_type_idx`,
       columns: ['slug', 'context', '_meta_type'],

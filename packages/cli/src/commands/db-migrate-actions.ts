@@ -1,5 +1,12 @@
+import { createHash } from 'node:crypto';
+
 export interface MigrationAction {
-  type: 'add_column' | 'add_index' | 'type_mismatch' | 'type_upgrade';
+  type:
+    | 'add_column'
+    | 'add_index'
+    | 'drop_index'
+    | 'type_mismatch'
+    | 'type_upgrade';
   tableName: string;
   className: string;
   column?: {
@@ -14,6 +21,13 @@ export interface MigrationAction {
     columns: string[];
     unique?: boolean;
   };
+  /**
+   * Set on `drop_index` actions — the index name being dropped. We track
+   * this separately from `index` because the differ does not (and cannot,
+   * for the orphan-drop case) always know the original column list of a
+   * DB-side index that's being removed.
+   */
+  indexName?: string;
   mismatch?: {
     column: string;
     expected: string;
@@ -85,6 +99,44 @@ export interface DbMigrateFailureState {
   dryRun?: boolean;
 }
 
+/**
+ * Short stable fingerprint of the SQL we'd execute for an action, used
+ * to disambiguate index synthetic ids when an index's shape changes
+ * across migrations.
+ *
+ * Issue #1165: when shape-drift repair recreates an index under the same
+ * name (e.g., `tenants_slug_context_meta_type_idx` flipped non-unique →
+ * unique), the new `add_index_<name>` migration carries different SQL
+ * than the previous run's record. The MigrationTracker rejects "Already
+ * applied with different checksum" even under `reconcile: true`. By
+ * including this fingerprint in the synthetic id, each distinct shape
+ * gets its own tracker row and the repair always applies cleanly.
+ */
+function sqlShapeFingerprint(action: {
+  sql?: string;
+  sqlStatements?: string[];
+  index?: { name: string; columns: string[]; unique?: boolean };
+}): string {
+  const parts: string[] = [];
+  if (action.sqlStatements && action.sqlStatements.length > 0) {
+    parts.push(...action.sqlStatements);
+  } else if (action.sql) {
+    parts.push(action.sql);
+  } else if (action.index) {
+    // Fallback: derive a fingerprint from the structural index shape so
+    // callers without SQL still get distinct ids for distinct shapes.
+    parts.push(
+      `${action.index.name}|${(action.index.unique ?? false) ? 'U' : 'N'}|${action.index.columns.join(',')}`,
+    );
+  }
+  if (parts.length === 0) {
+    return '';
+  }
+  // Normalize whitespace so trivial reformatting doesn't churn the hash.
+  const normalized = parts.map((s) => s.replace(/\s+/g, ' ').trim()).join(';');
+  return createHash('sha256').update(normalized).digest('hex').slice(0, 8);
+}
+
 export function classifyTypeUpgradeSql(sql?: string): TypeUpgradeExecutionKind {
   const trimmed = sql?.trim();
 
@@ -115,8 +167,24 @@ export function getSyntheticMigrationNameForAction(
         ? `add_column_${action.tableName}_${action.column.name}`
         : null;
 
-    case 'add_index':
-      return action.index ? `add_index_${action.index.name}` : null;
+    case 'add_index': {
+      if (!action.index) return null;
+      // The 8-char fingerprint dodges checksum collisions when the same
+      // index name is recreated with a different shape across migrate
+      // runs. Issue #1165.
+      const fingerprint = sqlShapeFingerprint(action);
+      return fingerprint
+        ? `add_index_${action.index.name}_${fingerprint}`
+        : `add_index_${action.index.name}`;
+    }
+
+    case 'drop_index': {
+      if (!action.indexName) return null;
+      const fingerprint = sqlShapeFingerprint(action);
+      return fingerprint
+        ? `drop_index_${action.indexName}_${fingerprint}`
+        : `drop_index_${action.indexName}`;
+    }
 
     case 'type_upgrade':
       return action.column
@@ -137,7 +205,26 @@ export function getSyntheticMigrationNameForChange(
 
     case 'add_index': {
       const indexName = change.index?.name ?? change.name;
-      return indexName ? `add_index_${indexName}` : null;
+      if (!indexName) return null;
+      const fingerprint = sqlShapeFingerprint({
+        sql: change.sql,
+        sqlStatements: change.sqlStatements,
+        index: change.index,
+      });
+      return fingerprint
+        ? `add_index_${indexName}_${fingerprint}`
+        : `add_index_${indexName}`;
+    }
+
+    case 'drop_index': {
+      if (!change.name) return null;
+      const fingerprint = sqlShapeFingerprint({
+        sql: change.sql,
+        sqlStatements: change.sqlStatements,
+      });
+      return fingerprint
+        ? `drop_index_${change.name}_${fingerprint}`
+        : `drop_index_${change.name}`;
     }
 
     case 'type_upgrade':
@@ -170,6 +257,7 @@ export function classifyFailedMigration(
   if (
     !migrationName.startsWith('add_column_') &&
     !migrationName.startsWith('add_index_') &&
+    !migrationName.startsWith('drop_index_') &&
     !migrationName.startsWith('type_upgrade_')
   ) {
     return 'other';
@@ -189,6 +277,7 @@ export function getUnresolvedGeneratedMigrationNames(
     if (
       change.type !== 'add_column' &&
       change.type !== 'add_index' &&
+      change.type !== 'drop_index' &&
       change.type !== 'type_upgrade'
     ) {
       continue;
@@ -311,6 +400,28 @@ export function partitionSchemaChanges(
             columns: idx.columns,
             unique: idx.unique,
           },
+          sql: change.sql,
+          ...(change.sqlStatements
+            ? { sqlStatements: change.sqlStatements }
+            : {}),
+        });
+        break;
+      }
+
+      case 'drop_index': {
+        // Issue #1165: shape-drift repair pushes `drop_index` then
+        // `add_index` for the same name in change-order. We preserve that
+        // order in `migrations` by pushing here, so the drop runs before
+        // the add and the recreate actually happens (otherwise the add's
+        // `IF NOT EXISTS` silently no-ops against the wrong-shape index).
+        // Orphan-index drops (opt-in via includeDroppedIndexes) flow
+        // through the same path.
+        if (!change.name) continue;
+        migrations.push({
+          type: 'drop_index',
+          tableName: change.table,
+          className,
+          indexName: change.name,
           sql: change.sql,
           ...(change.sqlStatements
             ? { sqlStatements: change.sqlStatements }
