@@ -816,11 +816,43 @@ export { setupRoutes as default };
 /**
  * Generate virtual client module
  */
+function lowerFirst(value: string): string {
+  return value ? value[0].toLowerCase() + value.slice(1) : value;
+}
+
+function uniqueApiClientEntries(
+  objects: Array<[string, SmartObjectManifest['objects'][string]]>,
+): Array<{
+  objectName: string;
+  obj: SmartObjectManifest['objects'][string];
+  clientKey: string;
+}> {
+  const usedKeys = new Set<string>();
+
+  return objects.map(([objectName, obj]) => {
+    let clientKey = obj.collection;
+
+    if (usedKeys.has(clientKey)) {
+      clientKey = lowerFirst(obj.className);
+    }
+
+    const baseClientKey = clientKey;
+    let suffix = 2;
+    while (usedKeys.has(clientKey)) {
+      clientKey = `${baseClientKey}${suffix}`;
+      suffix += 1;
+    }
+
+    usedKeys.add(clientKey);
+    return { objectName, obj, clientKey };
+  });
+}
+
 function generateClientModule(manifest: SmartObjectManifest): string {
-  const objects = Object.entries(manifest.objects);
+  const objects = uniqueApiClientEntries(Object.entries(manifest.objects));
 
   const clientMethods = objects
-    .map(([_name, obj]) => {
+    .map(({ obj, clientKey }) => {
       const { collection, methods = {} } = obj;
       const customMethods = Object.entries(methods);
 
@@ -840,7 +872,7 @@ function generateClientModule(manifest: SmartObjectManifest): string {
         customMethods.length > 0 ? `,\n${customMethodImpls}` : '';
 
       return `
-  ${collection}: {
+  ${clientKey}: {
     list: (params) => fetch(basePath + '/${collection}', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
@@ -1128,9 +1160,11 @@ ${fields}
 
     // Generate API client interface for each object
     // Always use plural collection names (standard REST convention)
-    const apiClientInterface = Object.entries(manifest.objects)
-      .map(([_objectName, obj]) => {
-        const { className, collection, methods = {} } = obj;
+    const apiClientInterface = uniqueApiClientEntries(
+      Object.entries(manifest.objects),
+    )
+      .map(({ obj, clientKey }) => {
+        const { className, methods = {} } = obj;
         const interfaceName = `${className}Data`;
         const customMethods = Object.entries(methods);
 
@@ -1149,10 +1183,10 @@ ${fields}
 
         if (customMethods.length > 0) {
           // Object with custom methods: include both CRUD and custom methods
-          return `    ${collection}: CrudOperations<${interfaceName}> & {\n${customMethodSignatures}\n    };`;
+          return `    ${clientKey}: CrudOperations<${interfaceName}> & {\n${customMethodSignatures}\n    };`;
         } else {
           // Standard CRUD operations only
-          return `    ${collection}: CrudOperations<${interfaceName}>;`;
+          return `    ${clientKey}: CrudOperations<${interfaceName}>;`;
         }
       })
       .join('\n');
