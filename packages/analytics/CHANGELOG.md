@@ -1,5 +1,15 @@
 # @happyvertical/smrt-analytics
 
+## 1.0.0
+
+### Minor Changes
+
+- 9e67003: Add Matomo as a first-class analytics provider with model and collection helpers.
+
+### Patch Changes
+
+- @happyvertical/smrt-core@1.0.0
+
 ## 0.22.17
 
 ### Patch Changes
