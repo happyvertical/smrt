@@ -1104,6 +1104,14 @@
           "isStatic": false,
           "isPublic": true
         },
+        "isMatomo": {
+          "name": "isMatomo",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getProviderMetadata": {
           "name": "getProviderMetadata",
           "async": false,
@@ -1369,6 +1377,14 @@
         },
         "findPlausibleSites": {
           "name": "findPlausibleSites",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AnalyticsProperty[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findMatomoSites": {
+          "name": "findMatomoSites",
           "async": true,
           "parameters": [],
           "returnType": "Promise<AnalyticsProperty[]>",

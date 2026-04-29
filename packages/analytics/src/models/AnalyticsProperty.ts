@@ -7,7 +7,8 @@ import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { AnalyticsPropertyStatus, AnalyticsProvider } from '../types/index.js';
 
 /**
- * AnalyticsProperty represents an analytics property (GA4 property or Plausible site).
+ * AnalyticsProperty represents an analytics property (GA4 property,
+ * Plausible site, or Matomo site).
  *
  * @example
  * ```typescript
@@ -38,12 +39,13 @@ export class AnalyticsProperty extends SmrtObject {
   displayName: string = '';
 
   /**
-   * Analytics provider (ga4, plausible)
+   * Analytics provider (ga4, plausible, matomo)
    */
   provider: AnalyticsProvider = AnalyticsProvider.GA4;
 
   /**
-   * External ID from the provider (e.g., "properties/123456789" for GA4)
+   * External ID from the provider (e.g., "properties/123456789" for GA4,
+   * idSite for Matomo)
    */
   externalId: string = '';
 
@@ -58,7 +60,7 @@ export class AnalyticsProperty extends SmrtObject {
   apiSecret: string = '';
 
   /**
-   * Site domain for Plausible
+   * Site domain for Plausible/Matomo
    */
   siteDomain: string = '';
 
@@ -133,6 +135,13 @@ export class AnalyticsProperty extends SmrtObject {
    */
   isPlausible(): boolean {
     return this.provider === AnalyticsProvider.PLAUSIBLE;
+  }
+
+  /**
+   * Check if this is a Matomo site
+   */
+  isMatomo(): boolean {
+    return this.provider === AnalyticsProvider.MATOMO;
   }
 
   /**

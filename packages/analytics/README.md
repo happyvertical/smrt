@@ -1,6 +1,6 @@
 # @happyvertical/smrt-analytics
 
-Analytics integration models for the SMRT framework. Manages analytics properties (GA4, Plausible), data streams, server-side event tracking with retry support, and AI-powered report generation with scheduling.
+Analytics integration models for the SMRT framework. Manages analytics properties (GA4, Plausible, Matomo), data streams, server-side event tracking with retry support, and AI-powered report generation with scheduling.
 
 ## Installation
 
@@ -98,7 +98,7 @@ Use `isDue()` to check if a scheduled report needs to run.
 
 | Export | Description |
 |--------|------------|
-| `AnalyticsProperty` | GA4 property or Plausible site. AI methods: `analyzePerformance()`, `isPerformingWell()` |
+| `AnalyticsProperty` | GA4 property, Plausible site, or Matomo site. AI methods: `analyzePerformance()`, `isPerformingWell()` |
 | `AnalyticsDataStream` | Data stream within a property (web/iOS/Android). `getPlatformId()` returns measurementId or firebaseAppId |
 | `AnalyticsEvent` | Server-side tracking event with retry queue. `toTrackEvent()` builds SDK payload |
 | `AnalyticsReport` | Saved report config with dimensions/metrics, scheduling, result caching. AI methods: `analyzeResults()`, `hasPositiveTrends()` |
@@ -111,7 +111,7 @@ Use `isDue()` to check if a scheduled report needs to run.
 
 | Export | Description |
 |--------|------------|
-| `AnalyticsProvider` | `ga4`, `plausible` |
+| `AnalyticsProvider` | `ga4`, `plausible`, `matomo` |
 | `AnalyticsPropertyStatus` | `active`, `inactive`, `pending` |
 | `DataStreamType` | `WEB_DATA_STREAM`, `ANDROID_APP_DATA_STREAM`, `IOS_APP_DATA_STREAM` |
 | `DataStreamStatus` | `active`, `inactive` |

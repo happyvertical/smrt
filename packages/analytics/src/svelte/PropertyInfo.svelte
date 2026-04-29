@@ -24,7 +24,9 @@ const providerLabel = $derived(
     ? 'Google Analytics 4'
     : provider === 'plausible'
       ? 'Plausible'
-      : (provider ?? 'Unknown'),
+      : provider === 'matomo'
+        ? 'Matomo'
+        : (provider ?? 'Unknown'),
 );
 
 const lastSyncFormatted = $derived.by(() => {

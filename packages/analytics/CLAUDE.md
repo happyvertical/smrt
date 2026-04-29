@@ -1,10 +1,10 @@
 # @happyvertical/smrt-analytics
 
-GA4/Plausible analytics integration with server-side event tracking and AI-powered reporting.
+GA4/Plausible/Matomo analytics integration with server-side event tracking and AI-powered reporting.
 
 ## Models
 
-- **AnalyticsProperty**: GA4 property or Plausible site. Provider metadata, status, sync timestamps.
+- **AnalyticsProperty**: GA4 property, Plausible site, or Matomo site. Provider metadata, status, sync timestamps.
 - **AnalyticsDataStream**: web/iOS/Android data streams. Measurement IDs (G-XXXXXX for GA4, Firebase app ID for mobile).
 - **AnalyticsEvent**: tracked events with params (JSON), retry queue, conversion classification.
 - **AnalyticsReport**: saved report configs with dimensions/metrics (JSON), scheduling (daily/weekly/monthly), result caching.
@@ -13,7 +13,7 @@ All models use STI (`tableStrategy: 'sti'`).
 
 ## Key Collection Methods
 
-`findByExternalId()`, `findByProvider()`, `findNeedingSync()`, `findGA4Properties()`, `findPlausibleSites()`
+`findByExternalId()`, `findByProvider()`, `findNeedingSync()`, `findGA4Properties()`, `findPlausibleSites()`, `findMatomoSites()`
 
 ## AI Operations
 

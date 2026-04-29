@@ -59,6 +59,21 @@ describe('AnalyticsProperty', () => {
       expect(property.provider).toBe(AnalyticsProvider.PLAUSIBLE);
       expect(property.siteDomain).toBe('example.com');
     });
+
+    it('should create a Matomo property with options', () => {
+      const property = new AnalyticsProperty({
+        name: 'sites/7',
+        displayName: 'Example Matomo Site',
+        provider: AnalyticsProvider.MATOMO,
+        externalId: '7',
+        siteDomain: 'example.com',
+      });
+
+      expect(property.name).toBe('sites/7');
+      expect(property.provider).toBe(AnalyticsProvider.MATOMO);
+      expect(property.externalId).toBe('7');
+      expect(property.siteDomain).toBe('example.com');
+    });
   });
 
   describe('provider checks', () => {
@@ -69,6 +84,7 @@ describe('AnalyticsProperty', () => {
 
       expect(property.isGA4()).toBe(true);
       expect(property.isPlausible()).toBe(false);
+      expect(property.isMatomo()).toBe(false);
     });
 
     it('should correctly identify Plausible sites', () => {
@@ -78,6 +94,17 @@ describe('AnalyticsProperty', () => {
 
       expect(property.isGA4()).toBe(false);
       expect(property.isPlausible()).toBe(true);
+      expect(property.isMatomo()).toBe(false);
+    });
+
+    it('should correctly identify Matomo sites', () => {
+      const property = new AnalyticsProperty({
+        provider: AnalyticsProvider.MATOMO,
+      });
+
+      expect(property.isGA4()).toBe(false);
+      expect(property.isPlausible()).toBe(false);
+      expect(property.isMatomo()).toBe(true);
     });
   });
 
@@ -177,6 +204,13 @@ describe.skipIf(skipTests)(
       });
       await plausible.save();
 
+      const matomo = await collection.create({
+        name: 'Matomo',
+        displayName: 'Matomo Site',
+        provider: AnalyticsProvider.MATOMO,
+      });
+      await matomo.save();
+
       const ga4Properties = await collection.findGA4Properties();
       expect(ga4Properties).toHaveLength(1);
       expect(ga4Properties[0].provider).toBe(AnalyticsProvider.GA4);
@@ -184,6 +218,10 @@ describe.skipIf(skipTests)(
       const plausibleSites = await collection.findPlausibleSites();
       expect(plausibleSites).toHaveLength(1);
       expect(plausibleSites[0].provider).toBe(AnalyticsProvider.PLAUSIBLE);
+
+      const matomoSites = await collection.findMatomoSites();
+      expect(matomoSites).toHaveLength(1);
+      expect(matomoSites[0].provider).toBe(AnalyticsProvider.MATOMO);
     });
 
     it('should find active properties', async () => {
