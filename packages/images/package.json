@@ -45,7 +45,9 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
-    "@happyvertical/utils": "catalog:"
+    "@happyvertical/utils": "catalog:",
+    "jimp": "catalog:",
+    "sharp": "catalog:"
   },
   "peerDependencies": {
     "svelte": "^4.0.0 || ^5.0.0"
