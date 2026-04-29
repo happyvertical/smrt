@@ -285,4 +285,117 @@ describe('system table compatibility', () => {
       ),
     ).toBe(false);
   });
+
+  it('tolerates a verified Postgres concurrent index creation race', async () => {
+    let createdAtIndexLookups = 0;
+    const query = vi
+      .fn()
+      .mockImplementation(async (sql: string, ...params: unknown[]) => {
+        if (sql === 'SELECT 1 FROM _smrt_job_events LIMIT 1') {
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('information_schema.columns')) {
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('pg_indexes')) {
+          const [indexName] = params;
+          if (indexName === 'idx_smrt_job_events_created_at') {
+            createdAtIndexLookups += 1;
+            return {
+              rows: createdAtIndexLookups === 1 ? [] : [{ '?column?': 1 }],
+            };
+          }
+
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (
+          sql.includes(
+            'CREATE INDEX IF NOT EXISTS idx_smrt_job_events_created_at',
+          )
+        ) {
+          const error = new Error('Failed query') as Error & {
+            originalError?: {
+              code: string;
+              message: string;
+              detail: string;
+            };
+          };
+          error.originalError = {
+            code: '23505',
+            message:
+              'duplicate key value violates unique constraint "pg_class_relname_nsp_index"',
+            detail:
+              'Key (relname, relnamespace)=(idx_smrt_job_events_created_at, 2200) already exists.',
+          };
+          throw error;
+        }
+
+        throw new Error(`Unexpected query: ${sql}`);
+      });
+
+    await expect(
+      ensureJobEventsSystemTableCompatibility({
+        url: 'postgresql://localhost:5432/test',
+        query,
+      } as any),
+    ).resolves.toBeUndefined();
+
+    expect(createdAtIndexLookups).toBe(2);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes(
+          'CREATE INDEX IF NOT EXISTS idx_smrt_job_events_created_at',
+        ),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it('still fails Postgres index creation when the index race cannot be verified', async () => {
+    const query = vi
+      .fn()
+      .mockImplementation(async (sql: string, ...params: unknown[]) => {
+        if (sql === 'SELECT 1 FROM _smrt_job_events LIMIT 1') {
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('information_schema.columns')) {
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('pg_indexes')) {
+          const [indexName] = params;
+          if (indexName === 'idx_smrt_job_events_created_at') {
+            return { rows: [] };
+          }
+
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (
+          sql.includes(
+            'CREATE INDEX IF NOT EXISTS idx_smrt_job_events_created_at',
+          )
+        ) {
+          const error = new Error(
+            'permission denied for schema public',
+          ) as Error & {
+            code?: string;
+          };
+          error.code = '42501';
+          throw error;
+        }
+
+        throw new Error(`Unexpected query: ${sql}`);
+      });
+
+    await expect(
+      ensureJobEventsSystemTableCompatibility({
+        url: 'postgresql://localhost:5432/test',
+        query,
+      } as any),
+    ).rejects.toThrow('permission denied for schema public');
+  });
 });
