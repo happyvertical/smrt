@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1767322692161,
+  "timestamp": 1777475395703,
   "objects": {
     "analyticsdatastream": {
       "name": "analyticsdatastream",
@@ -1104,6 +1104,14 @@
           "isStatic": false,
           "isPublic": true
         },
+        "isMatomo": {
+          "name": "isMatomo",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
         "getProviderMetadata": {
           "name": "getProviderMetadata",
           "async": false,
@@ -1339,6 +1347,11 @@
               "name": "siteDomain",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "provider",
+              "type": "AnalyticsProvider",
+              "optional": true
             }
           ],
           "returnType": "Promise<AnalyticsProperty | null>",
@@ -1369,6 +1382,14 @@
         },
         "findPlausibleSites": {
           "name": "findPlausibleSites",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<AnalyticsProperty[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findMatomoSites": {
+          "name": "findMatomoSites",
           "async": true,
           "parameters": [],
           "returnType": "Promise<AnalyticsProperty[]>",

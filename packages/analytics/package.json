@@ -69,6 +69,7 @@
     "analytics",
     "google-analytics",
     "plausible",
+    "matomo",
     "tracking"
   ],
   "author": "HAVE Team",

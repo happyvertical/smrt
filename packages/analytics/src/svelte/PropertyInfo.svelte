@@ -19,12 +19,14 @@ const {
   siteDomain,
 }: Props = $props();
 
+const PROVIDER_LABELS = new Map<string, string>([
+  ['ga4', 'Google Analytics 4'],
+  ['plausible', 'Plausible'],
+  ['matomo', 'Matomo'],
+]);
+
 const providerLabel = $derived(
-  provider === 'ga4'
-    ? 'Google Analytics 4'
-    : provider === 'plausible'
-      ? 'Plausible'
-      : (provider ?? 'Unknown'),
+  provider ? (PROVIDER_LABELS.get(provider) ?? provider) : 'Unknown',
 );
 
 const lastSyncFormatted = $derived.by(() => {

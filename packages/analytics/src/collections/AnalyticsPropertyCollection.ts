@@ -43,16 +43,18 @@ export class AnalyticsPropertyCollection extends SmrtCollection<AnalyticsPropert
   }
 
   /**
-   * Find property by site domain (Plausible)
+   * Find property by site domain and optional provider.
    *
-   * @param siteDomain - Plausible site domain
+   * @param siteDomain - Provider site domain
+   * @param provider - Optional provider discriminator for migration/coexistence
    * @returns Matching property or null
    */
   async findBySiteDomain(
     siteDomain: string,
+    provider?: AnalyticsProvider,
   ): Promise<AnalyticsProperty | null> {
     const results = await this.list({
-      where: { siteDomain },
+      where: provider ? { siteDomain, provider } : { siteDomain },
       limit: 1,
     });
     return results.length > 0 ? results[0] : null;
@@ -85,6 +87,13 @@ export class AnalyticsPropertyCollection extends SmrtCollection<AnalyticsPropert
    */
   async findPlausibleSites(): Promise<AnalyticsProperty[]> {
     return await this.findByProvider(AnalyticsProvider.PLAUSIBLE);
+  }
+
+  /**
+   * Find all Matomo sites
+   */
+  async findMatomoSites(): Promise<AnalyticsProperty[]> {
+    return await this.findByProvider(AnalyticsProvider.MATOMO);
   }
 
   /**

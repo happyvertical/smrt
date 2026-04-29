@@ -1,7 +1,20 @@
+import { spawnSync } from 'node:child_process';
 import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resolveVitestEntrypoint, utilityCommands } from '../utilities.js';
+
+vi.mock('node:child_process', () => ({
+  spawnSync: vi.fn(() => ({
+    error: undefined,
+    output: [null, '', 'Missing export file: dist/index.js'],
+    pid: 0,
+    signal: null,
+    status: 1,
+    stderr: 'Missing export file: dist/index.js',
+    stdout: '',
+  })),
+}));
 
 describe('utilities', () => {
   const tempDirs: string[] = [];
@@ -59,6 +72,7 @@ describe('utilities', () => {
       tempDirs.map((dir) => rm(dir, { recursive: true, force: true })),
     );
     tempDirs.length = 0;
+    vi.clearAllMocks();
   });
 
   it('resolves vitest from nested project directories without a local node_modules', async () => {
@@ -249,6 +263,14 @@ describe('utilities', () => {
     const output = logSpy.mock.calls.flat().join('\n');
     expect(output).toContain('Packed publish artifact verification');
     expect(output).toContain('dist/index.js');
+    expect(spawnSync).toHaveBeenCalledWith(
+      process.execPath,
+      [expect.stringContaining('verify-package-types-exports.js'), projectDir],
+      {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
 
     exitSpy.mockRestore();
     logSpy.mockRestore();

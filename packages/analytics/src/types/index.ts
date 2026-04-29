@@ -8,6 +8,7 @@
 export enum AnalyticsProvider {
   GA4 = 'ga4',
   PLAUSIBLE = 'plausible',
+  MATOMO = 'matomo',
 }
 
 /**

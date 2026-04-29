@@ -35,7 +35,7 @@ export default defineConfig({
 
     // Increased timeouts for CI environments
     testTimeout: 60000, // 60 seconds for slow CI
-    hookTimeout: 60000, // Match testTimeout
+    hookTimeout: 120000, // Hooks can include module setup in constrained CI
     teardownTimeout: 60000, // Allow time for cleanup
 
     // Reporter configuration
@@ -53,14 +53,9 @@ export default defineConfig({
     },
 
     // Use forks pool instead of threads to prevent worker timeout issues
-    // This matches the SDK configuration that resolved similar problems
+    // This matches the SDK configuration that resolved similar problems.
     pool: 'forks',
-    poolOptions: {
-      forks: {
-        singleFork: true, // Run tests sequentially to avoid race conditions
-        isolate: true, // Isolate tests for proper cleanup
-      },
-    },
+    isolate: true,
 
     // Limit to single worker to prevent timeout issues
     maxWorkers: 1,
