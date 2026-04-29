@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.22.17
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - tolerate concurrent system index creation (#1169) (core)
+  - @happyvertical/smrt-scanner@0.22.17
+  - @happyvertical/smrt-config@0.22.17
+  - @happyvertical/smrt-types@0.22.17
+
 ## 0.22.16
 
 ### Patch Changes
