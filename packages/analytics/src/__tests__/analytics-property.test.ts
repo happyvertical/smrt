@@ -189,19 +189,30 @@ describe.skipIf(skipTests)(
       expect(found?.displayName).toBe('GA4 Test');
     });
 
-    it('should find Matomo property by site domain', async () => {
-      const property = await collection.create({
+    it('should find Matomo property by site domain and provider', async () => {
+      const plausible = await collection.create({
+        name: 'Plausible Property',
+        displayName: 'Plausible Site',
+        provider: AnalyticsProvider.PLAUSIBLE,
+        siteDomain: 'shared.example.com',
+      });
+      await plausible.save();
+
+      const matomo = await collection.create({
         name: 'Matomo Property',
         displayName: 'Matomo Site',
         provider: AnalyticsProvider.MATOMO,
-        siteDomain: 'matomo.example.com',
+        siteDomain: 'shared.example.com',
       });
-      await property.save();
+      await matomo.save();
 
-      const found = await collection.findBySiteDomain('matomo.example.com');
+      const found = await collection.findBySiteDomain(
+        'shared.example.com',
+        AnalyticsProvider.MATOMO,
+      );
       expect(found).not.toBeNull();
       expect(found?.provider).toBe(AnalyticsProvider.MATOMO);
-      expect(found?.siteDomain).toBe('matomo.example.com');
+      expect(found?.siteDomain).toBe('shared.example.com');
     });
 
     it('should find properties by provider', async () => {

@@ -43,16 +43,18 @@ export class AnalyticsPropertyCollection extends SmrtCollection<AnalyticsPropert
   }
 
   /**
-   * Find the first property matching a site domain.
+   * Find property by site domain and optional provider.
    *
    * @param siteDomain - Provider site domain
-   * @returns First matching property or null
+   * @param provider - Optional provider discriminator for migration/coexistence
+   * @returns Matching property or null
    */
   async findBySiteDomain(
     siteDomain: string,
+    provider?: AnalyticsProvider,
   ): Promise<AnalyticsProperty | null> {
     const results = await this.list({
-      where: { siteDomain },
+      where: provider ? { siteDomain, provider } : { siteDomain },
       limit: 1,
     });
     return results.length > 0 ? results[0] : null;

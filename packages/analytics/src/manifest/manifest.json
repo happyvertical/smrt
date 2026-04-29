@@ -1,16 +1,235 @@
 {
   "version": "1.0.0",
-  "timestamp": 1777474145441,
-  "packageName": "@happyvertical/smrt-analytics",
-  "packageVersion": "0.22.16",
+  "timestamp": 1777475395703,
   "objects": {
-    "@happyvertical/smrt-analytics:AnalyticsDataStreamCollection": {
+    "analyticsdatastream": {
+      "name": "analyticsdatastream",
+      "className": "AnalyticsDataStream",
+      "collection": "analyticsdatastreams",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsDataStream.ts",
+      "fields": {
+        "propertyId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "displayName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "streamType": {
+          "type": "text",
+          "required": false
+        },
+        "externalId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "measurementId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "firebaseAppId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "defaultUri": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "bundleId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "packageName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "status": {
+          "type": "text",
+          "required": false
+        },
+        "enhancedMeasurement": {
+          "type": "boolean",
+          "required": false,
+          "default": true
+        }
+      },
+      "methods": {
+        "isWeb": {
+          "name": "isWeb",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isIOS": {
+          "name": "isIOS",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isAndroid": {
+          "name": "isAndroid",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isMobileApp": {
+          "name": "isMobileApp",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getPlatformId": {
+          "name": "getPlatformId",
+          "async": false,
+          "parameters": [],
+          "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AnalyticsDataStream",
+      "collectionExportName": "AnalyticsDataStreamCollection",
+      "schema": {
+        "tableName": "analytics_data_streams",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_streams\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"stream_type\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"firebase_app_id\" TEXT DEFAULT '',\n  \"default_uri\" TEXT DEFAULT '',\n  \"bundle_id\" TEXT DEFAULT '',\n  \"package_name\" TEXT DEFAULT '',\n  \"status\" TEXT,\n  \"enhanced_measurement\" BOOLEAN DEFAULT TRUE\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "property_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "display_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "stream_type": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "measurement_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "firebase_app_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "default_uri": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "bundle_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "package_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "enhanced_measurement": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": true
+          }
+        },
+        "indexes": [
+          {
+            "name": "analytics_data_streams_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "analytics_data_streams_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "3049f8aa"
+      }
+    },
+    "analyticsdatastreamcollection": {
       "name": "analyticsdatastreamcollection",
       "className": "AnalyticsDataStreamCollection",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsDataStreamCollection",
       "collection": "analyticsdatastreams",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/collections/AnalyticsDataStreamCollection.ts",
-      "packageName": "@happyvertical/smrt-analytics",
       "fields": {},
       "methods": {
         "findByProperty": {
@@ -188,16 +407,357 @@
             "unique": true
           }
         ],
-        "version": "5e3eabd9"
+        "version": "6beb016f"
       }
     },
-    "@happyvertical/smrt-analytics:AnalyticsEventCollection": {
+    "analyticsevent": {
+      "name": "analyticsevent",
+      "className": "AnalyticsEvent",
+      "collection": "analyticsevents",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsEvent.ts",
+      "fields": {
+        "propertyId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "eventName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "clientId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "userId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "params": {
+          "type": "text",
+          "required": false,
+          "default": "{}"
+        },
+        "eventTimestamp": {
+          "type": "datetime",
+          "required": false
+        },
+        "status": {
+          "type": "text",
+          "required": false
+        },
+        "sentAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "errorMessage": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "retryCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "nonPersonalizedAds": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "sessionId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "pagePath": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "pageTitle": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "userAgent": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "ipAddress": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getParams": {
+          "name": "getParams",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, string | number | boolean>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setParams": {
+          "name": "setParams",
+          "async": false,
+          "parameters": [
+            {
+              "name": "params",
+              "type": "Record<string, string | number | boolean>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "addParam": {
+          "name": "addParam",
+          "async": false,
+          "parameters": [
+            {
+              "name": "key",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "value",
+              "type": "string | number | boolean",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPageview": {
+          "name": "isPageview",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isConversion": {
+          "name": "isConversion",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markSent": {
+          "name": "markSent",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markFailed": {
+          "name": "markFailed",
+          "async": false,
+          "parameters": [
+            {
+              "name": "error",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "resetForRetry": {
+          "name": "resetForRetry",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "shouldRetry": {
+          "name": "shouldRetry",
+          "async": false,
+          "parameters": [
+            {
+              "name": "maxRetries",
+              "type": "number",
+              "optional": false,
+              "default": 3
+            }
+          ],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "toTrackEvent": {
+          "name": "toTrackEvent",
+          "async": false,
+          "parameters": [],
+          "returnType": "{\n    name: string;\n    params?: Record<string, string | number | boolean>;\n    clientId?: string;\n    userId?: string;\n    timestamp?: number;\n    nonPersonalizedAds?: boolean;\n  }",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "track"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AnalyticsEvent",
+      "collectionExportName": "AnalyticsEventCollection",
+      "schema": {
+        "tableName": "analytics_events",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_events\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" TEXT DEFAULT '',\n  \"event_name\" TEXT DEFAULT '',\n  \"client_id\" TEXT DEFAULT '',\n  \"user_id\" TEXT DEFAULT '',\n  \"params\" TEXT DEFAULT '{}',\n  \"event_timestamp\" TIMESTAMP,\n  \"status\" TEXT,\n  \"sent_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"error_message\" TEXT DEFAULT '',\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"non_personalized_ads\" BOOLEAN DEFAULT FALSE,\n  \"session_id\" TEXT DEFAULT '',\n  \"page_path\" TEXT DEFAULT '',\n  \"page_title\" TEXT DEFAULT '',\n  \"user_agent\" TEXT DEFAULT '',\n  \"ip_address\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "property_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "event_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "client_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "user_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "params": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "{}"
+          },
+          "event_timestamp": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "sent_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "error_message": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "retry_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "non_personalized_ads": {
+            "type": "BOOLEAN",
+            "notNull": false,
+            "default": false
+          },
+          "session_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "page_path": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "page_title": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "user_agent": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "ip_address": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "analytics_events_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "analytics_events_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "17eba562"
+      }
+    },
+    "analyticseventcollection": {
       "name": "analyticseventcollection",
       "className": "AnalyticsEventCollection",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsEventCollection",
       "collection": "analyticsevents",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/collections/AnalyticsEventCollection.ts",
-      "packageName": "@happyvertical/smrt-analytics",
       "fields": {},
       "methods": {
         "findByProperty": {
@@ -301,7 +861,8 @@
             {
               "name": "maxRetries",
               "type": "number",
-              "optional": true
+              "optional": false,
+              "default": 3
             }
           ],
           "returnType": "Promise<AnalyticsEvent[]>",
@@ -393,45 +954,7 @@
               "optional": false
             }
           ],
-          "returnType": "Promise<object>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getPropertyStatsWithTrend": {
-          "name": "getPropertyStatsWithTrend",
-          "async": true,
-          "parameters": [
-            {
-              "name": "propertyId",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "now",
-              "type": "Date",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<PropertyStatsWithTrend>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getBatchPropertyStats": {
-          "name": "getBatchPropertyStats",
-          "async": true,
-          "parameters": [
-            {
-              "name": "propertyIds",
-              "type": "string[]",
-              "optional": false
-            },
-            {
-              "name": "now",
-              "type": "Date",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, PropertyStatsWithTrend>>",
+          "returnType": "Promise<{\n    total: number;\n    pending: number;\n    sent: number;\n    failed: number;\n    conversions: number;\n    pageviews: number;\n  }>",
           "isStatic": false,
           "isPublic": true
         }
@@ -486,16 +1009,306 @@
             "unique": true
           }
         ],
-        "version": "9d4ab79a"
+        "version": "11b34b89"
       }
     },
-    "@happyvertical/smrt-analytics:AnalyticsPropertyCollection": {
+    "analyticsproperty": {
+      "name": "analyticsproperty",
+      "className": "AnalyticsProperty",
+      "collection": "analyticsproperties",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsProperty.ts",
+      "fields": {
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "displayName": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "provider": {
+          "type": "text",
+          "required": false
+        },
+        "externalId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "measurementId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "apiSecret": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "siteDomain": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "timeZone": {
+          "type": "text",
+          "required": false,
+          "default": "America/Los_Angeles"
+        },
+        "currencyCode": {
+          "type": "text",
+          "required": false,
+          "default": "USD"
+        },
+        "industryCategory": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "serviceLevel": {
+          "type": "text",
+          "required": false,
+          "default": "STANDARD"
+        },
+        "status": {
+          "type": "text",
+          "required": false
+        },
+        "lastSyncAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "providerMetadata": {
+          "type": "text",
+          "required": false,
+          "default": "{}"
+        }
+      },
+      "methods": {
+        "isGA4": {
+          "name": "isGA4",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPlausible": {
+          "name": "isPlausible",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isMatomo": {
+          "name": "isMatomo",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getProviderMetadata": {
+          "name": "getProviderMetadata",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, unknown>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setProviderMetadata": {
+          "name": "setProviderMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "metadata",
+              "type": "Record<string, unknown>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markSynced": {
+          "name": "markSynced",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "analyzePerformance": {
+          "name": "analyzePerformance",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "{ period?: string }",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<{\n    action: string;\n    period: string;\n    analysis: string;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isPerformingWell": {
+          "name": "isPerformingWell",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "sync",
+            "runReport"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AnalyticsProperty",
+      "collectionExportName": "AnalyticsPropertyCollection",
+      "schema": {
+        "tableName": "analytics_propertys",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_propertys\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"provider\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"api_secret\" TEXT DEFAULT '',\n  \"site_domain\" TEXT DEFAULT '',\n  \"time_zone\" TEXT DEFAULT 'America/Los_Angeles',\n  \"currency_code\" TEXT DEFAULT 'USD',\n  \"industry_category\" TEXT DEFAULT '',\n  \"service_level\" TEXT DEFAULT 'STANDARD',\n  \"status\" TEXT,\n  \"last_sync_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"provider_metadata\" TEXT DEFAULT '{}'\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "display_name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "provider": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "measurement_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "api_secret": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "site_domain": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "time_zone": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "America/Los_Angeles"
+          },
+          "currency_code": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "USD"
+          },
+          "industry_category": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "service_level": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "STANDARD"
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "last_sync_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "provider_metadata": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "{}"
+          }
+        },
+        "indexes": [
+          {
+            "name": "analytics_propertys_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "analytics_propertys_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "e3ea21e0"
+      }
+    },
+    "analyticspropertycollection": {
       "name": "analyticspropertycollection",
       "className": "AnalyticsPropertyCollection",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsPropertyCollection",
       "collection": "analyticsproperties",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/collections/AnalyticsPropertyCollection.ts",
-      "packageName": "@happyvertical/smrt-analytics",
       "fields": {},
       "methods": {
         "findByExternalId": {
@@ -534,6 +1347,11 @@
               "name": "siteDomain",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "provider",
+              "type": "AnalyticsProvider",
+              "optional": true
             }
           ],
           "returnType": "Promise<AnalyticsProperty | null>",
@@ -607,7 +1425,8 @@
             {
               "name": "hoursAgo",
               "type": "number",
-              "optional": true
+              "optional": false,
+              "default": 24
             }
           ],
           "returnType": "Promise<AnalyticsProperty[]>",
@@ -665,16 +1484,411 @@
             "unique": true
           }
         ],
-        "version": "bf43dd39"
+        "version": "f4081c9a"
       }
     },
-    "@happyvertical/smrt-analytics:AnalyticsReportCollection": {
+    "analyticsreport": {
+      "name": "analyticsreport",
+      "className": "AnalyticsReport",
+      "collection": "analyticsreports",
+      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsReport.ts",
+      "fields": {
+        "propertyId": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "name": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "description": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "dimensions": {
+          "type": "text",
+          "required": false,
+          "default": "[]"
+        },
+        "metrics": {
+          "type": "text",
+          "required": false,
+          "default": "[]"
+        },
+        "dateRangeStart": {
+          "type": "text",
+          "required": false,
+          "default": "7daysAgo"
+        },
+        "dateRangeEnd": {
+          "type": "text",
+          "required": false,
+          "default": "today"
+        },
+        "dimensionFilter": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "metricFilter": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "orderBy": {
+          "type": "text",
+          "required": false,
+          "default": "[]"
+        },
+        "maxResults": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "status": {
+          "type": "text",
+          "required": false
+        },
+        "frequency": {
+          "type": "text",
+          "required": false
+        },
+        "lastRunAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "nextRunAt": {
+          "type": "datetime",
+          "required": false,
+          "default": null
+        },
+        "resultData": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        },
+        "rowCount": {
+          "type": "integer",
+          "required": false,
+          "default": 0
+        },
+        "lastError": {
+          "type": "text",
+          "required": false,
+          "default": ""
+        }
+      },
+      "methods": {
+        "getDimensions": {
+          "name": "getDimensions",
+          "async": false,
+          "parameters": [],
+          "returnType": "Array<{ name: string }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setDimensions": {
+          "name": "setDimensions",
+          "async": false,
+          "parameters": [
+            {
+              "name": "dimensions",
+              "type": "Array<{ name: string }>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getMetrics": {
+          "name": "getMetrics",
+          "async": false,
+          "parameters": [],
+          "returnType": "Array<{ name: string }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setMetrics": {
+          "name": "setMetrics",
+          "async": false,
+          "parameters": [
+            {
+              "name": "metrics",
+              "type": "Array<{ name: string }>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getResultData": {
+          "name": "getResultData",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, unknown> | null",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setResultData": {
+          "name": "setResultData",
+          "async": false,
+          "parameters": [
+            {
+              "name": "data",
+              "type": "Record<string, unknown>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markRunning": {
+          "name": "markRunning",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markCompleted": {
+          "name": "markCompleted",
+          "async": false,
+          "parameters": [
+            {
+              "name": "rowCount",
+              "type": "number",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markFailed": {
+          "name": "markFailed",
+          "async": false,
+          "parameters": [
+            {
+              "name": "error",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "calculateNextRun": {
+          "name": "calculateNextRun",
+          "async": false,
+          "parameters": [],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "isDue": {
+          "name": "isDue",
+          "async": false,
+          "parameters": [],
+          "returnType": "boolean",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "analyzeResults": {
+          "name": "analyzeResults",
+          "async": true,
+          "parameters": [
+            {
+              "name": "_options",
+              "type": "any",
+              "optional": false,
+              "default": {}
+            }
+          ],
+          "returnType": "Promise<{\n    action: string;\n    analysis: string;\n    insights: string;\n  }>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "hasPositiveTrends": {
+          "name": "hasPositiveTrends",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<boolean>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "run"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "run",
+            "analyze"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "AnalyticsReport",
+      "collectionExportName": "AnalyticsReportCollection",
+      "schema": {
+        "tableName": "analytics_reports",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_reports\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"dimensions\" TEXT DEFAULT '[]',\n  \"metrics\" TEXT DEFAULT '[]',\n  \"date_range_start\" TEXT DEFAULT '7daysAgo',\n  \"date_range_end\" TEXT DEFAULT 'today',\n  \"dimension_filter\" TEXT DEFAULT '',\n  \"metric_filter\" TEXT DEFAULT '',\n  \"order_by\" TEXT DEFAULT '[]',\n  \"max_results\" INTEGER DEFAULT 0,\n  \"status\" TEXT,\n  \"frequency\" TEXT,\n  \"last_run_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"next_run_at\" TIMESTAMP DEFAULT current_timestamp,\n  \"result_data\" TEXT DEFAULT '',\n  \"row_count\" INTEGER DEFAULT 0,\n  \"last_error\" TEXT DEFAULT ''\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "property_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "description": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "dimensions": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "[]"
+          },
+          "metrics": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "[]"
+          },
+          "date_range_start": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "7daysAgo"
+          },
+          "date_range_end": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "today"
+          },
+          "dimension_filter": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "metric_filter": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "order_by": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": "[]"
+          },
+          "max_results": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "frequency": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "last_run_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "next_run_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "default": null
+          },
+          "result_data": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          },
+          "row_count": {
+            "type": "INTEGER",
+            "notNull": false,
+            "default": 0
+          },
+          "last_error": {
+            "type": "TEXT",
+            "notNull": false,
+            "default": ""
+          }
+        },
+        "indexes": [
+          {
+            "name": "analytics_reports_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "analytics_reports_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "9452cffc"
+      }
+    },
+    "analyticsreportcollection": {
       "name": "analyticsreportcollection",
       "className": "AnalyticsReportCollection",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsReportCollection",
       "collection": "analyticsreports",
       "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/collections/AnalyticsReportCollection.ts",
-      "packageName": "@happyvertical/smrt-analytics",
       "fields": {},
       "methods": {
         "findByProperty": {
@@ -793,7 +2007,8 @@
             {
               "name": "hoursAgo",
               "type": "number",
-              "optional": true
+              "optional": false,
+              "default": 24
             }
           ],
           "returnType": "Promise<AnalyticsReport[]>",
@@ -851,3004 +2066,10 @@
             "unique": true
           }
         ],
-        "version": "5c7bf831"
-      }
-    },
-    "@happyvertical/smrt-analytics:AnalyticsDataStream": {
-      "name": "analyticsdatastream",
-      "className": "AnalyticsDataStream",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsDataStream",
-      "collection": "analyticsdatastreams",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsDataStream.ts",
-      "packageName": "@happyvertical/smrt-analytics",
-      "fields": {
-        "created_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "updated_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "propertyId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "displayName": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "streamType": {
-          "type": "text",
-          "required": false
-        },
-        "externalId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "measurementId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "firebaseAppId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "defaultUri": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "bundleId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "packageName": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "status": {
-          "type": "text",
-          "required": false
-        },
-        "enhancedMeasurement": {
-          "type": "boolean",
-          "required": false,
-          "default": true
-        }
-      },
-      "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isWeb": {
-          "name": "isWeb",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isIOS": {
-          "name": "isIOS",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isAndroid": {
-          "name": "isAndroid",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isMobileApp": {
-          "name": "isMobileApp",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getPlatformId": {
-          "name": "getPlatformId",
-          "async": false,
-          "parameters": [],
-          "returnType": "string",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableStrategy": "sti",
-        "api": {
-          "include": [
-            "list",
-            "get",
-            "create",
-            "update"
-          ]
-        },
-        "mcp": {
-          "include": [
-            "list",
-            "get"
-          ]
-        },
-        "cli": true
-      },
-      "extends": "SmrtObject",
-      "exportName": "AnalyticsDataStream",
-      "collectionExportName": "AnalyticsDataStreamCollection",
-      "schema": {
-        "tableName": "analytics_data_streams",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_streams\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"stream_type\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"firebase_app_id\" TEXT DEFAULT '',\n  \"default_uri\" TEXT DEFAULT '',\n  \"bundle_id\" TEXT DEFAULT '',\n  \"package_name\" TEXT DEFAULT '',\n  \"status\" TEXT,\n  \"enhanced_measurement\" BOOLEAN DEFAULT TRUE\n);",
-        "columns": {
-          "id": {
-            "type": "TEXT",
-            "primaryKey": true,
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "_meta_type": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "_meta_data": {
-            "type": "JSON",
-            "notNull": false
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "property_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "display_name": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "stream_type": {
-            "type": "TEXT",
-            "notNull": false
-          },
-          "external_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "measurement_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "firebase_app_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "default_uri": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "bundle_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "package_name": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "status": {
-            "type": "TEXT",
-            "notNull": false
-          },
-          "enhanced_measurement": {
-            "type": "BOOLEAN",
-            "notNull": false,
-            "default": true
-          }
-        },
-        "indexes": [
-          {
-            "name": "analytics_data_streams_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
-            "name": "analytics_data_streams_slug_context_meta_type_idx",
-            "columns": [
-              "slug",
-              "context",
-              "_meta_type"
-            ],
-            "unique": true
-          },
-          {
-            "name": "analytics_data_streams_meta_type_idx",
-            "columns": [
-              "_meta_type"
-            ]
-          }
-        ],
-        "version": "b0cfd073"
-      }
-    },
-    "@happyvertical/smrt-analytics:AnalyticsEvent": {
-      "name": "analyticsevent",
-      "className": "AnalyticsEvent",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsEvent",
-      "collection": "analyticsevents",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsEvent.ts",
-      "packageName": "@happyvertical/smrt-analytics",
-      "fields": {
-        "created_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "updated_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "propertyId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "eventName": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "clientId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "userId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "params": {
-          "type": "text",
-          "required": false,
-          "default": "{}"
-        },
-        "eventTimestamp": {
-          "type": "datetime",
-          "required": false
-        },
-        "status": {
-          "type": "text",
-          "required": false
-        },
-        "sentAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "errorMessage": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "retryCount": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "nonPersonalizedAds": {
-          "type": "boolean",
-          "required": false,
-          "default": false
-        },
-        "sessionId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "pagePath": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "pageTitle": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "userAgent": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "ipAddress": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        }
-      },
-      "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getParams": {
-          "name": "getParams",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string, string | number | boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "setParams": {
-          "name": "setParams",
-          "async": false,
-          "parameters": [
-            {
-              "name": "params",
-              "type": "Record<string, string | number | boolean>",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "addParam": {
-          "name": "addParam",
-          "async": false,
-          "parameters": [
-            {
-              "name": "key",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "value",
-              "type": "string | number | boolean",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isPageview": {
-          "name": "isPageview",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isConversion": {
-          "name": "isConversion",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "markSent": {
-          "name": "markSent",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "markFailed": {
-          "name": "markFailed",
-          "async": false,
-          "parameters": [
-            {
-              "name": "error",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetForRetry": {
-          "name": "resetForRetry",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "shouldRetry": {
-          "name": "shouldRetry",
-          "async": false,
-          "parameters": [
-            {
-              "name": "maxRetries",
-              "type": "number",
-              "optional": true
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toTrackEvent": {
-          "name": "toTrackEvent",
-          "async": false,
-          "parameters": [],
-          "returnType": "object",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableStrategy": "sti",
-        "api": {
-          "include": [
-            "list",
-            "get",
-            "create"
-          ]
-        },
-        "mcp": {
-          "include": [
-            "list",
-            "get",
-            "track"
-          ]
-        },
-        "cli": true
-      },
-      "extends": "SmrtObject",
-      "exportName": "AnalyticsEvent",
-      "collectionExportName": "AnalyticsEventCollection",
-      "schema": {
-        "tableName": "analytics_events",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_events\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" TEXT DEFAULT '',\n  \"event_name\" TEXT DEFAULT '',\n  \"client_id\" TEXT DEFAULT '',\n  \"user_id\" TEXT DEFAULT '',\n  \"params\" TEXT DEFAULT '{}',\n  \"event_timestamp\" TIMESTAMP,\n  \"status\" TEXT,\n  \"sent_at\" TIMESTAMP,\n  \"error_message\" TEXT DEFAULT '',\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"non_personalized_ads\" BOOLEAN DEFAULT FALSE,\n  \"session_id\" TEXT DEFAULT '',\n  \"page_path\" TEXT DEFAULT '',\n  \"page_title\" TEXT DEFAULT '',\n  \"user_agent\" TEXT DEFAULT '',\n  \"ip_address\" TEXT DEFAULT ''\n);",
-        "columns": {
-          "id": {
-            "type": "TEXT",
-            "primaryKey": true,
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "_meta_type": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "_meta_data": {
-            "type": "JSON",
-            "notNull": false
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "property_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "event_name": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "client_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "user_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "params": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "{}"
-          },
-          "event_timestamp": {
-            "type": "TIMESTAMP",
-            "notNull": false
-          },
-          "status": {
-            "type": "TEXT",
-            "notNull": false
-          },
-          "sent_at": {
-            "type": "TIMESTAMP",
-            "notNull": false
-          },
-          "error_message": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "retry_count": {
-            "type": "INTEGER",
-            "notNull": false,
-            "default": 0
-          },
-          "non_personalized_ads": {
-            "type": "BOOLEAN",
-            "notNull": false,
-            "default": false
-          },
-          "session_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "page_path": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "page_title": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "user_agent": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "ip_address": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          }
-        },
-        "indexes": [
-          {
-            "name": "analytics_events_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
-            "name": "analytics_events_slug_context_meta_type_idx",
-            "columns": [
-              "slug",
-              "context",
-              "_meta_type"
-            ],
-            "unique": true
-          },
-          {
-            "name": "analytics_events_meta_type_idx",
-            "columns": [
-              "_meta_type"
-            ]
-          }
-        ],
-        "version": "b96586b1"
-      }
-    },
-    "@happyvertical/smrt-analytics:AnalyticsProperty": {
-      "name": "analyticsproperty",
-      "className": "AnalyticsProperty",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsProperty",
-      "collection": "analyticsproperties",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsProperty.ts",
-      "packageName": "@happyvertical/smrt-analytics",
-      "fields": {
-        "created_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "updated_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "name": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "displayName": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "provider": {
-          "type": "text",
-          "required": false
-        },
-        "externalId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "measurementId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "apiSecret": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "siteDomain": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "timeZone": {
-          "type": "text",
-          "required": false,
-          "default": "America/Los_Angeles"
-        },
-        "currencyCode": {
-          "type": "text",
-          "required": false,
-          "default": "USD"
-        },
-        "industryCategory": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "serviceLevel": {
-          "type": "text",
-          "required": false,
-          "default": "STANDARD"
-        },
-        "status": {
-          "type": "text",
-          "required": false
-        },
-        "lastSyncAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "providerMetadata": {
-          "type": "text",
-          "required": false,
-          "default": "{}"
-        }
-      },
-      "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isGA4": {
-          "name": "isGA4",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isPlausible": {
-          "name": "isPlausible",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isMatomo": {
-          "name": "isMatomo",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getProviderMetadata": {
-          "name": "getProviderMetadata",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "setProviderMetadata": {
-          "name": "setProviderMetadata",
-          "async": false,
-          "parameters": [
-            {
-              "name": "metadata",
-              "type": "Record<string>",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "markSynced": {
-          "name": "markSynced",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "analyzePerformance": {
-          "name": "analyzePerformance",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<object>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isPerformingWell": {
-          "name": "isPerformingWell",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableStrategy": "sti",
-        "api": {
-          "include": [
-            "list",
-            "get",
-            "create",
-            "update"
-          ]
-        },
-        "mcp": {
-          "include": [
-            "list",
-            "get",
-            "sync",
-            "runReport"
-          ]
-        },
-        "cli": true
-      },
-      "extends": "SmrtObject",
-      "exportName": "AnalyticsProperty",
-      "collectionExportName": "AnalyticsPropertyCollection",
-      "schema": {
-        "tableName": "analytics_properties",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_properties\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"provider\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"api_secret\" TEXT DEFAULT '',\n  \"site_domain\" TEXT DEFAULT '',\n  \"time_zone\" TEXT DEFAULT 'America/Los_Angeles',\n  \"currency_code\" TEXT DEFAULT 'USD',\n  \"industry_category\" TEXT DEFAULT '',\n  \"service_level\" TEXT DEFAULT 'STANDARD',\n  \"status\" TEXT,\n  \"last_sync_at\" TIMESTAMP,\n  \"provider_metadata\" TEXT DEFAULT '{}'\n);",
-        "columns": {
-          "id": {
-            "type": "TEXT",
-            "primaryKey": true,
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "_meta_type": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "_meta_data": {
-            "type": "JSON",
-            "notNull": false
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "name": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "display_name": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "provider": {
-            "type": "TEXT",
-            "notNull": false
-          },
-          "external_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "measurement_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "api_secret": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "site_domain": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "time_zone": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "America/Los_Angeles"
-          },
-          "currency_code": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "USD"
-          },
-          "industry_category": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "service_level": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "STANDARD"
-          },
-          "status": {
-            "type": "TEXT",
-            "notNull": false
-          },
-          "last_sync_at": {
-            "type": "TIMESTAMP",
-            "notNull": false
-          },
-          "provider_metadata": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "{}"
-          }
-        },
-        "indexes": [
-          {
-            "name": "analytics_properties_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
-            "name": "analytics_properties_slug_context_meta_type_idx",
-            "columns": [
-              "slug",
-              "context",
-              "_meta_type"
-            ],
-            "unique": true
-          },
-          {
-            "name": "analytics_properties_meta_type_idx",
-            "columns": [
-              "_meta_type"
-            ]
-          }
-        ],
-        "version": "54e59a85"
-      }
-    },
-    "@happyvertical/smrt-analytics:AnalyticsReport": {
-      "name": "analyticsreport",
-      "className": "AnalyticsReport",
-      "qualifiedName": "@happyvertical/smrt-analytics:AnalyticsReport",
-      "collection": "analyticsreports",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/packages/analytics/src/models/AnalyticsReport.ts",
-      "packageName": "@happyvertical/smrt-analytics",
-      "fields": {
-        "created_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "updated_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "propertyId": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "name": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "description": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "dimensions": {
-          "type": "text",
-          "required": false,
-          "default": "[]"
-        },
-        "metrics": {
-          "type": "text",
-          "required": false,
-          "default": "[]"
-        },
-        "dateRangeStart": {
-          "type": "text",
-          "required": false,
-          "default": "7daysAgo"
-        },
-        "dateRangeEnd": {
-          "type": "text",
-          "required": false,
-          "default": "today"
-        },
-        "dimensionFilter": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "metricFilter": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "orderBy": {
-          "type": "text",
-          "required": false,
-          "default": "[]"
-        },
-        "maxResults": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "status": {
-          "type": "text",
-          "required": false
-        },
-        "frequency": {
-          "type": "text",
-          "required": false
-        },
-        "lastRunAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "nextRunAt": {
-          "type": "datetime",
-          "required": false
-        },
-        "resultData": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        },
-        "rowCount": {
-          "type": "integer",
-          "required": false,
-          "default": 0
-        },
-        "lastError": {
-          "type": "text",
-          "required": false,
-          "default": ""
-        }
-      },
-      "methods": {
-        "getAiUsageSnapshot": {
-          "name": "getAiUsageSnapshot",
-          "async": false,
-          "parameters": [],
-          "returnType": "AiUsageSnapshot | undefined",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "resetAiUsage": {
-          "name": "resetAiUsage",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "listAiUsage": {
-          "name": "listAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageListOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<SmrtAiUsageRecord[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "summarizeAiUsage": {
-          "name": "summarizeAiUsage",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "AiUsageSummaryOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Record<string, AiUsageStats>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "destroy": {
-          "name": "destroy",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "initialize": {
-          "name": "initialize",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadDataFromDb": {
-          "name": "loadDataFromDb",
-          "async": true,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "any",
-              "optional": false
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getFields": {
-          "name": "getFields",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toJSON": {
-          "name": "toJSON",
-          "async": false,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "toPlainObject": {
-          "name": "toPlainObject",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getId": {
-          "name": "getId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSlug": {
-          "name": "getSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getSavedId": {
-          "name": "getSavedId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isSaved": {
-          "name": "isSaved",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "save": {
-          "name": "save",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromId": {
-          "name": "loadFromId",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadFromSlug": {
-          "name": "loadFromSlug",
-          "async": true,
-          "parameters": [],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "is": {
-          "name": "is",
-          "async": true,
-          "parameters": [
-            {
-              "name": "criteria",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "do": {
-          "name": "do",
-          "async": true,
-          "parameters": [
-            {
-              "name": "instructions",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "describe": {
-          "name": "describe",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "any",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "delete": {
-          "name": "delete",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isRelatedLoaded": {
-          "name": "isRelatedLoaded",
-          "async": false,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelated": {
-          "name": "loadRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "loadRelatedMany": {
-          "name": "loadRelatedMany",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any[]>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getRelated": {
-          "name": "getRelated",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getAvailableTools": {
-          "name": "getAvailableTools",
-          "async": false,
-          "parameters": [],
-          "returnType": "AITool[]",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "executeToolCall": {
-          "name": "executeToolCall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "toolCall",
-              "type": "ToolCall",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<ToolCallResult>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "remember": {
-          "name": "remember",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recall": {
-          "name": "recall",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<any | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "recallAll": {
-          "name": "recallAll",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<Map<string, any>>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forget": {
-          "name": "forget",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "forgetScope": {
-          "name": "forgetScope",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "object",
-              "optional": false
-            }
-          ],
-          "returnType": "Promise<number>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "generateEmbeddings": {
-          "name": "generateEmbeddings",
-          "async": true,
-          "parameters": [
-            {
-              "name": "options",
-              "type": "GenerateEmbeddingsOptions",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getEmbedding": {
-          "name": "getEmbedding",
-          "async": true,
-          "parameters": [
-            {
-              "name": "fieldName",
-              "type": "string",
-              "optional": false
-            },
-            {
-              "name": "model",
-              "type": "string",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<number[] | null>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasStaleEmbeddings": {
-          "name": "hasStaleEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "clearEmbeddings": {
-          "name": "clearEmbeddings",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<void>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getDimensions": {
-          "name": "getDimensions",
-          "async": false,
-          "parameters": [],
-          "returnType": "Array<object>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "setDimensions": {
-          "name": "setDimensions",
-          "async": false,
-          "parameters": [
-            {
-              "name": "dimensions",
-              "type": "Array<object>",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getMetrics": {
-          "name": "getMetrics",
-          "async": false,
-          "parameters": [],
-          "returnType": "Array<object>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "setMetrics": {
-          "name": "setMetrics",
-          "async": false,
-          "parameters": [
-            {
-              "name": "metrics",
-              "type": "Array<object>",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "getResultData": {
-          "name": "getResultData",
-          "async": false,
-          "parameters": [],
-          "returnType": "Record<string> | null",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "setResultData": {
-          "name": "setResultData",
-          "async": false,
-          "parameters": [
-            {
-              "name": "data",
-              "type": "Record<string>",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "markRunning": {
-          "name": "markRunning",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "markCompleted": {
-          "name": "markCompleted",
-          "async": false,
-          "parameters": [
-            {
-              "name": "rowCount",
-              "type": "number",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "markFailed": {
-          "name": "markFailed",
-          "async": false,
-          "parameters": [
-            {
-              "name": "error",
-              "type": "string",
-              "optional": false
-            }
-          ],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "calculateNextRun": {
-          "name": "calculateNextRun",
-          "async": false,
-          "parameters": [],
-          "returnType": "void",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "isDue": {
-          "name": "isDue",
-          "async": false,
-          "parameters": [],
-          "returnType": "boolean",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "analyzeResults": {
-          "name": "analyzeResults",
-          "async": true,
-          "parameters": [
-            {
-              "name": "_options",
-              "type": "any",
-              "optional": true
-            }
-          ],
-          "returnType": "Promise<object>",
-          "isStatic": false,
-          "isPublic": true
-        },
-        "hasPositiveTrends": {
-          "name": "hasPositiveTrends",
-          "async": true,
-          "parameters": [],
-          "returnType": "Promise<boolean>",
-          "isStatic": false,
-          "isPublic": true
-        }
-      },
-      "decoratorConfig": {
-        "tableStrategy": "sti",
-        "api": {
-          "include": [
-            "list",
-            "get",
-            "create",
-            "update",
-            "run"
-          ]
-        },
-        "mcp": {
-          "include": [
-            "list",
-            "get",
-            "run",
-            "analyze"
-          ]
-        },
-        "cli": true
-      },
-      "extends": "SmrtObject",
-      "exportName": "AnalyticsReport",
-      "collectionExportName": "AnalyticsReportCollection",
-      "schema": {
-        "tableName": "analytics_reports",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_reports\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"dimensions\" TEXT DEFAULT '[]',\n  \"metrics\" TEXT DEFAULT '[]',\n  \"date_range_start\" TEXT DEFAULT '7daysAgo',\n  \"date_range_end\" TEXT DEFAULT 'today',\n  \"dimension_filter\" TEXT DEFAULT '',\n  \"metric_filter\" TEXT DEFAULT '',\n  \"order_by\" TEXT DEFAULT '[]',\n  \"max_results\" INTEGER DEFAULT 0,\n  \"status\" TEXT,\n  \"frequency\" TEXT,\n  \"last_run_at\" TIMESTAMP,\n  \"next_run_at\" TIMESTAMP,\n  \"result_data\" TEXT DEFAULT '',\n  \"row_count\" INTEGER DEFAULT 0,\n  \"last_error\" TEXT DEFAULT ''\n);",
-        "columns": {
-          "id": {
-            "type": "TEXT",
-            "primaryKey": true,
-            "notNull": true
-          },
-          "slug": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "context": {
-            "type": "TEXT",
-            "notNull": true,
-            "default": ""
-          },
-          "_meta_type": {
-            "type": "TEXT",
-            "notNull": true
-          },
-          "_meta_data": {
-            "type": "JSON",
-            "notNull": false
-          },
-          "created_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "updated_at": {
-            "type": "TIMESTAMP",
-            "notNull": true,
-            "default": "current_timestamp"
-          },
-          "property_id": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "name": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "description": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "dimensions": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "[]"
-          },
-          "metrics": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "[]"
-          },
-          "date_range_start": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "7daysAgo"
-          },
-          "date_range_end": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "today"
-          },
-          "dimension_filter": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "metric_filter": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "order_by": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": "[]"
-          },
-          "max_results": {
-            "type": "INTEGER",
-            "notNull": false,
-            "default": 0
-          },
-          "status": {
-            "type": "TEXT",
-            "notNull": false
-          },
-          "frequency": {
-            "type": "TEXT",
-            "notNull": false
-          },
-          "last_run_at": {
-            "type": "TIMESTAMP",
-            "notNull": false
-          },
-          "next_run_at": {
-            "type": "TIMESTAMP",
-            "notNull": false
-          },
-          "result_data": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          },
-          "row_count": {
-            "type": "INTEGER",
-            "notNull": false,
-            "default": 0
-          },
-          "last_error": {
-            "type": "TEXT",
-            "notNull": false,
-            "default": ""
-          }
-        },
-        "indexes": [
-          {
-            "name": "analytics_reports_id_idx",
-            "columns": [
-              "id"
-            ]
-          },
-          {
-            "name": "analytics_reports_slug_context_meta_type_idx",
-            "columns": [
-              "slug",
-              "context",
-              "_meta_type"
-            ],
-            "unique": true
-          },
-          {
-            "name": "analytics_reports_meta_type_idx",
-            "columns": [
-              "_meta_type"
-            ]
-          }
-        ],
-        "version": "08a28e51"
+        "version": "e21049fe"
       }
     }
   },
   "moduleType": "smrt",
-  "smrtDependencies": [
-    "@happyvertical/smrt-core"
-  ]
+  "packageName": "@happyvertical/smrt-analytics"
 }
