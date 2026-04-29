@@ -55,7 +55,7 @@ export class AnalyticsProperty extends SmrtObject {
   measurementId: string = '';
 
   /**
-   * API secret for server-side tracking (GA4)
+   * Provider API secret/token (GA4 API secret, Matomo token_auth)
    */
   apiSecret: string = '';
 

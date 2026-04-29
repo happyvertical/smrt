@@ -19,14 +19,14 @@ const {
   siteDomain,
 }: Props = $props();
 
+const PROVIDER_LABELS: Record<string, string> = {
+  ga4: 'Google Analytics 4',
+  plausible: 'Plausible',
+  matomo: 'Matomo',
+};
+
 const providerLabel = $derived(
-  provider === 'ga4'
-    ? 'Google Analytics 4'
-    : provider === 'plausible'
-      ? 'Plausible'
-      : provider === 'matomo'
-        ? 'Matomo'
-        : (provider ?? 'Unknown'),
+  (provider && PROVIDER_LABELS[provider]) ?? provider ?? 'Unknown',
 );
 
 const lastSyncFormatted = $derived.by(() => {

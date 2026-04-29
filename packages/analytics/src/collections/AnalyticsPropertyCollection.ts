@@ -43,10 +43,10 @@ export class AnalyticsPropertyCollection extends SmrtCollection<AnalyticsPropert
   }
 
   /**
-   * Find property by site domain (Plausible/Matomo)
+   * Find the first property matching a site domain.
    *
-   * @param siteDomain - Plausible or Matomo site domain
-   * @returns Matching property or null
+   * @param siteDomain - Provider site domain
+   * @returns First matching property or null
    */
   async findBySiteDomain(
     siteDomain: string,
