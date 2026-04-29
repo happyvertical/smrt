@@ -74,6 +74,69 @@ function isDuplicateColumnError(error: unknown): boolean {
   );
 }
 
+function collectErrorDetails(
+  error: unknown,
+  seen = new Set<unknown>(),
+): {
+  codes: Set<string>;
+  messages: string[];
+} {
+  const codes = new Set<string>();
+  const messages: string[] = [];
+
+  if (!error || seen.has(error)) {
+    return { codes, messages };
+  }
+
+  seen.add(error);
+
+  if (typeof error === 'object') {
+    const errorRecord = error as Record<string, unknown>;
+
+    if (typeof errorRecord.code === 'string') {
+      codes.add(errorRecord.code);
+    }
+
+    for (const messageKey of ['message', 'detail']) {
+      if (typeof errorRecord[messageKey] === 'string') {
+        messages.push(errorRecord[messageKey]);
+      }
+    }
+
+    for (const nestedKey of ['cause', 'originalError']) {
+      const nested = collectErrorDetails(errorRecord[nestedKey], seen);
+      for (const code of nested.codes) {
+        codes.add(code);
+      }
+      messages.push(...nested.messages);
+    }
+  } else {
+    messages.push(String(error));
+  }
+
+  return { codes, messages };
+}
+
+function isDuplicateIndexRaceError(error: unknown, indexName: string): boolean {
+  const { codes, messages } = collectErrorDetails(error);
+  const message = messages.join('\n').toLowerCase();
+  const normalizedIndexName = indexName.toLowerCase();
+
+  if (!message.includes(normalizedIndexName)) {
+    return false;
+  }
+
+  if (codes.has('23505') && message.includes('pg_class_relname_nsp_index')) {
+    return true;
+  }
+
+  if (codes.has('42P07') && /relation .*already exists/i.test(message)) {
+    return true;
+  }
+
+  return false;
+}
+
 async function addColumnIfMissing(
   db: DatabaseInterface,
   tableName: string,
@@ -144,9 +207,19 @@ async function addIndexIfMissing(
     return;
   }
 
-  await db.query(
-    `CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columnName})`,
-  );
+  try {
+    await db.query(
+      `CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columnName})`,
+    );
+  } catch (error) {
+    if (isDuplicateIndexRaceError(error, indexName)) {
+      if (await indexExists(db, indexName)) {
+        return;
+      }
+    }
+
+    throw error;
+  }
 }
 
 export async function ensureDispatchSystemTableCompatibility(

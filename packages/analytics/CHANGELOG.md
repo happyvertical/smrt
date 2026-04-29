@@ -1,5 +1,12 @@
 # @happyvertical/smrt-analytics
 
+## 0.22.17
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.22.17
+
 ## 0.22.16
 
 ### Patch Changes
