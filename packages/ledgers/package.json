@@ -14,7 +14,8 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "CLAUDE.md"
   ],
   "scripts": {
     "build": "vite build --mode library",
