@@ -254,7 +254,7 @@ describe('shouldFailDbMigrate', () => {
     expect(shouldFailDbMigrate({ tableErrorCount: 1 })).toBe(true);
   });
 
-  it('fails when STI upgrade has errors', () => {
+  it('fails when STI repair has errors', () => {
     expect(shouldFailDbMigrate({ stiErrorCount: 1 })).toBe(true);
   });
 
