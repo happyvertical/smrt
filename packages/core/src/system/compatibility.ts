@@ -103,7 +103,7 @@ function collectErrorDetails(
       }
     }
 
-    for (const nestedKey of ['cause', 'originalError']) {
+    for (const nestedKey of ['cause', 'context', 'originalError']) {
       const nested = collectErrorDetails(errorRecord[nestedKey], seen);
       for (const code of nested.codes) {
         codes.add(code);
@@ -121,16 +121,20 @@ function isDuplicateIndexRaceError(error: unknown, indexName: string): boolean {
   const { codes, messages } = collectErrorDetails(error);
   const message = messages.join('\n').toLowerCase();
   const normalizedIndexName = indexName.toLowerCase();
+  const hasDuplicateCode =
+    codes.has('23505') || /\bcode\s*=\s*23505\b/.test(message);
+  const hasRelationExistsCode =
+    codes.has('42P07') || /\bcode\s*=\s*42p07\b/i.test(message);
 
   if (!message.includes(normalizedIndexName)) {
     return false;
   }
 
-  if (codes.has('23505') && message.includes('pg_class_relname_nsp_index')) {
+  if (hasDuplicateCode && message.includes('pg_class_relname_nsp_index')) {
     return true;
   }
 
-  if (codes.has('42P07') && /relation .*already exists/i.test(message)) {
+  if (hasRelationExistsCode && /relation .*already exists/i.test(message)) {
     return true;
   }
 
