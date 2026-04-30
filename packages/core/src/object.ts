@@ -74,6 +74,10 @@ function getSTIHierarchyMembers(className: string): string[] {
   );
 }
 
+type PersistenceWritePlan =
+  | { type: 'upsert'; conflictColumns: string[] }
+  | { type: 'updateById'; qualifiedMetaType: string };
+
 /**
  * Warn once per process if a consumer has SMRT_SKIP_STI_REHYDRATE set.
  * The env variable is a no-op since Release C (#1134); without this
@@ -269,6 +273,122 @@ export class SmrtObject extends SmrtClass {
     return (
       registered?.qualifiedName || registered?.name || this.constructor.name
     );
+  }
+
+  private getCurrentMetaType(): string | undefined {
+    const metaType = (this as any)._meta_type;
+    return typeof metaType === 'string' ? metaType : undefined;
+  }
+
+  private isLegacySTIDiscriminatorUpgrade(
+    currentMetaType: string | undefined,
+    nextMetaType: unknown,
+    className: string,
+  ): currentMetaType is string {
+    return (
+      typeof nextMetaType === 'string' &&
+      typeof currentMetaType === 'string' &&
+      currentMetaType !== nextMetaType &&
+      !currentMetaType.includes(':') &&
+      isValidMetaType(currentMetaType, className) &&
+      isValidMetaType(nextMetaType, className)
+    );
+  }
+
+  private async planPersistenceWrite(
+    className: string,
+    tableStrategy: string,
+    data: Record<string, any>,
+    conflictColumns: string[],
+  ): Promise<PersistenceWritePlan> {
+    const upsertPlan: PersistenceWritePlan = {
+      type: 'upsert',
+      conflictColumns,
+    };
+
+    if (tableStrategy !== 'sti' || !data.id) {
+      return upsertPlan;
+    }
+
+    const currentMetaType = this.getCurrentMetaType();
+    const nextMetaType = data._meta_type;
+    if (
+      !this.isLegacySTIDiscriminatorUpgrade(
+        currentMetaType,
+        nextMetaType,
+        className,
+      )
+    ) {
+      return upsertPlan;
+    }
+    const qualifiedMetaType = String(nextMetaType);
+    const conflictIdentity: Record<string, any> = {};
+    for (const column of conflictColumns.filter(
+      (conflictColumn) => conflictColumn !== '_meta_type',
+    )) {
+      if (!Object.hasOwn(data, column)) {
+        return upsertPlan;
+      }
+      conflictIdentity[column] = data[column];
+    }
+
+    const id = String(data.id);
+    const existingById = await ErrorUtils.withRetry(
+      async () => {
+        try {
+          return await this.db.get(this.tableName, { id });
+        } catch (error) {
+          throw DatabaseError.queryFailed(
+            `get(${this.tableName}, legacy STI id)`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      },
+      3,
+      500,
+    );
+
+    if (!existingById || existingById._meta_type !== currentMetaType) {
+      return upsertPlan;
+    }
+
+    const slug = String(data.slug ?? '');
+    const context = String(data.context ?? '');
+    const existingQualified = await ErrorUtils.withRetry(
+      async () => {
+        try {
+          return await this.db.get(this.tableName, {
+            ...conflictIdentity,
+            _meta_type: qualifiedMetaType,
+          });
+        } catch (error) {
+          throw DatabaseError.queryFailed(
+            `get(${this.tableName}, qualified STI conflict identity)`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      },
+      3,
+      500,
+    );
+
+    if (existingQualified && existingQualified.id !== id) {
+      throw DatabaseError.stiDiscriminatorConflict({
+        className,
+        tableName: this.tableName,
+        id,
+        slug,
+        context,
+        conflictIdentity,
+        legacyMetaType: currentMetaType,
+        qualifiedMetaType,
+        duplicateId: String(existingQualified.id),
+      });
+    }
+
+    // This mirrors save()'s current last-writer-wins behavior: the probe and
+    // update are not transactional, so concurrent saves may both choose this.
+    return { type: 'updateById', qualifiedMetaType };
   }
 
   /**
@@ -1211,11 +1331,27 @@ export class SmrtObject extends SmrtClass {
 
       // Get conflict columns from registry (supports custom columns for junction tables)
       const conflictColumns = ObjectRegistry.getConflictColumns(className);
+      const writePlan = await this.planPersistenceWrite(
+        className,
+        tableStrategy,
+        data,
+        conflictColumns,
+      );
 
       await ErrorUtils.withRetry(
         async () => {
           try {
-            await this.db.upsert(this.tableName, conflictColumns, data);
+            if (writePlan.type === 'updateById') {
+              const { id: _id, ...updateData } = data;
+              await this.db.update(this.tableName, { id: data.id }, updateData);
+              this.setMetaType(writePlan.qualifiedMetaType);
+            } else {
+              await this.db.upsert(
+                this.tableName,
+                writePlan.conflictColumns,
+                data,
+              );
+            }
           } catch (error) {
             // Detect specific database error types
             if (error instanceof Error) {
@@ -1230,10 +1366,11 @@ export class SmrtObject extends SmrtClass {
                 const field = this.extractConstraintField(error.message);
                 throw ValidationError.requiredField(field, className);
               }
-              throw DatabaseError.queryFailed(
-                `UPSERT INTO ${this.tableName}`,
-                error,
-              );
+              const operation =
+                writePlan.type === 'updateById'
+                  ? `UPDATE ${this.tableName} (id-targeted)`
+                  : `UPSERT INTO ${this.tableName}`;
+              throw DatabaseError.queryFailed(operation, error);
             }
             throw error;
           }

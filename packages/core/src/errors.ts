@@ -163,6 +163,7 @@ function getPrimaryCauseMessage(cause?: Error): {
  * - `DatabaseError.constraintViolation(constraint, value, cause)` — FK/CHECK/UNIQUE
  * - `DatabaseError.corruptedData(field, class, cause)` — unparse-able column data
  * - `DatabaseError.missingDiscriminator(class, rowId)` — STI row missing `_meta_type`
+ * - `DatabaseError.stiDiscriminatorConflict(...)` — legacy STI discriminator collides during qualification
  * - `DatabaseError.schemaMissing(table, class)` — table not yet migrated
  *
  * All errors have `category: 'database'` and codes prefixed with `DB_`.
@@ -253,6 +254,31 @@ export class DatabaseError extends SmrtError {
         `This may indicate a schema mismatch or manual database modification.`,
       'DB_MISSING_DISCRIMINATOR',
       { className, rowId },
+    );
+  }
+
+  static stiDiscriminatorConflict(details: {
+    className: string;
+    tableName: string;
+    id: string;
+    slug: string;
+    context: string;
+    conflictIdentity: Record<string, any>;
+    legacyMetaType: string;
+    qualifiedMetaType: string;
+    duplicateId: string;
+  }): DatabaseError {
+    const identityText = Object.entries(details.conflictIdentity)
+      .map(([key, value]) => `${key} '${String(value)}'`)
+      .join(', ');
+
+    return new DatabaseError(
+      `Legacy STI discriminator collision for ${details.className} (${details.tableName}). ` +
+        `Row '${details.id}' would upgrade _meta_type from '${details.legacyMetaType}' to '${details.qualifiedMetaType}', ` +
+        `but row '${details.duplicateId}' already uses the qualified discriminator for ${identityText || 'the same conflict identity'}. ` +
+        `Merge or remove the duplicate legacy/qualified rows before saving.`,
+      'DB_STI_DISCRIMINATOR_CONFLICT',
+      details,
     );
   }
 
