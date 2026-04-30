@@ -1,5 +1,14 @@
 # @happyvertical/smrt-core
 
+## 0.23.2
+
+### Patch Changes
+
+- 6d6e8f5: Avoid duplicate generated virtual client keys when an object and collection share the same REST collection name.
+  - @happyvertical/smrt-scanner@0.23.2
+  - @happyvertical/smrt-config@0.23.2
+  - @happyvertical/smrt-types@0.23.2
+
 ## 0.23.1
 
 ### Patch Changes
