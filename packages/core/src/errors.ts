@@ -263,14 +263,19 @@ export class DatabaseError extends SmrtError {
     id: string;
     slug: string;
     context: string;
+    conflictIdentity: Record<string, any>;
     legacyMetaType: string;
     qualifiedMetaType: string;
     duplicateId: string;
   }): DatabaseError {
+    const identityText = Object.entries(details.conflictIdentity)
+      .map(([key, value]) => `${key} '${String(value)}'`)
+      .join(', ');
+
     return new DatabaseError(
       `Legacy STI discriminator collision for ${details.className} (${details.tableName}). ` +
         `Row '${details.id}' would upgrade _meta_type from '${details.legacyMetaType}' to '${details.qualifiedMetaType}', ` +
-        `but row '${details.duplicateId}' already uses the qualified discriminator for slug '${details.slug}' and context '${details.context}'. ` +
+        `but row '${details.duplicateId}' already uses the qualified discriminator for ${identityText || 'the same conflict identity'}. ` +
         `Merge or remove the duplicate legacy/qualified rows before saving.`,
       'DB_STI_DISCRIMINATOR_CONFLICT',
       details,

@@ -76,7 +76,7 @@ function getSTIHierarchyMembers(className: string): string[] {
 
 type PersistenceWritePlan =
   | { type: 'upsert'; conflictColumns: string[] }
-  | { type: 'updateById' };
+  | { type: 'updateById'; qualifiedMetaType: string };
 
 /**
  * Warn once per process if a consumer has SMRT_SKIP_STI_REHYDRATE set.
@@ -322,6 +322,15 @@ export class SmrtObject extends SmrtClass {
       return upsertPlan;
     }
     const qualifiedMetaType = String(nextMetaType);
+    const conflictIdentity: Record<string, any> = {};
+    for (const column of conflictColumns.filter(
+      (conflictColumn) => conflictColumn !== '_meta_type',
+    )) {
+      if (!Object.hasOwn(data, column)) {
+        return upsertPlan;
+      }
+      conflictIdentity[column] = data[column];
+    }
 
     const id = String(data.id);
     const existingById = await ErrorUtils.withRetry(
@@ -330,7 +339,7 @@ export class SmrtObject extends SmrtClass {
           return await this.db.get(this.tableName, { id });
         } catch (error) {
           throw DatabaseError.queryFailed(
-            `get(${this.tableName}, { id: ${id} })`,
+            `get(${this.tableName}, legacy STI id)`,
             error instanceof Error ? error : new Error(String(error)),
           );
         }
@@ -349,13 +358,12 @@ export class SmrtObject extends SmrtClass {
       async () => {
         try {
           return await this.db.get(this.tableName, {
-            slug,
-            context,
+            ...conflictIdentity,
             _meta_type: qualifiedMetaType,
           });
         } catch (error) {
           throw DatabaseError.queryFailed(
-            `get(${this.tableName}, { slug: ${slug}, context: ${context}, _meta_type: ${qualifiedMetaType} })`,
+            `get(${this.tableName}, qualified STI conflict identity)`,
             error instanceof Error ? error : new Error(String(error)),
           );
         }
@@ -371,13 +379,16 @@ export class SmrtObject extends SmrtClass {
         id,
         slug,
         context,
+        conflictIdentity,
         legacyMetaType: currentMetaType,
         qualifiedMetaType,
         duplicateId: String(existingQualified.id),
       });
     }
 
-    return { type: 'updateById' };
+    // This mirrors save()'s current last-writer-wins behavior: the probe and
+    // update are not transactional, so concurrent saves may both choose this.
+    return { type: 'updateById', qualifiedMetaType };
   }
 
   /**
@@ -1333,6 +1344,7 @@ export class SmrtObject extends SmrtClass {
             if (writePlan.type === 'updateById') {
               const { id: _id, ...updateData } = data;
               await this.db.update(this.tableName, { id: data.id }, updateData);
+              this.setMetaType(writePlan.qualifiedMetaType);
             } else {
               await this.db.upsert(
                 this.tableName,
@@ -1356,7 +1368,7 @@ export class SmrtObject extends SmrtClass {
               }
               const operation =
                 writePlan.type === 'updateById'
-                  ? `UPDATE ${this.tableName} WHERE id = ${data.id}`
+                  ? `UPDATE ${this.tableName} (id-targeted)`
                   : `UPSERT INTO ${this.tableName}`;
               throw DatabaseError.queryFailed(operation, error);
             }
