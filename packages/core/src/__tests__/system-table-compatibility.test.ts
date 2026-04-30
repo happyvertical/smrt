@@ -353,6 +353,68 @@ describe('system table compatibility', () => {
     ).toHaveLength(1);
   });
 
+  it('tolerates a verified Postgres index race wrapped by sql context text', async () => {
+    let createdAtIndexLookups = 0;
+    const query = vi
+      .fn()
+      .mockImplementation(async (sql: string, ...params: unknown[]) => {
+        if (sql === 'SELECT 1 FROM _smrt_job_events LIMIT 1') {
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('information_schema.columns')) {
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (sql.includes('pg_indexes')) {
+          const [indexName] = params;
+          if (indexName === 'idx_smrt_job_events_created_at') {
+            createdAtIndexLookups += 1;
+            return {
+              rows: createdAtIndexLookups === 1 ? [] : [{ '?column?': 1 }],
+            };
+          }
+
+          return { rows: [{ '?column?': 1 }] };
+        }
+
+        if (
+          sql.includes(
+            'CREATE INDEX IF NOT EXISTS idx_smrt_job_events_created_at',
+          )
+        ) {
+          const error = new Error('Failed to execute raw query') as Error & {
+            context?: {
+              originalError: string;
+            };
+          };
+          error.context = {
+            originalError:
+              'duplicate key value violates unique constraint "pg_class_relname_nsp_index", code=23505, detail=Key (relname, relnamespace)=(idx_smrt_job_events_created_at, 2200) already exists., severity=ERROR',
+          };
+          throw error;
+        }
+
+        throw new Error(`Unexpected query: ${sql}`);
+      });
+
+    await expect(
+      ensureJobEventsSystemTableCompatibility({
+        url: 'postgresql://localhost:5432/test',
+        query,
+      } as any),
+    ).resolves.toBeUndefined();
+
+    expect(createdAtIndexLookups).toBe(2);
+    expect(
+      query.mock.calls.filter(([sql]) =>
+        String(sql).includes(
+          'CREATE INDEX IF NOT EXISTS idx_smrt_job_events_created_at',
+        ),
+      ),
+    ).toHaveLength(1);
+  });
+
   it('still fails Postgres index creation when the index race cannot be verified', async () => {
     const query = vi
       .fn()
