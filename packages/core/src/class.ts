@@ -770,15 +770,19 @@ export class SmrtClass {
       throw new Error('Database is not initialized');
     }
 
+    const beginTransaction = this._db.beginTransaction;
     const shouldUsePostgresLock =
       detectEngine(getDatabaseUrl(this._db)) === 'postgres' &&
-      typeof this._db.beginTransaction === 'function';
+      typeof beginTransaction === 'function';
 
     if (!shouldUsePostgresLock) {
       return callback(this._db);
     }
 
-    const tx = await this._db.beginTransaction?.();
+    const tx = await beginTransaction.call(this._db);
+    if (!tx) {
+      throw new Error('Database transaction could not be started');
+    }
 
     try {
       await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
