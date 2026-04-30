@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.1
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] Handle legacy STI discriminator saves
+  - @happyvertical/smrt-scanner@0.23.1
+  - @happyvertical/smrt-config@0.23.1
+  - @happyvertical/smrt-types@0.23.1
+
 ## 1.0.0
 
 ### Patch Changes
