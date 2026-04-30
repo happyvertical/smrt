@@ -39,7 +39,11 @@ import {
   runRuntimeCheckSafely,
   runtimeCheckCommand,
 } from './runtime-check-command.js';
-import { resolveStiDiscriminatorUpgrade } from './sti-upgrade.js';
+import {
+  repairStiDiscriminatorRows,
+  resolveStiDiscriminatorUpgrade,
+  type StiDiscriminatorRepairConflict,
+} from './sti-upgrade.js';
 
 /**
  * Column definition type for migration comparison
@@ -205,6 +209,24 @@ function parseExpectedIndexes(schema: {
 function quoteIdentifier(name: string): string {
   // Escape any double quotes in the identifier by doubling them
   return `"${name.replace(/"/g, '""')}"`;
+}
+
+function formatStiConflictIdentity(
+  conflict: StiDiscriminatorRepairConflict,
+): string {
+  const entries = Object.entries(conflict.conflictIdentity);
+  const identity =
+    entries.length > 0
+      ? entries
+          .map(([column, value]) => `${column}=${JSON.stringify(value)}`)
+          .join(', ')
+      : 'no non-_meta_type conflict columns';
+  const ids =
+    conflict.legacyId || conflict.qualifiedId
+      ? ` (legacy id: ${conflict.legacyId ?? 'unknown'}, qualified id: ${conflict.qualifiedId ?? 'unknown'})`
+      : '';
+
+  return `${identity}${ids}`;
 }
 
 /**
@@ -1063,7 +1085,7 @@ export default testManifest;
       'upgrade-sti': {
         type: 'boolean',
         description:
-          'Upgrade STI discriminators from simple class names to qualified names (@pkg:Class)',
+          'Safely upgrade STI discriminators from simple class names to qualified names (@pkg:Class)',
         default: false,
       },
       'drop-indexes': {
@@ -1554,7 +1576,7 @@ export default testManifest;
           );
         }
 
-        // 13.5 Handle --upgrade-sti flag for STI discriminator migration
+        // 13.5 Handle --upgrade-sti flag for STI discriminator data repair
         if (options['upgrade-sti']) {
           console.log(
             '\n🔄 Upgrading STI discriminators to qualified names...\n',
@@ -1630,32 +1652,50 @@ export default testManifest;
                   continue;
                 }
 
-                const qualifiedName = resolution.currentQualifiedName;
-
-                // Generate UPDATE statement (? placeholders are converted to $1, $2 by sql package)
-                const updateSql = `UPDATE ${quoteIdentifier(tableName)} SET ${quoteIdentifier('_meta_type')} = ? WHERE ${quoteIdentifier('_meta_type')} = ?`;
-
-                if (isDryRun) {
-                  console.log(`  [DRY RUN] ${updateSql}`);
-                  console.log(
-                    `            params: ['${qualifiedName}', '${metaType}']`,
-                  );
-                  stiSuccessCount++;
-                  continue;
-                }
-
                 try {
-                  const updateResult = await db.query(
-                    updateSql,
-                    qualifiedName,
-                    metaType,
-                  );
-                  const rowsAffected = updateResult.rowCount || 0;
-                  console.log(
-                    `  ✓ ${tableName}: "${metaType}" → "${qualifiedName}" (${rowsAffected} row(s))`,
-                  );
-                  stiSuccessCount++;
+                  const repair = await repairStiDiscriminatorRows({
+                    db,
+                    tableName,
+                    className: resolution.className,
+                    legacyMetaType: metaType,
+                    qualifiedMetaType: resolution.currentQualifiedName,
+                    dryRun: isDryRun,
+                  });
+
+                  if (repair.conflicts.length > 0) {
+                    console.error(
+                      `  ✗ ${tableName}: "${metaType}" → "${repair.qualifiedMetaType}" blocked by ${repair.conflicts.length} duplicate row(s)`,
+                    );
+                    for (const conflict of repair.conflicts) {
+                      console.error(
+                        `     ${formatStiConflictIdentity(conflict)}`,
+                      );
+                    }
+                    stiErrorCount += repair.conflicts.length;
+                  }
+
+                  if (isDryRun) {
+                    if (repair.wouldUpdateRows > 0) {
+                      console.log(
+                        `  [DRY RUN] ${tableName}: "${metaType}" → "${repair.qualifiedMetaType}" (${repair.wouldUpdateRows} row(s) would be updated by id)`,
+                      );
+                      stiSuccessCount += repair.wouldUpdateRows;
+                    } else if (repair.conflicts.length === 0) {
+                      stiSkippedCount++;
+                    }
+                    continue;
+                  }
+
+                  if (repair.updatedRows > 0) {
+                    console.log(
+                      `  ✓ ${tableName}: "${metaType}" → "${repair.qualifiedMetaType}" (${repair.updatedRows} row(s))`,
+                    );
+                    stiSuccessCount += repair.updatedRows;
+                  } else if (repair.conflicts.length === 0) {
+                    stiSkippedCount++;
+                  }
                 } catch (error: any) {
+                  const qualifiedName = resolution.currentQualifiedName;
                   const errorMsg =
                     error instanceof Error ? error.message : String(error);
                   const originalError = error?.context?.originalError;
@@ -1670,7 +1710,7 @@ export default testManifest;
             console.log();
             if (stiErrorCount > 0) {
               console.log(
-                `⚠️  STI upgrade completed with errors: ${stiSuccessCount} succeeded, ${stiErrorCount} failed`,
+                `⚠️  STI upgrade completed with errors: ${stiSuccessCount} row(s) upgraded, ${stiErrorCount} conflict/error(s)`,
               );
               if (stiSkippedCount > 0) {
                 console.log(
@@ -1683,7 +1723,7 @@ export default testManifest;
               );
             } else {
               console.log(
-                `✅ Successfully upgraded ${stiSuccessCount} STI discriminator(s)`,
+                `✅ Successfully upgraded ${stiSuccessCount} STI discriminator row(s)`,
               );
               if (stiSkippedCount > 0) {
                 console.log(
