@@ -314,6 +314,103 @@ describe('Issue #35: System Tables Initialization', () => {
       expect(tx.rollback).not.toHaveBeenCalled();
       expect(db.query).not.toHaveBeenCalled();
     });
+
+    it('should use transaction callback fallback for Postgres adapters without beginTransaction', async () => {
+      const txQueries: string[] = [];
+      const tx = {
+        url: `postgresql://localhost:5432/test_${randomUUID()}`,
+        query: vi.fn(async (sql: string) => {
+          txQueries.push(sql);
+
+          if (sql.includes('pg_advisory_xact_lock')) {
+            return { rows: [{ locked: true }], rowCount: 1 };
+          }
+
+          if (sql.includes('SELECT 1 FROM _smrt_')) {
+            throw new Error('relation does not exist');
+          }
+
+          return { rows: [], rowCount: 0 };
+        }),
+        execute: vi.fn(async () => undefined),
+      } as unknown as DatabaseInterface;
+      const transaction = vi.fn(
+        async <T>(callback: (tx: DatabaseInterface) => Promise<T>) =>
+          callback(tx),
+      );
+      const db = {
+        url: tx.url,
+        query: vi.fn(async () => {
+          throw new Error('system table DDL should run through transaction');
+        }),
+        transaction,
+      } as unknown as DatabaseInterface;
+
+      const obj = new Issue35PostgresLockObject({
+        db,
+        value: 'test',
+      });
+      await obj.initialize();
+
+      expect(transaction).toHaveBeenCalledOnce();
+      expect(tx.query).toHaveBeenNthCalledWith(
+        1,
+        "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
+      );
+      expect(
+        txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
+      ).toBe(true);
+      expect(db.query).not.toHaveBeenCalled();
+    });
+
+    it('should use explicit Postgres type hint when the database URL is omitted', async () => {
+      const txQueries: string[] = [];
+      const tx = {
+        url: '',
+        query: vi.fn(async (sql: string) => {
+          txQueries.push(sql);
+
+          if (sql.includes('pg_advisory_xact_lock')) {
+            return { rows: [{ locked: true }], rowCount: 1 };
+          }
+
+          if (sql.includes('SELECT 1 FROM _smrt_')) {
+            throw new Error('relation does not exist');
+          }
+
+          return { rows: [], rowCount: 0 };
+        }),
+        execute: vi.fn(async () => undefined),
+      } as unknown as DatabaseInterface;
+      const transaction = vi.fn(
+        async <T>(callback: (tx: DatabaseInterface) => Promise<T>) =>
+          callback(tx),
+      );
+      const db = {
+        type: 'postgres',
+        url: '',
+        query: vi.fn(async () => {
+          throw new Error('system table DDL should run through transaction');
+        }),
+        transaction,
+      } as unknown as DatabaseInterface;
+
+      const obj = new Issue35PostgresLockObject({
+        db,
+        value: 'test',
+      });
+      await obj.initialize();
+
+      expect(transaction).toHaveBeenCalledOnce();
+      expect(tx.query).toHaveBeenNthCalledWith(
+        1,
+        "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
+      );
+      expect(
+        txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
+      ).toBe(true);
+      expect(db.query).not.toHaveBeenCalled();
+    });
   });
 
   describe('WeakSet garbage collection behavior', () => {

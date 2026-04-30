@@ -42,8 +42,17 @@ const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
 
 type DatabaseWithConfig = DatabaseInterface & {
   config?: {
+    type?: string;
     url?: string;
   };
+  type?: string;
+};
+
+type TransactionCapableDatabase = DatabaseInterface & {
+  transaction?: <T>(
+    this: DatabaseInterface,
+    callback: (tx: DatabaseInterface) => Promise<T>,
+  ) => Promise<T>;
 };
 
 interface ResolvedAiUsageConfig {
@@ -86,6 +95,36 @@ function firstNumber(...candidates: unknown[]): number | undefined {
 function getDatabaseUrl(db: DatabaseInterface): string {
   const dbWithConfig = db as DatabaseWithConfig;
   return db.url || dbWithConfig.config?.url || '';
+}
+
+function getDatabaseTypeHint(
+  config: DatabaseConfig | undefined,
+): string | undefined {
+  if (!config || typeof config === 'string') {
+    return undefined;
+  }
+
+  const configWithType = config as DatabaseWithConfig & {
+    client?: unknown;
+  };
+
+  if (typeof configWithType.type === 'string') {
+    return configWithType.type;
+  }
+
+  if (typeof configWithType.config?.type === 'string') {
+    return configWithType.config.type;
+  }
+
+  if ('query' in configWithType && typeof configWithType.query === 'function') {
+    return undefined;
+  }
+
+  if ('client' in configWithType && configWithType.client) {
+    return 'postgres';
+  }
+
+  return undefined;
 }
 
 function normalizeIncomingAiUsageTokens(
@@ -384,6 +423,7 @@ export class SmrtClass {
    * Database interface for data persistence
    */
   protected _db!: DatabaseInterface;
+  private _dbEngineHint?: string;
 
   /**
    * Class name used for identification
@@ -504,6 +544,8 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
+      this._dbEngineHint = getDatabaseTypeHint(this.options.db);
+
       if (
         this.options._reuseInitializedDb &&
         typeof this.options.db === 'object' &&
@@ -771,28 +813,45 @@ export class SmrtClass {
     }
 
     const beginTransaction = this._db.beginTransaction;
+    const transaction = (this._db as TransactionCapableDatabase).transaction;
     const shouldUsePostgresLock =
-      detectEngine(getDatabaseUrl(this._db)) === 'postgres' &&
-      typeof beginTransaction === 'function';
+      detectEngine(getDatabaseUrl(this._db), this._dbEngineHint) === 'postgres';
 
     if (!shouldUsePostgresLock) {
       return callback(this._db);
     }
 
-    const tx = await beginTransaction.call(this._db);
-    if (!tx) {
-      throw new Error('Database transaction could not be started');
+    if (typeof beginTransaction === 'function') {
+      const tx = await beginTransaction.call(this._db);
+      if (!tx) {
+        throw new Error('Database transaction could not be started');
+      }
+
+      try {
+        await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+        const result = await callback(tx);
+        await tx.commit();
+        return result;
+      } catch (error) {
+        await this.rollbackSystemTableBootstrap(tx);
+        throw error;
+      }
     }
 
-    try {
-      await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
-      const result = await callback(tx);
-      await tx.commit();
-      return result;
-    } catch (error) {
-      await this.rollbackSystemTableBootstrap(tx);
-      throw error;
+    if (typeof transaction === 'function') {
+      const runInTransaction = transaction.bind(this._db) as <R>(
+        callback: (tx: DatabaseInterface) => Promise<R>,
+      ) => Promise<R>;
+
+      return runInTransaction(async (tx) => {
+        await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+        return callback(tx);
+      });
     }
+
+    throw new Error(
+      'Postgres system table bootstrap requires a transaction-capable database adapter',
+    );
   }
 
   private async rollbackSystemTableBootstrap(
