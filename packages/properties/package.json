@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-properties",
-  "version": "0.23.3",
+  "version": "0.23.4",
   "description": "Digital property and zone management models for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",

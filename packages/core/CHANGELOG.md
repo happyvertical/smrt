@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.4
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - rename STI data repair flag (#1174) (cli)
+  - @happyvertical/smrt-scanner@0.23.4
+  - @happyvertical/smrt-config@0.23.4
+  - @happyvertical/smrt-types@0.23.4
+
 ## 0.23.3
 
 ### Patch Changes
