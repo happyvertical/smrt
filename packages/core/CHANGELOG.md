@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - serialize postgres system table bootstrap (#1173) (core)
+  - @happyvertical/smrt-scanner@0.23.6
+  - @happyvertical/smrt-config@0.23.6
+  - @happyvertical/smrt-types@0.23.6
+
 ## 0.23.5
 
 ### Patch Changes

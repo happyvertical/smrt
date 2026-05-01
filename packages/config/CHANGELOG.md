@@ -1,5 +1,7 @@
 # @happyvertical/smrt-config
 
+## 0.23.6
+
 ## 0.23.5
 
 ## 0.23.4
