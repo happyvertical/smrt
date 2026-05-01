@@ -5,29 +5,30 @@ packages:
 catalog:
   '@aws-sdk/client-sqs': ^3.1038.0
   '@google-cloud/tasks': ^6.2.1
-  '@happyvertical/ai': ^0.72.1
-  '@happyvertical/cache': ^0.72.1
-  '@happyvertical/documents': ^0.72.1
-  '@happyvertical/email': ^0.72.1
-  '@happyvertical/encryption': ^0.72.1
-  '@happyvertical/files': ^0.72.1
-  '@happyvertical/geo': ^0.72.1
-  '@happyvertical/images': ^0.72.1
-  '@happyvertical/jobs': ^0.72.1
-  '@happyvertical/json': ^0.72.1
-  '@happyvertical/logger': ^0.72.1
-  '@happyvertical/messages': ^0.72.1
+  '@happyvertical/ai': ^0.73.0
+  '@happyvertical/cache': ^0.73.0
+  '@happyvertical/documents': ^0.73.0
+  '@happyvertical/email': ^0.73.0
+  '@happyvertical/encryption': ^0.73.0
+  '@happyvertical/files': ^0.73.0
+  '@happyvertical/geo': ^0.73.0
+  '@happyvertical/images': ^0.73.0
+  '@happyvertical/jobs': ^0.73.0
+  '@happyvertical/json': ^0.73.0
+  '@happyvertical/logger': ^0.73.0
+  '@happyvertical/messages': ^0.73.0
   '@happyvertical/ocr': ^0.60.29
   '@happyvertical/pdf': ^0.62.20
-  '@happyvertical/projects': ^0.72.1
-  '@happyvertical/repos': ^0.72.1
-  '@happyvertical/secrets': ^0.72.1
+  '@happyvertical/projects': ^0.73.0
+  '@happyvertical/repos': ^0.73.0
+  '@happyvertical/secrets': ^0.73.0
   '@happyvertical/spider': ^0.60.9
-  '@happyvertical/sql': ^0.72.1
-  '@happyvertical/utils': ^0.72.1
+  '@happyvertical/sql': ^0.73.0
+  '@happyvertical/utils': ^0.73.0
   '@sentry/node': ^10.51.0
   bull: ^4.16.5
   bullmq: ^5.76.4
   jimp: ^1.6.1
   sharp: ^0.34.5
+
 
