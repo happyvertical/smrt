@@ -105,6 +105,22 @@ export {
   type CharacterOwnedAssetOptions,
 } from './character-owned-asset.js';
 export {
+  type MediaBundleFileDescriptor,
+  type MediaBundleGpsTrackPoint,
+  type MediaBundleInspection,
+  type MediaBundleInspectionLike,
+  type MediaBundleNormalizedMetadata,
+  type MediaBundleSupportFileInspection,
+  type MediaSupportFileVisibility,
+  type PersistMediaBundleAssetInput,
+  type PersistMediaBundleAssociationInput,
+  type PersistMediaBundleInspectionOptions,
+  type PersistMediaBundleInspectionResult,
+  type PersistMediaBundleMetadataArtifactInput,
+  persistMediaBundleInspection,
+  type SmrtMediaBundlePersistenceAdapter,
+} from './media-bundle-persistence.js';
+export {
   PerformerAsset,
   type PerformerAssetOptions,
   type PerformerAssetRole,
@@ -124,7 +140,6 @@ export {
   SceneOwnedAsset,
   type SceneOwnedAssetOptions,
 } from './scene-owned-asset.js';
-
 export {
   VideoCompositionAsset,
   type VideoCompositionAssetOptions,
