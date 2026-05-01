@@ -1,5 +1,16 @@
 # @happyvertical/smrt-social
 
+## 0.23.7
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.23.7
+  - @happyvertical/smrt-content@0.23.7
+  - @happyvertical/smrt-tenancy@0.23.7
+  - @happyvertical/smrt-video@0.23.7
+  - @happyvertical/smrt-config@0.23.7
+
 ## 0.23.6
 
 ### Patch Changes
