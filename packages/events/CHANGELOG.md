@@ -1,5 +1,53 @@
 # @happyvertical/smrt-events
 
+## 0.23.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.23.5
+  - @happyvertical/smrt-assets@0.23.5
+  - @happyvertical/smrt-places@0.23.5
+  - @happyvertical/smrt-profiles@0.23.5
+  - @happyvertical/smrt-tenancy@0.23.5
+  - @happyvertical/smrt-types@0.23.5
+
+## 0.23.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.23.4
+  - @happyvertical/smrt-assets@0.23.4
+  - @happyvertical/smrt-places@0.23.4
+  - @happyvertical/smrt-profiles@0.23.4
+  - @happyvertical/smrt-tenancy@0.23.4
+  - @happyvertical/smrt-types@0.23.4
+
+## 0.23.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.23.3
+  - @happyvertical/smrt-assets@0.23.3
+  - @happyvertical/smrt-places@0.23.3
+  - @happyvertical/smrt-profiles@0.23.3
+  - @happyvertical/smrt-tenancy@0.23.3
+  - @happyvertical/smrt-types@0.23.3
+
+## 0.23.2
+
+### Patch Changes
+
+- Updated dependencies [6d6e8f5]
+  - @happyvertical/smrt-core@0.23.2
+  - @happyvertical/smrt-assets@0.23.2
+  - @happyvertical/smrt-places@0.23.2
+  - @happyvertical/smrt-profiles@0.23.2
+  - @happyvertical/smrt-tenancy@0.23.2
+  - @happyvertical/smrt-types@0.23.2
+
 ## 0.23.1
 
 ### Patch Changes

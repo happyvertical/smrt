@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.23.1",
+  "version": "0.23.5",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",
@@ -74,7 +74,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "CLAUDE.md"
   ],
   "scripts": {
     "build": "svelte-package -i src --tsconfig tsconfig.svelte.json",

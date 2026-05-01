@@ -1,5 +1,47 @@
 # @happyvertical/smrt-core
 
+## 0.23.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - publish CLAUDE.md to npm (#1179) (ledgers,smrt-svelte)
+  - @happyvertical/smrt-scanner@0.23.5
+  - @happyvertical/smrt-config@0.23.5
+  - @happyvertical/smrt-types@0.23.5
+
+## 0.23.4
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - rename STI data repair flag (#1174) (cli)
+  - @happyvertical/smrt-scanner@0.23.4
+  - @happyvertical/smrt-config@0.23.4
+  - @happyvertical/smrt-types@0.23.4
+
+## 0.23.3
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - handle wrapped system index races (#1176) (core)
+  - @happyvertical/smrt-scanner@0.23.3
+  - @happyvertical/smrt-config@0.23.3
+  - @happyvertical/smrt-types@0.23.3
+
+## 0.23.2
+
+### Patch Changes
+
+- 6d6e8f5: Avoid duplicate generated virtual client keys when an object and collection share the same REST collection name.
+  - @happyvertical/smrt-scanner@0.23.2
+  - @happyvertical/smrt-config@0.23.2
+  - @happyvertical/smrt-types@0.23.2
+
 ## 0.23.1
 
 ### Patch Changes

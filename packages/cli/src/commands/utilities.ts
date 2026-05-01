@@ -1082,10 +1082,15 @@ export default testManifest;
           'Force re-apply even if already applied (skip checksum validation)',
         default: false,
       },
-      'upgrade-sti': {
+      'repair-data': {
         type: 'boolean',
         description:
-          'Safely upgrade STI discriminators from simple class names to qualified names (@pkg:Class)',
+          'Apply safe data repairs after schema migrations (currently legacy STI discriminator rows)',
+        default: false,
+      },
+      'upgrade-sti': {
+        type: 'boolean',
+        description: '[Deprecated] Use --repair-data instead',
         default: false,
       },
       'drop-indexes': {
@@ -1248,6 +1253,16 @@ export default testManifest;
         const applySchemaMigrations = shouldApplySchemaMigrations({
           dryRun: isDryRun,
         });
+        const repairData = Boolean(
+          options['repair-data'] || options['upgrade-sti'],
+        );
+
+        if (options['upgrade-sti']) {
+          console.warn(
+            '⚠️  --upgrade-sti is deprecated and will be removed in a future release.',
+          );
+          console.warn('   Use --repair-data instead.\n');
+        }
 
         console.log('🔍 Comparing schemas...\n');
 
@@ -1387,68 +1402,76 @@ export default testManifest;
         // 11. Preview or execute migrations
         // Note: SQL statements come from SchemaComparer via change.sql
         if (isDryRun) {
-          if (schemaUpToDate && !options['upgrade-sti']) {
+          if (schemaUpToDate && !repairData) {
             console.log(
               '✅ Database schema is up to date - no migrations needed\n',
             );
             return;
           }
 
-          console.log('📋 Migration Preview (not executed):\n');
+          if (schemaUpToDate) {
+            console.log(
+              '✅ Database schema is up to date - no schema migrations needed\n',
+            );
+          } else {
+            console.log('📋 Migration Preview (not executed):\n');
 
-          const columnMigrations = migrations.filter(
-            (m) => m.type === 'add_column',
-          );
-          const indexMigrations = migrations.filter(
-            (m) => m.type === 'add_index',
-          );
-          const indexDrops = migrations.filter((m) => m.type === 'drop_index');
+            const columnMigrations = migrations.filter(
+              (m) => m.type === 'add_column',
+            );
+            const indexMigrations = migrations.filter(
+              (m) => m.type === 'add_index',
+            );
+            const indexDrops = migrations.filter(
+              (m) => m.type === 'drop_index',
+            );
 
-          if (columnMigrations.length > 0) {
-            console.log(`  📊 Columns to add: ${columnMigrations.length}`);
-            for (const m of columnMigrations) {
-              console.log(
-                `     ${m.tableName}.${m.column?.name} (${m.column?.type})`,
-              );
+            if (columnMigrations.length > 0) {
+              console.log(`  📊 Columns to add: ${columnMigrations.length}`);
+              for (const m of columnMigrations) {
+                console.log(
+                  `     ${m.tableName}.${m.column?.name} (${m.column?.type})`,
+                );
+              }
+              console.log();
+            }
+
+            if (indexDrops.length > 0) {
+              // Drops are listed before adds because that's the execution
+              // order (a shape-drift recreate emits drop+add for the same
+              // name; the drop must precede the add).
+              console.log(`  🗑️  Indexes to drop: ${indexDrops.length}`);
+              for (const m of indexDrops) {
+                console.log(`     ${m.indexName} on ${m.tableName}`);
+              }
+              console.log();
+            }
+
+            if (indexMigrations.length > 0) {
+              console.log(`  🗂️  Indexes to add: ${indexMigrations.length}`);
+              for (const m of indexMigrations) {
+                console.log(`     ${m.index?.name} on ${m.tableName}`);
+              }
+              console.log();
+            }
+
+            console.log('  SQL Statements:\n');
+            for (const m of migrations) {
+              const sqlStatements = m.sqlStatements ?? (m.sql ? [m.sql] : []);
+              for (const sql of sqlStatements) {
+                console.log(`    ${sql};`);
+              }
             }
             console.log();
           }
 
-          if (indexDrops.length > 0) {
-            // Drops are listed before adds because that's the execution
-            // order (a shape-drift recreate emits drop+add for the same
-            // name; the drop must precede the add).
-            console.log(`  🗑️  Indexes to drop: ${indexDrops.length}`);
-            for (const m of indexDrops) {
-              console.log(`     ${m.indexName} on ${m.tableName}`);
-            }
-            console.log();
-          }
-
-          if (indexMigrations.length > 0) {
-            console.log(`  🗂️  Indexes to add: ${indexMigrations.length}`);
-            for (const m of indexMigrations) {
-              console.log(`     ${m.index?.name} on ${m.tableName}`);
-            }
-            console.log();
-          }
-
-          console.log('  SQL Statements:\n');
-          for (const m of migrations) {
-            const sqlStatements = m.sqlStatements ?? (m.sql ? [m.sql] : []);
-            for (const sql of sqlStatements) {
-              console.log(`    ${sql};`);
-            }
-          }
-          console.log();
-
-          if (!options['upgrade-sti']) {
+          if (!repairData) {
             console.log('✅ Dry-run complete (no changes made)');
             console.log('   Run without --dry-run to apply migrations\n');
             return;
           }
-          // If --upgrade-sti is requested, skip schema execution and continue
-          // to the STI upgrade section, which handles its own dry-run mode.
+          // Data repair also supports dry-run mode, so continue into that
+          // section after previewing schema changes.
         }
 
         // 13. Execute migrations with tracking
@@ -1570,16 +1593,16 @@ export default testManifest;
           }
         }
 
-        if (schemaUpToDate && !options['upgrade-sti']) {
+        if (schemaUpToDate && !repairData) {
           console.log(
             '✅ Database schema is up to date - no migrations needed\n',
           );
         }
 
-        // 13.5 Handle --upgrade-sti flag for STI discriminator data repair
-        if (options['upgrade-sti']) {
+        // 13.5 Handle safe data repair requested via --repair-data
+        if (repairData) {
           console.log(
-            '\n🔄 Upgrading STI discriminators to qualified names...\n',
+            '\n🔄 Repairing STI discriminators to qualified names...\n',
           );
 
           // Get unique table names from initialization order
@@ -1602,7 +1625,7 @@ export default testManifest;
 
           if (stiTables.length === 0) {
             console.log(
-              '  No STI tables found - skipping discriminator upgrade\n',
+              '  No STI tables found - skipping discriminator repair\n',
             );
           } else {
             if (options.verbose) {
@@ -1710,7 +1733,7 @@ export default testManifest;
             console.log();
             if (stiErrorCount > 0) {
               console.log(
-                `⚠️  STI upgrade completed with errors: ${stiSuccessCount} row(s) upgraded, ${stiErrorCount} conflict/error(s)`,
+                `⚠️  STI repair completed with errors: ${stiSuccessCount} row(s) repaired, ${stiErrorCount} conflict/error(s)`,
               );
               if (stiSkippedCount > 0) {
                 console.log(
@@ -1723,7 +1746,7 @@ export default testManifest;
               );
             } else {
               console.log(
-                `✅ Successfully upgraded ${stiSuccessCount} STI discriminator row(s)`,
+                `✅ Successfully repaired ${stiSuccessCount} STI discriminator row(s)`,
               );
               if (stiSkippedCount > 0) {
                 console.log(
@@ -1734,8 +1757,8 @@ export default testManifest;
           }
         }
 
-        // 14. Report summary (only for schema migrations, not STI upgrades)
-        // STI upgrades have their own summary printed above
+        // 14. Report summary (only for schema migrations, not data repairs)
+        // Data repairs have their own summary printed above.
         if (
           applySchemaMigrations &&
           (migrations.length > 0 || errorCount > 0 || skippedCount > 0)

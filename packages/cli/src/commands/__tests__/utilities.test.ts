@@ -94,6 +94,22 @@ describe('utilities', () => {
     expect(vitestEntrypoint).toMatch(/vitest[\\/]vitest\.mjs$/);
   });
 
+  it('exposes --repair-data for db:migrate data repairs and keeps --upgrade-sti deprecated', () => {
+    const migrateOptions = utilityCommands['db:migrate'].options;
+
+    expect(migrateOptions?.['repair-data']).toMatchObject({
+      type: 'boolean',
+      default: false,
+    });
+    expect(migrateOptions?.['repair-data'].description).toContain(
+      'safe data repairs',
+    );
+    expect(migrateOptions?.['upgrade-sti'].description).toContain('Deprecated');
+    expect(migrateOptions?.['upgrade-sti'].description).toContain(
+      '--repair-data',
+    );
+  });
+
   it('doctor reports missing consumer registrations for projects with external SMRT dependencies', async () => {
     const projectDir = await mkdtemp(
       resolve(process.cwd(), '.tmp-smrt-doctor-'),

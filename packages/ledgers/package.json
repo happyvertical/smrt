@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ledgers",
-  "version": "0.23.1",
+  "version": "0.23.5",
   "description": "Double-entry accounting ledger for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,7 +14,8 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "CLAUDE.md"
   ],
   "scripts": {
     "build": "vite build --mode library",

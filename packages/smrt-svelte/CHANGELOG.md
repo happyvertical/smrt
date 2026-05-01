@@ -1,5 +1,45 @@
 # @happyvertical/smrt-svelte
 
+## 0.23.5
+
+### Patch Changes
+
+- @happyvertical/smrt-agents@0.23.5
+- @happyvertical/smrt-jobs@0.23.5
+- @happyvertical/smrt-profiles@0.23.5
+- @happyvertical/smrt-users@0.23.5
+- @happyvertical/smrt-types@0.23.5
+
+## 0.23.4
+
+### Patch Changes
+
+- @happyvertical/smrt-agents@0.23.4
+- @happyvertical/smrt-jobs@0.23.4
+- @happyvertical/smrt-profiles@0.23.4
+- @happyvertical/smrt-users@0.23.4
+- @happyvertical/smrt-types@0.23.4
+
+## 0.23.3
+
+### Patch Changes
+
+- @happyvertical/smrt-agents@0.23.3
+- @happyvertical/smrt-jobs@0.23.3
+- @happyvertical/smrt-profiles@0.23.3
+- @happyvertical/smrt-users@0.23.3
+- @happyvertical/smrt-types@0.23.3
+
+## 0.23.2
+
+### Patch Changes
+
+- @happyvertical/smrt-agents@0.23.2
+- @happyvertical/smrt-jobs@0.23.2
+- @happyvertical/smrt-profiles@0.23.2
+- @happyvertical/smrt-users@0.23.2
+- @happyvertical/smrt-types@0.23.2
+
 ## 0.23.1
 
 ### Patch Changes
