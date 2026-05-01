@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.8
+
+### Patch Changes
+
+- ### Features
+
+  - add media bundle persistence helpers (#1182) (media)
+  - @happyvertical/smrt-scanner@0.23.8
+  - @happyvertical/smrt-config@0.23.8
+  - @happyvertical/smrt-types@0.23.8
+
 ## 0.23.7
 
 ### Patch Changes
