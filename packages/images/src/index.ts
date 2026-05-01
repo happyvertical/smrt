@@ -19,6 +19,21 @@ export { ImageEditor } from './editor';
 // Model (moved from smrt-assets)
 export { Image } from './image';
 export { ImageCollection } from './images';
+export {
+  type ImageMediaBundleFileDescriptor,
+  type ImageMediaBundleGpsTrackPoint,
+  type ImageMediaBundleInspectionLike,
+  type ImageMediaBundleNormalizedMetadata,
+  type ImageMediaBundleSupportFileInspection,
+  type MediaSupportFileVisibility,
+  type PersistImageMediaBundleAssetInput,
+  type PersistImageMediaBundleAssociationInput,
+  type PersistImageMediaBundleInspectionOptions,
+  type PersistImageMediaBundleInspectionResult,
+  type PersistImageMediaBundleMetadataArtifactInput,
+  persistImageMediaBundleInspection,
+  type SmrtImageMediaBundlePersistenceAdapter,
+} from './media-bundle-persistence';
 export { ImageMetadataExtractor } from './metadata';
 export { ImageSearch } from './search';
 // Types
