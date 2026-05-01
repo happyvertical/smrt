@@ -14,7 +14,11 @@ import type {
   SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from '@happyvertical/smrt-types';
-import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import {
+  type DatabaseInterface,
+  getDatabase,
+  type TransactionHandle,
+} from '@happyvertical/sql';
 import {
   AiUsageCollector,
   AiUsagePersistenceHandler,
@@ -28,9 +32,28 @@ import type {
 } from './config.js';
 import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
+import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import { ensureLegacySystemTableCompatibility } from './system/compatibility.js';
 import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
+
+const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
+  "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
+
+type DatabaseWithConfig = DatabaseInterface & {
+  config?: {
+    type?: string;
+    url?: string;
+  };
+  type?: string;
+};
+
+type TransactionCapableDatabase = DatabaseInterface & {
+  transaction?: <T>(
+    this: DatabaseInterface,
+    callback: (tx: DatabaseInterface) => Promise<T>,
+  ) => Promise<T>;
+};
 
 interface ResolvedAiUsageConfig {
   enabled: boolean;
@@ -67,6 +90,41 @@ function firstNumber(...candidates: unknown[]): number | undefined {
   return candidates.find((candidate): candidate is number => {
     return typeof candidate === 'number';
   });
+}
+
+function getDatabaseUrl(db: DatabaseInterface): string {
+  const dbWithConfig = db as DatabaseWithConfig;
+  return db.url || dbWithConfig.config?.url || '';
+}
+
+function getDatabaseTypeHint(
+  config: DatabaseConfig | undefined,
+): string | undefined {
+  if (!config || typeof config === 'string') {
+    return undefined;
+  }
+
+  const configWithType = config as DatabaseWithConfig & {
+    client?: unknown;
+  };
+
+  if (typeof configWithType.type === 'string') {
+    return configWithType.type;
+  }
+
+  if (typeof configWithType.config?.type === 'string') {
+    return configWithType.config.type;
+  }
+
+  if ('query' in configWithType && typeof configWithType.query === 'function') {
+    return undefined;
+  }
+
+  if ('client' in configWithType && configWithType.client) {
+    return 'postgres';
+  }
+
+  return undefined;
 }
 
 function normalizeIncomingAiUsageTokens(
@@ -365,6 +423,7 @@ export class SmrtClass {
    * Database interface for data persistence
    */
   protected _db!: DatabaseInterface;
+  private _dbEngineHint?: string;
 
   /**
    * Class name used for identification
@@ -485,6 +544,8 @@ export class SmrtClass {
     }
 
     if (this.options.db) {
+      this._dbEngineHint = getDatabaseTypeHint(this.options.db);
+
       if (
         this.options._reuseInitializedDb &&
         typeof this.options.db === 'object' &&
@@ -697,7 +758,7 @@ export class SmrtClass {
   private async ensureSystemTables(): Promise<void> {
     if (!this._db) return;
 
-    const dbUrl = this._db.url;
+    const dbUrl = getDatabaseUrl(this._db);
 
     // Some databases share URLs but are different instances:
     // - :memory: databases (SQLite/DuckDB in-memory)
@@ -723,92 +784,10 @@ export class SmrtClass {
     }
 
     try {
-      // Fast path: check if system tables already exist by querying _smrt_migrations.
-      // This avoids 29 sequential DDL round-trips on high-latency connections
-      // (e.g. remote Postgres over Tailscale where each round-trip is ~650ms).
-      // If the migrations table doesn't exist, the query will throw and we fall
-      // through to the full DDL path.
-      const version = SMRT_SCHEMA_VERSION;
-      try {
-        const rows = await this._db.query(
-          `SELECT 1 FROM _smrt_migrations WHERE version = '${version}' LIMIT 1`,
-        );
-        if (getQueryRows(rows).length > 0) {
-          // System tables already at current version — skip DDL
-          if (useInstanceTracking) {
-            SmrtClass._systemTablesInitialized.add(this._db);
-          } else {
-            SmrtClass._systemTablesInitializedByUrl.add(dbUrl);
-          }
-          return;
-        }
-      } catch {
-        // _smrt_migrations doesn't exist yet — fall through to create everything
-      }
-
-      // Older installs can have a subset of system columns already created.
-      // Upgrade those tables before replaying idempotent DDL so index creation
-      // does not fail on missing legacy columns.
-      await ensureLegacySystemTableCompatibility(this._db);
-
-      // Create all system tables
-      // Split multi-statement SQL into individual statements to avoid race conditions
-      // Each ALL_SYSTEM_TABLES entry contains CREATE TABLE + CREATE INDEX statements
-      const allStatements: string[] = [];
-      for (const multiStatementSQL of ALL_SYSTEM_TABLES) {
-        // Split on semicolon, filter out empty statements
-        const statements = multiStatementSQL
-          .split(';')
-          .map((s) => s.trim())
-          .filter((s) => s.length > 0);
-        allStatements.push(...statements);
-      }
-
-      // Use db.query() for system tables — they use CREATE TABLE/INDEX IF NOT EXISTS
-      // which databases handle natively in a single round-trip. The syncSchema()
-      // approach does per-column existence checks (multiple round-trips per table)
-      // which is unnecessary for framework-owned system tables and extremely slow
-      // on high-latency connections (e.g. remote postgres over Tailscale).
-      for (const statement of allStatements) {
-        await this._db.query(statement);
-      }
-
-      // Record current schema version
-      // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)
-      const id = crypto.randomUUID();
-      const description = 'Initial SMRT system tables';
-      await this._db.execute`
-        INSERT INTO _smrt_migrations (id, version, description)
-        VALUES (${id}, ${version}, ${description})
-        ON CONFLICT(version) DO NOTHING
-      `;
-
-      // Initialize native vector storage if configured
-      try {
-        const { ObjectRegistry } = await import('./registry.js');
-        const embeddingConfig = ObjectRegistry.getProjectEmbeddingConfig();
-        if (embeddingConfig?.storage === 'native') {
-          const { EmbeddingStorage } = await import('./embeddings/storage.js');
-          const vector = this._db.vector;
-          if (vector) {
-            const dimensions = embeddingConfig.dimensions || 768;
-            await EmbeddingStorage.ensureVectorStorage(
-              this._db,
-              dimensions,
-              vector,
-            );
-          } else {
-            console.warn(
-              '[smrt] Embedding storage set to "native" but database has no vector capability. Falling back to JSON storage.',
-            );
-          }
-        }
-      } catch (error) {
-        // Don't fail system table initialization for vector setup errors
-        console.warn(
-          `[smrt] Failed to initialize vector storage: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
+      await this.withSystemTableBootstrapLock((db) =>
+        this.bootstrapSystemTables(db),
+      );
+      await this.ensureNativeVectorStorage();
 
       // Mark as initialized using appropriate tracking mechanism
       if (useInstanceTracking) {
@@ -822,6 +801,157 @@ export class SmrtClass {
       throw new Error(
         `Failed to create system tables for ${dbInfo}: ${error instanceof Error ? error.message : String(error)}`,
         { cause: error },
+      );
+    }
+  }
+
+  private async withSystemTableBootstrapLock<T>(
+    callback: (db: DatabaseInterface) => Promise<T>,
+  ): Promise<T> {
+    if (!this._db) {
+      throw new Error('Database is not initialized');
+    }
+
+    const beginTransaction = this._db.beginTransaction;
+    const transaction = (this._db as TransactionCapableDatabase).transaction;
+    const shouldUsePostgresLock =
+      detectEngine(getDatabaseUrl(this._db), this._dbEngineHint) === 'postgres';
+
+    if (!shouldUsePostgresLock) {
+      return callback(this._db);
+    }
+
+    if (typeof beginTransaction === 'function') {
+      const tx = await beginTransaction.call(this._db);
+      if (!tx) {
+        throw new Error('Database transaction could not be started');
+      }
+
+      try {
+        await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+        const result = await callback(tx);
+        await tx.commit();
+        return result;
+      } catch (error) {
+        await this.rollbackSystemTableBootstrap(tx);
+        throw error;
+      }
+    }
+
+    if (typeof transaction === 'function') {
+      const runInTransaction = transaction.bind(this._db) as <R>(
+        callback: (tx: DatabaseInterface) => Promise<R>,
+      ) => Promise<R>;
+
+      return runInTransaction(async (tx) => {
+        await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+        return callback(tx);
+      });
+    }
+
+    throw new Error(
+      'Postgres system table bootstrap requires a transaction-capable database adapter',
+    );
+  }
+
+  private async rollbackSystemTableBootstrap(
+    tx: TransactionHandle,
+  ): Promise<void> {
+    try {
+      if (typeof tx.isActive !== 'function' || tx.isActive()) {
+        await tx.rollback();
+      }
+    } catch (rollbackError) {
+      console.warn(
+        `[smrt] Failed to rollback system table bootstrap transaction: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
+      );
+    }
+  }
+
+  private async bootstrapSystemTables(db: DatabaseInterface): Promise<void> {
+    // Fast path: check if system tables already exist by querying _smrt_migrations.
+    // This avoids 29 sequential DDL round-trips on high-latency connections
+    // (e.g. remote Postgres over Tailscale where each round-trip is ~650ms).
+    // For Postgres, this runs after acquiring the advisory lock so concurrent
+    // initializers can observe a completed bootstrap and skip replaying DDL.
+    const version = SMRT_SCHEMA_VERSION;
+    try {
+      const rows = await db.query(
+        `SELECT 1 FROM _smrt_migrations WHERE version = '${version}' LIMIT 1`,
+      );
+      if (getQueryRows(rows).length > 0) {
+        return;
+      }
+    } catch {
+      // _smrt_migrations doesn't exist yet — fall through to create everything
+    }
+
+    // Older installs can have a subset of system columns already created.
+    // Upgrade those tables before replaying idempotent DDL so index creation
+    // does not fail on missing legacy columns.
+    await ensureLegacySystemTableCompatibility(db);
+
+    // Create all system tables
+    // Split multi-statement SQL into individual statements to avoid race conditions
+    // Each ALL_SYSTEM_TABLES entry contains CREATE TABLE + CREATE INDEX statements
+    const allStatements: string[] = [];
+    for (const multiStatementSQL of ALL_SYSTEM_TABLES) {
+      // Split on semicolon, filter out empty statements
+      const statements = multiStatementSQL
+        .split(';')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      allStatements.push(...statements);
+    }
+
+    // Use db.query() for system tables — they use CREATE TABLE/INDEX IF NOT EXISTS
+    // which databases handle natively in a single round-trip. The syncSchema()
+    // approach does per-column existence checks (multiple round-trips per table)
+    // which is unnecessary for framework-owned system tables and extremely slow
+    // on high-latency connections (e.g. remote postgres over Tailscale).
+    for (const statement of allStatements) {
+      await db.query(statement);
+    }
+
+    // Record current schema version
+    // Use ON CONFLICT for DuckDB compatibility (not INSERT OR IGNORE)
+    const id = crypto.randomUUID();
+    const description = 'Initial SMRT system tables';
+    await db.execute`
+      INSERT INTO _smrt_migrations (id, version, description)
+      VALUES (${id}, ${version}, ${description})
+      ON CONFLICT(version) DO NOTHING
+    `;
+  }
+
+  private async ensureNativeVectorStorage(): Promise<void> {
+    if (!this._db) {
+      return;
+    }
+
+    try {
+      const { ObjectRegistry } = await import('./registry.js');
+      const embeddingConfig = ObjectRegistry.getProjectEmbeddingConfig();
+      if (embeddingConfig?.storage === 'native') {
+        const { EmbeddingStorage } = await import('./embeddings/storage.js');
+        const vector = this._db.vector;
+        if (vector) {
+          const dimensions = embeddingConfig.dimensions || 768;
+          await EmbeddingStorage.ensureVectorStorage(
+            this._db,
+            dimensions,
+            vector,
+          );
+        } else {
+          console.warn(
+            '[smrt] Embedding storage set to "native" but database has no vector capability. Falling back to JSON storage.',
+          );
+        }
+      }
+    } catch (error) {
+      // Don't fail system table initialization for vector setup errors
+      console.warn(
+        `[smrt] Failed to initialize vector storage: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
