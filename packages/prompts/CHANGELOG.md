@@ -1,5 +1,14 @@
 # @happyvertical/smrt-prompts
 
+## 0.22.20
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.23.5
+  - @happyvertical/smrt-tenancy@0.23.5
+  - @happyvertical/smrt-config@0.23.5
+
 ## 0.22.19
 
 ### Patch Changes

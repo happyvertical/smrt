@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - publish CLAUDE.md to npm (#1179) (ledgers,smrt-svelte)
+  - @happyvertical/smrt-scanner@0.23.5
+  - @happyvertical/smrt-config@0.23.5
+  - @happyvertical/smrt-types@0.23.5
+
 ## 0.23.4
 
 ### Patch Changes
