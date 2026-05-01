@@ -107,6 +107,7 @@ export {
 export {
   type MediaBundleFileDescriptor,
   type MediaBundleGpsTrackPoint,
+  type MediaBundleInspection,
   type MediaBundleInspectionLike,
   type MediaBundleNormalizedMetadata,
   type MediaBundleSupportFileInspection,

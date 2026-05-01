@@ -22,6 +22,7 @@ export { ImageCollection } from './images';
 export {
   type ImageMediaBundleFileDescriptor,
   type ImageMediaBundleGpsTrackPoint,
+  type ImageMediaBundleInspection,
   type ImageMediaBundleInspectionLike,
   type ImageMediaBundleNormalizedMetadata,
   type ImageMediaBundleSupportFileInspection,

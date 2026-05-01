@@ -64,6 +64,22 @@ export { AssetCollection } from './assets';
 export { Folder } from './folder';
 export { FolderCollection } from './folders';
 export {
+  type MediaBundleFileDescriptor,
+  type MediaBundleGpsTrackPoint,
+  type MediaBundleInspection,
+  type MediaBundleInspectionLike,
+  type MediaBundleNormalizedMetadata,
+  type MediaBundleSupportFileInspection,
+  type MediaSupportFileVisibility,
+  type PersistMediaBundleAssetInput,
+  type PersistMediaBundleAssociationInput,
+  type PersistMediaBundleInspectionOptions,
+  type PersistMediaBundleInspectionResult,
+  type PersistMediaBundleMetadataArtifactInput,
+  persistMediaBundleInspection,
+  type SmrtMediaBundlePersistenceAdapter,
+} from './media-bundle-persistence';
+export {
   type AssetOwnerCollection,
   type AssetOwnerRecord,
   addOwnedAssetFromCollection,
