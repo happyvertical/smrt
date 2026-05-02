@@ -20,7 +20,22 @@ export { Content } from './content';
 export type { ContentAssetOptions } from './content-asset';
 export { ContentAsset } from './content-asset';
 export { ContentAssetCollection } from './content-assets';
-export { contentEditorSessionPrompt } from './content-chat-prompts';
+export {
+  contentEditorInteractionPrompt,
+  contentEditorSessionPrompt,
+} from './content-chat-prompts';
+export type {
+  ContentChatAISelection,
+  ContentEditorInteractionInput,
+} from './content-chat-session';
+export {
+  buildContentChatModelUpdates,
+  buildContentEditorInteractionVariables,
+  buildContentEditorSessionContext,
+  getContentChatAISelection,
+  inferProviderFromModel,
+  resolveContentChatModelSelection,
+} from './content-chat-session';
 export type {
   AppendContentContributionRevisionOptions,
   ApproveContentContributionOptions,
