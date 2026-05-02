@@ -222,6 +222,7 @@ export class FactCollection extends SmrtCollection<Fact> {
     options: {
       tenantId?: string | null;
       limit?: number;
+      offset?: number;
       minSimilarity?: number;
       includeSuperseded?: boolean;
       latestOnly?: boolean;
@@ -230,10 +231,17 @@ export class FactCollection extends SmrtCollection<Fact> {
     const {
       tenantId,
       limit = 25,
+      offset = 0,
       minSimilarity = 0.55,
       includeSuperseded = false,
       latestOnly = true,
     } = options;
+    const safeLimit = Number.isFinite(limit)
+      ? Math.max(1, Math.floor(limit))
+      : 25;
+    const safeOffset = Number.isFinite(offset)
+      ? Math.max(0, Math.floor(offset))
+      : 0;
 
     const baseList =
       tenantId === undefined || tenantId === null
@@ -253,23 +261,22 @@ export class FactCollection extends SmrtCollection<Fact> {
     );
 
     if (!query.trim()) {
-      const facts = tenantScoped.slice(0, limit);
       if (!latestOnly) {
-        return facts;
+        return tenantScoped.slice(safeOffset, safeOffset + safeLimit);
       }
 
       const latest = await Promise.all(
-        facts.map((fact) => this.getLatestInChain(fact.id as string)),
+        tenantScoped.map((fact) => this.getLatestInChain(fact.id as string)),
       );
       return [
         ...new Map(latest.map((fact) => [fact.id as string, fact])).values(),
-      ];
+      ].slice(safeOffset, safeOffset + safeLimit);
     }
 
     let matches: Fact[] = [];
     try {
       matches = await this.semanticSearch(query, {
-        limit,
+        limit: safeOffset + safeLimit,
         minSimilarity,
         where: includeSuperseded ? undefined : { status: 'active' },
       });
@@ -281,16 +288,14 @@ export class FactCollection extends SmrtCollection<Fact> {
       }
     } catch {
       const normalizedQuery = query.toLowerCase();
-      matches = tenantScoped
-        .filter((fact) => {
-          const haystack = `${fact.textRefined} ${fact.textRaw}`.toLowerCase();
-          return haystack.includes(normalizedQuery);
-        })
-        .slice(0, limit);
+      matches = tenantScoped.filter((fact) => {
+        const haystack = `${fact.textRefined} ${fact.textRaw}`.toLowerCase();
+        return haystack.includes(normalizedQuery);
+      });
     }
 
     if (!latestOnly) {
-      return matches;
+      return matches.slice(safeOffset, safeOffset + safeLimit);
     }
 
     const latest = await Promise.all(
@@ -299,7 +304,7 @@ export class FactCollection extends SmrtCollection<Fact> {
 
     return [
       ...new Map(latest.map((fact) => [fact.id as string, fact])).values(),
-    ];
+    ].slice(safeOffset, safeOffset + safeLimit);
   }
 
   /**

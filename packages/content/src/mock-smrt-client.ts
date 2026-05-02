@@ -485,6 +485,7 @@ class ApiClient {
       query = '',
       options: {
         limit?: number;
+        offset?: number;
         minSimilarity?: number;
         includeSuperseded?: boolean;
         latestOnly?: boolean;
@@ -494,6 +495,7 @@ class ApiClient {
         `/contents/facts${toQueryString({
           q: query,
           limit: options.limit,
+          offset: options.offset,
           minSimilarity: options.minSimilarity,
           includeSuperseded: options.includeSuperseded,
           latestOnly: options.latestOnly,

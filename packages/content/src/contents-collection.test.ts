@@ -44,6 +44,7 @@ describe('Contents collection helpers', () => {
       contents.browseFacts({
         q: 'bridge',
         limit: '5',
+        offset: '10',
         minSimilarity: '0.75',
         includeSuperseded: 'true',
         latestOnly: 'false',
@@ -57,6 +58,7 @@ describe('Contents collection helpers', () => {
 
     expect(browseCatalog).toHaveBeenCalledWith('bridge', {
       limit: 5,
+      offset: 10,
       minSimilarity: 0.75,
       includeSuperseded: true,
       latestOnly: false,

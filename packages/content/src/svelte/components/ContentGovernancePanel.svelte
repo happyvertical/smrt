@@ -40,6 +40,8 @@ interface ReviewAction {
   instructions?: string;
 }
 
+const FACT_CATALOG_PAGE_SIZE = 12;
+
 let {
   apiBaseUrl = '/api/v1',
   contentId = 'new',
@@ -74,6 +76,9 @@ let activeReviewProfileKey = $state('');
 let activeCustomPolicyKey = $state('');
 
 let catalogLoading = $state(false);
+let catalogPage = $state(1);
+let catalogHasNextPage = $state(false);
+let catalogBrowseQuery = $state('');
 let syncingFacts = $state(false);
 let workflowLoading = $state(false);
 let reviewBusy = $state<string | null>(null);
@@ -148,6 +153,12 @@ const activeCustomPolicy = $derived(
 );
 const customReviewButtonLabel = $derived(
   activeCustomPolicy?.label || customReviewLabel,
+);
+const factCatalogRangeStart = $derived(
+  catalogFacts.length > 0 ? (catalogPage - 1) * FACT_CATALOG_PAGE_SIZE + 1 : 0,
+);
+const factCatalogRangeEnd = $derived(
+  catalogFacts.length > 0 ? factCatalogRangeStart + catalogFacts.length - 1 : 0,
 );
 
 $effect(() => {
@@ -452,9 +463,13 @@ function getReviewActionBusyKey(action: ReviewAction) {
   return action.policyKey || action.kind;
 }
 
-async function searchFacts(query = factQuery) {
+async function searchFacts(query = factQuery, page = 1) {
+  const nextPage = Math.max(1, Math.floor(page));
   if (governanceState && !governanceState.factLinkingEnabled) {
     catalogFacts = [];
+    catalogPage = 1;
+    catalogHasNextPage = false;
+    catalogBrowseQuery = '';
     return;
   }
 
@@ -463,15 +478,42 @@ async function searchFacts(query = factQuery) {
 
   try {
     const response = await client.contents.browseFacts(query, {
-      limit: 12,
+      limit: FACT_CATALOG_PAGE_SIZE + 1,
+      offset: (nextPage - 1) * FACT_CATALOG_PAGE_SIZE,
       latestOnly: true,
     });
-    catalogFacts = response.data;
+    const rows = response.data || [];
+    catalogFacts = rows.slice(0, FACT_CATALOG_PAGE_SIZE);
+    catalogPage = nextPage;
+    catalogHasNextPage = rows.length > FACT_CATALOG_PAGE_SIZE;
+    catalogBrowseQuery = query;
   } catch (err: any) {
+    catalogFacts = [];
+    catalogHasNextPage = false;
     catalogError = err.message || 'Failed to browse facts';
   } finally {
     catalogLoading = false;
   }
+}
+
+function searchFactsFirstPage() {
+  void searchFacts(factQuery, 1);
+}
+
+function browsePreviousFacts() {
+  if (catalogPage <= 1 || catalogLoading) {
+    return;
+  }
+
+  void searchFacts(catalogBrowseQuery, catalogPage - 1);
+}
+
+function browseNextFacts() {
+  if (!catalogHasNextPage || catalogLoading) {
+    return;
+  }
+
+  void searchFacts(catalogBrowseQuery, catalogPage + 1);
 }
 
 async function syncFactsIfSaved(nextFacts: FactData[]) {
@@ -887,7 +929,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           bind:value={factQuery}
           placeholder="Browse app facts before authoring"
         />
-        <button type="button" onclick={() => void searchFacts()}>
+        <button type="button" onclick={searchFactsFirstPage}>
           Search
         </button>
       </div>
@@ -948,6 +990,35 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                 </button>
               </div>
             {/each}
+          </div>
+        {/if}
+
+        {#if catalogFacts.length > 0 || catalogPage > 1}
+          <div class="fact-pagination" aria-label="Fact catalog pagination">
+            <span>
+              Page {catalogPage}
+              {#if catalogFacts.length > 0}
+                · {factCatalogRangeStart}-{factCatalogRangeEnd}
+              {/if}
+            </span>
+            <div class="fact-pagination__actions">
+              <button
+                type="button"
+                class="secondary-button"
+                disabled={catalogLoading || catalogPage <= 1}
+                onclick={browsePreviousFacts}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                class="secondary-button"
+                disabled={catalogLoading || !catalogHasNextPage}
+                onclick={browseNextFacts}
+              >
+                Next
+              </button>
+            </div>
           </div>
         {/if}
       </div>
@@ -1511,11 +1582,20 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .fact-search,
+  .fact-pagination,
+  .fact-pagination__actions,
   .review-actions,
   .version-card__footer {
     display: flex;
     gap: 0.75rem;
     align-items: center;
+  }
+
+  .fact-pagination {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.85rem;
   }
 
   .fact-search input,
@@ -1553,7 +1633,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .fact-search button:disabled,
-  .review-actions button:disabled {
+  .review-actions button:disabled,
+  .fact-pagination button:disabled {
     cursor: not-allowed;
     opacity: 0.65;
   }

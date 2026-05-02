@@ -1546,6 +1546,7 @@ export class Content
     query = '',
     options: {
       limit?: number;
+      offset?: number;
       minSimilarity?: number;
       includeSuperseded?: boolean;
       latestOnly?: boolean;

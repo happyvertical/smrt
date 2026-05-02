@@ -148,6 +148,7 @@ export class Contents extends SmrtCollection<Content> {
       q?: string;
       query?: string;
       limit?: number | string;
+      offset?: number | string;
       minSimilarity?: number | string;
       includeSuperseded?: boolean | string;
       latestOnly?: boolean | string;
@@ -159,6 +160,8 @@ export class Contents extends SmrtCollection<Content> {
       const query = options.query || options.q || '';
       const limit =
         options.limit !== undefined ? Number(options.limit) : undefined;
+      const offset =
+        options.offset !== undefined ? Number(options.offset) : undefined;
       const minSimilarity =
         options.minSimilarity !== undefined
           ? Number(options.minSimilarity)
@@ -173,6 +176,7 @@ export class Contents extends SmrtCollection<Content> {
 
       const results = await facts.browseCatalog(query, {
         limit: Number.isFinite(limit) ? limit : undefined,
+        offset: Number.isFinite(offset) ? offset : undefined,
         minSimilarity: Number.isFinite(minSimilarity)
           ? minSimilarity
           : undefined,
