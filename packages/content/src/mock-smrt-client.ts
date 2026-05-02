@@ -67,6 +67,7 @@ export interface FactEvidenceData {
   id?: string;
   factId?: string;
   evidenceKey?: string;
+  status?: FactEvidenceStatus;
   sourceKind?: string | null;
   sourceId?: string | null;
   sourceUrl?: string | null;
@@ -80,6 +81,13 @@ export interface FactEvidenceData {
   createdAt?: string;
   updatedAt?: string;
 }
+
+export type FactEvidenceStatus =
+  | 'supports'
+  | 'contradicts'
+  | 'unclear'
+  | 'irrelevant'
+  | 'invalid';
 
 export type FactAuditSupportStatus =
   | 'supported'
@@ -112,6 +120,7 @@ export interface FactAuditResourceClaimData {
   sourceTitle?: string | null;
   locator?: string | null;
   quote?: string | null;
+  status?: FactEvidenceStatus;
   confidence?: number | null;
   evidence?: FactEvidenceData[];
 }
@@ -129,6 +138,9 @@ export interface FactAuditStateData {
     referenceFactsExtracted: number;
     warnings: string[];
   };
+  evidenceRepair?: Record<string, any>;
+  claimRecheck?: Record<string, any>;
+  evidenceStatusUpdate?: Record<string, any>;
 }
 
 export interface ContentReviewFindingData {
@@ -596,6 +608,49 @@ class ApiClient {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+
+    repairFactEvidence: async (
+      id: string,
+      data: Record<string, any> = {},
+    ): Promise<ApiResponse<FactAuditStateData>> =>
+      this.request<FactAuditStateData>(
+        `/contents/${id}/fact-audit/evidence/repair`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
+
+    recheckFactClaims: async (
+      id: string,
+      data: Record<string, any> = {},
+    ): Promise<ApiResponse<FactAuditStateData>> =>
+      this.request<FactAuditStateData>(
+        `/contents/${id}/fact-audit/claims/recheck`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
+
+    updateFactEvidenceStatus: async (
+      id: string,
+      data: {
+        evidenceIds?: string[];
+        status?: FactEvidenceStatus;
+        reason?: string;
+      } = {},
+    ): Promise<ApiResponse<FactAuditStateData>> =>
+      this.request<FactAuditStateData>(
+        `/contents/${id}/fact-audit/evidence/status`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        },
+      ),
 
     syncFacts: async (
       id: string,

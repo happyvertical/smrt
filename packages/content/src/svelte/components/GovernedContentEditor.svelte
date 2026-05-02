@@ -207,6 +207,7 @@ function handleSave(data: ContentData) {
     {hideActions}
     {hideChat}
     onChange={handleEditorChange}
+    onFactAuditChange={handleFactAuditChange}
     onSave={handleSave}
     onCancel={onCancel}
   />

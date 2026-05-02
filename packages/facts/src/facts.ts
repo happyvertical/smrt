@@ -149,10 +149,16 @@ function parseClaimSupportResponse(raw: string): FactClaimSupportAssessment {
         (id: unknown): id is string => typeof id === 'string' && id.length > 0,
       )
     : [];
+  const matchedEvidenceIds = Array.isArray(parsed?.matchedEvidenceIds)
+    ? parsed.matchedEvidenceIds.filter(
+        (id: unknown): id is string => typeof id === 'string' && id.length > 0,
+      )
+    : [];
 
   return {
     status: normalizeSupportStatus(parsed?.status),
     matchedFactIds,
+    matchedEvidenceIds,
     rationale: normalizeWhitespace(parsed?.rationale) || '',
     confidence: normalizeConfidence(parsed?.confidence),
   };
@@ -683,6 +689,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return {
         status: 'needs_review',
         matchedFactIds: [],
+        matchedEvidenceIds: [],
         rationale: 'No claim text was provided.',
       };
     }
@@ -691,6 +698,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return {
         status: 'unsupported',
         matchedFactIds: [],
+        matchedEvidenceIds: [],
         rationale: 'No candidate facts were available for comparison.',
         confidence: 1,
       };

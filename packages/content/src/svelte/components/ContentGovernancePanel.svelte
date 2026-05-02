@@ -10,6 +10,7 @@ import {
   type ContentTransparencyData,
   type ContentVersionData,
   createClient,
+  type FactAuditClaimData,
   type FactAuditStateData,
   type FactData,
   type ResolvedContentGovernanceData,
@@ -92,6 +93,7 @@ let correctionBusy = $state(false);
 let versionBusy = $state(false);
 let transparencyLoading = $state(false);
 let factAuditBusy = $state(false);
+let selectedClaimIds = $state<string[]>([]);
 
 let catalogError = $state<string | null>(null);
 let workflowError = $state<string | null>(null);
@@ -118,6 +120,26 @@ function getFactId(fact: FactData): string | null {
   return typeof fact.id === 'string' && fact.id.length > 0 ? fact.id : null;
 }
 
+function getClaimId(claim: FactAuditClaimData): string | null {
+  return typeof claim.id === 'string' && claim.id.length > 0 ? claim.id : null;
+}
+
+function isClaimSelected(claim: FactAuditClaimData): boolean {
+  const claimId = getClaimId(claim);
+  return Boolean(claimId && selectedClaimIds.includes(claimId));
+}
+
+function toggleClaimSelection(claim: FactAuditClaimData) {
+  const claimId = getClaimId(claim);
+  if (!claimId) {
+    return;
+  }
+
+  selectedClaimIds = selectedClaimIds.includes(claimId)
+    ? selectedClaimIds.filter((id) => id !== claimId)
+    : [...selectedClaimIds, claimId];
+}
+
 const factAuditGroups = $derived({
   contradicted:
     factAudit?.claims.filter(
@@ -140,6 +162,7 @@ const actionableFactAuditWarnings = $derived(
     (warning) => !isNonActionableFactAuditWarning(warning),
   ),
 );
+const selectedClaimCount = $derived(selectedClaimIds.length);
 
 function createFactMap(facts: FactData[]) {
   return new Map(
@@ -606,6 +629,34 @@ async function repairFactAudit() {
   }
 }
 
+async function recheckFactClaims(claimIds: string[]) {
+  if (!savedContentId || factAuditBusy || claimIds.length === 0) {
+    return;
+  }
+
+  factAuditBusy = true;
+  workflowError = null;
+  workflowNotice = null;
+
+  try {
+    const response = await client.contents.recheckFactClaims(savedContentId, {
+      claimFactIds: claimIds,
+    });
+    factAudit = response.data;
+    workflowNotice = `Rechecked ${claimIds.length} claim${claimIds.length === 1 ? '' : 's'} against current evidence.`;
+    selectedClaimIds = selectedClaimIds.filter((id) => !claimIds.includes(id));
+    onFactAuditChange?.(response.data);
+  } catch (err: any) {
+    workflowError = err.message || 'Failed to recheck claim support';
+  } finally {
+    factAuditBusy = false;
+  }
+}
+
+async function recheckSelectedClaims() {
+  await recheckFactClaims(selectedClaimIds);
+}
+
 function addFact(fact: FactData) {
   const factId = getFactId(fact);
   if (!factId || selectedFactIds.includes(factId)) {
@@ -994,6 +1045,14 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           <button
             type="button"
             class="secondary-button"
+            disabled={factAuditBusy || selectedClaimCount === 0}
+            onclick={() => void recheckSelectedClaims()}
+          >
+            {factAuditBusy ? 'Checking...' : `Recheck selected (${selectedClaimCount})`}
+          </button>
+          <button
+            type="button"
+            class="secondary-button"
             disabled={factAuditBusy}
             onclick={() => void repairFactAudit()}
           >
@@ -1031,12 +1090,33 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                 {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
                   <details class="claim-audit-item">
                     <summary>
+                      <label class="claim-audit-select">
+                        <input
+                          type="checkbox"
+                          checked={isClaimSelected(claim)}
+                          disabled={!getClaimId(claim)}
+                          onchange={() => toggleClaimSelection(claim)}
+                        />
+                      </label>
                       <span class={`pill pill--${claim.supportStatus === 'supported' ? 'passed' : claim.supportStatus === 'contradicted' ? 'failed' : 'flagged'}`}>
                         {claim.supportStatus.replace('_', ' ')}
                       </span>
                       <strong>{claim.fact.textRefined || claim.claimQuote || claim.id}</strong>
                     </summary>
                     <div class="claim-audit-item__body">
+                      <div class="claim-audit-item__actions">
+                        <button
+                          type="button"
+                          class="secondary-button"
+                          disabled={factAuditBusy || !getClaimId(claim)}
+                          onclick={() => {
+                            const claimId = getClaimId(claim);
+                            if (claimId) void recheckFactClaims([claimId]);
+                          }}
+                        >
+                          Recheck support
+                        </button>
+                      </div>
                       {#if claim.claimQuote}
                         <p><strong>Article claim:</strong> {claim.claimQuote}</p>
                       {/if}
@@ -1881,6 +1961,16 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   .claim-audit-item__body {
     padding-top: 0.75rem;
+  }
+
+  .claim-audit-select {
+    display: inline-flex;
+    line-height: 1;
+  }
+
+  .claim-audit-item__actions {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .review-profile-list {

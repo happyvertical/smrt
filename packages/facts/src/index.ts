@@ -47,6 +47,7 @@ export type {
   FactContentOptions,
   FactContentRelationship,
   FactEvidenceOptions,
+  FactEvidenceStatus,
   FactExtractionCandidate,
   FactExtractionOptions,
   FactMetadata,

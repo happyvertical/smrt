@@ -7,7 +7,23 @@
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import type { FactEvidenceOptions } from './types';
+import type { FactEvidenceOptions, FactEvidenceStatus } from './types';
+
+const FACT_EVIDENCE_STATUSES: FactEvidenceStatus[] = [
+  'supports',
+  'contradicts',
+  'unclear',
+  'irrelevant',
+  'invalid',
+];
+
+function normalizeFactEvidenceStatus(
+  value: FactEvidenceStatus | undefined,
+): FactEvidenceStatus {
+  return FACT_EVIDENCE_STATUSES.includes(value as FactEvidenceStatus)
+    ? (value as FactEvidenceStatus)
+    : 'supports';
+}
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -23,6 +39,9 @@ export class FactEvidence extends SmrtObject {
 
   @field({ required: true })
   evidenceKey: string = '';
+
+  @field({ type: 'text', required: true, default: 'supports' })
+  status: FactEvidenceStatus = 'supports';
 
   @field()
   sourceKind: string = '';
@@ -64,6 +83,7 @@ export class FactEvidence extends SmrtObject {
     super(options);
     if (options.factId) this.factId = options.factId;
     if (options.evidenceKey) this.evidenceKey = options.evidenceKey;
+    this.status = normalizeFactEvidenceStatus(options.status);
     if (options.sourceKind !== undefined) this.sourceKind = options.sourceKind;
     if (options.sourceId !== undefined) this.sourceId = options.sourceId;
     if (options.sourceUrl !== undefined) this.sourceUrl = options.sourceUrl;

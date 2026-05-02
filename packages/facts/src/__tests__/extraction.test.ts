@@ -121,6 +121,7 @@ describe('FactCollection.extractCandidatesFromText()', () => {
           JSON.stringify({
             status: 'supported',
             matchedFactIds: ['fact-1'],
+            matchedEvidenceIds: ['evidence-1'],
             rationale: 'The agenda fact supports the claim.',
             confidence: 0.92,
           }),
@@ -133,6 +134,7 @@ describe('FactCollection.extractCandidatesFromText()', () => {
         {
           id: 'fact-1',
           statement: 'The agenda lists a public hearing.',
+          evidence: [{ id: 'evidence-1', quote: 'public hearing' }],
         },
       ],
     );
@@ -140,6 +142,7 @@ describe('FactCollection.extractCandidatesFromText()', () => {
     expect(assessment).toEqual({
       status: 'supported',
       matchedFactIds: ['fact-1'],
+      matchedEvidenceIds: ['evidence-1'],
       rationale: 'The agenda fact supports the claim.',
       confidence: 0.92,
     });

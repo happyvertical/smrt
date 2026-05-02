@@ -246,7 +246,7 @@ describe('ContentEditor component', () => {
     });
 
     expect(target.textContent).toContain('Meeting minutes');
-    expect(target.textContent).toContain('1 resource claim');
+    expect(target.textContent).toContain('1 evidence claim');
     expect(target.textContent).toContain('Council approved the project.');
   });
 

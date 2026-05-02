@@ -11,6 +11,7 @@ import type {
   FactClaimSupportAssessment,
   FactClaimSupportStatus,
   FactContentRelationship,
+  FactEvidenceStatus,
   FactExtractionCandidate,
 } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
@@ -76,6 +77,30 @@ type FactAuditSourceMaterial = {
   text: string;
 };
 
+type FactAuditSourceSelector = {
+  sourceKind: string;
+  sourceId: string;
+};
+
+type FactAuditResourceRepairOptions = {
+  sources?: FactAuditSourceSelector[];
+  maxFactsPerSource?: number;
+  context?: string;
+};
+
+type FactAuditClaimRecheckOptions = {
+  claimFactIds?: string[];
+  sourceIds?: string[];
+  sources?: FactAuditSourceSelector[];
+  maxCandidateEvidence?: number;
+};
+
+type FactEvidenceStatusUpdateOptions = {
+  evidenceIds?: string[];
+  status?: FactEvidenceStatus;
+  reason?: string;
+};
+
 type FactAuditClaim = {
   id: string | null;
   fact: Record<string, any>;
@@ -101,6 +126,7 @@ type FactAuditResourceClaim = {
   sourceTitle: string | null;
   locator: string | null;
   quote: string | null;
+  status: FactEvidenceStatus;
   confidence: number | null;
   evidence: Record<string, any>[];
 };
@@ -192,6 +218,62 @@ function getGeneratedFactAuditMetadata(link: any): Record<string, any> | null {
   }
 
   return null;
+}
+
+function getEvidenceMetadata(evidence: any): Record<string, any> {
+  return typeof evidence?.getMetadata === 'function'
+    ? evidence.getMetadata()
+    : parseAuditMetadata(evidence?.metadata);
+}
+
+function isGeneratedFactAuditEvidence(
+  evidence: any,
+  contentId: string,
+): boolean {
+  const metadata = getEvidenceMetadata(evidence);
+  return (
+    metadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
+    metadata.contentId === contentId
+  );
+}
+
+function normalizeFactEvidenceStatus(
+  value: unknown,
+): FactEvidenceStatus | null {
+  const allowed: FactEvidenceStatus[] = [
+    'supports',
+    'contradicts',
+    'unclear',
+    'irrelevant',
+    'invalid',
+  ];
+
+  return allowed.includes(value as FactEvidenceStatus)
+    ? (value as FactEvidenceStatus)
+    : null;
+}
+
+function sourceMatchesSelector(
+  source: FactAuditSourceMaterial,
+  selector: FactAuditSourceSelector,
+): boolean {
+  return (
+    source.sourceKind === selector.sourceKind &&
+    source.sourceId === selector.sourceId
+  );
+}
+
+function filterAuditSources(
+  sources: FactAuditSourceMaterial[],
+  selectors: FactAuditSourceSelector[] | undefined,
+): FactAuditSourceMaterial[] {
+  if (!selectors || selectors.length === 0) {
+    return sources;
+  }
+
+  return sources.filter((source) =>
+    selectors.some((selector) => sourceMatchesSelector(source, selector)),
+  );
 }
 
 function getContentText(content: Content): string {
@@ -346,6 +428,9 @@ export interface ContentOptions extends SmrtObjectOptions {
       'syncFactsState',
       'getFactAuditStateAction',
       'repairFactAuditAction',
+      'repairFactEvidenceAction',
+      'recheckFactClaimsAction',
+      'updateFactEvidenceStatusAction',
       'getGovernanceStateAction',
       'listReviews',
       'runReviewAction',
@@ -363,6 +448,18 @@ export interface ContentOptions extends SmrtObjectOptions {
       syncFactsState: { method: 'PUT', path: 'facts' },
       getFactAuditStateAction: { method: 'GET', path: 'fact-audit' },
       repairFactAuditAction: { method: 'POST', path: 'fact-audit/repair' },
+      repairFactEvidenceAction: {
+        method: 'POST',
+        path: 'fact-audit/evidence/repair',
+      },
+      recheckFactClaimsAction: {
+        method: 'POST',
+        path: 'fact-audit/claims/recheck',
+      },
+      updateFactEvidenceStatusAction: {
+        method: 'PUT',
+        path: 'fact-audit/evidence/status',
+      },
       getGovernanceStateAction: { method: 'GET', path: 'governance' },
       listReviews: { method: 'GET', path: 'reviews' },
       runReviewAction: { method: 'POST', path: 'reviews' },
@@ -1856,37 +1953,78 @@ export class Content
     }
   }
 
-  public async repairFactAudit(
-    options: {
-      maxReferenceFactsPerSource?: number;
-      maxArticleClaims?: number;
-      context?: string;
-    } = {},
-  ) {
-    await this.requireFactLinking('fact audit repair');
-    if (!this.id) {
-      throw new Error('Cannot repair fact audit for unsaved content');
+  private async clearGeneratedFactSourcesForSources(
+    sources: FactAuditSourceMaterial[],
+  ): Promise<string[]> {
+    if (!this.id || sources.length === 0) {
+      return [];
     }
 
-    const auditRunId = createFactAuditRunId(this.id as string);
+    const sourceKeys = new Set(
+      sources.map((source) => `${source.sourceKind}:${source.sourceId}`),
+    );
+    const factSources = await this.getFactSourceCollection();
+    const generatedSources = await factSources.list(
+      this.tenantId ? { where: { tenantId: this.tenantId } } : {},
+    );
+    const deletedSourceIds: string[] = [];
+
+    for (const source of generatedSources as any[]) {
+      const metadata =
+        typeof source.getMetadata === 'function' ? source.getMetadata() : {};
+      const sourceKey = `${source.sourceType || ''}:${metadata.sourceId || ''}`;
+      if (
+        sourceKeys.has(sourceKey) &&
+        metadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
+        metadata.contentId === this.id
+      ) {
+        if (typeof source.id === 'string') {
+          deletedSourceIds.push(source.id);
+        }
+        await source.delete();
+      }
+    }
+
+    return deletedSourceIds;
+  }
+
+  private async extractReferenceFactsForAudit(
+    sources: FactAuditSourceMaterial[],
+    options: {
+      auditRunId: string;
+      maxFactsPerSource?: number;
+      context?: string;
+      replaceGenerated?: boolean;
+    },
+  ) {
     const facts = await this.getFactCollection();
     const evidences = await this.getFactEvidenceCollection();
     const warnings: string[] = [];
     const referenceFacts = new Map<string, Fact>();
-    const articleText = getContentText(this);
+    let deletedEvidenceIds: string[] = [];
+    let deletedSourceIds: string[] = [];
 
-    const sourceMaterials = await this.getFactAuditSourceMaterials();
-    warnings.push(...sourceMaterials.warnings);
-    await this.clearGeneratedFactAudit();
+    if (options.replaceGenerated && sources.length > 0) {
+      const replacement = await evidences.replaceGeneratedForSources(
+        sources.map((source) => ({
+          sourceKind: source.sourceKind,
+          sourceId: source.sourceId,
+        })),
+        { generatedBy: FACT_AUDIT_GENERATED_BY, contentId: this.id as string },
+      );
+      deletedEvidenceIds = replacement.deletedEvidenceIds;
+      deletedSourceIds =
+        await this.clearGeneratedFactSourcesForSources(sources);
+    }
 
-    for (const source of sourceMaterials.sources) {
+    for (const source of sources) {
       let candidates: FactExtractionCandidate[] = [];
       try {
         candidates = await facts.extractCandidatesFromText(source.text, {
           domain: FACT_AUDIT_DOMAIN,
           sourceType: source.sourceKind,
           context: options.context || source.sourceTitle,
-          maxFacts: options.maxReferenceFactsPerSource ?? 24,
+          maxFacts: options.maxFactsPerSource ?? 24,
           tenantId: this.tenantId,
         });
       } catch (error: any) {
@@ -1908,7 +2046,7 @@ export class Content
             sourceTitle: source.sourceTitle,
             credibility: candidate.confidence ?? 0.75,
             metadata: {
-              auditRunId,
+              auditRunId: options.auditRunId,
               generatedBy: FACT_AUDIT_GENERATED_BY,
               contentId: this.id,
               sourceId: source.sourceId,
@@ -1921,6 +2059,7 @@ export class Content
 
         await evidences.upsertEvidence({
           factId: result.fact.id as string,
+          status: 'supports',
           sourceKind: source.sourceKind,
           sourceId: source.sourceId,
           sourceUrl: source.sourceUrl,
@@ -1931,7 +2070,7 @@ export class Content
           confidence: candidate.confidence ?? 0.75,
           tenantId: this.tenantId,
           metadata: {
-            auditRunId,
+            auditRunId: options.auditRunId,
             generatedBy: FACT_AUDIT_GENERATED_BY,
             contentId: this.id,
             candidateMetadata: candidate.metadata || {},
@@ -1939,6 +2078,145 @@ export class Content
         });
       }
     }
+
+    return {
+      referenceFacts,
+      warnings,
+      referenceFactsExtracted: referenceFacts.size,
+      deletedEvidenceIds,
+      deletedSourceIds,
+      repairedSources: sources.map((source) => ({
+        sourceKind: source.sourceKind,
+        sourceId: source.sourceId,
+        sourceTitle: source.sourceTitle,
+      })),
+    };
+  }
+
+  private async getCurrentFactAuditSupportCandidates(
+    options: {
+      referenceFacts?: Map<string, Fact>;
+      sources?: FactAuditSourceSelector[];
+      sourceIds?: string[];
+      maxCandidateEvidence?: number;
+    } = {},
+  ) {
+    const evidences = await this.getFactEvidenceCollection();
+    const allFacts = await this.getFactCollection();
+    const candidateFacts = new Map<string, any>();
+    const candidateEvidence = new Map<string, any>();
+    const sourceKeys = new Set(
+      (options.sources || []).map(
+        (source) => `${source.sourceKind}:${source.sourceId}`,
+      ),
+    );
+    const sourceIds = new Set(options.sourceIds || []);
+    const maxCandidateEvidence = Math.max(
+      1,
+      options.maxCandidateEvidence ?? 120,
+    );
+
+    const evidenceEntries = options.referenceFacts
+      ? (
+          await Promise.all(
+            [...options.referenceFacts.keys()].map((factId) =>
+              evidences.getForFact(factId),
+            ),
+          )
+        ).flat()
+      : await evidences.list(
+          this.tenantId ? { where: { tenantId: this.tenantId } } : {},
+        );
+
+    for (const entry of evidenceEntries as any[]) {
+      if (!isGeneratedFactAuditEvidence(entry, this.id as string)) {
+        continue;
+      }
+      if (entry.sourceKind === 'content') {
+        continue;
+      }
+      if (entry.status === 'irrelevant' || entry.status === 'invalid') {
+        continue;
+      }
+      if (
+        sourceKeys.size > 0 &&
+        !sourceKeys.has(`${entry.sourceKind}:${entry.sourceId}`)
+      ) {
+        continue;
+      }
+      if (sourceIds.size > 0 && !sourceIds.has(entry.sourceId)) {
+        continue;
+      }
+      if (candidateEvidence.size >= maxCandidateEvidence) {
+        break;
+      }
+
+      const fact =
+        options.referenceFacts?.get(entry.factId) ||
+        (await allFacts.get({ id: entry.factId }));
+      if (!fact) {
+        continue;
+      }
+
+      const factId = fact.id as string;
+      const existing = candidateFacts.get(factId) || {
+        id: factId,
+        statement: fact.textRefined || fact.textRaw || '',
+        evidence: [],
+      };
+      const serializedEvidence = {
+        id: entry.id || null,
+        status: entry.status || 'supports',
+        quote: entry.quote || null,
+        sourceTitle: entry.sourceTitle || null,
+        sourceUrl: entry.sourceUrl || null,
+        locator: entry.locator || null,
+      };
+      existing.evidence.push(serializedEvidence);
+      candidateFacts.set(factId, existing);
+      if (typeof entry.id === 'string') {
+        candidateEvidence.set(entry.id, entry);
+      }
+    }
+
+    return {
+      supportCandidates: [...candidateFacts.values()],
+      candidateFactIds: new Set(candidateFacts.keys()),
+      candidateEvidence,
+    };
+  }
+
+  public async repairFactAudit(
+    options: {
+      maxReferenceFactsPerSource?: number;
+      maxArticleClaims?: number;
+      context?: string;
+    } = {},
+  ) {
+    await this.requireFactLinking('fact audit repair');
+    if (!this.id) {
+      throw new Error('Cannot repair fact audit for unsaved content');
+    }
+
+    const auditRunId = createFactAuditRunId(this.id as string);
+    const facts = await this.getFactCollection();
+    const evidences = await this.getFactEvidenceCollection();
+    const warnings: string[] = [];
+    const articleText = getContentText(this);
+
+    const sourceMaterials = await this.getFactAuditSourceMaterials();
+    warnings.push(...sourceMaterials.warnings);
+    await this.clearGeneratedFactAudit();
+    const referenceRepair = await this.extractReferenceFactsForAudit(
+      sourceMaterials.sources,
+      {
+        auditRunId,
+        maxFactsPerSource: options.maxReferenceFactsPerSource,
+        context: options.context,
+      },
+    );
+    warnings.push(...referenceRepair.warnings);
+    const referenceFacts = referenceRepair.referenceFacts;
 
     let claims: FactExtractionCandidate[] = [];
     if (!articleText) {
@@ -1959,22 +2237,10 @@ export class Content
       }
     }
 
-    const supportCandidates = await Promise.all(
-      [...referenceFacts.values()].map(async (fact: any) => {
-        const evidence = await evidences.getForFact(fact.id as string);
-        return {
-          id: fact.id as string,
-          statement: fact.textRefined || fact.textRaw || '',
-          evidence: evidence.map((entry: any) => ({
-            id: entry.id || null,
-            quote: entry.quote || null,
-            sourceTitle: entry.sourceTitle || null,
-            sourceUrl: entry.sourceUrl || null,
-            locator: entry.locator || null,
-          })),
-        };
-      }),
-    );
+    const { supportCandidates, candidateFactIds, candidateEvidence } =
+      await this.getCurrentFactAuditSupportCandidates({
+        referenceFacts,
+      });
 
     const findings: ContentReviewFinding[] = [];
 
@@ -1993,13 +2259,14 @@ export class Content
         assessment = {
           status: 'needs_review' as FactClaimSupportStatus,
           matchedFactIds: [],
+          matchedEvidenceIds: [],
           rationale: 'Support assessment failed.',
           confidence: undefined,
         };
       }
 
       const matchedFactIds = assessment.matchedFactIds.filter((factId) =>
-        referenceFacts.has(factId),
+        candidateFactIds.has(factId),
       );
       let claimFact =
         matchedFactIds.length > 0
@@ -2030,6 +2297,7 @@ export class Content
 
       const articleEvidence = await evidences.upsertEvidence({
         factId: claimFact.id as string,
+        status: 'supports',
         sourceKind: 'content',
         sourceId: this.id as string,
         sourceTitle: this.title || this.slug || (this.id as string),
@@ -2046,15 +2314,24 @@ export class Content
         },
       });
 
-      const supportingEvidenceIds: string[] = [];
+      let supportingEvidenceIds = assessment.matchedEvidenceIds.filter(
+        (evidenceId) => candidateEvidence.has(evidenceId),
+      );
       for (const matchedFactId of matchedFactIds) {
-        const supportingEvidence = await evidences.getForFact(matchedFactId);
-        supportingEvidenceIds.push(
-          ...supportingEvidence
+        if (supportingEvidenceIds.length > 0) {
+          continue;
+        }
+        const candidate = supportCandidates.find(
+          (entry: any) => entry.id === matchedFactId,
+        );
+        supportingEvidenceIds = [
+          ...supportingEvidenceIds,
+          ...(candidate?.evidence || [])
             .map((entry: any) => entry.id)
             .filter((id: unknown): id is string => typeof id === 'string'),
-        );
+        ];
       }
+      supportingEvidenceIds = [...new Set(supportingEvidenceIds)];
 
       const linkMetadata = {
         auditRunId,
@@ -2128,7 +2405,7 @@ export class Content
       repair: {
         auditRunId,
         claimsExtracted: claims.length,
-        referenceFactsExtracted: supportCandidates.length,
+        referenceFactsExtracted: referenceRepair.referenceFactsExtracted,
         warnings,
       },
     };
@@ -2142,6 +2419,344 @@ export class Content
     } = {},
   ) {
     return this.repairFactAudit(options);
+  }
+
+  public async repairFactEvidence(
+    options: FactAuditResourceRepairOptions = {},
+  ) {
+    await this.requireFactLinking('fact evidence repair');
+    if (!this.id) {
+      throw new Error('Cannot repair fact evidence for unsaved content');
+    }
+
+    const auditRunId = createFactAuditRunId(this.id as string);
+    const sourceMaterials = await this.getFactAuditSourceMaterials();
+    const sources = filterAuditSources(
+      sourceMaterials.sources,
+      options.sources,
+    );
+    const warnings: string[] = [];
+
+    if (options.sources?.length && sources.length === 0) {
+      warnings.push('No matching resource text was available for repair.');
+    }
+
+    const repair = await this.extractReferenceFactsForAudit(sources, {
+      auditRunId,
+      maxFactsPerSource: options.maxFactsPerSource,
+      context: options.context,
+      replaceGenerated: true,
+    });
+    warnings.push(...repair.warnings);
+
+    const state = await this.getFactAuditState();
+    return {
+      ...state,
+      evidenceRepair: {
+        auditRunId,
+        referenceFactsExtracted: repair.referenceFactsExtracted,
+        repairedSources: repair.repairedSources,
+        deletedEvidenceIds: repair.deletedEvidenceIds,
+        deletedSourceIds: repair.deletedSourceIds,
+        warnings,
+      },
+    };
+  }
+
+  public async repairFactEvidenceAction(
+    options: FactAuditResourceRepairOptions = {},
+  ) {
+    return this.repairFactEvidence(options);
+  }
+
+  private async clearGeneratedSupportLinksForClaim(
+    claimFactId: string,
+    articleEvidenceId: string | null,
+  ): Promise<void> {
+    const links = await this.getFactLinks();
+
+    for (const link of links as any[]) {
+      if (
+        link.relationship !== 'supports' &&
+        link.relationship !== 'contradicts'
+      ) {
+        continue;
+      }
+
+      const metadata = getGeneratedFactAuditMetadata(link);
+      if (!metadata) {
+        continue;
+      }
+
+      const matchesEvidence =
+        articleEvidenceId &&
+        typeof metadata.articleEvidenceId === 'string' &&
+        metadata.articleEvidenceId === articleEvidenceId;
+      const matchesClaim =
+        typeof metadata.claimFactId === 'string' &&
+        metadata.claimFactId === claimFactId;
+
+      if (matchesEvidence || matchesClaim) {
+        await link.delete();
+      }
+    }
+  }
+
+  public async recheckFactClaims(options: FactAuditClaimRecheckOptions = {}) {
+    await this.requireFactLinking('claim support recheck');
+    if (!this.id) {
+      throw new Error('Cannot recheck fact claims for unsaved content');
+    }
+
+    const auditRunId = createFactAuditRunId(this.id as string);
+    const facts = await this.getFactCollection();
+    const evidences = await this.getFactEvidenceCollection();
+    const links = await this.getFactContentCollection();
+    const claimIdFilter = new Set(options.claimFactIds || []);
+    const { supportCandidates, candidateFactIds, candidateEvidence } =
+      await this.getCurrentFactAuditSupportCandidates({
+        sources: options.sources,
+        sourceIds: options.sourceIds,
+        maxCandidateEvidence: options.maxCandidateEvidence,
+      });
+    const claimLinks = (
+      await links.getForContentByRelationship(
+        this.id as string,
+        'referenced_in',
+      )
+    )
+      .map((link: any) => ({
+        link,
+        metadata: getGeneratedFactAuditMetadata(link),
+      }))
+      .filter(
+        (entry): entry is { link: any; metadata: Record<string, any> } =>
+          entry.metadata !== null &&
+          (claimIdFilter.size === 0 || claimIdFilter.has(entry.link.factId)),
+      );
+    const warnings: string[] = [];
+    let recheckedClaims = 0;
+
+    for (const { link, metadata } of claimLinks) {
+      const claimFact = await facts.get({ id: link.factId });
+      if (!claimFact) {
+        continue;
+      }
+
+      const claimText =
+        normalizeAuditText(metadata.claimQuote) ||
+        normalizeAuditText(claimFact.textRefined) ||
+        normalizeAuditText(claimFact.textRaw);
+      if (!claimText) {
+        continue;
+      }
+
+      let assessment: FactClaimSupportAssessment;
+      try {
+        assessment = await facts.assessClaimSupport(
+          claimText,
+          supportCandidates,
+          { tenantId: this.tenantId },
+        );
+      } catch (error: any) {
+        warnings.push(
+          `Failed to recheck claim "${claimText}": ${error.message || error}`,
+        );
+        assessment = {
+          status: 'needs_review',
+          matchedFactIds: [],
+          matchedEvidenceIds: [],
+          rationale: 'Support assessment failed.',
+          confidence: undefined,
+        };
+      }
+
+      const matchedFactIds = assessment.matchedFactIds.filter((factId) =>
+        candidateFactIds.has(factId),
+      );
+      let supportStatus = assessment.status;
+      if (
+        (supportStatus === 'supported' || supportStatus === 'contradicted') &&
+        matchedFactIds.length === 0
+      ) {
+        supportStatus = 'needs_review';
+      }
+      let supportingEvidenceIds = assessment.matchedEvidenceIds.filter(
+        (evidenceId) => candidateEvidence.has(evidenceId),
+      );
+      if (supportingEvidenceIds.length === 0) {
+        for (const matchedFactId of matchedFactIds) {
+          const candidate = supportCandidates.find(
+            (entry: any) => entry.id === matchedFactId,
+          );
+          supportingEvidenceIds.push(
+            ...(candidate?.evidence || [])
+              .map((entry: any) => entry.id)
+              .filter((id: unknown): id is string => typeof id === 'string'),
+          );
+        }
+      }
+      supportingEvidenceIds = [...new Set(supportingEvidenceIds)];
+
+      const articleEvidenceId =
+        typeof metadata.articleEvidenceId === 'string'
+          ? metadata.articleEvidenceId
+          : null;
+      const nextMetadata = {
+        ...metadata,
+        auditRunId,
+        generatedBy: FACT_AUDIT_GENERATED_BY,
+        supportStatus,
+        supportingFactIds: matchedFactIds,
+        supportingEvidenceIds,
+        rationale: assessment.rationale,
+        confidence: assessment.confidence ?? metadata.confidence ?? null,
+        claimFactId: link.factId,
+      };
+      const existingMetadata = getLinkMetadata(link);
+      if (existingMetadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
+        link.setMetadata?.(nextMetadata);
+      } else {
+        link.setMetadata?.({
+          ...existingMetadata,
+          factAudit: nextMetadata,
+        });
+      }
+      await link.save();
+
+      if (articleEvidenceId) {
+        const articleEvidence = await evidences.get({ id: articleEvidenceId });
+        if (articleEvidence) {
+          articleEvidence.updateMetadata({
+            auditRunId,
+            supportStatus,
+          });
+          await articleEvidence.save();
+        }
+      }
+
+      await this.clearGeneratedSupportLinksForClaim(
+        link.factId,
+        articleEvidenceId,
+      );
+      for (const matchedFactId of matchedFactIds) {
+        await this.safeAuditLink(
+          matchedFactId,
+          supportStatus === 'contradicted' ? 'contradicts' : 'supports',
+          {
+            ...nextMetadata,
+            articleEvidenceId,
+          },
+        );
+      }
+
+      recheckedClaims += 1;
+    }
+
+    const state = await this.getFactAuditState();
+    return {
+      ...state,
+      claimRecheck: {
+        auditRunId,
+        recheckedClaims,
+        candidateFacts: supportCandidates.length,
+        candidateEvidence: candidateEvidence.size,
+        warnings,
+      },
+    };
+  }
+
+  public async recheckFactClaimsAction(
+    options: FactAuditClaimRecheckOptions = {},
+  ) {
+    return this.recheckFactClaims(options);
+  }
+
+  public async updateFactEvidenceStatus(
+    options: FactEvidenceStatusUpdateOptions = {},
+  ) {
+    await this.requireFactLinking('evidence status update');
+    if (!this.id) {
+      throw new Error('Cannot update fact evidence for unsaved content');
+    }
+
+    const status = normalizeFactEvidenceStatus(options.status);
+    if (!status) {
+      throw new Error('A valid evidence status is required');
+    }
+
+    const requestedEvidenceIds = [
+      ...new Set(
+        (options.evidenceIds || []).filter(
+          (id): id is string => typeof id === 'string' && id.length > 0,
+        ),
+      ),
+    ];
+    const evidences = await this.getFactEvidenceCollection();
+    const sourceMaterials = await this.getFactAuditSourceMaterials();
+    const allowedSourceKeys = new Set(
+      sourceMaterials.sources.map(
+        (source: FactAuditSourceMaterial) =>
+          `${source.sourceKind}:${source.sourceId}`,
+      ),
+    );
+    const allowedEvidenceIds: string[] = [];
+
+    for (const evidenceId of requestedEvidenceIds) {
+      const evidence = (await evidences.get({ id: evidenceId })) as any;
+      if (!evidence) {
+        continue;
+      }
+
+      if (
+        this.tenantId &&
+        evidence.tenantId &&
+        evidence.tenantId !== this.tenantId
+      ) {
+        continue;
+      }
+
+      const metadata = getEvidenceMetadata(evidence);
+      const sourceKey = `${evidence.sourceKind || ''}:${
+        evidence.sourceId || ''
+      }`;
+      if (
+        metadata.contentId === this.id ||
+        (evidence.sourceKind === 'content' && evidence.sourceId === this.id) ||
+        allowedSourceKeys.has(sourceKey)
+      ) {
+        allowedEvidenceIds.push(evidenceId);
+      }
+    }
+
+    const updated = await evidences.bulkUpdateStatus(
+      allowedEvidenceIds,
+      status,
+      {
+        reason: options.reason,
+      },
+    );
+    const state = await this.getFactAuditState();
+
+    return {
+      ...state,
+      evidenceStatusUpdate: {
+        status,
+        requestedEvidenceIds,
+        updatedEvidenceIds: updated
+          .map((entry: any) => entry.id)
+          .filter((id: unknown): id is string => typeof id === 'string'),
+        skippedEvidenceIds: requestedEvidenceIds.filter(
+          (id) => !allowedEvidenceIds.includes(id),
+        ),
+      },
+    };
+  }
+
+  public async updateFactEvidenceStatusAction(
+    options: FactEvidenceStatusUpdateOptions = {},
+  ) {
+    return this.updateFactEvidenceStatus(options);
   }
 
   public async getFactAuditState(): Promise<FactAuditState> {
@@ -2312,6 +2927,7 @@ export class Content
         sourceTitle: evidence.sourceTitle || null,
         locator: evidence.locator || null,
         quote: evidence.quote || null,
+        status: evidence.status || 'supports',
         confidence: evidence.confidence ?? null,
         evidence: [serializedEvidence],
       });

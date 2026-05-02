@@ -30,6 +30,16 @@ export type FactStatus =
   | 'retracted';
 
 /**
+ * Review status for a concrete evidence excerpt.
+ */
+export type FactEvidenceStatus =
+  | 'supports'
+  | 'contradicts'
+  | 'unclear'
+  | 'irrelevant'
+  | 'invalid';
+
+/**
  * How a fact evolved from its parent
  */
 export type EvolutionType =
@@ -107,6 +117,7 @@ export interface FactEvidenceOptions extends SmrtObjectOptions {
   id?: string;
   factId?: string;
   evidenceKey?: string;
+  status?: FactEvidenceStatus;
   sourceKind?: string;
   sourceId?: string;
   sourceUrl?: string;
@@ -231,6 +242,7 @@ export interface FactClaimSupportCandidate {
   statement: string;
   evidence?: Array<{
     id?: string | null;
+    status?: FactEvidenceStatus | null;
     quote?: string | null;
     sourceTitle?: string | null;
     sourceUrl?: string | null;
@@ -241,6 +253,7 @@ export interface FactClaimSupportCandidate {
 export interface FactClaimSupportAssessment {
   status: FactClaimSupportStatus;
   matchedFactIds: string[];
+  matchedEvidenceIds: string[];
   rationale: string;
   confidence?: number;
 }

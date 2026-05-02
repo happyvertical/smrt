@@ -4,6 +4,7 @@ import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 import type {
   FactAuditResourceClaimData,
   FactAuditStateData,
+  FactEvidenceStatus,
 } from '../../mock-smrt-client';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
 import ContentAgentChat from './ContentAgentChat.svelte';
@@ -20,6 +21,7 @@ let {
   hideActions = false,
   hideChat = false,
   onChange = undefined,
+  onFactAuditChange = undefined,
   onSave,
   onCancel,
 } = $props<{
@@ -34,6 +36,7 @@ let {
   hideActions?: boolean;
   hideChat?: boolean;
   onChange?: (data: any) => void;
+  onFactAuditChange?: (state: FactAuditStateData | null) => void;
   onSave: (data: any) => void;
   onCancel: () => void;
 }>();
@@ -212,18 +215,66 @@ function getReferenceUrl(reference: any): string | null {
 function getResourceClaimsForReference(
   reference: any,
 ): FactAuditResourceClaimData[] {
+  const selector = getReferenceSourceSelector(reference);
   const referenceId = String(reference?.id || '');
   const referenceUrl = getReferenceUrl(reference) || '';
   const resourceClaims: FactAuditResourceClaimData[] =
     factAudit?.resourceClaims ?? [];
 
   return resourceClaims.filter((claim: FactAuditResourceClaimData) => {
+    if (
+      selector &&
+      claim.sourceKind === selector.sourceKind &&
+      claim.sourceId === selector.sourceId
+    ) {
+      return true;
+    }
+
     if (referenceId && claim.sourceId === referenceId) {
       return true;
     }
 
     return Boolean(referenceUrl && claim.sourceUrl === referenceUrl);
   });
+}
+
+function getAuditReferences(): any[] {
+  const references = [...(formData.references ?? [])];
+  const seen = new Set<string>();
+
+  for (const reference of references) {
+    const selector = getReferenceSourceSelector(reference);
+    const key = selector
+      ? `${selector.sourceKind}:${selector.sourceId}`
+      : `url:${getReferenceUrl(reference) || getReferenceLabel(reference)}`;
+    seen.add(key);
+  }
+
+  for (const claim of factAudit?.resourceClaims ?? []) {
+    const sourceKind = String(claim.sourceKind || '').trim();
+    const sourceId = String(claim.sourceId || '').trim();
+    if (!sourceKind || !sourceId) {
+      continue;
+    }
+
+    const key = `${sourceKind}:${sourceId}`;
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    references.push({
+      id: sourceId,
+      title: claim.sourceTitle || claim.sourceUrl || sourceId,
+      url: claim.sourceUrl || '',
+      source: claim.sourceUrl || '',
+      _auditOnly: true,
+      _auditSourceKind: sourceKind,
+      _auditSourceId: sourceId,
+    });
+  }
+
+  return references;
 }
 
 function getReferenceExpansionKey(reference: any, index: number): string {
@@ -251,11 +302,220 @@ function toggleReferenceClaims(reference: any, index: number) {
 
 // We need a simple way to enter reference IDs or mock selecting them
 let newReferenceId = $state('');
+let selectedEvidenceIds = $state<string[]>([]);
+let evidenceBusy = $state<string | null>(null);
+let evidenceError = $state<string | null>(null);
+let evidenceNotice = $state<string | null>(null);
+let bulkEvidenceStatus = $state<FactEvidenceStatus>('supports');
+const evidenceStatuses: FactEvidenceStatus[] = [
+  'supports',
+  'contradicts',
+  'unclear',
+  'irrelevant',
+  'invalid',
+];
+const selectedEvidenceCount = $derived(selectedEvidenceIds.length);
+const auditReferences = $derived(getAuditReferences());
 
 function addReference() {
   if (newReferenceId && !formData.referenceIds.includes(newReferenceId)) {
     formData.referenceIds = [...formData.referenceIds, newReferenceId];
     newReferenceId = '';
+  }
+}
+
+function getResourceClaimEvidenceIds(
+  claim: FactAuditResourceClaimData,
+): string[] {
+  return (claim.evidence ?? [])
+    .map((evidence) => evidence.id)
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+}
+
+function isResourceClaimSelected(claim: FactAuditResourceClaimData): boolean {
+  const evidenceIds = getResourceClaimEvidenceIds(claim);
+  return (
+    evidenceIds.length > 0 &&
+    evidenceIds.every((id) => selectedEvidenceIds.includes(id))
+  );
+}
+
+function toggleResourceClaimSelection(claim: FactAuditResourceClaimData) {
+  const evidenceIds = getResourceClaimEvidenceIds(claim);
+  if (evidenceIds.length === 0) {
+    return;
+  }
+
+  const selected = isResourceClaimSelected(claim);
+  selectedEvidenceIds = selected
+    ? selectedEvidenceIds.filter((id) => !evidenceIds.includes(id))
+    : [...new Set([...selectedEvidenceIds, ...evidenceIds])];
+}
+
+function getReferenceSourceSelector(reference: any): {
+  sourceKind: string;
+  sourceId: string;
+} | null {
+  const sourceId = String(
+    reference?._auditSourceId || reference?.id || '',
+  ).trim();
+  const sourceKind = String(
+    reference?._auditSourceKind || 'content-reference',
+  ).trim();
+  return sourceId
+    ? {
+        sourceKind,
+        sourceId,
+      }
+    : null;
+}
+
+function getSelectedReferenceSourceSelectors(): Array<{
+  sourceKind: string;
+  sourceId: string;
+}> {
+  const selected = new Set(selectedEvidenceIds);
+  const selectors: Array<{ sourceKind: string; sourceId: string }> = [];
+  const seen = new Set<string>();
+
+  for (const reference of getAuditReferences()) {
+    const selector = getReferenceSourceSelector(reference);
+    if (!selector) {
+      continue;
+    }
+
+    const hasSelectedEvidence = getResourceClaimsForReference(reference).some(
+      (claim) =>
+        getResourceClaimEvidenceIds(claim).some((id) => selected.has(id)),
+    );
+    const selectorKey = `${selector.sourceKind}:${selector.sourceId}`;
+    if (hasSelectedEvidence && !seen.has(selectorKey)) {
+      seen.add(selectorKey);
+      selectors.push(selector);
+    }
+  }
+
+  return selectors;
+}
+
+function getEvidenceStatusIcon(status: FactEvidenceStatus | null | undefined) {
+  switch (status) {
+    case 'supports':
+      return '✓';
+    case 'contradicts':
+      return '×';
+    case 'irrelevant':
+      return '⊘';
+    case 'invalid':
+      return '!';
+    default:
+      return '?';
+  }
+}
+
+async function runFactAuditAction(
+  path: string,
+  method: 'POST' | 'PUT',
+  body: Record<string, any>,
+): Promise<FactAuditStateData> {
+  if (!contentId || contentId === 'new') {
+    throw new Error('Save this content before updating evidence.');
+  }
+
+  const response = await fetch(
+    joinApiUrl(apiBaseUrl, `/contents/${contentId}/fact-audit/${path}`),
+    {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload?.message || payload?.error || response.statusText);
+  }
+
+  return (payload.data ?? payload.result ?? payload) as FactAuditStateData;
+}
+
+async function updateEvidenceStatus(
+  evidenceIds: string[],
+  status: FactEvidenceStatus,
+) {
+  if (evidenceIds.length === 0 || evidenceBusy) {
+    return;
+  }
+
+  evidenceBusy = 'status';
+  evidenceError = null;
+  evidenceNotice = null;
+
+  try {
+    const nextAudit = await runFactAuditAction('evidence/status', 'PUT', {
+      evidenceIds,
+      status,
+    });
+    selectedEvidenceIds = selectedEvidenceIds.filter(
+      (id) => !evidenceIds.includes(id),
+    );
+    evidenceNotice = `Updated ${evidenceIds.length} evidence item${evidenceIds.length === 1 ? '' : 's'}.`;
+    onFactAuditChange?.(nextAudit);
+  } catch (error: any) {
+    evidenceError = error.message || 'Failed to update evidence status.';
+  } finally {
+    evidenceBusy = null;
+  }
+}
+
+async function updateSelectedEvidenceStatus() {
+  await updateEvidenceStatus(selectedEvidenceIds, bulkEvidenceStatus);
+}
+
+async function repairReferenceEvidence(reference: any) {
+  const selector = getReferenceSourceSelector(reference);
+  if (!selector || evidenceBusy) {
+    return;
+  }
+
+  evidenceBusy = `repair:${selector.sourceId}`;
+  evidenceError = null;
+  evidenceNotice = null;
+
+  try {
+    const nextAudit = await runFactAuditAction('evidence/repair', 'POST', {
+      sources: [selector],
+    });
+    selectedEvidenceIds = [];
+    evidenceNotice = 'Reference evidence repaired.';
+    onFactAuditChange?.(nextAudit);
+  } catch (error: any) {
+    evidenceError = error.message || 'Failed to repair reference evidence.';
+  } finally {
+    evidenceBusy = null;
+  }
+}
+
+async function repairSelectedReferenceEvidence() {
+  const sources = getSelectedReferenceSourceSelectors();
+  if (sources.length === 0 || evidenceBusy) {
+    return;
+  }
+
+  evidenceBusy = 'repair-selected';
+  evidenceError = null;
+  evidenceNotice = null;
+
+  try {
+    const nextAudit = await runFactAuditAction('evidence/repair', 'POST', {
+      sources,
+    });
+    selectedEvidenceIds = [];
+    evidenceNotice = `Repaired ${sources.length} reference${sources.length === 1 ? '' : 's'}.`;
+    onFactAuditChange?.(nextAudit);
+  } catch (error: any) {
+    evidenceError = error.message || 'Failed to repair selected references.';
+  } finally {
+    evidenceBusy = null;
   }
 }
 
@@ -728,13 +988,41 @@ function removeAsset(id: string) {
                       <button type="button" class="remove-ref-btn" onclick={() => removeReference(refId)}>×</button>
                     </div>
                   {/each}
-                  {#if formData.referenceIds.length === 0}
+                  {#if formData.referenceIds.length === 0 && auditReferences.length === 0}
                     <span class="no-refs">No references.</span>
                   {/if}
                </div>
-               {#if formData.references?.length > 0}
+               {#if auditReferences.length > 0}
                  <div class="reference-detail-list">
-                   {#each formData.references as reference, referenceIndex (reference.id ?? reference.url ?? reference.title)}
+                   {#if evidenceError}
+                     <p class="evidence-message evidence-message--error">{evidenceError}</p>
+                   {/if}
+                   {#if evidenceNotice}
+                     <p class="evidence-message evidence-message--notice">{evidenceNotice}</p>
+                   {/if}
+                   <div class="evidence-bulk-toolbar">
+                     <span>{selectedEvidenceCount} evidence item{selectedEvidenceCount === 1 ? '' : 's'} selected</span>
+                     <select bind:value={bulkEvidenceStatus} disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}>
+                       {#each evidenceStatuses as status}
+                         <option value={status}>{status}</option>
+                       {/each}
+                     </select>
+                     <button
+                       type="button"
+                       disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}
+                       onclick={() => void updateSelectedEvidenceStatus()}
+                     >
+                       Mark
+                     </button>
+                     <button
+                       type="button"
+                       disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}
+                       onclick={() => void repairSelectedReferenceEvidence()}
+                     >
+                       Repair resources
+                     </button>
+                   </div>
+                   {#each auditReferences as reference, referenceIndex (reference._auditSourceId ?? reference.id ?? reference.url ?? reference.title)}
                      {@const resourceClaims = getResourceClaimsForReference(reference)}
                      {@const resourceClaimsExpanded = isReferenceClaimsExpanded(reference, referenceIndex)}
                      {@const visibleResourceClaims = resourceClaimsExpanded ? resourceClaims : resourceClaims.slice(0, 6)}
@@ -748,17 +1036,85 @@ function removeAsset(id: string) {
                              </a>
                            {/if}
                          </div>
-                         <span>{resourceClaims.length} resource claim{resourceClaims.length === 1 ? '' : 's'}</span>
+                         <div class="reference-detail-actions">
+                           <span>{resourceClaims.length} evidence claim{resourceClaims.length === 1 ? '' : 's'}</span>
+                           <button
+                             type="button"
+                             disabled={Boolean(evidenceBusy)}
+                             onclick={() => void repairReferenceEvidence(reference)}
+                           >
+                             {evidenceBusy === `repair:${reference.id}` ? 'Repairing...' : 'Repair'}
+                           </button>
+                         </div>
                        </div>
                        {#if resourceClaims.length > 0}
                          <div class="resource-claim-list">
                            {#each visibleResourceClaims as claim (claim.id ?? claim.quote ?? claim.fact?.textRefined)}
-                             <div class="resource-claim">
-                               <strong>{claim.fact?.textRefined || claim.fact?.textRaw || claim.quote}</strong>
-                               {#if claim.quote}
-                                 <span>{claim.quote}</span>
-                               {/if}
-                             </div>
+                             {@const evidenceIds = getResourceClaimEvidenceIds(claim)}
+                             <details class="resource-claim">
+                               <summary>
+                                 <label class="evidence-select">
+                                   <input
+                                     type="checkbox"
+                                     checked={isResourceClaimSelected(claim)}
+                                     disabled={evidenceIds.length === 0}
+                                     onchange={() => toggleResourceClaimSelection(claim)}
+                                   />
+                                   <span class={`evidence-status evidence-status--${claim.status || 'supports'}`}>
+                                     {getEvidenceStatusIcon(claim.status)}
+                                   </span>
+                                 </label>
+                                 <strong>{claim.fact?.textRefined || claim.fact?.textRaw || claim.quote}</strong>
+                               </summary>
+                               <div class="resource-claim-body">
+                                 {#if claim.quote}
+                                   <p>{claim.quote}</p>
+                                 {/if}
+                                 <dl>
+                                   <div>
+                                     <dt>Status</dt>
+                                     <dd>{claim.status || 'supports'}</dd>
+                                   </div>
+                                   {#if claim.locator}
+                                     <div>
+                                       <dt>Locator</dt>
+                                       <dd>{claim.locator}</dd>
+                                     </div>
+                                   {/if}
+                                   {#if claim.sourceTitle}
+                                     <div>
+                                       <dt>Source</dt>
+                                       <dd>{claim.sourceTitle}</dd>
+                                     </div>
+                                   {/if}
+                                   {#if claim.confidence !== null && claim.confidence !== undefined}
+                                     <div>
+                                       <dt>Confidence</dt>
+                                       <dd>{Math.round(claim.confidence * 100)}%</dd>
+                                     </div>
+                                   {/if}
+                                 </dl>
+                                 {#each claim.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
+                                   <div class="evidence-detail">
+                                     <span>{evidence.extractionMethod || 'extracted evidence'}</span>
+                                     {#if evidence.quote}
+                                       <p>{evidence.quote}</p>
+                                     {/if}
+                                   </div>
+                                 {/each}
+                                 <div class="resource-claim-actions">
+                                   {#each evidenceStatuses as status}
+                                     <button
+                                       type="button"
+                                       disabled={evidenceIds.length === 0 || Boolean(evidenceBusy)}
+                                       onclick={() => void updateEvidenceStatus(evidenceIds, status)}
+                                     >
+                                       {status}
+                                     </button>
+                                   {/each}
+                                 </div>
+                               </div>
+                             </details>
                            {/each}
                            {#if resourceClaims.length > 6}
                              <button
@@ -1148,15 +1504,81 @@ function removeAsset(id: string) {
   }
 
   .reference-detail-header div,
-  .resource-claim {
+  .resource-claim summary {
+    display: flex;
+    gap: 0.25rem;
+  }
+
+  .reference-detail-header div {
+    flex-direction: column;
+  }
+
+  .reference-detail-actions {
+    align-items: flex-end;
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 0.35rem;
+    white-space: nowrap;
+  }
+
+  .reference-detail-actions button,
+  .resource-claim-actions button,
+  .evidence-bulk-toolbar button {
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.375rem;
+    color: var(--smrt-color-on-surface);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .reference-detail-actions button:disabled,
+  .resource-claim-actions button:disabled,
+  .evidence-bulk-toolbar button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+
+  .evidence-bulk-toolbar {
+    align-items: center;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.5rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+
+  .evidence-bulk-toolbar span,
+  .evidence-message {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.8125rem;
+  }
+
+  .evidence-bulk-toolbar select {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.375rem;
+    padding: 0.25rem 0.5rem;
+  }
+
+  .evidence-message {
+    margin: 0;
+  }
+
+  .evidence-message--error {
+    color: var(--smrt-color-error);
+  }
+
+  .evidence-message--notice {
+    color: var(--smrt-color-primary);
   }
 
   .reference-detail-header a,
   .reference-detail-header span,
-  .resource-claim span,
+  .resource-claim-body,
   .resource-claim-more {
     color: var(--smrt-color-on-surface-variant);
     font-size: 0.8125rem;
@@ -1178,6 +1600,108 @@ function removeAsset(id: string) {
   .resource-claim {
     border-top: 1px solid var(--smrt-color-outline-variant);
     padding-top: 0.65rem;
+  }
+
+  .resource-claim summary {
+    align-items: flex-start;
+    cursor: pointer;
+    list-style: none;
+  }
+
+  .resource-claim summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .evidence-select {
+    align-items: center;
+    display: flex;
+    gap: 0.35rem;
+    margin-top: 0.1rem;
+  }
+
+  .evidence-status {
+    align-items: center;
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.75rem;
+    font-weight: 800;
+    height: 1.35rem;
+    justify-content: center;
+    line-height: 1;
+    width: 1.35rem;
+  }
+
+  .evidence-status--supports {
+    background: #dcfce7;
+    color: #166534;
+  }
+
+  .evidence-status--contradicts,
+  .evidence-status--invalid {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .evidence-status--unclear {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .evidence-status--irrelevant {
+    background: #f1f5f9;
+    color: #475569;
+  }
+
+  .resource-claim-body {
+    padding: 0.5rem 0 0 2.6rem;
+  }
+
+  .resource-claim-body p {
+    margin: 0.25rem 0 0;
+  }
+
+  .resource-claim-body dl {
+    display: grid;
+    gap: 0.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+    margin: 0.5rem 0;
+  }
+
+  .resource-claim-body dl div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  .resource-claim-body dt {
+    color: var(--smrt-color-outline);
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .resource-claim-body dd {
+    margin: 0;
+  }
+
+  .evidence-detail {
+    border-left: 2px solid var(--smrt-color-outline-variant);
+    margin-top: 0.5rem;
+    padding-left: 0.65rem;
+  }
+
+  .evidence-detail span {
+    color: var(--smrt-color-outline);
+    font-size: 0.75rem;
+    font-weight: 700;
+  }
+
+  .resource-claim-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.65rem;
   }
 
   .add-reference-row {

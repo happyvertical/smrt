@@ -4,7 +4,21 @@
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { FactEvidence } from './fact-evidence';
-import type { FactEvidenceOptions } from './types';
+import type { FactEvidenceOptions, FactEvidenceStatus } from './types';
+
+const FACT_EVIDENCE_STATUSES: FactEvidenceStatus[] = [
+  'supports',
+  'contradicts',
+  'unclear',
+  'irrelevant',
+  'invalid',
+];
+
+function normalizeFactEvidenceStatus(value: unknown): FactEvidenceStatus {
+  return FACT_EVIDENCE_STATUSES.includes(value as FactEvidenceStatus)
+    ? (value as FactEvidenceStatus)
+    : 'supports';
+}
 
 function normalizeEvidenceKeyPart(value: unknown): string {
   return String(value ?? '')
@@ -63,6 +77,92 @@ export class FactEvidenceCollection extends SmrtCollection<FactEvidence> {
     });
   }
 
+  async getForSources(
+    sources: Array<{ sourceKind: string; sourceId: string }>,
+  ): Promise<FactEvidence[]> {
+    const byId = new Map<string, FactEvidence>();
+
+    for (const source of sources) {
+      const entries = await this.getForSource(
+        source.sourceKind,
+        source.sourceId,
+      );
+      for (const entry of entries) {
+        const key =
+          typeof entry.id === 'string' && entry.id
+            ? entry.id
+            : `${entry.factId}:${entry.evidenceKey}`;
+        byId.set(key, entry);
+      }
+    }
+
+    return [...byId.values()];
+  }
+
+  async bulkUpdateStatus(
+    evidenceIds: string[],
+    status: FactEvidenceStatus,
+    options: { reason?: string; reviewedBy?: string | null } = {},
+  ): Promise<FactEvidence[]> {
+    const uniqueIds = [...new Set(evidenceIds.filter(Boolean))];
+    const normalizedStatus = normalizeFactEvidenceStatus(status);
+    const updated: FactEvidence[] = [];
+
+    for (const evidenceId of uniqueIds) {
+      const entry = await this.get({ id: evidenceId });
+      if (!entry) {
+        continue;
+      }
+
+      entry.status = normalizedStatus;
+      entry.updateMetadata({
+        evidenceStatusReason: options.reason || null,
+        evidenceStatusReviewedBy: options.reviewedBy || null,
+        evidenceStatusUpdatedAt: new Date().toISOString(),
+      });
+      await entry.save();
+      updated.push(entry);
+    }
+
+    return updated;
+  }
+
+  async replaceGeneratedForSources(
+    sources: Array<{ sourceKind: string; sourceId: string }>,
+    options: { generatedBy?: string; contentId?: string } = {},
+  ): Promise<{ deletedEvidenceIds: string[] }> {
+    const deletedEvidenceIds: string[] = [];
+    const sourceKeys = new Set(
+      sources.map((source) => `${source.sourceKind}:${source.sourceId}`),
+    );
+
+    if (sourceKeys.size === 0) {
+      return { deletedEvidenceIds };
+    }
+
+    const entries = await this.list({});
+    for (const entry of entries) {
+      if (!sourceKeys.has(`${entry.sourceKind}:${entry.sourceId}`)) {
+        continue;
+      }
+
+      const metadata = entry.getMetadata();
+      if (options.generatedBy && metadata.generatedBy !== options.generatedBy) {
+        continue;
+      }
+      if (options.contentId && metadata.contentId !== options.contentId) {
+        continue;
+      }
+
+      if (typeof entry.id === 'string') {
+        deletedEvidenceIds.push(entry.id);
+      }
+      await entry.delete();
+    }
+
+    return { deletedEvidenceIds };
+  }
+
   async upsertEvidence(options: FactEvidenceOptions): Promise<FactEvidence> {
     if (!options.factId) {
       throw new Error('factId is required for evidence');
@@ -76,6 +176,7 @@ export class FactEvidenceCollection extends SmrtCollection<FactEvidence> {
 
     if (existing) {
       Object.assign(existing, {
+        status: normalizeFactEvidenceStatus(options.status ?? existing.status),
         sourceKind: options.sourceKind ?? existing.sourceKind,
         sourceId: options.sourceId ?? existing.sourceId,
         sourceUrl: options.sourceUrl ?? existing.sourceUrl,
@@ -100,6 +201,7 @@ export class FactEvidenceCollection extends SmrtCollection<FactEvidence> {
 
     return this.create({
       ...options,
+      status: normalizeFactEvidenceStatus(options.status),
       metadata: serializeEvidenceMetadata(options.metadata),
       evidenceKey,
     });

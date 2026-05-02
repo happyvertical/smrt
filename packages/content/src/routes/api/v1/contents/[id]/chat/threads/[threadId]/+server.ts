@@ -19,6 +19,11 @@ type ContentChatLocals = {
   } | null;
 };
 
+type ContentChatAIConfig = AIClientOptions & {
+  model?: string;
+  defaultModel?: string;
+};
+
 export const GET: RequestHandler = async ({ params, locals }) => {
   const smrtLocals = locals as ContentChatLocals;
   const { threadId } = params;
@@ -177,7 +182,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     }));
 
     const config = getSmrtConfig('@happyvertical/smrt-content:Content');
-    const aiConfig = (config.ai || {}) as AIClientOptions;
+    const aiConfig = (config.ai || {}) as ContentChatAIConfig;
 
     // Get SvelteKit environment variables for SSR
     const env = process.env;

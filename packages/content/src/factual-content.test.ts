@@ -160,6 +160,7 @@ CREATE TABLE IF NOT EXISTS fact_evidences (
   tenant_id TEXT,
   fact_id TEXT,
   evidence_key TEXT,
+  status TEXT DEFAULT 'supports',
   source_kind TEXT,
   source_id TEXT,
   source_url TEXT,
@@ -171,6 +172,7 @@ CREATE TABLE IF NOT EXISTS fact_evidences (
   metadata TEXT
 );
 CREATE INDEX IF NOT EXISTS fact_evidences_id_idx ON fact_evidences (id);
+CREATE INDEX IF NOT EXISTS fact_evidences_tenant_id_source_status_idx ON fact_evidences (tenant_id, source_kind, source_id, status);
 CREATE UNIQUE INDEX IF NOT EXISTS fact_evidences_fact_id_evidence_key_idx ON fact_evidences (fact_id, evidence_key);
 `;
 
@@ -884,6 +886,47 @@ describe('Content governance', () => {
         'supported',
         'unsupported',
       ]);
+      expect(audit.resourceClaims[0]?.status).toBe('supports');
+
+      const sourceEvidenceId = audit.resourceClaims[0]?.evidence?.[0]?.id;
+      const supportedClaim = audit.claims.find(
+        (claim) => claim.supportStatus === 'supported',
+      );
+      expect(sourceEvidenceId).toBeTruthy();
+      expect(supportedClaim?.id).toBeTruthy();
+
+      const invalidEvidenceState = await article.updateFactEvidenceStatus({
+        evidenceIds: [sourceEvidenceId as string],
+        status: 'invalid',
+        reason: 'Evidence excerpt is not reliable.',
+      });
+      expect(invalidEvidenceState.resourceClaims[0]?.status).toBe('invalid');
+
+      const recheckedWithoutEvidence = await article.recheckFactClaims({
+        claimFactIds: [supportedClaim?.id as string],
+      });
+      expect(
+        recheckedWithoutEvidence.claims.find(
+          (claim) => claim.id === supportedClaim?.id,
+        )?.supportStatus,
+      ).toBe('unsupported');
+
+      await article.repairFactEvidence({
+        sources: [
+          {
+            sourceKind: 'content-reference',
+            sourceId: reference.id as string,
+          },
+        ],
+      });
+      const recheckedWithEvidence = await article.recheckFactClaims({
+        claimFactIds: [supportedClaim?.id as string],
+      });
+      expect(
+        recheckedWithEvidence.claims.find(
+          (claim) => claim.id === supportedClaim?.id,
+        )?.supportStatus,
+      ).toBe('supported');
 
       const secondAudit = await article.repairFactAudit();
       expect(secondAudit.counts.total).toBe(2);

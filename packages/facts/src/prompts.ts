@@ -122,7 +122,8 @@ Statuses:
 Rules:
 - Use only the supplied candidate facts and evidence.
 - Do not use outside knowledge.
-- Return ONLY JSON with status, matchedFactIds, rationale, and confidence.
+- Include matchedFactIds and matchedEvidenceIds for the exact facts/evidence excerpts that support or contradict the claim.
+- Return ONLY JSON with status, matchedFactIds, matchedEvidenceIds, rationale, and confidence.
 
 <claim>
 {claim}

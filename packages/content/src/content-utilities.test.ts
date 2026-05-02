@@ -228,6 +228,7 @@ describe('content utilities', () => {
       id: 'content-1',
       title: 'Hello world',
       referenceIds: ['reference-1'],
+      references: [{ id: 'reference-1' }, { id: null }],
       assetIds: ['asset-1'],
       assets: [{ id: 'asset-1' }, { id: undefined }],
     });
