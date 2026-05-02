@@ -149,6 +149,31 @@ CREATE TABLE IF NOT EXISTS fact_sources (
 CREATE INDEX IF NOT EXISTS fact_sources_id_idx ON fact_sources (id);
 `;
 
+const FACT_EVIDENCE_SCHEMA = `
+CREATE TABLE IF NOT EXISTS fact_evidences (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  _meta_type TEXT,
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  fact_id TEXT,
+  evidence_key TEXT,
+  source_kind TEXT,
+  source_id TEXT,
+  source_url TEXT,
+  source_title TEXT,
+  quote TEXT,
+  locator TEXT,
+  extraction_method TEXT,
+  confidence DECIMAL,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS fact_evidences_id_idx ON fact_evidences (id);
+CREATE UNIQUE INDEX IF NOT EXISTS fact_evidences_fact_id_evidence_key_idx ON fact_evidences (fact_id, evidence_key);
+`;
+
 const FACT_CONTENTS_SCHEMA = `
 CREATE TABLE IF NOT EXISTS fact_contents (
   id TEXT PRIMARY KEY NOT NULL,
@@ -236,6 +261,7 @@ async function prepareContentWorkflowSchemas(db: DatabaseInterface) {
   await syncSchema({ db, schema: CONTENT_CORRECTIONS_SCHEMA });
   await syncSchema({ db, schema: FACTS_SCHEMA });
   await syncSchema({ db, schema: FACT_SOURCES_SCHEMA });
+  await syncSchema({ db, schema: FACT_EVIDENCE_SCHEMA });
   await syncSchema({ db, schema: FACT_CONTENTS_SCHEMA });
 }
 
@@ -690,7 +716,7 @@ describe('Content governance', () => {
       const fact = await facts.create({
         textRefined: 'The bridge reopened on March 1.',
         textRaw: 'The bridge reopened on March 1.',
-        status: 'active',
+        status: 'pending',
         type: 'assertion',
         domain: 'civic',
       });
@@ -729,6 +755,153 @@ describe('Content governance', () => {
         true,
       );
       expect(versions.some((version) => version.kind === 'draft')).toBe(true);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
+  it('repairs fact audit claims without changing article prose', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+
+      configureContentGovernance({
+        assignments: [
+          {
+            contentType: 'article',
+            enabled: true,
+            factLinkingEnabled: true,
+            transparencyEnabled: true,
+            defaultFactRelationship: 'supports',
+          },
+        ],
+      });
+
+      const aiMessage = vi.fn(async (prompt: string) => {
+        if (prompt.includes('candidate_facts_json')) {
+          const matchedId = prompt.match(/"id": "([^"]+)"/)?.[1];
+          if (prompt.includes('<claim>\nCouncil approved the project.')) {
+            return JSON.stringify({
+              status: 'supported',
+              matchedFactIds: matchedId ? [matchedId] : [],
+              rationale: 'The reference fact supports the article claim.',
+              confidence: 0.94,
+            });
+          }
+          return JSON.stringify({
+            status: 'unsupported',
+            matchedFactIds: [],
+            rationale: 'No source fact supports this claim.',
+            confidence: 0.9,
+          });
+        }
+
+        if (prompt.includes('article_text')) {
+          return JSON.stringify({
+            facts: [
+              {
+                statement: 'Council approved the project.',
+                type: 'event',
+                sourceExcerpt: 'Council approved the project.',
+                confidence: 0.91,
+              },
+              {
+                statement: 'The project will cost $2 million.',
+                type: 'measurement',
+                sourceExcerpt: 'The project will cost $2 million.',
+                confidence: 0.82,
+              },
+            ],
+          });
+        }
+
+        return JSON.stringify({
+          facts: [
+            {
+              statement: 'Council approved the project.',
+              type: 'event',
+              sourceExcerpt: 'Council approved the project.',
+              confidence: 0.95,
+            },
+          ],
+        });
+      });
+
+      const article = new Content({
+        name: 'project-story',
+        title: 'Council approves project',
+        body: 'Council approved the project. The project will cost $2 million.',
+        type: 'article',
+        status: 'draft',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: aiMessage,
+        },
+      });
+      await article.initialize();
+      await article.save();
+
+      const reference = new Content({
+        name: 'project-minutes',
+        title: 'Meeting minutes',
+        body: 'Council approved the project.',
+        type: 'minutes',
+        status: 'published',
+        db,
+      });
+      await reference.initialize();
+      await reference.save();
+      await article.addReference(reference);
+
+      const facts = await FactCollection.create({ db });
+      const manualClaimFact = await facts.create({
+        textRefined: 'The project will cost $2 million.',
+        textRaw: 'The project will cost $2 million.',
+        status: 'pending',
+        type: 'measurement',
+        domain: 'content-audit',
+      });
+      await article.addFact(manualClaimFact, 'referenced_in', {
+        manual: true,
+      });
+
+      const originalBody = article.body;
+      const audit = await article.repairFactAudit();
+
+      expect(article.body).toBe(originalBody);
+      expect(audit.counts.total).toBe(2);
+      expect(audit.counts.supported).toBe(1);
+      expect(audit.counts.unsupported).toBe(1);
+      expect(audit.claims.map((claim) => claim.supportStatus).sort()).toEqual([
+        'supported',
+        'unsupported',
+      ]);
+
+      const secondAudit = await article.repairFactAudit();
+      expect(secondAudit.counts.total).toBe(2);
+
+      const manualLink = (
+        await article.getFactLinks({ relationship: 'referenced_in' })
+      ).find((link: any) => link.factId === manualClaimFact.id);
+      expect(manualLink).toBeTruthy();
+      expect(manualLink?.getMetadata().manual).toBe(true);
+      expect(manualLink?.getMetadata().generatedBy).toBeUndefined();
+      expect(manualLink?.getMetadata().factAudit?.generatedBy).toBe(
+        'content.factAudit',
+      );
+
+      const pending = await facts.getPending();
+      expect(
+        pending.some((fact) => fact.textRefined.includes('$2 million')),
+      ).toBe(true);
     } finally {
       if (typeof db.close === 'function') {
         await db.close();

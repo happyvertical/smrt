@@ -101,6 +101,27 @@ export interface FactSourceOptions extends SmrtObjectOptions {
 }
 
 /**
+ * Options for creating concrete evidence for a fact.
+ */
+export interface FactEvidenceOptions extends SmrtObjectOptions {
+  id?: string;
+  factId?: string;
+  evidenceKey?: string;
+  sourceKind?: string;
+  sourceId?: string;
+  sourceUrl?: string;
+  sourceTitle?: string;
+  quote?: string;
+  locator?: string;
+  extractionMethod?: string;
+  confidence?: number;
+  metadata?: string | Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
  * Options for creating a FactSubject instance
  */
 export interface FactSubjectOptions extends SmrtObjectOptions {
@@ -156,7 +177,9 @@ export interface ReconcileOptions {
     sourceUrl?: string;
     sourceTitle?: string;
     credibility?: number;
+    metadata?: Record<string, any>;
   };
+  tenantId?: string | null;
   /** Runtime prompt override for AI-assisted ambiguous reconciliation */
   promptOverride?: PromptConfigOverrideInput;
 }
@@ -194,6 +217,36 @@ export interface FactExtractionOptions {
   /** Tenant id used when resolving stored prompt overrides */
   tenantId?: string | null;
   /** Runtime prompt override for a single extraction call */
+  promptOverride?: PromptConfigOverrideInput;
+}
+
+export type FactClaimSupportStatus =
+  | 'supported'
+  | 'unsupported'
+  | 'contradicted'
+  | 'needs_review';
+
+export interface FactClaimSupportCandidate {
+  id?: string | null;
+  statement: string;
+  evidence?: Array<{
+    id?: string | null;
+    quote?: string | null;
+    sourceTitle?: string | null;
+    sourceUrl?: string | null;
+    locator?: string | null;
+  }>;
+}
+
+export interface FactClaimSupportAssessment {
+  status: FactClaimSupportStatus;
+  matchedFactIds: string[];
+  rationale: string;
+  confidence?: number;
+}
+
+export interface FactClaimSupportOptions {
+  tenantId?: string | null;
   promptOverride?: PromptConfigOverrideInput;
 }
 

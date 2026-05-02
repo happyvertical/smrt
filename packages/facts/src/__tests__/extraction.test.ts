@@ -79,6 +79,71 @@ describe('FactCollection.extractCandidatesFromText()', () => {
     });
     expect(facts[0].statement).toBe('Council received the report.');
   });
+
+  it('extracts material article claims with the article-claim prompt', async () => {
+    const prompts: string[] = [];
+    const collection = new FactCollection({
+      ai: {
+        message: async (prompt: string) => {
+          prompts.push(prompt);
+          return JSON.stringify({
+            facts: [
+              {
+                statement: 'Council approved Bylaw 255-2025.',
+                type: 'event',
+                sourceExcerpt: 'Council approved Bylaw 255-2025',
+                confidence: 0.88,
+              },
+            ],
+          });
+        },
+      },
+    } as any);
+
+    const claims = await collection.extractArticleClaims(
+      'Council approved Bylaw 255-2025 after a public hearing.',
+      { maxFacts: 3 },
+    );
+
+    expect(prompts[0]).toContain('article_text');
+    expect(claims[0]).toMatchObject({
+      statement: 'Council approved Bylaw 255-2025.',
+      type: 'event',
+      sourceExcerpt: 'Council approved Bylaw 255-2025',
+      confidence: 0.88,
+    });
+  });
+
+  it('assesses article claim support against candidate facts', async () => {
+    const collection = new FactCollection({
+      ai: {
+        message: async () =>
+          JSON.stringify({
+            status: 'supported',
+            matchedFactIds: ['fact-1'],
+            rationale: 'The agenda fact supports the claim.',
+            confidence: 0.92,
+          }),
+      },
+    } as any);
+
+    const assessment = await collection.assessClaimSupport(
+      'Council scheduled a public hearing.',
+      [
+        {
+          id: 'fact-1',
+          statement: 'The agenda lists a public hearing.',
+        },
+      ],
+    );
+
+    expect(assessment).toEqual({
+      status: 'supported',
+      matchedFactIds: ['fact-1'],
+      rationale: 'The agenda fact supports the claim.',
+      confidence: 0.92,
+    });
+  });
 });
 
 beforeEach(() => {

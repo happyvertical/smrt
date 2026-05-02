@@ -6,7 +6,13 @@ import {
   smrt,
   ValidationError,
 } from '@happyvertical/smrt-core';
-import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
+import type {
+  Fact,
+  FactClaimSupportAssessment,
+  FactClaimSupportStatus,
+  FactContentRelationship,
+  FactExtractionCandidate,
+} from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
@@ -18,6 +24,7 @@ import {
   buildContentGovernanceAssignmentKey,
   buildContentReviewPrompt,
   type ContentGovernanceState,
+  type ContentReviewFinding,
   type ContentReviewProfileEvaluation,
   type CreateContentVersionOptions,
   getAcceptedContentReviewStatuses,
@@ -57,6 +64,41 @@ const USED_FACT_RELATIONSHIPS = new Set<FactContentRelationship>([
   'referenced_in',
   'contradicts',
 ]);
+const FACT_AUDIT_GENERATED_BY = 'content.factAudit';
+const FACT_AUDIT_DOMAIN = 'content-audit';
+
+type FactAuditSourceMaterial = {
+  sourceKind: string;
+  sourceId: string;
+  sourceUrl: string;
+  sourceTitle: string;
+  locator: string;
+  text: string;
+};
+
+type FactAuditClaim = {
+  id: string | null;
+  fact: Record<string, any>;
+  supportStatus: FactClaimSupportStatus;
+  claimQuote: string | null;
+  rationale: string | null;
+  confidence: number | null;
+  relationship: string | null;
+  linkMetadata: Record<string, any>;
+  evidence: Record<string, any>[];
+  matchedFacts: Array<{
+    fact: Record<string, any>;
+    evidence: Record<string, any>[];
+  }>;
+};
+
+type FactAuditState = {
+  counts: Record<FactClaimSupportStatus | 'total', number>;
+  claims: FactAuditClaim[];
+  warnings: string[];
+  generatedBy: string;
+  latestAuditRunId: string | null;
+};
 
 function normalizeFingerprintValue(value: unknown): unknown {
   if (value instanceof Date) {
@@ -93,6 +135,56 @@ function hashFingerprint(input: string): string {
 
 function createFingerprint(value: unknown): string {
   return hashFingerprint(JSON.stringify(normalizeFingerprintValue(value)));
+}
+
+function normalizeAuditText(value: unknown): string {
+  return String(value ?? '')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function createFactAuditRunId(contentId: string): string {
+  return `fact-audit-${hashFingerprint(
+    `${contentId}:${new Date().toISOString()}:${Math.random()}`,
+  )}`;
+}
+
+function parseAuditMetadata(value: unknown): Record<string, any> {
+  if (!value) return {};
+  if (typeof value === 'object') return value as Record<string, any>;
+  try {
+    return JSON.parse(String(value)) as Record<string, any>;
+  } catch {
+    return {};
+  }
+}
+
+function getLinkMetadata(link: any): Record<string, any> {
+  return typeof link?.getMetadata === 'function' ? link.getMetadata() : {};
+}
+
+function getGeneratedFactAuditMetadata(link: any): Record<string, any> | null {
+  const metadata = getLinkMetadata(link);
+  if (metadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
+    return metadata;
+  }
+
+  if (
+    metadata.factAudit &&
+    typeof metadata.factAudit === 'object' &&
+    metadata.factAudit.generatedBy === FACT_AUDIT_GENERATED_BY
+  ) {
+    return metadata.factAudit as Record<string, any>;
+  }
+
+  return null;
+}
+
+function getContentText(content: Content): string {
+  return [content.title, content.description, content.body]
+    .map(normalizeAuditText)
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 function getPublicPrompt(metadata: Record<string, any>): string | null {
@@ -238,6 +330,8 @@ export interface ContentOptions extends SmrtObjectOptions {
       'delete',
       'getFactsState',
       'syncFactsState',
+      'getFactAuditStateAction',
+      'repairFactAuditAction',
       'getGovernanceStateAction',
       'listReviews',
       'runReviewAction',
@@ -253,6 +347,8 @@ export interface ContentOptions extends SmrtObjectOptions {
     routes: {
       getFactsState: { method: 'GET', path: 'facts' },
       syncFactsState: { method: 'PUT', path: 'facts' },
+      getFactAuditStateAction: { method: 'GET', path: 'fact-audit' },
+      repairFactAuditAction: { method: 'POST', path: 'fact-audit/repair' },
       getGovernanceStateAction: { method: 'GET', path: 'governance' },
       listReviews: { method: 'GET', path: 'reviews' },
       runReviewAction: { method: 'POST', path: 'reviews' },
@@ -584,6 +680,13 @@ export class Content
   private async getFactSourceCollection() {
     const { FactSourceCollection } = await import('@happyvertical/smrt-facts');
     return FactSourceCollection.create(this.options);
+  }
+
+  private async getFactEvidenceCollection() {
+    const { FactEvidenceCollection } = await import(
+      '@happyvertical/smrt-facts'
+    );
+    return FactEvidenceCollection.create(this.options);
   }
 
   private async getContentVersionCollection() {
@@ -1558,6 +1661,632 @@ export class Content
       ...options,
       tenantId: this.tenantId,
     });
+  }
+
+  private async getFactAuditSourceMaterials(): Promise<{
+    sources: FactAuditSourceMaterial[];
+    warnings: string[];
+  }> {
+    const warnings: string[] = [];
+    const sources: FactAuditSourceMaterial[] = [];
+    const references = await this.getReferences();
+    const assets = await this.getAssets();
+
+    for (const reference of references) {
+      const referenceId = (reference.id as string | undefined) || '';
+      const text = getContentText(reference);
+      const sourceUrl =
+        normalizeAuditText((reference as any).url) ||
+        normalizeAuditText((reference as any).sourceUrl) ||
+        normalizeAuditText((reference as any).fileKey);
+      const sourceTitle =
+        normalizeAuditText(reference.title) ||
+        normalizeAuditText((reference as any).name) ||
+        sourceUrl ||
+        referenceId;
+
+      if (!text) {
+        warnings.push(
+          `Reference ${sourceTitle || referenceId} has no extracted text.`,
+        );
+        continue;
+      }
+
+      sources.push({
+        sourceKind: 'content-reference',
+        sourceId: referenceId,
+        sourceUrl,
+        sourceTitle,
+        locator: sourceTitle,
+        text,
+      });
+    }
+
+    for (const asset of assets as any[]) {
+      const metadata =
+        typeof asset?.getMetadata === 'function'
+          ? asset.getMetadata()
+          : parseAuditMetadata(asset?.metadata);
+      const text = [
+        metadata.extractedText,
+        metadata.text,
+        metadata.ocrText,
+        asset?.text,
+        asset?.body,
+        asset?.description,
+      ]
+        .map(normalizeAuditText)
+        .filter(Boolean)
+        .join('\n\n');
+      const assetId = normalizeAuditText(asset?.id);
+      const sourceTitle =
+        normalizeAuditText(asset?.title) ||
+        normalizeAuditText(asset?.name) ||
+        normalizeAuditText(asset?.filename) ||
+        assetId;
+      const sourceUrl =
+        normalizeAuditText(asset?.url) ||
+        normalizeAuditText(asset?.sourceUrl) ||
+        normalizeAuditText(asset?.fileKey);
+
+      if (!text) {
+        warnings.push(`Asset ${sourceTitle || assetId} has no extracted text.`);
+        continue;
+      }
+
+      sources.push({
+        sourceKind: 'asset',
+        sourceId: assetId,
+        sourceUrl,
+        sourceTitle,
+        locator: sourceTitle,
+        text,
+      });
+    }
+
+    return { sources, warnings };
+  }
+
+  private async findExactAuditFact(statement: string): Promise<Fact | null> {
+    const facts = await this.getFactCollection();
+    const matches = await facts.list({
+      where: { textRefined: statement },
+      orderBy: 'updated_at DESC',
+    });
+
+    return (
+      matches.find(
+        (fact: any) =>
+          fact.tenantId === this.tenantId ||
+          fact.tenant_id === this.tenantId ||
+          (!fact.tenantId && !fact.tenant_id && !this.tenantId),
+      ) || null
+    );
+  }
+
+  private async safeAuditLink(
+    factId: string,
+    relationship: FactContentRelationship,
+    metadata: Record<string, any>,
+  ) {
+    const links = await this.getFactContentCollection();
+    const existing = (
+      await links.getForContentByRelationship(this.id as string, relationship)
+    ).find((link: any) => link.factId === factId);
+
+    if (existing) {
+      const existingMetadata = getLinkMetadata(existing);
+      if (existingMetadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
+        existing.setMetadata?.({
+          ...existingMetadata,
+          ...metadata,
+        });
+      } else {
+        existing.setMetadata?.({
+          ...existingMetadata,
+          factAudit: {
+            ...(existingMetadata.factAudit &&
+            typeof existingMetadata.factAudit === 'object'
+              ? existingMetadata.factAudit
+              : {}),
+            ...metadata,
+          },
+        });
+      }
+      await existing.save();
+      return existing;
+    }
+
+    return links.link(factId, this.id as string, relationship, metadata);
+  }
+
+  private async clearGeneratedFactAudit(): Promise<void> {
+    if (!this.id) {
+      return;
+    }
+
+    const [links, evidences] = await Promise.all([
+      this.getFactLinks(),
+      this.getFactEvidenceCollection(),
+    ]);
+
+    for (const link of links as any[]) {
+      const metadata = getLinkMetadata(link);
+      if (metadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
+        await link.delete();
+      } else if (
+        metadata.factAudit &&
+        typeof metadata.factAudit === 'object' &&
+        metadata.factAudit.generatedBy === FACT_AUDIT_GENERATED_BY
+      ) {
+        const { factAudit: _removed, ...preservedMetadata } = metadata;
+        link.setMetadata?.(preservedMetadata);
+        await link.save();
+      }
+    }
+
+    const generatedEvidence = await evidences.list(
+      this.tenantId ? { where: { tenantId: this.tenantId } } : {},
+    );
+    for (const evidence of generatedEvidence as any[]) {
+      const metadata =
+        typeof evidence.getMetadata === 'function'
+          ? evidence.getMetadata()
+          : {};
+      if (
+        metadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
+        metadata.contentId === this.id
+      ) {
+        await evidence.delete();
+      }
+    }
+  }
+
+  public async repairFactAudit(
+    options: {
+      maxReferenceFactsPerSource?: number;
+      maxArticleClaims?: number;
+      context?: string;
+    } = {},
+  ) {
+    await this.requireFactLinking('fact audit repair');
+    if (!this.id) {
+      throw new Error('Cannot repair fact audit for unsaved content');
+    }
+
+    const auditRunId = createFactAuditRunId(this.id as string);
+    const facts = await this.getFactCollection();
+    const evidences = await this.getFactEvidenceCollection();
+    const warnings: string[] = [];
+    const referenceFacts = new Map<string, Fact>();
+    const articleText = getContentText(this);
+
+    const sourceMaterials = await this.getFactAuditSourceMaterials();
+    warnings.push(...sourceMaterials.warnings);
+    await this.clearGeneratedFactAudit();
+
+    for (const source of sourceMaterials.sources) {
+      let candidates: FactExtractionCandidate[] = [];
+      try {
+        candidates = await facts.extractCandidatesFromText(source.text, {
+          domain: FACT_AUDIT_DOMAIN,
+          sourceType: source.sourceKind,
+          context: options.context || source.sourceTitle,
+          maxFacts: options.maxReferenceFactsPerSource ?? 24,
+          tenantId: this.tenantId,
+        });
+      } catch (error: any) {
+        warnings.push(
+          `Failed to extract facts from ${source.sourceTitle}: ${error.message || error}`,
+        );
+        continue;
+      }
+
+      for (const candidate of candidates) {
+        const result = await facts.reconcile({
+          rawInput: candidate.statement,
+          type: candidate.type || 'assertion',
+          domain: FACT_AUDIT_DOMAIN,
+          tenantId: this.tenantId,
+          source: {
+            sourceType: source.sourceKind,
+            sourceUrl: source.sourceUrl,
+            sourceTitle: source.sourceTitle,
+            credibility: candidate.confidence ?? 0.75,
+            metadata: {
+              auditRunId,
+              generatedBy: FACT_AUDIT_GENERATED_BY,
+              contentId: this.id,
+              sourceId: source.sourceId,
+              quote: candidate.sourceExcerpt || null,
+              locator: source.locator || null,
+            },
+          },
+        });
+        referenceFacts.set(result.fact.id as string, result.fact);
+
+        await evidences.upsertEvidence({
+          factId: result.fact.id as string,
+          sourceKind: source.sourceKind,
+          sourceId: source.sourceId,
+          sourceUrl: source.sourceUrl,
+          sourceTitle: source.sourceTitle,
+          quote: candidate.sourceExcerpt || candidate.statement,
+          locator: source.locator,
+          extractionMethod: 'ai-reference-fact',
+          confidence: candidate.confidence ?? 0.75,
+          tenantId: this.tenantId,
+          metadata: {
+            auditRunId,
+            generatedBy: FACT_AUDIT_GENERATED_BY,
+            contentId: this.id,
+            candidateMetadata: candidate.metadata || {},
+          },
+        });
+      }
+    }
+
+    let claims: FactExtractionCandidate[] = [];
+    if (!articleText) {
+      warnings.push('Article has no text to audit.');
+    } else {
+      try {
+        claims = await facts.extractArticleClaims(articleText, {
+          domain: FACT_AUDIT_DOMAIN,
+          sourceType: 'article',
+          context: options.context || this.title || this.slug || '',
+          maxFacts: options.maxArticleClaims ?? 32,
+          tenantId: this.tenantId,
+        });
+      } catch (error: any) {
+        warnings.push(
+          `Failed to extract article claims: ${error.message || error}`,
+        );
+      }
+    }
+
+    const supportCandidates = await Promise.all(
+      [...referenceFacts.values()].map(async (fact: any) => {
+        const evidence = await evidences.getForFact(fact.id as string);
+        return {
+          id: fact.id as string,
+          statement: fact.textRefined || fact.textRaw || '',
+          evidence: evidence.map((entry: any) => ({
+            id: entry.id || null,
+            quote: entry.quote || null,
+            sourceTitle: entry.sourceTitle || null,
+            sourceUrl: entry.sourceUrl || null,
+            locator: entry.locator || null,
+          })),
+        };
+      }),
+    );
+
+    const findings: ContentReviewFinding[] = [];
+
+    for (const claim of claims) {
+      let assessment: FactClaimSupportAssessment;
+      try {
+        assessment = await facts.assessClaimSupport(
+          claim.statement,
+          supportCandidates,
+          { tenantId: this.tenantId },
+        );
+      } catch (error: any) {
+        warnings.push(
+          `Failed to assess claim "${claim.statement}": ${error.message || error}`,
+        );
+        assessment = {
+          status: 'needs_review' as FactClaimSupportStatus,
+          matchedFactIds: [],
+          rationale: 'Support assessment failed.',
+          confidence: undefined,
+        };
+      }
+
+      const matchedFactIds = assessment.matchedFactIds.filter((factId) =>
+        referenceFacts.has(factId),
+      );
+      let claimFact =
+        matchedFactIds.length > 0
+          ? referenceFacts.get(matchedFactIds[0]) || null
+          : await this.findExactAuditFact(claim.statement);
+
+      if (!claimFact) {
+        claimFact = await facts.create({
+          textRefined: claim.statement,
+          textRaw: claim.statement,
+          type: claim.type || 'assertion',
+          domain: FACT_AUDIT_DOMAIN,
+          status:
+            assessment.status === 'unsupported' ||
+            assessment.status === 'needs_review'
+              ? 'pending'
+              : 'active',
+          sourceCount: 0,
+          confidence: claim.confidence ?? assessment.confidence ?? 0.5,
+          tenantId: this.tenantId,
+          metadata: JSON.stringify({
+            auditRunId,
+            generatedBy: FACT_AUDIT_GENERATED_BY,
+            claimOnly: matchedFactIds.length === 0,
+          }),
+        });
+      }
+
+      const articleEvidence = await evidences.upsertEvidence({
+        factId: claimFact.id as string,
+        sourceKind: 'content',
+        sourceId: this.id as string,
+        sourceTitle: this.title || this.slug || (this.id as string),
+        quote: claim.sourceExcerpt || claim.statement,
+        locator: this.title || this.slug || '',
+        extractionMethod: 'ai-article-claim',
+        confidence: claim.confidence ?? assessment.confidence ?? 0.5,
+        tenantId: this.tenantId,
+        metadata: {
+          auditRunId,
+          generatedBy: FACT_AUDIT_GENERATED_BY,
+          contentId: this.id,
+          supportStatus: assessment.status,
+        },
+      });
+
+      const supportingEvidenceIds: string[] = [];
+      for (const matchedFactId of matchedFactIds) {
+        const supportingEvidence = await evidences.getForFact(matchedFactId);
+        supportingEvidenceIds.push(
+          ...supportingEvidence
+            .map((entry: any) => entry.id)
+            .filter((id: unknown): id is string => typeof id === 'string'),
+        );
+      }
+
+      const linkMetadata = {
+        auditRunId,
+        generatedBy: FACT_AUDIT_GENERATED_BY,
+        supportStatus: assessment.status,
+        claimQuote: claim.sourceExcerpt || claim.statement,
+        articleEvidenceId: articleEvidence.id || null,
+        supportingFactIds: matchedFactIds,
+        supportingEvidenceIds,
+        rationale: assessment.rationale,
+        confidence: assessment.confidence ?? claim.confidence ?? null,
+      };
+
+      await this.safeAuditLink(
+        claimFact.id as string,
+        'referenced_in',
+        linkMetadata,
+      );
+
+      for (const matchedFactId of matchedFactIds) {
+        await this.safeAuditLink(
+          matchedFactId,
+          assessment.status === 'contradicted' ? 'contradicts' : 'supports',
+          {
+            ...linkMetadata,
+            supportingEvidenceIds,
+          },
+        );
+      }
+
+      if (assessment.status !== 'supported') {
+        findings.push({
+          severity: assessment.status === 'contradicted' ? 'error' : 'warning',
+          title:
+            assessment.status === 'contradicted'
+              ? 'Contradicted article claim'
+              : 'Unsupported article claim',
+          detail: assessment.rationale || 'The claim needs editorial review.',
+          factId: claimFact.id as string,
+          quote: claim.sourceExcerpt || claim.statement,
+          ruleId: 'fact-audit',
+        });
+      }
+    }
+
+    const reviews = await this.getContentReviewCollection();
+    await reviews.createFromResult({
+      contentId: this.id as string,
+      kind: 'facts',
+      policyKey: 'facts',
+      reviewer: 'system',
+      result: {
+        status: findings.length > 0 ? 'flagged' : 'passed',
+        summary:
+          findings.length > 0
+            ? `${findings.length} article claim(s) need review.`
+            : 'Article claims are supported by available evidence.',
+        findings,
+      },
+      metadata: {
+        auditRunId,
+        generatedBy: FACT_AUDIT_GENERATED_BY,
+        warnings,
+      },
+      tenantId: this.tenantId,
+    });
+
+    const state = await this.getFactAuditState();
+    return {
+      ...state,
+      repair: {
+        auditRunId,
+        claimsExtracted: claims.length,
+        referenceFactsExtracted: supportCandidates.length,
+        warnings,
+      },
+    };
+  }
+
+  public async repairFactAuditAction(
+    options: {
+      maxReferenceFactsPerSource?: number;
+      maxArticleClaims?: number;
+      context?: string;
+    } = {},
+  ) {
+    return this.repairFactAudit(options);
+  }
+
+  public async getFactAuditState(): Promise<FactAuditState> {
+    if (!this.id) {
+      return {
+        counts: {
+          total: 0,
+          supported: 0,
+          unsupported: 0,
+          contradicted: 0,
+          needs_review: 0,
+        },
+        claims: [],
+        warnings: [],
+        generatedBy: FACT_AUDIT_GENERATED_BY,
+        latestAuditRunId: null,
+      };
+    }
+
+    const [facts, factLinks] = await Promise.all([
+      this.getFacts({
+        relationship: 'referenced_in',
+        latestOnly: false,
+        includeSuperseded: false,
+      }),
+      this.getFactLinks({ relationship: 'referenced_in' }),
+    ]);
+    const factMap = new Map(
+      facts
+        .filter((fact: any) => fact.id)
+        .map((fact: any) => [fact.id as string, fact]),
+    );
+    const evidences = await this.getFactEvidenceCollection();
+    const allFacts = await this.getFactCollection();
+    const generatedLinks = factLinks
+      .map((link: any) => ({
+        link,
+        metadata: getGeneratedFactAuditMetadata(link),
+      }))
+      .filter(
+        (entry): entry is { link: any; metadata: Record<string, any> } =>
+          entry.metadata !== null,
+      );
+    const claims: FactAuditClaim[] = [];
+    const warnings: string[] = [];
+    let latestAuditRunId: string | null = null;
+
+    for (const { link, metadata } of generatedLinks) {
+      const fact = factMap.get(link.factId);
+      if (!fact) {
+        continue;
+      }
+
+      latestAuditRunId = metadata.auditRunId || latestAuditRunId;
+      const status = (metadata.supportStatus ||
+        'needs_review') as FactClaimSupportStatus;
+      const matchedFactIds = Array.isArray(metadata.supportingFactIds)
+        ? metadata.supportingFactIds
+        : [];
+      const articleEvidenceId =
+        typeof metadata.articleEvidenceId === 'string'
+          ? metadata.articleEvidenceId
+          : null;
+      const supportingEvidenceIds = new Set(
+        Array.isArray(metadata.supportingEvidenceIds)
+          ? metadata.supportingEvidenceIds.filter(
+              (id: unknown): id is string => typeof id === 'string',
+            )
+          : [],
+      );
+      const [allClaimEvidence, matchedFacts] = await Promise.all([
+        evidences.getForFact(fact.id as string),
+        Promise.all(
+          matchedFactIds.map(async (factId: string) => {
+            const matchedFact = await allFacts.get({ id: factId });
+            const matchedEvidence = (await evidences.getForFact(factId)).filter(
+              (entry: any) =>
+                supportingEvidenceIds.size === 0
+                  ? entry.sourceKind !== 'content' || entry.sourceId !== this.id
+                  : supportingEvidenceIds.has(entry.id),
+            );
+            return matchedFact
+              ? {
+                  fact: serializeFact(matchedFact),
+                  evidence: matchedEvidence.map((entry: any) => ({
+                    ...serializeFact(entry),
+                    metadata:
+                      typeof entry.getMetadata === 'function'
+                        ? entry.getMetadata()
+                        : {},
+                  })),
+                }
+              : null;
+          }),
+        ),
+      ]);
+      const claimEvidence = allClaimEvidence.filter((entry: any) =>
+        articleEvidenceId
+          ? entry.id === articleEvidenceId
+          : entry.sourceKind === 'content' && entry.sourceId === this.id,
+      );
+
+      claims.push({
+        id: fact.id as string,
+        fact: serializeFact(fact),
+        supportStatus: status,
+        claimQuote: metadata.claimQuote || null,
+        rationale: metadata.rationale || null,
+        confidence: metadata.confidence ?? null,
+        relationship: link.relationship || null,
+        linkMetadata: metadata,
+        evidence: claimEvidence.map((entry: any) => ({
+          ...serializeFact(entry),
+          metadata:
+            typeof entry.getMetadata === 'function' ? entry.getMetadata() : {},
+        })),
+        matchedFacts: matchedFacts.filter(
+          Boolean,
+        ) as FactAuditClaim['matchedFacts'],
+      });
+    }
+
+    const latestReview = (
+      await this.getContentReviewCollection()
+    ).getLatestForPolicyKey(this.id as string, 'facts');
+    const review = await latestReview;
+    const reviewMetadata =
+      review && typeof review.getMetadata === 'function'
+        ? review.getMetadata()
+        : {};
+    if (
+      reviewMetadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
+      Array.isArray(reviewMetadata.warnings)
+    ) {
+      warnings.push(...reviewMetadata.warnings);
+    }
+
+    const counts = {
+      total: claims.length,
+      supported: 0,
+      unsupported: 0,
+      contradicted: 0,
+      needs_review: 0,
+    };
+    for (const claim of claims) {
+      counts[claim.supportStatus] += 1;
+    }
+
+    return {
+      counts,
+      claims,
+      warnings,
+      generatedBy: FACT_AUDIT_GENERATED_BY,
+      latestAuditRunId,
+    };
+  }
+
+  public async getFactAuditStateAction() {
+    return this.getFactAuditState();
   }
 
   public async getFactsState(

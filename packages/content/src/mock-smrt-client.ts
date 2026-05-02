@@ -63,6 +63,60 @@ export interface FactLinkData {
   updatedAt?: string;
 }
 
+export interface FactEvidenceData {
+  id?: string;
+  factId?: string;
+  evidenceKey?: string;
+  sourceKind?: string | null;
+  sourceId?: string | null;
+  sourceUrl?: string | null;
+  sourceTitle?: string | null;
+  quote?: string | null;
+  locator?: string | null;
+  extractionMethod?: string | null;
+  confidence?: number | null;
+  metadata?: Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type FactAuditSupportStatus =
+  | 'supported'
+  | 'unsupported'
+  | 'contradicted'
+  | 'needs_review';
+
+export interface FactAuditClaimData {
+  id?: string | null;
+  fact: FactData;
+  supportStatus: FactAuditSupportStatus;
+  claimQuote?: string | null;
+  rationale?: string | null;
+  confidence?: number | null;
+  relationship?: string | null;
+  linkMetadata?: Record<string, any>;
+  evidence?: FactEvidenceData[];
+  matchedFacts?: Array<{
+    fact: FactData;
+    evidence: FactEvidenceData[];
+  }>;
+}
+
+export interface FactAuditStateData {
+  counts: Record<FactAuditSupportStatus | 'total', number>;
+  claims: FactAuditClaimData[];
+  warnings: string[];
+  generatedBy: string;
+  latestAuditRunId?: string | null;
+  repair?: {
+    auditRunId: string;
+    claimsExtracted: number;
+    referenceFactsExtracted: number;
+    warnings: string[];
+  };
+}
+
 export interface ContentReviewFindingData {
   severity?: string;
   title?: string;
@@ -513,6 +567,21 @@ class ApiClient {
       }>
     > =>
       this.request(`/contents/${id}/facts${toQueryString({ relationship })}`),
+
+    getFactAudit: async (
+      id: string,
+    ): Promise<ApiResponse<FactAuditStateData>> =>
+      this.request<FactAuditStateData>(`/contents/${id}/fact-audit`),
+
+    repairFactAudit: async (
+      id: string,
+      data: Record<string, any> = {},
+    ): Promise<ApiResponse<FactAuditStateData>> =>
+      this.request<FactAuditStateData>(`/contents/${id}/fact-audit/repair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
 
     syncFacts: async (
       id: string,

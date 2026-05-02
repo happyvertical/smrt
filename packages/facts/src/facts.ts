@@ -15,12 +15,18 @@ import { Fact } from './fact';
 import { FactSourceCollection } from './fact-sources';
 import { FactSubjectCollection } from './fact-subjects';
 import {
+  smrtFactsAssessClaimSupportPrompt,
+  smrtFactsExtractArticleClaimsPrompt,
   smrtFactsExtractCandidatesPrompt,
   smrtFactsReconcilePrompt,
 } from './prompts';
 import type {
   EntityBriefing,
   EvolutionType,
+  FactClaimSupportAssessment,
+  FactClaimSupportCandidate,
+  FactClaimSupportOptions,
+  FactClaimSupportStatus,
   FactContentRelationship,
   FactExtractionCandidate,
   FactExtractionOptions,
@@ -122,6 +128,34 @@ function parseFactExtractionResponse(raw: string): FactExtractionCandidate[] {
         entry: FactExtractionCandidate | null,
       ): entry is FactExtractionCandidate => entry !== null,
     );
+}
+
+function normalizeSupportStatus(value: unknown): FactClaimSupportStatus {
+  const allowed: FactClaimSupportStatus[] = [
+    'supported',
+    'unsupported',
+    'contradicted',
+    'needs_review',
+  ];
+  return allowed.includes(value as FactClaimSupportStatus)
+    ? (value as FactClaimSupportStatus)
+    : 'needs_review';
+}
+
+function parseClaimSupportResponse(raw: string): FactClaimSupportAssessment {
+  const parsed = JSON.parse(extractJSONPayload(raw));
+  const matchedFactIds = Array.isArray(parsed?.matchedFactIds)
+    ? parsed.matchedFactIds.filter(
+        (id: unknown): id is string => typeof id === 'string' && id.length > 0,
+      )
+    : [];
+
+  return {
+    status: normalizeSupportStatus(parsed?.status),
+    matchedFactIds,
+    rationale: normalizeWhitespace(parsed?.rationale) || '',
+    confidence: normalizeConfidence(parsed?.confidence),
+  };
 }
 
 function promptMessageOptions(ai: ResolvedPromptAI) {
@@ -406,6 +440,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         textRaw: rawInput,
         type,
         domain,
+        tenantId: options.tenantId ?? null,
         status: 'active',
         sourceCount: source ? 1 : 0,
         confidence: calculateConfidence({
@@ -462,6 +497,7 @@ export class FactCollection extends SmrtCollection<Fact> {
               textRaw: rawInput,
               type,
               domain,
+              tenantId: options.tenantId ?? null,
               status: 'active',
               sourceCount: source ? 1 : 0,
             },
@@ -483,6 +519,13 @@ export class FactCollection extends SmrtCollection<Fact> {
         sourceUrl: source.sourceUrl || '',
         sourceTitle: source.sourceTitle || '',
         credibility: source.credibility ?? 0.5,
+        metadata:
+          source.metadata === undefined
+            ? undefined
+            : typeof source.metadata === 'string'
+              ? source.metadata
+              : JSON.stringify(source.metadata),
+        tenantId: options.tenantId ?? null,
       });
     }
 
@@ -565,6 +608,125 @@ export class FactCollection extends SmrtCollection<Fact> {
       promptMessageOptions(resolvedPrompt.ai),
     );
     return parseFactExtractionResponse(response).slice(0, maxFacts);
+  }
+
+  /**
+   * Extract material factual claims made by an article.
+   *
+   * This is intentionally separate from source extraction: source extraction
+   * finds evidence-backed facts, while claim extraction finds statements the
+   * draft itself needs to justify.
+   */
+  async extractArticleClaims(
+    text: string,
+    options: FactExtractionOptions = {},
+  ): Promise<FactExtractionCandidate[]> {
+    const sourceText = normalizeWhitespace(text);
+    if (!sourceText) {
+      return [];
+    }
+
+    const {
+      domain = '',
+      context = '',
+      maxFacts = 24,
+      allowedTypes = DEFAULT_EXTRACTION_FACT_TYPES,
+    } = options;
+
+    const resolvedPrompt = await resolvePrompt(
+      smrtFactsExtractArticleClaimsPrompt.key,
+      {
+        db: this.options.db,
+        tenantId: options.tenantId,
+        override: options.promptOverride,
+        variables: {
+          allowedTypes: allowedTypes.join(', '),
+          context: context || 'No additional context.',
+          domain: domain || 'general',
+          maxFacts,
+          sourceText,
+          sourceType: options.sourceType || 'article',
+        },
+      },
+    );
+
+    const directAi =
+      this.options.ai && typeof (this.options.ai as any).message === 'function'
+        ? (this.options.ai as {
+            message: (prompt: string, options?: any) => Promise<string>;
+          })
+        : null;
+    const ai = directAi || (await this.getAiClient());
+    if (typeof ai.message !== 'function') {
+      throw new Error(
+        'AI article claim extraction requires an AI client with a message() method',
+      );
+    }
+
+    const response = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+    return parseFactExtractionResponse(response).slice(0, maxFacts);
+  }
+
+  /**
+   * Classify whether a claim is supported by candidate facts/evidence.
+   */
+  async assessClaimSupport(
+    claim: string,
+    candidateFacts: FactClaimSupportCandidate[],
+    options: FactClaimSupportOptions = {},
+  ): Promise<FactClaimSupportAssessment> {
+    const normalizedClaim = normalizeWhitespace(claim);
+    if (!normalizedClaim) {
+      return {
+        status: 'needs_review',
+        matchedFactIds: [],
+        rationale: 'No claim text was provided.',
+      };
+    }
+
+    if (candidateFacts.length === 0) {
+      return {
+        status: 'unsupported',
+        matchedFactIds: [],
+        rationale: 'No candidate facts were available for comparison.',
+        confidence: 1,
+      };
+    }
+
+    const resolvedPrompt = await resolvePrompt(
+      smrtFactsAssessClaimSupportPrompt.key,
+      {
+        db: this.options.db,
+        tenantId: options.tenantId,
+        override: options.promptOverride,
+        variables: {
+          claim: normalizedClaim,
+          candidateFacts: JSON.stringify(candidateFacts, null, 2),
+        },
+      },
+    );
+
+    const directAi =
+      this.options.ai && typeof (this.options.ai as any).message === 'function'
+        ? (this.options.ai as {
+            message: (prompt: string, options?: any) => Promise<string>;
+          })
+        : null;
+    const ai = directAi || (await this.getAiClient());
+    if (typeof ai.message !== 'function') {
+      throw new Error(
+        'AI claim support assessment requires an AI client with a message() method',
+      );
+    }
+
+    const response = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+    return parseClaimSupportResponse(response);
   }
 
   /**

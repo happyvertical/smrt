@@ -16,6 +16,11 @@ import './prompts.js';
 export { Fact } from './fact';
 export { FactContent } from './fact-content';
 export { FactContentCollection } from './fact-contents';
+export { FactEvidence } from './fact-evidence';
+export {
+  createFactEvidenceKey,
+  FactEvidenceCollection,
+} from './fact-evidences';
 export { FactSource } from './fact-source';
 export { FactSourceCollection } from './fact-sources';
 export { FactSubject } from './fact-subject';
@@ -25,6 +30,8 @@ export { FactTagCollection } from './fact-tags';
 // Export collections
 export { FactCollection } from './facts';
 export {
+  smrtFactsAssessClaimSupportPrompt,
+  smrtFactsExtractArticleClaimsPrompt,
   smrtFactsExtractCandidatesPrompt,
   smrtFactsReconcilePrompt,
 } from './prompts';
@@ -33,8 +40,13 @@ export {
 export type {
   EntityBriefing,
   EvolutionType,
+  FactClaimSupportAssessment,
+  FactClaimSupportCandidate,
+  FactClaimSupportOptions,
+  FactClaimSupportStatus,
   FactContentOptions,
   FactContentRelationship,
+  FactEvidenceOptions,
   FactExtractionCandidate,
   FactExtractionOptions,
   FactMetadata,

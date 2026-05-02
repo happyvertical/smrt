@@ -10,6 +10,7 @@ import {
   type ContentTransparencyData,
   type ContentVersionData,
   createClient,
+  type FactAuditStateData,
   type FactData,
   type ResolvedContentGovernanceData,
 } from '../../mock-smrt-client';
@@ -67,6 +68,7 @@ let corrections = $state<ContentCorrectionData[]>([]);
 let versions = $state<ContentVersionData[]>([]);
 let transparencyPreview = $state<ContentTransparencyData | null>(null);
 let publishedTransparency = $state<ContentTransparencyData | null>(null);
+let factAudit = $state<FactAuditStateData | null>(null);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
 let reviewProfiles = $state<ContentReviewProfileData[]>([]);
 let governanceDefinitions = $state<ContentGovernanceDefinitionsData | null>(
@@ -85,6 +87,7 @@ let reviewBusy = $state<string | null>(null);
 let correctionBusy = $state(false);
 let versionBusy = $state(false);
 let transparencyLoading = $state(false);
+let factAuditBusy = $state(false);
 
 let catalogError = $state<string | null>(null);
 let workflowError = $state<string | null>(null);
@@ -110,6 +113,24 @@ const draftGovernanceKey = $derived(
 function getFactId(fact: FactData): string | null {
   return typeof fact.id === 'string' && fact.id.length > 0 ? fact.id : null;
 }
+
+const factAuditGroups = $derived({
+  contradicted:
+    factAudit?.claims.filter(
+      (claim) => claim.supportStatus === 'contradicted',
+    ) || [],
+  unsupported:
+    factAudit?.claims.filter(
+      (claim) => claim.supportStatus === 'unsupported',
+    ) || [],
+  needs_review:
+    factAudit?.claims.filter(
+      (claim) => claim.supportStatus === 'needs_review',
+    ) || [],
+  supported:
+    factAudit?.claims.filter((claim) => claim.supportStatus === 'supported') ||
+    [],
+});
 
 function createFactMap(facts: FactData[]) {
   return new Map(
@@ -547,6 +568,28 @@ async function syncFactsIfSaved(nextFacts: FactData[]) {
   }
 }
 
+async function repairFactAudit() {
+  if (!savedContentId || factAuditBusy) {
+    return;
+  }
+
+  factAuditBusy = true;
+  workflowError = null;
+  workflowNotice = null;
+
+  try {
+    const response = await client.contents.repairFactAudit(savedContentId);
+    factAudit = response.data;
+    workflowNotice = `Fact audit repaired: ${response.data.counts.total} claim(s) checked.`;
+    const factsResponse = await client.contents.getFacts(savedContentId);
+    updateSelectedFacts(factsResponse.data.facts || []);
+  } catch (err: any) {
+    workflowError = err.message || 'Failed to repair fact audit';
+  } finally {
+    factAuditBusy = false;
+  }
+}
+
 function addFact(fact: FactData) {
   const factId = getFactId(fact);
   if (!factId || selectedFactIds.includes(factId)) {
@@ -626,6 +669,7 @@ async function loadSavedWorkflow() {
       versionsResponse,
       governanceResponse,
       governanceDefinitionsResponse,
+      factAuditResponse,
       transparencyPreviewResponse,
       publishedTransparencyResponse,
     ] = await Promise.all([
@@ -635,6 +679,7 @@ async function loadSavedWorkflow() {
       client.contents.getVersions(savedContentId),
       client.contents.getGovernanceState(savedContentId),
       client.contents.getGovernanceDefinitions(),
+      client.contents.getFactAudit(savedContentId),
       client.contents.getTransparencyPreview(savedContentId),
       client.contents.getPublishedTransparency(savedContentId),
     ]);
@@ -645,6 +690,7 @@ async function loadSavedWorkflow() {
     versions = versionsResponse.data;
     transparencyPreview = transparencyPreviewResponse.data;
     publishedTransparency = publishedTransparencyResponse.data;
+    factAudit = factAuditResponse.data;
     governanceState = governanceResponse.data;
     governanceDefinitions = governanceDefinitionsResponse.data;
     reviewProfiles = governanceResponse.data.reviewProfiles || [];
@@ -1024,6 +1070,117 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </div>
     {/if}
   </div>
+  </details>
+
+  <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
+    <summary class="editor-drawer-header">
+      <div style="display: flex; align-items: center; gap: 0.5rem;">
+        Claim audit
+        {#if factAuditBusy}
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Repairing...</span>
+        {/if}
+      </div>
+      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+    </summary>
+    <div class="editor-drawer-content">
+      {#if !savedContentId}
+        <p class="empty-copy">Save this content to audit article claims against evidence.</p>
+      {:else}
+        <div class="claim-audit-toolbar">
+          <div class="claim-audit-counts">
+            <span><strong>{factAudit?.counts.total ?? 0}</strong> claims</span>
+            <span><strong>{factAudit?.counts.supported ?? 0}</strong> supported</span>
+            <span><strong>{factAudit?.counts.unsupported ?? 0}</strong> unsupported</span>
+            <span><strong>{factAudit?.counts.contradicted ?? 0}</strong> contradicted</span>
+            <span><strong>{factAudit?.counts.needs_review ?? 0}</strong> review</span>
+          </div>
+          <button
+            type="button"
+            class="secondary-button"
+            disabled={factAuditBusy}
+            onclick={() => void repairFactAudit()}
+          >
+            {factAuditBusy ? 'Repairing...' : 'Repair audit'}
+          </button>
+        </div>
+
+        {#if factAudit?.warnings?.length}
+          <div class="claim-audit-warnings">
+            {#each factAudit.warnings as warning}
+              <p>{warning}</p>
+            {/each}
+          </div>
+        {/if}
+
+        {#if !factAudit || factAudit.counts.total === 0}
+          <p class="empty-copy">
+            No claim audit has been generated yet.
+          </p>
+        {:else}
+          {#each [
+            ['contradicted', 'Contradicted'],
+            ['unsupported', 'Unsupported'],
+            ['needs_review', 'Needs review'],
+            ['supported', 'Supported']
+          ] as group}
+            {@const groupKey = group[0] as keyof typeof factAuditGroups}
+            {@const groupClaims = factAuditGroups[groupKey]}
+            {#if groupClaims.length > 0}
+              <div class="claim-audit-group">
+                <div class="section-caption">{group[1]} claims</div>
+                {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
+                  <details class="claim-audit-item">
+                    <summary>
+                      <span class={`pill pill--${claim.supportStatus === 'supported' ? 'passed' : claim.supportStatus === 'contradicted' ? 'failed' : 'flagged'}`}>
+                        {claim.supportStatus.replace('_', ' ')}
+                      </span>
+                      <strong>{claim.fact.textRefined || claim.claimQuote || claim.id}</strong>
+                    </summary>
+                    <div class="claim-audit-item__body">
+                      {#if claim.claimQuote}
+                        <p><strong>Article quote:</strong> {claim.claimQuote}</p>
+                      {/if}
+                      {#if claim.rationale}
+                        <p><strong>Assessment:</strong> {claim.rationale}</p>
+                      {/if}
+                      {#if claim.evidence?.length}
+                        <div class="claim-audit-evidence">
+                          <div class="section-caption">Article evidence</div>
+                          {#each claim.evidence as evidence (evidence.id ?? evidence.evidenceKey)}
+                            <p>{evidence.quote || evidence.locator || evidence.sourceTitle}</p>
+                          {/each}
+                        </div>
+                      {/if}
+                      {#if claim.matchedFacts?.length}
+                        <div class="claim-audit-evidence">
+                          <div class="section-caption">Matched evidence</div>
+                          {#each claim.matchedFacts as matched (matched.fact.id ?? matched.fact.textRefined)}
+                            <div class="claim-audit-match">
+                              <strong>{matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
+                              {#each matched.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
+                                <span>
+                                  {evidence.sourceTitle || 'Source'}
+                                  {#if evidence.locator}
+                                    · {evidence.locator}
+                                  {/if}
+                                  {#if evidence.quote}
+                                    · {evidence.quote}
+                                  {/if}
+                                </span>
+                              {/each}
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  </details>
+                {/each}
+              </div>
+            {/if}
+          {/each}
+        {/if}
+      {/if}
+    </div>
   </details>
 
   <details class="editor-drawer">
@@ -1575,6 +1732,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .section-caption,
   .empty-copy,
   .review-card span,
+  .claim-audit-counts,
+  .claim-audit-item span,
   .fact-result span,
   .fact-chip span {
     color: var(--smrt-color-on-surface-variant);
@@ -1584,6 +1743,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .fact-search,
   .fact-pagination,
   .fact-pagination__actions,
+  .claim-audit-toolbar,
+  .claim-audit-counts,
   .review-actions,
   .version-card__footer {
     display: flex;
@@ -1647,10 +1808,53 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   .fact-chip-list,
   .fact-catalog__list,
+  .claim-audit-group,
+  .claim-audit-item__body,
+  .claim-audit-evidence,
+  .claim-audit-match,
   .review-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+  }
+
+  .claim-audit-toolbar {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .claim-audit-counts {
+    flex-wrap: wrap;
+  }
+
+  .claim-audit-warnings {
+    border-radius: 0.6rem;
+    background: rgba(245, 158, 11, 0.12);
+    color: #92400e;
+    padding: 0.75rem 0.9rem;
+  }
+
+  .claim-audit-warnings p,
+  .claim-audit-item p {
+    margin: 0;
+  }
+
+  .claim-audit-item {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.6rem;
+    background: var(--smrt-color-surface);
+    padding: 0.75rem;
+  }
+
+  .claim-audit-item summary {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .claim-audit-item__body {
+    padding-top: 0.75rem;
   }
 
   .review-profile-list {
