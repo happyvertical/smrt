@@ -495,4 +495,20 @@ describe('ContentEditor component', () => {
     expect(disabledState).not.toBeNull();
     expect(target.textContent).toContain('Agent chat is temporarily offline.');
   });
+
+  it('removes the chat sidebar container and layout column when hidden', () => {
+    const target = renderEditor({ hideChat: true });
+
+    expect(target.querySelector('.editor-sidebar-col')).toBeNull();
+    expect(
+      target.querySelector(
+        '[data-testid="content-editor-agent-chat-disabled"]',
+      ),
+    ).toBeNull();
+    expect(
+      target
+        .querySelector('.editor-grid')
+        ?.classList.contains('editor-grid--with-sidebar'),
+    ).toBe(false);
+  });
 });

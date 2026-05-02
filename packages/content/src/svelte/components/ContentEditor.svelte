@@ -456,7 +456,7 @@ function removeAsset(id: string) {
 </script>
 
 <div class="form-container">
-  <div class="editor-grid">
+  <div class="editor-grid" class:editor-grid--with-sidebar={showChatSidebar}>
     <!-- LEFT COLUMN (Document Canvas) -->
     <form
       bind:this={editForm}
@@ -730,7 +730,7 @@ function removeAsset(id: string) {
   }
 
   @media (min-width: 1024px) {
-    .editor-grid {
+    .editor-grid--with-sidebar {
       grid-template-columns: 1fr auto;
     }
     .editor-sidebar-col {
