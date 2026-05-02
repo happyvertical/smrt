@@ -2,6 +2,7 @@
 import type {
   ContentData,
   ContentGovernanceStateData,
+  FactAuditStateData,
   FactData,
 } from '../../mock-smrt-client';
 import { evaluateContentPublishReadiness } from '../../publish-readiness';
@@ -68,6 +69,7 @@ let selectedFacts = $state<FactData[]>([]);
 let lastResetKey = $state<string | null | undefined>(undefined);
 let draftContent = $state<ContentData | undefined>(undefined);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
+let factAudit = $state<FactAuditStateData | null>(null);
 const resolvedContentId = $derived(content?.id ?? contentId);
 let innerEditor = $state<any>(null);
 
@@ -151,6 +153,10 @@ function handleGovernanceStateChange(state: ContentGovernanceStateData | null) {
   governanceState = state;
 }
 
+function handleFactAuditChange(state: FactAuditStateData | null) {
+  factAudit = state;
+}
+
 function handleSave(data: ContentData) {
   draftContent = data;
 
@@ -191,6 +197,7 @@ function handleSave(data: ContentData) {
     {apiBaseUrl}
     content={governedContent}
     contentId={resolvedContentId}
+    {factAudit}
     saveDisabled={publishSaveDisabled}
     saveNotice={resolvedSaveNotice}
     {agentChatEnabled}
@@ -217,6 +224,7 @@ function handleSave(data: ContentData) {
     customReviewPolicyKey={customReviewPolicyKey}
     onFactsChange={handleFactsChange}
     onGovernanceStateChange={handleGovernanceStateChange}
+    onFactAuditChange={handleFactAuditChange}
   />
 </div>
 
@@ -278,4 +286,3 @@ function handleSave(data: ContentData) {
     color: var(--smrt-color-on-surface-variant);
   }
 </style>
-

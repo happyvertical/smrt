@@ -83,6 +83,7 @@ beforeEach(() => {
         needs_review: 0,
       },
       claims: [],
+      resourceClaims: [],
       warnings: [],
       generatedBy: 'content.factAudit',
       latestAuditRunId: null,
@@ -100,6 +101,7 @@ beforeEach(() => {
         needs_review: 0,
       },
       claims: [],
+      resourceClaims: [],
       warnings: [],
       generatedBy: 'content.factAudit',
       latestAuditRunId: null,
@@ -201,9 +203,25 @@ describe('ContentGovernancePanel component', () => {
             claimQuote: 'Council approved the project.',
             rationale: 'No supporting evidence was found.',
             evidence: [],
-            matchedFacts: [],
+            matchedFacts: [
+              {
+                fact: {
+                  id: 'source-fact-1',
+                  textRefined: 'The minutes say council approved the project.',
+                },
+                evidence: [
+                  {
+                    id: 'evidence-1',
+                    sourceTitle: 'Meeting minutes',
+                    quote: 'Council approved the project.',
+                    confidence: 0.91,
+                  },
+                ],
+              },
+            ],
           },
         ],
+        resourceClaims: [],
         warnings: [],
         generatedBy: 'content.factAudit',
         latestAuditRunId: 'audit-1',
@@ -219,6 +237,7 @@ describe('ContentGovernancePanel component', () => {
           needs_review: 0,
         },
         claims: [],
+        resourceClaims: [],
         warnings: [],
         generatedBy: 'content.factAudit',
         latestAuditRunId: 'audit-2',
@@ -228,9 +247,13 @@ describe('ContentGovernancePanel component', () => {
     const target = renderPanel({ contentId: 'content-1' });
 
     await vi.waitFor(() => {
-      expect(target.textContent).toContain('Claim audit');
-      expect(target.textContent).toContain('Unsupported claims');
+      expect(target.textContent).toContain('Article claim audit');
+      expect(target.textContent).toContain('Unsupported article claims');
       expect(target.textContent).toContain('Council approved the project.');
+      expect(target.textContent).toContain('Based on source evidence');
+      expect(target.textContent).toContain(
+        'Source claim: The minutes say council approved the project.',
+      );
     });
 
     const repairButton = Array.from(target.querySelectorAll('button')).find(

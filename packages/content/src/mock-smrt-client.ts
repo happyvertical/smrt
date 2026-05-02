@@ -103,9 +103,23 @@ export interface FactAuditClaimData {
   }>;
 }
 
+export interface FactAuditResourceClaimData {
+  id?: string | null;
+  fact: FactData;
+  sourceKind?: string | null;
+  sourceId?: string | null;
+  sourceUrl?: string | null;
+  sourceTitle?: string | null;
+  locator?: string | null;
+  quote?: string | null;
+  confidence?: number | null;
+  evidence?: FactEvidenceData[];
+}
+
 export interface FactAuditStateData {
   counts: Record<FactAuditSupportStatus | 'total', number>;
   claims: FactAuditClaimData[];
+  resourceClaims: FactAuditResourceClaimData[];
   warnings: string[];
   generatedBy: string;
   latestAuditRunId?: string | null;

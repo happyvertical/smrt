@@ -23,6 +23,7 @@ function renderEditor(
     apiBaseUrl?: string;
     content?: any;
     contentId?: string;
+    factAudit?: any;
     saveDisabled?: boolean;
     saveNotice?: string | null;
     agentChatEnabled?: boolean;
@@ -43,6 +44,7 @@ function renderEditor(
       apiBaseUrl: props.apiBaseUrl,
       content: props.content,
       contentId: props.contentId ?? 'new',
+      factAudit: props.factAudit,
       saveDisabled: props.saveDisabled,
       saveNotice: props.saveNotice,
       agentChatEnabled: props.agentChatEnabled,
@@ -172,7 +174,7 @@ describe('ContentEditor component', () => {
       'Council approved the waterline phase two work.',
     );
     const factsDrawer = Array.from(target.querySelectorAll('details')).find(
-      (detail) => detail.textContent?.includes('Selected facts'),
+      (detail) => detail.textContent?.includes('Manually linked facts'),
     ) as HTMLDetailsElement | undefined;
     expect(factsDrawer?.open).toBe(true);
   });
@@ -199,6 +201,53 @@ describe('ContentEditor component', () => {
     await vi.waitFor(() =>
       expect(target.textContent).toContain('ref-content-123'),
     );
+  });
+
+  it('shows resource claims with their related reference', async () => {
+    const target = renderEditor({
+      content: {
+        title: 'Test Article',
+        referenceIds: ['ref-1'],
+        references: [
+          {
+            id: 'ref-1',
+            title: 'Meeting minutes',
+            url: 'https://example.com/minutes.pdf',
+          },
+        ],
+        assetIds: [],
+        assets: [],
+      },
+      factAudit: {
+        counts: {
+          total: 0,
+          supported: 0,
+          unsupported: 0,
+          contradicted: 0,
+          needs_review: 0,
+        },
+        claims: [],
+        resourceClaims: [
+          {
+            id: 'fact-1',
+            sourceId: 'ref-1',
+            sourceTitle: 'Meeting minutes',
+            quote: 'Council approved the project.',
+            fact: {
+              id: 'fact-1',
+              textRefined: 'Council approved the project.',
+            },
+          },
+        ],
+        warnings: [],
+        generatedBy: 'content.factAudit',
+        latestAuditRunId: 'audit-1',
+      },
+    });
+
+    expect(target.textContent).toContain('Meeting minutes');
+    expect(target.textContent).toContain('1 resource claim');
+    expect(target.textContent).toContain('Council approved the project.');
   });
 
   it('uploads dropped image URLs and renders them in the media gallery', async () => {

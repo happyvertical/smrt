@@ -1,6 +1,10 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
+import type {
+  FactAuditResourceClaimData,
+  FactAuditStateData,
+} from '../../mock-smrt-client';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
 import ContentAgentChat from './ContentAgentChat.svelte';
 
@@ -8,6 +12,7 @@ let {
   apiBaseUrl = '/api/v1',
   content = undefined,
   contentId = 'new',
+  factAudit = null,
   saveDisabled = false,
   saveNotice = null,
   agentChatEnabled = true,
@@ -21,6 +26,7 @@ let {
   apiBaseUrl?: string;
   content?: any;
   contentId?: string;
+  factAudit?: FactAuditStateData | null;
   saveDisabled?: boolean;
   saveNotice?: string | null;
   agentChatEnabled?: boolean;
@@ -67,8 +73,10 @@ function normalizePublishDate(value: unknown): string | null {
 }
 
 function getSavePayload(data: any) {
+  const { references: _references, ...payload } = data;
+
   return {
-    ...data,
+    ...payload,
     publish_date: normalizePublishDate(data.publish_date),
   };
 }
@@ -89,6 +97,7 @@ function getInitialFormData(c: any) {
         ...c,
         tags: c.tags || [],
         referenceIds: c.referenceIds || [],
+        references: c.references || [],
         assetIds: c.assetIds || [],
         assets: c.assets || [],
         publish_date: formatDateTimeLocal(c.publish_date ?? c.publishDate),
@@ -108,6 +117,7 @@ function getInitialFormData(c: any) {
         thumbnailAssetId: null,
         tags: [],
         referenceIds: [],
+        references: [],
         assetIds: [],
         assets: [],
       };
@@ -120,6 +130,7 @@ let currentReferenceIds = $derived(formData.referenceIds || []);
 const editorSnapshot = $derived({
   ...getSavePayload(formData),
   referenceIds: [...(formData.referenceIds || [])],
+  references: [...(formData.references || [])],
   assetIds: [...(formData.assetIds || [])],
   assets: [...(formData.assets || [])],
 });
@@ -181,6 +192,38 @@ function undoLastApply() {
   if (fieldUndoStack.length === 0) {
     showUndoBanner = false;
   }
+}
+
+function getReferenceLabel(reference: any): string {
+  return (
+    reference?.title ||
+    reference?.name ||
+    reference?.url ||
+    reference?.source ||
+    reference?.id ||
+    'Reference'
+  );
+}
+
+function getReferenceUrl(reference: any): string | null {
+  return reference?.url || reference?.originalUrl || reference?.source || null;
+}
+
+function getResourceClaimsForReference(
+  reference: any,
+): FactAuditResourceClaimData[] {
+  const referenceId = String(reference?.id || '');
+  const referenceUrl = getReferenceUrl(reference) || '';
+  const resourceClaims: FactAuditResourceClaimData[] =
+    factAudit?.resourceClaims ?? [];
+
+  return resourceClaims.filter((claim: FactAuditResourceClaimData) => {
+    if (referenceId && claim.sourceId === referenceId) {
+      return true;
+    }
+
+    return Boolean(referenceUrl && claim.sourceUrl === referenceUrl);
+  });
 }
 
 // We need a simple way to enter reference IDs or mock selecting them
@@ -665,6 +708,41 @@ function removeAsset(id: string) {
                     <span class="no-refs">No references.</span>
                   {/if}
                </div>
+               {#if formData.references?.length > 0}
+                 <div class="reference-detail-list">
+                   {#each formData.references as reference (reference.id ?? reference.url ?? reference.title)}
+                     {@const resourceClaims = getResourceClaimsForReference(reference)}
+                     <div class="reference-detail">
+                       <div class="reference-detail-header">
+                         <div>
+                           <strong>{getReferenceLabel(reference)}</strong>
+                           {#if getReferenceUrl(reference)}
+                             <a href={getReferenceUrl(reference) ?? undefined} target="_blank" rel="noreferrer">
+                               {getReferenceUrl(reference)}
+                             </a>
+                           {/if}
+                         </div>
+                         <span>{resourceClaims.length} resource claim{resourceClaims.length === 1 ? '' : 's'}</span>
+                       </div>
+                       {#if resourceClaims.length > 0}
+                         <div class="resource-claim-list">
+                           {#each resourceClaims.slice(0, 6) as claim (claim.id ?? claim.quote ?? claim.fact?.textRefined)}
+                             <div class="resource-claim">
+                               <strong>{claim.fact?.textRefined || claim.fact?.textRaw || claim.quote}</strong>
+                               {#if claim.quote}
+                                 <span>{claim.quote}</span>
+                               {/if}
+                             </div>
+                           {/each}
+                           {#if resourceClaims.length > 6}
+                             <span class="resource-claim-more">+ {resourceClaims.length - 6} more</span>
+                           {/if}
+                         </div>
+                       {/if}
+                     </div>
+                   {/each}
+                 </div>
+               {/if}
                <div class="add-reference-row">
                   <input type="text" bind:value={newReferenceId} placeholder="Reference ID or URL" />
                   <button type="button" onclick={addReference}>Add</button>
@@ -1013,6 +1091,52 @@ function removeAsset(id: string) {
     color: var(--smrt-color-outline);
     font-size: 0.875rem;
     font-style: italic;
+  }
+
+  .reference-detail-list,
+  .resource-claim-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .reference-detail {
+    border: 1px solid var(--smrt-color-outline-variant);
+    background: var(--smrt-color-surface);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+  }
+
+  .reference-detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    color: var(--smrt-color-on-surface);
+  }
+
+  .reference-detail-header div,
+  .resource-claim {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .reference-detail-header a,
+  .reference-detail-header span,
+  .resource-claim span,
+  .resource-claim-more {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.8125rem;
+  }
+
+  .resource-claim-list {
+    margin-top: 0.75rem;
+  }
+
+  .resource-claim {
+    border-top: 1px solid var(--smrt-color-outline-variant);
+    padding-top: 0.65rem;
   }
 
   .add-reference-row {

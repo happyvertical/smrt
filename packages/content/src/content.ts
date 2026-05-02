@@ -92,9 +92,23 @@ type FactAuditClaim = {
   }>;
 };
 
+type FactAuditResourceClaim = {
+  id: string | null;
+  fact: Record<string, any>;
+  sourceKind: string | null;
+  sourceId: string | null;
+  sourceUrl: string | null;
+  sourceTitle: string | null;
+  locator: string | null;
+  quote: string | null;
+  confidence: number | null;
+  evidence: Record<string, any>[];
+};
+
 type FactAuditState = {
   counts: Record<FactClaimSupportStatus | 'total', number>;
   claims: FactAuditClaim[];
+  resourceClaims: FactAuditResourceClaim[];
   warnings: string[];
   generatedBy: string;
   latestAuditRunId: string | null;
@@ -2141,6 +2155,7 @@ export class Content
           needs_review: 0,
         },
         claims: [],
+        resourceClaims: [],
         warnings: [],
         generatedBy: FACT_AUDIT_GENERATED_BY,
         latestAuditRunId: null,
@@ -2172,6 +2187,7 @@ export class Content
           entry.metadata !== null,
       );
     const claims: FactAuditClaim[] = [];
+    const resourceClaimsByKey = new Map<string, FactAuditResourceClaim>();
     const warnings: string[] = [];
     let latestAuditRunId: string | null = null;
 
@@ -2250,6 +2266,57 @@ export class Content
       });
     }
 
+    const generatedEvidence = await evidences.list(
+      this.tenantId ? { where: { tenantId: this.tenantId } } : {},
+    );
+    for (const evidence of generatedEvidence as any[]) {
+      const metadata =
+        typeof evidence.getMetadata === 'function'
+          ? evidence.getMetadata()
+          : {};
+      if (
+        metadata.generatedBy !== FACT_AUDIT_GENERATED_BY ||
+        metadata.contentId !== this.id ||
+        evidence.sourceKind === 'content'
+      ) {
+        continue;
+      }
+
+      const fact = await allFacts.get({ id: evidence.factId });
+      if (!fact) {
+        continue;
+      }
+
+      const key = [
+        evidence.factId,
+        evidence.sourceKind,
+        evidence.sourceId,
+        evidence.evidenceKey,
+      ].join(':');
+      const serializedEvidence = {
+        ...serializeFact(evidence),
+        metadata,
+      };
+      const existing = resourceClaimsByKey.get(key);
+      if (existing) {
+        existing.evidence.push(serializedEvidence);
+        continue;
+      }
+
+      resourceClaimsByKey.set(key, {
+        id: fact.id as string,
+        fact: serializeFact(fact),
+        sourceKind: evidence.sourceKind || null,
+        sourceId: evidence.sourceId || null,
+        sourceUrl: evidence.sourceUrl || null,
+        sourceTitle: evidence.sourceTitle || null,
+        locator: evidence.locator || null,
+        quote: evidence.quote || null,
+        confidence: evidence.confidence ?? null,
+        evidence: [serializedEvidence],
+      });
+    }
+
     const latestReview = (
       await this.getContentReviewCollection()
     ).getLatestForPolicyKey(this.id as string, 'facts');
@@ -2279,6 +2346,7 @@ export class Content
     return {
       counts,
       claims,
+      resourceClaims: [...resourceClaimsByKey.values()],
       warnings,
       generatedBy: FACT_AUDIT_GENERATED_BY,
       latestAuditRunId,

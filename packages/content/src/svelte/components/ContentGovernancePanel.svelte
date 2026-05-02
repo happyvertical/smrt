@@ -30,6 +30,7 @@ export interface Props {
   customReviewPolicyKey?: string;
   onFactsChange?: (factIds: string[], facts: FactData[]) => void;
   onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
+  onFactAuditChange?: (state: FactAuditStateData | null) => void;
 }
 
 type ReviewKind = 'facts' | 'safety' | 'custom';
@@ -57,6 +58,7 @@ let {
   customReviewPolicyKey = 'custom',
   onFactsChange = undefined,
   onGovernanceStateChange = undefined,
+  onFactAuditChange = undefined,
 }: Props = $props();
 
 const client = $derived(createClient(normalizeApiBaseUrl(apiBaseUrl)));
@@ -209,6 +211,8 @@ $effect(() => {
     versions = [];
     transparencyPreview = null;
     publishedTransparency = null;
+    factAudit = null;
+    onFactAuditChange?.(null);
     reviewProfiles = [];
     workflowError = null;
     workflowNotice = null;
@@ -581,6 +585,7 @@ async function repairFactAudit() {
     const response = await client.contents.repairFactAudit(savedContentId);
     factAudit = response.data;
     workflowNotice = `Fact audit repaired: ${response.data.counts.total} claim(s) checked.`;
+    onFactAuditChange?.(response.data);
     const factsResponse = await client.contents.getFacts(savedContentId);
     updateSelectedFacts(factsResponse.data.facts || []);
   } catch (err: any) {
@@ -691,6 +696,7 @@ async function loadSavedWorkflow() {
     transparencyPreview = transparencyPreviewResponse.data;
     publishedTransparency = publishedTransparencyResponse.data;
     factAudit = factAuditResponse.data;
+    onFactAuditChange?.(factAudit);
     governanceState = governanceResponse.data;
     governanceDefinitions = governanceDefinitionsResponse.data;
     reviewProfiles = governanceResponse.data.reviewProfiles || [];
@@ -955,7 +961,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
-        Facts
+        Linked facts
         {#if syncingFacts}
           <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
         {/if}
@@ -973,7 +979,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         <input
           type="text"
           bind:value={factQuery}
-          placeholder="Browse app facts before authoring"
+            placeholder="Search fact catalog"
         />
         <button type="button" onclick={searchFactsFirstPage}>
           Search
@@ -985,9 +991,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       {/if}
 
       <div class="selected-facts">
-        <div class="section-caption">Selected facts</div>
+        <div class="section-caption">Manually linked facts</div>
         {#if selectedFactsResolved.length === 0}
-          <p class="empty-copy">No facts linked yet.</p>
+          <p class="empty-copy">No manually linked facts yet.</p>
         {:else}
           <div class="fact-chip-list">
             {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
@@ -1075,7 +1081,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
-        Claim audit
+        Article claim audit
         {#if factAuditBusy}
           <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Repairing...</span>
         {/if}
@@ -1088,7 +1094,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       {:else}
         <div class="claim-audit-toolbar">
           <div class="claim-audit-counts">
-            <span><strong>{factAudit?.counts.total ?? 0}</strong> claims</span>
+            <span><strong>{factAudit?.counts.total ?? 0}</strong> article claims</span>
             <span><strong>{factAudit?.counts.supported ?? 0}</strong> supported</span>
             <span><strong>{factAudit?.counts.unsupported ?? 0}</strong> unsupported</span>
             <span><strong>{factAudit?.counts.contradicted ?? 0}</strong> contradicted</span>
@@ -1114,7 +1120,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
         {#if !factAudit || factAudit.counts.total === 0}
           <p class="empty-copy">
-            No claim audit has been generated yet.
+            No article claim audit has been generated yet.
           </p>
         {:else}
           {#each [
@@ -1127,7 +1133,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {@const groupClaims = factAuditGroups[groupKey]}
             {#if groupClaims.length > 0}
               <div class="claim-audit-group">
-                <div class="section-caption">{group[1]} claims</div>
+                <div class="section-caption">{group[1]} article claims</div>
                 {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
                   <details class="claim-audit-item">
                     <summary>
@@ -1138,14 +1144,14 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                     </summary>
                     <div class="claim-audit-item__body">
                       {#if claim.claimQuote}
-                        <p><strong>Article quote:</strong> {claim.claimQuote}</p>
+                        <p><strong>Article claim:</strong> {claim.claimQuote}</p>
                       {/if}
                       {#if claim.rationale}
-                        <p><strong>Assessment:</strong> {claim.rationale}</p>
+                        <p><strong>Support assessment:</strong> {claim.rationale}</p>
                       {/if}
                       {#if claim.evidence?.length}
                         <div class="claim-audit-evidence">
-                          <div class="section-caption">Article evidence</div>
+                          <div class="section-caption">Claim excerpt</div>
                           {#each claim.evidence as evidence (evidence.id ?? evidence.evidenceKey)}
                             <p>{evidence.quote || evidence.locator || evidence.sourceTitle}</p>
                           {/each}
@@ -1153,10 +1159,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                       {/if}
                       {#if claim.matchedFacts?.length}
                         <div class="claim-audit-evidence">
-                          <div class="section-caption">Matched evidence</div>
+                          <div class="section-caption">Based on source evidence</div>
                           {#each claim.matchedFacts as matched (matched.fact.id ?? matched.fact.textRefined)}
                             <div class="claim-audit-match">
-                              <strong>{matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
+                              <strong>Source claim: {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
                               {#each matched.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
                                 <span>
                                   {evidence.sourceTitle || 'Source'}
@@ -1171,6 +1177,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                             </div>
                           {/each}
                         </div>
+                      {:else}
+                        <p><strong>Based on:</strong> No supporting source evidence linked.</p>
                       {/if}
                     </div>
                   </details>
