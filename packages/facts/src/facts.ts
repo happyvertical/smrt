@@ -438,7 +438,7 @@ export class FactCollection extends SmrtCollection<Fact> {
           rawInput,
           topMatch,
           options.promptOverride,
-          options.tenantId,
+          options.tenantId ?? undefined,
         );
 
         if (aiDecision === 'merge') {

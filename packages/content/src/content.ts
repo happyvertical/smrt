@@ -1042,7 +1042,12 @@ export class Content
       body = body.replace(incorrectText, correctedText);
       generationMethod = 'replace';
     } else if (correctedText) {
-      const ai = this.ai as { message?: (prompt: string) => Promise<string> };
+      const ai = this.ai as {
+        message?: (
+          prompt: string,
+          options?: Record<string, unknown>,
+        ) => Promise<string>;
+      };
       if (ai?.message) {
         const resolvedPrompt = await resolvePrompt(
           smrtContentApplyCorrectionPrompt.key,
@@ -1871,7 +1876,12 @@ export class Content
       },
     });
     const reviewFingerprint = await this.buildReviewFingerprint(policyKey);
-    const ai = this.ai as { message?: (prompt: string) => Promise<string> };
+    const ai = this.ai as {
+      message?: (
+        prompt: string,
+        options?: Record<string, unknown>,
+      ) => Promise<string>;
+    };
     if (!ai?.message) {
       throw new Error('AI client is not configured for content reviews');
     }
