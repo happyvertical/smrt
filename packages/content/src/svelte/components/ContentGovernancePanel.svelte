@@ -28,6 +28,7 @@ export interface Props {
   customReviewLabel?: string;
   customReviewInstructions?: string;
   customReviewPolicyKey?: string;
+  showFactCatalog?: boolean;
   onFactsChange?: (factIds: string[], facts: FactData[]) => void;
   onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
@@ -56,6 +57,7 @@ let {
   customReviewLabel = 'Custom Review',
   customReviewInstructions = '',
   customReviewPolicyKey = 'custom',
+  showFactCatalog = false,
   onFactsChange = undefined,
   onGovernanceStateChange = undefined,
   onFactAuditChange = undefined,
@@ -133,6 +135,11 @@ const factAuditGroups = $derived({
     factAudit?.claims.filter((claim) => claim.supportStatus === 'supported') ||
     [],
 });
+const actionableFactAuditWarnings = $derived(
+  (factAudit?.warnings ?? []).filter(
+    (warning) => !isNonActionableFactAuditWarning(warning),
+  ),
+);
 
 function createFactMap(facts: FactData[]) {
   return new Map(
@@ -197,7 +204,7 @@ $effect(() => {
 });
 
 $effect(() => {
-  if (!catalogLoaded) {
+  if (showFactCatalog && !catalogLoaded) {
     catalogLoaded = true;
     void searchFacts();
   }
@@ -383,6 +390,10 @@ function getTransparencyReferenceLabel(reference: {
   url?: string | null;
 }) {
   return reference.title || reference.url || 'Untitled reference';
+}
+
+function isNonActionableFactAuditWarning(warning: string) {
+  return /^Asset .+ has no extracted text\.$/.test(warning.trim());
 }
 
 function resolveActiveReviewProfileKey(
@@ -958,126 +969,6 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 </script>
 
 <div class="factual-workflow">
-  <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
-    <summary class="editor-drawer-header">
-      <div style="display: flex; align-items: center; gap: 0.5rem;">
-        Linked facts
-        {#if syncingFacts}
-          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
-        {/if}
-      </div>
-      <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-    </summary>
-    <div class="editor-drawer-content">
-
-    {#if governanceState && !governanceState.factLinkingEnabled}
-      <p class="empty-copy">
-        Fact linking is not enabled for this governed content type.
-      </p>
-    {:else}
-      <div class="fact-search">
-        <input
-          type="text"
-          bind:value={factQuery}
-            placeholder="Search fact catalog"
-        />
-        <button type="button" onclick={searchFactsFirstPage}>
-          Search
-        </button>
-      </div>
-
-      {#if catalogError}
-        <p class="workflow-error">{catalogError}</p>
-      {/if}
-
-      <div class="selected-facts">
-        <div class="section-caption">Manually linked facts</div>
-        {#if selectedFactsResolved.length === 0}
-          <p class="empty-copy">No manually linked facts yet.</p>
-        {:else}
-          <div class="fact-chip-list">
-            {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
-              <div class="fact-chip">
-                <div class="fact-chip__body">
-                  <strong>{fact.textRefined}</strong>
-                  <span>
-                    {fact.status} · confidence {formatPercent(fact.confidence)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="fact-chip__remove"
-                  onclick={() => fact.id && removeFact(fact.id)}
-                >
-                  Remove
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <div class="fact-catalog">
-        <div class="section-caption">Fact catalog</div>
-        {#if catalogLoading}
-          <p class="empty-copy">Loading facts...</p>
-        {:else if catalogFacts.length === 0}
-          <p class="empty-copy">No facts matched this search.</p>
-        {:else}
-          <div class="fact-catalog__list">
-            {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
-              <div class="fact-result">
-                <div class="fact-result__body">
-                  <strong>{fact.textRefined}</strong>
-                  <span>
-                    {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  disabled={!fact.id || selectedFactIds.includes(fact.id ?? '')}
-                  onclick={() => addFact(fact)}
-                >
-                  {!fact.id || selectedFactIds.includes(fact.id ?? '') ? 'Selected' : 'Add'}
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        {#if catalogFacts.length > 0 || catalogPage > 1}
-          <div class="fact-pagination" aria-label="Fact catalog pagination">
-            <span>
-              Page {catalogPage}
-              {#if catalogFacts.length > 0}
-                · {factCatalogRangeStart}-{factCatalogRangeEnd}
-              {/if}
-            </span>
-            <div class="fact-pagination__actions">
-              <button
-                type="button"
-                class="secondary-button"
-                disabled={catalogLoading || catalogPage <= 1}
-                onclick={browsePreviousFacts}
-              >
-                Previous
-              </button>
-              <button
-                type="button"
-                class="secondary-button"
-                disabled={catalogLoading || !catalogHasNextPage}
-                onclick={browseNextFacts}
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        {/if}
-      </div>
-    {/if}
-  </div>
-  </details>
-
   <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
@@ -1109,10 +1000,13 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {factAuditBusy ? 'Repairing...' : 'Repair audit'}
           </button>
         </div>
+        <p class="claim-audit-help">
+          Article claims are statements made by this draft. A supported claim has linked source evidence from the references; unsupported means the audit has not found that supporting evidence yet.
+        </p>
 
-        {#if factAudit?.warnings?.length}
+        {#if actionableFactAuditWarnings.length}
           <div class="claim-audit-warnings">
-            {#each factAudit.warnings as warning}
+            {#each actionableFactAuditWarnings as warning}
               <p>{warning}</p>
             {/each}
           </div>
@@ -1190,6 +1084,129 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       {/if}
     </div>
   </details>
+
+  {#if showFactCatalog || selectedFactsResolved.length > 0}
+    <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
+      <summary class="editor-drawer-header">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          Manual fact links
+          {#if syncingFacts}
+            <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
+          {/if}
+        </div>
+        <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </summary>
+      <div class="editor-drawer-content">
+        {#if governanceState && !governanceState.factLinkingEnabled}
+          <p class="empty-copy">
+            Fact linking is not enabled for this governed content type.
+          </p>
+        {:else}
+          <div class="selected-facts">
+            <div class="section-caption">Manually linked facts</div>
+            {#if selectedFactsResolved.length === 0}
+              <p class="empty-copy">No manually linked facts yet.</p>
+            {:else}
+              <div class="fact-chip-list">
+                {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
+                  <div class="fact-chip">
+                    <div class="fact-chip__body">
+                      <strong>{fact.textRefined}</strong>
+                      <span>
+                        {fact.status} · confidence {formatPercent(fact.confidence)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      class="fact-chip__remove"
+                      onclick={() => fact.id && removeFact(fact.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          {#if showFactCatalog}
+            <div class="fact-search">
+              <input
+                type="text"
+                bind:value={factQuery}
+                placeholder="Search fact catalog"
+              />
+              <button type="button" onclick={searchFactsFirstPage}>
+                Search
+              </button>
+            </div>
+
+            {#if catalogError}
+              <p class="workflow-error">{catalogError}</p>
+            {/if}
+
+            <div class="fact-catalog">
+              <div class="section-caption">Fact catalog</div>
+              {#if catalogLoading}
+                <p class="empty-copy">Loading facts...</p>
+              {:else if catalogFacts.length === 0}
+                <p class="empty-copy">No facts matched this search.</p>
+              {:else}
+                <div class="fact-catalog__list">
+                  {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
+                    <div class="fact-result">
+                      <div class="fact-result__body">
+                        <strong>{fact.textRefined}</strong>
+                        <span>
+                          {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!fact.id || selectedFactIds.includes(fact.id ?? '')}
+                        onclick={() => addFact(fact)}
+                      >
+                        {!fact.id || selectedFactIds.includes(fact.id ?? '') ? 'Selected' : 'Add'}
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if catalogFacts.length > 0 || catalogPage > 1}
+                <div class="fact-pagination" aria-label="Fact catalog pagination">
+                  <span>
+                    Page {catalogPage}
+                    {#if catalogFacts.length > 0}
+                      · {factCatalogRangeStart}-{factCatalogRangeEnd}
+                    {/if}
+                  </span>
+                  <div class="fact-pagination__actions">
+                    <button
+                      type="button"
+                      class="secondary-button"
+                      disabled={catalogLoading || catalogPage <= 1}
+                      onclick={browsePreviousFacts}
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary-button"
+                      disabled={catalogLoading || !catalogHasNextPage}
+                      onclick={browseNextFacts}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        {/if}
+      </div>
+    </details>
+  {/if}
 
   <details class="editor-drawer">
     <summary class="editor-drawer-header">
@@ -1739,6 +1756,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .section-status,
   .section-caption,
   .empty-copy,
+  .claim-audit-help,
   .review-card span,
   .claim-audit-counts,
   .claim-audit-item span,

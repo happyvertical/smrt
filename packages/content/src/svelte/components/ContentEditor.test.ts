@@ -250,6 +250,64 @@ describe('ContentEditor component', () => {
     expect(target.textContent).toContain('Council approved the project.');
   });
 
+  it('expands long resource claim lists in references', async () => {
+    const resourceClaims = Array.from({ length: 8 }, (_, index) => {
+      const claimNumber = index + 1;
+      return {
+        id: `fact-${claimNumber}`,
+        sourceId: 'ref-1',
+        sourceTitle: 'Meeting minutes',
+        quote: `Source quote ${claimNumber}`,
+        fact: {
+          id: `fact-${claimNumber}`,
+          textRefined: `Resource claim ${claimNumber}`,
+        },
+      };
+    });
+
+    const target = renderEditor({
+      content: {
+        title: 'Test Article',
+        referenceIds: ['ref-1'],
+        references: [
+          {
+            id: 'ref-1',
+            title: 'Meeting minutes',
+          },
+        ],
+        assetIds: [],
+        assets: [],
+      },
+      factAudit: {
+        counts: {
+          total: 0,
+          supported: 0,
+          unsupported: 0,
+          contradicted: 0,
+          needs_review: 0,
+        },
+        claims: [],
+        resourceClaims,
+        warnings: [],
+        generatedBy: 'content.factAudit',
+        latestAuditRunId: 'audit-1',
+      },
+    });
+
+    expect(target.textContent).toContain('Resource claim 6');
+    expect(target.textContent).not.toContain('Resource claim 7');
+
+    const expandButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '+ 2 more',
+    );
+    expandButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+
+    expect(target.textContent).toContain('Resource claim 7');
+    expect(target.textContent).toContain('Resource claim 8');
+    expect(target.textContent).toContain('Show fewer');
+  });
+
   it('uploads dropped image URLs and renders them in the media gallery', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,

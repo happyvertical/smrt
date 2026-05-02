@@ -226,6 +226,29 @@ function getResourceClaimsForReference(
   });
 }
 
+function getReferenceExpansionKey(reference: any, index: number): string {
+  return String(
+    reference?.id ||
+      reference?.url ||
+      reference?.originalUrl ||
+      reference?.title ||
+      `reference-${index}`,
+  );
+}
+
+function isReferenceClaimsExpanded(reference: any, index: number): boolean {
+  return expandedReferenceClaimKeys.includes(
+    getReferenceExpansionKey(reference, index),
+  );
+}
+
+function toggleReferenceClaims(reference: any, index: number) {
+  const key = getReferenceExpansionKey(reference, index);
+  expandedReferenceClaimKeys = expandedReferenceClaimKeys.includes(key)
+    ? expandedReferenceClaimKeys.filter((expandedKey) => expandedKey !== key)
+    : [...expandedReferenceClaimKeys, key];
+}
+
 // We need a simple way to enter reference IDs or mock selecting them
 let newReferenceId = $state('');
 
@@ -245,6 +268,7 @@ function removeReference(id: string) {
 // AI Authoring State (Migrated to ContentAgentChat Sidebar)
 
 let showImageUploader = $state(false);
+let expandedReferenceClaimKeys = $state<string[]>([]);
 
 // Drag-and-drop state
 let imageDragOver = $state(false);
@@ -710,8 +734,10 @@ function removeAsset(id: string) {
                </div>
                {#if formData.references?.length > 0}
                  <div class="reference-detail-list">
-                   {#each formData.references as reference (reference.id ?? reference.url ?? reference.title)}
+                   {#each formData.references as reference, referenceIndex (reference.id ?? reference.url ?? reference.title)}
                      {@const resourceClaims = getResourceClaimsForReference(reference)}
+                     {@const resourceClaimsExpanded = isReferenceClaimsExpanded(reference, referenceIndex)}
+                     {@const visibleResourceClaims = resourceClaimsExpanded ? resourceClaims : resourceClaims.slice(0, 6)}
                      <div class="reference-detail">
                        <div class="reference-detail-header">
                          <div>
@@ -726,7 +752,7 @@ function removeAsset(id: string) {
                        </div>
                        {#if resourceClaims.length > 0}
                          <div class="resource-claim-list">
-                           {#each resourceClaims.slice(0, 6) as claim (claim.id ?? claim.quote ?? claim.fact?.textRefined)}
+                           {#each visibleResourceClaims as claim (claim.id ?? claim.quote ?? claim.fact?.textRefined)}
                              <div class="resource-claim">
                                <strong>{claim.fact?.textRefined || claim.fact?.textRaw || claim.quote}</strong>
                                {#if claim.quote}
@@ -735,7 +761,13 @@ function removeAsset(id: string) {
                              </div>
                            {/each}
                            {#if resourceClaims.length > 6}
-                             <span class="resource-claim-more">+ {resourceClaims.length - 6} more</span>
+                             <button
+                               type="button"
+                               class="resource-claim-more"
+                               onclick={() => toggleReferenceClaims(reference, referenceIndex)}
+                             >
+                               {resourceClaimsExpanded ? 'Show fewer' : `+ ${resourceClaims.length - 6} more`}
+                             </button>
                            {/if}
                          </div>
                        {/if}
@@ -1128,6 +1160,15 @@ function removeAsset(id: string) {
   .resource-claim-more {
     color: var(--smrt-color-on-surface-variant);
     font-size: 0.8125rem;
+  }
+
+  .resource-claim-more {
+    align-self: flex-start;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    cursor: pointer;
+    font-weight: 600;
   }
 
   .resource-claim-list {

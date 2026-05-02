@@ -30,6 +30,7 @@ export interface Props {
   agentChatNotice?: string | null;
   hideActions?: boolean;
   hideChat?: boolean;
+  showFactCatalog?: boolean;
   onSave: (data: GovernedContentEditorSaveData) => void;
   onCancel: () => void;
 }
@@ -50,6 +51,7 @@ let {
   agentChatNotice = null,
   hideActions = false,
   hideChat = false,
+  showFactCatalog = false,
   onSave,
   onCancel,
 }: Props = $props();
@@ -222,6 +224,7 @@ function handleSave(data: ContentData) {
     customReviewLabel={customReviewLabel}
     customReviewInstructions={customReviewInstructions}
     customReviewPolicyKey={customReviewPolicyKey}
+    {showFactCatalog}
     onFactsChange={handleFactsChange}
     onGovernanceStateChange={handleGovernanceStateChange}
     onFactAuditChange={handleFactAuditChange}

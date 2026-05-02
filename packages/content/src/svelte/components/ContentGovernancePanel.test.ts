@@ -123,12 +123,15 @@ afterEach(() => {
 
 describe('ContentGovernancePanel component', () => {
   it('accepts a custom apiBaseUrl for shared client calls', async () => {
-    renderPanel({ apiBaseUrl: '/tenant/api/v2' });
+    renderPanel({ apiBaseUrl: '/tenant/api/v2', contentId: 'content-1' });
 
     await vi.waitFor(() =>
       expect(clientMocks.createClient).toHaveBeenCalledWith('/tenant/api/v2'),
     );
-    await vi.waitFor(() => expect(clientMocks.browseFacts).toHaveBeenCalled());
+    await vi.waitFor(() =>
+      expect(clientMocks.getGovernanceDefinitions).toHaveBeenCalled(),
+    );
+    expect(clientMocks.browseFacts).not.toHaveBeenCalled();
   });
 
   it('pages through fact catalog browsing results', async () => {
@@ -148,7 +151,7 @@ describe('ContentGovernancePanel component', () => {
       };
     });
 
-    const target = renderPanel();
+    const target = renderPanel({ showFactCatalog: true });
 
     await vi.waitFor(() => {
       expect(target.textContent).toContain('Fact 12');
@@ -222,7 +225,10 @@ describe('ContentGovernancePanel component', () => {
           },
         ],
         resourceClaims: [],
-        warnings: [],
+        warnings: [
+          'Asset VID_20260410_193127_00_001_003_DASHCAM_2026-04-16_11-57-10_screenshot.jpg has no extracted text.',
+          'Reference minutes.pdf has no extracted text.',
+        ],
         generatedBy: 'content.factAudit',
         latestAuditRunId: 'audit-1',
       },
@@ -253,6 +259,10 @@ describe('ContentGovernancePanel component', () => {
       expect(target.textContent).toContain('Based on source evidence');
       expect(target.textContent).toContain(
         'Source claim: The minutes say council approved the project.',
+      );
+      expect(target.textContent).not.toContain('DASHCAM_2026-04-16');
+      expect(target.textContent).toContain(
+        'Reference minutes.pdf has no extracted text.',
       );
     });
 
