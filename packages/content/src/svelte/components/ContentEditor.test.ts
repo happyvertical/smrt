@@ -14,6 +14,7 @@ vi.mock('@happyvertical/smrt-images/svelte', async () => ({
 }));
 
 import ContentEditor from './ContentEditor.svelte';
+import GovernedContentEditor from './GovernedContentEditor.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
 
@@ -49,6 +50,33 @@ function renderEditor(
       hideActions: props.hideActions,
       hideChat: props.hideChat,
       onChange: props.onChange ?? vi.fn(),
+      onSave: props.onSave ?? vi.fn(),
+      onCancel: props.onCancel ?? vi.fn(),
+    },
+  });
+
+  mountedComponents.push(component);
+  flushSync();
+
+  return target;
+}
+
+function renderGovernedEditor(props: {
+  content?: any;
+  contentId?: string;
+  hideChat?: boolean;
+  onSave?: (data: any) => void;
+  onCancel?: () => void;
+}) {
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+
+  const component = mount(GovernedContentEditor, {
+    target,
+    props: {
+      content: props.content,
+      contentId: props.contentId ?? 'new',
+      hideChat: props.hideChat,
       onSave: props.onSave ?? vi.fn(),
       onCancel: props.onCancel ?? vi.fn(),
     },
@@ -114,6 +142,41 @@ beforeEach(() => {
 });
 
 describe('ContentEditor component', () => {
+  it('renders governed content facts with the facts drawer open', () => {
+    const target = renderGovernedEditor({
+      contentId: 'content-1',
+      content: {
+        id: 'content-1',
+        title: 'Governed Article',
+        body: 'Governed body',
+        type: 'article',
+        status: 'published',
+        state: 'active',
+        factIds: ['fact-1'],
+        facts: [
+          {
+            id: 'fact-1',
+            textRefined: 'Council approved the waterline phase two work.',
+            status: 'verified',
+            confidence: 0.92,
+          },
+        ],
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      hideChat: true,
+    });
+
+    expect(target.textContent).toContain(
+      'Council approved the waterline phase two work.',
+    );
+    const factsDrawer = Array.from(target.querySelectorAll('details')).find(
+      (detail) => detail.textContent?.includes('Selected facts'),
+    ) as HTMLDetailsElement | undefined;
+    expect(factsDrawer?.open).toBe(true);
+  });
+
   it('adds dropped plain-text references to the reference list', async () => {
     const target = renderEditor({
       content: {

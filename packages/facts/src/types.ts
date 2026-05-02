@@ -3,6 +3,7 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type { PromptConfigOverrideInput } from '@happyvertical/smrt-prompts';
 
 /**
  * Fact type classification
@@ -156,6 +157,44 @@ export interface ReconcileOptions {
     sourceTitle?: string;
     credibility?: number;
   };
+  /** Runtime prompt override for AI-assisted ambiguous reconciliation */
+  promptOverride?: PromptConfigOverrideInput;
+}
+
+/**
+ * A candidate factual statement extracted from unstructured source text.
+ */
+export interface FactExtractionCandidate {
+  /** Concise, atomic factual statement suitable for audit */
+  statement: string;
+  /** Fact type classification */
+  type?: FactType;
+  /** Short source excerpt that supports the statement */
+  sourceExcerpt?: string;
+  /** Optional extraction confidence from 0 to 1 */
+  confidence?: number;
+  /** Optional extraction metadata */
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Options for AI-assisted fact extraction from source text.
+ */
+export interface FactExtractionOptions {
+  /** Domain to guide extraction and later reconciliation */
+  domain?: string;
+  /** Source type, e.g. agenda, minutes, article, transcript */
+  sourceType?: string;
+  /** Human-readable context for the source text */
+  context?: string;
+  /** Maximum number of facts to extract */
+  maxFacts?: number;
+  /** Fact types the extractor may return */
+  allowedTypes?: FactType[];
+  /** Tenant id used when resolving stored prompt overrides */
+  tenantId?: string | null;
+  /** Runtime prompt override for a single extraction call */
+  promptOverride?: PromptConfigOverrideInput;
 }
 
 /**

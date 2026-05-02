@@ -9,6 +9,7 @@ import {
 import type { Fact, FactContentRelationship } from '@happyvertical/smrt-facts';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociable, MetadataAccessor } from './asset-associable';
 import { isPlainMetadataRecord } from './asset-associable';
@@ -31,6 +32,11 @@ import {
   resolveConfiguredContentGovernance,
   resolveEffectiveContentGovernance,
 } from './content-governance';
+import {
+  promptMessageOptions,
+  smrtContentApplyCorrectionPrompt,
+  smrtContentReviewPrompt,
+} from './content-prompts';
 import { ContentReferences } from './content-references';
 import type { ContentReview } from './content-review';
 import { normalizeContentTransparency } from './content-transparency';
@@ -1038,25 +1044,27 @@ export class Content
     } else if (correctedText) {
       const ai = this.ai as { message?: (prompt: string) => Promise<string> };
       if (ai?.message) {
-        const prompt = `You are revising an article draft to apply a factual correction.
-
-Return ONLY the fully revised body text, with no commentary.
-
-Current body:
-${this.body}
-
-Correction summary:
-${options.summary}
-
-Incorrect text to fix:
-${incorrectText || 'Not provided'}
-
-Corrected text to incorporate:
-${correctedText}
-`;
+        const resolvedPrompt = await resolvePrompt(
+          smrtContentApplyCorrectionPrompt.key,
+          {
+            db: this.options.db,
+            tenantId: this.tenantId,
+            variables: {
+              body: this.body,
+              correctedText,
+              incorrectText: incorrectText || 'Not provided',
+              summary: options.summary || '',
+            },
+          },
+        );
 
         try {
-          const proposedBody = (await ai.message(prompt)).trim();
+          const proposedBody = (
+            await ai.message(
+              resolvedPrompt.text,
+              promptMessageOptions(resolvedPrompt.ai),
+            )
+          ).trim();
           if (proposedBody) {
             body = proposedBody;
             generationMethod = 'ai';
@@ -1842,12 +1850,25 @@ ${correctedText}
       options.factIds && options.factIds.length > 0
         ? facts.filter((fact) => options.factIds?.includes(fact.id as string))
         : facts;
-    const prompt = buildContentReviewPrompt({
+    const reviewPrompt = buildContentReviewPrompt({
       kind,
       content: this,
       facts: filteredFacts,
       policy,
       customInstructions: options.instructions,
+    });
+    const resolvedPrompt = await resolvePrompt(smrtContentReviewPrompt.key, {
+      db: this.options.db,
+      tenantId: this.tenantId,
+      variables: {
+        contentBody: this.body,
+        contentDescription: this.description ?? '',
+        contentId: this.id ?? '',
+        contentTitle: this.title,
+        kind,
+        policyKey: policy?.key || kind,
+        reviewPrompt,
+      },
     });
     const reviewFingerprint = await this.buildReviewFingerprint(policyKey);
     const ai = this.ai as { message?: (prompt: string) => Promise<string> };
@@ -1855,7 +1876,10 @@ ${correctedText}
       throw new Error('AI client is not configured for content reviews');
     }
 
-    const rawResponse = await ai.message(prompt);
+    const rawResponse = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
     const result = parseContentReviewResponse(rawResponse);
     const version =
       options.createVersion === false
@@ -1880,7 +1904,7 @@ ${correctedText}
       result,
       metadata: {
         ...(options.metadata || {}),
-        prompt,
+        prompt: resolvedPrompt.text,
         rawResponse,
         reviewFingerprint,
         factIds: filteredFacts.map((fact) => fact.id),

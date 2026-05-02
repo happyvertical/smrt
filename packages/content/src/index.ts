@@ -128,6 +128,11 @@ export { ContentGovernancePolicy } from './content-governance-policy';
 export type { ContentGovernanceProfileOptions } from './content-governance-profile';
 export { ContentGovernanceProfile } from './content-governance-profile';
 export { ContentGovernanceProfileCollection } from './content-governance-profiles';
+export {
+  promptMessageOptions,
+  smrtContentApplyCorrectionPrompt,
+  smrtContentReviewPrompt,
+} from './content-prompts';
 export type { ContentReferenceOptions } from './content-reference';
 export { ContentReference } from './content-reference';
 export type { ContentReferencesOptions } from './content-references';

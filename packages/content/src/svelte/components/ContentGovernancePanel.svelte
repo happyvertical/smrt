@@ -864,7 +864,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 </script>
 
 <div class="factual-workflow">
-  <details class="editor-drawer">
+  <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
         Facts
