@@ -131,6 +131,22 @@ if (missingReleasePackages.length > 0) {
   );
 }
 
+const publishableSmrtPackagesMissingFixedGroup = publishablePackages
+  .filter(
+    (pkg) =>
+      pkg.name.startsWith('@happyvertical/smrt-') &&
+      !releasePackageNames.has(pkg.name),
+  )
+  .map((pkg) => pkg.name);
+
+if (publishableSmrtPackagesMissingFixedGroup.length > 0) {
+  fail(
+    `Publishable SMRT packages must be declared in .changeset/config.json fixed release group:\n${publishableSmrtPackagesMissingFixedGroup
+      .map((packageName) => `- ${packageName}`)
+      .join('\n')}`,
+  );
+}
+
 if (publishablePackages.length === 0) {
   console.log('ℹ️ No publishable packages found');
   process.exit(0);
