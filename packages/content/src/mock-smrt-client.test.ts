@@ -254,6 +254,7 @@ describe('mock-smrt-client', () => {
     await client.contents.delete('content-1');
     await client.contents.browseFacts('bridge', {
       limit: 5,
+      offset: 10,
       minSimilarity: 0.8,
       includeSuperseded: true,
       latestOnly: false,
@@ -326,7 +327,7 @@ describe('mock-smrt-client', () => {
           body: null,
         },
         {
-          url: '/api/v1/contents/facts?q=bridge&limit=5&minSimilarity=0.8&includeSuperseded=true&latestOnly=false',
+          url: '/api/v1/contents/facts?q=bridge&limit=5&offset=10&minSimilarity=0.8&includeSuperseded=true&latestOnly=false',
           method: 'GET',
           body: null,
         },

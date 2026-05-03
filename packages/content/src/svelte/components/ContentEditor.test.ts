@@ -14,6 +14,7 @@ vi.mock('@happyvertical/smrt-images/svelte', async () => ({
 }));
 
 import ContentEditor from './ContentEditor.svelte';
+import GovernedContentEditor from './GovernedContentEditor.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
 
@@ -22,6 +23,7 @@ function renderEditor(
     apiBaseUrl?: string;
     content?: any;
     contentId?: string;
+    factAudit?: any;
     saveDisabled?: boolean;
     saveNotice?: string | null;
     agentChatEnabled?: boolean;
@@ -42,6 +44,7 @@ function renderEditor(
       apiBaseUrl: props.apiBaseUrl,
       content: props.content,
       contentId: props.contentId ?? 'new',
+      factAudit: props.factAudit,
       saveDisabled: props.saveDisabled,
       saveNotice: props.saveNotice,
       agentChatEnabled: props.agentChatEnabled,
@@ -49,6 +52,33 @@ function renderEditor(
       hideActions: props.hideActions,
       hideChat: props.hideChat,
       onChange: props.onChange ?? vi.fn(),
+      onSave: props.onSave ?? vi.fn(),
+      onCancel: props.onCancel ?? vi.fn(),
+    },
+  });
+
+  mountedComponents.push(component);
+  flushSync();
+
+  return target;
+}
+
+function renderGovernedEditor(props: {
+  content?: any;
+  contentId?: string;
+  hideChat?: boolean;
+  onSave?: (data: any) => void;
+  onCancel?: () => void;
+}) {
+  const target = document.createElement('div');
+  document.body.appendChild(target);
+
+  const component = mount(GovernedContentEditor, {
+    target,
+    props: {
+      content: props.content,
+      contentId: props.contentId ?? 'new',
+      hideChat: props.hideChat,
       onSave: props.onSave ?? vi.fn(),
       onCancel: props.onCancel ?? vi.fn(),
     },
@@ -114,6 +144,41 @@ beforeEach(() => {
 });
 
 describe('ContentEditor component', () => {
+  it('renders governed content facts with the facts drawer open', () => {
+    const target = renderGovernedEditor({
+      contentId: 'content-1',
+      content: {
+        id: 'content-1',
+        title: 'Governed Article',
+        body: 'Governed body',
+        type: 'article',
+        status: 'published',
+        state: 'active',
+        factIds: ['fact-1'],
+        facts: [
+          {
+            id: 'fact-1',
+            textRefined: 'Council approved the waterline phase two work.',
+            status: 'verified',
+            confidence: 0.92,
+          },
+        ],
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      hideChat: true,
+    });
+
+    expect(target.textContent).toContain(
+      'Council approved the waterline phase two work.',
+    );
+    const factsDrawer = Array.from(target.querySelectorAll('details')).find(
+      (detail) => detail.textContent?.includes('Manually linked facts'),
+    ) as HTMLDetailsElement | undefined;
+    expect(factsDrawer?.open).toBe(true);
+  });
+
   it('adds dropped plain-text references to the reference list', async () => {
     const target = renderEditor({
       content: {
@@ -136,6 +201,111 @@ describe('ContentEditor component', () => {
     await vi.waitFor(() =>
       expect(target.textContent).toContain('ref-content-123'),
     );
+  });
+
+  it('shows resource claims with their related reference', async () => {
+    const target = renderEditor({
+      content: {
+        title: 'Test Article',
+        referenceIds: ['ref-1'],
+        references: [
+          {
+            id: 'ref-1',
+            title: 'Meeting minutes',
+            url: 'https://example.com/minutes.pdf',
+          },
+        ],
+        assetIds: [],
+        assets: [],
+      },
+      factAudit: {
+        counts: {
+          total: 0,
+          supported: 0,
+          unsupported: 0,
+          contradicted: 0,
+          needs_review: 0,
+        },
+        claims: [],
+        resourceClaims: [
+          {
+            id: 'fact-1',
+            sourceId: 'ref-1',
+            sourceTitle: 'Meeting minutes',
+            quote: 'Council approved the project.',
+            fact: {
+              id: 'fact-1',
+              textRefined: 'Council approved the project.',
+            },
+          },
+        ],
+        warnings: [],
+        generatedBy: 'content.factAudit',
+        latestAuditRunId: 'audit-1',
+      },
+    });
+
+    expect(target.textContent).toContain('Meeting minutes');
+    expect(target.textContent).toContain('1 evidence claim');
+    expect(target.textContent).toContain('Council approved the project.');
+  });
+
+  it('expands long resource claim lists in references', async () => {
+    const resourceClaims = Array.from({ length: 8 }, (_, index) => {
+      const claimNumber = index + 1;
+      return {
+        id: `fact-${claimNumber}`,
+        sourceId: 'ref-1',
+        sourceTitle: 'Meeting minutes',
+        quote: `Source quote ${claimNumber}`,
+        fact: {
+          id: `fact-${claimNumber}`,
+          textRefined: `Resource claim ${claimNumber}`,
+        },
+      };
+    });
+
+    const target = renderEditor({
+      content: {
+        title: 'Test Article',
+        referenceIds: ['ref-1'],
+        references: [
+          {
+            id: 'ref-1',
+            title: 'Meeting minutes',
+          },
+        ],
+        assetIds: [],
+        assets: [],
+      },
+      factAudit: {
+        counts: {
+          total: 0,
+          supported: 0,
+          unsupported: 0,
+          contradicted: 0,
+          needs_review: 0,
+        },
+        claims: [],
+        resourceClaims,
+        warnings: [],
+        generatedBy: 'content.factAudit',
+        latestAuditRunId: 'audit-1',
+      },
+    });
+
+    expect(target.textContent).toContain('Resource claim 6');
+    expect(target.textContent).not.toContain('Resource claim 7');
+
+    const expandButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === '+ 2 more',
+    );
+    expandButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+
+    expect(target.textContent).toContain('Resource claim 7');
+    expect(target.textContent).toContain('Resource claim 8');
+    expect(target.textContent).toContain('Show fewer');
   });
 
   it('uploads dropped image URLs and renders them in the media gallery', async () => {
@@ -431,5 +601,21 @@ describe('ContentEditor component', () => {
 
     expect(disabledState).not.toBeNull();
     expect(target.textContent).toContain('Agent chat is temporarily offline.');
+  });
+
+  it('removes the chat sidebar container and layout column when hidden', () => {
+    const target = renderEditor({ hideChat: true });
+
+    expect(target.querySelector('.editor-sidebar-col')).toBeNull();
+    expect(
+      target.querySelector(
+        '[data-testid="content-editor-agent-chat-disabled"]',
+      ),
+    ).toBeNull();
+    expect(
+      target
+        .querySelector('.editor-grid')
+        ?.classList.contains('editor-grid--with-sidebar'),
+    ).toBe(false);
   });
 });

@@ -8,7 +8,10 @@ import {
 } from '@happyvertical/smrt-prompts';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { contentEditorSessionPrompt } from './content-chat-prompts';
+import {
+  contentEditorInteractionPrompt,
+  contentEditorSessionPrompt,
+} from './content-chat-prompts';
 import { Contents } from './contents';
 import {
   GET as getContentChat,
@@ -57,6 +60,7 @@ describe('content chat prompt integration', () => {
     clearPromptCache();
     PromptRegistry.clear();
     PromptRegistry.register(contentEditorSessionPrompt as any);
+    PromptRegistry.register(contentEditorInteractionPrompt as any);
 
     setConfig({
       packages: {
@@ -386,6 +390,86 @@ describe('content chat prompt integration', () => {
         model: 'gpt-4o',
       }),
     );
+  });
+
+  it('resolves tenant-specific editor interaction instructions for thread turns', async () => {
+    const content = await currentContents?.create({
+      tenantId: 'tenant-a',
+      name: 'draft-4b',
+      title: 'Draft 4b',
+      body: 'Body',
+    });
+
+    await overrides.create({
+      key: contentEditorInteractionPrompt.key,
+      tenantId: 'tenant-a',
+      template:
+        'Tenant interaction policy for {title}. Current body: {body}. {references}',
+    });
+
+    const chatService = await ChatService.create({ tenantId: 'tenant-a', db });
+    await chatService.initialize();
+
+    const { session } = await chatService.createAgentSession({
+      tenantId: 'tenant-a',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-a',
+      systemPrompt: 'Provider-aware prompt',
+    });
+    await session.updateSessionContext({
+      contentId: content.id,
+      provider: 'openrouter',
+      model: 'gpt-4o',
+    });
+
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      throw new Error('Expected content editor session to create a chat room');
+    }
+
+    const thread = await chatService.threads.create({
+      tenantId: 'tenant-a',
+      roomId: chatRoomId,
+      title: 'General',
+      messageCount: 0,
+    });
+
+    const chatMock = vi.fn(async () => ({ content: 'Assistant reply' }));
+    getAIMock.mockResolvedValue({
+      chat: chatMock,
+    });
+
+    const response = await postContentChatThread({
+      params: { id: content.id, threadId: thread.id },
+      request: {
+        json: async () => ({
+          content: 'Please improve the intro.',
+          sessionId: session.id,
+          model: 'gpt-4o',
+          currentEditorState: content.body,
+          referenceIds: [],
+          formFields: {
+            title: 'Draft title from editor',
+            body: 'Body from editor',
+          },
+        }),
+      },
+      locals: {
+        tenantId: 'tenant-a',
+        profileId: 'profile-a',
+      },
+    } as any);
+
+    expect(response.status).toBe(200);
+    const conversation = chatMock.mock.calls[0]?.[0];
+    expect(conversation[0]).toMatchObject({
+      role: 'system',
+      content: expect.stringContaining(
+        'Tenant interaction policy for Draft title from editor',
+      ),
+    });
+    expect(conversation[0].content).toContain('Provider-aware prompt');
+    expect(conversation[0].content).toContain('Body from editor');
   });
 
   it('clears a stored prompt profile when a thread request switches to a different model', async () => {

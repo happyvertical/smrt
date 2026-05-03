@@ -10,6 +10,12 @@ export interface ContentChatAISelection {
   maxTokens: number | null;
 }
 
+export interface ContentEditorInteractionInput {
+  fields?: Record<string, unknown> | null;
+  currentEditorState?: unknown;
+  references?: string | null;
+}
+
 function readString(
   context: SessionContext,
   key: keyof ContentChatAISelection,
@@ -101,5 +107,34 @@ export function buildContentEditorSessionContext(
     ...(prompt.ai.maxTokens !== undefined
       ? { maxTokens: prompt.ai.maxTokens }
       : {}),
+  };
+}
+
+function displayValue(value: unknown, fallback = '(empty)'): string {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : fallback;
+  }
+
+  if (value === undefined || value === null) {
+    return fallback;
+  }
+
+  return String(value);
+}
+
+export function buildContentEditorInteractionVariables(
+  input: ContentEditorInteractionInput,
+): Record<string, string> {
+  const fields = input.fields ?? {};
+
+  return {
+    title: displayValue(fields.title),
+    description: displayValue(fields.description),
+    type: displayValue(fields.type, 'article'),
+    status: displayValue(fields.status, 'draft'),
+    state: displayValue(fields.state, 'active'),
+    body: displayValue(fields.body ?? input.currentEditorState),
+    references: input.references ?? '',
   };
 }

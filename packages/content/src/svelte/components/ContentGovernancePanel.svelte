@@ -10,6 +10,8 @@ import {
   type ContentTransparencyData,
   type ContentVersionData,
   createClient,
+  type FactAuditClaimData,
+  type FactAuditStateData,
   type FactData,
   type ResolvedContentGovernanceData,
 } from '../../mock-smrt-client';
@@ -27,8 +29,10 @@ export interface Props {
   customReviewLabel?: string;
   customReviewInstructions?: string;
   customReviewPolicyKey?: string;
+  showFactCatalog?: boolean;
   onFactsChange?: (factIds: string[], facts: FactData[]) => void;
   onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
+  onFactAuditChange?: (state: FactAuditStateData | null) => void;
 }
 
 type ReviewKind = 'facts' | 'safety' | 'custom';
@@ -39,6 +43,8 @@ interface ReviewAction {
   policyKey?: string;
   instructions?: string;
 }
+
+const FACT_CATALOG_PAGE_SIZE = 12;
 
 let {
   apiBaseUrl = '/api/v1',
@@ -52,8 +58,10 @@ let {
   customReviewLabel = 'Custom Review',
   customReviewInstructions = '',
   customReviewPolicyKey = 'custom',
+  showFactCatalog = false,
   onFactsChange = undefined,
   onGovernanceStateChange = undefined,
+  onFactAuditChange = undefined,
 }: Props = $props();
 
 const client = $derived(createClient(normalizeApiBaseUrl(apiBaseUrl)));
@@ -65,6 +73,7 @@ let corrections = $state<ContentCorrectionData[]>([]);
 let versions = $state<ContentVersionData[]>([]);
 let transparencyPreview = $state<ContentTransparencyData | null>(null);
 let publishedTransparency = $state<ContentTransparencyData | null>(null);
+let factAudit = $state<FactAuditStateData | null>(null);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
 let reviewProfiles = $state<ContentReviewProfileData[]>([]);
 let governanceDefinitions = $state<ContentGovernanceDefinitionsData | null>(
@@ -74,12 +83,17 @@ let activeReviewProfileKey = $state('');
 let activeCustomPolicyKey = $state('');
 
 let catalogLoading = $state(false);
+let catalogPage = $state(1);
+let catalogHasNextPage = $state(false);
+let catalogBrowseQuery = $state('');
 let syncingFacts = $state(false);
 let workflowLoading = $state(false);
 let reviewBusy = $state<string | null>(null);
 let correctionBusy = $state(false);
 let versionBusy = $state(false);
 let transparencyLoading = $state(false);
+let factAuditBusy = $state(false);
+let selectedClaimIds = $state<string[]>([]);
 
 let catalogError = $state<string | null>(null);
 let workflowError = $state<string | null>(null);
@@ -105,6 +119,50 @@ const draftGovernanceKey = $derived(
 function getFactId(fact: FactData): string | null {
   return typeof fact.id === 'string' && fact.id.length > 0 ? fact.id : null;
 }
+
+function getClaimId(claim: FactAuditClaimData): string | null {
+  return typeof claim.id === 'string' && claim.id.length > 0 ? claim.id : null;
+}
+
+function isClaimSelected(claim: FactAuditClaimData): boolean {
+  const claimId = getClaimId(claim);
+  return Boolean(claimId && selectedClaimIds.includes(claimId));
+}
+
+function toggleClaimSelection(claim: FactAuditClaimData) {
+  const claimId = getClaimId(claim);
+  if (!claimId) {
+    return;
+  }
+
+  selectedClaimIds = selectedClaimIds.includes(claimId)
+    ? selectedClaimIds.filter((id) => id !== claimId)
+    : [...selectedClaimIds, claimId];
+}
+
+const factAuditGroups = $derived({
+  contradicted:
+    factAudit?.claims.filter(
+      (claim) => claim.supportStatus === 'contradicted',
+    ) || [],
+  unsupported:
+    factAudit?.claims.filter(
+      (claim) => claim.supportStatus === 'unsupported',
+    ) || [],
+  needs_review:
+    factAudit?.claims.filter(
+      (claim) => claim.supportStatus === 'needs_review',
+    ) || [],
+  supported:
+    factAudit?.claims.filter((claim) => claim.supportStatus === 'supported') ||
+    [],
+});
+const actionableFactAuditWarnings = $derived(
+  (factAudit?.warnings ?? []).filter(
+    (warning) => !isNonActionableFactAuditWarning(warning),
+  ),
+);
+const selectedClaimCount = $derived(selectedClaimIds.length);
 
 function createFactMap(facts: FactData[]) {
   return new Map(
@@ -149,6 +207,12 @@ const activeCustomPolicy = $derived(
 const customReviewButtonLabel = $derived(
   activeCustomPolicy?.label || customReviewLabel,
 );
+const factCatalogRangeStart = $derived(
+  catalogFacts.length > 0 ? (catalogPage - 1) * FACT_CATALOG_PAGE_SIZE + 1 : 0,
+);
+const factCatalogRangeEnd = $derived(
+  catalogFacts.length > 0 ? factCatalogRangeStart + catalogFacts.length - 1 : 0,
+);
 
 $effect(() => {
   customReviewText = customReviewInstructions;
@@ -163,7 +227,7 @@ $effect(() => {
 });
 
 $effect(() => {
-  if (!catalogLoaded) {
+  if (showFactCatalog && !catalogLoaded) {
     catalogLoaded = true;
     void searchFacts();
   }
@@ -177,6 +241,8 @@ $effect(() => {
     versions = [];
     transparencyPreview = null;
     publishedTransparency = null;
+    factAudit = null;
+    onFactAuditChange?.(null);
     reviewProfiles = [];
     workflowError = null;
     workflowNotice = null;
@@ -349,6 +415,10 @@ function getTransparencyReferenceLabel(reference: {
   return reference.title || reference.url || 'Untitled reference';
 }
 
+function isNonActionableFactAuditWarning(warning: string) {
+  return /^Asset .+ has no extracted text\.$/.test(warning.trim());
+}
+
 function resolveActiveReviewProfileKey(
   profiles: ContentReviewProfileData[],
   preferredKey: string | null | undefined,
@@ -452,9 +522,13 @@ function getReviewActionBusyKey(action: ReviewAction) {
   return action.policyKey || action.kind;
 }
 
-async function searchFacts(query = factQuery) {
+async function searchFacts(query = factQuery, page = 1) {
+  const nextPage = Math.max(1, Math.floor(page));
   if (governanceState && !governanceState.factLinkingEnabled) {
     catalogFacts = [];
+    catalogPage = 1;
+    catalogHasNextPage = false;
+    catalogBrowseQuery = '';
     return;
   }
 
@@ -463,15 +537,42 @@ async function searchFacts(query = factQuery) {
 
   try {
     const response = await client.contents.browseFacts(query, {
-      limit: 12,
+      limit: FACT_CATALOG_PAGE_SIZE + 1,
+      offset: (nextPage - 1) * FACT_CATALOG_PAGE_SIZE,
       latestOnly: true,
     });
-    catalogFacts = response.data;
+    const rows = response.data || [];
+    catalogFacts = rows.slice(0, FACT_CATALOG_PAGE_SIZE);
+    catalogPage = nextPage;
+    catalogHasNextPage = rows.length > FACT_CATALOG_PAGE_SIZE;
+    catalogBrowseQuery = query;
   } catch (err: any) {
+    catalogFacts = [];
+    catalogHasNextPage = false;
     catalogError = err.message || 'Failed to browse facts';
   } finally {
     catalogLoading = false;
   }
+}
+
+function searchFactsFirstPage() {
+  void searchFacts(factQuery, 1);
+}
+
+function browsePreviousFacts() {
+  if (catalogPage <= 1 || catalogLoading) {
+    return;
+  }
+
+  void searchFacts(catalogBrowseQuery, catalogPage - 1);
+}
+
+function browseNextFacts() {
+  if (!catalogHasNextPage || catalogLoading) {
+    return;
+  }
+
+  void searchFacts(catalogBrowseQuery, catalogPage + 1);
 }
 
 async function syncFactsIfSaved(nextFacts: FactData[]) {
@@ -503,6 +604,57 @@ async function syncFactsIfSaved(nextFacts: FactData[]) {
   } finally {
     syncingFacts = false;
   }
+}
+
+async function repairFactAudit() {
+  if (!savedContentId || factAuditBusy) {
+    return;
+  }
+
+  factAuditBusy = true;
+  workflowError = null;
+  workflowNotice = null;
+
+  try {
+    const response = await client.contents.repairFactAudit(savedContentId);
+    factAudit = response.data;
+    workflowNotice = `Fact audit repaired: ${response.data.counts.total} claim(s) checked.`;
+    onFactAuditChange?.(response.data);
+    const factsResponse = await client.contents.getFacts(savedContentId);
+    updateSelectedFacts(factsResponse.data.facts || []);
+  } catch (err: any) {
+    workflowError = err.message || 'Failed to repair fact audit';
+  } finally {
+    factAuditBusy = false;
+  }
+}
+
+async function recheckFactClaims(claimIds: string[]) {
+  if (!savedContentId || factAuditBusy || claimIds.length === 0) {
+    return;
+  }
+
+  factAuditBusy = true;
+  workflowError = null;
+  workflowNotice = null;
+
+  try {
+    const response = await client.contents.recheckFactClaims(savedContentId, {
+      claimFactIds: claimIds,
+    });
+    factAudit = response.data;
+    workflowNotice = `Rechecked ${claimIds.length} claim${claimIds.length === 1 ? '' : 's'} against current evidence.`;
+    selectedClaimIds = selectedClaimIds.filter((id) => !claimIds.includes(id));
+    onFactAuditChange?.(response.data);
+  } catch (err: any) {
+    workflowError = err.message || 'Failed to recheck claim support';
+  } finally {
+    factAuditBusy = false;
+  }
+}
+
+async function recheckSelectedClaims() {
+  await recheckFactClaims(selectedClaimIds);
 }
 
 function addFact(fact: FactData) {
@@ -584,6 +736,7 @@ async function loadSavedWorkflow() {
       versionsResponse,
       governanceResponse,
       governanceDefinitionsResponse,
+      factAuditResponse,
       transparencyPreviewResponse,
       publishedTransparencyResponse,
     ] = await Promise.all([
@@ -593,6 +746,7 @@ async function loadSavedWorkflow() {
       client.contents.getVersions(savedContentId),
       client.contents.getGovernanceState(savedContentId),
       client.contents.getGovernanceDefinitions(),
+      client.contents.getFactAudit(savedContentId),
       client.contents.getTransparencyPreview(savedContentId),
       client.contents.getPublishedTransparency(savedContentId),
     ]);
@@ -603,6 +757,8 @@ async function loadSavedWorkflow() {
     versions = versionsResponse.data;
     transparencyPreview = transparencyPreviewResponse.data;
     publishedTransparency = publishedTransparencyResponse.data;
+    factAudit = factAuditResponse.data;
+    onFactAuditChange?.(factAudit);
     governanceState = governanceResponse.data;
     governanceDefinitions = governanceDefinitionsResponse.data;
     reviewProfiles = governanceResponse.data.reviewProfiles || [];
@@ -864,96 +1020,273 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 </script>
 
 <div class="factual-workflow">
-  <details class="editor-drawer">
+  <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
-        Facts
-        {#if syncingFacts}
-          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
+        Article claim audit
+        {#if factAuditBusy}
+          <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Repairing...</span>
         {/if}
       </div>
       <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
     </summary>
     <div class="editor-drawer-content">
+      {#if !savedContentId}
+        <p class="empty-copy">Save this content to audit article claims against evidence.</p>
+      {:else}
+        <div class="claim-audit-toolbar">
+          <div class="claim-audit-counts">
+            <span><strong>{factAudit?.counts.total ?? 0}</strong> article claims</span>
+            <span><strong>{factAudit?.counts.supported ?? 0}</strong> supported</span>
+            <span><strong>{factAudit?.counts.unsupported ?? 0}</strong> unsupported</span>
+            <span><strong>{factAudit?.counts.contradicted ?? 0}</strong> contradicted</span>
+            <span><strong>{factAudit?.counts.needs_review ?? 0}</strong> review</span>
+          </div>
+          <button
+            type="button"
+            class="secondary-button"
+            disabled={factAuditBusy || selectedClaimCount === 0}
+            onclick={() => void recheckSelectedClaims()}
+          >
+            {factAuditBusy ? 'Checking...' : `Recheck selected (${selectedClaimCount})`}
+          </button>
+          <button
+            type="button"
+            class="secondary-button"
+            disabled={factAuditBusy}
+            onclick={() => void repairFactAudit()}
+          >
+            {factAuditBusy ? 'Repairing...' : 'Repair audit'}
+          </button>
+        </div>
+        <p class="claim-audit-help">
+          Article claims are statements made by this draft. A supported claim has linked source evidence from the references; unsupported means the audit has not found that supporting evidence yet.
+        </p>
 
-    {#if governanceState && !governanceState.factLinkingEnabled}
-      <p class="empty-copy">
-        Fact linking is not enabled for this governed content type.
-      </p>
-    {:else}
-      <div class="fact-search">
-        <input
-          type="text"
-          bind:value={factQuery}
-          placeholder="Browse app facts before authoring"
-        />
-        <button type="button" onclick={() => void searchFacts()}>
-          Search
-        </button>
-      </div>
+        {#if actionableFactAuditWarnings.length}
+          <div class="claim-audit-warnings">
+            {#each actionableFactAuditWarnings as warning}
+              <p>{warning}</p>
+            {/each}
+          </div>
+        {/if}
 
-      {#if catalogError}
-        <p class="workflow-error">{catalogError}</p>
+        {#if !factAudit || factAudit.counts.total === 0}
+          <p class="empty-copy">
+            No article claim audit has been generated yet.
+          </p>
+        {:else}
+          {#each [
+            ['contradicted', 'Contradicted'],
+            ['unsupported', 'Unsupported'],
+            ['needs_review', 'Needs review'],
+            ['supported', 'Supported']
+          ] as group}
+            {@const groupKey = group[0] as keyof typeof factAuditGroups}
+            {@const groupClaims = factAuditGroups[groupKey]}
+            {#if groupClaims.length > 0}
+              <div class="claim-audit-group">
+                <div class="section-caption">{group[1]} article claims</div>
+                {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
+                  <details class="claim-audit-item">
+                    <summary>
+                      <label class="claim-audit-select">
+                        <input
+                          type="checkbox"
+                          checked={isClaimSelected(claim)}
+                          disabled={!getClaimId(claim)}
+                          onchange={() => toggleClaimSelection(claim)}
+                        />
+                      </label>
+                      <span class={`pill pill--${claim.supportStatus === 'supported' ? 'passed' : claim.supportStatus === 'contradicted' ? 'failed' : 'flagged'}`}>
+                        {claim.supportStatus.replace('_', ' ')}
+                      </span>
+                      <strong>{claim.fact.textRefined || claim.claimQuote || claim.id}</strong>
+                    </summary>
+                    <div class="claim-audit-item__body">
+                      <div class="claim-audit-item__actions">
+                        <button
+                          type="button"
+                          class="secondary-button"
+                          disabled={factAuditBusy || !getClaimId(claim)}
+                          onclick={() => {
+                            const claimId = getClaimId(claim);
+                            if (claimId) void recheckFactClaims([claimId]);
+                          }}
+                        >
+                          Recheck support
+                        </button>
+                      </div>
+                      {#if claim.claimQuote}
+                        <p><strong>Article claim:</strong> {claim.claimQuote}</p>
+                      {/if}
+                      {#if claim.rationale}
+                        <p><strong>Support assessment:</strong> {claim.rationale}</p>
+                      {/if}
+                      {#if claim.evidence?.length}
+                        <div class="claim-audit-evidence">
+                          <div class="section-caption">Claim excerpt</div>
+                          {#each claim.evidence as evidence (evidence.id ?? evidence.evidenceKey)}
+                            <p>{evidence.quote || evidence.locator || evidence.sourceTitle}</p>
+                          {/each}
+                        </div>
+                      {/if}
+                      {#if claim.matchedFacts?.length}
+                        <div class="claim-audit-evidence">
+                          <div class="section-caption">Based on source evidence</div>
+                          {#each claim.matchedFacts as matched (matched.fact.id ?? matched.fact.textRefined)}
+                            <div class="claim-audit-match">
+                              <strong>Source claim: {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
+                              {#each matched.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
+                                <span>
+                                  {evidence.sourceTitle || 'Source'}
+                                  {#if evidence.locator}
+                                    · {evidence.locator}
+                                  {/if}
+                                  {#if evidence.quote}
+                                    · {evidence.quote}
+                                  {/if}
+                                </span>
+                              {/each}
+                            </div>
+                          {/each}
+                        </div>
+                      {:else}
+                        <p><strong>Based on:</strong> No supporting source evidence linked.</p>
+                      {/if}
+                    </div>
+                  </details>
+                {/each}
+              </div>
+            {/if}
+          {/each}
+        {/if}
       {/if}
-
-      <div class="selected-facts">
-        <div class="section-caption">Selected facts</div>
-        {#if selectedFactsResolved.length === 0}
-          <p class="empty-copy">No facts linked yet.</p>
-        {:else}
-          <div class="fact-chip-list">
-            {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
-              <div class="fact-chip">
-                <div class="fact-chip__body">
-                  <strong>{fact.textRefined}</strong>
-                  <span>
-                    {fact.status} · confidence {formatPercent(fact.confidence)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="fact-chip__remove"
-                  onclick={() => fact.id && removeFact(fact.id)}
-                >
-                  Remove
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <div class="fact-catalog">
-        <div class="section-caption">Fact catalog</div>
-        {#if catalogLoading}
-          <p class="empty-copy">Loading facts...</p>
-        {:else if catalogFacts.length === 0}
-          <p class="empty-copy">No facts matched this search.</p>
-        {:else}
-          <div class="fact-catalog__list">
-            {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
-              <div class="fact-result">
-                <div class="fact-result__body">
-                  <strong>{fact.textRefined}</strong>
-                  <span>
-                    {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  disabled={!fact.id || selectedFactIds.includes(fact.id ?? '')}
-                  onclick={() => addFact(fact)}
-                >
-                  {!fact.id || selectedFactIds.includes(fact.id ?? '') ? 'Selected' : 'Add'}
-                </button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
-  </div>
+    </div>
   </details>
+
+  {#if showFactCatalog || selectedFactsResolved.length > 0}
+    <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
+      <summary class="editor-drawer-header">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          Manual fact links
+          {#if syncingFacts}
+            <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
+          {/if}
+        </div>
+        <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+      </summary>
+      <div class="editor-drawer-content">
+        {#if governanceState && !governanceState.factLinkingEnabled}
+          <p class="empty-copy">
+            Fact linking is not enabled for this governed content type.
+          </p>
+        {:else}
+          <div class="selected-facts">
+            <div class="section-caption">Manually linked facts</div>
+            {#if selectedFactsResolved.length === 0}
+              <p class="empty-copy">No manually linked facts yet.</p>
+            {:else}
+              <div class="fact-chip-list">
+                {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
+                  <div class="fact-chip">
+                    <div class="fact-chip__body">
+                      <strong>{fact.textRefined}</strong>
+                      <span>
+                        {fact.status} · confidence {formatPercent(fact.confidence)}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      class="fact-chip__remove"
+                      onclick={() => fact.id && removeFact(fact.id)}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+
+          {#if showFactCatalog}
+            <div class="fact-search">
+              <input
+                type="text"
+                bind:value={factQuery}
+                placeholder="Search fact catalog"
+              />
+              <button type="button" onclick={searchFactsFirstPage}>
+                Search
+              </button>
+            </div>
+
+            {#if catalogError}
+              <p class="workflow-error">{catalogError}</p>
+            {/if}
+
+            <div class="fact-catalog">
+              <div class="section-caption">Fact catalog</div>
+              {#if catalogLoading}
+                <p class="empty-copy">Loading facts...</p>
+              {:else if catalogFacts.length === 0}
+                <p class="empty-copy">No facts matched this search.</p>
+              {:else}
+                <div class="fact-catalog__list">
+                  {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
+                    <div class="fact-result">
+                      <div class="fact-result__body">
+                        <strong>{fact.textRefined}</strong>
+                        <span>
+                          {fact.status} · {fact.domain || 'general'} · confidence {formatPercent(fact.confidence)}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!fact.id || selectedFactIds.includes(fact.id ?? '')}
+                        onclick={() => addFact(fact)}
+                      >
+                        {!fact.id || selectedFactIds.includes(fact.id ?? '') ? 'Selected' : 'Add'}
+                      </button>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if catalogFacts.length > 0 || catalogPage > 1}
+                <div class="fact-pagination" aria-label="Fact catalog pagination">
+                  <span>
+                    Page {catalogPage}
+                    {#if catalogFacts.length > 0}
+                      · {factCatalogRangeStart}-{factCatalogRangeEnd}
+                    {/if}
+                  </span>
+                  <div class="fact-pagination__actions">
+                    <button
+                      type="button"
+                      class="secondary-button"
+                      disabled={catalogLoading || catalogPage <= 1}
+                      onclick={browsePreviousFacts}
+                    >
+                      Previous
+                    </button>
+                    <button
+                      type="button"
+                      class="secondary-button"
+                      disabled={catalogLoading || !catalogHasNextPage}
+                      onclick={browseNextFacts}
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        {/if}
+      </div>
+    </details>
+  {/if}
 
   <details class="editor-drawer">
     <summary class="editor-drawer-header">
@@ -1503,7 +1836,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .section-status,
   .section-caption,
   .empty-copy,
+  .claim-audit-help,
   .review-card span,
+  .claim-audit-counts,
+  .claim-audit-item span,
   .fact-result span,
   .fact-chip span {
     color: var(--smrt-color-on-surface-variant);
@@ -1511,11 +1847,22 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .fact-search,
+  .fact-pagination,
+  .fact-pagination__actions,
+  .claim-audit-toolbar,
+  .claim-audit-counts,
   .review-actions,
   .version-card__footer {
     display: flex;
     gap: 0.75rem;
     align-items: center;
+  }
+
+  .fact-pagination {
+    justify-content: space-between;
+    flex-wrap: wrap;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.85rem;
   }
 
   .fact-search input,
@@ -1553,7 +1900,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .fact-search button:disabled,
-  .review-actions button:disabled {
+  .review-actions button:disabled,
+  .fact-pagination button:disabled {
     cursor: not-allowed;
     opacity: 0.65;
   }
@@ -1566,10 +1914,63 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   .fact-chip-list,
   .fact-catalog__list,
+  .claim-audit-group,
+  .claim-audit-item__body,
+  .claim-audit-evidence,
+  .claim-audit-match,
   .review-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+  }
+
+  .claim-audit-toolbar {
+    justify-content: space-between;
+    flex-wrap: wrap;
+  }
+
+  .claim-audit-counts {
+    flex-wrap: wrap;
+  }
+
+  .claim-audit-warnings {
+    border-radius: 0.6rem;
+    background: rgba(245, 158, 11, 0.12);
+    color: #92400e;
+    padding: 0.75rem 0.9rem;
+  }
+
+  .claim-audit-warnings p,
+  .claim-audit-item p {
+    margin: 0;
+  }
+
+  .claim-audit-item {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.6rem;
+    background: var(--smrt-color-surface);
+    padding: 0.75rem;
+  }
+
+  .claim-audit-item summary {
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .claim-audit-item__body {
+    padding-top: 0.75rem;
+  }
+
+  .claim-audit-select {
+    display: inline-flex;
+    line-height: 1;
+  }
+
+  .claim-audit-item__actions {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .review-profile-list {

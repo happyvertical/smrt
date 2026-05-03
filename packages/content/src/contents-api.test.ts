@@ -229,6 +229,9 @@ describe('Content API Endpoints', () => {
       expect(data.referenceIds).toBeDefined();
       expect(data.referenceIds.length).toBe(1);
       expect(data.referenceIds[0]).toBe(ref.id);
+      expect(data.references).toHaveLength(1);
+      expect(data.references[0].id).toBe(ref.id);
+      expect(data.references[0].title).toBe('A ref');
     });
 
     it('returns 404 for missing content', async () => {

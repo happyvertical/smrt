@@ -3,6 +3,7 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type { PromptConfigOverrideInput } from '@happyvertical/smrt-prompts';
 
 /**
  * Fact type classification
@@ -27,6 +28,16 @@ export type FactStatus =
   | 'superseded'
   | 'archived'
   | 'retracted';
+
+/**
+ * Review status for a concrete evidence excerpt.
+ */
+export type FactEvidenceStatus =
+  | 'supports'
+  | 'contradicts'
+  | 'unclear'
+  | 'irrelevant'
+  | 'invalid';
 
 /**
  * How a fact evolved from its parent
@@ -100,6 +111,28 @@ export interface FactSourceOptions extends SmrtObjectOptions {
 }
 
 /**
+ * Options for creating concrete evidence for a fact.
+ */
+export interface FactEvidenceOptions extends SmrtObjectOptions {
+  id?: string;
+  factId?: string;
+  evidenceKey?: string;
+  status?: FactEvidenceStatus;
+  sourceKind?: string;
+  sourceId?: string;
+  sourceUrl?: string;
+  sourceTitle?: string;
+  quote?: string;
+  locator?: string;
+  extractionMethod?: string;
+  confidence?: number;
+  metadata?: string | Record<string, any>;
+  tenantId?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+/**
  * Options for creating a FactSubject instance
  */
 export interface FactSubjectOptions extends SmrtObjectOptions {
@@ -155,7 +188,79 @@ export interface ReconcileOptions {
     sourceUrl?: string;
     sourceTitle?: string;
     credibility?: number;
+    metadata?: Record<string, any>;
   };
+  tenantId?: string | null;
+  /** Runtime prompt override for AI-assisted ambiguous reconciliation */
+  promptOverride?: PromptConfigOverrideInput;
+}
+
+/**
+ * A candidate factual statement extracted from unstructured source text.
+ */
+export interface FactExtractionCandidate {
+  /** Concise, atomic factual statement suitable for audit */
+  statement: string;
+  /** Fact type classification */
+  type?: FactType;
+  /** Short source excerpt that supports the statement */
+  sourceExcerpt?: string;
+  /** Optional extraction confidence from 0 to 1 */
+  confidence?: number;
+  /** Optional extraction metadata */
+  metadata?: Record<string, any>;
+}
+
+/**
+ * Options for AI-assisted fact extraction from source text.
+ */
+export interface FactExtractionOptions {
+  /** Domain to guide extraction and later reconciliation */
+  domain?: string;
+  /** Source type, e.g. agenda, minutes, article, transcript */
+  sourceType?: string;
+  /** Human-readable context for the source text */
+  context?: string;
+  /** Maximum number of facts to extract */
+  maxFacts?: number;
+  /** Fact types the extractor may return */
+  allowedTypes?: FactType[];
+  /** Tenant id used when resolving stored prompt overrides */
+  tenantId?: string | null;
+  /** Runtime prompt override for a single extraction call */
+  promptOverride?: PromptConfigOverrideInput;
+}
+
+export type FactClaimSupportStatus =
+  | 'supported'
+  | 'unsupported'
+  | 'contradicted'
+  | 'needs_review';
+
+export interface FactClaimSupportCandidate {
+  id?: string | null;
+  statement: string;
+  evidence?: Array<{
+    id?: string | null;
+    status?: FactEvidenceStatus | null;
+    quote?: string | null;
+    sourceTitle?: string | null;
+    sourceUrl?: string | null;
+    locator?: string | null;
+  }>;
+}
+
+export interface FactClaimSupportAssessment {
+  status: FactClaimSupportStatus;
+  matchedFactIds: string[];
+  matchedEvidenceIds: string[];
+  rationale: string;
+  confidence?: number;
+}
+
+export interface FactClaimSupportOptions {
+  tenantId?: string | null;
+  promptOverride?: PromptConfigOverrideInput;
 }
 
 /**

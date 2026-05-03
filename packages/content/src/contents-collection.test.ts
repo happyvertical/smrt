@@ -44,6 +44,7 @@ describe('Contents collection helpers', () => {
       contents.browseFacts({
         q: 'bridge',
         limit: '5',
+        offset: '10',
         minSimilarity: '0.75',
         includeSuperseded: 'true',
         latestOnly: 'false',
@@ -57,6 +58,7 @@ describe('Contents collection helpers', () => {
 
     expect(browseCatalog).toHaveBeenCalledWith('bridge', {
       limit: 5,
+      offset: 10,
       minSimilarity: 0.75,
       includeSuperseded: true,
       latestOnly: false,
@@ -84,6 +86,7 @@ describe('Contents collection helpers', () => {
       id: 'content-1',
       title: 'Bridge Update',
       referenceIds: ['reference-1'],
+      references: [{ id: 'reference-1' }],
       assetIds: ['asset-1'],
       assets: [{ id: 'asset-1' }],
     });

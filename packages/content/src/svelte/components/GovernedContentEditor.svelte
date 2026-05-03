@@ -2,6 +2,7 @@
 import type {
   ContentData,
   ContentGovernanceStateData,
+  FactAuditStateData,
   FactData,
 } from '../../mock-smrt-client';
 import { evaluateContentPublishReadiness } from '../../publish-readiness';
@@ -29,6 +30,7 @@ export interface Props {
   agentChatNotice?: string | null;
   hideActions?: boolean;
   hideChat?: boolean;
+  showFactCatalog?: boolean;
   onSave: (data: GovernedContentEditorSaveData) => void;
   onCancel: () => void;
 }
@@ -49,6 +51,7 @@ let {
   agentChatNotice = null,
   hideActions = false,
   hideChat = false,
+  showFactCatalog = false,
   onSave,
   onCancel,
 }: Props = $props();
@@ -68,6 +71,7 @@ let selectedFacts = $state<FactData[]>([]);
 let lastResetKey = $state<string | null | undefined>(undefined);
 let draftContent = $state<ContentData | undefined>(undefined);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
+let factAudit = $state<FactAuditStateData | null>(null);
 const resolvedContentId = $derived(content?.id ?? contentId);
 let innerEditor = $state<any>(null);
 
@@ -151,6 +155,10 @@ function handleGovernanceStateChange(state: ContentGovernanceStateData | null) {
   governanceState = state;
 }
 
+function handleFactAuditChange(state: FactAuditStateData | null) {
+  factAudit = state;
+}
+
 function handleSave(data: ContentData) {
   draftContent = data;
 
@@ -191,6 +199,7 @@ function handleSave(data: ContentData) {
     {apiBaseUrl}
     content={governedContent}
     contentId={resolvedContentId}
+    {factAudit}
     saveDisabled={publishSaveDisabled}
     saveNotice={resolvedSaveNotice}
     {agentChatEnabled}
@@ -198,6 +207,7 @@ function handleSave(data: ContentData) {
     {hideActions}
     {hideChat}
     onChange={handleEditorChange}
+    onFactAuditChange={handleFactAuditChange}
     onSave={handleSave}
     onCancel={onCancel}
   />
@@ -215,8 +225,10 @@ function handleSave(data: ContentData) {
     customReviewLabel={customReviewLabel}
     customReviewInstructions={customReviewInstructions}
     customReviewPolicyKey={customReviewPolicyKey}
+    {showFactCatalog}
     onFactsChange={handleFactsChange}
     onGovernanceStateChange={handleGovernanceStateChange}
+    onFactAuditChange={handleFactAuditChange}
   />
 </div>
 
@@ -278,4 +290,3 @@ function handleSave(data: ContentData) {
     color: var(--smrt-color-on-surface-variant);
   }
 </style>
-

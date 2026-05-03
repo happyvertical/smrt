@@ -223,6 +223,9 @@ export async function serializeContent(content: any) {
     referenceIds: references
       .map((reference: any) => reference?.id)
       .filter(Boolean),
+    references: references.map((reference: any) =>
+      toJSON<Record<string, any>>(reference),
+    ),
     assetIds: assets.map((asset: any) => asset?.id).filter(Boolean),
     assets: assets.map((asset: any) => toJSON<Record<string, any>>(asset)),
   };

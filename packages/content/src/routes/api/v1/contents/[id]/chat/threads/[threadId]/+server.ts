@@ -1,9 +1,12 @@
 import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import { ChatService } from '@happyvertical/smrt-chat';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
+import { contentEditorInteractionPrompt } from '../../../../../../../../content-chat-prompts.js';
 import {
   buildContentChatModelUpdates,
+  buildContentEditorInteractionVariables,
   getContentChatAISelection,
   resolveContentChatModelSelection,
 } from '../../../../../../../../content-chat-session.js';
@@ -14,6 +17,11 @@ type ContentChatLocals = {
   user?: {
     id?: string | null;
   } | null;
+};
+
+type ContentChatAIConfig = AIClientOptions & {
+  model?: string;
+  defaultModel?: string;
 };
 
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -148,41 +156,18 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       }
     }
 
-    // Build context from all form fields so the AI can see and update any field
-    const fields = formFields || {};
-    const contextPrompt = `
-CURRENT CONTENT FORM STATE:
-- title: ${fields.title || '(empty)'}
-- description: ${fields.description || '(empty)'}
-- type: ${fields.type || 'article'}
-- status: ${fields.status || 'draft'}
-- state: ${fields.state || 'active'}
-- body:
-${fields.body || currentEditorState || '(empty)'}
-${combinedReferences}
-
-INSTRUCTIONS FOR CO-AUTHORING:
-You are a content co-author. You can update ANY of the above fields.
-
-When you want to make changes to the content, output a JSON code block with a "fields" object containing ONLY the fields you want to change:
-
-\`\`\`json
-{"fields": {"title": "New Title", "body": "New body content..."}}
-\`\`\`
-
-Valid field names: title, description, type, status, state, body.
-Valid status values: draft, published, archived.
-Valid state values: active, highlighted, deprecated.
-Valid type values: article, document, mirror.
-
-RULES:
-- Only include fields you are actually changing.
-- If the user asks to write/rewrite content, update the "body" field.
-- If the user asks to change the title, update the "title" field.
-- You can change multiple fields at once.
-- Always respond conversationally BEFORE the JSON block.
-- The JSON block will be automatically applied to the editor.
-`;
+    const interactionPrompt = await resolvePrompt(
+      contentEditorInteractionPrompt.key,
+      {
+        db: contentsCollection.db,
+        tenantId,
+        variables: buildContentEditorInteractionVariables({
+          fields: formFields,
+          currentEditorState,
+          references: combinedReferences,
+        }),
+      },
+    );
 
     // Fetch previous messages in this thread for context history
     const history = await chatService.messages.list({
@@ -197,17 +182,22 @@ RULES:
     }));
 
     const config = getSmrtConfig('@happyvertical/smrt-content:Content');
-    const aiConfig = (config.ai || {}) as AIClientOptions;
+    const aiConfig = (config.ai || {}) as ContentChatAIConfig;
 
     // Get SvelteKit environment variables for SSR
     const env = process.env;
 
     const ctx = session.getSessionContext();
     const storedSelection = getContentChatAISelection(ctx);
+    const fallbackModel =
+      storedSelection.model ?? aiConfig.model ?? aiConfig.defaultModel ?? model;
+    if (!fallbackModel) {
+      throw new Error('AI model is not configured for content chat');
+    }
     const { model: aiModel, provider } = resolveContentChatModelSelection(
       ctx,
       model,
-      storedSelection.model ?? 'gemini-2.5-pro',
+      fallbackModel,
     );
     const temperature = storedSelection.temperature ?? 0.7;
     const maxTokens = storedSelection.maxTokens ?? 2000;
@@ -232,7 +222,7 @@ RULES:
       typeof session.systemPrompt === 'string' ? session.systemPrompt : '';
     conversation.unshift({
       role: 'system',
-      content: `${fullSystemPrompt}\n\n${contextPrompt}`,
+      content: `${fullSystemPrompt}\n\n${interactionPrompt.text}`,
     });
 
     const response = await ai.chat(conversation, {
@@ -253,11 +243,7 @@ RULES:
     });
 
     // If model changed, update context
-    const updates = buildContentChatModelUpdates(
-      ctx,
-      model,
-      storedSelection.model ?? 'gemini-2.5-pro',
-    );
+    const updates = buildContentChatModelUpdates(ctx, model, fallbackModel);
     if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
       await session.updateSessionContext(updates);
     }

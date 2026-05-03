@@ -10,11 +10,17 @@
 // downstream. Must come first so the side effect runs ahead of the class
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
+import './prompts.js';
 
 // Export models
 export { Fact } from './fact';
 export { FactContent } from './fact-content';
 export { FactContentCollection } from './fact-contents';
+export { FactEvidence } from './fact-evidence';
+export {
+  createFactEvidenceKey,
+  FactEvidenceCollection,
+} from './fact-evidences';
 export { FactSource } from './fact-source';
 export { FactSourceCollection } from './fact-sources';
 export { FactSubject } from './fact-subject';
@@ -23,13 +29,27 @@ export { FactTag } from './fact-tag';
 export { FactTagCollection } from './fact-tags';
 // Export collections
 export { FactCollection } from './facts';
+export {
+  smrtFactsAssessClaimSupportPrompt,
+  smrtFactsExtractArticleClaimsPrompt,
+  smrtFactsExtractCandidatesPrompt,
+  smrtFactsReconcilePrompt,
+} from './prompts';
 
 // Export types
 export type {
   EntityBriefing,
   EvolutionType,
+  FactClaimSupportAssessment,
+  FactClaimSupportCandidate,
+  FactClaimSupportOptions,
+  FactClaimSupportStatus,
   FactContentOptions,
   FactContentRelationship,
+  FactEvidenceOptions,
+  FactEvidenceStatus,
+  FactExtractionCandidate,
+  FactExtractionOptions,
   FactMetadata,
   FactOptions,
   FactSourceOptions,

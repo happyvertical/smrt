@@ -33,6 +33,7 @@
     "@happyvertical/files": "catalog:",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:"

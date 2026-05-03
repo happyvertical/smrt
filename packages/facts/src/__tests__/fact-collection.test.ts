@@ -221,4 +221,88 @@ describe('getEntityBriefing', () => {
 
     expect(results.map((fact) => fact.id)).toEqual([tenantFact.id]);
   });
+
+  it('applies offset when browsing catalog results', async () => {
+    const browseFacts = await Promise.all(
+      Array.from({ length: 15 }, (_, index) =>
+        facts.create({
+          textRefined: `Catalog fact ${index + 1}`,
+          type: 'assertion',
+          status: 'active',
+        }),
+      ),
+    );
+
+    vi.spyOn(facts, 'semanticSearch').mockResolvedValue(browseFacts as any);
+
+    const results = await facts.browseCatalog('catalog', {
+      limit: 5,
+      offset: 10,
+      latestOnly: false,
+    });
+
+    expect(results.map((fact) => fact.textRefined)).toEqual([
+      'Catalog fact 11',
+      'Catalog fact 12',
+      'Catalog fact 13',
+      'Catalog fact 14',
+      'Catalog fact 15',
+    ]);
+    expect(facts.semanticSearch).toHaveBeenCalledWith(
+      'catalog',
+      expect.objectContaining({ limit: 15 }),
+    );
+  });
+
+  it('caps latest-chain resolution when browsing an empty catalog query', async () => {
+    const browseFacts = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        facts.create({
+          textRefined: `Catalog fact ${index + 1}`,
+          type: 'assertion',
+          status: 'active',
+        }),
+      ),
+    );
+    const byId = new Map(browseFacts.map((fact) => [fact.id as string, fact]));
+    const latestSpy = vi
+      .spyOn(facts, 'getLatestInChain')
+      .mockImplementation(async (factId: string) => byId.get(factId) as any);
+
+    const results = await facts.browseCatalog('', {
+      limit: 5,
+      latestOnly: true,
+    });
+
+    expect(results).toHaveLength(5);
+    expect(latestSpy).toHaveBeenCalledTimes(5);
+  });
+
+  it('caps latest-chain resolution in the text fallback browse path', async () => {
+    const browseFacts = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        facts.create({
+          textRefined: `Catalog fallback fact ${index + 1}`,
+          type: 'assertion',
+          status: 'active',
+        }),
+      ),
+    );
+    const byId = new Map(browseFacts.map((fact) => [fact.id as string, fact]));
+    vi.spyOn(facts, 'semanticSearch').mockRejectedValue(
+      new Error('Embeddings unavailable'),
+    );
+    const latestSpy = vi
+      .spyOn(facts, 'getLatestInChain')
+      .mockImplementation(async (factId: string) => byId.get(factId) as any);
+
+    const results = await facts.browseCatalog('fallback', {
+      limit: 5,
+      offset: 10,
+      latestOnly: true,
+    });
+
+    expect(results).toHaveLength(5);
+    expect(latestSpy).toHaveBeenCalledTimes(15);
+  });
 });

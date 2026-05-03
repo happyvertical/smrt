@@ -20,7 +20,22 @@ export { Content } from './content';
 export type { ContentAssetOptions } from './content-asset';
 export { ContentAsset } from './content-asset';
 export { ContentAssetCollection } from './content-assets';
-export { contentEditorSessionPrompt } from './content-chat-prompts';
+export {
+  contentEditorInteractionPrompt,
+  contentEditorSessionPrompt,
+} from './content-chat-prompts';
+export type {
+  ContentChatAISelection,
+  ContentEditorInteractionInput,
+} from './content-chat-session';
+export {
+  buildContentChatModelUpdates,
+  buildContentEditorInteractionVariables,
+  buildContentEditorSessionContext,
+  getContentChatAISelection,
+  inferProviderFromModel,
+  resolveContentChatModelSelection,
+} from './content-chat-session';
 export type {
   AppendContentContributionRevisionOptions,
   ApproveContentContributionOptions,
@@ -128,6 +143,11 @@ export { ContentGovernancePolicy } from './content-governance-policy';
 export type { ContentGovernanceProfileOptions } from './content-governance-profile';
 export { ContentGovernanceProfile } from './content-governance-profile';
 export { ContentGovernanceProfileCollection } from './content-governance-profiles';
+export {
+  promptMessageOptions,
+  smrtContentApplyCorrectionPrompt,
+  smrtContentReviewPrompt,
+} from './content-prompts';
 export type { ContentReferenceOptions } from './content-reference';
 export { ContentReference } from './content-reference';
 export type { ContentReferencesOptions } from './content-references';
