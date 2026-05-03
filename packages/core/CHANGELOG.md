@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - align smrt package version (#1185) (prompts)
+  - @happyvertical/smrt-scanner@0.23.10
+  - @happyvertical/smrt-config@0.23.10
+  - @happyvertical/smrt-types@0.23.10
+
 ## 0.23.9
 
 ### Patch Changes
