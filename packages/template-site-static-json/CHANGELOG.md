@@ -1,5 +1,7 @@
 # @happyvertical/smrt-template-site-static-json
 
+## 0.23.9
+
 ## 0.23.8
 
 ## 0.23.7

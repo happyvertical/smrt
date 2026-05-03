@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.9
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - Refactor QA content integration prompts
+  - @happyvertical/smrt-scanner@0.23.9
+  - @happyvertical/smrt-config@0.23.9
+  - @happyvertical/smrt-types@0.23.9
+
 ## 0.23.8
 
 ### Patch Changes
