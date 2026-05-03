@@ -332,6 +332,30 @@ function getResourceClaimEvidenceIds(
     .filter((id): id is string => typeof id === 'string' && id.length > 0);
 }
 
+function getResourceClaimKey(
+  claim: FactAuditResourceClaimData,
+  index: number,
+): string {
+  const firstEvidence = claim.evidence?.[0];
+  return (
+    firstEvidence?.id ||
+    firstEvidence?.evidenceKey ||
+    [
+      claim.id,
+      claim.sourceKind,
+      claim.sourceId,
+      claim.quote,
+      claim.fact?.textRefined,
+    ]
+      .filter(
+        (value): value is string =>
+          typeof value === 'string' && value.length > 0,
+      )
+      .join(':') ||
+    `resource-claim-${index}`
+  );
+}
+
 function isResourceClaimSelected(claim: FactAuditResourceClaimData): boolean {
   const evidenceIds = getResourceClaimEvidenceIds(claim);
   return (
@@ -1049,7 +1073,7 @@ function removeAsset(id: string) {
                        </div>
                        {#if resourceClaims.length > 0}
                          <div class="resource-claim-list">
-                           {#each visibleResourceClaims as claim (claim.id ?? claim.quote ?? claim.fact?.textRefined)}
+                           {#each visibleResourceClaims as claim, claimIndex (getResourceClaimKey(claim, claimIndex))}
                              {@const evidenceIds = getResourceClaimEvidenceIds(claim)}
                              <details class="resource-claim">
                                <summary>

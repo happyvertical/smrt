@@ -203,6 +203,12 @@ function getLinkMetadata(link: any): Record<string, any> {
   return typeof link?.getMetadata === 'function' ? link.getMetadata() : {};
 }
 
+function getFactMetadata(fact: any): Record<string, any> {
+  return typeof fact?.getMetadata === 'function'
+    ? fact.getMetadata()
+    : parseAuditMetadata(fact?.metadata);
+}
+
 function getGeneratedFactAuditMetadata(link: any): Record<string, any> | null {
   const metadata = getLinkMetadata(link);
   if (metadata.generatedBy === FACT_AUDIT_GENERATED_BY) {
@@ -235,6 +241,19 @@ function isGeneratedFactAuditEvidence(
     metadata.generatedBy === FACT_AUDIT_GENERATED_BY &&
     metadata.contentId === contentId
   );
+}
+
+function isGeneratedArticleClaimFact(fact: any, contentId: string): boolean {
+  const metadata = getFactMetadata(fact);
+  if (metadata.generatedBy !== FACT_AUDIT_GENERATED_BY) {
+    return false;
+  }
+
+  const role = metadata.auditFactRole || metadata.factAuditRole;
+  const isArticleClaim =
+    role === 'article-claim' || metadata.claimOnly === true;
+
+  return isArticleClaim && metadata.contentId === contentId;
 }
 
 function normalizeFactEvidenceStatus(
@@ -1858,19 +1877,45 @@ export class Content
     return { sources, warnings };
   }
 
-  private async findExactAuditFact(statement: string): Promise<Fact | null> {
+  private factMatchesTenant(fact: any): boolean {
+    return (
+      fact.tenantId === this.tenantId ||
+      fact.tenant_id === this.tenantId ||
+      (!fact.tenantId && !fact.tenant_id && !this.tenantId)
+    );
+  }
+
+  private async findExactArticleClaimFact(
+    statement: string,
+  ): Promise<Fact | null> {
+    const normalizedStatement = normalizeAuditText(statement);
     const facts = await this.getFactCollection();
+    const linkedClaimFacts = await Promise.all(
+      (await this.getFactLinks({ relationship: 'referenced_in' })).map(
+        (link: any) => facts.get({ id: link.factId }),
+      ),
+    );
+    const linkedMatch = linkedClaimFacts.find(
+      (fact: any): fact is Fact =>
+        Boolean(fact) &&
+        this.factMatchesTenant(fact) &&
+        normalizeAuditText(fact.textRefined) === normalizedStatement,
+    );
+    if (linkedMatch) {
+      return linkedMatch;
+    }
+
     const matches = await facts.list({
-      where: { textRefined: statement },
+      where: { textRefined: normalizedStatement },
       orderBy: 'updated_at DESC',
     });
 
     return (
       matches.find(
         (fact: any) =>
-          fact.tenantId === this.tenantId ||
-          fact.tenant_id === this.tenantId ||
-          (!fact.tenantId && !fact.tenant_id && !this.tenantId),
+          this.factMatchesTenant(fact) &&
+          this.id &&
+          isGeneratedArticleClaimFact(fact, this.id as string),
       ) || null
     );
   }
@@ -2268,10 +2313,7 @@ export class Content
       const matchedFactIds = assessment.matchedFactIds.filter((factId) =>
         candidateFactIds.has(factId),
       );
-      let claimFact =
-        matchedFactIds.length > 0
-          ? referenceFacts.get(matchedFactIds[0]) || null
-          : await this.findExactAuditFact(claim.statement);
+      let claimFact = await this.findExactArticleClaimFact(claim.statement);
 
       if (!claimFact) {
         claimFact = await facts.create({
@@ -2290,9 +2332,30 @@ export class Content
           metadata: JSON.stringify({
             auditRunId,
             generatedBy: FACT_AUDIT_GENERATED_BY,
+            contentId: this.id,
+            auditFactRole: 'article-claim',
             claimOnly: matchedFactIds.length === 0,
           }),
         });
+      } else if (
+        this.id &&
+        isGeneratedArticleClaimFact(claimFact, this.id as string)
+      ) {
+        claimFact.status =
+          assessment.status === 'unsupported' ||
+          assessment.status === 'needs_review'
+            ? 'pending'
+            : 'active';
+        claimFact.confidence =
+          claim.confidence ?? assessment.confidence ?? claimFact.confidence;
+        claimFact.updateMetadata?.({
+          auditRunId,
+          generatedBy: FACT_AUDIT_GENERATED_BY,
+          contentId: this.id,
+          auditFactRole: 'article-claim',
+          claimOnly: matchedFactIds.length === 0,
+        });
+        await claimFact.save();
       }
 
       const articleEvidence = await evidences.upsertEvidence({
@@ -2338,6 +2401,7 @@ export class Content
         generatedBy: FACT_AUDIT_GENERATED_BY,
         supportStatus: assessment.status,
         claimQuote: claim.sourceExcerpt || claim.statement,
+        claimFactId: claimFact.id as string,
         articleEvidenceId: articleEvidence.id || null,
         supportingFactIds: matchedFactIds,
         supportingEvidenceIds,

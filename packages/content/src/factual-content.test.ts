@@ -952,6 +952,126 @@ describe('Content governance', () => {
     }
   });
 
+  it('keeps supported article claims distinct from their source facts', async () => {
+    const db: DatabaseInterface = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    try {
+      await prepareContentWorkflowSchemas(db);
+      await prepareGovernanceSchemas(db);
+
+      configureContentGovernance({
+        assignments: [
+          {
+            contentType: 'article',
+            enabled: true,
+            factLinkingEnabled: true,
+            transparencyEnabled: true,
+            defaultFactRelationship: 'supports',
+          },
+        ],
+      });
+
+      const aiMessage = vi.fn(async (prompt: string) => {
+        if (prompt.includes('candidate_facts_json')) {
+          const matchedId = prompt.match(/"id": "([^"]+)"/)?.[1];
+          return JSON.stringify({
+            status: 'supported',
+            matchedFactIds: matchedId ? [matchedId] : [],
+            rationale: 'The source fact supports the article claim.',
+            confidence: 0.93,
+          });
+        }
+
+        if (prompt.includes('article_text')) {
+          return JSON.stringify({
+            facts: [
+              {
+                statement: 'Council approved the project.',
+                type: 'event',
+                sourceExcerpt: 'Council approved the project.',
+                confidence: 0.91,
+              },
+              {
+                statement: 'Council gave final approval to the project.',
+                type: 'event',
+                sourceExcerpt: 'Council gave final approval to the project.',
+                confidence: 0.89,
+              },
+            ],
+          });
+        }
+
+        return JSON.stringify({
+          facts: [
+            {
+              statement: 'Council approved the project.',
+              type: 'event',
+              sourceExcerpt: 'Council approved the project.',
+              confidence: 0.95,
+            },
+          ],
+        });
+      });
+
+      const article = new Content({
+        name: 'project-approval-story',
+        title: 'Council approves project',
+        body: 'Council approved the project. Council gave final approval to the project.',
+        type: 'article',
+        status: 'draft',
+        db,
+        ai: {
+          embed: vi.fn().mockResolvedValue([]),
+          message: aiMessage,
+        },
+      });
+      await article.initialize();
+      await article.save();
+
+      const reference = new Content({
+        name: 'project-approval-minutes',
+        title: 'Meeting minutes',
+        body: 'Council approved the project.',
+        type: 'minutes',
+        status: 'published',
+        db,
+      });
+      await reference.initialize();
+      await reference.save();
+      await article.addReference(reference);
+
+      const audit = await article.repairFactAudit();
+      const sourceFactId = audit.resourceClaims[0]?.id;
+      const claimIds = audit.claims
+        .map((claim) => claim.id)
+        .filter((id): id is string => typeof id === 'string');
+
+      expect(audit.counts.total).toBe(2);
+      expect(audit.counts.supported).toBe(2);
+      expect(claimIds).toHaveLength(2);
+      expect(new Set(claimIds).size).toBe(2);
+      expect(sourceFactId).toBeTruthy();
+      expect(claimIds).not.toContain(sourceFactId);
+
+      const referencedLinks = await article.getFactLinks({
+        relationship: 'referenced_in',
+      });
+      expect(referencedLinks).toHaveLength(2);
+
+      const rechecked = await article.recheckFactClaims({
+        claimFactIds: [claimIds[0]],
+      });
+      expect(rechecked.claimRecheck.recheckedClaims).toBe(1);
+    } finally {
+      if (typeof db.close === 'function') {
+        await db.close();
+      }
+    }
+  });
+
   it('enforces publish readiness for persisted governance assignments', async () => {
     const db: DatabaseInterface = await getTestDatabase({
       type: 'sqlite',
