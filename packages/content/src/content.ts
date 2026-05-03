@@ -1981,9 +1981,9 @@ export class Content
       }
     }
 
-    const generatedEvidence = await evidences.list(
-      this.tenantId ? { where: { tenantId: this.tenantId } } : {},
-    );
+    const generatedEvidence = await evidences.list({
+      where: { tenantId: this.tenantId ?? null },
+    });
     for (const evidence of generatedEvidence as any[]) {
       const metadata =
         typeof evidence.getMetadata === 'function'
@@ -2009,9 +2009,9 @@ export class Content
       sources.map((source) => `${source.sourceKind}:${source.sourceId}`),
     );
     const factSources = await this.getFactSourceCollection();
-    const generatedSources = await factSources.list(
-      this.tenantId ? { where: { tenantId: this.tenantId } } : {},
-    );
+    const generatedSources = await factSources.list({
+      where: { tenantId: this.tenantId ?? null },
+    });
     const deletedSourceIds: string[] = [];
 
     for (const source of generatedSources as any[]) {
@@ -2055,7 +2055,11 @@ export class Content
           sourceKind: source.sourceKind,
           sourceId: source.sourceId,
         })),
-        { generatedBy: FACT_AUDIT_GENERATED_BY, contentId: this.id as string },
+        {
+          generatedBy: FACT_AUDIT_GENERATED_BY,
+          contentId: this.id as string,
+          tenantId: this.tenantId ?? null,
+        },
       );
       deletedEvidenceIds = replacement.deletedEvidenceIds;
       deletedSourceIds =
@@ -2169,9 +2173,9 @@ export class Content
             ),
           )
         ).flat()
-      : await evidences.list(
-          this.tenantId ? { where: { tenantId: this.tenantId } } : {},
-        );
+      : await evidences.list({
+          where: { tenantId: this.tenantId ?? null },
+        });
 
     for (const entry of evidenceEntries as any[]) {
       if (!isGeneratedFactAuditEvidence(entry, this.id as string)) {
@@ -2945,9 +2949,9 @@ export class Content
       });
     }
 
-    const generatedEvidence = await evidences.list(
-      this.tenantId ? { where: { tenantId: this.tenantId } } : {},
-    );
+    const generatedEvidence = await evidences.list({
+      where: { tenantId: this.tenantId ?? null },
+    });
     for (const evidence of generatedEvidence as any[]) {
       const metadata =
         typeof evidence.getMetadata === 'function'

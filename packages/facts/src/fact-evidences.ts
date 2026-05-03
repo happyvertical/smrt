@@ -129,20 +129,51 @@ export class FactEvidenceCollection extends SmrtCollection<FactEvidence> {
 
   async replaceGeneratedForSources(
     sources: Array<{ sourceKind: string; sourceId: string }>,
-    options: { generatedBy?: string; contentId?: string } = {},
+    options: {
+      generatedBy?: string;
+      contentId?: string;
+      tenantId?: string | null;
+    } = {},
   ): Promise<{ deletedEvidenceIds: string[] }> {
     const deletedEvidenceIds: string[] = [];
-    const sourceKeys = new Set(
-      sources.map((source) => `${source.sourceKind}:${source.sourceId}`),
-    );
+    const sourceEntries = [
+      ...new Map(
+        sources.map((source) => [
+          `${source.sourceKind}:${source.sourceId}`,
+          source,
+        ]),
+      ).values(),
+    ];
 
-    if (sourceKeys.size === 0) {
+    if (sourceEntries.length === 0) {
       return { deletedEvidenceIds };
     }
 
-    const entries = await this.list({});
+    const entriesById = new Map<string, FactEvidence>();
+    const useTenantFilter = Object.hasOwn(options, 'tenantId');
+    for (const source of sourceEntries) {
+      const entries = await this.list({
+        where: {
+          sourceKind: source.sourceKind,
+          sourceId: source.sourceId,
+          ...(useTenantFilter ? { tenantId: options.tenantId ?? null } : {}),
+        },
+      });
+      for (const entry of entries) {
+        const key =
+          typeof entry.id === 'string' && entry.id
+            ? entry.id
+            : `${entry.factId}:${entry.evidenceKey}`;
+        entriesById.set(key, entry);
+      }
+    }
+
+    const entries = [...entriesById.values()];
     for (const entry of entries) {
-      if (!sourceKeys.has(`${entry.sourceKind}:${entry.sourceId}`)) {
+      if (
+        useTenantFilter &&
+        (entry.tenantId ?? null) !== (options.tenantId ?? null)
+      ) {
         continue;
       }
 

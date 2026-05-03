@@ -5,7 +5,18 @@ import {
 
 export const smrtContentReviewPrompt = definePrompt({
   key: 'smrtContent.review',
-  template: '{reviewPrompt}',
+  template: `Content review request
+
+Content ID: {contentId}
+Review kind: {kind}
+Policy key: {policyKey}
+Title: {contentTitle}
+Description: {contentDescription}
+
+Body:
+{contentBody}
+
+{reviewPrompt}`,
   editable: {
     template: true,
     profile: true,

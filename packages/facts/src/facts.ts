@@ -282,6 +282,26 @@ export class FactCollection extends SmrtCollection<Fact> {
     const safeOffset = Number.isFinite(offset)
       ? Math.max(0, Math.floor(offset))
       : 0;
+    const pageEnd = safeOffset + safeLimit;
+    const latestResolutionLimit = pageEnd + safeLimit;
+    const resolveLatestPage = async (facts: Fact[]): Promise<Fact[]> => {
+      const latestById = new Map<string, Fact>();
+
+      for (const fact of facts.slice(0, latestResolutionLimit)) {
+        const factId = fact.id as string;
+        if (!factId) {
+          continue;
+        }
+
+        const latest = await this.getLatestInChain(factId);
+        latestById.set(latest.id as string, latest);
+        if (latestById.size >= pageEnd) {
+          break;
+        }
+      }
+
+      return [...latestById.values()].slice(safeOffset, pageEnd);
+    };
 
     const baseList =
       tenantId === undefined || tenantId === null
@@ -305,12 +325,7 @@ export class FactCollection extends SmrtCollection<Fact> {
         return tenantScoped.slice(safeOffset, safeOffset + safeLimit);
       }
 
-      const latest = await Promise.all(
-        tenantScoped.map((fact) => this.getLatestInChain(fact.id as string)),
-      );
-      return [
-        ...new Map(latest.map((fact) => [fact.id as string, fact])).values(),
-      ].slice(safeOffset, safeOffset + safeLimit);
+      return resolveLatestPage(tenantScoped);
     }
 
     let matches: Fact[] = [];
@@ -338,13 +353,7 @@ export class FactCollection extends SmrtCollection<Fact> {
       return matches.slice(safeOffset, safeOffset + safeLimit);
     }
 
-    const latest = await Promise.all(
-      matches.map((fact) => this.getLatestInChain(fact.id as string)),
-    );
-
-    return [
-      ...new Map(latest.map((fact) => [fact.id as string, fact])).values(),
-    ].slice(safeOffset, safeOffset + safeLimit);
+    return resolveLatestPage(matches);
   }
 
   /**

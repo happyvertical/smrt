@@ -138,6 +138,14 @@ describe('FactEvidenceCollection', () => {
       tenantId: 'tenant-1',
       metadata: { generatedBy: 'editor' },
     });
+    const otherTenantGenerated = await evidence.upsertEvidence({
+      factId: fact.id as string,
+      sourceKind: 'content-reference',
+      sourceId: 'agenda-1',
+      quote: 'Generated excerpt for another tenant',
+      tenantId: 'tenant-2',
+      metadata: { generatedBy: 'content.factAudit', contentId: 'article-1' },
+    });
     await evidence.upsertEvidence({
       factId: fact.id as string,
       sourceKind: 'content-reference',
@@ -149,13 +157,21 @@ describe('FactEvidenceCollection', () => {
 
     const result = await evidence.replaceGeneratedForSources(
       [{ sourceKind: 'content-reference', sourceId: 'agenda-1' }],
-      { generatedBy: 'content.factAudit', contentId: 'article-1' },
+      {
+        generatedBy: 'content.factAudit',
+        contentId: 'article-1',
+        tenantId: 'tenant-1',
+      },
     );
 
     expect(result.deletedEvidenceIds).toEqual([generated.id]);
-    await expect(
-      evidence.getForSource('content-reference', 'agenda-1'),
-    ).resolves.toMatchObject([{ id: manual.id }]);
+    const remainingAgendaEvidence = await evidence.getForSource(
+      'content-reference',
+      'agenda-1',
+    );
+    expect(remainingAgendaEvidence.map((entry) => entry.id).sort()).toEqual(
+      [manual.id, otherTenantGenerated.id].sort(),
+    );
     await expect(
       evidence.getForSource('content-reference', 'minutes-1'),
     ).resolves.toHaveLength(1);

@@ -46,6 +46,28 @@ describe('content prompt definitions', () => {
     });
   });
 
+  it('renders the default review prompt with structured content variables', async () => {
+    const resolved = await resolvePrompt(smrtContentReviewPrompt.key, {
+      variables: {
+        contentBody: 'The draft body.',
+        contentDescription: 'A draft description.',
+        contentId: 'content-1',
+        contentTitle: 'Budget Update',
+        kind: 'facts',
+        policyKey: 'facts',
+        reviewPrompt: 'Legacy review prompt',
+      },
+    });
+
+    expect(resolved.text).toContain('Content ID: content-1');
+    expect(resolved.text).toContain('Review kind: facts');
+    expect(resolved.text).toContain('Policy key: facts');
+    expect(resolved.text).toContain('Title: Budget Update');
+    expect(resolved.text).toContain('Description: A draft description.');
+    expect(resolved.text).toContain('The draft body.');
+    expect(resolved.text).toContain('Legacy review prompt');
+  });
+
   it('resolves apply-correction prompt variables', async () => {
     const resolved = await resolvePrompt(smrtContentApplyCorrectionPrompt.key, {
       variables: {
