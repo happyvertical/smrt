@@ -37,6 +37,7 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+export * from './collections/index.js';
 export {
   OAuthState,
   type OAuthStateOptions,
@@ -45,6 +46,7 @@ export {
 export {
   type AccountStatus,
   type LinkBehavior,
+  type PublishMode,
   SocialAccount,
   type SocialAccountOptions,
   type SocialPlatformType,
@@ -54,4 +56,9 @@ export {
   type PostStatus,
   SocialPost,
   type SocialPostOptions,
+  type SocialPostType,
 } from './social-post.js';
+export {
+  SocialPostAnalyticsSnapshot,
+  type SocialPostAnalyticsSnapshotOptions,
+} from './social-post-analytics-snapshot.js';

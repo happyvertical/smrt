@@ -127,6 +127,22 @@ describe('SecretService', () => {
       expect(rows[0]?.name).toBe('interceptor-free-secret');
       expect(rows[0]?.tenant_id).toBe('tenant-1');
     });
+
+    it('can store and retrieve with an explicit tenant id', async () => {
+      disableTenancy();
+
+      await service.storeForTenant('tenant-1', 'explicit-secret', 'value', {
+        category: 'oauth',
+      });
+
+      const retrieved = await service.retrieveForTenant(
+        'tenant-1',
+        'explicit-secret',
+      );
+
+      expect(retrieved.value).toBe('value');
+      expect(retrieved.category).toBe('oauth');
+    });
   });
 
   describe('Secret lifecycle', () => {

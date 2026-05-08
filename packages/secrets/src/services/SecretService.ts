@@ -12,7 +12,11 @@ import {
   getSecretStore,
   type SecretStore,
 } from '@happyvertical/secrets';
-import { getCurrentTenant, requireTenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  requireTenantId,
+  withTenant,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { SecretAuditLogCollection } from '../collections/SecretAuditLogCollection.js';
 import { SecretCollection } from '../collections/SecretCollection.js';
@@ -235,6 +239,21 @@ export class SecretService {
   }
 
   /**
+   * Store a secret for a specific tenant.
+   *
+   * This is useful for integrations that already resolved tenant ownership but
+   * may be running outside the application's ambient tenant context.
+   */
+  async storeForTenant(
+    tenantId: string,
+    name: string,
+    value: string,
+    options: StoreSecretOptions = {},
+  ): Promise<Secret> {
+    return withTenant({ tenantId }, () => this.store(name, value, options));
+  }
+
+  /**
    * Retrieve a secret for the current tenant
    */
   async retrieve(name: string): Promise<RetrievedSecret> {
@@ -295,6 +314,16 @@ export class SecretService {
       }
       throw error;
     }
+  }
+
+  /**
+   * Retrieve a secret for a specific tenant.
+   */
+  async retrieveForTenant(
+    tenantId: string,
+    name: string,
+  ): Promise<RetrievedSecret> {
+    return withTenant({ tenantId }, () => this.retrieve(name));
   }
 
   /**
