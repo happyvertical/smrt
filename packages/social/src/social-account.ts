@@ -5,14 +5,17 @@
  * Stores OAuth credentials and account settings.
  */
 
+import { randomUUID } from 'node:crypto';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SecretService } from '@happyvertical/smrt-secrets';
 import {
   getCurrentTenant,
   TenantScoped,
   tenantId,
   withTenant,
 } from '@happyvertical/smrt-tenancy';
+import { getSocialPlatformSetup } from './server.js';
 
 /**
  * Supported social platforms
@@ -354,12 +357,15 @@ export class SocialAccount extends SmrtObject {
     if (options.status !== undefined) this.status = options.status;
     if (options.errorMessage !== undefined)
       this.errorMessage = options.errorMessage;
-    if (options.tenantId !== undefined) {
-      this.tenantId = options.tenantId;
-    } else {
-      const rawTenantId = (options as { tenant_id?: string | null }).tenant_id;
-      if (rawTenantId !== undefined) {
-        this.tenantId = rawTenantId;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+
+    if (options.platform !== undefined) {
+      const setup = getSocialPlatformSetup(this.platform);
+      if (options.linkBehavior === undefined) {
+        this.linkBehavior = setup.defaultLinkBehavior;
+      }
+      if (options.publishMode === undefined) {
+        this.publishMode = setup.defaultPublishMode;
       }
     }
   }
@@ -374,7 +380,15 @@ export class SocialAccount extends SmrtObject {
     if (!this.slug) {
       const identity =
         this.platformUserId || this.platformUsername || this.name || this.id;
-      const source = [this.tenantId || 'global', this.platform, identity]
+      if (!identity) {
+        return this.slug;
+      }
+
+      const source = [
+        this.tenantId ? `tenant-${this.tenantId}` : 'no-tenant',
+        this.platform,
+        identity,
+      ]
         .filter(Boolean)
         .join('-');
 
@@ -453,33 +467,28 @@ export class SocialAccount extends SmrtObject {
     } = {},
   ): Promise<void> {
     if (!this.id) {
-      await this.save();
+      this.id = randomUUID();
     }
 
-    const { SecretService } = await import('@happyvertical/smrt-secrets');
-    const secretService = await SecretService.create({ db: this.db });
     const secretName = this.credentialSecretId ?? `social-account-${this.id}`;
-    const tenantId = this.getCredentialTenantId();
+    const tenantId = this.requireCredentialTenantId(
+      'store social account credentials',
+    );
+    const secretService = await SecretService.create({ db: this.db });
 
-    if (tenantId) {
-      await secretService.storeForTenant(
-        tenantId,
-        secretName,
-        JSON.stringify(credentials),
-        {
-          description: options.description ?? `Credentials for ${this.name}`,
-          category: options.category ?? 'social',
-        },
-      );
-    } else {
-      await secretService.store(secretName, JSON.stringify(credentials), {
+    await secretService.storeForTenant(
+      tenantId,
+      secretName,
+      JSON.stringify(credentials),
+      {
         description: options.description ?? `Credentials for ${this.name}`,
         category: options.category ?? 'social',
-      });
-    }
+      },
+    );
+
+    this.credentialSecretId = secretName;
 
     await this.withCredentialTenantContext(async () => {
-      this.credentialSecretId = secretName;
       await this.save();
     });
   }
@@ -489,6 +498,32 @@ export class SocialAccount extends SmrtObject {
    */
   async getCredentials(): Promise<Record<string, unknown> | null> {
     if (!this.credentialSecretId) {
+      if (this.accessTokenSecretName || this.refreshTokenSecretName) {
+        const tenantId = this.requireCredentialTenantId(
+          'retrieve social account credentials',
+        );
+        const secretService = await SecretService.create({ db: this.db });
+        const credentials: Record<string, unknown> = {};
+
+        if (this.accessTokenSecretName) {
+          const secret = await secretService.retrieveForTenant(
+            tenantId,
+            this.accessTokenSecretName,
+          );
+          credentials.accessToken = secret.value;
+        }
+
+        if (this.refreshTokenSecretName) {
+          const secret = await secretService.retrieveForTenant(
+            tenantId,
+            this.refreshTokenSecretName,
+          );
+          credentials.refreshToken = secret.value;
+        }
+
+        return credentials;
+      }
+
       if (!this.accessToken && !this.refreshToken) return null;
       return {
         accessToken: this.accessToken,
@@ -496,32 +531,29 @@ export class SocialAccount extends SmrtObject {
       };
     }
 
-    const { SecretService } = await import('@happyvertical/smrt-secrets');
-    const secretService = await SecretService.create({ db: this.db });
-
     const credentialSecretId = this.credentialSecretId;
-    const tenantId = this.getCredentialTenantId();
-    const secret = tenantId
-      ? await secretService.retrieveForTenant(tenantId, credentialSecretId)
-      : await this.withCredentialTenantContext(() =>
-          secretService.retrieve(credentialSecretId),
-        );
+    const tenantId = this.requireCredentialTenantId(
+      'retrieve social account credentials',
+    );
+    const secretService = await SecretService.create({ db: this.db });
+    const secret = await secretService.retrieveForTenant(
+      tenantId,
+      credentialSecretId,
+    );
     return JSON.parse(secret.value);
   }
 
   private async withCredentialTenantContext<T>(
     fn: () => Promise<T>,
   ): Promise<T> {
-    if (getCurrentTenant()) {
+    const tenantId = this.getCredentialTenantId();
+    const currentTenantId = getCurrentTenant()?.tenantId;
+
+    if (!tenantId || currentTenantId === tenantId) {
       return fn();
     }
 
-    const tenantId = this.getCredentialTenantId();
-    if (tenantId) {
-      return withTenant({ tenantId }, fn);
-    }
-
-    return fn();
+    return withTenant({ tenantId }, fn);
   }
 
   private getCredentialTenantId(): string | null {
@@ -529,9 +561,14 @@ export class SocialAccount extends SmrtObject {
       return this.tenantId;
     }
 
-    const rawTenantId = (this as { tenant_id?: unknown }).tenant_id;
-    return typeof rawTenantId === 'string' && rawTenantId.length > 0
-      ? rawTenantId
-      : null;
+    return getCurrentTenant()?.tenantId ?? null;
+  }
+
+  private requireCredentialTenantId(action: string): string {
+    const tenantId = this.getCredentialTenantId();
+    if (!tenantId) {
+      throw new Error(`Tenant context required to ${action}.`);
+    }
+    return tenantId;
   }
 }

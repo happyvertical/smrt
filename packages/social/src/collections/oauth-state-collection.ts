@@ -9,8 +9,10 @@ export class OAuthStateCollection extends SmrtCollection<OAuthState> {
   }
 
   async findExpired(now: Date = new Date()): Promise<OAuthState[]> {
-    const states = await this.list({});
-    return states.filter((state) => state.expiresAt.getTime() <= now.getTime());
+    return this.list({
+      where: { 'expiresAt <=': now },
+      orderBy: 'expiresAt ASC',
+    });
   }
 
   async deleteExpired(now: Date = new Date()): Promise<number> {

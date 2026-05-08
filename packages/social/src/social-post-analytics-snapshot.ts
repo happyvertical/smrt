@@ -26,7 +26,7 @@ export interface SocialPostAnalyticsSnapshotOptions extends SmrtObjectOptions {
   /**
    * Platform that produced this snapshot
    */
-  platform?: SocialPlatformType;
+  platform?: SocialPlatformType | null;
 
   /**
    * Normalized platform analytics.
@@ -62,7 +62,8 @@ export class SocialPostAnalyticsSnapshot extends SmrtObject {
   @foreignKey(() => SocialPost)
   socialPostId: string | null = null;
 
-  platform: SocialPlatformType = 'youtube';
+  @field({ required: true })
+  platform: SocialPlatformType | null = null;
 
   analytics: PostAnalytics = {};
 

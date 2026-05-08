@@ -59,6 +59,7 @@ export {
   type SocialPostType,
 } from './social-post.js';
 export {
+  type RawAnalyticsPayload,
   SocialPostAnalyticsSnapshot,
   type SocialPostAnalyticsSnapshotOptions,
 } from './social-post-analytics-snapshot.js';

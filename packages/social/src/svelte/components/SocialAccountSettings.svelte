@@ -31,7 +31,7 @@ const platforms: Array<{ platform: SocialPlatformType; label: string }> = [
 function statusLabel(account: SocialAccountSettingsItem): string {
   if (!account.isActive) return 'inactive';
   if (account.needsAttention) return 'needs attention';
-  return account.status.replace('_', ' ');
+  return account.status.replaceAll('_', ' ');
 }
 </script>
 

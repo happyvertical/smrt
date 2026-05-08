@@ -58,17 +58,24 @@ export class SocialPostCollection extends SmrtCollection<SocialPost> {
   }
 
   async findDueForPublish(now: Date = new Date()): Promise<SocialPost[]> {
-    const posts = await this.list({
-      where: {},
-      orderBy: 'scheduledAt ASC',
-    });
+    const [approved, scheduled] = await Promise.all([
+      this.list({
+        where: { status: 'approved' },
+        orderBy: 'scheduledAt ASC',
+      }),
+      this.list({
+        where: { status: 'scheduled', 'scheduledAt <=': now },
+        orderBy: 'scheduledAt ASC',
+      }),
+    ]);
 
-    return posts.filter((post) => {
-      if (post.status !== 'approved' && post.status !== 'scheduled') {
-        return false;
-      }
-      return !post.scheduledAt || post.scheduledAt.getTime() <= now.getTime();
-    });
+    return [
+      ...approved.filter((post) => post.isDueForPublish),
+      ...scheduled,
+    ].sort(
+      (a, b) =>
+        (a.scheduledAt?.getTime() ?? 0) - (b.scheduledAt?.getTime() ?? 0),
+    );
   }
 
   async recordPublishSuccess(
@@ -78,8 +85,9 @@ export class SocialPostCollection extends SmrtCollection<SocialPost> {
     const status = data.status ?? 'published';
     post.platformPostId = data.platformPostId;
     post.platformUrl = data.platformUrl;
-    post.publishedAt =
-      data.publishedAt ?? (status === 'published' ? new Date() : null);
+    if (status === 'published') {
+      post.publishedAt = data.publishedAt ?? post.publishedAt ?? new Date();
+    }
     post.status = status;
     post.errorMessage = null;
     await post.save();
@@ -91,7 +99,7 @@ export class SocialPostCollection extends SmrtCollection<SocialPost> {
     error: Error | string,
   ): Promise<SocialPost> {
     post.status = 'failed';
-    post.errorMessage = error instanceof Error ? error.message : error;
+    post.errorMessage = formatPublishError(error);
     await post.save();
     return post;
   }
@@ -109,4 +117,20 @@ export class SocialPostCollection extends SmrtCollection<SocialPost> {
     await post.save();
     return post;
   }
+}
+
+function formatPublishError(error: Error | string): string {
+  if (typeof error === 'string') {
+    return error;
+  }
+
+  const details = [error.message];
+  const code = (error as Error & { code?: unknown }).code;
+  if (code !== undefined) {
+    details.push(`code=${String(code)}`);
+  }
+  if (error.stack) {
+    details.push(error.stack);
+  }
+  return details.join('\n');
 }

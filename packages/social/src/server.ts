@@ -80,12 +80,14 @@ export const SOCIAL_PLATFORM_SETUPS: SocialPlatformSetup[] = [
   },
 ];
 
+const SOCIAL_PLATFORM_SETUP_BY_PLATFORM = new Map(
+  SOCIAL_PLATFORM_SETUPS.map((setup) => [setup.platform, setup]),
+);
+
 export function getSocialPlatformSetup(
   platform: SocialPlatformType,
 ): SocialPlatformSetup {
-  const setup = SOCIAL_PLATFORM_SETUPS.find(
-    (item) => item.platform === platform,
-  );
+  const setup = SOCIAL_PLATFORM_SETUP_BY_PLATFORM.get(platform);
   if (!setup) {
     throw new Error(`Unsupported social platform: ${platform}`);
   }
@@ -115,4 +117,21 @@ export function normalizeManualCredentials(
   }
 
   return credentials;
+}
+
+export function validateManualCredentials(
+  platform: SocialPlatformType,
+  values: Record<string, unknown>,
+): string[] {
+  const setup = getSocialPlatformSetup(platform);
+  const missing: string[] = [];
+
+  for (const field of setup.requiredSecretFields) {
+    const value = values[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+      missing.push(field);
+    }
+  }
+
+  return missing;
 }
