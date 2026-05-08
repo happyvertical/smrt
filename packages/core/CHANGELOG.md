@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.11
+
+### Patch Changes
+
+- ### Features
+
+  - add Garrula social primitives (#1186) (social)
+  - @happyvertical/smrt-scanner@0.23.11
+  - @happyvertical/smrt-config@0.23.11
+  - @happyvertical/smrt-types@0.23.11
+
 ## 0.23.10
 
 ### Patch Changes
