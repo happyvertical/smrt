@@ -1760,6 +1760,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-secrets':
+        specifier: workspace:*
+        version: link:../secrets
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -1769,9 +1772,6 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.73.2
         version: 0.73.2
-      svelte:
-        specifier: ^5.0.0
-        version: 5.53.5
     devDependencies:
       '@happyvertical/logger':
         specifier: ^0.73.2
@@ -1782,9 +1782,18 @@ importers:
       '@happyvertical/sql':
         specifier: ^0.73.2
         version: 0.73.2
+      '@sveltejs/package':
+        specifier: ^2.5.7
+        version: 2.5.7(svelte@5.53.5)(typescript@5.9.3)
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
+      svelte:
+        specifier: ^5.0.0
+        version: 5.53.5
+      svelte-check:
+        specifier: ^4.3.5
+        version: 4.4.4(picomatch@4.0.3)(svelte@5.53.5)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

@@ -16,10 +16,20 @@ import { SocialAccount } from './social-account.js';
  */
 export type PostStatus =
   | 'draft'
+  | 'pending_approval'
+  | 'approved'
   | 'scheduled'
   | 'publishing'
+  | 'dry_run'
+  | 'staged'
   | 'published'
-  | 'failed';
+  | 'failed'
+  | 'cancelled';
+
+/**
+ * Social post type
+ */
+export type SocialPostType = 'text' | 'link' | 'image' | 'video';
 
 /**
  * Post analytics
@@ -29,6 +39,11 @@ export interface PostAnalytics {
    * View/impression count
    */
   views?: number;
+
+  /**
+   * Impression count when the platform distinguishes it from views
+   */
+  impressions?: number;
 
   /**
    * Like/favorite count
@@ -49,6 +64,11 @@ export interface PostAnalytics {
    * Link click count
    */
   clicks?: number;
+
+  /**
+   * Raw platform analytics payload
+   */
+  raw?: unknown;
 
   /**
    * When analytics were last updated
@@ -74,6 +94,16 @@ export interface SocialPostOptions extends SmrtObjectOptions {
    * Generic content ID (for non-video content)
    */
   contentId?: string | null;
+
+  /**
+   * High-level post type
+   */
+  postType?: SocialPostType;
+
+  /**
+   * Public media URL for platforms that cannot upload buffers
+   */
+  mediaUrl?: string | null;
 
   /**
    * Post title (for platforms that support it)
@@ -130,6 +160,11 @@ export interface SocialPostOptions extends SmrtObjectOptions {
    * Engagement analytics
    */
   analytics?: PostAnalytics;
+
+  /**
+   * When analytics were last synced
+   */
+  analyticsLastSyncedAt?: Date | null;
 
   /**
    * Tenant ID for multi-tenant isolation
@@ -196,6 +231,16 @@ export class SocialPost extends SmrtObject {
   contentId: string | null = null;
 
   /**
+   * High-level post type
+   */
+  postType: SocialPostType = 'text';
+
+  /**
+   * Public media URL for platforms that require URL media publishing
+   */
+  mediaUrl: string | null = null;
+
+  /**
    * Post title (for platforms that support it)
    */
   title: string | null = null;
@@ -239,10 +284,15 @@ export class SocialPost extends SmrtObject {
   /**
    * Post status
    * - draft: Not yet submitted for publishing
+   * - pending_approval: Awaiting editorial approval
+   * - approved: Approved and ready to publish
    * - scheduled: Queued for future publishing
    * - publishing: Currently being published
+   * - dry_run: Payload was validated without remote write
+   * - staged: Non-public platform object/container was created
    * - published: Successfully published
    * - failed: Publishing failed
+   * - cancelled: Publishing was cancelled
    */
   status: PostStatus = 'draft';
 
@@ -256,6 +306,11 @@ export class SocialPost extends SmrtObject {
    */
   analytics: PostAnalytics = {};
 
+  /**
+   * When analytics were last synced
+   */
+  analyticsLastSyncedAt: Date | null = null;
+
   constructor(options: SocialPostOptions = {}) {
     super(options);
 
@@ -264,6 +319,8 @@ export class SocialPost extends SmrtObject {
     if (options.videoContentId !== undefined)
       this.videoContentId = options.videoContentId;
     if (options.contentId !== undefined) this.contentId = options.contentId;
+    if (options.postType !== undefined) this.postType = options.postType;
+    if (options.mediaUrl !== undefined) this.mediaUrl = options.mediaUrl;
     if (options.title !== undefined) this.title = options.title;
     if (options.description !== undefined)
       this.description = options.description;
@@ -281,6 +338,8 @@ export class SocialPost extends SmrtObject {
     if (options.errorMessage !== undefined)
       this.errorMessage = options.errorMessage;
     if (options.analytics !== undefined) this.analytics = options.analytics;
+    if (options.analyticsLastSyncedAt !== undefined)
+      this.analyticsLastSyncedAt = options.analyticsLastSyncedAt;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
 
@@ -302,7 +361,21 @@ export class SocialPost extends SmrtObject {
    * Check if the post can be edited (draft or failed)
    */
   get isEditable(): boolean {
-    return this.status === 'draft' || this.status === 'failed';
+    return (
+      this.status === 'draft' ||
+      this.status === 'pending_approval' ||
+      this.status === 'failed'
+    );
+  }
+
+  /**
+   * Check if the post is due for publishing now.
+   */
+  get isDueForPublish(): boolean {
+    if (this.status !== 'approved' && this.status !== 'scheduled') {
+      return false;
+    }
+    return !this.scheduledAt || this.scheduledAt.getTime() <= Date.now();
   }
 
   /**
