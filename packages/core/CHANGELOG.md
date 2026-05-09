@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.1
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] Export content editor building blocks
+  - @happyvertical/smrt-scanner@0.24.1
+  - @happyvertical/smrt-config@0.24.1
+  - @happyvertical/smrt-types@0.24.1
+
 ## 1.0.0
 
 ### Patch Changes
