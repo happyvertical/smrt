@@ -2,13 +2,14 @@
 
 Multi-tenant user management with RBAC, hierarchical tenants, session handling, and SvelteKit integration.
 
-## Models (12)
+## Models (13)
 
 | Model | Key Pattern |
 |-------|-------------|
 | User | Auth identity. `profileId` is plain string (not FK) to smrt-profiles. Email auto-lowercased. |
 | Tenant | **STI** + hierarchical parent-child. `hierarchyPath` (materialized path), `hierarchyLevel`. Max depth 10. |
 | Session | Server-side. Secure UUID. TTL in **seconds** (not ms). Status auto-updates to EXPIRED on access. |
+| MagicLinkToken | Single-use email login token. Backed by `MagicLinkService`. |
 | Role | `tenantId = null` → system role (available to all tenants). `isSystem: true` blocks deletion. |
 | Permission | Slug format: `resource.action`. Parsed by PermissionResolver. |
 | Membership | User + Tenant + Role junction. UNIQUE(userId, tenantId). |
