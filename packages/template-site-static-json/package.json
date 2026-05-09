@@ -9,10 +9,11 @@
     "./template/*": "./template/*"
   },
   "files": [
-    "template",
-    "template.config.js",
+    "CLAUDE.md",
+    "README.md",
     "index.js",
-    "README.md"
+    "template",
+    "template.config.js"
   ],
   "keywords": [
     "smrt",

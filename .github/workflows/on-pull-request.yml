@@ -113,6 +113,16 @@ jobs:
       - name: Verify SDK packages use same version
         run: bash scripts/check-sdk-versions.sh
 
+  check-standards:
+    name: Check Monorepo Standards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      - name: Run standards check
+        run: node scripts/check-standards.mjs
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

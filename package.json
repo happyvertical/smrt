@@ -20,6 +20,7 @@
     "typecheck": "turbo typecheck",
     "dev": "turbo dev --parallel",
     "validate-build": "node scripts/validate-build.js",
+    "check:standards": "node scripts/check-standards.mjs",
     "changeset": "changeset",
     "changeset:auto": "npx tsx scripts/auto-changeset.ts",
     "changeset:version": "changeset version",

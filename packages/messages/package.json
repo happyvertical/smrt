@@ -38,7 +38,7 @@
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

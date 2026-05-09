@@ -15,9 +15,10 @@
     }
   },
   "files": [
-    "dist",
+    "CLAUDE.md",
+    "LICENSE",
     "README.md",
-    "LICENSE"
+    "dist"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
