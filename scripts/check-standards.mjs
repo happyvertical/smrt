@@ -56,6 +56,17 @@ const EXEMPTIONS = {
     'template-sveltekit',
     'template-site-static-json',
   ]),
+  // Packages whose `files` allowlist legitimately omits the bare "dist"
+  // entry:
+  //   - products ships triple-consumption dist subpaths (dist/lib, dist/app,
+  //     dist/federation) so a bare "dist" would over-publish.
+  //   - templates ship a `template/` directory of scaffolding files instead
+  //     of compiled output.
+  noDistInFiles: new Set([
+    'products',
+    'template-sveltekit',
+    'template-site-static-json',
+  ]),
 };
 
 const REPO_URL = 'https://github.com/happyvertical/smrt.git';
@@ -149,12 +160,14 @@ function checkPackage(name) {
     );
   }
 
-  // 4. repository.directory present and correct
+  // 4. repository field shape — type, url, directory all required
   const expectedDir = `packages/${name}`;
   const repo = json.repository;
   if (
     !repo ||
     typeof repo !== 'object' ||
+    repo.type !== 'git' ||
+    typeof repo.url !== 'string' ||
     repo.url !== REPO_URL ||
     repo.directory !== expectedDir
   ) {
@@ -163,9 +176,26 @@ function checkPackage(name) {
     );
   }
 
-  // 5. files allowlist must include CLAUDE.md
-  if (Array.isArray(json.files) && !json.files.includes('CLAUDE.md')) {
-    violations.push('files allowlist missing "CLAUDE.md"');
+  // 5. files allowlist must be an array, must include "dist" and "CLAUDE.md".
+  //    Per docs/content/standards.md §2: files: ["dist", "CLAUDE.md"] (plus
+  //    optional "bin" for CLI packages). See EXEMPTIONS.noDistInFiles for
+  //    documented bare-"dist" exceptions.
+  if (json.files !== undefined) {
+    if (!Array.isArray(json.files)) {
+      violations.push('files must be an array');
+    } else {
+      if (
+        !json.files.includes('dist') &&
+        !EXEMPTIONS.noDistInFiles.has(name)
+      ) {
+        violations.push('files allowlist missing "dist"');
+      }
+      if (!json.files.includes('CLAUDE.md')) {
+        violations.push('files allowlist missing "CLAUDE.md"');
+      }
+    }
+  } else {
+    violations.push('files allowlist is missing — add ["dist", "CLAUDE.md"]');
   }
 
   // 6. vitest.config.ts presence + smrtVitestPlugin usage
