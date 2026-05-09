@@ -500,10 +500,17 @@ export class Profile extends SmrtObject {
    * @returns Generated bio text
    */
   async generateBio(): Promise<string> {
+    // Pass either `db` or its `persistence` alias — when callers use the
+    // alias on a not-yet-initialized instance, `this.options.db` is still
+    // undefined because SmrtClass only resolves the alias during
+    // initialize(). Falling back to `persistence` ensures stored prompt
+    // overrides in `_smrt_prompt_overrides` are honored on first call.
+    const db = this.options.db ?? (this.options as any).persistence;
+
     const resolvedPrompt = await resolvePrompt(
       smrtProfilesGenerateBioPrompt.key,
       {
-        db: this.options.db,
+        db,
         tenantId: this.tenantId,
         variables: {
           profileName: this.name || '',
@@ -514,15 +521,10 @@ export class Profile extends SmrtObject {
     );
 
     const ai = await this.getAiClient();
-    if (typeof (ai as any).message !== 'function') {
-      throw new Error(
-        'AI bio generation requires an AI client with a message() method',
-      );
-    }
-
-    const response = await (
-      ai as { message: (prompt: string, options?: any) => Promise<string> }
-    ).message(resolvedPrompt.text, promptMessageOptions(resolvedPrompt.ai));
+    const response = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
 
     return response.trim();
   }
