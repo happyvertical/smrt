@@ -22,6 +22,7 @@
       "@happyvertical/smrt-gnode",
       "@happyvertical/smrt-images",
       "@happyvertical/smrt-jobs",
+      "@happyvertical/smrt-languages",
       "@happyvertical/smrt-ledgers",
       "@happyvertical/smrt-messages",
       "@happyvertical/smrt-places",

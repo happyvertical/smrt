@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.package-build.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "lib": ["ES2023"]
+  },
+  "exclude": ["**/*.test.ts", "**/*.spec.ts", "node_modules", "dist"]
+}
