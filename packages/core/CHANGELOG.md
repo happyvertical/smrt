@@ -1,5 +1,13 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Patch Changes
+
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+- @happyvertical/smrt-scanner@1.0.0
+
 ## 0.23.12
 
 ### Patch Changes
