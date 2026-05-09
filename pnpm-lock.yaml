@@ -1499,6 +1499,9 @@ importers:
       '@happyvertical/smrt-projects':
         specifier: workspace:*
         version: link:../projects
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
