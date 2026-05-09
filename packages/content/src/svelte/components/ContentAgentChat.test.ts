@@ -128,4 +128,70 @@ describe('ContentAgentChat component', () => {
       ),
     );
   });
+
+  it('can be hosted from an external assistant context', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          session: { id: 'session-1', allowedTools: '[]' },
+          threads: [],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          thread: { id: 'thread-1', title: 'General' },
+          session: { id: 'session-1' },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          messages: [],
+        }),
+      } as Response);
+
+    renderChat({
+      apiBaseUrl: '/tenant/api/v2',
+      assistantContext: {
+        type: 'content.editor',
+        title: 'External assistant article',
+        data: {
+          contentId: 'content-from-context',
+          contentType: 'article',
+          editorKind: 'governed',
+          currentEditorState: 'Draft body from editor',
+          referenceIds: ['ref-1'],
+          fields: {
+            title: 'External assistant article',
+            body: 'Draft body from editor',
+          },
+        },
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenNthCalledWith(
+        1,
+        '/tenant/api/v2/contents/content-from-context/chat',
+      ),
+    );
+
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        '/tenant/api/v2/contents/content-from-context/chat',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            title: 'General',
+            sessionId: 'session-1',
+            model: 'gemini-2.5-pro',
+            referenceIds: ['ref-1'],
+          }),
+        }),
+      ),
+    );
+  });
 });

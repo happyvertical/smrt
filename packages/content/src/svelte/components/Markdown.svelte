@@ -7,6 +7,8 @@
  * @example
  * <Markdown content="# Hello\n\nThis is **bold** text." />
  */
+import { renderMarkdownToHtml } from '../../body-format';
+
 /** Props for the Markdown component */
 export interface Props {
   /** Markdown content to render */
@@ -15,137 +17,9 @@ export interface Props {
   class?: string;
 }
 
-const { content, class: className = '' }: Props = $props();
+let { content, class: className = '' }: Props = $props();
 
-/**
- * Escape HTML special characters to prevent XSS attacks.
- * This must be called before any markdown transformations.
- */
-function escapeHtml(text: string): string {
-  const htmlEntities: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  };
-  return text.replace(/[&<>"']/g, (char) => htmlEntities[char]);
-}
-
-/**
- * Render markdown to HTML with XSS protection.
- *
- * Security: All HTML in the input is escaped before markdown processing.
- * The output should still be considered potentially dangerous if the input
- * contains malicious markdown, so use with caution.
- */
-function renderMarkdown(markdown: string): string {
-  if (!markdown || typeof markdown !== 'string') {
-    return '';
-  }
-
-  // First escape HTML to prevent XSS
-  let html = escapeHtml(markdown);
-
-  // Process block-level elements first
-  const lines = html.split('\n');
-  const result: string[] = [];
-  let inList = false;
-  let inParagraph = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const trimmed = line.trim();
-
-    // Handle empty lines
-    if (!trimmed) {
-      if (inList) {
-        result.push('</ul>');
-        inList = false;
-      }
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-      continue;
-    }
-
-    // Handle headers
-    if (trimmed.startsWith('# ')) {
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-      result.push(`<h1>${trimmed.substring(2)}</h1>`);
-      continue;
-    }
-    if (trimmed.startsWith('## ')) {
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-      result.push(`<h2>${trimmed.substring(3)}</h2>`);
-      continue;
-    }
-    if (trimmed.startsWith('### ')) {
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-      result.push(`<h3>${trimmed.substring(4)}</h3>`);
-      continue;
-    }
-
-    // Handle list items
-    if (trimmed.startsWith('- ') || trimmed.startsWith('* ')) {
-      if (inParagraph) {
-        result.push('</p>');
-        inParagraph = false;
-      }
-      if (!inList) {
-        result.push('<ul>');
-        inList = true;
-      }
-      result.push(`<li>${trimmed.substring(2)}</li>`);
-      continue;
-    }
-
-    // Regular paragraph text
-    if (inList) {
-      result.push('</ul>');
-      inList = false;
-    }
-    if (!inParagraph) {
-      result.push('<p>');
-      inParagraph = true;
-    }
-    result.push(line);
-  }
-
-  // Close any open tags
-  if (inList) {
-    result.push('</ul>');
-  }
-  if (inParagraph) {
-    result.push('</p>');
-  }
-
-  // Join and process inline elements
-  html = result.join('\n');
-
-  // Process inline formatting
-  // Note: Process bold first, then italic to handle nested patterns correctly
-  // Bold: **text**
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-  // Italic: *text*
-  html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-  // Inline code: `text`
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-
-  return html;
-}
-
-const rendered = $derived(renderMarkdown(content));
+const rendered = $derived(renderMarkdownToHtml(content));
 </script>
 
 <div class="markdown-content {className}">
@@ -233,5 +107,19 @@ const rendered = $derived(renderMarkdown(content));
   .markdown-content :global(pre code) {
     background: transparent;
     padding: 0;
+  }
+
+  .markdown-content :global(a) {
+    color: var(--smrt-color-primary);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+  }
+
+  .markdown-content :global(img) {
+    display: block;
+    width: min(100%, 48rem);
+    height: auto;
+    margin: var(--spacing-lg, 1rem) 0;
+    border-radius: var(--smrt-radius-medium, 8px);
   }
 </style>

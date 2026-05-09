@@ -1,6 +1,6 @@
 <script lang="ts">
+import ContentBodyRenderer from '../components/ContentBodyRenderer.svelte';
 import ContentTransparencyReport from '../components/ContentTransparencyReport.svelte';
-import Markdown from '../components/Markdown.svelte';
 import {
   CONTENT_ROUTE_IDS,
   getContentRouteDefaultPath,
@@ -50,7 +50,10 @@ function formatTimestamp(value: string | null | undefined) {
 
   <main class="article-layout">
     <article class="article-body">
-      <Markdown content={data.content.body || ''} />
+      <ContentBodyRenderer
+        content={data.content.body || ''}
+        format={data.content.bodyFormat}
+      />
     </article>
 
     <aside class="article-sidebar">

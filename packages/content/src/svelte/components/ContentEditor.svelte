@@ -1,6 +1,16 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
+import {
+  type ContentBodyFormat,
+  extractBodyImages,
+  resolveBodyFormat,
+} from '../../body-format';
+import type {
+  ContentEditorAssistantActions,
+  ContentEditorAssistantContextChange,
+} from '../../content-editor-assistant';
+import { createContentEditorAssistantContext } from '../../content-editor-assistant';
 import type {
   FactAuditResourceClaimData,
   FactAuditStateData,
@@ -8,6 +18,10 @@ import type {
 } from '../../mock-smrt-client';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
 import ContentAgentChat from './ContentAgentChat.svelte';
+import ContentBodyEditor, {
+  type ContentBodyEditorChange,
+} from './ContentBodyEditor.svelte';
+import ContentImageChooser from './ContentImageChooser.svelte';
 
 let {
   apiBaseUrl = '/api/v1',
@@ -20,6 +34,7 @@ let {
   agentChatNotice = null,
   hideActions = false,
   hideChat = false,
+  onAssistantContextChange = undefined,
   onChange = undefined,
   onFactAuditChange = undefined,
   onSave,
@@ -35,6 +50,7 @@ let {
   agentChatNotice?: string | null;
   hideActions?: boolean;
   hideChat?: boolean;
+  onAssistantContextChange?: ContentEditorAssistantContextChange;
   onChange?: (data: any) => void;
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
   onSave: (data: any) => void;
@@ -98,6 +114,7 @@ function getInitialFormData(c: any) {
   return c
     ? {
         ...c,
+        bodyFormat: resolveBodyFormat(c.bodyFormat, c.body),
         tags: c.tags || [],
         referenceIds: c.referenceIds || [],
         references: c.references || [],
@@ -109,6 +126,7 @@ function getInitialFormData(c: any) {
         title: '',
         description: '',
         body: '',
+        bodyFormat: 'html' as ContentBodyFormat,
         author: '',
         type: 'article',
         status: 'draft',
@@ -149,12 +167,29 @@ const agentChatFields = $derived({
   state: formData.state,
   publish_date: normalizePublishDate(formData.publish_date) || '',
   body: formData.body,
+  bodyFormat: formData.bodyFormat || '',
 });
+const assistantContext = $derived(
+  createContentEditorAssistantContext({
+    contentId: agentChatContentId,
+    title: agentChatFields.title,
+    editorKind: 'content',
+    fields: agentChatFields,
+    currentEditorState,
+    referenceIds: currentReferenceIds,
+  }),
+);
 
 // Undo stack for AI field edits — each entry stores the old values of changed fields
 let fieldUndoStack = $state<Record<string, string>[]>([]);
 let lastAppliedFields = $state<string[]>([]);
 let showUndoBanner = $state(false);
+
+const assistantActions: ContentEditorAssistantActions = {
+  triggerSave,
+  applyFieldUpdates,
+  undoLastFieldUpdate: undoLastApply,
+};
 
 // When content prop changes from outside (different item), reset formData.
 $effect(() => {
@@ -169,6 +204,22 @@ $effect(() => {
 
 $effect(() => {
   onChange?.(editorSnapshot);
+});
+
+$effect(() => {
+  onAssistantContextChange?.({
+    context: assistantContext,
+    actions: assistantActions,
+  });
+});
+
+$effect(() => {
+  const callback = onAssistantContextChange;
+  if (!callback) {
+    return;
+  }
+
+  return () => callback(null);
 });
 
 /** Called by ContentAgentChat when AI wants to update form fields */
@@ -552,24 +603,20 @@ function removeReference(id: string) {
 // AI Authoring State (Migrated to ContentAgentChat Sidebar)
 
 let showImageUploader = $state(false);
+let showInlineImageUploader = $state(false);
 let expandedReferenceClaimKeys = $state<string[]>([]);
+let bodyEditor = $state<any>(null);
+let selectedBodyImageIndex = $state(-1);
+const bodyImages = $derived(
+  extractBodyImages(
+    formData.body || '',
+    resolveBodyFormat(formData.bodyFormat, formData.body),
+  ),
+);
 
 // Drag-and-drop state
 let imageDragOver = $state(false);
 let refDragOver = $state(false);
-
-function autoResize(node: HTMLTextAreaElement, _content: string) {
-  function resize() {
-    node.style.height = 'auto';
-    node.style.height = `${node.scrollHeight}px`;
-  }
-  resize();
-  return {
-    update() {
-      resize();
-    },
-  };
-}
 
 function getImageRecord(payload: any) {
   return payload?.data ?? payload;
@@ -714,71 +761,142 @@ function parseTagsInput(value: string) {
     .filter(Boolean);
 }
 
-function handleImageSelect(selected: ImageLike | File | string) {
-  if (selected && typeof selected === 'object' && 'id' in selected) {
-    // Gallery Image Object
-    addSelectedAsset(selected);
-    showImageUploader = false;
-  } else if (selected instanceof File) {
-    // 1. Raw File Upload (Camera / Upload Tab)
-    // For local dev, we base64 encode the file and save the data URI directly to the DB!
+function handleBodyChange(change: ContentBodyEditorChange) {
+  formData.body = change.body;
+  formData.bodyFormat = change.bodyFormat;
+  if (change.images.length === 0) {
+    selectedBodyImageIndex = -1;
+  } else if (selectedBodyImageIndex >= change.images.length) {
+    selectedBodyImageIndex = change.images.length - 1;
+  }
+}
+
+function focusBodyImage(index: number) {
+  selectedBodyImageIndex = index;
+  bodyEditor?.focusImage?.(index);
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = async (e) => {
-      const base64Url = e.target?.result as string;
-      try {
-        const resp = await fetch(joinApiUrl(apiBaseUrl, '/images'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: selected.name || 'Uploaded Image',
-            sourceUri: base64Url,
-            mimeType: selected.type || 'image/png',
-          }),
-        });
-        if (resp.ok) {
-          const newImage = await resp.json();
-          addSelectedAsset(getImageRecord(newImage));
-        } else {
-          console.error('[ContentEditor] Failed to save uploaded file record');
-        }
-      } catch (err) {
-        console.error(
-          '[ContentEditor] Error sending uploaded file to API:',
-          err,
-        );
-      }
-    };
-    reader.readAsDataURL(selected);
-    showImageUploader = false;
-  } else if (typeof selected === 'string') {
-    // 2. External URL Upload
-    void (async () => {
-      try {
-        const parsedUrl = new URL(selected);
-        const resp = await fetch(joinApiUrl(apiBaseUrl, '/images'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: parsedUrl.pathname.split('/').pop() || 'External Image',
-            sourceUri: selected,
-            mimeType: 'image/jpeg',
-          }),
-        });
+    reader.onload = (event) => resolve(event.target?.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
-        if (!resp.ok) {
-          throw new Error(await resp.text());
-        }
+async function createImageRecord(input: {
+  name: string;
+  sourceUri: string;
+  mimeType: string;
+}): Promise<any | null> {
+  const resp = await fetch(joinApiUrl(apiBaseUrl, '/images'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
 
-        const newImage = await resp.json();
-        addSelectedAsset(getImageRecord(newImage));
-      } catch (err) {
-        console.error(
-          '[ContentEditor] Failed to save external URL record:',
-          err,
-        );
-      }
-    })();
-    showImageUploader = false;
+  if (!resp.ok) {
+    throw new Error(await resp.text());
+  }
+
+  return getImageRecord(await resp.json());
+}
+
+async function resolveSelectedImage(
+  selected: ImageLike | File | string,
+): Promise<any | null> {
+  if (selected && typeof selected === 'object' && 'id' in selected) {
+    addSelectedAsset(selected);
+    return selected;
+  }
+
+  if (selected instanceof File) {
+    const asset = await createImageRecord({
+      name: selected.name || 'Uploaded Image',
+      sourceUri: await readFileAsDataUrl(selected),
+      mimeType: selected.type || 'image/png',
+    });
+    if (asset) {
+      addSelectedAsset(asset);
+    }
+    return asset;
+  }
+
+  if (typeof selected === 'string') {
+    const parsedUrl = new URL(selected);
+    const asset = await createImageRecord({
+      name: parsedUrl.pathname.split('/').pop() || 'External Image',
+      sourceUri: selected,
+      mimeType: 'image/jpeg',
+    });
+    if (asset) {
+      addSelectedAsset(asset);
+    }
+    return asset;
+  }
+
+  return null;
+}
+
+function handleImageSelect(selected: ImageLike | File | string) {
+  void (async () => {
+    try {
+      await resolveSelectedImage(selected);
+    } catch (err) {
+      console.error('[ContentEditor] Failed to add image:', err);
+    } finally {
+      showImageUploader = false;
+    }
+  })();
+}
+
+function getAssetImageSource(asset: any): string {
+  return String(asset?.sourceUri || asset?.url || asset?.src || '');
+}
+
+function handleAttachedImageDragStart(event: DragEvent, asset: any) {
+  if (!event.dataTransfer) {
+    return;
+  }
+
+  const source = getAssetImageSource(asset);
+  const payload = {
+    ...asset,
+    sourceUri: asset?.sourceUri || source,
+  };
+
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData(
+    'application/x-smrt-image',
+    JSON.stringify(payload),
+  );
+  if (source) {
+    event.dataTransfer.setData('text/uri-list', source);
+    event.dataTransfer.setData('text/plain', source);
+  }
+}
+
+async function handleInlineImageSelect(selected: ImageLike | File | string) {
+  try {
+    const asset = await resolveSelectedImage(selected);
+    if (asset) {
+      bodyEditor?.insertImageAsset?.(asset);
+      selectedBodyImageIndex = Math.max(bodyImages.length, 0);
+    }
+  } catch (err) {
+    console.error('[ContentEditor] Failed to insert inline image:', err);
+  } finally {
+    showInlineImageUploader = false;
+  }
+}
+
+async function resolveBodyDropImage(selected: ImageLike | File | string) {
+  try {
+    return await resolveSelectedImage(selected);
+  } catch (err) {
+    console.error('[ContentEditor] Failed to resolve dropped image:', err);
+    return null;
   }
 }
 
@@ -880,43 +998,42 @@ function removeAsset(id: string) {
         </div>
       {/if}
 
-      <textarea 
-         id="content-body-input" 
-         class="document-body-input" 
-         bind:value={formData.body} 
-         use:autoResize={formData.body}
-         placeholder="Start writing..." 
-         style="overflow: hidden;"
-      ></textarea>
+      <div class="document-body-section">
+        <ContentBodyEditor
+          bind:this={bodyEditor}
+          value={formData.body || ''}
+          format={formData.bodyFormat}
+          selectedImageIndex={selectedBodyImageIndex}
+          onChange={handleBodyChange}
+          onOpenImageChooser={() => showInlineImageUploader = !showInlineImageUploader}
+          onSelectImage={(index) => selectedBodyImageIndex = index}
+          onUseImageAsThumbnail={setThumbnail}
+          onResolveImage={resolveBodyDropImage}
+        />
 
-      <!-- Metadata Panel -->
-      <details class="editor-drawer" open>
-        <summary class="editor-drawer-header">
-          Metadata
-          <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-        </summary>
-        <div class="editor-drawer-content">
-          <label>
-            Author:
-            <input type="text" bind:value={formData.author} placeholder="Author name" />
-          </label>
-          <label>
-            Description:
-            <textarea bind:value={formData.description} rows="2" placeholder="Brief summary..."></textarea>
-          </label>
-          <label>
-            Tags (Comma separated):
-            <input
-              type="text"
-              value={(formData.tags || []).join(', ')}
-              placeholder="e.g. news, tech"
-              oninput={(event) => parseTagsInput((event.currentTarget as HTMLInputElement).value)}
-            />
-          </label>
+        <div class="document-body-media-row">
+          <ContentImageChooser
+            body={formData.body || ''}
+            format={formData.bodyFormat}
+            selectedIndex={selectedBodyImageIndex}
+            onSelect={focusBodyImage}
+          />
         </div>
-      </details>
 
-      <!-- Images & Media -> Metadata Drawer -->
+        {#if showInlineImageUploader}
+          <div class="inline-uploader-container body-inline-uploader">
+            <ImageUploader
+              apiBaseUrl={normalizeApiBaseUrl(apiBaseUrl)}
+              allowedTabs={['gallery', 'upload', 'external']}
+              enableDragToEditor={true}
+              onSelect={(selected) => void handleInlineImageSelect(selected)}
+              onCancel={() => showInlineImageUploader = false}
+            />
+          </div>
+        {/if}
+      </div>
+
+      <!-- Images & Media -->
       <details class="editor-drawer" open>
           <summary class="editor-drawer-header">
             Images & Media
@@ -939,8 +1056,14 @@ function removeAsset(id: string) {
                 {#if formData.assets && formData.assets.length > 0}
                   <div class="media-grid">
                     {#each formData.assets as asset (asset.id)}
-                      <div class="media-item" class:is-thumbnail={asset.id === formData.thumbnailAssetId}>
-                        <img class="media-item-image" src={asset.sourceUri || asset.url} alt={asset.name || 'Asset image'} />
+                      <div
+                        class="media-item"
+                        class:is-thumbnail={asset.id === formData.thumbnailAssetId}
+                        draggable="true"
+                        title="Drag into the body"
+                        ondragstart={(event) => handleAttachedImageDragStart(event, asset)}
+                      >
+                        <img class="media-item-image" src={getAssetImageSource(asset)} alt={asset.name || 'Asset image'} />
                         <div class="media-item-overlay">
                            {#if asset.id !== formData.thumbnailAssetId}
                              <button type="button" class="btn-make-thumbnail" title="Make Thumbnail" onclick={() => setThumbnail(asset.id)}>
@@ -983,6 +1106,33 @@ function removeAsset(id: string) {
                 {/if}
              </div>
           </div>
+      </details>
+
+      <!-- Metadata Panel -->
+      <details class="editor-drawer" open>
+        <summary class="editor-drawer-header">
+          Metadata
+          <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+        </summary>
+        <div class="editor-drawer-content">
+          <label>
+            Author:
+            <input type="text" bind:value={formData.author} placeholder="Author name" />
+          </label>
+          <label>
+            Description:
+            <textarea bind:value={formData.description} rows="2" placeholder="Brief summary..."></textarea>
+          </label>
+          <label>
+            Tags (Comma separated):
+            <input
+              type="text"
+              value={(formData.tags || []).join(', ')}
+              placeholder="e.g. news, tech"
+              oninput={(event) => parseTagsInput((event.currentTarget as HTMLInputElement).value)}
+            />
+          </label>
+        </div>
       </details>
 
       <!-- References Panel -->
@@ -1179,6 +1329,7 @@ function removeAsset(id: string) {
           {#if showAgentChat}
             <ContentAgentChat
               {apiBaseUrl}
+              assistantContext={assistantContext}
               contentId={agentChatContentId}
               {currentEditorState}
               {currentReferenceIds}
@@ -1247,22 +1398,17 @@ function removeAsset(id: string) {
     color: var(--smrt-color-outline-variant);
   }
 
-  .document-body-input {
-    width: 100%;
-    font-size: 1.125rem;
-    line-height: 1.6;
-    padding: 0;
-    border: none;
-    outline: none;
-    background: transparent;
-    color: var(--smrt-color-on-surface);
-    resize: vertical;
-    font-family: inherit;
-    min-height: 60vh;
+  .document-body-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+    margin-bottom: 2rem;
   }
 
-  .document-body-input::placeholder {
-    color: var(--smrt-color-outline-variant);
+  .document-body-media-row {
+    display: flex;
+    justify-content: flex-end;
+    min-height: 2.75rem;
   }
 
   .editor-toolbar {
@@ -1821,6 +1967,10 @@ function removeAsset(id: string) {
     /* Svelte built-in slide animations will be handled if implemented */
   }
 
+  .body-inline-uploader {
+    background: var(--smrt-color-surface-container);
+  }
+
   .undo-banner {
     display: flex;
     align-items: center;
@@ -1883,6 +2033,14 @@ function removeAsset(id: string) {
     border: 2px solid transparent;
     background: var(--smrt-color-surface-container-high, #242424);
     transition: border-color 0.2s;
+  }
+
+  .media-item[draggable='true'] {
+    cursor: grab;
+  }
+
+  .media-item[draggable='true']:active {
+    cursor: grabbing;
   }
 
   .media-item.is-thumbnail {

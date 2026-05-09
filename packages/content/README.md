@@ -352,6 +352,40 @@ The `ContentAgentChat` Svelte component provides a chat sidebar in the
 content editor. When chat tables aren't provisioned, it gracefully shows
 a "not available" notice instead of erroring.
 
+For app-level assistants, `ContentEditor` and `GovernedContentEditor` also
+publish a reusable assistant registration through `onAssistantContextChange`.
+This works even when `hideChat={true}`:
+
+```svelte
+<GovernedContentEditor
+  content={article}
+  contentId={article.id}
+  hideChat
+  onAssistantContextChange={(registration) => {
+    assistantStore.setContext(registration?.context ?? null);
+    assistantStore.setActions(registration?.actions ?? null);
+  }}
+  onSave={saveArticle}
+  onCancel={closeEditor}
+/>
+```
+
+The registration includes a serializable `ContentEditorAssistantContext`
+(`contentId`, draft fields, current editor body, reference IDs, and governed
+fact/readiness summaries) plus local actions such as `triggerSave`,
+`triggerReview`, `applyFieldUpdates`, and undo for AI-applied field updates.
+`ContentAgentChat` can be mounted outside the editor by passing the context:
+
+```svelte
+<ContentAgentChat apiBaseUrl="/tenant/api/v1" assistantContext={context} />
+```
+
+Server integrations can use `getOrCreateContentEditorChatSession`,
+`createContentEditorChatThread`, `listContentEditorChatThreadMessages`, and
+`sendContentEditorChatThreadMessage` to install `/contents/:id/chat` routes
+with app-specific tenancy, auth, and AI model resolution hooks instead of
+copying the package dev-server endpoints.
+
 ## Dev Server
 
 The package includes a SvelteKit dev server (`npm run dev`) with:

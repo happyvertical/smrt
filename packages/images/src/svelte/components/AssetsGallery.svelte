@@ -10,10 +10,12 @@ let {
   apiBaseUrl = '/api/v1',
   client = undefined,
   onSelect = undefined,
+  enableDragToEditor = false,
 }: {
   apiBaseUrl?: string;
   client?: ImagesGalleryClient;
   onSelect?: (image: ImageLike) => void;
+  enableDragToEditor?: boolean;
 } = $props();
 
 let images: ImageLike[] = $state([]);
@@ -122,6 +124,20 @@ function handleSelect(image: ImageLike) {
     onSelect(image);
   }
 }
+
+function handleDragStart(event: DragEvent, image: ImageLike) {
+  if (!enableDragToEditor || !event.dataTransfer) {
+    return;
+  }
+
+  const source = image.sourceUri || image.url || '';
+  event.dataTransfer.effectAllowed = 'copy';
+  event.dataTransfer.setData('application/x-smrt-image', JSON.stringify(image));
+  if (source) {
+    event.dataTransfer.setData('text/uri-list', source);
+    event.dataTransfer.setData('text/plain', source);
+  }
+}
 </script>
 
 <div class="smrt-assets-gallery">
@@ -172,6 +188,8 @@ function handleSelect(image: ImageLike) {
           type="button"
           class="gallery-item"
           class:selectable={true}
+          draggable={enableDragToEditor}
+          ondragstart={(event) => handleDragStart(event, image)}
           onclick={() => handleSelect(image)}
         >
           <div class="img-container">

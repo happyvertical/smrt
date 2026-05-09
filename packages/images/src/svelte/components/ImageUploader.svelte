@@ -14,6 +14,7 @@ let {
   onSelect,
   onCancel = undefined,
   allowedTabs = ['gallery', 'upload', 'camera', 'external'],
+  enableDragToEditor = false,
 }: {
   apiBaseUrl?: string;
   editorClient?: ImageEditorClient;
@@ -22,6 +23,7 @@ let {
   onSelect: (image: ImageLike | File | string) => void;
   onCancel?: () => void;
   allowedTabs?: ('gallery' | 'upload' | 'camera' | 'external')[];
+  enableDragToEditor?: boolean;
 } = $props();
 
 let activeTab = $state<string>();
@@ -348,6 +350,7 @@ onDestroy(() => {
           <AssetsGallery
             {apiBaseUrl}
             client={galleryClient}
+            {enableDragToEditor}
             onSelect={handleGalleryPick}
           />
         </div>

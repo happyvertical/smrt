@@ -20,6 +20,7 @@ export interface ContentData {
   title?: any;
   description?: any;
   body?: any;
+  bodyFormat?: 'markdown' | 'html' | null;
   publish_date?: any;
   url?: any;
   source?: any;

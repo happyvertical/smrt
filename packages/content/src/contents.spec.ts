@@ -2,7 +2,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { faker } from '@faker-js/faker';
+import { getTestDatabase } from '@happyvertical/smrt-core';
 import { ImageCollection } from '@happyvertical/smrt-images';
+import { syncSchema } from '@happyvertical/sql';
 import { makeSlug } from '@happyvertical/utils';
 import { expect, it } from 'vitest';
 import { ContentAssetCollection } from './content-assets';
@@ -20,6 +22,128 @@ function getTestDbUrl(testName: string): string {
   const random = Math.random().toString(36).substring(7);
   return `file:${TMP_DIR}/${testName}-${timestamp}-${random}.db`;
 }
+
+const CONTENT_VERSIONS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_versions (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  content_id TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  kind TEXT DEFAULT 'manual',
+  title TEXT,
+  description TEXT,
+  body TEXT,
+  status TEXT,
+  summary TEXT,
+  snapshot TEXT,
+  metadata TEXT,
+  tenant_id TEXT
+);
+CREATE INDEX IF NOT EXISTS content_versions_id_idx ON content_versions (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_versions_content_id_version_idx ON content_versions (content_id, version);
+`;
+
+const GOVERNANCE_POLICIES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_policies (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  kind TEXT,
+  instructions TEXT,
+  enabled BOOLEAN,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_policies_id_idx ON content_governance_policies (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_policies_key_idx ON content_governance_policies (key);
+`;
+
+const GOVERNANCE_PROFILES_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_profiles (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  description TEXT,
+  enabled BOOLEAN,
+  requirements TEXT,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_profiles_id_idx ON content_governance_profiles (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_profiles_key_idx ON content_governance_profiles (key);
+`;
+
+const GOVERNANCE_ASSIGNMENTS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_governance_assignments (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  tenant_id TEXT,
+  key TEXT NOT NULL,
+  label TEXT,
+  content_type TEXT NOT NULL,
+  content_variant TEXT,
+  enabled BOOLEAN,
+  fact_linking_enabled BOOLEAN,
+  transparency_enabled BOOLEAN,
+  publication_profile_key TEXT,
+  correction_profile_key TEXT,
+  enforce_publish_readiness BOOLEAN,
+  default_fact_relationship TEXT,
+  metadata TEXT
+);
+CREATE INDEX IF NOT EXISTS content_governance_assignments_id_idx ON content_governance_assignments (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_governance_assignments_key_idx ON content_governance_assignments (key);
+`;
+
+it('should persist bodyFormat and restore it from content versions', async () => {
+  const db = await getTestDatabase({
+    type: 'sqlite',
+    url: getTestDbUrl('body-format'),
+  });
+  const contents = await Contents.create({
+    db,
+  });
+  await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_ASSIGNMENTS_SCHEMA });
+
+  const content = await contents.create({
+    name: 'body-format',
+    title: 'Body format',
+    body: '<p>HTML body</p>',
+    bodyFormat: 'html',
+    status: 'draft',
+  });
+
+  const reloaded = await contents.get({ id: content.id });
+  expect(reloaded?.bodyFormat).toBe('html');
+
+  const version = await content.createVersion({ summary: 'Before markdown' });
+  expect(version.getSnapshot().bodyFormat).toBe('html');
+
+  content.body = 'Markdown body';
+  content.bodyFormat = 'markdown';
+  await content.save();
+  await content.restoreFromVersion(version.version);
+
+  expect(content.body).toBe('<p>HTML body</p>');
+  expect(content.bodyFormat).toBe('html');
+});
 
 it.skipIf(!process.env.OPENAI_API_KEY)(
   'should be able to getOrInsert a content item',

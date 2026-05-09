@@ -20,6 +20,8 @@ import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociable, MetadataAccessor } from './asset-associable';
 import { isPlainMetadataRecord } from './asset-associable';
+import type { ContentBodyFormat } from './body-format';
+import { isContentBodyFormat } from './body-format';
 import { ContentAssetCollection } from './content-assets';
 import {
   buildContentGovernanceAssignmentKey,
@@ -353,6 +355,11 @@ export interface ContentOptions extends SmrtObjectOptions {
   body?: string | null;
 
   /**
+   * Stored body format.
+   */
+  bodyFormat?: ContentBodyFormat | null;
+
+  /**
    * Date when content was published
    */
   publish_date?: Date | null;
@@ -572,6 +579,11 @@ export class Content
   public body = '';
 
   /**
+   * Format used to persist the body field.
+   */
+  public bodyFormat: ContentBodyFormat | null = null;
+
+  /**
    * Date when content was published
    */
   public publish_date: Date | null = null;
@@ -642,6 +654,9 @@ export class Content
     this.title = options.title || '';
     this.description = options.description || null;
     this.body = options.body || '';
+    this.bodyFormat = isContentBodyFormat(options.bodyFormat)
+      ? options.bodyFormat
+      : null;
     this.publish_date = options.publish_date || null;
     this.source = options.source || null;
     this.original_url = options.original_url || null;

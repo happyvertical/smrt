@@ -8,6 +8,7 @@ import {
 } from '@happyvertical/smrt-prompts';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sendContentEditorChatThreadMessage } from './content-chat-handlers';
 import {
   contentEditorInteractionPrompt,
   contentEditorSessionPrompt,
@@ -542,6 +543,100 @@ describe('content chat prompt integration', () => {
       model: 'claude-3-5-haiku-latest',
       provider: 'anthropic',
       profile: null,
+    });
+  });
+
+  it('allows consumers to provide custom AI resolution for content chat helpers', async () => {
+    const contents = currentContents;
+    if (!contents) {
+      throw new Error('Test collection not initialized');
+    }
+
+    const content = await contents.create({
+      tenantId: 'tenant-a',
+      name: 'draft-custom-ai',
+      title: 'Draft Custom AI',
+      body: 'Body',
+    });
+
+    const chatService = await ChatService.create({ tenantId: 'tenant-a', db });
+    await chatService.initialize();
+
+    const { session } = await chatService.createAgentSession({
+      tenantId: 'tenant-a',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-a',
+      systemPrompt: 'Provider-aware prompt',
+    });
+    await session.updateSessionContext({
+      contentId: content.id,
+      provider: 'openai',
+      model: 'gpt-4o',
+    });
+
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      throw new Error('Expected content editor session to create a chat room');
+    }
+
+    const thread = await chatService.threads.create({
+      tenantId: 'tenant-a',
+      roomId: chatRoomId,
+      title: 'General',
+      messageCount: 0,
+    });
+
+    const chatMock = vi.fn(async () => ({ content: 'Assistant reply' }));
+    const getAIClient = vi.fn(async () => ({ chat: chatMock }));
+
+    const response = await sendContentEditorChatThreadMessage({
+      contents,
+      tenantId: 'tenant-a',
+      profileId: 'profile-a',
+      contentId: content.id as string,
+      threadId: thread.id as string,
+      content: 'Please improve the intro.',
+      sessionId: session.id as string,
+      currentEditorState: content.body,
+      referenceIds: [],
+      formFields: {
+        title: content.title,
+        body: content.body,
+      },
+      getAIClient: getAIClient as any,
+      resolveAI: () => ({
+        clientOptions: {
+          provider: 'bifrost',
+          defaultModel: 'bifrost-editor',
+        } as any,
+        model: 'bifrost-editor',
+        provider: 'bifrost',
+        temperature: 0.1,
+        maxTokens: 123,
+      }),
+    });
+
+    expect(response.agentMessage).toBeDefined();
+    expect(getAIClient).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'bifrost',
+        defaultModel: 'bifrost-editor',
+      }),
+    );
+    expect(chatMock).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.objectContaining({
+        model: 'bifrost-editor',
+        temperature: 0.1,
+        maxTokens: 123,
+      }),
+    );
+
+    const updated = await chatService.agentSessions.get(session.id as string);
+    expect(updated?.getSessionContext()).toMatchObject({
+      contentId: content.id,
+      model: 'bifrost-editor',
+      provider: 'bifrost',
     });
   });
 });

@@ -6,6 +6,8 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
+import type { ContentEditorAssistantContext } from '../../content-editor-assistant';
+import { contentEditorAssistantContextToChatProps } from '../../content-editor-assistant';
 import { joinApiUrl } from '../api';
 
 const AI_MODELS = [
@@ -20,7 +22,8 @@ const DEFAULT_MODEL_ID = AI_MODELS[0].id;
 
 let {
   apiBaseUrl = '/api/v1',
-  contentId,
+  assistantContext = null,
+  contentId = '',
   currentEditorState = '',
   currentReferenceIds = [],
   formFields = {},
@@ -28,7 +31,8 @@ let {
   onclose = undefined,
 } = $props<{
   apiBaseUrl?: string;
-  contentId: string;
+  assistantContext?: ContentEditorAssistantContext | null;
+  contentId?: string;
   currentEditorState?: string;
   currentReferenceIds?: string[];
   formFields?: Record<string, string>;
@@ -46,7 +50,6 @@ let loadingMessages = $state(false);
 let sendingMessage = $state(false);
 let error = $state<string | null>(null);
 let currentProfileId = $state('user123');
-const canRetrySessionLoad = $derived(Boolean(contentId && contentId !== 'new'));
 
 // New Topic State
 let isCreatingTopic = $state(false);
@@ -57,14 +60,32 @@ let showNewTopicInput = $state(false);
 let selectedModelId = $state(DEFAULT_MODEL_ID);
 let loadedContentId = $state<string | null>(null);
 let loadedApiBaseUrl = $state<string | null>(null);
+const assistantChatProps = $derived(
+  assistantContext
+    ? contentEditorAssistantContextToChatProps(assistantContext)
+    : null,
+);
+const resolvedContentId = $derived(assistantChatProps?.contentId ?? contentId);
+const resolvedCurrentEditorState = $derived(
+  assistantChatProps?.currentEditorState ?? currentEditorState,
+);
+const resolvedCurrentReferenceIds = $derived(
+  assistantChatProps?.currentReferenceIds ?? currentReferenceIds,
+);
+const resolvedFormFields = $derived(
+  assistantChatProps?.formFields ?? formFields,
+);
+const canRetrySessionLoad = $derived(
+  Boolean(resolvedContentId && resolvedContentId !== 'new'),
+);
 
 $effect(() => {
-  if (!contentId) {
+  if (!resolvedContentId) {
     return;
   }
 
-  if (contentId === 'new') {
-    loadedContentId = contentId;
+  if (resolvedContentId === 'new') {
+    loadedContentId = resolvedContentId;
     loadedApiBaseUrl = apiBaseUrl;
     session = null;
     threads = [];
@@ -75,11 +96,14 @@ $effect(() => {
     return;
   }
 
-  if (contentId === loadedContentId && apiBaseUrl === loadedApiBaseUrl) {
+  if (
+    resolvedContentId === loadedContentId &&
+    apiBaseUrl === loadedApiBaseUrl
+  ) {
     return;
   }
 
-  loadedContentId = contentId;
+  loadedContentId = resolvedContentId;
   loadedApiBaseUrl = apiBaseUrl;
   selectedModelId = DEFAULT_MODEL_ID;
   session = null;
@@ -131,7 +155,7 @@ async function loadSession() {
   error = null;
   try {
     const res = await fetch(
-      joinApiUrl(apiBaseUrl, `/contents/${contentId}/chat`),
+      joinApiUrl(apiBaseUrl, `/contents/${resolvedContentId}/chat`),
     );
     if (!res.ok) throw new Error('Failed to load chat session.');
     const data = await res.json();
@@ -184,7 +208,10 @@ async function loadThread(threadId: string) {
 
   try {
     const res = await fetch(
-      joinApiUrl(apiBaseUrl, `/contents/${contentId}/chat/threads/${threadId}`),
+      joinApiUrl(
+        apiBaseUrl,
+        `/contents/${resolvedContentId}/chat/threads/${threadId}`,
+      ),
     );
 
     if (!res.ok)
@@ -211,7 +238,7 @@ async function createNewTopic() {
   isCreatingTopic = true;
   try {
     const res = await fetch(
-      joinApiUrl(apiBaseUrl, `/contents/${contentId}/chat`),
+      joinApiUrl(apiBaseUrl, `/contents/${resolvedContentId}/chat`),
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -219,7 +246,7 @@ async function createNewTopic() {
           title: title,
           sessionId: session.id,
           model: selectedModelId,
-          referenceIds: currentReferenceIds,
+          referenceIds: resolvedCurrentReferenceIds,
         }),
       },
     );
@@ -257,7 +284,7 @@ async function handleSendMessage(content: string) {
     const res = await fetch(
       joinApiUrl(
         apiBaseUrl,
-        `/contents/${contentId}/chat/threads/${activeThreadId}`,
+        `/contents/${resolvedContentId}/chat/threads/${activeThreadId}`,
       ),
       {
         method: 'POST',
@@ -266,9 +293,9 @@ async function handleSendMessage(content: string) {
           content,
           sessionId: session.id,
           model: selectedModelId,
-          currentEditorState,
-          referenceIds: currentReferenceIds,
-          formFields,
+          currentEditorState: resolvedCurrentEditorState,
+          referenceIds: resolvedCurrentReferenceIds,
+          formFields: resolvedFormFields,
         }),
       },
     );
