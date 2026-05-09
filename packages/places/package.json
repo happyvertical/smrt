@@ -11,12 +11,12 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./utils": {
-      "import": "./dist/utils.js",
-      "types": "./dist/utils.d.ts"
+      "types": "./dist/utils.d.ts",
+      "import": "./dist/utils.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"

@@ -19,14 +19,14 @@
       "default": "./dist/utils.js"
     },
     "./ui": {
-      "import": "./dist/ui.js",
-      "types": "./dist/ui.d.ts"
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./playground": {
-      "import": "./dist/playground.js",
-      "types": "./dist/playground.d.ts"
+      "types": "./dist/playground.d.ts",
+      "import": "./dist/playground.js"
     },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",

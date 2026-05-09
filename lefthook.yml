@@ -11,7 +11,7 @@ pre-commit:
   commands:
     format:
       glob: "*.{ts,js,tsx,jsx,svelte}"
-      run: npx biome check --write --unsafe {staged_files}
+      run: npx biome check --write --unsafe --no-errors-on-unmatched {staged_files}
       stage_fixed: true
       fail_text: |
         ❌ Formatting/linting failed!

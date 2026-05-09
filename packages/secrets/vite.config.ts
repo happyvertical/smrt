@@ -1,4 +1,4 @@
-import { createPackageConfig } from '../../vite.config.base';
+import { createPackageConfig } from '../../vite.config.base.js';
 
 // Multi-entry library exposing models/index and services/SecretService as
 // subpath exports. smrtPlugin is auto-injected by createPackageConfig().

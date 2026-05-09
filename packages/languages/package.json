@@ -11,16 +11,16 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./jobs": {
-      "import": "./dist/jobs.js",
-      "types": "./dist/jobs.d.ts"
+      "types": "./dist/jobs.d.ts",
+      "import": "./dist/jobs.js"
     },
     "./cli": {
-      "import": "./dist/cli.js",
-      "types": "./dist/cli.d.ts"
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"

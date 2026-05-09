@@ -9,12 +9,12 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./server": {
-      "import": "./dist/server.js",
-      "types": "./dist/server.d.ts"
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
     },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
