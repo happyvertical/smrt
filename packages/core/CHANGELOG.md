@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.5
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: Foundation packages Phase 2 alignment (epic #1191, category #1206) (#1207)
+  - @happyvertical/smrt-scanner@0.24.5
+  - @happyvertical/smrt-config@0.24.5
+  - @happyvertical/smrt-types@0.24.5
+
 ## 0.24.4
 
 ### Patch Changes
