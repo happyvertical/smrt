@@ -46,13 +46,11 @@ const EXEMPTIONS = {
   // both packages have substantive existing test suites.
   noSmrtVitestPlugin: new Set(['core', 'cli', 'smrt-playground']),
   // Packages whose hand-written exports map predates the conditional
-  // standard. Migrating ~18 bare-string entries in core requires careful
-  // type-resolution verification across consumers. Tracked as a CC-2
-  // follow-up (issue 1193). Templates ship plain JS scaffolding helpers
-  // (`./index.js`) rather than typed module APIs, so the conditional shape
-  // does not apply to their root export.
+  // standard. Templates ship plain JS scaffolding helpers (`./index.js`)
+  // rather than typed module APIs, so the conditional shape does not apply
+  // to their root export. (`core` migrated to conditional shape — see
+  // packages/core/package.json.)
   bareStringExportsAllowed: new Set([
-    'core',
     'template-sveltekit',
     'template-site-static-json',
   ]),
