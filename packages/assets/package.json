@@ -11,8 +11,8 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
@@ -35,7 +35,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.kit.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.typecheck.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

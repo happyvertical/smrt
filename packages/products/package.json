@@ -7,9 +7,10 @@
   "main": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",
   "files": [
-    "dist/lib",
+    "CLAUDE.md",
     "dist/app",
     "dist/federation",
+    "dist/lib",
     "docs"
   ],
   "exports": {

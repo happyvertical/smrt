@@ -15,8 +15,8 @@
       "import": "./dist/index.js"
     },
     "./ui": {
-      "import": "./dist/ui.js",
-      "types": "./dist/ui.d.ts"
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",

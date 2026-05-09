@@ -9,26 +9,26 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./ui": {
-      "import": "./dist/ui.js",
-      "types": "./dist/ui.d.ts"
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
     },
     "./vite": {
-      "import": "./dist/vite-plugin.js",
-      "types": "./dist/vite-plugin.d.ts"
+      "types": "./dist/vite-plugin.d.ts",
+      "import": "./dist/vite-plugin.js"
     },
     "./server": {
-      "import": "./dist/server.js",
-      "types": "./dist/server/index.d.ts"
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./playground": {
-      "import": "./dist/playground.js",
-      "types": "./dist/playground.d.ts"
+      "types": "./dist/playground.d.ts",
+      "import": "./dist/playground.js"
     },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",

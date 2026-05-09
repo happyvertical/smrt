@@ -7,10 +7,14 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
+    "CLAUDE.md",
     "dist"
   ],
   "exports": {
-    ".": "./dist/index.js",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"
   },
@@ -24,7 +28,7 @@
   },
   "scripts": {
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:watch": "vitest",
     "build": "vite build",
     "build:watch": "vite build --watch",
@@ -40,7 +44,6 @@
     "@types/node": "25.0.9",
     "typescript": "^5.9.3",
     "vite": "7.3.1",
-    "vite-plugin-dts": "4.5.4",
     "vitest": "^4.0.17"
   },
   "publishConfig": {

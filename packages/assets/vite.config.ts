@@ -1,3 +1,8 @@
+// Hand-written by design — does not use createPackageConfig (per
+// docs/content/standards.md §3). Same dual-mode (SvelteKit dev /
+// library build) pattern as smrt-content; see content's vite.config.ts
+// for rationale.
+
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import {

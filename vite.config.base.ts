@@ -184,7 +184,14 @@ export function createPackageConfig(
     : resolve(packageDir, 'tsconfig.json');
 
   // Packages that should NOT use smrtPlugin (framework infrastructure)
-  const skipSmrtPlugin = ['core', 'types', 'config', 'smrt-playground'];
+  const skipSmrtPlugin = [
+    'core',
+    'types',
+    'config',
+    'scanner',
+    'vitest',
+    'smrt-playground',
+  ];
 
   return async () => {
     // Dynamically import smrtPlugin only if needed
@@ -330,6 +337,9 @@ export function createPackageConfig(
             'cosmiconfig',
             '@libsql/client',
             'fast-glob',
+            'minimatch',
+            'oxc-parser',
+            'oxc-resolver',
 
             // Internal SMRT packages - externalize to avoid cross-package bundling
             /^@happyvertical\//,

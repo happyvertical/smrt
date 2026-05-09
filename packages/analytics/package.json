@@ -11,14 +11,14 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./playground": {
-      "import": "./dist/playground.js",
-      "types": "./dist/playground.d.ts"
+      "types": "./dist/playground.d.ts",
+      "import": "./dist/playground.js"
     },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
@@ -33,7 +33,7 @@
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:sqlite": "TEST_DB_ADAPTER=sqlite vitest run --project sqlite --passWithNoTests",
     "test:postgres": "TEST_DB_ADAPTER=postgres vitest run --project postgres --passWithNoTests",
     "test:json": "TEST_DB_ADAPTER=json vitest run --project json --passWithNoTests",

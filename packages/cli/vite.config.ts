@@ -1,3 +1,9 @@
+// Hand-written by design — does not use createPackageConfig (per
+// docs/content/standards.md §3). CLI ships as an SSR Node binary with
+// `ssr: true` build mode, node24 target, and externalizes Node-only
+// deps (rollup, esbuild, vite, jiti, tsx) that don't belong in a
+// library-mode lib bundle. createPackageConfig is library-mode only.
+
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';
 

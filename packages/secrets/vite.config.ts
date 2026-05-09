@@ -1,3 +1,14 @@
+// Hand-written by design — does not use createPackageConfig (per
+// docs/content/standards.md §3). Secrets ships submodule exports
+// (./models, ./service) backed by separate dist entries that downstream
+// consumers import via type-import paths like
+// `dist/models/index.d.ts -> ./SecretAuditLog.js`. The base config's
+// rollupTypes:true bundles all types into a single d.ts per entry,
+// which produces a different type-import structure that fails
+// `verify:pack` for this package. Migration would require base config
+// to support per-entry rollupTypes:false plus entryRoot, or this
+// package's published surface needs to be re-shaped to a single entry.
+
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';

@@ -113,6 +113,26 @@ jobs:
       - name: Verify SDK packages use same version
         run: bash scripts/check-sdk-versions.sh
 
+  check-standards:
+    name: Check Monorepo Standards
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      # Pin Node to the version declared in package.json engines so that
+      # `import.meta.dirname` (Node 20.11+) and other modern features used by
+      # scripts/check-standards.mjs are guaranteed available regardless of the
+      # ubuntu-latest default. Skip dep install — the script reads only
+      # package.json files and uses no node_modules.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Run standards check
+        run: node scripts/check-standards.mjs
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

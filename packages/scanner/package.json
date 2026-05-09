@@ -15,9 +15,18 @@
     "dist"
   ],
   "exports": {
-    ".": "./dist/index.js",
-    "./cli": "./dist/cli.js",
-    "./types": "./dist/types.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./cli": {
+      "types": "./dist/cli.d.ts",
+      "import": "./dist/cli.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "import": "./dist/types.js"
+    }
   },
   "dependencies": {
     "fast-glob": "3.3.3",
@@ -29,7 +38,6 @@
     "@types/node": "25.0.9",
     "tsx": "^4.21.0",
     "vite": "7.3.1",
-    "vite-plugin-dts": "4.5.4",
     "vitest": "^4.0.17"
   },
   "peerDependencies": {
