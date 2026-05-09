@@ -40,6 +40,14 @@ export type TenantKeyStatus = 'active' | 'rotating' | 'retired' | 'compromised';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped({ mode: 'optional' })`):
+// `TenantKey` is deliberately NOT tenant-scoped — neither via the decorator nor via
+// `tenantScoped: true` on `@smrt()`. The row carries a `tenantId` column because each
+// TDEK belongs to a tenant, but the model itself must remain queryable across tenants
+// (e.g. cross-tenant key-rotation tooling, AMK rewrap jobs, super-admin auditing).
+// Adding the tenancy interceptor here would silently filter out keys the rotation
+// service needs to inspect. See `packages/secrets/CLAUDE.md` "Known exceptions to
+// monorepo standards" for the full rationale.
 @smrt({
   // NOT tenant-scoped - this model tracks keys FOR tenants
   api: { include: [] }, // No API exposure
