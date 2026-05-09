@@ -1,37 +1,7 @@
-import { resolve } from 'node:path';
-import { defineConfig } from 'vite';
-import dts from 'vite-plugin-dts';
+import { createPackageConfig } from '../../vite.config.base';
 
-export default defineConfig({
-  build: {
-    lib: {
-      entry: {
-        index: resolve(__dirname, 'src/index.ts'),
-        cli: resolve(__dirname, 'src/cli.ts'),
-        types: resolve(__dirname, 'src/types.ts'),
-      },
-      formats: ['es'],
-      fileName: (format, entryName) => `${entryName}.js`,
-    },
-    rollupOptions: {
-      external: [
-        /^node:/,
-        'oxc-parser',
-        'oxc-resolver',
-        'fast-glob',
-        'minimatch',
-        '@happyvertical/smrt-core',
-        '@happyvertical/smrt-types',
-      ],
-    },
-    target: 'node20',
-    sourcemap: true,
-    minify: false,
-  },
-  plugins: [
-    dts({
-      include: ['src/**/*.ts'],
-      exclude: ['**/*.test.ts', '**/*.spec.ts'],
-    }),
-  ],
+// `cli` and `types` are additional entries beyond the default `index`.
+// `types` is auto-detected by createPackageConfig when src/types.ts exists.
+export default createPackageConfig('scanner', {
+  entries: ['cli'],
 });

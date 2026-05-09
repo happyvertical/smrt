@@ -1,3 +1,10 @@
+// Hand-written by design — does not use createPackageConfig (per
+// docs/content/standards.md §3). Dual-mode build: when SMRT_PACKAGE_BUILD
+// is unset, runs as a SvelteKit dev server (sveltekit() + smrtConsumer()
+// + smrtPlugin scanning routes/ and models/). When set, builds as a
+// library. createPackageConfig is library-only and would require a
+// SvelteKit-aware mode toggle to absorb this pattern.
+
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import {

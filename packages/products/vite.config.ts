@@ -1,3 +1,11 @@
+// Hand-written by design — does not use createPackageConfig (per
+// docs/content/standards.md §3 and §9). Products is the reference for
+// triple-consumption (npm library + module federation + standalone
+// SvelteKit app). Uses @originjs/vite-plugin-federation, multi-mode
+// builds (lib/app/federation), workspace-import rewriting in the dts
+// plugin, and an index.html for the standalone variant — none of which
+// fit createPackageConfig's library-only output shape.
+
 import { dirname, resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import dts from 'vite-plugin-dts';

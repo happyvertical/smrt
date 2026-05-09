@@ -1,3 +1,14 @@
+// Hand-written by design — does not use createPackageConfig (per
+// docs/content/standards.md §3). Core uses a custom getCoreEntries()
+// helper that reads the package.json exports map to enumerate entries,
+// preserveModules:true to keep the runtime/scanner/vite-plugin layout
+// loadable as separate JS modules from consumer projects, and a much
+// larger external allowlist than the base config exposes (oxc-* packages,
+// @huggingface/transformers etc). Migration would require extending
+// createPackageConfig with at least: per-package preserveModules toggle,
+// programmatic entry derivation from exports map, and arbitrary external
+// passthrough.
+
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
