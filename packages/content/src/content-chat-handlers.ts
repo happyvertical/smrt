@@ -5,6 +5,7 @@ import {
   resolvePrompt,
 } from '@happyvertical/smrt-prompts';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { sanitizeHtml, stripHtml } from './body-format';
 import {
   contentEditorInteractionPrompt,
   contentEditorSessionPrompt,
@@ -18,6 +19,8 @@ import {
 } from './content-chat-session';
 
 const CONTENT_EDITOR_AGENT_ID = 'content_editor';
+const REFERENCE_TITLE_MAX_LENGTH = 200;
+const REFERENCE_BODY_MAX_LENGTH = 2000;
 
 export type ContentChatAIConfig = AIClientOptions & {
   apiKey?: string;
@@ -146,7 +149,7 @@ export function contentChatSessionMatchesContent(
   contentId: string,
 ): boolean {
   const context = getSessionContext(session);
-  return !context.contentId || context.contentId === contentId;
+  return asNonEmptyString(context.contentId) === contentId;
 }
 
 export function contentChatSessionIsAuthorized(
@@ -156,10 +159,14 @@ export function contentChatSessionIsAuthorized(
     contentId: string;
   },
 ): boolean {
-  const candidate = session as { participantProfileId?: string };
+  const candidate = session as {
+    agentId?: string;
+    participantProfileId?: string;
+  };
   return (
     Boolean(session) &&
     isActiveSession(session) &&
+    candidate.agentId === CONTENT_EDITOR_AGENT_ID &&
     candidate.participantProfileId === input.profileId &&
     contentChatSessionMatchesContent(session, input.contentId)
   );
@@ -313,6 +320,7 @@ export async function listContentEditorChatThreadMessages(
   const roomId = (thread as { roomId?: string }).roomId;
   const activeSessions = await chatService.agentSessions.list({
     where: {
+      agentId: CONTENT_EDITOR_AGENT_ID,
       participantProfileId: profileId,
       status: 'active',
     },
@@ -389,6 +397,20 @@ export function resolveDefaultContentChatAI(
   };
 }
 
+function sanitizeReferenceText(value: unknown, maxLength: number): string {
+  const text = stripHtml(sanitizeHtml(String(value ?? '')))
+    .replace(/<{2,}/g, '< <')
+    .replace(/>{2,}/g, '> >')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
+}
+
+function sanitizeReferenceId(value: string): string {
+  return value.replace(/[^\w:.-]/g, '_').slice(0, 128);
+}
+
 async function buildReferenceContext(
   contents: ContentChatCollectionLike,
   referenceIds: unknown,
@@ -408,7 +430,17 @@ async function buildReferenceContext(
       body?: string;
     } | null;
     if (ref) {
-      refTexts.push(`--- REFERENCE: ${ref.title} ---\n${ref.body}`);
+      const safeTitle = sanitizeReferenceText(
+        ref.title,
+        REFERENCE_TITLE_MAX_LENGTH,
+      );
+      const safeBody = sanitizeReferenceText(
+        ref.body,
+        REFERENCE_BODY_MAX_LENGTH,
+      );
+      refTexts.push(
+        `<<<SMRT_REFERENCE id=${sanitizeReferenceId(id)}>>>\nTitle: ${safeTitle}\nBody: ${safeBody}\n<<<END_SMRT_REFERENCE>>>`,
+      );
     }
   }
 

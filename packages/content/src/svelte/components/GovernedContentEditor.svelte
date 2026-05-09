@@ -1,4 +1,5 @@
 <script lang="ts">
+import { untrack } from 'svelte';
 import type {
   ContentEditorAssistantContextChange,
   ContentEditorAssistantRegistration,
@@ -188,18 +189,63 @@ const governedAssistantRegistration = $derived.by(() => {
     },
   } satisfies ContentEditorAssistantRegistration;
 });
+let activeAssistantContextCallback:
+  | ContentEditorAssistantContextChange
+  | undefined;
+let lastAssistantContextCallback:
+  | ContentEditorAssistantContextChange
+  | undefined;
+let lastAssistantRegistration:
+  | ContentEditorAssistantRegistration
+  | null
+  | undefined;
 
-$effect(() => {
-  onAssistantContextChange?.(governedAssistantRegistration);
-});
-
-$effect(() => {
-  const callback = onAssistantContextChange;
+function publishAssistantRegistration(
+  registration: ContentEditorAssistantRegistration | null,
+) {
+  const callback = activeAssistantContextCallback;
   if (!callback) {
     return;
   }
 
-  return () => callback(null);
+  if (
+    callback === lastAssistantContextCallback &&
+    registration === lastAssistantRegistration
+  ) {
+    return;
+  }
+
+  callback(registration);
+  lastAssistantContextCallback = callback;
+  lastAssistantRegistration = registration;
+}
+
+$effect(() => {
+  const callback = onAssistantContextChange;
+  activeAssistantContextCallback = callback;
+  if (!callback) {
+    lastAssistantContextCallback = undefined;
+    lastAssistantRegistration = undefined;
+    return;
+  }
+
+  publishAssistantRegistration(untrack(() => governedAssistantRegistration));
+
+  return () => {
+    if (activeAssistantContextCallback === callback) {
+      activeAssistantContextCallback = undefined;
+    }
+    if (lastAssistantContextCallback === callback) {
+      lastAssistantContextCallback = undefined;
+      lastAssistantRegistration = undefined;
+    }
+    callback(null);
+  };
+});
+
+$effect(() => {
+  const registration = governedAssistantRegistration;
+  untrack(() => publishAssistantRegistration(registration));
 });
 
 function handleFactsChange(factIds: string[], facts: FactData[]) {

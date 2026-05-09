@@ -32,6 +32,19 @@ describe('content body format utilities', () => {
     expect(html).toContain('src="#"');
   });
 
+  it('sanitizes URL-bearing attributes with encoded protocols', () => {
+    const html = sanitizeHtml(
+      '<svg><a xlink:href="java&#x73;cript&#x3A;alert(1)">click</a></svg><form action="javascript:alert(2)"><button formaction="java&#115;cript:alert(3)">Go</button></form><video poster="javascript:alert(4)"></video><img srcset="javascript:alert(5) 1x, https://example.com/safe.jpg 2x" src="https://example.com/fallback.jpg">',
+    );
+
+    expect(html).toContain('xlink:href="#"');
+    expect(html).toContain('action="#"');
+    expect(html).toContain('formaction="#"');
+    expect(html).toContain('poster="#"');
+    expect(html).toContain('srcset="https://example.com/safe.jpg 2x"');
+    expect(html).not.toMatch(/javascript/i);
+  });
+
   it('keeps safe image layout metadata out of markdown-only output', () => {
     const html = sanitizeHtml(
       '<figure data-smrt-inline-image="true" data-smrt-placement="left" data-smrt-width="320" data-smrt-selected="true" style="width: 320px; position: absolute"><img src="https://example.com/a.jpg" alt="A"></figure>',

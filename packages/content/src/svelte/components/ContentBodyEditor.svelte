@@ -46,6 +46,7 @@ let {
 
 const MIN_IMAGE_WIDTH = 120;
 const IMAGE_WIDTH_STEP = 80;
+const INPUT_CHANGE_DEBOUNCE_MS = 120;
 const ELEMENT_NODE = 1;
 const TEXT_NODE = 3;
 const EDITOR_TEXT_BLOCK_TAGS = new Set([
@@ -92,6 +93,7 @@ let moveState: {
   frame: HTMLElement;
 } | null = null;
 let lastAppliedSelectedImageIndex: number | null = null;
+let inputChangeTimer: ReturnType<typeof setTimeout> | null = null;
 
 function makeExternalKey(body: string, bodyFormat: ContentBodyFormat) {
   return `${bodyFormat}\u0000${body || ''}`;
@@ -132,7 +134,12 @@ $effect(() => {
     return;
   }
 
-  const update = () => refreshSelectedImageChrome();
+  const update = () => {
+    if (selectedImageIndexState < 0) {
+      return;
+    }
+    refreshSelectedImageChrome();
+  };
   window.addEventListener('resize', update);
   window.addEventListener('scroll', update, true);
 
@@ -140,6 +147,10 @@ $effect(() => {
     window.removeEventListener('resize', update);
     window.removeEventListener('scroll', update, true);
   };
+});
+
+$effect(() => {
+  return () => clearPendingInputChange();
 });
 
 function saveSelection() {
@@ -442,6 +453,13 @@ function placementFromPoint(x: number): ContentBodyImagePlacement | null {
 }
 
 function refreshSelectedImageChrome() {
+  if (selectedImageIndexState < 0) {
+    selectedImageBox = null;
+    selectedImageAssetId = null;
+    selectedImagePlacement = 'block';
+    return;
+  }
+
   const image = getSelectedImage();
   if (!image || !rootElement || !editorElement?.contains(image)) {
     selectedImageBox = null;
@@ -535,11 +553,27 @@ function clearImageSelection(options: { notify?: boolean } = {}) {
   }
 }
 
+function clearPendingInputChange() {
+  if (inputChangeTimer) {
+    clearTimeout(inputChangeTimer);
+    inputChangeTimer = null;
+  }
+}
+
+function scheduleInputChange() {
+  clearPendingInputChange();
+  inputChangeTimer = setTimeout(() => {
+    inputChangeTimer = null;
+    emitChange();
+  }, INPUT_CHANGE_DEBOUNCE_MS);
+}
+
 function emitChange(options: { syncDom?: boolean } = {}) {
   if (!editorElement) {
     return;
   }
 
+  clearPendingInputChange();
   const rawHtml = editorElement.innerHTML;
   const normalizedHtml = normalizeEditorHtml(rawHtml);
   if (options.syncDom && editorElement.innerHTML !== normalizedHtml) {
@@ -958,16 +992,16 @@ function handleEditorDragEnd() {
 
 <div bind:this={rootElement} class="content-body-editor">
   <div class="body-editor-toolbar" aria-label="Body editor toolbar">
-    <button type="button" title="Bold" onclick={() => runCommand('bold')}>
+    <button type="button" title="Bold" aria-label="Bold" onclick={() => runCommand('bold')}>
       <strong>B</strong>
     </button>
-    <button type="button" title="Italic" onclick={() => runCommand('italic')}>
+    <button type="button" title="Italic" aria-label="Italic" onclick={() => runCommand('italic')}>
       <em>I</em>
     </button>
-    <button type="button" title="Heading" onclick={() => runCommand('formatBlock', 'h2')}>
+    <button type="button" title="Heading" aria-label="Heading" onclick={() => runCommand('formatBlock', 'h2')}>
       H2
     </button>
-    <button type="button" title="Bulleted list" onclick={() => runCommand('insertUnorderedList')}>
+    <button type="button" title="Bulleted list" aria-label="Bulleted list" onclick={() => runCommand('insertUnorderedList')}>
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
         <line x1="9" y1="6" x2="21" y2="6"></line>
         <line x1="9" y1="12" x2="21" y2="12"></line>
@@ -977,7 +1011,7 @@ function handleEditorDragEnd() {
         <circle cx="4" cy="18" r="1"></circle>
       </svg>
     </button>
-    <button type="button" title="Insert image" onclick={() => onOpenImageChooser?.()}>
+    <button type="button" title="Insert image" aria-label="Insert image" onclick={() => onOpenImageChooser?.()}>
       <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2"></rect>
         <circle cx="8.5" cy="8.5" r="1.5"></circle>
@@ -1003,7 +1037,7 @@ function handleEditorDragEnd() {
       style={`top: ${Math.max(44, selectedImageBox.top + 8)}px; left: ${selectedImageBox.left + selectedImageBox.width / 2}px;`}
       aria-label="Selected image controls"
     >
-      <button type="button" title="Move image" onpointerdown={startImageMove}>
+      <button type="button" title="Move image" aria-label="Move image" onpointerdown={startImageMove}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M12 2v20"></path>
           <path d="M2 12h20"></path>
@@ -1017,6 +1051,7 @@ function handleEditorDragEnd() {
       <button
         type="button"
         title="Wrap text on right"
+        aria-label="Wrap text on right"
         class:active={selectedImagePlacement === 'left'}
         onclick={() => applyImagePlacement('left')}
       >
@@ -1031,6 +1066,7 @@ function handleEditorDragEnd() {
       <button
         type="button"
         title="Center image"
+        aria-label="Center image"
         class:active={selectedImagePlacement === 'center' || selectedImagePlacement === 'block'}
         onclick={() => applyImagePlacement('center')}
       >
@@ -1043,6 +1079,7 @@ function handleEditorDragEnd() {
       <button
         type="button"
         title="Wrap text on left"
+        aria-label="Wrap text on left"
         class:active={selectedImagePlacement === 'right'}
         onclick={() => applyImagePlacement('right')}
       >
@@ -1057,6 +1094,7 @@ function handleEditorDragEnd() {
       <button
         type="button"
         title="Full width"
+        aria-label="Full width"
         class:active={selectedImagePlacement === 'full'}
         onclick={() => applyImagePlacement('full')}
       >
@@ -1067,14 +1105,14 @@ function handleEditorDragEnd() {
         </svg>
       </button>
       <span class="image-control-divider"></span>
-      <button type="button" title="Make smaller" onclick={() => resizeSelectedImage(-IMAGE_WIDTH_STEP)}>
+      <button type="button" title="Make smaller" aria-label="Make image smaller" onclick={() => resizeSelectedImage(-IMAGE_WIDTH_STEP)}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M5 12h14"></path>
           <path d="M9 8 5 12l4 4"></path>
           <path d="m15 8 4 4-4 4"></path>
         </svg>
       </button>
-      <button type="button" title="Make larger" onclick={() => resizeSelectedImage(IMAGE_WIDTH_STEP)}>
+      <button type="button" title="Make larger" aria-label="Make image larger" onclick={() => resizeSelectedImage(IMAGE_WIDTH_STEP)}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
           <path d="M3 12h18"></path>
           <path d="m7 8-4 4 4 4"></path>
@@ -1082,13 +1120,13 @@ function handleEditorDragEnd() {
         </svg>
       </button>
       {#if selectedImageAssetId && onUseImageAsThumbnail}
-        <button type="button" title="Use as primary image" onclick={useSelectedImageAsThumbnail}>
+        <button type="button" title="Use as primary image" aria-label="Use as primary image" onclick={useSelectedImageAsThumbnail}>
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
             <path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1.1 6.2L12 17.3 6.4 20.2 7.5 14 3 9.6l6.2-.9L12 3Z"></path>
           </svg>
         </button>
       {/if}
-      <button type="button" title="Remove image" onclick={removeSelectedImage}>
+      <button type="button" title="Remove image" aria-label="Remove image" onclick={removeSelectedImage}>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M3 6h18"></path>
           <path d="M8 6V4h8v2"></path>
@@ -1123,7 +1161,7 @@ function handleEditorDragEnd() {
     aria-multiline="true"
     tabindex="0"
     data-placeholder={placeholder}
-    oninput={() => emitChange()}
+    oninput={scheduleInputChange}
     onblur={() => {
       isFocused = false;
       saveSelection();

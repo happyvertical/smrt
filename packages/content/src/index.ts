@@ -25,6 +25,7 @@ export {
   renderMarkdownToHtml,
   resolveBodyFormat,
   sanitizeHtml,
+  stripHtml,
 } from './body-format';
 export type { ContentOptions } from './content';
 export { Content } from './content';

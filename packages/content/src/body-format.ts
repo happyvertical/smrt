@@ -20,6 +20,10 @@ export const DEFAULT_CONTENT_BODY_FORMAT: ContentBodyFormat = 'html';
 
 const HTML_TAG_PATTERN =
   /<\/?(?:article|aside|blockquote|br|div|figure|figcaption|h[1-6]|hr|img|li|ol|p|pre|section|span|strong|em|b|i|u|a|ul|table|tbody|td|th|thead|tr)(?:\s[^>]*)?>/i;
+const URL_ATTRIBUTE_PATTERN =
+  /\s+(href|src|xlink:href|formaction|action|poster)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+const SRCSET_ATTRIBUTE_PATTERN =
+  /\s+srcset\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi;
 
 const BLOCK_TAGS = [
   'address',
@@ -110,13 +114,27 @@ export function escapeAttribute(value: string): string {
 }
 
 function decodeBasicEntities(value: string): string {
+  const decodeCodePoint = (codePoint: number) =>
+    Number.isFinite(codePoint) && codePoint >= 0 && codePoint <= 0x10ffff
+      ? String.fromCodePoint(codePoint)
+      : '';
+
   return value
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
+    .replace(/&#x([0-9a-f]+);?/gi, (_match, hex: string) => {
+      const codePoint = Number.parseInt(hex, 16);
+      return decodeCodePoint(codePoint);
+    })
+    .replace(/&#(\d+);?/g, (_match, decimal: string) => {
+      const codePoint = Number.parseInt(decimal, 10);
+      return decodeCodePoint(codePoint);
+    })
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&');
 }
 
 function sanitizeUrl(value: string): string {
@@ -125,18 +143,46 @@ function sanitizeUrl(value: string): string {
     return '';
   }
 
-  if (/^(?:javascript|vbscript):/i.test(trimmed)) {
+  let compactScheme = '';
+  for (const char of trimmed) {
+    const code = char.charCodeAt(0);
+    if (code <= 31 || code === 127 || char.trim() === '') {
+      continue;
+    }
+    compactScheme += char.toLowerCase();
+  }
+
+  if (/^(?:javascript|vbscript):/.test(compactScheme)) {
     return '#';
   }
 
   if (
-    /^data:/i.test(trimmed) &&
-    !/^data:image\/(?:png|gif|jpe?g|webp);/i.test(trimmed)
+    compactScheme.startsWith('data:') &&
+    !/^data:image\/(?:png|gif|jpe?g|webp);/.test(compactScheme)
   ) {
     return '#';
   }
 
   return trimmed;
+}
+
+function sanitizeSrcset(value: string): string {
+  return decodeBasicEntities(value)
+    .split(',')
+    .map((candidate) => {
+      const parts = candidate.trim().split(/\s+/);
+      const url = sanitizeUrl(parts.shift() || '');
+      if (!url || url === '#') {
+        return '';
+      }
+
+      const descriptors = parts.filter((part) =>
+        /^(?:\d+(?:\.\d+)?x|\d+w)$/.test(part),
+      );
+      return [url, ...descriptors].join(' ');
+    })
+    .filter(Boolean)
+    .join(', ');
 }
 
 function sanitizeStyle(value: string): string {
@@ -201,7 +247,22 @@ export function sanitizeHtml(value: string): string {
     },
   );
   html = html.replace(
-    /\s+(href|src)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+    SRCSET_ATTRIBUTE_PATTERN,
+    (
+      _match,
+      _raw: string,
+      doubleValue = '',
+      singleValue = '',
+      bareValue = '',
+    ) => {
+      const safeSrcset = sanitizeSrcset(
+        doubleValue || singleValue || bareValue,
+      );
+      return safeSrcset ? ` srcset="${escapeAttribute(safeSrcset)}"` : '';
+    },
+  );
+  html = html.replace(
+    URL_ATTRIBUTE_PATTERN,
     (
       _match,
       name: string,
@@ -421,7 +482,7 @@ function fallbackHtmlToMarkdown(html: string): string {
   return normalizeMarkdownWhitespace(markdown);
 }
 
-function stripHtml(value: string): string {
+export function stripHtml(value: string): string {
   return decodeBasicEntities(value.replace(/<[^>]*>/g, ''));
 }
 

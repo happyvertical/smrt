@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
+import { untrack } from 'svelte';
 import {
   type ContentBodyFormat,
   extractBodyImages,
@@ -9,6 +10,7 @@ import {
 import type {
   ContentEditorAssistantActions,
   ContentEditorAssistantContextChange,
+  ContentEditorAssistantRegistration,
 } from '../../content-editor-assistant';
 import { createContentEditorAssistantContext } from '../../content-editor-assistant';
 import type {
@@ -22,6 +24,24 @@ import ContentBodyEditor, {
   type ContentBodyEditorChange,
 } from './ContentBodyEditor.svelte';
 import ContentImageChooser from './ContentImageChooser.svelte';
+
+export interface Props {
+  apiBaseUrl?: string;
+  content?: any;
+  contentId?: string;
+  factAudit?: FactAuditStateData | null;
+  saveDisabled?: boolean;
+  saveNotice?: string | null;
+  agentChatEnabled?: boolean;
+  agentChatNotice?: string | null;
+  hideActions?: boolean;
+  hideChat?: boolean;
+  onAssistantContextChange?: ContentEditorAssistantContextChange;
+  onChange?: (data: any) => void;
+  onFactAuditChange?: (state: FactAuditStateData | null) => void;
+  onSave: (data: any) => void;
+  onCancel: () => void;
+}
 
 let {
   apiBaseUrl = '/api/v1',
@@ -39,23 +59,7 @@ let {
   onFactAuditChange = undefined,
   onSave,
   onCancel,
-} = $props<{
-  apiBaseUrl?: string;
-  content?: any;
-  contentId?: string;
-  factAudit?: FactAuditStateData | null;
-  saveDisabled?: boolean;
-  saveNotice?: string | null;
-  agentChatEnabled?: boolean;
-  agentChatNotice?: string | null;
-  hideActions?: boolean;
-  hideChat?: boolean;
-  onAssistantContextChange?: ContentEditorAssistantContextChange;
-  onChange?: (data: any) => void;
-  onFactAuditChange?: (state: FactAuditStateData | null) => void;
-  onSave: (data: any) => void;
-  onCancel: () => void;
-}>();
+}: Props = $props();
 
 let editForm = $state<HTMLFormElement | null>(null);
 
@@ -190,6 +194,40 @@ const assistantActions: ContentEditorAssistantActions = {
   applyFieldUpdates,
   undoLastFieldUpdate: undoLastApply,
 };
+const assistantRegistration = $derived({
+  context: assistantContext,
+  actions: assistantActions,
+});
+let activeAssistantContextCallback:
+  | ContentEditorAssistantContextChange
+  | undefined;
+let lastAssistantContextCallback:
+  | ContentEditorAssistantContextChange
+  | undefined;
+let lastAssistantRegistration:
+  | ContentEditorAssistantRegistration
+  | null
+  | undefined;
+
+function publishAssistantRegistration(
+  registration: ContentEditorAssistantRegistration | null,
+) {
+  const callback = activeAssistantContextCallback;
+  if (!callback) {
+    return;
+  }
+
+  if (
+    callback === lastAssistantContextCallback &&
+    registration === lastAssistantRegistration
+  ) {
+    return;
+  }
+
+  callback(registration);
+  lastAssistantContextCallback = callback;
+  lastAssistantRegistration = registration;
+}
 
 // When content prop changes from outside (different item), reset formData.
 $effect(() => {
@@ -207,19 +245,31 @@ $effect(() => {
 });
 
 $effect(() => {
-  onAssistantContextChange?.({
-    context: assistantContext,
-    actions: assistantActions,
-  });
-});
-
-$effect(() => {
   const callback = onAssistantContextChange;
+  activeAssistantContextCallback = callback;
   if (!callback) {
+    lastAssistantContextCallback = undefined;
+    lastAssistantRegistration = undefined;
     return;
   }
 
-  return () => callback(null);
+  publishAssistantRegistration(untrack(() => assistantRegistration));
+
+  return () => {
+    if (activeAssistantContextCallback === callback) {
+      activeAssistantContextCallback = undefined;
+    }
+    if (lastAssistantContextCallback === callback) {
+      lastAssistantContextCallback = undefined;
+      lastAssistantRegistration = undefined;
+    }
+    callback(null);
+  };
+});
+
+$effect(() => {
+  const registration = assistantRegistration;
+  untrack(() => publishAssistantRegistration(registration));
 });
 
 /** Called by ContentAgentChat when AI wants to update form fields */

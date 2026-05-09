@@ -20,6 +20,17 @@ const AI_MODELS = [
 ];
 const DEFAULT_MODEL_ID = AI_MODELS[0].id;
 
+export interface Props {
+  apiBaseUrl?: string;
+  assistantContext?: ContentEditorAssistantContext | null;
+  contentId?: string;
+  currentEditorState?: string;
+  currentReferenceIds?: string[];
+  formFields?: Record<string, string>;
+  onapplyfields?: (fields: Record<string, string>) => void;
+  onclose?: () => void;
+}
+
 let {
   apiBaseUrl = '/api/v1',
   assistantContext = null,
@@ -29,16 +40,7 @@ let {
   formFields = {},
   onapplyfields = undefined,
   onclose = undefined,
-} = $props<{
-  apiBaseUrl?: string;
-  assistantContext?: ContentEditorAssistantContext | null;
-  contentId?: string;
-  currentEditorState?: string;
-  currentReferenceIds?: string[];
-  formFields?: Record<string, string>;
-  onapplyfields?: (fields: Record<string, string>) => void;
-  onclose?: () => void;
-}>();
+}: Props = $props();
 
 let session = $state<any>(null);
 let threads = $state<any[]>([]);
