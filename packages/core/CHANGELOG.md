@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.6
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: Agents & Runtime packages Phase 2 alignment (epic #1191, category #1208) (#1209)
+  - @happyvertical/smrt-scanner@0.24.6
+  - @happyvertical/smrt-config@0.24.6
+  - @happyvertical/smrt-types@0.24.6
+
 ## 0.24.5
 
 ### Patch Changes
