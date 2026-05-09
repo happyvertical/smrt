@@ -104,6 +104,16 @@ chat sessions via `@happyvertical/smrt-chat`. Gracefully handles
 missing chat tables (returns `session: null` with notice).
 `ContentAgentChat` Svelte component provides the UI.
 
+For global assistant shells, `ContentEditor` and `GovernedContentEditor`
+support `onAssistantContextChange`. The callback receives a serializable
+`ContentEditorAssistantContext` plus local editor actions, and still fires when
+`hideChat={true}`. `ContentAgentChat` can be mounted outside the editor with an
+`assistantContext` prop. Server-side consumers can reuse the exported
+`getOrCreateContentEditorChatSession`, `createContentEditorChatThread`,
+`listContentEditorChatThreadMessages`, and
+`sendContentEditorChatThreadMessage` helpers for app-specific tenancy/auth/AI
+route wiring.
+
 ## Relationship Models
 
 - **ContentReference**: SMRT junction model backing `content_references` for content-to-content links

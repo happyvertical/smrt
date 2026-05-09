@@ -15,11 +15,44 @@ export type {
   MetadataAccessor,
 } from './asset-associable';
 export { isAssetAssociable, isMetadataAccessor } from './asset-associable';
+export type { ContentBodyFormat, ContentBodyImage } from './body-format';
+export {
+  bodyToEditorHtml,
+  DEFAULT_CONTENT_BODY_FORMAT,
+  editorHtmlToBody,
+  extractBodyImages,
+  htmlToMarkdown,
+  renderMarkdownToHtml,
+  resolveBodyFormat,
+  sanitizeHtml,
+  stripHtml,
+} from './body-format';
 export type { ContentOptions } from './content';
 export { Content } from './content';
 export type { ContentAssetOptions } from './content-asset';
 export { ContentAsset } from './content-asset';
 export { ContentAssetCollection } from './content-assets';
+export type {
+  ContentChatAIConfig,
+  ContentChatCollectionLike,
+  ContentChatSessionInput,
+  CreateContentChatThreadInput,
+  ListContentChatThreadMessagesInput,
+  ResolveContentChatAIInput,
+  ResolvedContentChatAI,
+  SendContentChatThreadMessageInput,
+} from './content-chat-handlers';
+export {
+  contentChatMessageToJSON,
+  contentChatSessionIsAuthorized,
+  contentChatSessionMatchesContent,
+  createContentEditorChatThread,
+  getOrCreateContentEditorChatSession,
+  listContentEditorChatThreadMessages,
+  resolveDefaultContentChatAI,
+  sendContentEditorChatThreadMessage,
+  serializeContentChatMessageForUI,
+} from './content-chat-handlers';
 export {
   contentEditorInteractionPrompt,
   contentEditorSessionPrompt,
@@ -92,6 +125,23 @@ export { ContentContributorCollection } from './content-contributors';
 export type { ContentCorrectionOptions } from './content-correction';
 export { ContentCorrection } from './content-correction';
 export { ContentCorrectionCollection } from './content-corrections';
+export type {
+  ContentEditorAssistantActions,
+  ContentEditorAssistantChatProps,
+  ContentEditorAssistantContext,
+  ContentEditorAssistantContextChange,
+  ContentEditorAssistantContextData,
+  ContentEditorAssistantEditorKind,
+  ContentEditorAssistantFactSummary,
+  ContentEditorAssistantFields,
+  ContentEditorAssistantGovernanceSummary,
+  ContentEditorAssistantRegistration,
+  CreateContentEditorAssistantContextInput,
+} from './content-editor-assistant';
+export {
+  contentEditorAssistantContextToChatProps,
+  createContentEditorAssistantContext,
+} from './content-editor-assistant';
 export type {
   ContentCorrectionStatus,
   ContentCorrectionType,

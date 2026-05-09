@@ -64,4 +64,21 @@ describe('Markdown component', () => {
     expect(root?.querySelector('script')).toBeNull();
     expect(root?.querySelector('strong')?.textContent).toBe('safe');
   });
+
+  it('renders markdown links and images safely', () => {
+    const target = renderMarkdown({
+      content:
+        '[Docs](https://example.com)\n\n![Alt](https://example.com/a.jpg)',
+    });
+
+    const root = target.querySelector('.markdown-content');
+    expect(root?.querySelector('a')?.getAttribute('href')).toBe(
+      'https://example.com',
+    );
+    expect(root?.querySelector('a')?.textContent).toBe('Docs');
+    expect(root?.querySelector('img')?.getAttribute('src')).toBe(
+      'https://example.com/a.jpg',
+    );
+    expect(root?.querySelector('img')?.getAttribute('alt')).toBe('Alt');
+  });
 });

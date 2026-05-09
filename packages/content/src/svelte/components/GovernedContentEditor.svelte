@@ -1,4 +1,9 @@
 <script lang="ts">
+import { untrack } from 'svelte';
+import type {
+  ContentEditorAssistantContextChange,
+  ContentEditorAssistantRegistration,
+} from '../../content-editor-assistant';
 import type {
   ContentData,
   ContentGovernanceStateData,
@@ -31,6 +36,7 @@ export interface Props {
   hideActions?: boolean;
   hideChat?: boolean;
   showFactCatalog?: boolean;
+  onAssistantContextChange?: ContentEditorAssistantContextChange;
   onSave: (data: GovernedContentEditorSaveData) => void;
   onCancel: () => void;
 }
@@ -52,6 +58,7 @@ let {
   hideActions = false,
   hideChat = false,
   showFactCatalog = false,
+  onAssistantContextChange = undefined,
   onSave,
   onCancel,
 }: Props = $props();
@@ -72,6 +79,8 @@ let lastResetKey = $state<string | null | undefined>(undefined);
 let draftContent = $state<ContentData | undefined>(undefined);
 let governanceState = $state<ContentGovernanceStateData | null>(null);
 let factAudit = $state<FactAuditStateData | null>(null);
+let editorAssistantRegistration =
+  $state<ContentEditorAssistantRegistration | null>(null);
 const resolvedContentId = $derived(content?.id ?? contentId);
 let innerEditor = $state<any>(null);
 
@@ -141,6 +150,103 @@ const publishSaveDisabled = $derived(
   Boolean(saveDisabled || publishReadinessState?.disableSave),
 );
 const resolvedSaveNotice = $derived(publishSaveNotice || saveNotice || null);
+const governedAssistantRegistration = $derived.by(() => {
+  if (!editorAssistantRegistration) {
+    return null;
+  }
+
+  const publishReadiness = publishReadinessState
+    ? {
+        level: publishReadinessState.level,
+        title: publishReadinessState.title,
+        message: publishReadinessState.message,
+        disableSave: publishReadinessState.disableSave,
+        details: [...publishReadinessState.details],
+      }
+    : null;
+
+  return {
+    context: {
+      ...editorAssistantRegistration.context,
+      data: {
+        ...editorAssistantRegistration.context.data,
+        editorKind: 'governed' as const,
+        facts: {
+          factIds: [...selectedFactIds],
+          factCount: selectedFacts.length || selectedFactIds.length,
+        },
+        governance: {
+          reviewProfileKey: activeReviewProfileKey,
+          enforcePublishReadiness: activeEnforcePublishReadiness,
+          publishReadiness,
+        },
+      },
+    },
+    actions: {
+      ...editorAssistantRegistration.actions,
+      triggerSave,
+      triggerReview,
+    },
+  } satisfies ContentEditorAssistantRegistration;
+});
+let activeAssistantContextCallback:
+  | ContentEditorAssistantContextChange
+  | undefined;
+let lastAssistantContextCallback:
+  | ContentEditorAssistantContextChange
+  | undefined;
+let lastAssistantRegistration:
+  | ContentEditorAssistantRegistration
+  | null
+  | undefined;
+
+function publishAssistantRegistration(
+  registration: ContentEditorAssistantRegistration | null,
+) {
+  const callback = activeAssistantContextCallback;
+  if (!callback) {
+    return;
+  }
+
+  if (
+    callback === lastAssistantContextCallback &&
+    registration === lastAssistantRegistration
+  ) {
+    return;
+  }
+
+  callback(registration);
+  lastAssistantContextCallback = callback;
+  lastAssistantRegistration = registration;
+}
+
+$effect(() => {
+  const callback = onAssistantContextChange;
+  activeAssistantContextCallback = callback;
+  if (!callback) {
+    lastAssistantContextCallback = undefined;
+    lastAssistantRegistration = undefined;
+    return;
+  }
+
+  publishAssistantRegistration(untrack(() => governedAssistantRegistration));
+
+  return () => {
+    if (activeAssistantContextCallback === callback) {
+      activeAssistantContextCallback = undefined;
+    }
+    if (lastAssistantContextCallback === callback) {
+      lastAssistantContextCallback = undefined;
+      lastAssistantRegistration = undefined;
+    }
+    callback(null);
+  };
+});
+
+$effect(() => {
+  const registration = governedAssistantRegistration;
+  untrack(() => publishAssistantRegistration(registration));
+});
 
 function handleFactsChange(factIds: string[], facts: FactData[]) {
   selectedFactIds = factIds;
@@ -157,6 +263,12 @@ function handleGovernanceStateChange(state: ContentGovernanceStateData | null) {
 
 function handleFactAuditChange(state: FactAuditStateData | null) {
   factAudit = state;
+}
+
+function handleEditorAssistantContextChange(
+  registration: ContentEditorAssistantRegistration | null,
+) {
+  editorAssistantRegistration = registration;
 }
 
 function handleSave(data: ContentData) {
@@ -206,6 +318,7 @@ function handleSave(data: ContentData) {
     {agentChatNotice}
     {hideActions}
     {hideChat}
+    onAssistantContextChange={handleEditorAssistantContextChange}
     onChange={handleEditorChange}
     onFactAuditChange={handleFactAuditChange}
     onSave={handleSave}

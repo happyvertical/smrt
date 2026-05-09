@@ -30,6 +30,7 @@ function renderEditor(
     agentChatNotice?: string | null;
     hideActions?: boolean;
     hideChat?: boolean;
+    onAssistantContextChange?: (registration: any) => void;
     onChange?: (data: any) => void;
     onSave?: (data: any) => void;
     onCancel?: () => void;
@@ -51,6 +52,7 @@ function renderEditor(
       agentChatNotice: props.agentChatNotice,
       hideActions: props.hideActions,
       hideChat: props.hideChat,
+      onAssistantContextChange: props.onAssistantContextChange,
       onChange: props.onChange ?? vi.fn(),
       onSave: props.onSave ?? vi.fn(),
       onCancel: props.onCancel ?? vi.fn(),
@@ -67,6 +69,7 @@ function renderGovernedEditor(props: {
   content?: any;
   contentId?: string;
   hideChat?: boolean;
+  onAssistantContextChange?: (registration: any) => void;
   onSave?: (data: any) => void;
   onCancel?: () => void;
 }) {
@@ -79,6 +82,7 @@ function renderGovernedEditor(props: {
       content: props.content,
       contentId: props.contentId ?? 'new',
       hideChat: props.hideChat,
+      onAssistantContextChange: props.onAssistantContextChange,
       onSave: props.onSave ?? vi.fn(),
       onCancel: props.onCancel ?? vi.fn(),
     },
@@ -410,6 +414,464 @@ describe('ContentEditor component', () => {
     );
   });
 
+  it('saves the inferred HTML body format for legacy HTML records', () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'HTML Article',
+        body: '<p>Existing HTML</p>',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave,
+    });
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyFormat: 'html',
+      }),
+    );
+  });
+
+  it('can switch the body save format to markdown', async () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'HTML Article',
+        body: '<p>Existing <strong>HTML</strong></p>',
+        bodyFormat: 'html',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave,
+    });
+
+    await vi.waitFor(() =>
+      expect(target.querySelector('.body-editor-surface')?.innerHTML).toContain(
+        'Existing',
+      ),
+    );
+
+    const formatSelect = target.querySelector(
+      '.format-select select',
+    ) as HTMLSelectElement | null;
+    expect(formatSelect).not.toBeNull();
+    if (!formatSelect) {
+      throw new Error('Expected body format select to be rendered');
+    }
+
+    formatSelect.value = 'markdown';
+    formatSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    flushSync();
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        bodyFormat: 'markdown',
+        body: expect.stringContaining('Existing **HTML**'),
+      }),
+    );
+  });
+
+  it('drops image URLs into the body editor and chooses the first image as thumbnail', async () => {
+    const onSave = vi.fn();
+    vi.mocked(fetch).mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 'image-inline-1',
+        name: 'Inline Image',
+        sourceUri: 'https://example.com/inline.jpg',
+      }),
+    } as Response);
+
+    const target = renderEditor({
+      content: {
+        title: 'Inline Article',
+        body: '<p>Intro</p>',
+        bodyFormat: 'html',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave,
+    });
+
+    const bodySurface = target.querySelector(
+      '.body-editor-surface',
+    ) as HTMLElement | null;
+    expect(bodySurface).not.toBeNull();
+    if (!bodySurface) {
+      throw new Error('Expected body editor surface to be rendered');
+    }
+
+    bodySurface.dispatchEvent(
+      createDropEvent({
+        getData: (type) =>
+          type === 'text/plain' ? 'https://example.com/inline.jpg' : '',
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/v1/images',
+        expect.objectContaining({
+          method: 'POST',
+        }),
+      ),
+    );
+
+    await vi.waitFor(() =>
+      expect(bodySurface.querySelector('img')?.getAttribute('src')).toBe(
+        'https://example.com/inline.jpg',
+      ),
+    );
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thumbnailAssetId: 'image-inline-1',
+        assetIds: ['image-inline-1'],
+        body: expect.stringContaining('data-smrt-asset-id="image-inline-1"'),
+      }),
+    );
+    expect(onSave.mock.calls[0]?.[0].body).toContain(
+      'data-smrt-inline-image="true"',
+    );
+    expect(onSave.mock.calls[0]?.[0].body).not.toContain('<figure');
+  });
+
+  it('drops gallery image payloads into the body editor', async () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'Gallery Drag Article',
+        body: '<p>Intro</p>',
+        bodyFormat: 'html',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave,
+    });
+
+    const bodySurface = target.querySelector(
+      '.body-editor-surface',
+    ) as HTMLElement | null;
+    expect(bodySurface).not.toBeNull();
+    if (!bodySurface) {
+      throw new Error('Expected body editor surface to be rendered');
+    }
+
+    bodySurface.dispatchEvent(
+      createDropEvent({
+        getData: (type) =>
+          type === 'application/x-smrt-image'
+            ? JSON.stringify({
+                id: 'asset-inline-1',
+                name: 'Gallery Asset',
+                sourceUri: 'https://example.com/gallery.jpg',
+                alt: 'Gallery alt',
+              })
+            : '',
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(bodySurface.querySelector('img')?.getAttribute('src')).toBe(
+        'https://example.com/gallery.jpg',
+      ),
+    );
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thumbnailAssetId: 'asset-inline-1',
+        assetIds: ['asset-inline-1'],
+        body: expect.stringContaining('data-smrt-asset-id="asset-inline-1"'),
+      }),
+    );
+  });
+
+  it('drags attached media images into the body editor', async () => {
+    const asset = {
+      id: 'asset-attached-1',
+      name: 'Attached Asset',
+      sourceUri: 'https://example.com/attached.jpg',
+      alt: 'Attached alt',
+    };
+    const target = renderEditor({
+      content: {
+        title: 'Attached Image Drag Article',
+        body: '<p>Intro</p>',
+        bodyFormat: 'html',
+        thumbnailAssetId: asset.id,
+        referenceIds: [],
+        assetIds: [asset.id],
+        assets: [asset],
+      },
+    });
+
+    const mediaItem = target.querySelector('.media-item') as HTMLElement | null;
+    const bodySurface = target.querySelector(
+      '.body-editor-surface',
+    ) as HTMLElement | null;
+    expect(mediaItem).not.toBeNull();
+    expect(bodySurface).not.toBeNull();
+    if (!mediaItem || !bodySurface) {
+      throw new Error('Expected media item and body editor surface');
+    }
+
+    const dragData = new Map<string, string>();
+    const dataTransfer = {
+      effectAllowed: 'none',
+      files: [],
+      setData: vi.fn((type: string, value: string) => {
+        dragData.set(type, value);
+      }),
+      getData: vi.fn((type: string) => dragData.get(type) || ''),
+    };
+    const dragStart = new Event('dragstart', {
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(dragStart, 'dataTransfer', {
+      value: dataTransfer,
+    });
+
+    mediaItem.dispatchEvent(dragStart);
+    expect(dataTransfer.effectAllowed).toBe('copy');
+    expect(dataTransfer.setData).toHaveBeenCalledWith(
+      'application/x-smrt-image',
+      expect.any(String),
+    );
+    expect(dragData.get('text/plain')).toBe(asset.sourceUri);
+
+    bodySurface.dispatchEvent(
+      createDropEvent({
+        getData: (type) => dragData.get(type) || '',
+      }),
+    );
+
+    await vi.waitFor(() =>
+      expect(bodySurface.querySelector('img')?.getAttribute('src')).toBe(
+        asset.sourceUri,
+      ),
+    );
+  });
+
+  it('cycles body images with the inline image chooser arrows', async () => {
+    const target = renderEditor({
+      content: {
+        title: 'Gallery Article',
+        body: '<p>Intro</p><img src="https://example.com/a.jpg" alt="A"><img src="https://example.com/b.jpg" alt="B">',
+        bodyFormat: 'html',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+    });
+
+    await vi.waitFor(() =>
+      expect(target.querySelectorAll('.body-editor-surface img').length).toBe(
+        2,
+      ),
+    );
+
+    const nextButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.getAttribute('aria-label') === 'Next body image',
+    );
+    expect(nextButton).toBeDefined();
+    nextButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+
+    const selected = target.querySelector(
+      '.body-editor-surface img[data-smrt-selected="true"]',
+    ) as HTMLImageElement | null;
+    expect(selected?.getAttribute('src')).toBe('https://example.com/b.jpg');
+  });
+
+  it('adds image placement, resize, primary, and remove controls for HTML bodies', () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'Image Controls Article',
+        body: '<p>Intro text that should wrap.</p><figure data-smrt-inline-image="true" data-smrt-placement="block"><img src="https://example.com/body.jpg" alt="Body" data-smrt-asset-id="asset-body"></figure><p>More copy.</p>',
+        bodyFormat: 'html',
+        thumbnailAssetId: null,
+        referenceIds: [],
+        assetIds: ['asset-body'],
+        assets: [
+          {
+            id: 'asset-body',
+            name: 'Body',
+            sourceUri: 'https://example.com/body.jpg',
+          },
+        ],
+      },
+      onSave,
+    });
+
+    const bodyImage = target.querySelector(
+      '.body-editor-surface img',
+    ) as HTMLImageElement | null;
+    expect(bodyImage).not.toBeNull();
+    bodyImage?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    flushSync();
+
+    const wrapRightButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === 'Wrap text on left',
+    );
+    const largerButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === 'Make larger',
+    );
+    const primaryButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === 'Use as primary image',
+    );
+    expect(wrapRightButton).toBeDefined();
+    expect(largerButton).toBeDefined();
+    expect(primaryButton).toBeDefined();
+
+    wrapRightButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    largerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    primaryButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        thumbnailAssetId: 'asset-body',
+        bodyFormat: 'html',
+        body: expect.stringContaining('data-smrt-placement="right"'),
+      }),
+    );
+    expect(onSave.mock.calls[0]?.[0].body).toMatch(/data-smrt-width="\d+"/);
+
+    const removeButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === 'Remove image',
+    );
+    removeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(onSave.mock.calls[1]?.[0].body).not.toContain(
+      'https://example.com/body.jpg',
+    );
+  });
+
+  it('keeps the caret in text after clearing a selected body image', () => {
+    const target = renderEditor({
+      content: {
+        title: 'Image Caret Article',
+        body: '<p>Intro text.</p><figure data-smrt-inline-image="true" data-smrt-placement="left"><img src="https://example.com/body.jpg" alt="Body"></figure><p>More copy after the image.</p>',
+        bodyFormat: 'html',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+    });
+
+    const bodySurface = target.querySelector(
+      '.body-editor-surface',
+    ) as HTMLElement | null;
+    const bodyImage = bodySurface?.querySelector(
+      'img',
+    ) as HTMLImageElement | null;
+    const textParagraph = Array.from(
+      bodySurface?.querySelectorAll('p') || [],
+    ).find((paragraph) =>
+      paragraph.textContent?.includes('More copy after the image.'),
+    );
+
+    expect(bodyImage).not.toBeNull();
+    expect(textParagraph).toBeDefined();
+
+    bodyImage?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    flushSync();
+
+    expect(bodyImage?.getAttribute('data-smrt-selected')).toBe('true');
+
+    textParagraph?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    flushSync();
+
+    expect(bodyImage?.hasAttribute('data-smrt-selected')).toBe(false);
+
+    bodySurface?.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+
+    expect(bodyImage?.hasAttribute('data-smrt-selected')).toBe(false);
+  });
+
+  it('keeps markdown saves as markdown when image layout controls are used', () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'Markdown Image Controls',
+        body: 'Intro\n\n![Body](https://example.com/body.jpg)\n\nMore copy.',
+        bodyFormat: 'markdown',
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onSave,
+    });
+
+    const bodyImage = target.querySelector(
+      '.body-editor-surface img',
+    ) as HTMLImageElement | null;
+    expect(bodyImage).not.toBeNull();
+    bodyImage?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true, cancelable: true }),
+    );
+    flushSync();
+
+    const wrapLeftButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === 'Wrap text on right',
+    );
+    const smallerButton = Array.from(target.querySelectorAll('button')).find(
+      (button) => button.getAttribute('title') === 'Make smaller',
+    );
+    wrapLeftButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    smallerButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    const saved = onSave.mock.calls[0]?.[0];
+    expect(saved.bodyFormat).toBe('markdown');
+    expect(saved.body).toContain('![Body](https://example.com/body.jpg)');
+    expect(saved.body).not.toContain('data-smrt-placement');
+    expect(saved.body).not.toContain('data-smrt-width');
+  });
+
   it('creates placeholder reference records for dropped files without storing data URLs', async () => {
     vi.mocked(fetch).mockResolvedValue({
       ok: true,
@@ -617,5 +1079,115 @@ describe('ContentEditor component', () => {
         .querySelector('.editor-grid')
         ?.classList.contains('editor-grid--with-sidebar'),
     ).toBe(false);
+  });
+
+  it('publishes assistant context and actions when the chat sidebar is hidden', () => {
+    const onAssistantContextChange = vi.fn();
+    renderEditor({
+      hideChat: true,
+      contentId: 'content-1',
+      content: {
+        id: 'content-1',
+        title: 'Assistant Article',
+        description: 'Draft deck',
+        body: 'Initial body',
+        type: 'article',
+        status: 'draft',
+        state: 'active',
+        referenceIds: ['ref-1'],
+        assetIds: [],
+        assets: [],
+      },
+      onAssistantContextChange,
+    });
+
+    const registration = onAssistantContextChange.mock.calls
+      .map(([value]) => value)
+      .filter(Boolean)
+      .at(-1);
+
+    expect(registration?.context).toMatchObject({
+      type: 'content.editor',
+      title: 'Assistant Article',
+      data: {
+        contentId: 'content-1',
+        contentType: 'article',
+        editorKind: 'content',
+        currentEditorState: 'Initial body',
+        referenceIds: ['ref-1'],
+        fields: {
+          title: 'Assistant Article',
+          description: 'Draft deck',
+          type: 'article',
+          status: 'draft',
+          state: 'active',
+          body: 'Initial body',
+        },
+      },
+    });
+    expect(registration?.actions.triggerSave).toEqual(expect.any(Function));
+    expect(registration?.actions.applyFieldUpdates).toEqual(
+      expect.any(Function),
+    );
+
+    registration.actions.applyFieldUpdates({ title: 'AI title' });
+    flushSync();
+
+    const updatedRegistration = onAssistantContextChange.mock.calls
+      .map(([value]) => value)
+      .filter(Boolean)
+      .at(-1);
+    expect(updatedRegistration?.context.title).toBe('AI title');
+    expect(updatedRegistration?.context.data.fields.title).toBe('AI title');
+    expect(
+      onAssistantContextChange.mock.calls.some(([value]) => value === null),
+    ).toBe(false);
+  });
+
+  it('adds governance and review actions to governed assistant context', () => {
+    const onAssistantContextChange = vi.fn();
+    renderGovernedEditor({
+      hideChat: true,
+      contentId: 'content-1',
+      content: {
+        id: 'content-1',
+        title: 'Governed Article',
+        body: 'Governed body',
+        type: 'article',
+        status: 'published',
+        state: 'active',
+        factIds: ['fact-1'],
+        facts: [
+          {
+            id: 'fact-1',
+            textRefined: 'Council approved the waterline phase two work.',
+          },
+        ],
+        referenceIds: [],
+        assetIds: [],
+        assets: [],
+      },
+      onAssistantContextChange,
+    });
+
+    const registration = onAssistantContextChange.mock.calls
+      .map(([value]) => value)
+      .filter(Boolean)
+      .at(-1);
+
+    expect(registration?.context.data).toMatchObject({
+      contentId: 'content-1',
+      editorKind: 'governed',
+      facts: {
+        factIds: ['fact-1'],
+        factCount: 1,
+      },
+      governance: {
+        reviewProfileKey: 'publication',
+        enforcePublishReadiness: false,
+      },
+    });
+    expect(registration?.actions.triggerSave).toEqual(expect.any(Function));
+    expect(registration?.actions.triggerReview).toEqual(expect.any(Function));
   });
 });

@@ -9,6 +9,7 @@ import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { makeSlug } from '@happyvertical/utils';
 import YAML from 'yaml';
+import { htmlToMarkdown, resolveBodyFormat } from './body-format';
 import { Content } from './content';
 import {
   getEffectiveContentGovernanceConfig,
@@ -357,9 +358,12 @@ export class Contents extends SmrtCollection<Content> {
       output += '---\n';
     }
 
-    // Format body as markdown if it's plain text
+    // Filesystem exports are markdown regardless of the editor save format.
     let formattedBody = body || '';
-    if (body && !this.isMarkdown(body)) {
+    const bodyFormat = resolveBodyFormat(content.bodyFormat, body);
+    if (bodyFormat === 'html') {
+      formattedBody = htmlToMarkdown(body || '');
+    } else if (body && !this.isMarkdown(body)) {
       formattedBody = this.formatAsMarkdown(body);
     }
     output += formattedBody;

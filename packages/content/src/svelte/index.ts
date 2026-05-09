@@ -14,6 +14,8 @@ import { CONTENT_MODULE_META } from '../ui.js';
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import ContentBodyEditor from './components/ContentBodyEditor.svelte';
+import ContentBodyRenderer from './components/ContentBodyRenderer.svelte';
 import ContentContributionForm from './components/ContentContributionForm.svelte';
 import ContentContributionInbox from './components/ContentContributionInbox.svelte';
 import ContentContributionPortal from './components/ContentContributionPortal.svelte';
@@ -25,6 +27,7 @@ import ContentGovernanceManager from './components/ContentGovernanceManager.svel
 import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
 import ContentGovernancePolicyEditor from './components/ContentGovernancePolicyEditor.svelte';
 import ContentGovernanceProfileEditor from './components/ContentGovernanceProfileEditor.svelte';
+import ContentImageChooser from './components/ContentImageChooser.svelte';
 import ContentList from './components/ContentList.svelte';
 import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
 import GovernedContentEditor from './components/GovernedContentEditor.svelte';
@@ -53,12 +56,15 @@ export {
   ContentContributionPortal,
   ContentContributionTypeManager,
   ContentContributorManager,
+  ContentBodyEditor,
+  ContentBodyRenderer,
   ContentEditor,
   ContentGovernanceAssignmentEditor,
   ContentGovernanceManager,
   ContentGovernancePanel,
   ContentGovernancePolicyEditor,
   ContentGovernanceProfileEditor,
+  ContentImageChooser,
   ContentList,
   ContentTransparencyReport,
   ContentContributionsRoute,
@@ -81,6 +87,13 @@ export {
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
 export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
+export type ContentBodyEditorProps = ComponentProps<typeof ContentBodyEditor>;
+export type ContentBodyRendererProps = ComponentProps<
+  typeof ContentBodyRenderer
+>;
+export type ContentImageChooserProps = ComponentProps<
+  typeof ContentImageChooser
+>;
 export type ContentListProps = ComponentProps<typeof ContentList>;
 export type ContentContributionFormProps = ComponentProps<
   typeof ContentContributionForm
@@ -133,6 +146,24 @@ export type PublishedArticleRouteProps = ComponentProps<
   typeof PublishedArticleRoute
 >;
 
+// Export types
+export type {
+  ContentEditorAssistantActions,
+  ContentEditorAssistantChatProps,
+  ContentEditorAssistantContext,
+  ContentEditorAssistantContextChange,
+  ContentEditorAssistantContextData,
+  ContentEditorAssistantEditorKind,
+  ContentEditorAssistantFactSummary,
+  ContentEditorAssistantFields,
+  ContentEditorAssistantGovernanceSummary,
+  ContentEditorAssistantRegistration,
+  CreateContentEditorAssistantContextInput,
+} from '../content-editor-assistant.js';
+export {
+  contentEditorAssistantContextToChatProps,
+  createContentEditorAssistantContext,
+} from '../content-editor-assistant.js';
 export type {
   ContentRouteId,
   ContentRouteKey,
@@ -140,7 +171,6 @@ export type {
   LoadPublishedArticleRouteInput,
   PublishedContentArticleRouteData,
 } from './routes/shared.js';
-// Export types
 export type {
   Article,
   ArticleCardProps as ArticleCardPropsLegacy,

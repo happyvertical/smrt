@@ -16,6 +16,8 @@ export default defineConfig(async ({ mode }) => {
     // externals, dts generation, and svelte-package exclusion.
     const config = createPackageConfig('content', {
       entries: [
+        'body-format',
+        'content-editor-assistant',
         'ui',
         'mock-smrt-client',
         'playground',
