@@ -16,29 +16,107 @@
   ],
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "browser": "./dist/browser.js",
+      "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
-    "./utils": "./dist/utils.js",
-    "./schema/utils": "./dist/schema/utils.js",
-    "./generators": "./dist/generators.js",
-    "./generators/rest": "./dist/generators/rest.js",
-    "./generators/mcp": "./dist/generators/mcp.js",
-    "./generators/swagger": "./dist/generators/swagger.js",
-    "./manifest": "./dist/manifest.js",
+    "./utils": {
+      "types": "./dist/utils.d.ts",
+      "import": "./dist/utils.js",
+      "default": "./dist/utils.js"
+    },
+    "./schema/utils": {
+      "types": "./dist/schema/utils.d.ts",
+      "import": "./dist/schema/utils.js",
+      "default": "./dist/schema/utils.js"
+    },
+    "./generators": {
+      "types": "./dist/generators.d.ts",
+      "import": "./dist/generators.js",
+      "default": "./dist/generators.js"
+    },
+    "./generators/rest": {
+      "types": "./dist/generators/rest.d.ts",
+      "import": "./dist/generators/rest.js",
+      "default": "./dist/generators/rest.js"
+    },
+    "./generators/mcp": {
+      "types": "./dist/generators/mcp.d.ts",
+      "import": "./dist/generators/mcp.js",
+      "default": "./dist/generators/mcp.js"
+    },
+    "./generators/swagger": {
+      "types": "./dist/generators/swagger.d.ts",
+      "import": "./dist/generators/swagger.js",
+      "default": "./dist/generators/swagger.js"
+    },
+    "./manifest": {
+      "types": "./dist/manifest.d.ts",
+      "import": "./dist/manifest.js",
+      "default": "./dist/manifest.js"
+    },
     "./manifest.json": "./dist/manifest.json",
-    "./vite-plugin": "./dist/vite-plugin.js",
-    "./runtime": "./dist/runtime.js",
-    "./prebuild": "./dist/prebuild.js",
-    "./prebuild/cli": "./dist/prebuild/cli.js",
-    "./consumer-plugin": "./dist/consumer-plugin.js",
-    "./scanner": "./dist/scanner.js",
-    "./scanner/types": "./dist/scanner/types.js",
-    "./manifest/discover-smrt-packages": "./dist/manifest/discover-smrt-packages.js",
-    "./manifest/discover-base-classes": "./dist/manifest/discover-base-classes.js",
-    "./utils/import-workspace-module": "./dist/utils/import-workspace-module.js",
-    "./migrations": "./dist/migrations.js",
-    "./testing": "./dist/testing.js"
+    "./vite-plugin": {
+      "types": "./dist/vite-plugin.d.ts",
+      "import": "./dist/vite-plugin.js",
+      "default": "./dist/vite-plugin.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js",
+      "default": "./dist/runtime.js"
+    },
+    "./prebuild": {
+      "types": "./dist/prebuild.d.ts",
+      "import": "./dist/prebuild.js",
+      "default": "./dist/prebuild.js"
+    },
+    "./prebuild/cli": {
+      "types": "./dist/prebuild/cli.d.ts",
+      "import": "./dist/prebuild/cli.js",
+      "default": "./dist/prebuild/cli.js"
+    },
+    "./consumer-plugin": {
+      "types": "./dist/consumer-plugin.d.ts",
+      "import": "./dist/consumer-plugin.js",
+      "default": "./dist/consumer-plugin.js"
+    },
+    "./scanner": {
+      "types": "./dist/scanner.d.ts",
+      "import": "./dist/scanner.js",
+      "default": "./dist/scanner.js"
+    },
+    "./scanner/types": {
+      "types": "./dist/scanner/types.d.ts",
+      "import": "./dist/scanner/types.js",
+      "default": "./dist/scanner/types.js"
+    },
+    "./manifest/discover-smrt-packages": {
+      "types": "./dist/manifest/discover-smrt-packages.d.ts",
+      "import": "./dist/manifest/discover-smrt-packages.js",
+      "default": "./dist/manifest/discover-smrt-packages.js"
+    },
+    "./manifest/discover-base-classes": {
+      "types": "./dist/manifest/discover-base-classes.d.ts",
+      "import": "./dist/manifest/discover-base-classes.js",
+      "default": "./dist/manifest/discover-base-classes.js"
+    },
+    "./utils/import-workspace-module": {
+      "types": "./dist/utils/import-workspace-module.d.ts",
+      "import": "./dist/utils/import-workspace-module.js",
+      "default": "./dist/utils/import-workspace-module.js"
+    },
+    "./migrations": {
+      "types": "./dist/migrations.d.ts",
+      "import": "./dist/migrations.js",
+      "default": "./dist/migrations.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
+    }
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",
