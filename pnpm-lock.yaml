@@ -1069,6 +1069,52 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/languages:
+    dependencies:
+      '@happyvertical/ai':
+        specifier: ^0.73.2
+        version: 0.73.2(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
+      '@happyvertical/smrt-config':
+        specifier: workspace:*
+        version: link:../config
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-features':
+        specifier: workspace:*
+        version: link:../features
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/sql':
+        specifier: ^0.73.2
+        version: 0.73.2
+    devDependencies:
+      '@happyvertical/smrt-cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
+
   packages/ledgers:
     dependencies:
       '@happyvertical/smrt-core':
@@ -3102,6 +3148,11 @@ packages:
     peerDependencies:
       jimp: '>=1.6.1'
       sharp: '>=0.34.5'
+    peerDependenciesMeta:
+      jimp:
+        optional: true
+      sharp:
+        optional: true
 
   '@happyvertical/jobs@0.73.2':
     resolution: {integrity: sha512-9J6w8v6mznflNIEE7t8lK4qDzLSNQ++5nmlAPEvzHcsRER0edDXMxlj6k4jmKACBjteBAa/pk/2vv5+Ui1cd8g==, tarball: https://npm.pkg.github.com/download/@happyvertical/jobs/0.73.2/eca86edc045db40a0698614a96da8f95396e1c38}
@@ -3111,6 +3162,15 @@ packages:
       '@google-cloud/tasks': '>=4.1.0'
       bull: '>=4.16.5'
       bullmq: '>=5.76.0'
+    peerDependenciesMeta:
+      '@aws-sdk/client-sqs':
+        optional: true
+      '@google-cloud/tasks':
+        optional: true
+      bull:
+        optional: true
+      bullmq:
+        optional: true
 
   '@happyvertical/json@0.73.2':
     resolution: {integrity: sha512-I+DN5t1V71kEl9dS6sEjJ8U/gyYs5tkSt+1YNSnT1hayZeyNuFbQ2EDvAbjAzeB4bm4e8PMER/DTcsLULT94kA==, tarball: https://npm.pkg.github.com/download/@happyvertical/json/0.73.2/9e82a8c46cc2456523daf11866ef97b7bbdc7013}
@@ -3120,6 +3180,9 @@ packages:
     hasBin: true
     peerDependencies:
       '@sentry/node': '>=10.49.0'
+    peerDependenciesMeta:
+      '@sentry/node':
+        optional: true
 
   '@happyvertical/messages@0.73.2':
     resolution: {integrity: sha512-YJ6aIHAftH0fSHjYWavzhULYb5LQLrBAwUKiOaCTJs+LOtVDpleoXvqMOnU1woMKtzVyOTSpF79sGQCN+9KBWA==, tarball: https://npm.pkg.github.com/download/@happyvertical/messages/0.73.2/563be2a38a81a81de8b06b12e6c9404fd0734dcf}
@@ -10842,16 +10905,18 @@ snapshots:
   '@happyvertical/images@0.73.2(jimp@1.6.1)(sharp@0.34.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
-      jimp: 1.6.1
       satori: 0.26.0
+    optionalDependencies:
+      jimp: 1.6.1
       sharp: 0.34.5
 
   '@happyvertical/jobs@0.73.2(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.76.4)':
     dependencies:
-      '@aws-sdk/client-sqs': 3.1038.0
-      '@google-cloud/tasks': 6.2.1
       '@happyvertical/sql': 0.73.2
       '@happyvertical/utils': 0.73.2
+    optionalDependencies:
+      '@aws-sdk/client-sqs': 3.1038.0
+      '@google-cloud/tasks': 6.2.1
       bull: 4.16.5
       bullmq: 5.76.4
     transitivePeerDependencies:
@@ -10865,6 +10930,7 @@ snapshots:
   '@happyvertical/logger@0.73.2(@sentry/node@10.51.0)':
     dependencies:
       '@happyvertical/utils': 0.73.2
+    optionalDependencies:
       '@sentry/node': 10.51.0
 
   '@happyvertical/messages@0.73.2(@sentry/node@10.51.0)':
