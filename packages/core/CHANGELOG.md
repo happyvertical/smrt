@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.2
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: monorepo standards alignment (epic #1191) (#1202)
+  - @happyvertical/smrt-scanner@0.24.2
+  - @happyvertical/smrt-config@0.24.2
+  - @happyvertical/smrt-types@0.24.2
+
 ## 0.24.1
 
 ### Patch Changes
