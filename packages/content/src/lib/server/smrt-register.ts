@@ -17,6 +17,7 @@ import { ContentContributionRevision } from '../../content-contribution-revision
 import { ContentContributionType } from '../../content-contribution-type';
 import { ContentContributor } from '../../content-contributor';
 import { ContentCorrection } from '../../content-correction';
+import { ContentFeedSource } from '../../content-feed-source';
 import { ContentGovernanceAssignment } from '../../content-governance-assignment';
 import { ContentGovernancePolicy } from '../../content-governance-policy';
 import { ContentGovernanceProfile } from '../../content-governance-profile';
@@ -31,6 +32,7 @@ import '../../content-contribution-types';
 import '../../content-contributions';
 import '../../content-contributors';
 import '../../content-corrections';
+import '../../content-feed-sources';
 import '../../content-governance-assignments';
 import '../../content-governance-policies';
 import '../../content-governance-profiles';
@@ -66,6 +68,10 @@ ObjectRegistry.register(ContentContributor, {
 });
 ObjectRegistry.register(ContentCorrection, {
   name: 'ContentCorrection',
+  packageName: '@happyvertical/smrt-content',
+});
+ObjectRegistry.register(ContentFeedSource, {
+  name: 'ContentFeedSource',
   packageName: '@happyvertical/smrt-content',
 });
 ObjectRegistry.register(ContentGovernanceAssignment, {

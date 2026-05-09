@@ -143,6 +143,24 @@ export {
   createContentEditorAssistantContext,
 } from './content-editor-assistant';
 export type {
+  ContentFeedFormat,
+  ParsedContentFeed,
+  ParsedContentFeedItem,
+} from './content-feed-parser';
+export { parseContentFeed } from './content-feed-parser';
+export type {
+  ContentFeedSourceOptions,
+  ContentFeedSourceStatus,
+} from './content-feed-source';
+export { ContentFeedSource } from './content-feed-source';
+export type { ContentFeedSourceCollectionOptions } from './content-feed-sources';
+export { ContentFeedSourceCollection } from './content-feed-sources';
+export type {
+  ContentFeedSyncOptions,
+  ContentFeedSyncResult,
+} from './content-feed-sync';
+export { syncContentFeedSource } from './content-feed-sync';
+export type {
   ContentCorrectionStatus,
   ContentCorrectionType,
   ContentGovernanceAssignmentDefinition,
@@ -215,6 +233,7 @@ export type {
   ContentTransparencyVersionHistoryItem,
 } from './content-transparency';
 export { normalizeContentTransparency } from './content-transparency';
+export type { MirrorOptions } from './content-types';
 // Content subclasses (STI)
 export {
   Article,
