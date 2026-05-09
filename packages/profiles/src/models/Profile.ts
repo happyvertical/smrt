@@ -20,7 +20,12 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  promptMessageOptions,
+  smrtProfilesGenerateBioPrompt,
+} from '../prompts';
 import type { ProfileRelationship } from './ProfileRelationship';
 import { ProfileType } from './ProfileType';
 
@@ -488,10 +493,38 @@ export class Profile extends SmrtObject {
   /**
    * AI-powered: Generate a professional bio for this profile
    *
+   * Uses the `smrtProfiles.profile.generateBio` prompt registered via
+   * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
    * @returns Generated bio text
    */
   async generateBio(): Promise<string> {
-    return await this.do('Write a short, professional bio for this person.');
+    const resolvedPrompt = await resolvePrompt(
+      smrtProfilesGenerateBioPrompt.key,
+      {
+        db: this.options.db,
+        tenantId: this.tenantId,
+        variables: {
+          profileName: this.name || '',
+          profileEmail: this.email || '',
+          profileDescription: this.description || '',
+        },
+      },
+    );
+
+    const ai = await this.getAiClient();
+    if (typeof (ai as any).message !== 'function') {
+      throw new Error(
+        'AI bio generation requires an AI client with a message() method',
+      );
+    }
+
+    const response = await (
+      ai as { message: (prompt: string, options?: any) => Promise<string> }
+    ).message(resolvedPrompt.text, promptMessageOptions(resolvedPrompt.ai));
+
+    return response.trim();
   }
 
   /**

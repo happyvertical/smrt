@@ -4,7 +4,7 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 
 ## Models
 
-- **Profile** (STI base → Bot, Organization, Person): email (globally unique), `typeId` FK to ProfileType, `metadata`
+- **Profile** (STI base → Bot, Organization, Person): email (globally unique), `typeId` FK to ProfileType, plus a `metadata` `@oneToMany('ProfileMetadata')` relationship for controlled per-profile values.
 - **ProfileAsset**: dedicated owned-asset join in `profile_assets` with `relationship` and `sortOrder`.
 - **ProfileRelationship**: bidirectional — creating one auto-creates reciprocal inverse. `contextProfileId` for tertiary relationships. `ProfileRelationshipTerm` tracks start/end dates.
 - **ProfileMetafield**: controlled vocabulary with `validationSchema`. **ProfileMetadata**: per-profile values linked to metafields.
@@ -19,13 +19,29 @@ Central identity system with multi-auth, relationships, controlled metadata, and
 | ApiKey | SHA-256 hashed. **Plaintext returned once only** on `generate()`. `keyPrefix` for identification. Scope-based with expiry. |
 | MagicLinkToken | One-time token with expiry for passwordless auth. |
 
-## Key Collection Methods
+## Identity Resolution
 
-- `UserCollection.getOrCreateFromOidc(claims, provider)` — creates Profile + OidcIdentity + User in one flow
-- `Profile.getAssets()` / `addAsset()` / `removeAsset()` and the matching `ProfileCollection` wrappers — canonical owned asset helpers backed by `profile_assets`
-- `ProfileCollection.addMetadata()`/`getMetadata()` — validates against metafield schema
-- `Profile.getRelationships({ direction: 'from'|'to'|'all' })` — direction matters
-- AI: `generateBio()` (do), `matches(criteria)` (is)
+Auth helpers in `src/auth/` build profiles from external identity claims:
+
+- `resolveIdentity()` — top-level dispatcher that returns/creates a Profile from Nostr signatures, OIDC claims, magic link tokens, or API keys.
+- `createProfileFromOidc(claims, provider)` — creates `Profile` + `OidcIdentity` for first-time OIDC sign-in.
+- `createProfileFromNostr(email, nostrData)` — creates `Profile` + `NostrIdentity` for Nostr-authenticated users.
+
+## Key Methods
+
+- `Profile.getAssets()` / `addAsset()` / `removeAsset()` and the matching `ProfileCollection` wrappers — canonical owned asset helpers backed by `profile_assets`.
+- `Profile.addMetadata(metafieldSlug, value)` / `Profile.getMetadata()` — validates against metafield schema. `ProfileCollection.batchGetMetadata()` / `batchUpdateMetadata()` for bulk reads/writes.
+- `Profile.getRelationships({ direction: 'from'|'to'|'all' })` — direction matters.
+- AI: `generateBio()` (uses `smrtProfiles.profile.generateBio` prompt via `@happyvertical/smrt-prompts`), `matches(criteria)` (delegates to `is()`).
+
+## Prompt Registry
+
+`generateBio()` is registered with `@happyvertical/smrt-prompts` so tenants can override template/model/params at runtime:
+
+```typescript
+import { smrtProfilesGenerateBioPrompt } from '@happyvertical/smrt-profiles';
+// key: 'smrtProfiles.profile.generateBio'
+```
 
 ## Gotchas
 
