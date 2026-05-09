@@ -45,11 +45,9 @@ const EXEMPTIONS = {
   // remainder); migration requires careful test verification because
   // both packages have substantive existing test suites.
   noSmrtVitestPlugin: new Set(['core', 'cli', 'smrt-playground']),
-  // Packages whose hand-written exports map predates the conditional
-  // standard. Templates ship plain JS scaffolding helpers (`./index.js`)
-  // rather than typed module APIs, so the conditional shape does not apply
-  // to their root export. (`core` migrated to conditional shape — see
-  // packages/core/package.json.)
+  // Templates ship plain JS scaffolding helpers (`./index.js`) rather than
+  // typed module APIs, so the conditional `{ types, import }` shape does not
+  // apply to their root export.
   bareStringExportsAllowed: new Set([
     'template-sveltekit',
     'template-site-static-json',
