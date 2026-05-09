@@ -41,10 +41,12 @@ pre-commit:
           go install github.com/rhysd/actionlint/cmd/actionlint@latest
 
     forbidden-artifacts:
-      # Reject staged files matching patterns forbidden by docs/standards.md §11.
-      # These patterns capture vite write-cache files, manual backups, manifest-
-      # builder driver scripts, ASCII-art dumps, and other dev throwaways that
-      # have repeatedly leaked into the repo.
+      # Partial enforcement of docs/standards.md §11: rejects the highest-recurrence
+      # patterns we have seen leak into the repo. Not exhaustive — items still TODO
+      # for full §11 coverage: empty config files, generated .claude/smrt-framework.md
+      # written into per-package .claude/ dirs, large binary blobs in package src/,
+      # generic .DS_Store catch-all (currently handled passively via .gitignore).
+      # Expand the case list below as new patterns appear.
       run: |
         files="{staged_files}"
         violations=""

@@ -189,22 +189,27 @@ export default createPackageConfig('<package-name>', {
 
 ```typescript
 import { defineConfig } from 'vitest/config';
-import { smrtVitestPlugin } from '@happyvertical/smrt-vitest';
+import { smrtVitestPlugin } from '../vitest/src/index.ts';
 
 export default defineConfig({
-  plugins: [smrtVitestPlugin()],
+  plugins: [smrtVitestPlugin({ verbose: true })],
   test: {
     globals: true,
     environment: 'node',
-    testTimeout: 30_000,
+    include: ['src/**/*.test.ts'],
+    testTimeout: 30000,
+    fileParallelism: false,
     pool: 'forks',
     poolOptions: {
-      forks: { singleFork: true, isolate: true },
+      forks: {
+        singleFork: true,
+      },
     },
-    fileParallelism: false,
   },
 });
 ```
+
+> **Note**: Inside this monorepo, packages import `smrtVitestPlugin` directly from the workspace source (`../vitest/src/index.ts`) rather than from the published `@happyvertical/smrt-vitest`. This avoids a circular workspace build dependency. Consumer projects (outside the monorepo) should import from the package name.
 
 ### Rules
 
