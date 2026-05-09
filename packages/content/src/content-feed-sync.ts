@@ -1,15 +1,25 @@
 import { randomUUID } from 'node:crypto';
-import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
+import { lookup as dnsLookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
+import {
+  ObjectRegistry,
+  type SmrtCollectionOptions,
+} from '@happyvertical/smrt-core';
 import {
   type ParsedContentFeedItem,
   parseContentFeed,
 } from './content-feed-parser';
 import type { ContentFeedSource } from './content-feed-source';
+import { Mirror } from './content-types';
 import { Contents } from './contents';
 
 export interface ContentFeedSyncOptions extends SmrtCollectionOptions {
   fetch?: typeof fetch;
   maxItems?: number;
+  maxResponseBytes?: number;
+  fetchTimeoutMs?: number;
+  allowPrivateNetworkHosts?: boolean;
+  resolveHostname?: typeof resolveHostname;
   status?: 'published' | 'draft';
   now?: () => Date;
 }
@@ -24,6 +34,22 @@ export interface ContentFeedSyncResult {
 }
 
 type QueryableCollection = Pick<Contents, 'query'>;
+type ResolvedAddress = { address: string; family?: number };
+
+const DEFAULT_MAX_RESPONSE_BYTES = 2_000_000;
+const DEFAULT_FETCH_TIMEOUT_MS = 10_000;
+const FALLBACK_MIRROR_META_TYPE = '@happyvertical/smrt-content:Mirror';
+
+async function resolveHostname(hostname: string): Promise<ResolvedAddress[]> {
+  return dnsLookup(hostname, { all: true, verbatim: false });
+}
+
+function getMirrorMetaType(): string {
+  return (
+    ObjectRegistry.getClassByConstructor(Mirror)?.qualifiedName ??
+    FALLBACK_MIRROR_META_TYPE
+  );
+}
 
 function slugify(value: string): string {
   const slug = value
@@ -61,6 +87,134 @@ function createDedupeKey(
   return `feed:${source.id ?? source.feedUrl}:${item.guid || normalizeUrlIdentity(item.url)}`;
 }
 
+function isBlockedIPv4(address: string): boolean {
+  const octets = address.split('.').map((part) => Number(part));
+  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part))) {
+    return true;
+  }
+
+  const [first, second] = octets;
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    first >= 224 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 198 && (second === 18 || second === 19))
+  );
+}
+
+function isBlockedIPv6(address: string): boolean {
+  const normalized = address.toLowerCase();
+  const mapped = normalized.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped?.[1]) return isBlockedIPv4(mapped[1]);
+
+  return (
+    normalized === '::' ||
+    normalized === '::1' ||
+    normalized.startsWith('fc') ||
+    normalized.startsWith('fd') ||
+    /^fe[89ab]/.test(normalized) ||
+    normalized.startsWith('ff')
+  );
+}
+
+function isBlockedAddress(address: string): boolean {
+  const family = isIP(address);
+  if (family === 4) return isBlockedIPv4(address);
+  if (family === 6) return isBlockedIPv6(address);
+  return true;
+}
+
+async function validateFeedFetchUrl(
+  feedUrl: string,
+  options: ContentFeedSyncOptions,
+): Promise<URL> {
+  let url: URL;
+  try {
+    url = new URL(feedUrl);
+  } catch {
+    throw new Error('Feed URL must be an absolute URL');
+  }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error('Feed URL must use http or https');
+  }
+  if (url.username || url.password) {
+    throw new Error('Feed URL must not include credentials');
+  }
+  if (!url.hostname) {
+    throw new Error('Feed URL must include a hostname');
+  }
+
+  if (options.allowPrivateNetworkHosts) return url;
+
+  const addresses =
+    isIP(url.hostname) === 0
+      ? await (options.resolveHostname ?? resolveHostname)(url.hostname)
+      : [{ address: url.hostname }];
+
+  if (
+    !addresses.length ||
+    addresses.some(({ address }) => isBlockedAddress(address))
+  ) {
+    throw new Error('Feed URL must resolve to a public network address');
+  }
+
+  return url;
+}
+
+function createTimeoutSignal(timeoutMs: number): AbortSignal | undefined {
+  if (timeoutMs <= 0) return undefined;
+  return AbortSignal.timeout(timeoutMs);
+}
+
+async function readResponseText(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const contentLength = response.headers.get('content-length');
+  if (contentLength && Number(contentLength) > maxBytes) {
+    throw new Error(`Feed response exceeds ${maxBytes} bytes`);
+  }
+
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes) {
+      throw new Error(`Feed response exceeds ${maxBytes} bytes`);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      throw new Error(`Feed response exceeds ${maxBytes} bytes`);
+    }
+    chunks.push(value);
+  }
+
+  const buffer = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    buffer.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return new TextDecoder().decode(buffer);
+}
+
 async function findExistingMirror(
   contents: QueryableCollection,
   source: ContentFeedSource,
@@ -68,7 +222,7 @@ async function findExistingMirror(
   dedupeKey: string,
 ): Promise<{ id: string; status: string | null } | null> {
   const tenantWhere = source.tenantId ? 'tenant_id = ?' : 'tenant_id IS NULL';
-  const params: unknown[] = ['Mirror'];
+  const params: unknown[] = [getMirrorMetaType()];
   if (source.tenantId) params.push(source.tenantId);
 
   if (item.guid) {
@@ -90,9 +244,10 @@ async function findExistingMirror(
        FROM contents
       WHERE _meta_type = ?
         AND ${tenantWhere}
-        AND (dedupe_key = ? OR external_url = ? OR original_url = ?)
+        AND feed_source_id = ?
+        AND dedupe_key = ?
       LIMIT 1`,
-    [...params, dedupeKey, item.url, item.url],
+    [...params, source.id, dedupeKey],
   );
   return (
     (result[0] as { id: string; status: string | null } | undefined) ?? null
@@ -177,7 +332,7 @@ async function upsertMirrorItem(
       id,
       `mirror-${sourceSlug}-${hashString(dedupeKey)}`,
       '',
-      'Mirror',
+      getMirrorMetaType(),
       item.title,
       item.title,
       item.summary,
@@ -238,7 +393,13 @@ export async function syncContentFeedSource(
   await source.save();
 
   try {
-    const response = await fetchImpl(source.feedUrl, { headers });
+    const feedUrl = await validateFeedFetchUrl(source.feedUrl, options);
+    const response = await fetchImpl(feedUrl, {
+      headers,
+      signal: createTimeoutSignal(
+        options.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
+      ),
+    });
 
     if (response.status === 304) {
       source.markFetchSucceeded(now);
@@ -257,7 +418,13 @@ export async function syncContentFeedSource(
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 
-    const parsed = parseContentFeed(await response.text(), source.feedUrl);
+    const parsed = parseContentFeed(
+      await readResponseText(
+        response,
+        options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES,
+      ),
+      feedUrl.toString(),
+    );
     source.format = parsed.format;
     source.homepageUrl = source.homepageUrl || parsed.homepageUrl;
     if (!source.name && parsed.title) source.name = parsed.title;

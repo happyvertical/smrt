@@ -89,6 +89,7 @@ export class ContentFeedSource extends SmrtObject {
 
   homepageUrl: string | null = null;
   format: ContentFeedFormat | null = null;
+  @field({ type: 'text', required: true, default: 'active' })
   status: ContentFeedSourceStatus = 'active';
   defaultCategory: string | null = null;
   sourceGroup: string | null = null;
