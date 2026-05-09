@@ -13,12 +13,15 @@ import {
   type ResolvedPromptAI,
 } from '@happyvertical/smrt-prompts';
 
+// Bio generation only uses non-PII profile fields (name + description).
+// Email is intentionally NOT passed to the AI provider — see review on PR
+// #1209 — to minimize PII exposure. If a downstream tenant needs email in
+// the bio, they can override the template via PromptOverride.
 export const smrtProfilesGenerateBioPrompt = definePrompt({
   key: 'smrtProfiles.profile.generateBio',
   template: `Write a short, professional bio for this person.
 
 Profile name: {profileName}
-Profile email: {profileEmail}
 Profile description: {profileDescription}
 
 Return only the bio text, with no commentary or surrounding quotation marks.`,

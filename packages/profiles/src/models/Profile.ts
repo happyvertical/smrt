@@ -500,12 +500,14 @@ export class Profile extends SmrtObject {
    * @returns Generated bio text
    */
   async generateBio(): Promise<string> {
-    // Pass either `db` or its `persistence` alias — when callers use the
-    // alias on a not-yet-initialized instance, `this.options.db` is still
-    // undefined because SmrtClass only resolves the alias during
-    // initialize(). Falling back to `persistence` ensures stored prompt
-    // overrides in `_smrt_prompt_overrides` are honored on first call.
-    const db = this.options.db ?? (this.options as any).persistence;
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias. SmrtClass maps `persistence → db` lazily during `initialize()`,
+    // so on a freshly-constructed Profile that has not yet been initialized,
+    // `this.options.db` may be undefined while `this.options.persistence` is
+    // set. Falling back here ensures stored app- and tenant-level prompt
+    // overrides in `_smrt_prompt_overrides` are honored on the first call —
+    // before `getAiClient()` triggers full initialization further below.
+    const db = this.options.db ?? this.options.persistence;
 
     const resolvedPrompt = await resolvePrompt(
       smrtProfilesGenerateBioPrompt.key,
@@ -514,7 +516,6 @@ export class Profile extends SmrtObject {
         tenantId: this.tenantId,
         variables: {
           profileName: this.name || '',
-          profileEmail: this.email || '',
           profileDescription: this.description || '',
         },
       },
