@@ -6,7 +6,12 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  promptMessageOptions,
+  smrtPropertiesSummarizePrompt,
+} from '../prompts';
 import type { PropertyOptions, PropertyStatus } from '../types';
 
 @TenantScoped({ mode: 'optional' })
@@ -129,20 +134,53 @@ export class Property extends SmrtObject {
   }
 
   /**
-   * Generate a summary of the property and its zones
+   * AI-powered: Generate a summary of the property and its zones.
+   *
+   * Uses the `smrtProperties.property.summarize` prompt registered via
+   * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
+   * Only non-PII fields (name, domain, description, status) plus aggregate
+   * zone information are sent to the AI provider. Internal foreign-key
+   * fields and the extensible `metadata` blob are intentionally excluded.
+   *
+   * @returns Generated summary text
    */
   async summarize(): Promise<string> {
     const zones = await this.getZones();
     const topLevelZones = zones.filter((z) => z.parentId === null);
 
-    return await this.do(
-      `Summarize this digital property:\n` +
-        `Name: ${this.name}\n` +
-        `Domain: ${this.domain}\n` +
-        `Description: ${this.description}\n` +
-        `Status: ${this.status}\n` +
-        `Total zones: ${zones.length}\n` +
-        `Top-level zones: ${topLevelZones.map((z) => z.name).join(', ')}`,
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias. SmrtClass maps `persistence → db` lazily during `initialize()`,
+    // so on a freshly-constructed Property that has not yet been initialized,
+    // `this.options.db` may be undefined while `this.options.persistence` is
+    // set. Falling back here ensures stored app- and tenant-level prompt
+    // overrides in `_smrt_prompt_overrides` are honored on the first call —
+    // before `getAiClient()` triggers full initialization further below.
+    const db = this.options.db ?? this.options.persistence;
+
+    const resolvedPrompt = await resolvePrompt(
+      smrtPropertiesSummarizePrompt.key,
+      {
+        db,
+        tenantId: this.tenantId,
+        variables: {
+          propertyName: this.name || '',
+          propertyDomain: this.domain || '',
+          propertyDescription: this.description || '',
+          propertyStatus: this.status || '',
+          totalZones: String(zones.length),
+          topLevelZones: topLevelZones.map((z) => z.name).join(', '),
+        },
+      },
     );
+
+    const ai = await this.getAiClient();
+    const response = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+
+    return response.trim();
   }
 }
