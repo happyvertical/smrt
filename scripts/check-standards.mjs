@@ -45,6 +45,17 @@ const EXEMPTIONS = {
   // remainder); migration requires careful test verification because
   // both packages have substantive existing test suites.
   noSmrtVitestPlugin: new Set(['core', 'cli', 'smrt-playground']),
+  // Packages whose hand-written exports map predates the conditional
+  // standard. Migrating ~18 bare-string entries in core requires careful
+  // type-resolution verification across consumers. Tracked as a CC-2
+  // follow-up (issue 1193). Templates ship plain JS scaffolding helpers
+  // (`./index.js`) rather than typed module APIs, so the conditional shape
+  // does not apply to their root export.
+  bareStringExportsAllowed: new Set([
+    'core',
+    'template-sveltekit',
+    'template-site-static-json',
+  ]),
 };
 
 const REPO_URL = 'https://github.com/happyvertical/smrt.git';
@@ -81,6 +92,25 @@ function findExportsOrderViolations(obj, path = '') {
   return issues;
 }
 
+// Bare-string export targets are forbidden by docs/content/standards.md §2.
+// Every entry must be a conditional object so consumers get a `types`
+// resolution path. Exemptions:
+//   - JSON-target exports (data, not modules — TS does not resolve types)
+//   - Glob patterns ending in `/*` (raw file scaffolding, not modules — used
+//     by templates and asset directories where the target paths are static
+//     files copied into consumer projects)
+function findBareStringExportViolations(exports) {
+  if (typeof exports !== 'object' || exports === null) return [];
+  const issues = [];
+  for (const [path, target] of Object.entries(exports)) {
+    if (typeof target !== 'string') continue;
+    if (target.endsWith('.json')) continue;
+    if (path.endsWith('/*') || target.endsWith('/*')) continue;
+    issues.push(path);
+  }
+  return issues;
+}
+
 function checkPackage(name) {
   const violations = [];
   const pkg = readPkg(name);
@@ -93,6 +123,16 @@ function checkPackage(name) {
     for (const path of bad) {
       violations.push(
         `exports map "${path}" lists \`import\` before \`types\` — flip so \`types\` comes first`,
+      );
+    }
+  }
+
+  // 1b. bare-string export targets
+  if (json.exports && !EXEMPTIONS.bareStringExportsAllowed.has(name)) {
+    const bare = findBareStringExportViolations(json.exports);
+    for (const path of bare) {
+      violations.push(
+        `exports map "${path}" uses a bare-string target — replace with a conditional { types, import } object`,
       );
     }
   }
@@ -141,15 +181,22 @@ function checkPackage(name) {
     }
   }
 
-  // 7. no --passWithNoTests in test scripts
-  if (!EXEMPTIONS.passWithNoTestsAllowed.has(name)) {
-    for (const key of ['test', 'test:watch']) {
-      const script = json.scripts?.[key];
-      if (typeof script === 'string' && script.includes('--passWithNoTests')) {
-        violations.push(
-          `scripts.${key} uses --passWithNoTests — write at least one real test`,
-        );
-      }
+  // 7. no --passWithNoTests in any test script (test, test:watch, test:sqlite,
+  //    test:postgres, test:json, test:e2e, test:integration, etc.). Adapter-
+  //    specific scripts must enforce the same rule as the default test script.
+  //    Exception: scripts that select a specific Vitest project via --project
+  //    are allowed --passWithNoTests because the targeted project may have
+  //    legitimately zero tests in some CI envs (e.g. postgres adapter without
+  //    a postgres container).
+  if (!EXEMPTIONS.passWithNoTestsAllowed.has(name) && json.scripts) {
+    for (const [key, script] of Object.entries(json.scripts)) {
+      if (key !== 'test' && !key.startsWith('test:')) continue;
+      if (typeof script !== 'string') continue;
+      if (!script.includes('--passWithNoTests')) continue;
+      if (script.includes('--project')) continue;
+      violations.push(
+        `scripts.${key} uses --passWithNoTests — write at least one real test`,
+      );
     }
   }
 
