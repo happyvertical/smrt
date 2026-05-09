@@ -2,13 +2,12 @@
   "name": "@happyvertical/smrt-gnode",
   "version": "0.24.0",
   "description": "SMRT federation library for building federated local knowledge bases (gnodes)",
-  "author": "Will Griffin <willgriffin@gmail.com>",
+  "author": "HappyVertical",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist",
-    "docs"
+    "dist"
   ],
   "exports": {
     ".": "./dist/index.js",
@@ -47,5 +46,10 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/gnode"
   }
 }

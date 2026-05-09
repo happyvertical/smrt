@@ -52,7 +52,7 @@
     "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
-    "svelte": "^4.0.0 || ^5.0.0"
+    "svelte": "^5.18.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
@@ -78,10 +78,15 @@
     "metadata",
     "smrt"
   ],
-  "author": "HAVE Team",
+  "author": "HappyVertical",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/assets"
   }
 }

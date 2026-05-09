@@ -92,7 +92,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/happyvertical/sdk.git",
+    "url": "https://github.com/happyvertical/smrt.git",
     "directory": "packages/events"
   },
   "publishConfig": {
