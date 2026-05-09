@@ -115,17 +115,37 @@ describe('Property.summarize()', () => {
     expect(text).not.toMatch(/Top-level zones:[^\n]*\bHeader Slot\b/);
   });
 
-  it('passes resolvedPrompt.ai params (model/temperature/maxTokens) through to ai.message', async () => {
+  it('passes empty AI options for the default registered prompt (no ai config)', async () => {
     const property = makeProperty();
 
     await property.summarize();
 
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
-    // Second arg is the AI options object derived from the prompt's `ai`
-    // config plus any tenant overrides. The default registered prompt has
-    // no model/temperature/maxTokens, so options should be an empty object
-    // (or contain only ai.params if the prompt registered them).
+    // The default registered prompt has no model/temperature/maxTokens/params,
+    // so the options object derived by promptMessageOptions should be empty.
     const [, options] = aiMessageMock.mock.calls[0];
-    expect(options).toBeTypeOf('object');
+    expect(options).toEqual({});
+  });
+
+  it('forwards model/temperature/maxTokens from a runtime ai override to ai.message', async () => {
+    // Drive promptMessageOptions directly with a synthetic ResolvedPromptAI
+    // shape — this exercises the same helper Property.summarize calls and
+    // documents the contract for tenant overrides that set ai-config fields.
+    const { promptMessageOptions } = await import('../prompts.js');
+
+    const options = promptMessageOptions({
+      profile: null,
+      model: 'gpt-test-1',
+      temperature: 0.42,
+      maxTokens: 256,
+      params: { topP: 0.9 },
+    });
+
+    expect(options).toEqual({
+      topP: 0.9,
+      model: 'gpt-test-1',
+      temperature: 0.42,
+      maxTokens: 256,
+    });
   });
 });
