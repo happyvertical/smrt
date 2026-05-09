@@ -29,6 +29,8 @@ Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, run
 | `beforeSave` | Auto-populates tenantId if empty + `autoPopulate: true`; validates if already set |
 | `beforeDelete` | Validates instance.tenantId matches context |
 | `beforeQuery` | Enforces raw SQL policy on tenant-scoped classes (`throw`/`warn`/`allow`) |
+| `afterSave` | Emits `directory.<class>.created`/`updated` via `dispatchBus` for configured `directoryClasses` |
+| `afterDelete` | Emits `directory.<class>.deleted` via `dispatchBus` for configured `directoryClasses` |
 
 Mismatches throw `TenantIsolationError`. Missing required context throws `TenantContextError`.
 
@@ -63,3 +65,7 @@ Modes: `'required'` (default — throws without context) or `'optional'` (passes
 - **Auto-populate only if empty**: if tenantId already set, interceptor validates (not overwrites)
 - **Isolation checked at query time**: `list({ where: { tenantId: 'other' } })` throws immediately
 - **Testing**: `resetTenancy()` + `setupTestTenancy()` in beforeEach; `testTenantIsolation()` helper
+
+## Known exceptions to monorepo standards
+
+- **`serializeInstance()` in `src/interceptor.ts` calls `instance.toJSON()` directly** (standards.md §7 forbids this in favor of `transformJSON()`). The interceptor must serialize arbitrary instances handed to it — including workspace stubs and plain-object test doubles whose classes may not extend `SmrtObject` and therefore have no `transformJSON()` hook. The call is duck-typed and falls back to manual key iteration when `toJSON` is absent. See the inline comment at the call site for the full rationale.
