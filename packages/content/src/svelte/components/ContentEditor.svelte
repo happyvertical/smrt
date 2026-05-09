@@ -2,11 +2,7 @@
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 import { untrack } from 'svelte';
-import {
-  type ContentBodyFormat,
-  extractBodyImages,
-  resolveBodyFormat,
-} from '../../body-format';
+import { extractBodyImages, resolveBodyFormat } from '../../body-format';
 import type {
   ContentEditorAssistantActions,
   ContentEditorAssistantContextChange,
@@ -19,6 +15,13 @@ import type {
   FactEvidenceStatus,
 } from '../../mock-smrt-client';
 import { joinApiUrl, normalizeApiBaseUrl } from '../api';
+import {
+  type ContentEditorFormData,
+  getContentEditorInitialFormData,
+  getContentEditorSavePayload,
+  getContentEditorSnapshot,
+  normalizePublishDate,
+} from '../content-editor-form';
 import ContentAgentChat from './ContentAgentChat.svelte';
 import ContentBodyEditor, {
   type ContentBodyEditorChange,
@@ -63,47 +66,6 @@ let {
 
 let editForm = $state<HTMLFormElement | null>(null);
 
-function formatDateTimeLocal(value: unknown): string {
-  if (!value) {
-    return '';
-  }
-
-  const date = value instanceof Date ? value : new Date(value as string);
-  if (Number.isNaN(date.getTime())) {
-    return typeof value === 'string' ? value : '';
-  }
-
-  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-  return localDate.toISOString().slice(0, 16);
-}
-
-function normalizePublishDate(value: unknown): string | null {
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      return null;
-    }
-
-    const parsed = new Date(trimmed);
-    return Number.isNaN(parsed.getTime()) ? trimmed : parsed.toISOString();
-  }
-
-  if (value instanceof Date) {
-    return Number.isNaN(value.getTime()) ? null : value.toISOString();
-  }
-
-  return null;
-}
-
-function getSavePayload(data: any) {
-  const { references: _references, ...payload } = data;
-
-  return {
-    ...payload,
-    publish_date: normalizePublishDate(data.publish_date),
-  };
-}
-
 export function triggerSave() {
   if (saveDisabled) return;
   if (editForm?.requestSubmit) {
@@ -111,54 +73,16 @@ export function triggerSave() {
     return;
   }
 
-  onSave(getSavePayload(formData));
+  onSave(getContentEditorSavePayload(formData));
 }
 
-function getInitialFormData(c: any) {
-  return c
-    ? {
-        ...c,
-        bodyFormat: resolveBodyFormat(c.bodyFormat, c.body),
-        tags: c.tags || [],
-        referenceIds: c.referenceIds || [],
-        references: c.references || [],
-        assetIds: c.assetIds || [],
-        assets: c.assets || [],
-        publish_date: formatDateTimeLocal(c.publish_date ?? c.publishDate),
-      }
-    : {
-        title: '',
-        description: '',
-        body: '',
-        bodyFormat: 'html' as ContentBodyFormat,
-        author: '',
-        type: 'article',
-        status: 'draft',
-        state: 'active',
-        source: 'manual',
-        url: '',
-        fileKey: '',
-        publish_date: '',
-        thumbnailAssetId: null,
-        tags: [],
-        referenceIds: [],
-        references: [],
-        assetIds: [],
-        assets: [],
-      };
-}
-
-let formData = $state<any>(getInitialFormData(undefined));
+let formData = $state<ContentEditorFormData>(
+  getContentEditorInitialFormData(undefined),
+);
 let lastContentKey = $state<string | undefined>(undefined);
 let currentEditorState = $derived(formData.body || '');
 let currentReferenceIds = $derived(formData.referenceIds || []);
-const editorSnapshot = $derived({
-  ...getSavePayload(formData),
-  referenceIds: [...(formData.referenceIds || [])],
-  references: [...(formData.references || [])],
-  assetIds: [...(formData.assetIds || [])],
-  assets: [...(formData.assets || [])],
-});
+const editorSnapshot = $derived(getContentEditorSnapshot(formData));
 const showActions = $derived(!hideActions);
 const showChatSidebar = $derived(!hideChat);
 const showAgentChat = $derived(agentChatEnabled && showChatSidebar);
@@ -234,7 +158,7 @@ $effect(() => {
   const newKey = content?.id ?? contentId;
   if (newKey !== lastContentKey) {
     lastContentKey = newKey;
-    formData = getInitialFormData(content);
+    formData = getContentEditorInitialFormData(content);
     fieldUndoStack = [];
     showUndoBanner = false;
   }
@@ -277,7 +201,7 @@ function applyFieldUpdates(fields: Record<string, string>) {
   // Snapshot old values for undo
   const oldValues: Record<string, string> = {};
   for (const key of Object.keys(fields)) {
-    oldValues[key] = formData[key] ?? '';
+    oldValues[key] = String(formData[key] ?? '');
     formData[key] = fields[key];
   }
   fieldUndoStack = [...fieldUndoStack, oldValues];
@@ -793,7 +717,7 @@ function handleSubmit(e: Event) {
   if (saveDisabled) {
     return;
   }
-  onSave(getSavePayload(formData));
+  onSave(getContentEditorSavePayload(formData));
 }
 
 function handleCancel() {
@@ -1105,26 +1029,29 @@ function removeAsset(id: string) {
              <div class="media-gallery">
                 {#if formData.assets && formData.assets.length > 0}
                   <div class="media-grid">
-                    {#each formData.assets as asset (asset.id)}
+                    {#each formData.assets as asset, index (asset.id || `asset-${index}`)}
+                      {@const assetId = typeof asset.id === 'string' ? asset.id : ''}
                       <div
                         class="media-item"
-                        class:is-thumbnail={asset.id === formData.thumbnailAssetId}
+                        class:is-thumbnail={assetId === formData.thumbnailAssetId}
                         draggable="true"
                         title="Drag into the body"
                         ondragstart={(event) => handleAttachedImageDragStart(event, asset)}
                       >
                         <img class="media-item-image" src={getAssetImageSource(asset)} alt={asset.name || 'Asset image'} />
                         <div class="media-item-overlay">
-                           {#if asset.id !== formData.thumbnailAssetId}
-                             <button type="button" class="btn-make-thumbnail" title="Make Thumbnail" onclick={() => setThumbnail(asset.id)}>
+                           {#if assetId && assetId !== formData.thumbnailAssetId}
+                             <button type="button" class="btn-make-thumbnail" title="Make Thumbnail" onclick={() => setThumbnail(assetId)}>
                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                              </button>
                            {/if}
-                           <button type="button" class="btn-remove-asset" title="Remove" onclick={() => removeAsset(asset.id)}>
-                             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
-                           </button>
+                           {#if assetId}
+                             <button type="button" class="btn-remove-asset" title="Remove" onclick={() => removeAsset(assetId)}>
+                               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+                             </button>
+                           {/if}
                         </div>
-                        {#if asset.id === formData.thumbnailAssetId}
+                        {#if assetId === formData.thumbnailAssetId}
                           <div class="thumbnail-badge">Thumbnail</div>
                         {/if}
                       </div>

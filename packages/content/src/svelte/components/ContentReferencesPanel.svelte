@@ -1,0 +1,195 @@
+<script lang="ts">
+import type { ContentEditorReference } from '../content-editor-form';
+
+export interface Props {
+  referenceIds?: string[];
+  references?: ContentEditorReference[];
+  onReferenceIdsChange?: (referenceIds: string[]) => void;
+}
+
+let {
+  referenceIds = [],
+  references = [],
+  onReferenceIdsChange = undefined,
+}: Props = $props();
+
+let newReferenceId = $state('');
+
+const visibleReferences = $derived(
+  references.length
+    ? references
+    : referenceIds.map((id) => ({ id, title: id })),
+);
+
+function getReferenceLabel(reference: ContentEditorReference): string {
+  return String(
+    reference?.title ||
+      reference?.name ||
+      reference?.url ||
+      reference?.source ||
+      reference?.id ||
+      'Reference',
+  );
+}
+
+function getReferenceUrl(reference: ContentEditorReference): string {
+  return String(
+    reference?.url || reference?.originalUrl || reference?.source || '',
+  );
+}
+
+function getSafeReferenceUrl(reference: ContentEditorReference): string {
+  const url = getReferenceUrl(reference).trim();
+  if (!url) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? parsed.href
+      : '';
+  } catch {
+    return '';
+  }
+}
+
+function addReference() {
+  const id = newReferenceId.trim();
+  if (!id || referenceIds.includes(id)) {
+    return;
+  }
+  onReferenceIdsChange?.([...referenceIds, id]);
+  newReferenceId = '';
+}
+
+function removeReference(id: string) {
+  onReferenceIdsChange?.(
+    referenceIds.filter((referenceId) => referenceId !== id),
+  );
+}
+</script>
+
+<div class="content-references-panel">
+  {#if visibleReferences.length}
+    <div class="reference-list">
+      {#each visibleReferences as reference, index (reference.id || getSafeReferenceUrl(reference) || `${getReferenceLabel(reference)}-${index}`)}
+        {@const safeUrl = getSafeReferenceUrl(reference)}
+        {@const referenceId = typeof reference.id === 'string' ? reference.id : ''}
+        <div class="reference-row">
+          <div class="reference-copy">
+            <strong>{getReferenceLabel(reference)}</strong>
+            {#if safeUrl}
+              <a href={safeUrl} target="_blank" rel="noreferrer">{safeUrl}</a>
+            {/if}
+          </div>
+          {#if referenceId}
+            <button type="button" onclick={() => removeReference(referenceId)}>Remove</button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <p class="empty-state">No references.</p>
+  {/if}
+
+  <div class="reference-input-row">
+    <input
+      type="text"
+      aria-label="Add reference by ID or URL"
+      placeholder="Reference ID or URL"
+      bind:value={newReferenceId}
+      onkeydown={(event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          addReference();
+        }
+      }}
+    />
+    <button type="button" onclick={addReference}>Add</button>
+  </div>
+</div>
+
+<style>
+  .content-references-panel {
+    display: grid;
+    gap: 0.875rem;
+    padding: 1rem;
+    border: 1px dashed color-mix(in srgb, var(--smrt-color-outline) 45%, transparent);
+    border-radius: 0.5rem;
+  }
+
+  .empty-state {
+    margin: 0;
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.875rem;
+    font-style: italic;
+  }
+
+  .reference-list {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .reference-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 28%, transparent);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+  }
+
+  .reference-copy {
+    display: grid;
+    gap: 0.2rem;
+    min-width: 0;
+  }
+
+  .reference-copy strong,
+  .reference-copy a {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .reference-copy strong {
+    color: var(--smrt-color-on-surface);
+    font-size: 0.875rem;
+  }
+
+  .reference-copy a {
+    color: var(--smrt-color-primary);
+    font-size: 0.8125rem;
+    text-decoration: none;
+  }
+
+  .reference-input-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+  }
+
+  input,
+  button {
+    min-height: 2.5rem;
+    border: 1px solid color-mix(in srgb, var(--smrt-color-outline) 50%, transparent);
+    border-radius: 0.5rem;
+    background: var(--smrt-color-surface-container-low);
+    color: var(--smrt-color-on-surface);
+    font: inherit;
+    padding: 0.55rem 0.875rem;
+  }
+
+  button {
+    background: var(--smrt-color-surface-container);
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  button:hover {
+    background: var(--smrt-color-surface-container-high);
+  }
+</style>

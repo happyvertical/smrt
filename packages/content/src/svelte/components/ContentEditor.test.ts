@@ -1002,6 +1002,33 @@ describe('ContentEditor component', () => {
     expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('publishDate');
   });
 
+  it('omits hydrated assets and references from the save payload', () => {
+    const onSave = vi.fn();
+    const target = renderEditor({
+      content: {
+        title: 'Hydrated Article',
+        referenceIds: ['ref-1'],
+        references: [{ id: 'ref-1', title: 'Minutes' }],
+        assetIds: ['asset-1'],
+        assets: [{ id: 'asset-1', sourceUri: 'https://example.com/a.jpg' }],
+      },
+      onSave,
+    });
+
+    target
+      .querySelector('#content-edit-form')
+      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        referenceIds: ['ref-1'],
+        assetIds: ['asset-1'],
+      }),
+    );
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('references');
+    expect(onSave.mock.calls[0]?.[0]).not.toHaveProperty('assets');
+  });
+
   it('preserves type changes in the save payload', () => {
     const onSave = vi.fn();
     const target = renderEditor({
