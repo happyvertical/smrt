@@ -14,6 +14,14 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./jobs": {
+      "import": "./dist/jobs.js",
+      "types": "./dist/jobs.d.ts"
+    },
+    "./cli": {
+      "import": "./dist/cli.js",
+      "types": "./dist/cli.d.ts"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"
   },

@@ -100,8 +100,11 @@ async function resolveBaseForLocale(
     }
   }
 
-  // 3. File-config override.
-  const configTemplate = config.overrides?.[key]?.[locale];
+  // 3. File-config override. Locale keys in user-authored config files
+  // commonly come in mixed case (`fr-ca`, `Fr-CA`, etc.); normalize lookup so
+  // config matches the same way the DB and code-default layers do.
+  const configForKey = config.overrides?.[key];
+  const configTemplate = lookupNormalizedLocale(configForKey, locale);
   if (typeof configTemplate === 'string') {
     return finalize({
       key,
@@ -137,6 +140,21 @@ async function resolveBaseForLocale(
     source: 'missing',
     resolvedFromLocale: locale,
   };
+}
+
+function lookupNormalizedLocale(
+  bag: Record<string, string> | undefined,
+  locale: string,
+): string | undefined {
+  if (!bag) return undefined;
+  // Fast path: exact match (most file configs use the canonical form).
+  if (typeof bag[locale] === 'string') return bag[locale];
+  for (const [candidate, template] of Object.entries(bag)) {
+    if (normalizeLocale(candidate) === locale) {
+      return template;
+    }
+  }
+  return undefined;
 }
 
 function finalize(args: {
@@ -230,7 +248,6 @@ export async function resolveLanguageString(
       requestedLocale: requested,
       defaultLocale,
       options,
-      fallbackTemplate: firstHit.template,
     });
     return {
       key,
@@ -265,7 +282,6 @@ async function tryEnqueueTranslation(args: {
   requestedLocale: string;
   defaultLocale: string;
   options: ResolveLanguageStringOptions;
-  fallbackTemplate?: string | null;
 }): Promise<void> {
   if (!args.options.db) {
     // Without a DB we cannot persist a job; skip silently — resolver still

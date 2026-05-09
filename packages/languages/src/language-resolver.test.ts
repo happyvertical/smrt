@@ -251,4 +251,82 @@ describe('@happyvertical/smrt-languages — resolver', () => {
     expect(initial.text).toBe('Cached');
     expect(getLanguageCacheTtlMs()).toBeGreaterThan(0);
   });
+
+  it('moves the row when (key, locale, tenantId) changes — invalidates old cache, returns code default at the old identity', async () => {
+    defineLanguageString({
+      key: 'test.identity.source',
+      locale: 'en',
+      template: 'Source EN',
+    });
+    defineLanguageString({
+      key: 'test.identity.target',
+      locale: 'en',
+      template: 'Target EN',
+    });
+
+    const override = await overrides.create({
+      key: 'test.identity.source',
+      locale: 'en',
+      tenantId: null,
+      template: 'App Source',
+    });
+
+    const cached = await resolveLanguageString('test.identity.source', {
+      db,
+      tenantId: 'tenant-a',
+    });
+    expect(cached.text).toBe('App Source');
+
+    // Move the override across all three identity dimensions in one save.
+    override.key = 'test.identity.target';
+    override.tenantId = 'tenant-a';
+    override.template = 'Tenant Target';
+    await override.save();
+
+    // Old (key, locale, tenant) — both the cache and the row should be gone,
+    // so resolution falls back through to the registered code default.
+    const sourceAfter = await resolveLanguageString('test.identity.source', {
+      db,
+      tenantId: 'tenant-a',
+    });
+    expect(sourceAfter.text).toBe('Source EN');
+    expect(sourceAfter.source).toBe('code');
+
+    // New identity returns the moved override.
+    const targetAfter = await resolveLanguageString('test.identity.target', {
+      db,
+      tenantId: 'tenant-a',
+    });
+    expect(targetAfter.text).toBe('Tenant Target');
+    expect(targetAfter.source).toBe('tenant');
+  });
+
+  it('honors mixed-case file-config locale keys (fr-ca vs fr-CA)', async () => {
+    defineLanguageString({
+      key: 'test.config.case',
+      locale: 'en',
+      template: 'EN',
+    });
+    setConfig({
+      packages: {
+        languages: {
+          defaultLocale: 'en',
+          overrides: {
+            'test.config.case': {
+              // User wrote the locale key in lowercase; resolver normalizes
+              // and finds it for a fr-CA request anyway.
+              'fr-ca': 'Bonjour',
+            },
+          },
+        },
+      },
+    });
+
+    const resolved = await resolveLanguageString('test.config.case', {
+      db,
+      locale: 'fr-CA',
+    });
+    expect(resolved.text).toBe('Bonjour');
+    expect(resolved.source).toBe('config');
+  });
 });

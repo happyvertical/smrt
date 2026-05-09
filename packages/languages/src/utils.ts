@@ -12,12 +12,21 @@ export function computeSourceHash(template: string): string {
   return `sha256:${createHash('sha256').update(template, 'utf8').digest('hex')}`;
 }
 
-/** Normalize a BCP-47 tag to lowercase region-and-script segments. */
+/**
+ * Normalize a BCP-47-ish locale tag for consistent matching across the
+ * registry, the cache, and DB lookups.
+ *
+ * Lowercases the language subtag and uppercases everything after it so
+ * `fr-ca`, `fr-CA`, and `Fr-Ca` collapse to the same key. This is **not**
+ * canonical BCP-47 casing (proper BCP-47 lower-cases variants and uses
+ * Title-case for script subtags like `Hans`); it is an internal
+ * normalization shared by every layer in this package and intentionally
+ * stricter than what BCP-47 mandates.
+ */
 export function normalizeLocale(locale: string): string {
   if (!locale) return '';
   const trimmed = locale.trim();
   if (!trimmed) return '';
-  // Lowercase language; uppercase region for consistent matching.
   const [language, ...rest] = trimmed.split('-');
   if (rest.length === 0) {
     return language.toLowerCase();
@@ -63,7 +72,19 @@ export function buildLocaleFallbackChain(
   return chain;
 }
 
-/** Render `{var}` placeholders. Missing variables collapse to empty strings. */
+/**
+ * Render `{var}` placeholders against the supplied variables.
+ *
+ * When at least one variable is provided, every `{...}` placeholder in the
+ * template is replaced; missing or `undefined`/`null` variables collapse to
+ * empty strings (callers that pass `name` but not `title` get the `{title}`
+ * placeholder removed).
+ *
+ * When `variables` is `undefined` or `{}` the template is returned unchanged
+ * — that fast path avoids the regex pass for the common "no interpolation
+ * needed" case. If you need every placeholder collapsed regardless, pass at
+ * least one variable (e.g. `{ __forceRender: true }`).
+ */
 export function renderTemplate(
   template: string,
   variables?: LanguageVariables,

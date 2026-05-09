@@ -152,6 +152,38 @@ export default {
 };
 ```
 
+## Subpath exports
+
+The package root (`@happyvertical/smrt-languages`) only exposes the read path:
+`defineLanguageString`, `resolveLanguageString`, `LanguageOverride`, the cache
+helpers, the glossary helper, and shared types/utilities. Loading the root
+does **not** pull `@happyvertical/ai`, smrt-jobs, smrt-features, or
+smrt-prompts into the consumer bundle.
+
+The translation-worker stack lives on a subpath:
+
+```typescript
+// Background workers + tests that enqueue or run translation jobs.
+import {
+  enqueueTranslationJob,
+  LanguageTranslationTask,
+  AUTO_TRANSLATE_FEATURE_KEY,
+  TRANSLATION_PROMPT_KEY,
+} from '@happyvertical/smrt-languages/jobs';
+
+// Admin / batch CLI helpers.
+import {
+  translateMissing,
+  approveAutoTranslation,
+  editLanguageOverride,
+  listUnreviewedAutoTranslations,
+} from '@happyvertical/smrt-languages/cli';
+```
+
+The resolver itself dynamically imports the worker module on a soft-miss, so
+calling `resolveLanguageString` still triggers a translation enqueue without
+the caller having to pre-import the `/jobs` subpath.
+
 ## Out of scope (v1)
 
 Pluralization, ICU MessageFormat, Svelte component i18n, RTL layout, locale

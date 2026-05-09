@@ -6,6 +6,15 @@
  * `@happyvertical/smrt-prompts` plus a smrt-jobs handler that fills gaps in
  * non-default locales the first time a string is requested.
  *
+ * The package root intentionally exposes only the read path
+ * (`defineLanguageString`, `resolveLanguageString`, `LanguageOverride`, the
+ * cache helpers, glossary helpers, and shared types/utilities). The
+ * translation-worker stack — which depends on `@happyvertical/ai`,
+ * smrt-jobs, smrt-features, and smrt-prompts — lives on the
+ * `@happyvertical/smrt-languages/jobs` subpath, and the admin CLI helpers
+ * live on `@happyvertical/smrt-languages/cli`. Resolver consumers (the vast
+ * majority of call sites) never load the worker dependency tree.
+ *
  * @packageDocumentation
  */
 
@@ -16,15 +25,7 @@ export {
   getLanguageCacheTtlMs,
   invalidateLanguageCache,
 } from './cache.js';
-export {
-  approveAutoTranslation,
-  editLanguageOverride,
-  listUnreviewedAutoTranslations,
-  translateMissing,
-} from './cli.js';
-
 export { LanguageOverrideCollection } from './collections/LanguageOverrideCollection.js';
-
 export { buildTenantGlossary } from './glossary.js';
 
 export {
@@ -42,13 +43,6 @@ export {
   type LanguageOverrideCtorOptions,
 } from './models/LanguageOverride.js';
 
-export {
-  AUTO_TRANSLATE_FEATURE_KEY,
-  enqueueTranslationJob,
-  LanguageTranslationTask,
-  TRANSLATION_PROMPT_KEY,
-} from './translation-job.js';
-
 export type {
   LanguageCacheValue,
   LanguageOverrideOptions,
@@ -58,7 +52,6 @@ export type {
   LanguageVariables,
   ResolvedLanguageString,
   ResolveLanguageStringOptions,
-  TranslationJobPayload,
 } from './types.js';
 
 export {

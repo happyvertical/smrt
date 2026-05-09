@@ -16,10 +16,34 @@ vi.mock('@happyvertical/ai', async (importOriginal) => {
   };
 });
 
+// Mock the prompts resolver so the integration test doesn't have to
+// provision `_smrt_prompt_overrides` for an external package whose schema
+// generation isn't reachable through the local vitest manifest. Production
+// callers still get the full smrt-prompts override pipeline; the unit-level
+// behavior of `resolvePrompt(db: ...)` is exercised by the prompts package's
+// own test suite.
+vi.mock('@happyvertical/smrt-prompts', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@happyvertical/smrt-prompts')>();
+  return {
+    ...actual,
+    resolvePrompt: vi.fn(async () => ({
+      key: 'smrt-languages.translation',
+      template: 'translate {template} to {targetLocale}',
+      text: 'translate Hello, {name} to es',
+      ai: { profile: undefined, model: undefined, params: {} },
+    })),
+  };
+});
+
 import { clearLanguageCache } from './cache.js';
 import { LanguageOverrideCollection } from './collections/LanguageOverrideCollection.js';
 import { defineLanguageString, LanguageRegistry } from './language-registry.js';
 import { resolveLanguageString } from './language-resolver.js';
+// Side-effect import: registers `LanguageTranslationTask` with the
+// ObjectRegistry so the test can pull a constructor from
+// `ObjectRegistry.getClass(...)` and exercise the runner contract.
+import './translation-job.js';
 import type { LanguageTranslationTask } from './translation-job.js';
 
 describe('@happyvertical/smrt-languages — miss → enqueue → run → resolved', () => {
@@ -120,6 +144,45 @@ describe('@happyvertical/smrt-languages — miss → enqueue → run → resolve
     expect(after.text).toBe('Hola, Will');
     expect(after.source).toBe('app');
     expect(after.resolvedFromLocale).toBe('es');
+  });
+
+  it('rejects JSON responses missing the translation field instead of persisting the wrong shape', async () => {
+    const ai = await import('@happyvertical/ai');
+    // Re-stub the mock: valid JSON, wrong shape — the handler must NOT fall
+    // through to the bare-string path and persist the whole blob.
+    const getAiSpy = vi.spyOn(ai, 'getAI').mockResolvedValue({
+      message: vi.fn(async () => '{"text": "Hola"}'),
+    } as any);
+
+    defineLanguageString({
+      key: 'integration.shape',
+      locale: 'en',
+      template: 'Hello',
+    });
+
+    const taskEntry = ObjectRegistry.getClass('LanguageTranslationTask');
+    const TaskClass = taskEntry?.constructor as new (
+      opts: Record<string, unknown>,
+    ) => LanguageTranslationTask;
+    const task = new TaskClass({ db });
+    await task.initialize();
+
+    const definition = LanguageRegistry.get('integration.shape', 'en');
+    await expect(
+      task.execute({
+        key: 'integration.shape',
+        sourceLocale: 'en',
+        sourceTemplate: definition?.template ?? '',
+        sourceHash: definition?.sourceHash ?? '',
+        targetLocale: 'es',
+      }),
+    ).rejects.toThrow('returned no usable translation');
+
+    const overrides = await LanguageOverrideCollection.create({ db });
+    const persisted = await overrides.getAppOverride('integration.shape', 'es');
+    expect(persisted).toBeNull();
+
+    getAiSpy.mockRestore();
   });
 
   it('never overwrites a human-edited row even when the source changes', async () => {

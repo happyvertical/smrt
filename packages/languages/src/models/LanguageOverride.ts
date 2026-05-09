@@ -4,9 +4,15 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { invalidateLanguageCache } from '../cache.js';
 import type { LanguageOverrideOptions } from '../types.js';
 import { normalizeLocale } from '../utils.js';
+
+type LanguageTransactionHandle = DatabaseInterface & {
+  commit: () => Promise<void>;
+  rollback: () => Promise<void>;
+};
 
 export interface LanguageOverrideCtorOptions
   extends SmrtObjectOptions,
@@ -86,19 +92,30 @@ export class LanguageOverride extends SmrtObject {
     }
 
     this.locale = normalizeLocale(this.locale);
-    // `context` is the conflictColumn-friendly scope: 'app' for nullable tenant,
-    // tenantId otherwise. Mirrors the prompt-override convention.
+    // `context` is the conflictColumn-friendly scope: '__app__' for nullable
+    // tenant, tenantId otherwise. Mirrors the prompt-override convention.
     this.context = this.tenantId ?? '__app__';
 
     const previousIdentity = await this.getPersistedIdentity();
-    const result = await super.save();
-
-    if (
-      previousIdentity &&
+    const identityChanged =
+      !!previousIdentity &&
       (previousIdentity.key !== this.key ||
         previousIdentity.locale !== this.locale ||
-        previousIdentity.tenantId !== this.tenantId)
-    ) {
+        previousIdentity.tenantId !== this.tenantId);
+
+    // Persistence upserts on `(key, locale, context)`, so changing any of
+    // those on an existing row makes a plain `super.save()` write the old
+    // primary key under a new conflict identity — that hits the PK
+    // constraint instead of moving the override. Use the same
+    // delete-then-insert dance as PromptOverride: prefer a transaction when
+    // the driver supports it; otherwise stage a replacement row first and
+    // delete the old one only after the new one is durable.
+    const result =
+      identityChanged && previousIdentity
+        ? await this.saveAfterIdentityChange()
+        : await super.save();
+
+    if (identityChanged && previousIdentity) {
       invalidateLanguageCache(
         previousIdentity.key,
         previousIdentity.locale,
@@ -108,6 +125,72 @@ export class LanguageOverride extends SmrtObject {
     }
     invalidateLanguageCache(this.key, this.locale, this.tenantId, this.db);
     return result;
+  }
+
+  private async saveAfterIdentityChange(): Promise<this> {
+    if (typeof this.db.beginTransaction === 'function') {
+      return this.saveAfterIdentityChangeInTransaction();
+    }
+    return this.saveAfterIdentityChangeWithDeferredDelete();
+  }
+
+  private async saveAfterIdentityChangeInTransaction(): Promise<this> {
+    const originalDb = this._db;
+    const originalOptionsDb = this.options.db;
+    const tx = (await this.db.beginTransaction?.()) as
+      | LanguageTransactionHandle
+      | undefined;
+
+    if (!tx) {
+      return this.saveAfterIdentityChangeWithDeferredDelete();
+    }
+
+    try {
+      this._db = tx;
+      this.options.db = tx;
+      await super.delete();
+      const result = await super.save();
+      await tx.commit();
+      return result;
+    } catch (error) {
+      try {
+        await tx.rollback();
+      } catch {
+        // Preserve the original save error; rollback failures are secondary.
+      }
+      throw error;
+    } finally {
+      this._db = originalDb;
+      this.options.db = originalOptionsDb;
+    }
+  }
+
+  private async saveAfterIdentityChangeWithDeferredDelete(): Promise<this> {
+    const previousId = this.id;
+    if (!previousId) {
+      return super.save();
+    }
+
+    const replacementId = crypto.randomUUID();
+    let replacementSaved = false;
+    this.id = replacementId;
+
+    try {
+      const result = await super.save();
+      replacementSaved = true;
+      await this.db.delete(this.tableName, { id: previousId });
+      return result;
+    } catch (error) {
+      if (replacementSaved) {
+        try {
+          await this.db.delete(this.tableName, { id: replacementId });
+        } catch {
+          // Best effort cleanup keeps the original row as the source of truth.
+        }
+      }
+      this.id = previousId;
+      throw error;
+    }
   }
 
   override async delete(): Promise<void> {

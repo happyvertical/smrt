@@ -25,14 +25,24 @@ export const AUTO_TRANSLATE_FEATURE_KEY = 'smrt-languages.auto_translate';
  */
 export const TRANSLATION_PROMPT_KEY = 'smrt-languages.translation';
 
+/**
+ * Brace-containing example values that must reach the model verbatim. The
+ * prompt renderer treats every `{...}` as a variable, so anything we want the
+ * model to literally see (the placeholder syntax we're asking it to preserve,
+ * the JSON shape we're asking it to return) is injected via a variable rather
+ * than being baked into the static template.
+ */
+const PLACEHOLDER_EXAMPLE = '"{name}"';
+const RESPONSE_SHAPE_EXAMPLE = '{"translation": "Hola, {name}"}';
+
 definePrompt({
   key: TRANSLATION_PROMPT_KEY,
   template:
     'You translate user-facing application strings from {sourceLocale} to {targetLocale}.\n' +
-    'Preserve any "{var}" placeholders exactly. Do not add markup or commentary.\n' +
+    'Preserve any placeholders such as {placeholderExample} exactly as they appear, including the braces. Do not add markup or commentary.\n' +
     'Match the organization glossary where applicable:\n{glossary}\n' +
     'String to translate: "{template}"\n' +
-    'Reply with a JSON object: {"translation": string}.',
+    'Reply with a JSON object shaped like {responseShapeExample} where the translation field is your translated string.',
   editable: {
     template: true,
     profile: true,
@@ -129,22 +139,34 @@ export class LanguageTranslationTask extends SmrtObject {
       glossary = '(no organization glossary)';
     }
 
+    // Pass the task's DB into resolvePrompt so any app/tenant-level prompt
+    // overrides stored in `_smrt_prompt_overrides` are honored — that's the
+    // whole reason we register the translation prompt with smrt-prompts in
+    // the first place.
     const prompt = await resolvePrompt(TRANSLATION_PROMPT_KEY, {
+      db: this.options.db,
       tenantId: args.tenantId ?? null,
       variables: {
         sourceLocale,
         targetLocale,
         template: args.sourceTemplate,
         glossary,
+        placeholderExample: PLACEHOLDER_EXAMPLE,
+        responseShapeExample: RESPONSE_SHAPE_EXAMPLE,
       },
     });
 
-    const aiConfig: Record<string, unknown> = { ...(prompt.ai ?? {}) };
-    if (args.model) aiConfig.model = args.model;
-    const ai = await getAI(aiConfig as any);
+    // Single merged AI config: per-job model override (`args.model`) wins
+    // over the prompt's `ai.model`, and the same merge feeds both `getAI()`
+    // (client construction) and `ai.message()` (request options) so the
+    // override actually takes effect end-to-end.
+    const promptAi = (prompt.ai ?? {}) as Record<string, unknown>;
+    const mergedAiConfig: Record<string, unknown> = { ...promptAi };
+    if (args.model) mergedAiConfig.model = args.model;
+    const ai = await getAI(mergedAiConfig as any);
 
     const message = await ai.message(prompt.text, {
-      ...(prompt.ai as Record<string, unknown>),
+      ...mergedAiConfig,
       responseFormat: { type: 'json_object' },
     });
 
@@ -161,7 +183,12 @@ export class LanguageTranslationTask extends SmrtObject {
       );
     }
 
-    const aiModel = (prompt.ai?.model as string | undefined) ?? null;
+    // Persist the model that actually produced the translation, not just the
+    // prompt's default — `args.model` overrides the prompt's `ai.model`.
+    const aiModel =
+      (args.model as string | undefined) ??
+      (promptAi.model as string | undefined) ??
+      null;
     const sourceHash =
       args.sourceHash || computeSourceHash(args.sourceTemplate);
 
@@ -254,11 +281,17 @@ export async function enqueueTranslationJob(
     tenantId: options.tenantId ?? null,
   };
 
+  // Stamp tenantId on the SmrtJob row so the per-tenant daily budget query
+  // (which filters by `tenantId`) actually counts this job. SmrtJob.save()
+  // will fall back to `getTenantId()` from AsyncLocalStorage when undefined,
+  // but we may be enqueueing from outside a tenant context (e.g. resolver
+  // miss with an explicit tenantId option), so set it explicitly here.
   const job = await jobs.create({
     queue: 'languages',
     objectType: 'LanguageTranslationTask',
     objectId: null,
     method: 'execute',
+    tenantId: options.tenantId ?? null,
     args: { ...payload, _dedupId: dedupId },
     runAt: new Date(),
     priority: 25,
@@ -330,22 +363,23 @@ async function countTodayTenantTranslations(
   options: { db?: unknown },
   tenantId: string,
 ): Promise<number> {
-  try {
-    const jobs = await (SmrtJobCollection as any).create({ db: options.db });
-    const since = new Date();
-    since.setUTCHours(0, 0, 0, 0);
-    const rows = await jobs.list({
-      where: {
-        objectType: 'LanguageTranslationTask',
-        method: 'execute',
-        tenantId,
-        createdAt: { op: '>=', value: since.toISOString() },
-      },
-    });
-    return rows.length;
-  } catch {
-    return 0;
-  }
+  // SmrtCollection.list() encodes operators into the where-clause key (e.g.
+  // `'createdAt >='`), not as `{ op, value }` objects — using the wrong shape
+  // either throws or matches nothing, and a swallowed failure here silently
+  // disables the budget. Let the call propagate so configuration mistakes
+  // surface immediately rather than as a missed throttle in production.
+  const jobs = await (SmrtJobCollection as any).create({ db: options.db });
+  const since = new Date();
+  since.setUTCHours(0, 0, 0, 0);
+  const rows = await jobs.list({
+    where: {
+      objectType: 'LanguageTranslationTask',
+      method: 'execute',
+      tenantId,
+      'createdAt >=': since.toISOString(),
+    },
+  });
+  return rows.length;
 }
 
 function getLanguagesConfig(): LanguagesPackageConfig {
@@ -376,18 +410,37 @@ function parseTranslationResponse(
   message: string | null | undefined,
 ): string | null {
   if (!message) return null;
+
+  // We requested `responseFormat: json_object` so the model is supposed to
+  // return a JSON object with a `translation` string. If parsing succeeds but
+  // the shape is wrong (e.g. `{"text":"Hola"}`), we MUST NOT fall through to
+  // the bare-string path — that would persist the whole JSON blob as the
+  // translation. Only the parse-failed branch may try to use the raw message
+  // as a literal string (some providers occasionally return prose despite
+  // the format hint).
+  let parseFailed = false;
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(message);
+    parsed = JSON.parse(message);
+  } catch {
+    parseFailed = true;
+  }
+
+  if (!parseFailed) {
     if (
       parsed &&
       typeof parsed === 'object' &&
-      typeof parsed.translation === 'string'
+      !Array.isArray(parsed) &&
+      typeof (parsed as { translation?: unknown }).translation === 'string'
     ) {
-      const cleaned = parsed.translation.trim();
+      const cleaned = (parsed as { translation: string }).translation.trim();
       return cleaned.length > 0 ? cleaned : null;
     }
-  } catch {
-    // Fall through — the model may have returned a bare string.
+    if (typeof parsed === 'string') {
+      const cleaned = parsed.trim();
+      return cleaned.length > 0 ? cleaned : null;
+    }
+    return null;
   }
 
   const trimmed = String(message).trim();
