@@ -24,7 +24,7 @@
   },
   "scripts": {
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:watch": "vitest",
     "build": "vite build",
     "build:watch": "vite build --watch",
