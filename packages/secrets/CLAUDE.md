@@ -54,6 +54,9 @@ inline comment pointing back to this section.
   rely on.
 - **`SecretAuditLog` (`src/models/SecretAuditLog.ts`)** — uses the inline
   `tenantScoped: true` form rather than the decorator. Audit reads run in mixed
-  contexts (tenant-scoped reports vs. super-admin compliance review); pairing the
-  boolean form with explicit `withSuperAdminBypass()` at compliance call sites
-  keeps cross-tenant audit queries explicit instead of magical.
+  contexts (tenant-scoped reports vs. super-admin compliance review). Cross-
+  tenant audit queries should be wrapped in `withSuperAdminBypass()` from
+  `@happyvertical/smrt-tenancy` at the call site — there are no such cross-
+  tenant call sites in this package today, but consumers building compliance
+  tooling should adopt that pattern explicitly rather than relying on
+  decorator-implicit filtering.
