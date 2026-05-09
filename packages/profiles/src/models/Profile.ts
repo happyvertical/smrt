@@ -20,7 +20,12 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  promptMessageOptions,
+  smrtProfilesGenerateBioPrompt,
+} from '../prompts';
 import type { ProfileRelationship } from './ProfileRelationship';
 import { ProfileType } from './ProfileType';
 
@@ -488,10 +493,41 @@ export class Profile extends SmrtObject {
   /**
    * AI-powered: Generate a professional bio for this profile
    *
+   * Uses the `smrtProfiles.profile.generateBio` prompt registered via
+   * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
    * @returns Generated bio text
    */
   async generateBio(): Promise<string> {
-    return await this.do('Write a short, professional bio for this person.');
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias. SmrtClass maps `persistence → db` lazily during `initialize()`,
+    // so on a freshly-constructed Profile that has not yet been initialized,
+    // `this.options.db` may be undefined while `this.options.persistence` is
+    // set. Falling back here ensures stored app- and tenant-level prompt
+    // overrides in `_smrt_prompt_overrides` are honored on the first call —
+    // before `getAiClient()` triggers full initialization further below.
+    const db = this.options.db ?? this.options.persistence;
+
+    const resolvedPrompt = await resolvePrompt(
+      smrtProfilesGenerateBioPrompt.key,
+      {
+        db,
+        tenantId: this.tenantId,
+        variables: {
+          profileName: this.name || '',
+          profileDescription: this.description || '',
+        },
+      },
+    );
+
+    const ai = await this.getAiClient();
+    const response = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+
+    return response.trim();
   }
 
   /**

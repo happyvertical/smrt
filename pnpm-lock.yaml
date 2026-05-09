@@ -1343,6 +1343,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -1469,9 +1472,6 @@ importers:
         specifier: ^0.73.2
         version: 0.73.2
     devDependencies:
-      '@happyvertical/smrt-cli':
-        specifier: workspace:*
-        version: link:../cli
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
