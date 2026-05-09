@@ -27,8 +27,12 @@ import ContentGovernanceManager from './components/ContentGovernanceManager.svel
 import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
 import ContentGovernancePolicyEditor from './components/ContentGovernancePolicyEditor.svelte';
 import ContentGovernanceProfileEditor from './components/ContentGovernanceProfileEditor.svelte';
+import ContentImageBrowser from './components/ContentImageBrowser.svelte';
 import ContentImageChooser from './components/ContentImageChooser.svelte';
 import ContentList from './components/ContentList.svelte';
+import ContentMetadataFields from './components/ContentMetadataFields.svelte';
+import ContentReferencesPanel from './components/ContentReferencesPanel.svelte';
+import ContentStatusFields from './components/ContentStatusFields.svelte';
 import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
 import GovernedContentEditor from './components/GovernedContentEditor.svelte';
 import Markdown from './components/Markdown.svelte';
@@ -64,8 +68,12 @@ export {
   ContentGovernancePanel,
   ContentGovernancePolicyEditor,
   ContentGovernanceProfileEditor,
+  ContentImageBrowser,
   ContentImageChooser,
   ContentList,
+  ContentMetadataFields,
+  ContentReferencesPanel,
+  ContentStatusFields,
   ContentTransparencyReport,
   ContentContributionsRoute,
   ContentFactsRoute,
@@ -93,6 +101,18 @@ export type ContentBodyRendererProps = ComponentProps<
 >;
 export type ContentImageChooserProps = ComponentProps<
   typeof ContentImageChooser
+>;
+export type ContentImageBrowserProps = ComponentProps<
+  typeof ContentImageBrowser
+>;
+export type ContentMetadataFieldsProps = ComponentProps<
+  typeof ContentMetadataFields
+>;
+export type ContentReferencesPanelProps = ComponentProps<
+  typeof ContentReferencesPanel
+>;
+export type ContentStatusFieldsProps = ComponentProps<
+  typeof ContentStatusFields
 >;
 export type ContentListProps = ComponentProps<typeof ContentList>;
 export type ContentContributionFormProps = ComponentProps<
@@ -146,6 +166,11 @@ export type PublishedArticleRouteProps = ComponentProps<
   typeof PublishedArticleRoute
 >;
 
+export type { ContentBodyFormat, ContentBodyImage } from '../body-format.js';
+export {
+  extractBodyImages,
+  resolveBodyFormat,
+} from '../body-format.js';
 // Export types
 export type {
   ContentEditorAssistantActions,
@@ -164,6 +189,19 @@ export {
   contentEditorAssistantContextToChatProps,
   createContentEditorAssistantContext,
 } from '../content-editor-assistant.js';
+export type {
+  ContentPublishReadinessState,
+  EvaluateContentPublishReadinessOptions,
+  PublishReadinessProfile,
+  PublishReadinessRequirement,
+} from '../publish-readiness.js';
+export { evaluateContentPublishReadiness } from '../publish-readiness.js';
+export type { ContentEditorFormData } from './content-editor-form.js';
+export {
+  getContentEditorInitialFormData,
+  getContentEditorSavePayload,
+  getContentEditorSnapshot,
+} from './content-editor-form.js';
 export type {
   ContentRouteId,
   ContentRouteKey,
