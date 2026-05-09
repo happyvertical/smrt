@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.4
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: cross-cutting standards remainder (CC-2/3/4/6) (#1205)
+  - @happyvertical/smrt-scanner@0.24.4
+  - @happyvertical/smrt-config@0.24.4
+  - @happyvertical/smrt-types@0.24.4
+
 ## 0.24.3
 
 ### Patch Changes
