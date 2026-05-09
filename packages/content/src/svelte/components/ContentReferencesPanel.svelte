@@ -1,12 +1,10 @@
 <script lang="ts">
+import type { ContentEditorReference } from '../content-editor-form';
+
 export interface Props {
-  apiBaseUrl?: string;
-  contentId?: string;
   referenceIds?: string[];
-  references?: any[];
-  factAudit?: Record<string, any> | null;
+  references?: ContentEditorReference[];
   onReferenceIdsChange?: (referenceIds: string[]) => void;
-  onFactAuditChange?: (state: Record<string, any> | null) => void;
 }
 
 let {
@@ -23,7 +21,7 @@ const visibleReferences = $derived(
     : referenceIds.map((id) => ({ id, title: id })),
 );
 
-function getReferenceLabel(reference: any): string {
+function getReferenceLabel(reference: ContentEditorReference): string {
   return String(
     reference?.title ||
       reference?.name ||
@@ -34,10 +32,26 @@ function getReferenceLabel(reference: any): string {
   );
 }
 
-function getReferenceUrl(reference: any): string {
+function getReferenceUrl(reference: ContentEditorReference): string {
   return String(
     reference?.url || reference?.originalUrl || reference?.source || '',
   );
+}
+
+function getSafeReferenceUrl(reference: ContentEditorReference): string {
+  const url = getReferenceUrl(reference).trim();
+  if (!url) {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      ? parsed.href
+      : '';
+  } catch {
+    return '';
+  }
 }
 
 function addReference() {
@@ -59,16 +73,18 @@ function removeReference(id: string) {
 <div class="content-references-panel">
   {#if visibleReferences.length}
     <div class="reference-list">
-      {#each visibleReferences as reference (reference.id || getReferenceLabel(reference))}
+      {#each visibleReferences as reference, index (reference.id || getSafeReferenceUrl(reference) || `${getReferenceLabel(reference)}-${index}`)}
+        {@const safeUrl = getSafeReferenceUrl(reference)}
+        {@const referenceId = typeof reference.id === 'string' ? reference.id : ''}
         <div class="reference-row">
           <div class="reference-copy">
             <strong>{getReferenceLabel(reference)}</strong>
-            {#if getReferenceUrl(reference)}
-              <a href={getReferenceUrl(reference)} target="_blank" rel="noreferrer">{getReferenceUrl(reference)}</a>
+            {#if safeUrl}
+              <a href={safeUrl} target="_blank" rel="noreferrer">{safeUrl}</a>
             {/if}
           </div>
-          {#if reference.id}
-            <button type="button" onclick={() => removeReference(reference.id)}>Remove</button>
+          {#if referenceId}
+            <button type="button" onclick={() => removeReference(referenceId)}>Remove</button>
           {/if}
         </div>
       {/each}
@@ -80,6 +96,7 @@ function removeReference(id: string) {
   <div class="reference-input-row">
     <input
       type="text"
+      aria-label="Add reference by ID or URL"
       placeholder="Reference ID or URL"
       bind:value={newReferenceId}
       onkeydown={(event) => {

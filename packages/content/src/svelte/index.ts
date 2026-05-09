@@ -196,11 +196,19 @@ export type {
   PublishReadinessRequirement,
 } from '../publish-readiness.js';
 export { evaluateContentPublishReadiness } from '../publish-readiness.js';
-export type { ContentEditorFormData } from './content-editor-form.js';
+export type {
+  ContentEditorAsset,
+  ContentEditorFormData,
+  ContentEditorInitialContent,
+  ContentEditorReference,
+  ContentEditorSavePayload,
+} from './content-editor-form.js';
 export {
+  formatDateTimeLocal,
   getContentEditorInitialFormData,
   getContentEditorSavePayload,
   getContentEditorSnapshot,
+  normalizePublishDate,
 } from './content-editor-form.js';
 export type {
   ContentRouteId,

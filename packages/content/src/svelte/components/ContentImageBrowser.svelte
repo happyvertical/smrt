@@ -3,16 +3,17 @@ import {
   type ImageLike,
   ImageUploader,
 } from '@happyvertical/smrt-images/svelte';
+import type { ContentEditorAsset } from '../content-editor-form';
 
 export interface Props {
   apiBaseUrl?: string;
-  assets?: any[];
+  assets?: ContentEditorAsset[];
   thumbnailAssetId?: string | null;
   addButtonLabel?: string;
   selectActionLabel?: string;
   showUploaderInitially?: boolean;
   onSelectImage?: (image: ImageLike | File | string) => void;
-  onUseAsset?: (asset: any) => void;
+  onUseAsset?: (asset: ContentEditorAsset) => void;
   onRemoveAsset?: (assetId: string) => void;
   onUseAsThumbnail?: (assetId: string) => void;
 }
@@ -33,12 +34,10 @@ let {
 let showUploader = $state(false);
 
 $effect(() => {
-  if (showUploaderInitially) {
-    showUploader = true;
-  }
+  showUploader = showUploaderInitially;
 });
 
-function getAssetImageSource(asset: any): string {
+function getAssetImageSource(asset: ContentEditorAsset): string {
   return String(
     asset?.sourceUri ||
       asset?.thumbnailUri ||
@@ -50,7 +49,7 @@ function getAssetImageSource(asset: any): string {
   );
 }
 
-function getAssetLabel(asset: any): string {
+function getAssetLabel(asset: ContentEditorAsset): string {
   return String(
     asset?.name || asset?.title || asset?.filename || asset?.id || 'Image',
   );
@@ -65,19 +64,20 @@ function handleSelect(selected: ImageLike | File | string) {
 <div class="content-image-browser">
   {#if assets.length}
     <div class="asset-grid">
-      {#each assets as asset (asset.id || getAssetLabel(asset))}
+      {#each assets as asset, index (asset.id || `${getAssetLabel(asset)}-${index}`)}
         {@const source = getAssetImageSource(asset)}
-        <article class="asset-card" class:asset-card--thumbnail={thumbnailAssetId === asset.id}>
+        {@const assetId = typeof asset.id === 'string' ? asset.id : ''}
+        <article class="asset-card" class:asset-card--thumbnail={thumbnailAssetId === assetId}>
           <div class="asset-preview">
             {#if source}
-              <img src={source} alt={getAssetLabel(asset)} />
+              <img src={source} alt={getAssetLabel(asset)} loading="lazy" decoding="async" />
             {:else}
               <span>{getAssetLabel(asset).slice(0, 1).toUpperCase()}</span>
             {/if}
           </div>
           <div class="asset-meta">
             <strong>{getAssetLabel(asset)}</strong>
-            {#if thumbnailAssetId === asset.id}
+            {#if thumbnailAssetId === assetId}
               <span>Thumbnail</span>
             {/if}
           </div>
@@ -85,11 +85,11 @@ function handleSelect(selected: ImageLike | File | string) {
             {#if onUseAsset}
               <button type="button" onclick={() => onUseAsset?.(asset)}>{selectActionLabel}</button>
             {/if}
-            {#if onUseAsThumbnail && asset.id && thumbnailAssetId !== asset.id}
-              <button type="button" onclick={() => onUseAsThumbnail?.(asset.id)}>Thumbnail</button>
+            {#if onUseAsThumbnail && assetId && thumbnailAssetId !== assetId}
+              <button type="button" onclick={() => onUseAsThumbnail?.(assetId)}>Thumbnail</button>
             {/if}
-            {#if onRemoveAsset && asset.id}
-              <button type="button" class="danger" onclick={() => onRemoveAsset?.(asset.id)}>Remove</button>
+            {#if onRemoveAsset && assetId}
+              <button type="button" class="danger" onclick={() => onRemoveAsset?.(assetId)}>Remove</button>
             {/if}
           </div>
         </article>
