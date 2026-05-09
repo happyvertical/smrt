@@ -125,6 +125,13 @@ function serializeInstance(
   instance: SmrtObject,
   className: string,
 ): Record<string, unknown> {
+  // Documented exception to the "never call toJSON() directly" convention
+  // (docs/content/standards.md §7): the interceptor must serialize whatever
+  // instance is handed to it, including workspace stubs and plain-object
+  // doubles used in unit tests whose classes may not extend SmrtObject and
+  // therefore have no `transformJSON()` hook. Using `toJSON()` here is a
+  // duck-typed fallback — when present, it strips framework-internal handles
+  // for us; when absent, we fall through to manual key iteration below.
   if (typeof (instance as any).toJSON === 'function') {
     return { className, ...(instance as any).toJSON() };
   }

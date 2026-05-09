@@ -653,6 +653,14 @@ export class SmrtClass {
           ) {
             this._ai = aiOption as unknown as AIClient;
           } else {
+            // CC-8 follow-up: ideally this would route through
+            // `@happyvertical/smrt-config` for sanitization parity (e.g. via
+            // `getPackageConfig('ai', ...)`), but smrt-config currently only
+            // merges file-based config + runtime overrides — it does NOT
+            // read from `process.env` with a typed prefix/schema. Until
+            // smrt-config grows an env-loader (or wraps `loadEnvConfig`),
+            // we continue to use the underlying utility directly. Tracked
+            // alongside the CC-8 audit on issue #1199.
             const { loadEnvConfig } = await import('@happyvertical/utils');
 
             // Start with global defaults
