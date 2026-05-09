@@ -6856,14 +6856,6 @@
       "filePath": "/Users/will/.codex/worktrees/e81a/smrt/packages/content/src/content-types.ts",
       "packageName": "@happyvertical/smrt-content",
       "fields": {
-        "created_at": {
-          "type": "json",
-          "required": false
-        },
-        "updated_at": {
-          "type": "json",
-          "required": false
-        },
         "tenantId": {
           "type": "text",
           "required": false
@@ -6901,6 +6893,10 @@
           "required": false
         },
         "body": {
+          "type": "text",
+          "required": false
+        },
+        "bodyFormat": {
           "type": "text",
           "required": false
         },
@@ -6949,6 +6945,34 @@
           "default": {}
         },
         "thumbnailAssetId": {
+          "type": "text",
+          "required": false
+        },
+        "feedSourceId": {
+          "type": "text",
+          "required": false
+        },
+        "sourceGuid": {
+          "type": "text",
+          "required": false
+        },
+        "sourceName": {
+          "type": "text",
+          "required": false
+        },
+        "sourceHomepageUrl": {
+          "type": "text",
+          "required": false
+        },
+        "externalUrl": {
+          "type": "text",
+          "required": false
+        },
+        "originalPublishedAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "dedupeKey": {
           "type": "text",
           "required": false
         }
@@ -8031,7 +8055,7 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" TEXT,\n  \"feed_source_id\" TEXT,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -8102,6 +8126,10 @@
             "type": "TEXT",
             "notNull": false
           },
+          "body_format": {
+            "type": "TEXT",
+            "notNull": false
+          },
           "publish_date": {
             "type": "TIMESTAMP",
             "notNull": false
@@ -8149,6 +8177,34 @@
           "thumbnail_asset_id": {
             "type": "TEXT",
             "notNull": false
+          },
+          "feed_source_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source_guid": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source_name": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source_homepage_url": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_url": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "original_published_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "dedupe_key": {
+            "type": "TEXT",
+            "notNull": false
           }
         },
         "indexes": [
@@ -8174,7 +8230,7 @@
             ]
           }
         ],
-        "version": "3856f456"
+        "version": "d53c72d1"
       }
     },
     "@happyvertical/smrt-content:ContentVersion": {
@@ -8612,14 +8668,6 @@
       "filePath": "/Users/will/.codex/worktrees/e81a/smrt/packages/content/src/content.ts",
       "packageName": "@happyvertical/smrt-content",
       "fields": {
-        "created_at": {
-          "type": "json",
-          "required": false
-        },
-        "updated_at": {
-          "type": "json",
-          "required": false
-        },
         "tenantId": {
           "type": "text",
           "required": false
@@ -8657,6 +8705,10 @@
           "required": false
         },
         "body": {
+          "type": "text",
+          "required": false
+        },
+        "bodyFormat": {
           "type": "text",
           "required": false
         },
@@ -9874,7 +9926,7 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" TEXT,\n  \"feed_source_id\" TEXT,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -9945,6 +9997,10 @@
             "type": "TEXT",
             "notNull": false
           },
+          "body_format": {
+            "type": "TEXT",
+            "notNull": false
+          },
           "publish_date": {
             "type": "TIMESTAMP",
             "notNull": false
@@ -9992,6 +10048,34 @@
           "thumbnail_asset_id": {
             "type": "TEXT",
             "notNull": false
+          },
+          "feed_source_id": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source_guid": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source_name": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "source_homepage_url": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "external_url": {
+            "type": "TEXT",
+            "notNull": false
+          },
+          "original_published_at": {
+            "type": "TIMESTAMP",
+            "notNull": false
+          },
+          "dedupe_key": {
+            "type": "TEXT",
+            "notNull": false
           }
         },
         "indexes": [
@@ -10017,7 +10101,7 @@
             ]
           }
         ],
-        "version": "4596f25c"
+        "version": "1084d7e1"
       }
     },
     "@happyvertical/smrt-content:Contents": {
@@ -10298,6 +10382,466 @@
           }
         ],
         "version": "03fead76"
+      }
+    },
+    "@happyvertical/smrt-content:ContentFeedSource": {
+      "name": "contentfeedsource",
+      "className": "ContentFeedSource",
+      "qualifiedName": "@happyvertical/smrt-content:ContentFeedSource",
+      "collection": "contentfeedsources",
+      "filePath": "/Users/will/.codex/worktrees/8c80/smrt/packages/content/src/content-feed-source.ts",
+      "packageName": "@happyvertical/smrt-content",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "required": false
+        },
+        "name": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "feedUrl": {
+          "type": "text",
+          "required": true,
+          "_meta": {
+            "required": true
+          }
+        },
+        "homepageUrl": {
+          "type": "text",
+          "required": false
+        },
+        "format": {
+          "type": "text",
+          "required": false
+        },
+        "status": {
+          "type": "text",
+          "required": true,
+          "default": "active",
+          "_meta": {
+            "required": true,
+            "default": "active"
+          }
+        },
+        "defaultCategory": {
+          "type": "text",
+          "required": false
+        },
+        "sourceGroup": {
+          "type": "text",
+          "required": false
+        },
+        "pollIntervalMinutes": {
+          "type": "integer",
+          "required": true,
+          "default": 15
+        },
+        "etag": {
+          "type": "text",
+          "required": false
+        },
+        "lastModified": {
+          "type": "text",
+          "required": false
+        },
+        "lastFetchedAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "lastSuccessAt": {
+          "type": "datetime",
+          "required": false
+        },
+        "lastError": {
+          "type": "text",
+          "required": false
+        },
+        "metadata": {
+          "type": "json",
+          "required": false,
+          "default": {}
+        },
+        "createdAt": {
+          "type": "text",
+          "required": false
+        },
+        "updatedAt": {
+          "type": "text",
+          "required": false
+        }
+      },
+      "methods": {
+        "getMetadata": {
+          "name": "getMetadata",
+          "async": false,
+          "parameters": [],
+          "returnType": "Record<string, any>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "setMetadata": {
+          "name": "setMetadata",
+          "async": false,
+          "parameters": [
+            {
+              "name": "metadata",
+              "type": "Record<string, any>",
+              "optional": false
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markFetchStarted": {
+          "name": "markFetchStarted",
+          "async": false,
+          "parameters": [
+            {
+              "name": "at",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markFetchSucceeded": {
+          "name": "markFetchSucceeded",
+          "async": false,
+          "parameters": [
+            {
+              "name": "at",
+              "type": "any",
+              "optional": true
+            },
+            {
+              "name": "headers",
+              "type": "object",
+              "optional": true
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "markFetchFailed": {
+          "name": "markFetchFailed",
+          "async": false,
+          "parameters": [
+            {
+              "name": "error",
+              "type": "any",
+              "optional": false
+            },
+            {
+              "name": "at",
+              "type": "any",
+              "optional": true
+            }
+          ],
+          "returnType": "void",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "content_feed_sources",
+        "conflictColumns": [
+          "tenant_id",
+          "feed_url"
+        ],
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "cli": true
+      },
+      "extends": "SmrtObject",
+      "exportName": "ContentFeedSource",
+      "collectionExportName": "ContentFeedSourceCollection",
+      "validationRules": [
+        {
+          "field": "name",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "feedUrl",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "status",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "pollIntervalMinutes",
+          "rule": "required",
+          "fieldType": "integer"
+        }
+      ],
+      "schema": {
+        "tableName": "content_feed_sources",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT NOT NULL,\n  \"feed_url\" TEXT NOT NULL,\n  \"homepage_url\" TEXT,\n  \"format\" TEXT,\n  \"status\" TEXT NOT NULL DEFAULT 'active',\n  \"default_category\" TEXT,\n  \"source_group\" TEXT,\n  \"poll_interval_minutes\" INTEGER NOT NULL DEFAULT 15,\n  \"etag\" TEXT,\n  \"last_modified\" TEXT,\n  \"last_fetched_at\" TIMESTAMP,\n  \"last_success_at\" TIMESTAMP,\n  \"last_error\" TEXT,\n  \"metadata\" JSON DEFAULT '{}'\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "name": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "feed_url": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "homepage_url": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "format": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false,
+            "default": "active"
+          },
+          "default_category": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "source_group": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "poll_interval_minutes": {
+            "type": "INTEGER",
+            "notNull": true,
+            "unique": false,
+            "default": 15
+          },
+          "etag": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "last_modified": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "last_fetched_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          },
+          "last_success_at": {
+            "type": "TIMESTAMP",
+            "notNull": false,
+            "unique": false
+          },
+          "last_error": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "metadata": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false,
+            "default": {}
+          }
+        },
+        "indexes": [
+          {
+            "name": "content_feed_sources_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "content_feed_sources_tenant_id_feed_url_idx",
+            "columns": [
+              "tenant_id",
+              "feed_url"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "de2bb298"
+      }
+    },
+    "@happyvertical/smrt-content:ContentFeedSourceCollection": {
+      "name": "contentfeedsourcecollection",
+      "className": "ContentFeedSourceCollection",
+      "qualifiedName": "@happyvertical/smrt-content:ContentFeedSourceCollection",
+      "collection": "contentfeedsources",
+      "filePath": "/Users/will/.codex/worktrees/8c80/smrt/packages/content/src/content-feed-sources.ts",
+      "packageName": "@happyvertical/smrt-content",
+      "fields": {},
+      "methods": {
+        "findActive": {
+          "name": "findActive",
+          "async": true,
+          "parameters": [
+            {
+              "name": "tenantId",
+              "type": "string | null",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ContentFeedSource[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByStatus": {
+          "name": "findByStatus",
+          "async": true,
+          "parameters": [
+            {
+              "name": "status",
+              "type": "ContentFeedSourceStatus",
+              "optional": false
+            },
+            {
+              "name": "tenantId",
+              "type": "string | null",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ContentFeedSource[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "findByFeedUrl": {
+          "name": "findByFeedUrl",
+          "async": true,
+          "parameters": [
+            {
+              "name": "feedUrl",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "tenantId",
+              "type": "string | null",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<ContentFeedSource | null>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "content_feed_sources"
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "ContentFeedSource",
+      "exportName": "ContentFeedSourceCollection",
+      "collectionExportName": "ContentFeedSourceCollectionCollection",
+      "schema": {
+        "tableName": "content_feed_sources",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "columns": {
+          "id": {
+            "type": "TEXT",
+            "primaryKey": true,
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          }
+        },
+        "indexes": [
+          {
+            "name": "content_feed_sources_id_idx",
+            "columns": [
+              "id"
+            ]
+          },
+          {
+            "name": "content_feed_sources_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          }
+        ],
+        "version": "ba9617ce"
       }
     }
   },

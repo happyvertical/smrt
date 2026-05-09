@@ -631,6 +631,9 @@ importers:
       '@happyvertical/utils':
         specifier: ^0.73.2
         version: 0.73.2
+      fast-xml-parser:
+        specifier: ^5.7.2
+        version: 5.7.2
       yaml:
         specifier: ^2.8.2
         version: 2.8.2
