@@ -2,7 +2,7 @@
   "name": "@happyvertical/smrt-products",
   "version": "0.24.1",
   "description": "SMRT products module: triple-purpose microservice template for standalone apps, federated modules, and NPM libraries",
-  "author": "Will Griffin <willgriffin@gmail.com>",
+  "author": "HappyVertical",
   "type": "module",
   "main": "dist/lib/index.js",
   "types": "dist/lib/index.d.ts",
@@ -112,5 +112,10 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/products"
   }
 }

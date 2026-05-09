@@ -2,7 +2,7 @@
   "name": "@happyvertical/smrt-scanner",
   "version": "0.24.1",
   "description": "High-performance TypeScript scanner using OXC for SMRT manifest generation",
-  "author": "Will Griffin <willgriffin@gmail.com>",
+  "author": "HappyVertical",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -10,6 +10,7 @@
     "smrt-scan": "./bin/smrt-scan.js"
   },
   "files": [
+    "CLAUDE.md",
     "bin",
     "dist"
   ],
@@ -49,5 +50,10 @@
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/scanner"
   }
 }

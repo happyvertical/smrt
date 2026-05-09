@@ -54,10 +54,15 @@
     "provenance",
     "smrt"
   ],
-  "author": "HAVE Team",
+  "author": "HappyVertical",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/facts"
   }
 }

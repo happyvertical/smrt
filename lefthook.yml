@@ -40,6 +40,49 @@ pre-commit:
           brew install actionlint  # macOS
           go install github.com/rhysd/actionlint/cmd/actionlint@latest
 
+    forbidden-artifacts:
+      # Partial enforcement of docs/standards.md §11: rejects the highest-recurrence
+      # patterns we have seen leak into the repo. Not exhaustive — items still TODO
+      # for full §11 coverage: empty config files, generated .claude/smrt-framework.md
+      # written into per-package .claude/ dirs, large binary blobs in package src/,
+      # generic .DS_Store catch-all (currently handled passively via .gitignore).
+      # Expand the case list below as new patterns appear.
+      run: |
+        files="{staged_files}"
+        violations=""
+        for f in $files; do
+          case "$f" in
+            *vite.config.ts.timestamp-*.mjs|*vite.config.*.timestamp-*.mjs|*.timestamp-*.mjs)
+              violations="$violations\n  $f (vite write-cache leftover)"
+              ;;
+            *.bak)
+              violations="$violations\n  $f (manual backup; remove or move outside repo)"
+              ;;
+            */temp-test-manifest-gen-*.ts)
+              violations="$violations\n  $f (manifest-builder driver script; should be gitignored)"
+              ;;
+            packages/*/woohoo.txt|packages/*/test-direct-imports.js)
+              violations="$violations\n  $f (stray dev artifact; remove)"
+              ;;
+            packages/*/.changeset/*)
+              violations="$violations\n  $f (changesets must live at repo root only)"
+              ;;
+          esac
+        done
+        if [ -n "$violations" ]; then
+          printf "❌ Staged files violate docs/standards.md §11:%b\n" "$violations"
+          exit 1
+        fi
+      fail_text: |
+        ❌ Forbidden artifacts in staged files!
+
+        See docs/standards.md §11 for the full list of forbidden patterns.
+        Common cases:
+          - vite.config.ts.timestamp-*.mjs    Vite write-cache; gitignored
+          - *.bak                             Manual backups; gitignored
+          - temp-test-manifest-gen-*.ts       Manifest-builder driver script
+          - packages/*/.changeset/            Changesets must be at repo root
+
 # Check formatting before push
 pre-push:
   commands:

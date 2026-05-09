@@ -166,6 +166,14 @@ repomix-output.xml
 *.db
 **/*.db
 
+# Vite write-cache leftovers (forbidden by docs/standards.md §11)
+**/vite.config.ts.timestamp-*.mjs
+**/vite.config.*.timestamp-*.mjs
+**/*.timestamp-*.mjs
+
+# Manual backups (forbidden by docs/standards.md §11)
+**/*.bak
+
 # Test artifacts
 **/temp-test-manifest-gen-*.ts
 .smrt-test-data/

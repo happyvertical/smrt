@@ -50,7 +50,7 @@
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@types/node": "24.10.9",
+    "@types/node": "25.0.9",
     "fast-glob": "3.3.3",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
@@ -64,10 +64,15 @@
     "payouts",
     "advertising"
   ],
-  "author": "HAVE Team",
+  "author": "HappyVertical",
   "license": "MIT",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
     "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/affiliates"
   }
 }

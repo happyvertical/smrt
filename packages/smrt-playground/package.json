@@ -65,5 +65,11 @@
     "registry": "https://npm.pkg.github.com",
     "access": "public"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "author": "HappyVertical",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-playground"
+  }
 }
