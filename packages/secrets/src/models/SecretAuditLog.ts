@@ -60,6 +60,14 @@ export type SecretAuditResult = 'success' | 'failure' | 'denied';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped({ mode: 'optional' })`):
+// `SecretAuditLog` uses the inline `tenantScoped: true` form on `@smrt()` rather than
+// the dedicated `@TenantScoped` decorator. Audit-trail queries are read-mostly and run
+// in mixed contexts — under a tenant for tenant-scoped reports, and under super-admin
+// bypass for compliance review. Pairing the boolean form with explicit
+// `withSuperAdminBypass()` at the call site keeps the cross-tenant audit query
+// behavior surprise-free. See `packages/secrets/CLAUDE.md` "Known exceptions to
+// monorepo standards" for context.
 @smrt({
   tenantScoped: true,
   api: { include: [] }, // No API exposure

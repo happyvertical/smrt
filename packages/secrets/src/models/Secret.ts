@@ -37,6 +37,16 @@ export type SecretStatus = 'active' | 'disabled' | 'expired';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped({ mode: 'optional' })`):
+// `Secret` uses the inline `tenantScoped: true` form on `@smrt()` rather than the
+// dedicated `@TenantScoped` decorator from `@happyvertical/smrt-tenancy`. The boolean
+// form gives us required-mode tenant scoping without depending on the tenancy package
+// at the model layer, while `SecretService` performs manual scoping by setting
+// `context = tenantId` on each row. The `(slug, context)` upsert key derived from the
+// base `SmrtObject` fields is what gives different tenants isolated namespaces for
+// secret names — switching to the decorator without changing the upsert key would
+// surface false-positive name collisions across tenants. See
+// `packages/secrets/CLAUDE.md` "Known exceptions to monorepo standards" for context.
 @smrt({
   tenantScoped: true,
   // NO API or MCP exposure for security

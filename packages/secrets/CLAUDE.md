@@ -33,3 +33,27 @@ Secret value → encrypted with TDEK (per-tenant Data Encryption Key)
 - **Expired secrets filtered by default**: pass `includeExpired: true` to list them
 - **TenantKeyCollection.cleanupRetiredKeys()**: hard-deletes after 90 days
 - **Audit logging optional but default**: failures logged to console, not thrown
+
+## Known exceptions to monorepo standards
+
+Per `docs/content/standards.md §7`, tenant-aware models should normally apply
+`@TenantScoped({ mode: 'optional' })` from `@happyvertical/smrt-tenancy`. The three
+models in this package deviate intentionally; each `@smrt(...)` block carries an
+inline comment pointing back to this section.
+
+- **`Secret` (`src/models/Secret.ts`)** — uses the inline `tenantScoped: true` form
+  on `@smrt()` instead of the `@TenantScoped` decorator. `SecretService.store()`
+  performs manual scoping by populating `context = tenantId` on each row, so the
+  `(slug, context)` upsert key from the base `SmrtObject` is what isolates secret
+  names per tenant. Switching to the decorator without rethinking the upsert key
+  would surface false-positive name collisions across tenants.
+- **`TenantKey` (`src/models/TenantKey.ts`)** — deliberately NOT tenant-scoped at
+  all. The row carries a `tenantId` column because each TDEK belongs to a tenant,
+  but key-rotation tooling, AMK rewrap jobs, and super-admin audits must query
+  across tenants; the tenancy interceptor would silently filter rows those flows
+  rely on.
+- **`SecretAuditLog` (`src/models/SecretAuditLog.ts`)** — uses the inline
+  `tenantScoped: true` form rather than the decorator. Audit reads run in mixed
+  contexts (tenant-scoped reports vs. super-admin compliance review); pairing the
+  boolean form with explicit `withSuperAdminBypass()` at compliance call sites
+  keeps cross-tenant audit queries explicit instead of magical.
