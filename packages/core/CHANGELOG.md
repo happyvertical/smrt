@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.23.12
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - Add content editor WYSIWYG body and assistant context
+  - @happyvertical/smrt-scanner@0.23.12
+  - @happyvertical/smrt-config@0.23.12
+  - @happyvertical/smrt-types@0.23.12
+
 ## 0.23.11
 
 ### Patch Changes
