@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.3
+
+### Patch Changes
+
+- ### Features
+
+  - add feed source imports (#1204) (content)
+  - @happyvertical/smrt-scanner@0.24.3
+  - @happyvertical/smrt-config@0.24.3
+  - @happyvertical/smrt-types@0.24.3
+
 ## 0.24.2
 
 ### Patch Changes
