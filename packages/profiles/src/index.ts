@@ -11,6 +11,9 @@
 // downstream. Must come first so the side effect runs ahead of the class
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
+// Register prompts at module-load time so consumers and tenants can
+// override them via `resolvePrompt()` without further plumbing.
+import './prompts.js';
 
 // Auth module - Identity resolution
 // Auth module - Nostr crypto
@@ -106,6 +109,13 @@ export type { ProfileTypeOptions } from './models/ProfileType';
 export { ProfileType } from './models/ProfileType';
 // Export profile subclasses (STI)
 export { Bot, Organization, Person } from './models/ProfileTypes';
+
+// Export prompt registrations so consumers can reference the key for
+// tenant-aware overrides via `@happyvertical/smrt-prompts`.
+export {
+  promptMessageOptions,
+  smrtProfilesGenerateBioPrompt,
+} from './prompts';
 
 // Export types
 export type {
