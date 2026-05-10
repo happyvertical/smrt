@@ -10,7 +10,7 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "init-data": "tsx scripts/init-data.ts",
-    "workflow:caelus": "tsx src/workflows/caelus.ts",
+    "workflow:caelus": "npx caelus --config smrt.config.js",
     "workflow:praeco": "npx praeco --config smrt.config.js",
     "validate:json": "tsx scripts/validate-json.ts",
     "validate:slugs": "tsx scripts/validate-slugs.ts"
