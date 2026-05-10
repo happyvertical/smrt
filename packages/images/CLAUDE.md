@@ -18,7 +18,26 @@ Image management with AI categorization, editing, and metadata extraction. Exten
 
 ## AI Operations
 
-`generateAltText()` uses `this.do()` for inference. Computed properties: `isLandscape`, `isPortrait`, `aspectRatio`.
+`generateAltText()` uses the `smrtImages.image.generateAltText` prompt registered via `@happyvertical/smrt-prompts` (resolves tenant overrides via `resolvePrompt()` then dispatches through `getAiClient().message()`). Computed properties: `isLandscape`, `isPortrait`, `aspectRatio`.
+
+## Prompt Registry
+
+`Image.generateAltText()` is registered with `@happyvertical/smrt-prompts` so tenants can override template/model/params at runtime:
+
+```typescript
+import { smrtImagesGenerateAltTextPrompt } from '@happyvertical/smrt-images';
+// key: 'smrtImages.image.generateAltText'
+```
+
+Only non-PII metadata fields are passed to the AI provider: `name`, `description`. Source URIs, internal foreign-key fields (`parentId`, `tenantId`), and the extensible `metadata` blob are intentionally excluded — source URIs may embed signed/private bucket paths and `metadata` may contain EXIF GPS data or tenant-private configuration.
+
+## UI Registry
+
+Svelte components auto-register with `ModuleUIRegistry` on import of `@happyvertical/smrt-images/svelte`. UI slot declarations live in `src/ui.ts` and are exported via `@happyvertical/smrt-images/ui`:
+
+- `assets-gallery` — `AssetsGallery.svelte`
+- `image-editor` — `ImageEditor.svelte`
+- `image-uploader` — `ImageUploader.svelte`
 
 ## Gotchas
 

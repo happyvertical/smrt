@@ -10,6 +10,11 @@
 
 import { Asset } from '@happyvertical/smrt-assets';
 import { field, smrt } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import {
+  promptMessageOptions,
+  smrtImagesGenerateAltTextPrompt,
+} from './prompts';
 import type { ImageOptions } from './types';
 
 @smrt({
@@ -86,19 +91,49 @@ export class Image extends Asset {
   }
 
   /**
-   * Generate accessibility text using AI
+   * AI-powered: Generate accessibility alt text for this image.
+   *
+   * Uses the `smrtImages.image.generateAltText` prompt registered via
+   * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
+   * Only non-PII metadata fields (name, description) are sent to the AI
+   * provider. Source URIs, internal foreign-key fields, and the
+   * extensible `metadata` blob are intentionally excluded — source URIs
+   * may embed signed/private bucket paths and metadata may contain EXIF
+   * GPS data or tenant-private configuration.
    *
    * @returns AI-generated alt text describing the image
    */
   async generateAltText(): Promise<string> {
-    const altText = await this.do(`
-      Generate concise accessibility alt text for this image.
-      Consider: subject matter, key visual elements, context.
-      Keep it under 125 characters for screen reader compatibility.
-      Image name: ${this.name}
-      Image description: ${this.description}
-    `);
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias. SmrtClass maps `persistence → db` lazily during `initialize()`,
+    // so on a freshly-constructed Image that has not yet been initialized,
+    // `this.options.db` may be undefined while `this.options.persistence` is
+    // set. Falling back here ensures stored app- and tenant-level prompt
+    // overrides in `_smrt_prompt_overrides` are honored on the first call —
+    // before `getAiClient()` triggers full initialization further below.
+    const db = this.options.db ?? this.options.persistence;
 
+    const resolvedPrompt = await resolvePrompt(
+      smrtImagesGenerateAltTextPrompt.key,
+      {
+        db,
+        tenantId: this.tenantId,
+        variables: {
+          imageName: this.name || '',
+          imageDescription: this.description || '',
+        },
+      },
+    );
+
+    const ai = await this.getAiClient();
+    const response = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+
+    const altText = response.trim();
     this.alt = altText;
     return altText;
   }

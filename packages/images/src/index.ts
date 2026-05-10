@@ -12,6 +12,10 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Side-effect import: register prompts at module load time so tenant
+// overrides resolve correctly via @happyvertical/smrt-prompts.
+import './prompts.js';
+
 // Operations
 export { ImageCategorizer } from './categorizer';
 export { ImageDeriver } from './deriver';
@@ -36,6 +40,7 @@ export {
   type SmrtImageMediaBundlePersistenceAdapter,
 } from './media-bundle-persistence';
 export { ImageMetadataExtractor } from './metadata';
+export { smrtImagesGenerateAltTextPrompt } from './prompts';
 export { ImageSearch } from './search';
 // Types
 export type {
