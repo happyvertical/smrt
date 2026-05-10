@@ -6,7 +6,12 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  promptMessageOptions,
+  smrtLedgersJournalSummarizePrompt,
+} from '../prompts';
 import {
   BALANCE_EPSILON,
   type JournalEntryData,
@@ -231,22 +236,57 @@ export class Journal extends SmrtObject {
   }
 
   /**
-   * Generate a summary of this journal
+   * AI-powered: Generate a summary of this journal.
+   *
+   * Uses the `smrtLedgers.journal.summarize` prompt registered via
+   * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
+   * Only non-PII journal fields (number, date, description, status, balanced
+   * flag) plus aggregate totals and entry count are sent to the AI provider.
+   * Internal foreign-key fields (tenantId, sourceRef, individual entry
+   * account IDs) and the extensible `metadata` blob are intentionally
+   * excluded.
+   *
+   * @returns Generated summary text
    */
   async summarize(): Promise<string> {
     const entries = await this.getEntries();
     const debits = await this.getTotalDebits();
     const balanced = await this.isBalanced();
 
-    return await this.do(
-      `Summarize this accounting journal entry:\n` +
-        `Number: ${this.number}\n` +
-        `Date: ${this.date.toISOString().split('T')[0]}\n` +
-        `Description: ${this.description}\n` +
-        `Status: ${this.status}\n` +
-        `Total: $${debits.toFixed(2)}\n` +
-        `Entries: ${entries.length}\n` +
-        `Balanced: ${balanced ? 'Yes' : 'No'}`,
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias. SmrtClass maps `persistence → db` lazily during `initialize()`,
+    // so on a freshly-constructed Journal that has not yet been initialized,
+    // `this.options.db` may be undefined while `this.options.persistence` is
+    // set. Falling back here ensures stored app- and tenant-level prompt
+    // overrides in `_smrt_prompt_overrides` are honored on the first call —
+    // before `getAiClient()` triggers full initialization further below.
+    const db = this.options.db ?? this.options.persistence;
+
+    const resolvedPrompt = await resolvePrompt(
+      smrtLedgersJournalSummarizePrompt.key,
+      {
+        db,
+        tenantId: this.tenantId,
+        variables: {
+          journalNumber: this.number || '',
+          journalDate: this.date.toISOString().split('T')[0],
+          journalDescription: this.description || '',
+          journalStatus: this.status || '',
+          journalTotal: debits.toFixed(2),
+          entryCount: String(entries.length),
+          journalBalanced: balanced ? 'Yes' : 'No',
+        },
+      },
     );
+
+    const ai = await this.getAiClient();
+    const response = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+
+    return response.trim();
   }
 }
