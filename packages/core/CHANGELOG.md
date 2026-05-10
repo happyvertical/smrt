@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.10
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: Tooling/Templates packages Phase 2 alignment (epic #1191, category #1216) (#1217)
+  - @happyvertical/smrt-scanner@0.24.10
+  - @happyvertical/smrt-config@0.24.10
+  - @happyvertical/smrt-types@0.24.10
+
 ## 0.24.9
 
 ### Patch Changes
