@@ -56,10 +56,12 @@
     "sharp": "catalog:"
   },
   "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "svelte": "^5.18.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/kit": "^2.5.7",
@@ -90,5 +92,10 @@
     "type": "git",
     "url": "https://github.com/happyvertical/smrt.git",
     "directory": "packages/images"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    }
   }
 }
