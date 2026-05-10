@@ -9,6 +9,8 @@
       "@happyvertical/smrt-agents",
       "@happyvertical/smrt-analytics",
       "@happyvertical/smrt-assets",
+      "@happyvertical/smrt-assets-ergot",
+      "@happyvertical/smrt-assets-local",
       "@happyvertical/smrt-chat",
       "@happyvertical/smrt-cli",
       "@happyvertical/smrt-commerce",

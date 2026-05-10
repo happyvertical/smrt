@@ -54,6 +54,24 @@ export interface StoreOptions {
 
   /** Description */
   description?: string;
+
+  /** Original source system for imported/derived assets */
+  sourceType?: string;
+
+  /** External id in the source system */
+  externalId?: string;
+
+  /** JSON metadata stored on the asset record */
+  metadata?: string | Record<string, unknown> | null;
+}
+
+function serializeStoreMetadata(
+  metadata: StoreOptions['metadata'],
+): string | undefined {
+  if (metadata === undefined) return undefined;
+  if (metadata === null) return '';
+  if (typeof metadata === 'string') return metadata;
+  return JSON.stringify(metadata);
 }
 
 /**
@@ -358,6 +376,9 @@ export class AssetStore {
       statusSlug: opts.statusSlug ?? 'active',
       parentId: opts.parentId ?? null,
       description: opts.description ?? '',
+      sourceType: opts.sourceType ?? '',
+      externalId: opts.externalId ?? '',
+      metadata: serializeStoreMetadata(opts.metadata) ?? '',
       sourceUri: '', // Will be updated after file write
     })) as Asset;
 
@@ -394,10 +415,18 @@ export class AssetStore {
   ): Promise<Asset> {
     const primaryVersionId =
       asset.primaryVersionId ?? AssetStore.requireAssetId(asset);
+    const { metadata, ...versionOptions } = opts;
+    const versionUpdates: Partial<Asset> = { ...versionOptions };
+    const serializedMetadata = serializeStoreMetadata(metadata);
+    if (serializedMetadata !== undefined) {
+      versionUpdates.metadata = serializedMetadata;
+    } else {
+      delete versionUpdates.metadata;
+    }
     const newVersion = await this.collection.createNewVersion(
       primaryVersionId,
       '', // sourceUri will be set by store
-      { ...opts },
+      versionUpdates,
     );
 
     const mimeType = opts.mimeType ?? asset.mimeType;

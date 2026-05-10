@@ -18,6 +18,29 @@ export { AssetAssociation } from './asset-association';
 // Collections
 export { AssetAssociationCollection } from './asset-associations';
 export {
+  type AssetCapabilityName,
+  type AssetCapabilityProvider,
+  type AssetCapabilityRuntime,
+  AssetCapabilitySkippedError,
+  type AssetCapabilitySource,
+  AssetCapabilityUnavailableError,
+  type AssetEnsureVariantInput,
+  type AssetExternalSourceRef,
+  type AssetExternalSyncInput,
+  type AssetExternalSyncResult,
+  type AssetNearbySearchInput,
+  type AssetProcessInput,
+  type AssetProcessResult,
+  type AssetSearchItem,
+  type AssetSearchResult,
+  type AssetVariantFit,
+  type AssetVariantRequest,
+  type AssetVariantResult,
+  type AssetWorkflowInput,
+  type AssetWorkflowInputSelection,
+  type AssetWorkflowResult,
+} from './asset-capabilities';
+export {
   ASSET_EXTRACTION_STATUS,
   ASSET_METADATA_KEYS,
   ASSET_ROLES,

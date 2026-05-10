@@ -27,6 +27,7 @@ import ContentGovernanceManager from './components/ContentGovernanceManager.svel
 import ContentGovernancePanel from './components/ContentGovernancePanel.svelte';
 import ContentGovernancePolicyEditor from './components/ContentGovernancePolicyEditor.svelte';
 import ContentGovernanceProfileEditor from './components/ContentGovernanceProfileEditor.svelte';
+import ContentGovernanceTool from './components/ContentGovernanceTool.svelte';
 import ContentImageBrowser from './components/ContentImageBrowser.svelte';
 import ContentImageChooser from './components/ContentImageChooser.svelte';
 import ContentList from './components/ContentList.svelte';
@@ -68,6 +69,7 @@ export {
   ContentGovernancePanel,
   ContentGovernancePolicyEditor,
   ContentGovernanceProfileEditor,
+  ContentGovernanceTool,
   ContentImageBrowser,
   ContentImageChooser,
   ContentList,
@@ -141,6 +143,9 @@ export type ContentGovernanceManagerProps = ComponentProps<
 >;
 export type ContentGovernancePanelProps = ComponentProps<
   typeof ContentGovernancePanel
+>;
+export type ContentGovernanceToolProps = ComponentProps<
+  typeof ContentGovernanceTool
 >;
 export type ContentGovernancePolicyEditorProps = ComponentProps<
   typeof ContentGovernancePolicyEditor

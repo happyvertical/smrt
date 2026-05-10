@@ -1,0 +1,46 @@
+{
+  "name": "@happyvertical/smrt-assets-local",
+  "version": "0.24.10",
+  "description": "Local image metadata and variant processor for SMRT assets",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CLAUDE.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-assets": "workspace:*",
+    "sharp": "catalog:"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/assets-local"
+  },
+  "author": "HappyVertical",
+  "license": "MIT"
+}

@@ -40,6 +40,8 @@ export interface AssetOptions extends SmrtObjectOptions {
   sourceUri?: string;
   mimeType?: string;
   description?: string;
+  metadata?: string | Record<string, unknown> | null;
+  externalRefs?: string | Record<string, unknown> | null;
   version?: number;
   primaryVersionId?: string | null;
   typeSlug?: string;

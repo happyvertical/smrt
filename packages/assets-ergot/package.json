@@ -1,0 +1,45 @@
+{
+  "name": "@happyvertical/smrt-assets-ergot",
+  "version": "0.24.10",
+  "description": "Ergot-backed processing, search, and workflow adapter for SMRT assets",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CLAUDE.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@happyvertical/smrt-assets": "workspace:*"
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.17"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/assets-ergot"
+  },
+  "author": "HappyVertical",
+  "license": "MIT"
+}

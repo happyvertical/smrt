@@ -210,4 +210,46 @@ describe('AssetStore storage resolver', () => {
     expect(deleteFile).toHaveBeenCalledWith('replicas/missing.bin');
     expect(deleteRecord).toHaveBeenCalledTimes(1);
   });
+
+  it('preserves version metadata when no metadata override is provided', async () => {
+    const defaultBasePath = await createDefaultBasePath();
+    const save = vi.fn(async () => {});
+    const collection = {
+      createNewVersion: vi.fn(
+        async (
+          _primaryVersionId: string,
+          _sourceUri: string,
+          updates: Partial<Asset>,
+        ) => ({
+          id: 'asset-v2',
+          sourceUri: '',
+          mimeType: 'image/png',
+          typeSlug: 'image',
+          primaryVersionId: 'asset-v1',
+          save,
+          delete: vi.fn(async () => {}),
+          ...updates,
+        }),
+      ),
+    } as unknown as AssetCollection;
+    const store = new AssetStore(defaultBasePath, collection);
+    await store.initialize();
+
+    await store.storeVersion(
+      {
+        id: 'asset-v1',
+        mimeType: 'image/png',
+        typeSlug: 'image',
+        metadata: '{"keep":true}',
+      } as Asset,
+      Buffer.from('next version'),
+    );
+
+    expect(collection.createNewVersion).toHaveBeenCalledWith(
+      'asset-v1',
+      '',
+      {},
+    );
+    expect(save).toHaveBeenCalledTimes(1);
+  });
 });

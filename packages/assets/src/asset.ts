@@ -14,6 +14,40 @@ import { AssetStatus } from './asset-status';
 import { AssetType } from './asset-type';
 import type { AssetOptions } from './types';
 
+export interface AssetExternalReference {
+  provider: string;
+  assetId?: string | null;
+  externalId?: string | null;
+  sourceRef?: Record<string, unknown> | null;
+  status?: string | null;
+  metadata?: Record<string, unknown> | null;
+  syncedAt?: string | null;
+  [key: string]: unknown;
+}
+
+function parseAssetRecord(
+  value: string | Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (!value) return {};
+  if (typeof value !== 'string') return value;
+  if (!value.trim()) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringifyAssetRecord(
+  value: Record<string, unknown> | null | undefined,
+): string {
+  if (!value || Object.keys(value).length === 0) return '';
+  return JSON.stringify(value);
+}
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
@@ -32,6 +66,7 @@ export class Asset extends SmrtObject {
   sourceUri = ''; // URI to the actual file (e.g., 's3://bucket/key', 'file:///path')
   mimeType = ''; // MIME type (e.g., 'image/jpeg', 'video/mp4')
   description = ''; // Optional description
+  metadata = ''; // JSON metadata owned by SMRT asset processors
   version = 1; // Version number
 
   // Foreign key references (stored as IDs/slugs)
@@ -45,6 +80,7 @@ export class Asset extends SmrtObject {
   // Provenance fields
   sourceType = ''; // 'local', 'shutterstock', 'google-photos', 'upstream-smrt'
   externalId = ''; // Original ID in upstream source
+  externalRefs = ''; // JSON map of provider references, keyed by provider slug
 
   // Timestamps
   createdAt = new Date();
@@ -57,6 +93,11 @@ export class Asset extends SmrtObject {
     if (options.sourceUri) this.sourceUri = options.sourceUri;
     if (options.mimeType) this.mimeType = options.mimeType;
     if (options.description) this.description = options.description;
+    if (options.metadata !== undefined)
+      this.metadata =
+        typeof options.metadata === 'string'
+          ? options.metadata
+          : stringifyAssetRecord(options.metadata);
     if (options.version !== undefined) this.version = options.version;
     if (options.primaryVersionId !== undefined)
       this.primaryVersionId = options.primaryVersionId;
@@ -68,9 +109,61 @@ export class Asset extends SmrtObject {
     if (options.folderId !== undefined) this.folderId = options.folderId;
     if (options.sourceType) this.sourceType = options.sourceType;
     if (options.externalId) this.externalId = options.externalId;
+    if (options.externalRefs !== undefined)
+      this.externalRefs =
+        typeof options.externalRefs === 'string'
+          ? options.externalRefs
+          : stringifyAssetRecord(options.externalRefs);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+
+  getMetadata(): Record<string, unknown> {
+    return parseAssetRecord(this.metadata);
+  }
+
+  setMetadata(metadata: Record<string, unknown>): void {
+    this.metadata = stringifyAssetRecord(metadata);
+  }
+
+  mergeMetadata(metadata: Record<string, unknown>): void {
+    this.setMetadata({
+      ...this.getMetadata(),
+      ...metadata,
+    });
+  }
+
+  getExternalRefs(): Record<string, AssetExternalReference> {
+    const refs = parseAssetRecord(this.externalRefs);
+    const normalized: Record<string, AssetExternalReference> = {};
+    for (const [provider, value] of Object.entries(refs)) {
+      if (value && typeof value === 'object' && !Array.isArray(value)) {
+        normalized[provider] = {
+          ...(value as Record<string, unknown>),
+          provider,
+        } as AssetExternalReference;
+      }
+    }
+    return normalized;
+  }
+
+  getExternalRef(provider: string): AssetExternalReference | null {
+    return this.getExternalRefs()[provider] ?? null;
+  }
+
+  setExternalRef(
+    provider: string,
+    reference: Omit<AssetExternalReference, 'provider'> & { provider?: string },
+  ): void {
+    this.externalRefs = stringifyAssetRecord({
+      ...this.getExternalRefs(),
+      [provider]: {
+        ...(this.getExternalRef(provider) ?? {}),
+        ...reference,
+        provider: reference.provider ?? provider,
+      },
+    });
   }
 
   /**
