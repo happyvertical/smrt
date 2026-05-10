@@ -373,6 +373,9 @@ async function generateRegistrationFile(
   const registrations: string[] = [];
   let externalObjectCount = 0;
 
+  const isCollectionClass = (def: any): boolean =>
+    def?.extends === 'SmrtCollection';
+
   for (const [objectName, objectDef] of Object.entries(manifest.objects)) {
     const def = objectDef as any;
 
@@ -395,6 +398,11 @@ async function generateRegistrationFile(
       );
     } else {
       imports.push(`import { ${exportName} } from '${importPath}';`);
+    }
+
+    if (isCollectionClass(def)) {
+      externalObjectCount++;
+      continue;
     }
 
     // Generate registration calls

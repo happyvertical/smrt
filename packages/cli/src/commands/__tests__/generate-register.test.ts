@@ -152,6 +152,53 @@ describe('generate-register', () => {
     );
   });
 
+  it('imports collection entries without registering them as objects', async () => {
+    mockedAutoDiscover.mockResolvedValue({
+      discovered: [
+        {
+          path: '/fake/pkg/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/pkg',
+        },
+      ],
+    } as any);
+
+    mockedLoadManifest.mockResolvedValue({
+      objects: {
+        Widget: {
+          className: 'Widget',
+          exportName: 'Widget',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:Widget',
+          collection: 'widgets',
+          visibility: 'public',
+        },
+        WidgetCollection: {
+          className: 'WidgetCollection',
+          exportName: 'WidgetCollection',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:WidgetCollection',
+          collection: 'widgets',
+          extends: 'SmrtCollection',
+          visibility: 'public',
+        },
+      },
+    });
+
+    await handler([], { 'output-path': outputPath });
+
+    const content = await readFile(outputPath, 'utf-8');
+
+    expect(content).toContain("import { Widget } from '@happyvertical/pkg';");
+    expect(content).toContain(
+      "import { WidgetCollection } from '@happyvertical/pkg';",
+    );
+    expect(content).toContain(
+      'ObjectRegistry.register(Widget, { name: "Widget", packageName: "@happyvertical/pkg" });',
+    );
+    expect(content).not.toContain('ObjectRegistry.register(WidgetCollection');
+  });
+
   it('filters out test-visibility objects', async () => {
     mockedAutoDiscover.mockResolvedValue({
       discovered: [

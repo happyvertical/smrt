@@ -50,6 +50,15 @@ describe('smrtConsumer registration generation', () => {
             methods: {},
             decoratorConfig: {},
           },
+          ExternalThingCollection: {
+            className: 'ExternalThingCollection',
+            exportName: 'ExternalThingCollection',
+            collection: 'externalthings',
+            extends: 'SmrtCollection',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
         },
       }),
     );
@@ -77,6 +86,12 @@ describe('smrtConsumer registration generation', () => {
     const content = readFileSync(registerPath, 'utf-8');
     expect(content).toContain(
       'ObjectRegistry.register(ExternalThing, { name: "ExternalThing", packageName: "@test/pkg" });',
+    );
+    expect(content).toContain(
+      "import { ExternalThingCollection } from '@test/pkg';",
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(ExternalThingCollection',
     );
   });
 });
