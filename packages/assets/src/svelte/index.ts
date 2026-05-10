@@ -2,16 +2,34 @@
  * smrt-assets Svelte components
  *
  * Reusable Asset Manager UI for embedding in downstream SMRT sites.
+ * Auto-registers components with ModuleUIRegistry on import so chat
+ * (and other registry-driven consumers) can discover them.
+ *
+ * @packageDocumentation
  */
 
+import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import { ASSETS_MODULE_META } from '../ui.js';
+
+// Import components
+import ActionBar from './ActionBar.svelte';
+import AssetDetail from './AssetDetail.svelte';
+import AssetGrid from './AssetGrid.svelte';
+import AssetList from './AssetList.svelte';
+import AssetManager from './AssetManager.svelte';
+import AssetToolbar from './AssetToolbar.svelte';
+import CreateAssetModal from './CreateAssetModal.svelte';
+
 // Components
-export { default as ActionBar } from './ActionBar.svelte';
-export { default as AssetDetail } from './AssetDetail.svelte';
-export { default as AssetGrid } from './AssetGrid.svelte';
-export { default as AssetList } from './AssetList.svelte';
-export { default as AssetManager } from './AssetManager.svelte';
-export { default as AssetToolbar } from './AssetToolbar.svelte';
-export { default as CreateAssetModal } from './CreateAssetModal.svelte';
+export {
+  ActionBar,
+  AssetDetail,
+  AssetGrid,
+  AssetList,
+  AssetManager,
+  AssetToolbar,
+  CreateAssetModal,
+};
 
 // Types
 export type {
@@ -28,3 +46,41 @@ export type {
   AssetToolbarProps,
   AssetViewMode,
 } from './types';
+
+// Auto-register with ModuleUIRegistry
+ModuleUIRegistry.registerModule(ASSETS_MODULE_META);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'asset-manager',
+  AssetManager,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'asset-grid',
+  AssetGrid,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'asset-list',
+  AssetList,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'asset-detail',
+  AssetDetail,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'asset-toolbar',
+  AssetToolbar,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'asset-action-bar',
+  ActionBar,
+);
+ModuleUIRegistry.register(
+  '@happyvertical/smrt-assets',
+  'asset-create-modal',
+  CreateAssetModal,
+);
