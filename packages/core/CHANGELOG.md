@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve ESM-only scanner package (#1219) (core)
+  - @happyvertical/smrt-scanner@0.24.12
+  - @happyvertical/smrt-config@0.24.12
+  - @happyvertical/smrt-types@0.24.12
+
 ## 0.24.11
 
 ### Patch Changes
