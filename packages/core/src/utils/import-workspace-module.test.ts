@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { importWorkspaceModule } from './import-workspace-module.js';
 
 describe('importWorkspaceModule', () => {
-  it('loads packages that are resolvable by ESM import but not createRequire', async () => {
+  it('loads packages through ESM resolution', async () => {
     const fixturePackageDir = new URL(
       './node_modules/@fixture/esm-only-import-package/',
       import.meta.url,
@@ -47,7 +47,7 @@ describe('importWorkspaceModule', () => {
     }
   });
 
-  it('preserves createRequire and ESM resolver failures when no installed package or workspace fallback is available', async () => {
+  it('propagates ESM resolver failures when no installed package or workspace fallback is available', async () => {
     const isolatedDir = await mkdtemp(
       join(tmpdir(), 'smrt-import-workspace-module-'),
     );
@@ -67,12 +67,10 @@ describe('importWorkspaceModule', () => {
         thrown = error;
       }
 
-      expect(thrown).toBeInstanceOf(AggregateError);
-      expect(
-        (thrown as AggregateError & { errors: unknown[] }).errors,
-      ).toHaveLength(2);
+      expect(thrown).toBeInstanceOf(Error);
+      expect(thrown).not.toBeInstanceOf(AggregateError);
       expect((thrown as Error).message).toContain(
-        'Failed to resolve installed package "@happyvertical/definitely-not-a-real-smrt-package".',
+        '@happyvertical/definitely-not-a-real-smrt-package',
       );
     } finally {
       cwdSpy.mockRestore();
