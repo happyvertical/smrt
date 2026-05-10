@@ -4,6 +4,11 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import {
+  promptMessageOptions,
+  smrtAnalyticsAnalyzePerformancePrompt,
+} from '../prompts.js';
 import { AnalyticsPropertyStatus, AnalyticsProvider } from '../types/index.js';
 
 /**
@@ -170,7 +175,16 @@ export class AnalyticsProperty extends SmrtObject {
   }
 
   /**
-   * AI-powered: Analyze property performance
+   * AI-powered: Analyze property performance.
+   *
+   * Uses the `smrtAnalytics.property.analyzePerformance` prompt registered
+   * via `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
+   * Only non-PII fields (display name, provider label, requested period)
+   * are sent to the AI provider. Internal identifiers (`id`, `externalId`,
+   * `measurementId`, `apiSecret`, `providerMetadata`) are intentionally
+   * excluded — see `../prompts.ts` for the full exclusion rationale.
    */
   async analyzePerformance(options: { period?: string } = {}): Promise<{
     action: string;
@@ -178,15 +192,35 @@ export class AnalyticsProperty extends SmrtObject {
     analysis: string;
   }> {
     const period = options.period || '30 days';
-    const analysis = await this.do(`
-      Analyze the analytics performance for this property over the last ${period}.
-      Consider: traffic trends, user engagement, conversion patterns.
-      Property: ${this.displayName} (${this.provider})
-    `);
+
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias so stored prompt overrides are honored on first call before
+    // `getAiClient()` triggers full initialization.
+    const db = (this.options as any).db ?? (this.options as any).persistence;
+
+    const resolvedPrompt = await resolvePrompt(
+      smrtAnalyticsAnalyzePerformancePrompt.key,
+      {
+        db,
+        tenantId: (this as any).tenantId ?? null,
+        variables: {
+          period,
+          propertyDisplayName: this.displayName || '',
+          propertyProvider: this.provider || '',
+        },
+      },
+    );
+
+    const ai = await this.getAiClient();
+    const analysis = await ai.message(
+      resolvedPrompt.text,
+      promptMessageOptions(resolvedPrompt.ai),
+    );
+
     return {
       action: 'analyzePerformance',
       period,
-      analysis,
+      analysis: analysis.trim(),
     };
   }
 
