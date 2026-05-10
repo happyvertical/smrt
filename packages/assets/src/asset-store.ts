@@ -54,6 +54,24 @@ export interface StoreOptions {
 
   /** Description */
   description?: string;
+
+  /** Original source system for imported/derived assets */
+  sourceType?: string;
+
+  /** External id in the source system */
+  externalId?: string;
+
+  /** JSON metadata stored on the asset record */
+  metadata?: string | Record<string, unknown> | null;
+}
+
+function serializeStoreMetadata(
+  metadata: StoreOptions['metadata'],
+): string | undefined {
+  if (metadata === undefined) return undefined;
+  if (metadata === null) return '';
+  if (typeof metadata === 'string') return metadata;
+  return JSON.stringify(metadata);
 }
 
 /**
@@ -358,6 +376,9 @@ export class AssetStore {
       statusSlug: opts.statusSlug ?? 'active',
       parentId: opts.parentId ?? null,
       description: opts.description ?? '',
+      sourceType: opts.sourceType ?? '',
+      externalId: opts.externalId ?? '',
+      metadata: serializeStoreMetadata(opts.metadata) ?? '',
       sourceUri: '', // Will be updated after file write
     })) as Asset;
 
@@ -397,7 +418,10 @@ export class AssetStore {
     const newVersion = await this.collection.createNewVersion(
       primaryVersionId,
       '', // sourceUri will be set by store
-      { ...opts },
+      {
+        ...opts,
+        metadata: serializeStoreMetadata(opts.metadata),
+      },
     );
 
     const mimeType = opts.mimeType ?? asset.mimeType;

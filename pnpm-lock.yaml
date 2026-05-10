@@ -397,6 +397,53 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/assets-ergot:
+    dependencies:
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
+    devDependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/sql':
+        specifier: ^0.73.2
+        version: 0.73.2
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/assets-local:
+    dependencies:
+      '@happyvertical/smrt-assets':
+        specifier: workspace:*
+        version: link:../assets
+      sharp:
+        specifier: 'catalog:'
+        version: 0.34.5
+    devDependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/sql':
+        specifier: ^0.73.2
+        version: 0.73.2
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
+
   packages/chat:
     dependencies:
       '@happyvertical/smrt-core':

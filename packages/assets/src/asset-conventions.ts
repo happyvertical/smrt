@@ -19,6 +19,7 @@
  * - `document_image`: page image or other visual derived from a source
  *   document.
  * - `thumbnail`: small preview rendition of another asset.
+ * - `asset_variant`: deterministic sized rendition of another asset.
  * - `proof`: non-canonical evidence asset (e.g. a screenshot used to
  *   back a fact).
  * - `derivation_source`: source side of a derivation link (used when a
@@ -31,6 +32,7 @@ export const ASSET_ROLES = {
   SOURCE_DOCUMENT: 'source_document',
   DOCUMENT_IMAGE: 'document_image',
   THUMBNAIL: 'thumbnail',
+  ASSET_VARIANT: 'asset_variant',
   PROOF: 'proof',
   DERIVATION_SOURCE: 'derivation_source',
   ATTACHMENT: 'attachment',

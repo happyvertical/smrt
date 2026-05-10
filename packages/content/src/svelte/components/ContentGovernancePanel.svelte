@@ -33,9 +33,17 @@ export interface Props {
   onFactsChange?: (factIds: string[], facts: FactData[]) => void;
   onGovernanceStateChange?: (state: ContentGovernanceStateData | null) => void;
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
+  hiddenSections?: ContentGovernancePanelSection[];
 }
 
 type ReviewKind = 'facts' | 'safety' | 'custom';
+export type ContentGovernancePanelSection =
+  | 'factAudit'
+  | 'facts'
+  | 'reviews'
+  | 'transparency'
+  | 'corrections'
+  | 'versions';
 
 interface ReviewAction {
   kind: ReviewKind;
@@ -62,6 +70,7 @@ let {
   onFactsChange = undefined,
   onGovernanceStateChange = undefined,
   onFactAuditChange = undefined,
+  hiddenSections = [],
 }: Props = $props();
 
 const client = $derived(createClient(normalizeApiBaseUrl(apiBaseUrl)));
@@ -115,6 +124,11 @@ const savedContentId = $derived(
 const draftGovernanceKey = $derived(
   draftType ? `${draftType}::${draftVariant || ''}` : null,
 );
+const hiddenSectionSet = $derived(new Set(hiddenSections));
+
+function isSectionVisible(section: ContentGovernancePanelSection): boolean {
+  return !hiddenSectionSet.has(section);
+}
 
 function getFactId(fact: FactData): string | null {
   return typeof fact.id === 'string' && fact.id.length > 0 ? fact.id : null;
@@ -1020,7 +1034,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 </script>
 
 <div class="factual-workflow">
-  <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
+  {#if isSectionVisible('factAudit')}
+    <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
         Article claim audit
@@ -1163,9 +1178,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         {/if}
       {/if}
     </div>
-  </details>
+    </details>
+  {/if}
 
-  {#if showFactCatalog || selectedFactsResolved.length > 0}
+  {#if isSectionVisible('facts') && (showFactCatalog || selectedFactsResolved.length > 0)}
     <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
       <summary class="editor-drawer-header">
         <div style="display: flex; align-items: center; gap: 0.5rem;">
@@ -1288,7 +1304,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     </details>
   {/if}
 
-  <details class="editor-drawer">
+  {#if isSectionVisible('reviews')}
+    <details class="editor-drawer">
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
         Review
@@ -1473,9 +1490,11 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </div>
     {/if}
   </div>
-  </details>
+    </details>
+  {/if}
 
-  <details class="editor-drawer">
+  {#if isSectionVisible('transparency')}
+    <details class="editor-drawer">
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
         Transparency
@@ -1602,9 +1621,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </div>
     {/if}
   </div>
-  </details>
+    </details>
+  {/if}
 
-  {#if savedContentId}
+  {#if savedContentId && isSectionVisible('corrections')}
       <details class="editor-drawer">
         <summary class="editor-drawer-header">
           <div style="display: flex; align-items: center; gap: 0.5rem;">
@@ -1686,7 +1706,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         </div>
         </div>
       </details>
+  {/if}
 
+  {#if savedContentId && isSectionVisible('versions')}
       <details class="editor-drawer">
         <summary class="editor-drawer-header">
           <div style="display: flex; align-items: center; justify-content: space-between; flex: 1;">

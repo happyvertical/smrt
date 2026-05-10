@@ -19,6 +19,21 @@ import type { Asset } from './asset';
 import type { AssetAssociation } from './asset-association';
 import { AssetAssociationCollection } from './asset-associations';
 import {
+  type AssetCapabilityName,
+  type AssetCapabilityProvider,
+  AssetCapabilitySkippedError,
+  AssetCapabilityUnavailableError,
+  type AssetExternalSourceRef,
+  type AssetExternalSyncResult,
+  type AssetNearbySearchInput,
+  type AssetProcessResult,
+  type AssetSearchResult,
+  type AssetVariantRequest,
+  type AssetVariantResult,
+  type AssetWorkflowInput,
+  type AssetWorkflowResult,
+} from './asset-capabilities';
+import {
   ASSET_ROLES,
   type AssetExtractionStatus,
   type AssetRole,
@@ -76,6 +91,15 @@ export interface AssetRuntimeOptions {
    * Optional associations collection. If omitted, one is created from `db`.
    */
   associations?: AssetAssociationCollection;
+
+  /**
+   * Optional asset capability providers.
+   *
+   * Providers let callers keep one app-facing asset runtime while
+   * delegating processing, variant generation, search, external sync, or
+   * workflow submission to local processors or external systems.
+   */
+  capabilityProviders?: AssetCapabilityProvider[];
 }
 
 /**
@@ -87,6 +111,7 @@ export interface AssetRuntimeLike {
   readonly collection: AssetCollection;
   readonly associations: AssetAssociationCollection;
   readonly store: AssetStore;
+  readonly capabilityProviders?: readonly AssetCapabilityProvider[];
 }
 
 /**
@@ -144,11 +169,175 @@ export interface LinkDerivationOptions {
  * `CLAUDE.md` for the full "source vs derived" vocabulary.
  */
 export class AssetRuntime implements AssetRuntimeLike {
+  readonly capabilityProviders: AssetCapabilityProvider[];
+
   constructor(
     public readonly collection: AssetCollection,
     public readonly associations: AssetAssociationCollection,
     public readonly store: AssetStore,
-  ) {}
+    capabilityProviders: AssetCapabilityProvider[] = [],
+  ) {
+    this.capabilityProviders = [...capabilityProviders];
+  }
+
+  registerCapabilityProvider(provider: AssetCapabilityProvider): this {
+    this.capabilityProviders.push(provider);
+    return this;
+  }
+
+  private providersFor(
+    capability: AssetCapabilityName,
+  ): AssetCapabilityProvider[] {
+    const providers = this.capabilityProviders.filter(
+      (candidate) => typeof candidate[capability] === 'function',
+    );
+    if (providers.length === 0) {
+      throw new AssetCapabilityUnavailableError(capability);
+    }
+    return providers;
+  }
+
+  async processAsset(
+    asset: Asset,
+    input: {
+      variants?: AssetVariantRequest[];
+      metadata?: Record<string, unknown>;
+    } = {},
+  ): Promise<AssetProcessResult> {
+    let skipped: Error | null = null;
+    for (const provider of this.providersFor('processAsset')) {
+      const processAsset = provider.processAsset;
+      if (!processAsset) continue;
+      try {
+        return await processAsset({
+          runtime: this,
+          asset,
+          ...input,
+        });
+      } catch (cause) {
+        if (cause instanceof AssetCapabilitySkippedError) {
+          skipped = cause;
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new AssetCapabilityUnavailableError('processAsset', skipped?.message);
+  }
+
+  async ensureVariant(
+    asset: Asset,
+    request: AssetVariantRequest,
+  ): Promise<AssetVariantResult> {
+    let skipped: Error | null = null;
+    for (const provider of this.providersFor('ensureVariant')) {
+      const ensureVariant = provider.ensureVariant;
+      if (!ensureVariant) continue;
+      try {
+        return await ensureVariant({
+          runtime: this,
+          asset,
+          request,
+        });
+      } catch (cause) {
+        if (cause instanceof AssetCapabilitySkippedError) {
+          skipped = cause;
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new AssetCapabilityUnavailableError(
+      'ensureVariant',
+      skipped?.message,
+    );
+  }
+
+  async searchNearbyAssets(
+    input: Omit<AssetNearbySearchInput, 'runtime'>,
+  ): Promise<AssetSearchResult> {
+    let skipped: Error | null = null;
+    for (const provider of this.providersFor('searchNearbyAssets')) {
+      const searchNearbyAssets = provider.searchNearbyAssets;
+      if (!searchNearbyAssets) continue;
+      try {
+        return await searchNearbyAssets({
+          runtime: this,
+          ...input,
+        });
+      } catch (cause) {
+        if (cause instanceof AssetCapabilitySkippedError) {
+          skipped = cause;
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new AssetCapabilityUnavailableError(
+      'searchNearbyAssets',
+      skipped?.message,
+    );
+  }
+
+  async syncExternalAsset(
+    asset: Asset,
+    input: {
+      externalId?: string | null;
+      sourceRef?: AssetExternalSourceRef | null;
+      metadata?: Record<string, unknown>;
+    } = {},
+  ): Promise<AssetExternalSyncResult> {
+    let skipped: Error | null = null;
+    for (const provider of this.providersFor('syncExternalAsset')) {
+      const syncExternalAsset = provider.syncExternalAsset;
+      if (!syncExternalAsset) continue;
+      try {
+        return await syncExternalAsset({
+          runtime: this,
+          asset,
+          ...input,
+        });
+      } catch (cause) {
+        if (cause instanceof AssetCapabilitySkippedError) {
+          skipped = cause;
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new AssetCapabilityUnavailableError(
+      'syncExternalAsset',
+      skipped?.message,
+    );
+  }
+
+  async submitAssetWorkflow(
+    asset: Asset,
+    input: Omit<AssetWorkflowInput, 'runtime' | 'asset'>,
+  ): Promise<AssetWorkflowResult> {
+    let skipped: Error | null = null;
+    for (const provider of this.providersFor('submitAssetWorkflow')) {
+      const submitAssetWorkflow = provider.submitAssetWorkflow;
+      if (!submitAssetWorkflow) continue;
+      try {
+        return await submitAssetWorkflow({
+          runtime: this,
+          asset,
+          ...input,
+        });
+      } catch (cause) {
+        if (cause instanceof AssetCapabilitySkippedError) {
+          skipped = cause;
+          continue;
+        }
+        throw cause;
+      }
+    }
+    throw new AssetCapabilityUnavailableError(
+      'submitAssetWorkflow',
+      skipped?.message,
+    );
+  }
 
   /**
    * Create a new source asset with both a record and bytes on disk.
@@ -323,7 +512,12 @@ export async function createAssetRuntime(
     collection,
     options.storeOptions,
   ).initialize();
-  return new AssetRuntime(collection, associations, store);
+  return new AssetRuntime(
+    collection,
+    associations,
+    store,
+    options.capabilityProviders,
+  );
 }
 
 /**

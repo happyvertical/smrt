@@ -13,6 +13,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Asset } from '../asset';
 import { AssetAssociationCollection } from '../asset-associations';
+import { AssetCapabilitySkippedError } from '../asset-capabilities';
 import { ASSET_ROLES } from '../asset-conventions';
 import { AssetRuntime, createAssetRuntime } from '../asset-runtime';
 import { AssetCollection } from '../assets';
@@ -112,6 +113,136 @@ describe('AssetRuntime', () => {
 
       const reloaded = await runtime.store.readById(asset.id!);
       expect(reloaded?.data.toString()).toBe('hello world');
+    });
+  });
+
+  describe('capability providers', () => {
+    it('routes processing, variants, search, sync, and workflows through registered providers', async () => {
+      const provider = {
+        name: 'test-provider',
+        processAsset: vi.fn(async ({ asset }) => ({
+          asset,
+          metadata: { ok: true },
+        })),
+        ensureVariant: vi.fn(async ({ asset, request }) => ({
+          asset,
+          variant: request.variant,
+          source: 'cached' as const,
+        })),
+        searchNearbyAssets: vi.fn(async () => ({
+          items: [{ assetId: 'asset-1', origin: 'test' }],
+          nextCursor: null,
+        })),
+        syncExternalAsset: vi.fn(async ({ asset }) => ({
+          asset,
+          provider: 'test-provider',
+          status: 'ready' as const,
+          externalAssetId: 'external-1',
+        })),
+        submitAssetWorkflow: vi.fn(async () => ({
+          provider: 'test-provider',
+          jobId: 'job-1',
+          status: 'queued',
+        })),
+      };
+      const runtime = await createAssetRuntime({
+        db,
+        storage: storageDir,
+        capabilityProviders: [provider],
+      });
+      const asset = await runtime.storeSourceAsset(
+        'image.jpg',
+        Buffer.from('jpg'),
+        {
+          mimeType: 'image/jpeg',
+          typeSlug: 'image',
+        },
+      );
+
+      await expect(runtime.processAsset(asset)).resolves.toMatchObject({
+        metadata: { ok: true },
+      });
+      await expect(
+        runtime.ensureVariant(asset, { variant: 'thumb' }),
+      ).resolves.toMatchObject({ variant: 'thumb', source: 'cached' });
+      await expect(
+        runtime.searchNearbyAssets({ latitude: 1, longitude: 2 }),
+      ).resolves.toMatchObject({ items: [{ assetId: 'asset-1' }] });
+      await expect(runtime.syncExternalAsset(asset)).resolves.toMatchObject({
+        provider: 'test-provider',
+        externalAssetId: 'external-1',
+      });
+      await expect(
+        runtime.submitAssetWorkflow(asset, { workflowSlug: 'image.generate' }),
+      ).resolves.toMatchObject({ jobId: 'job-1' });
+
+      expect(provider.processAsset).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtime,
+          asset,
+        }),
+      );
+      expect(provider.ensureVariant).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtime,
+          asset,
+          request: { variant: 'thumb' },
+        }),
+      );
+    });
+
+    it('fails clearly when a capability has no registered provider', async () => {
+      const runtime = await createAssetRuntime({ db, storage: storageDir });
+      const asset = await runtime.storeSourceAsset(
+        'image.jpg',
+        Buffer.from('jpg'),
+        {
+          mimeType: 'image/jpeg',
+          typeSlug: 'image',
+        },
+      );
+
+      await expect(
+        runtime.ensureVariant(asset, { variant: 'thumb' }),
+      ).rejects.toThrow(/No asset capability provider/);
+    });
+
+    it('falls through providers that explicitly skip a capability', async () => {
+      const skippedProvider = {
+        name: 'skip-images',
+        processAsset: vi.fn(async () => {
+          throw new AssetCapabilitySkippedError(
+            'processAsset',
+            'skip this asset',
+          );
+        }),
+      };
+      const fallbackProvider = {
+        name: 'fallback',
+        processAsset: vi.fn(async ({ asset }) => ({
+          asset,
+          metadata: { provider: 'fallback' },
+        })),
+      };
+      const runtime = await createAssetRuntime({
+        db,
+        storage: storageDir,
+        capabilityProviders: [skippedProvider, fallbackProvider],
+      });
+      const asset = await runtime.storeSourceAsset(
+        'audio.wav',
+        Buffer.from('wav'),
+        {
+          mimeType: 'audio/wav',
+          typeSlug: 'audio',
+        },
+      );
+
+      await expect(runtime.processAsset(asset)).resolves.toMatchObject({
+        metadata: { provider: 'fallback' },
+      });
+      expect(skippedProvider.processAsset).toHaveBeenCalled();
+      expect(fallbackProvider.processAsset).toHaveBeenCalled();
     });
   });
 
