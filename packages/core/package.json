@@ -4,6 +4,9 @@
   "description": "Core AI agent framework with standardized collections, object-relational mapping, and code generators",
   "author": "HappyVertical",
   "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {

@@ -1,9 +1,6 @@
 import { existsSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-
-const require = createRequire(import.meta.url);
 
 export interface ImportWorkspaceModuleOptions {
   packageName: string;
@@ -28,6 +25,10 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
+function resolveInstalledPackage(packageName: string): string {
+  return import.meta.resolve(packageName);
+}
+
 export async function importWorkspaceModule<T = unknown>({
   packageName,
   sourceEntry,
@@ -35,9 +36,8 @@ export async function importWorkspaceModule<T = unknown>({
   purpose,
 }: ImportWorkspaceModuleOptions): Promise<T> {
   try {
-    const installedEntry = require.resolve(packageName);
     return (await import(
-      /* @vite-ignore */ pathToFileURL(installedEntry).href
+      /* @vite-ignore */ resolveInstalledPackage(packageName)
     )) as T;
   } catch (originalError) {
     const workspaceRoot = findWorkspaceRoot(process.cwd());
@@ -63,7 +63,7 @@ export async function importWorkspaceModule<T = unknown>({
 
     let tsxApiPath: string;
     try {
-      tsxApiPath = require.resolve('tsx/esm/api');
+      tsxApiPath = import.meta.resolve('tsx/esm/api');
     } catch (tsxError) {
       throw new Error(
         `Failed to load ${packageName} for ${purpose}: workspace source fallback requires the "tsx" package.`,
@@ -71,9 +71,7 @@ export async function importWorkspaceModule<T = unknown>({
       );
     }
 
-    const { register } = await import(
-      /* @vite-ignore */ pathToFileURL(tsxApiPath).href
-    );
+    const { register } = await import(/* @vite-ignore */ tsxApiPath);
     const tsconfigPath = join(workspaceRoot, 'tsconfig.package-build.json');
     const unregister = register(
       existsSync(tsconfigPath) ? { tsconfig: tsconfigPath } : undefined,
