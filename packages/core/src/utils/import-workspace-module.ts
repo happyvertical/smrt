@@ -28,6 +28,18 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
+function resolveInstalledPackage(packageName: string): string {
+  try {
+    return pathToFileURL(require.resolve(packageName)).href;
+  } catch (requireError) {
+    try {
+      return import.meta.resolve(packageName);
+    } catch {
+      throw requireError;
+    }
+  }
+}
+
 export async function importWorkspaceModule<T = unknown>({
   packageName,
   sourceEntry,
@@ -35,9 +47,8 @@ export async function importWorkspaceModule<T = unknown>({
   purpose,
 }: ImportWorkspaceModuleOptions): Promise<T> {
   try {
-    const installedEntry = require.resolve(packageName);
     return (await import(
-      /* @vite-ignore */ pathToFileURL(installedEntry).href
+      /* @vite-ignore */ resolveInstalledPackage(packageName)
     )) as T;
   } catch (originalError) {
     const workspaceRoot = findWorkspaceRoot(process.cwd());
