@@ -40,7 +40,9 @@
     "build": "vite build",
     "build:watch": "vite build --watch",
     "clean": "rm -rf dist",
-    "dev": "npm run build:watch & npm run test:watch"
+    "dev": "npm run build:watch & npm run test:watch",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",

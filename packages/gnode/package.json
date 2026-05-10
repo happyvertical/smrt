@@ -36,8 +36,8 @@
     "docs:watch": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules --watch",
     "clean": "rm -rf dist",
     "dev": "npm run build:watch & npm run test:watch",
-    "verify:exports": "node --input-type=module -e \"import { readFileSync, existsSync } from 'fs'; const pkg = JSON.parse(readFileSync('./package.json', 'utf-8')); Object.entries(pkg.exports).forEach(([key, path]) => { if (typeof path === 'string' && existsSync(path)) { console.log('✅', key, '→', path); } else if (typeof path === 'object' && path.import && existsSync(path.import)) { console.log('✅', key, '→', path.import); } else { console.error('❌', key, '→', path, '(missing)'); process.exit(1); } });\"",
-    "build:fresh": "npm run clean && npm run build && npm run verify:exports",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
+    "build:fresh": "npm run clean && npm run build && npm run verify:pack",
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "devDependencies": {
