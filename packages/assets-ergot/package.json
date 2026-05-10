@@ -1,12 +1,13 @@
 {
   "name": "@happyvertical/smrt-assets-ergot",
-  "version": "0.24.9",
+  "version": "0.24.10",
   "description": "Ergot-backed processing, search, and workflow adapter for SMRT assets",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "CLAUDE.md"
   ],
   "exports": {
     ".": {
@@ -22,14 +23,6 @@
   },
   "dependencies": {
     "@happyvertical/smrt-assets": "workspace:*"
-  },
-  "peerDependencies": {
-    "@happyvertical/ergot-sdk": "^0.1.0"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/ergot-sdk": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@happyvertical/smrt-core": "workspace:*",
