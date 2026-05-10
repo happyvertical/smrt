@@ -4,6 +4,12 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import {
+  promptMessageOptions,
+  smrtAnalyticsAnalyzeResultsPrompt,
+  smrtAnalyticsHasPositiveTrendsPrompt,
+} from '../prompts.js';
 import { ReportFrequency, ReportStatus } from '../types/index.js';
 
 /**
@@ -267,7 +273,23 @@ export class AnalyticsReport extends SmrtObject {
   }
 
   /**
-   * AI-powered: Analyze report results
+   * AI-powered: Analyze report results.
+   *
+   * Uses the `smrtAnalytics.report.analyzeResults` prompt registered via
+   * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
+   * Only non-PII fields (report name, dimension/metric labels which are
+   * provider-schema names, date-range window, row count, and the opaque
+   * `resultData` aggregates) are sent to the AI. Internal identifiers
+   * (`id`, `propertyId`, `tenantId`, `lastError`, raw filter expressions)
+   * are excluded — see `../prompts.ts` for the full exclusion rationale.
+   *
+   * The previous implementation issued a second freeform `this.do()` call
+   * to re-summarize "top 3 insights"; that behaviour is now folded into
+   * the single registered template (which already asks for findings,
+   * trends, and recommendations) — `insights` mirrors `analysis` so the
+   * return shape is preserved without a redundant AI round-trip.
    */
   async analyzeResults(_options: any = {}): Promise<{
     action: string;
@@ -275,45 +297,79 @@ export class AnalyticsReport extends SmrtObject {
     insights: string;
   }> {
     const resultData = this.getResultData();
-    const analysis = await this.do(`
-      Analyze these analytics report results and provide insights:
 
-      Report: ${this.name}
-      Dimensions: ${this.dimensions}
-      Metrics: ${this.metrics}
-      Date Range: ${this.dateRangeStart} to ${this.dateRangeEnd}
-      Row Count: ${this.rowCount}
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias so stored prompt overrides are honored on first call before
+    // `getAiClient()` triggers full initialization.
+    const db = (this.options as any).db ?? (this.options as any).persistence;
 
-      Data: ${JSON.stringify(resultData, null, 2)}
+    const resolvedPrompt = await resolvePrompt(
+      smrtAnalyticsAnalyzeResultsPrompt.key,
+      {
+        db,
+        tenantId: (this as any).tenantId ?? null,
+        variables: {
+          reportName: this.name || '',
+          reportDimensions: this.dimensions || '[]',
+          reportMetrics: this.metrics || '[]',
+          dateRangeStart: this.dateRangeStart || '',
+          dateRangeEnd: this.dateRangeEnd || '',
+          rowCount: String(this.rowCount),
+          reportData: JSON.stringify(resultData, null, 2),
+        },
+      },
+    );
 
-      Provide:
-      1. Key findings
-      2. Trends or patterns
-      3. Actionable recommendations
-    `);
+    const ai = await this.getAiClient();
+    const analysis = (
+      await ai.message(
+        resolvedPrompt.text,
+        promptMessageOptions(resolvedPrompt.ai),
+      )
+    ).trim();
 
     return {
       action: 'analyzeResults',
       analysis,
-      insights: await this.do(
-        'Summarize the top 3 insights from this report in bullet points',
-      ),
+      insights: analysis,
     };
   }
 
   /**
-   * AI-powered: Check if results show positive trends
+   * AI-powered: Check if results show positive trends.
+   *
+   * Uses the `smrtAnalytics.report.hasPositiveTrends` prompt registered
+   * via `@happyvertical/smrt-prompts`. Only the metric labels and the
+   * aggregate `resultData` JSON are sent to the AI provider. Boolean
+   * coercion uses the same heuristic as `SmrtObject.is()` (truthy if the
+   * response begins with /yes|true/i).
    */
   async hasPositiveTrends(): Promise<boolean> {
     const resultData = this.getResultData();
-    return await this.is(`
-      Based on these report results, are the metrics showing positive trends?
 
-      Metrics: ${this.metrics}
-      Data: ${JSON.stringify(resultData)}
+    const db = (this.options as any).db ?? (this.options as any).persistence;
 
-      Consider: user growth, engagement, conversions as positive indicators.
-    `);
+    const resolvedPrompt = await resolvePrompt(
+      smrtAnalyticsHasPositiveTrendsPrompt.key,
+      {
+        db,
+        tenantId: (this as any).tenantId ?? null,
+        variables: {
+          reportMetrics: this.metrics || '[]',
+          reportData: JSON.stringify(resultData),
+        },
+      },
+    );
+
+    const ai = await this.getAiClient();
+    const response = (
+      await ai.message(
+        resolvedPrompt.text,
+        promptMessageOptions(resolvedPrompt.ai),
+      )
+    ).trim();
+
+    return /^\s*(yes|true)\b/i.test(response);
   }
 }
 

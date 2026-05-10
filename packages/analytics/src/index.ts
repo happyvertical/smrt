@@ -12,6 +12,9 @@
 // downstream. Must come first so the side effect runs ahead of the class
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
+// Register prompts at module-load time so consumers and tenants can
+// override them via `resolvePrompt()` without further plumbing.
+import './prompts.js';
 
 // Collections
 export {
@@ -28,6 +31,14 @@ export {
   AnalyticsProperty,
   AnalyticsReport,
 } from './models/index.js';
+// Prompt registrations — re-exported so consumers can reference the keys
+// for tenant-aware overrides via `@happyvertical/smrt-prompts`.
+export {
+  promptMessageOptions,
+  smrtAnalyticsAnalyzePerformancePrompt,
+  smrtAnalyticsAnalyzeResultsPrompt,
+  smrtAnalyticsHasPositiveTrendsPrompt,
+} from './prompts.js';
 // Re-export SDK types for convenience
 export type {
   AnalyticsCapabilities,
