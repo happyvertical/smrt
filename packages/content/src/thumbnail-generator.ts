@@ -16,7 +16,9 @@ import {
 import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import type { Content } from './content';
+import { smrtContentThumbnailAIGeneratePrompt } from './content-prompts';
 
 // ============================================================================
 // Types
@@ -163,6 +165,14 @@ export interface ThumbnailGeneratorOptions {
    * Database configuration for storing generated images
    */
   db?: DatabaseConfig;
+
+  /**
+   * Alias for `db` — mirrors the `SmrtClassOptions.persistence` alias so
+   * callers can pass the same options shape they use for SmrtObject/Collection.
+   *
+   * @deprecated Prefer `db`. Retained for parity with `SmrtClassOptions`.
+   */
+  persistence?: DatabaseConfig;
 
   /**
    * AI client configuration for AI-generated thumbnails
@@ -341,7 +351,8 @@ export class ThumbnailGenerator {
 
     // Generate prompt if not provided
     const prompt =
-      options.prompt ?? this.buildAIPrompt(options.style ?? 'photorealistic');
+      options.prompt ??
+      (await this.buildAIPrompt(options.style ?? 'photorealistic'));
 
     // Generate the image using the new API signature
     const width = options.width ?? 1200;
@@ -381,9 +392,14 @@ export class ThumbnailGenerator {
   }
 
   /**
-   * Build a prompt for AI image generation based on content
+   * Build a prompt for AI image generation based on content.
+   *
+   * Resolves via `@happyvertical/smrt-prompts` so tenants can override the
+   * template/profile/model/params at runtime. Only non-PII content fields
+   * (title, description) and the caller-supplied style hint are passed.
+   * Internal IDs and the freeform `metadata` blob are intentionally excluded.
    */
-  private buildAIPrompt(style: string): string {
+  private async buildAIPrompt(style: string): Promise<string> {
     const title = this.content.title || 'Untitled';
     const description = this.content.description || '';
 
@@ -400,9 +416,23 @@ export class ThumbnailGenerator {
 
     const styleHint = stylePrompts[style] || stylePrompts.photorealistic;
 
-    return `Create a ${style} thumbnail image for an article titled "${title}". ${
-      description ? `The article is about: ${description}. ` : ''
-    }Style: ${styleHint}. The image should be suitable for a news article or blog post thumbnail.`;
+    const resolved = await resolvePrompt(
+      smrtContentThumbnailAIGeneratePrompt.key,
+      {
+        db: this.options.db ?? this.options.persistence,
+        tenantId: this.content.tenantId,
+        variables: {
+          style,
+          title,
+          styleHint,
+          descriptionClause: description
+            ? `The article is about: ${description}. `
+            : '',
+        },
+      },
+    );
+
+    return resolved.text;
   }
 
   /**
