@@ -34,8 +34,11 @@ function resolveInstalledPackage(packageName: string): string {
   } catch (requireError) {
     try {
       return import.meta.resolve(packageName);
-    } catch {
-      throw requireError;
+    } catch (esmResolveError) {
+      throw new AggregateError(
+        [requireError, esmResolveError],
+        `Failed to resolve installed package "${packageName}".`,
+      );
     }
   }
 }
