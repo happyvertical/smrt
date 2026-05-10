@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.7
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: Domain packages Phase 2 alignment (epic #1191, category #1210) (#1211)
+  - @happyvertical/smrt-scanner@0.24.7
+  - @happyvertical/smrt-config@0.24.7
+  - @happyvertical/smrt-types@0.24.7
+
 ## 0.24.6
 
 ### Patch Changes
