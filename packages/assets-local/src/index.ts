@@ -146,7 +146,10 @@ export function createLocalAssetProcessor(
     input: AssetEnsureVariantInput,
   ): Promise<AssetVariantResult> {
     if (!input.asset.mimeType?.startsWith('image/')) {
-      throw new Error('Local asset variants require an image asset.');
+      throw new AssetCapabilitySkippedError(
+        'ensureVariant',
+        'Local processor only handles image assets.',
+      );
     }
     if (!input.asset.id) {
       throw new Error('Local asset variants require a persisted source asset.');

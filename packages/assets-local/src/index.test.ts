@@ -1,7 +1,10 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createAssetRuntime } from '@happyvertical/smrt-assets';
+import {
+  type AssetEnsureVariantInput,
+  createAssetRuntime,
+} from '@happyvertical/smrt-assets';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import sharp from 'sharp';
@@ -121,6 +124,34 @@ describe('smrt-assets local processor', () => {
     });
     expect(cached.source).toBe('cached');
     expect(cached.asset.id).toBe(generated?.asset.id);
+  });
+
+  it('skips non-image variants so another provider can handle them', async () => {
+    const fallbackProvider = {
+      name: 'fallback',
+      ensureVariant: async ({ asset, request }: AssetEnsureVariantInput) => ({
+        asset,
+        variant: request.variant,
+        source: 'external' as const,
+      }),
+    };
+    const runtime = await createAssetRuntime({
+      db,
+      storage: storageDir,
+      capabilityProviders: [createLocalAssetProcessor(), fallbackProvider],
+    });
+    const source = await runtime.storeSourceAsset(
+      'source.mp4',
+      Buffer.from('video bytes'),
+      { mimeType: 'video/mp4', typeSlug: 'video' },
+    );
+
+    await expect(
+      runtime.ensureVariant(source, { variant: 'poster' }),
+    ).resolves.toMatchObject({
+      variant: 'poster',
+      source: 'external',
+    });
   });
 
   it('throws clearly for custom variants without dimensions', async () => {

@@ -415,13 +415,18 @@ export class AssetStore {
   ): Promise<Asset> {
     const primaryVersionId =
       asset.primaryVersionId ?? AssetStore.requireAssetId(asset);
+    const { metadata, ...versionOptions } = opts;
+    const versionUpdates: Partial<Asset> = { ...versionOptions };
+    const serializedMetadata = serializeStoreMetadata(metadata);
+    if (serializedMetadata !== undefined) {
+      versionUpdates.metadata = serializedMetadata;
+    } else {
+      delete versionUpdates.metadata;
+    }
     const newVersion = await this.collection.createNewVersion(
       primaryVersionId,
       '', // sourceUri will be set by store
-      {
-        ...opts,
-        metadata: serializeStoreMetadata(opts.metadata),
-      },
+      versionUpdates,
     );
 
     const mimeType = opts.mimeType ?? asset.mimeType;
