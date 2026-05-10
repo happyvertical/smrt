@@ -10,8 +10,8 @@
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
     "check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
     "init-data": "tsx scripts/init-data.ts",
-    "workflow:caelus": "tsx src/workflows/caelus.ts",
-    "workflow:praeco": "npx praeco --config smrt.config.js",
+    "workflow:caelus": "node -e \"console.error('workflow:caelus requires @happyvertical/caelus to ship a CLI bin (tracked upstream). For now invoke the workflow from a script that imports the package directly.'); process.exit(1)\"",
+    "workflow:praeco": "node -e \"console.error('workflow:praeco requires @happyvertical/praeco to ship a CLI bin (tracked upstream). For now invoke the workflow from a script that imports the package directly.'); process.exit(1)\"",
     "validate:json": "tsx scripts/validate-json.ts",
     "validate:slugs": "tsx scripts/validate-slugs.ts"
   },

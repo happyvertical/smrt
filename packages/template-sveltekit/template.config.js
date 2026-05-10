@@ -2,6 +2,11 @@
  * SvelteKit Template Configuration
  *
  * This file configures the template for use with `smrt gnode create`
+ *
+ * Version pins are kept in sync with `template/package.json` and the rest of
+ * the SMRT monorepo (see packages/smrt-svelte/package.json for the canonical
+ * Svelte 5 + Vite 7 baseline). Any changes here MUST be mirrored in
+ * `template/package.json` so generated projects match the tracked template.
  */
 
 export default {
@@ -15,17 +20,17 @@ export default {
 
   // Dependencies to add to generated project
   dependencies: {
-    '@happyvertical/smrt-core': '^0.17.0',
+    '@happyvertical/smrt-core': '^0.24.8',
   },
 
   devDependencies: {
-    '@sveltejs/adapter-auto': '^6.0.0',
-    '@sveltejs/kit': '^2.16.0',
-    '@sveltejs/vite-plugin-svelte': '^5.0.0',
-    'svelte': '^5.15.0',
-    'svelte-check': '^4.1.0',
-    'typescript': '^5.0.0',
-    'vite': '^6.0.0',
+    '@sveltejs/adapter-auto': '^7.0.1',
+    '@sveltejs/kit': '^2.46.0',
+    '@sveltejs/vite-plugin-svelte': '^6.2.4',
+    'svelte': '^5.18.0',
+    'svelte-check': '^4.3.5',
+    'typescript': '^5.9.3',
+    'vite': '^7.3.1',
   },
 
   // Optional: customize files
