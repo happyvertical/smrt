@@ -64,6 +64,9 @@
 // downstream. Must come first so the side effect runs ahead of the class
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
+// Register prompts at module-load time so consumers and tenants can
+// override them via `resolvePrompt()` without further plumbing.
+import './prompts.js';
 
 // Export collections
 export { AccountCollection } from './collections/Accounts';
@@ -74,6 +77,13 @@ export { JournalCollection } from './collections/Journals';
 export { Account } from './models/Account';
 export { Journal } from './models/Journal';
 export { JournalEntry } from './models/JournalEntry';
+
+// Export prompt registrations so consumers can reference the key for
+// tenant-aware overrides via `@happyvertical/smrt-prompts`.
+export {
+  promptMessageOptions,
+  smrtLedgersJournalSummarizePrompt,
+} from './prompts';
 
 // Export types
 export type {

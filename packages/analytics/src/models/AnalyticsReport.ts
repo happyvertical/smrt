@@ -4,6 +4,12 @@
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import {
+  promptMessageOptions,
+  smrtAnalyticsAnalyzeResultsPrompt,
+  smrtAnalyticsHasPositiveTrendsPrompt,
+} from '../prompts.js';
 import { ReportFrequency, ReportStatus } from '../types/index.js';
 
 /**
@@ -267,7 +273,33 @@ export class AnalyticsReport extends SmrtObject {
   }
 
   /**
-   * AI-powered: Analyze report results
+   * AI-powered: Analyze report results.
+   *
+   * Uses the `smrtAnalytics.report.analyzeResults` prompt registered via
+   * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
+   * overrides of the template, model, and parameters at runtime.
+   *
+   * Internal identifiers (`id`, `propertyId`, `tenantId`, `lastError`, raw
+   * `dimensionFilter` / `metricFilter` JSON) are excluded from the prompt
+   * variables — see `../prompts.ts` for the exclusion rationale.
+   *
+   * **`resultData` is FORWARDED VERBATIM.** The persisted result rows are
+   * JSON-stringified into the `reportData` variable; this package cannot
+   * strip PII because the row schema is determined by which dimensions /
+   * metrics the caller asked the analytics provider to return. If the
+   * persisted rows contain `userPseudoId`, `clientId`, IP-derived
+   * geolocation, or any other identifier, those fields WILL reach the AI
+   * provider. Callers are responsible for excluding PII-bearing dimensions
+   * before persisting, applying a column allowlist at the call site, or
+   * overriding the prompt template via `PromptOverride`. The forwarding is
+   * pinned by a regression test in
+   * `__tests__/analytics-report-prompt.test.ts`.
+   *
+   * The previous implementation issued a second freeform `this.do()` call
+   * to re-summarize "top 3 insights"; that behaviour is now folded into
+   * the single registered template (which already asks for findings,
+   * trends, and recommendations) — `insights` mirrors `analysis` so the
+   * return shape is preserved without a redundant AI round-trip.
    */
   async analyzeResults(_options: any = {}): Promise<{
     action: string;
@@ -275,45 +307,95 @@ export class AnalyticsReport extends SmrtObject {
     insights: string;
   }> {
     const resultData = this.getResultData();
-    const analysis = await this.do(`
-      Analyze these analytics report results and provide insights:
 
-      Report: ${this.name}
-      Dimensions: ${this.dimensions}
-      Metrics: ${this.metrics}
-      Date Range: ${this.dateRangeStart} to ${this.dateRangeEnd}
-      Row Count: ${this.rowCount}
+    // Resolve `db` from either the canonical `db` option or its `persistence`
+    // alias so stored prompt overrides are honored on first call before
+    // `getAiClient()` triggers full initialization. SmrtObject already types
+    // both options on `SmrtClassOptions` so no `any` cast is needed — that
+    // keeps a misspelt option name surfacing as a TypeScript error rather
+    // than silently falling through.
+    const db = this.options.db ?? this.options.persistence;
 
-      Data: ${JSON.stringify(resultData, null, 2)}
+    // `AnalyticsReport` does not declare a `tenantId` field (the model is
+    // intentionally not `@TenantScoped`), but consumers commonly invoke it
+    // inside a `withTenant(...)` block. We deliberately OMIT `tenantId` from
+    // the resolvePrompt options so that the resolver falls back to the
+    // AsyncLocalStorage tenancy context via `getTenantId()`. Passing
+    // `tenantId: null` explicitly would short-circuit that fallback and
+    // silently ignore tenant-specific prompt overrides.
+    const resolvedPrompt = await resolvePrompt(
+      smrtAnalyticsAnalyzeResultsPrompt.key,
+      {
+        db,
+        variables: {
+          reportName: this.name || '',
+          reportDimensions: this.dimensions || '[]',
+          reportMetrics: this.metrics || '[]',
+          dateRangeStart: this.dateRangeStart || '',
+          dateRangeEnd: this.dateRangeEnd || '',
+          rowCount: String(this.rowCount),
+          reportData: JSON.stringify(resultData, null, 2),
+        },
+      },
+    );
 
-      Provide:
-      1. Key findings
-      2. Trends or patterns
-      3. Actionable recommendations
-    `);
+    const ai = await this.getAiClient();
+    const analysis = (
+      await ai.message(
+        resolvedPrompt.text,
+        promptMessageOptions(resolvedPrompt.ai),
+      )
+    ).trim();
 
     return {
       action: 'analyzeResults',
       analysis,
-      insights: await this.do(
-        'Summarize the top 3 insights from this report in bullet points',
-      ),
+      insights: analysis,
     };
   }
 
   /**
-   * AI-powered: Check if results show positive trends
+   * AI-powered: Check if results show positive trends.
+   *
+   * Uses the `smrtAnalytics.report.hasPositiveTrends` prompt registered
+   * via `@happyvertical/smrt-prompts`. Only the metric labels and the
+   * aggregate `resultData` JSON are sent to the AI provider — though as
+   * with `analyzeResults`, `resultData` is forwarded verbatim and may
+   * carry PII the caller persisted; see `analyzeResults` docstring and
+   * `../prompts.ts`.
+   *
+   * Boolean coercion uses `/^\s*(yes|true)\b/i` against the trimmed
+   * response. The registered prompt template explicitly instructs the
+   * model to begin its answer with the literal word "yes" or "no" so
+   * this regex is reliable; tenant overrides MUST preserve that leading-
+   * word convention or the boolean will silently fall to `false`.
    */
   async hasPositiveTrends(): Promise<boolean> {
     const resultData = this.getResultData();
-    return await this.is(`
-      Based on these report results, are the metrics showing positive trends?
 
-      Metrics: ${this.metrics}
-      Data: ${JSON.stringify(resultData)}
+    // See `analyzeResults` above for the typed-options + tenancy-fallback rationale.
+    const db = this.options.db ?? this.options.persistence;
 
-      Consider: user growth, engagement, conversions as positive indicators.
-    `);
+    const resolvedPrompt = await resolvePrompt(
+      smrtAnalyticsHasPositiveTrendsPrompt.key,
+      {
+        db,
+        variables: {
+          reportMetrics: this.metrics || '[]',
+          reportData: JSON.stringify(resultData),
+        },
+      },
+    );
+
+    const ai = await this.getAiClient();
+    const response = (
+      await ai.message(
+        resolvedPrompt.text,
+        promptMessageOptions(resolvedPrompt.ai),
+      )
+    ).trim();
+
+    return /^\s*(yes|true)\b/i.test(response);
   }
 }
 

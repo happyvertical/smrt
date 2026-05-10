@@ -41,6 +41,12 @@ import { PartnerStatus, PartnerType, PayoutMethod } from '../types/index.js';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped`):
+// `Partner` is deliberately NOT tenant-scoped. A single partner (e.g. a
+// publisher operating sites across multiple tenants) needs a stable identity
+// for revenue aggregation, payout thresholds, and tax reporting; slicing
+// identity per tenant would duplicate the row or hide payouts owed across
+// tenants. See `packages/affiliates/CLAUDE.md` "Tenancy" section.
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create'] },

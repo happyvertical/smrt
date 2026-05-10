@@ -35,6 +35,12 @@ import { CommissionStatus, CommissionType } from '../types/index.js';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped`):
+// `Commission` is deliberately NOT tenant-scoped. The affiliate network
+// attributes revenue to a `Partner` across whichever tenant generated the
+// underlying ad event; cross-tenant attribution is the point of the network.
+// Tenant-attributed reporting should aggregate by joining back through
+// `eventId` (smrt-ads). See `packages/affiliates/CLAUDE.md` "Tenancy" section.
 @smrt({
   api: { include: ['create', 'list', 'get'] }, // No delete (audit trail)
   mcp: { include: ['create', 'list'] },

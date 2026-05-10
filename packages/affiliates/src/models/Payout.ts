@@ -33,6 +33,11 @@ import { PayoutStatus } from '../types/index.js';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped`):
+// `Payout` is deliberately NOT tenant-scoped. Payouts aggregate commissions
+// for a `Partner` regardless of which tenant generated the underlying revenue;
+// a tenant-scoped query would systematically under-report what is owed. See
+// `packages/affiliates/CLAUDE.md` "Tenancy" section.
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'create'] },

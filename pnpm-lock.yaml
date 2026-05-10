@@ -280,7 +280,19 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
     devDependencies:
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -289,7 +301,7 @@ importers:
         version: 0.73.2
       '@sveltejs/package':
         specifier: ^2.5.7
-        version: 2.5.7(svelte@5.53.5)(typescript@5.9.3)
+        version: 2.5.7(svelte@5.53.12)(typescript@5.9.3)
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -297,11 +309,11 @@ importers:
         specifier: 3.3.3
         version: 3.3.3
       svelte:
-        specifier: ^5.0.0
-        version: 5.53.5
+        specifier: ^5.18.0
+        version: 5.53.12
       svelte-check:
         specifier: ^4.3.5
-        version: 4.4.4(picomatch@4.0.3)(svelte@5.53.5)(typescript@5.9.3)
+        version: 4.4.4(picomatch@4.0.3)(svelte@5.53.12)(typescript@5.9.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1129,6 +1141,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy

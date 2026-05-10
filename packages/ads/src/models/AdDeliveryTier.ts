@@ -24,6 +24,13 @@ import { PricingModel } from '../types/index.js';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped`):
+// `AdDeliveryTier` is a shared catalog model describing the priority waterfall
+// for ad selection (Sponsorship → Standard → House). Tier definitions are part
+// of the package's ad-serving contract, not per-tenant configuration. Adding
+// `@TenantScoped` would require every tenant to seed the same three rows and
+// would fragment the selection algorithm without a clear use case. See
+// `packages/ads/CLAUDE.md` "Tenancy" section for context.
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
