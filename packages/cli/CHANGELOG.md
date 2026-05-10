@@ -1,5 +1,15 @@
 # @happyvertical/smrt-cli
 
+## 0.24.11
+
+### Patch Changes
+
+- @happyvertical/smrt-agents@0.24.11
+- @happyvertical/smrt-playground@0.24.11
+- @happyvertical/smrt-config@0.24.11
+- @happyvertical/smrt-core@0.24.11
+- @happyvertical/smrt-types@0.24.11
+
 ## 0.24.10
 
 ### Patch Changes
