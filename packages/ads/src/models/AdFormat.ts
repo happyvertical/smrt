@@ -19,6 +19,12 @@ import { AdFormatType } from '../types/index.js';
  * });
  * ```
  */
+// Intentional exception to standards.md §7 (`@TenantScoped`):
+// `AdFormat` is a shared catalog model describing IAB standard ad dimensions
+// (e.g. 728x90 Leaderboard). The dimensions are an industry standard, not a
+// per-tenant configuration. Adding `@TenantScoped` would require every tenant
+// to seed the same IAB rows. See `packages/ads/CLAUDE.md` "Tenancy" section
+// for context.
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
