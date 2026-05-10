@@ -14,6 +14,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./ui": {
+      "types": "./dist/ui.d.ts",
+      "import": "./dist/ui.js"
+    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json",
     "./playground": {
@@ -43,6 +47,7 @@
     "@happyvertical/images": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/utils": "catalog:",
@@ -50,10 +55,12 @@
     "sharp": "catalog:"
   },
   "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "svelte": "^5.18.0"
   },
   "devDependencies": {
     "@happyvertical/smrt-playground": "workspace:*",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/kit": "^2.5.7",
@@ -84,5 +91,10 @@
     "type": "git",
     "url": "https://github.com/happyvertical/smrt.git",
     "directory": "packages/images"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    }
   }
 }

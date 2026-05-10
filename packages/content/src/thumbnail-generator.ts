@@ -16,7 +16,15 @@ import {
 import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import type { Image } from '@happyvertical/smrt-images';
 import { ImageCollection } from '@happyvertical/smrt-images';
+import {
+  type ResolvedPrompt,
+  resolvePrompt,
+} from '@happyvertical/smrt-prompts';
 import type { Content } from './content';
+import {
+  promptMessageOptions,
+  smrtContentThumbnailAIGeneratePrompt,
+} from './content-prompts';
 
 // ============================================================================
 // Types
@@ -165,6 +173,14 @@ export interface ThumbnailGeneratorOptions {
   db?: DatabaseConfig;
 
   /**
+   * Alias for `db` — mirrors the `SmrtClassOptions.persistence` alias so
+   * callers can pass the same options shape they use for SmrtObject/Collection.
+   *
+   * @deprecated Prefer `db`. Retained for parity with `SmrtClassOptions`.
+   */
+  persistence?: DatabaseConfig;
+
+  /**
    * AI client configuration for AI-generated thumbnails
    */
   ai?: AIClientOptions | AIClient;
@@ -204,7 +220,16 @@ export class ThumbnailGenerator {
   constructor(
     private content: Content,
     private options: ThumbnailGeneratorOptions = {},
-  ) {}
+  ) {
+    // Normalize the `persistence` alias to `db` once so every downstream call
+    // (prompt resolution, ImageCollection.create, save sites) sees the same
+    // database regardless of which option name the caller used. Without this,
+    // a caller passing `persistence: ...` would have prompt resolution honor
+    // the alias while image saving silently used `undefined`.
+    if (!this.options.db && this.options.persistence) {
+      this.options.db = this.options.persistence;
+    }
+  }
 
   /**
    * Generate a thumbnail using the specified strategy
@@ -339,14 +364,25 @@ export class ThumbnailGenerator {
             );
           })();
 
-    // Generate prompt if not provided
-    const prompt =
-      options.prompt ?? this.buildAIPrompt(options.style ?? 'photorealistic');
-
-    // Generate the image using the new API signature
+    // Generate prompt if not provided. When the caller supplies a literal
+    // prompt we skip prompt resolution entirely (no tenant override path).
+    // When we resolve from the registry we also forward the resolved AI
+    // options (model, params) so `editable: { model, params }` actually
+    // takes effect for thumbnail generation.
     const width = options.width ?? 1200;
     const height = options.height ?? 630;
+    let prompt: string;
+    let aiOverrideOptions: Record<string, unknown> = {};
+    if (options.prompt) {
+      prompt = options.prompt;
+    } else {
+      const built = await this.buildAIPrompt(options.style ?? 'photorealistic');
+      prompt = built.text;
+      aiOverrideOptions = promptMessageOptions(built.ai);
+    }
+
     const result = await ai.generateImage(prompt, {
+      ...aiOverrideOptions,
       size: `${width}x${height}`,
       outputFormat: 'buffer',
     });
@@ -381,9 +417,18 @@ export class ThumbnailGenerator {
   }
 
   /**
-   * Build a prompt for AI image generation based on content
+   * Build a prompt for AI image generation based on content.
+   *
+   * Resolves via `@happyvertical/smrt-prompts` so tenants can override the
+   * template/profile/model/params at runtime. Only non-PII content fields
+   * (title, description) and the caller-supplied style hint are passed.
+   * Internal IDs and the freeform `metadata` blob are intentionally excluded.
+   *
+   * Returns the full ResolvedPrompt (text + ai config) so the caller can
+   * forward `model`/`params` overrides to `ai.generateImage()`. Returning
+   * only the text would silently drop the editable model/params overrides.
    */
-  private buildAIPrompt(style: string): string {
+  private async buildAIPrompt(style: string): Promise<ResolvedPrompt> {
     const title = this.content.title || 'Untitled';
     const description = this.content.description || '';
 
@@ -400,9 +445,18 @@ export class ThumbnailGenerator {
 
     const styleHint = stylePrompts[style] || stylePrompts.photorealistic;
 
-    return `Create a ${style} thumbnail image for an article titled "${title}". ${
-      description ? `The article is about: ${description}. ` : ''
-    }Style: ${styleHint}. The image should be suitable for a news article or blog post thumbnail.`;
+    return resolvePrompt(smrtContentThumbnailAIGeneratePrompt.key, {
+      db: this.options.db,
+      tenantId: this.content.tenantId,
+      variables: {
+        style,
+        title,
+        styleHint,
+        descriptionClause: description
+          ? `The article is about: ${description}. `
+          : '',
+      },
+    });
   }
 
   /**

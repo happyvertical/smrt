@@ -50,6 +50,17 @@ Corrected text to incorporate:
   },
 });
 
+export const smrtContentThumbnailAIGeneratePrompt = definePrompt({
+  key: 'smrtContent.thumbnail.aiGenerate',
+  template: `Create a {style} thumbnail image for an article titled "{title}". {descriptionClause}Style: {styleHint}. The image should be suitable for a news article or blog post thumbnail.`,
+  editable: {
+    template: true,
+    profile: true,
+    model: true,
+    params: true,
+  },
+});
+
 export function promptMessageOptions(ai: ResolvedPromptAI) {
   return {
     ...(ai.params || {}),

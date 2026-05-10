@@ -345,6 +345,9 @@ importers:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
@@ -946,6 +949,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-prompts':
+        specifier: workspace:*
+        version: link:../prompts
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -965,6 +971,9 @@ importers:
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

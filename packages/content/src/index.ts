@@ -215,6 +215,7 @@ export {
   promptMessageOptions,
   smrtContentApplyCorrectionPrompt,
   smrtContentReviewPrompt,
+  smrtContentThumbnailAIGeneratePrompt,
 } from './content-prompts';
 export type { ContentReferenceOptions } from './content-reference';
 export { ContentReference } from './content-reference';

@@ -26,7 +26,7 @@ export default defineConfig(async ({ mode }) => {
     // Delegate to the shared package config which handles entry points,
     // externals, dts generation, and svelte-package exclusion.
     const config = createPackageConfig('assets', {
-      entries: ['playground'],
+      entries: ['ui', 'playground'],
       svelte: 'svelte',
       dtsExclude: ['src/routes/**/*'],
       // Fail the build on TS errors in dts generation so type-only bugs

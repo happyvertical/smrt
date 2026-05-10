@@ -148,6 +148,20 @@ function bumpRevision(doc: MetadataAccessor) {
 
 `getCategorySegments()`, `getParentCategory()`, `getRootCategory()`, `getAncestorPaths()`, `isInCategory(path, includeChildren?)`
 
+## Prompt Registry
+
+Content prompts are registered with `@happyvertical/smrt-prompts` so tenants can override template/profile/model/params at runtime:
+
+```typescript
+import {
+  smrtContentReviewPrompt,             // key: 'smrtContent.review'
+  smrtContentApplyCorrectionPrompt,    // key: 'smrtContent.applyCorrection'
+  smrtContentThumbnailAIGeneratePrompt, // key: 'smrtContent.thumbnail.aiGenerate'
+} from '@happyvertical/smrt-content';
+```
+
+`smrtContent.thumbnail.aiGenerate` powers the AI image-generation prompt used by `ThumbnailGenerator` (strategy `'ai-generate'`). Variables substituted into the template: `style`, `title`, `styleHint`, `descriptionClause`. Internal foreign-key fields (`id`, `tenantId`) and the freeform `metadata` blob are intentionally excluded — `metadata` may carry tenant-private configuration or coordinates unrelated to the visual prompt.
+
 ## Gotchas
 
 - **STI discriminator**: qualified names like `@happyvertical/smrt-content:Article`
