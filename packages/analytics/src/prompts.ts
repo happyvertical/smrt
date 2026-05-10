@@ -55,9 +55,23 @@ Property: {propertyDisplayName} ({propertyProvider})`,
  * `AnalyticsReport.analyzeResults()` prompt. Surfaces report name, the
  * dimension/metric labels (which are public GA4/Plausible/Matomo schema
  * names — not user data), the date-range window, and the row count plus
- * a JSON-stringified `resultData` blob. Callers should ensure result rows
- * have already been de-PII'd by their analytics provider; we treat them
- * as opaque aggregates for the AI provider.
+ * a JSON-stringified `resultData` blob.
+ *
+ * **`resultData` is forwarded verbatim.** This package does not strip PII
+ * from result rows — it cannot, because the row schema is determined by
+ * the dimensions/metrics the caller asked the analytics provider to
+ * return. If the caller persists rows containing a `userPseudoId`,
+ * `clientId`, IP-derived geolocation, or any other identifier, those
+ * fields WILL reach the AI provider. Either:
+ *
+ *   - exclude PII-bearing dimensions before persisting `resultData`
+ *     (e.g. don't request `userPseudoId` as a GA4 dimension), or
+ *   - apply a column allowlist at the call site before invoking
+ *     `analyzeResults()`, or
+ *   - override the prompt template via `PromptOverride` to redact rows.
+ *
+ * The forwarding contract is pinned by a regression test in
+ * `__tests__/analytics-report-prompt.test.ts`.
  */
 export const smrtAnalyticsAnalyzeResultsPrompt = definePrompt({
   key: 'smrtAnalytics.report.analyzeResults',

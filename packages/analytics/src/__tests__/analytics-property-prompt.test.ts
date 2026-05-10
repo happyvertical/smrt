@@ -10,6 +10,7 @@
  */
 
 import { clearPromptCache } from '@happyvertical/smrt-prompts';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AnalyticsProperty } from '../models/AnalyticsProperty.js';
 import {
@@ -110,6 +111,47 @@ describe('AnalyticsProperty.analyzePerformance()', () => {
     expect(aiMessageMock).toHaveBeenCalledTimes(1);
     const [, options] = aiMessageMock.mock.calls[0];
     expect(options).toEqual({});
+  });
+
+  it('OMITS tenantId from resolvePrompt options so withTenant context is honored', async () => {
+    // Regression test pinning the codex P2 fix from PR #1214: the analytics
+    // models do not declare a `tenantId` field (intentionally not
+    // @TenantScoped), and the previous implementation passed
+    // `tenantId: null` explicitly. That short-circuited resolvePrompt's
+    // AsyncLocalStorage fallback (which uses `getTenantId() ?? null` only
+    // when `options.tenantId === undefined`) and silently ignored
+    // tenant-specific prompt overrides for any caller running inside a
+    // `withTenant(...)` block.
+    //
+    // The fix is to OMIT the field — not pass `null` — so the resolver
+    // falls back to the active tenancy context. This test pins that
+    // contract by inspecting the options object the model passes to
+    // resolvePrompt.
+    const property = makeProperty();
+    const promptsModule = await import('@happyvertical/smrt-prompts');
+    const observed: Array<Record<string, unknown> | undefined> = [];
+    const originalResolve = promptsModule.resolvePrompt;
+    const spy = vi
+      .spyOn(promptsModule, 'resolvePrompt')
+      .mockImplementation((key, options) => {
+        observed.push(options as Record<string, unknown> | undefined);
+        return originalResolve(key, options);
+      });
+
+    try {
+      await withTenant({ tenantId: 'tenant-context-X' }, async () => {
+        await property.analyzePerformance({ period: '7 days' });
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(observed).toHaveLength(1);
+    const opts = observed[0] ?? {};
+    // Critical: `tenantId` is NOT a key on the options object — that lets
+    // resolvePrompt's `options.tenantId !== undefined ? ... : (getTenantId() ?? null)`
+    // gate fall through to the AsyncLocalStorage tenant context.
+    expect('tenantId' in opts).toBe(false);
   });
 
   it('forwards model/temperature/maxTokens from a runtime ai override via promptMessageOptions', () => {

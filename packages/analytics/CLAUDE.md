@@ -35,7 +35,13 @@ Three prompts are registered at module-load time via `definePrompt()` from `@hap
 - `providerMetadata` — extensible JSON blob that may contain credentials, account IDs, or other configuration secrets.
 - `lastError`, raw `dimensionFilter` / `metricFilter` JSON — internal error strings (may contain auth tokens) and filter expressions that may reference cookie IDs, user-pseudo-IDs, or IP-derived geos.
 
-`resultData` is passed through as opaque aggregate; callers must ensure the analytics provider has already de-PII'd the rows before persisting them.
+**`resultData` is forwarded verbatim.** This package does not — and cannot — strip PII from result rows, because the row schema is determined by the dimensions/metrics the caller asked the analytics provider to return. If the caller persists rows containing a `userPseudoId`, `clientId`, IP-derived geolocation, or any other identifier, those fields WILL reach the AI provider. Callers must:
+
+- exclude PII-bearing dimensions before persisting `resultData` (e.g. don't request `userPseudoId` as a GA4 dimension), or
+- apply a column allowlist at the call site before invoking `analyzeResults()`, or
+- override the prompt template via `PromptOverride` to redact rows.
+
+The forwarding contract is pinned by a regression test in `src/__tests__/analytics-report-prompt.test.ts`.
 
 See `src/prompts.ts` for the full rationale block.
 

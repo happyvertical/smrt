@@ -103,6 +103,45 @@ describe('AnalyticsReport.analyzeResults()', () => {
     expect(text).not.toContain('INTERNAL: token expired');
   });
 
+  it('FORWARDS `resultData` rows verbatim — caller must de-PII before persisting', async () => {
+    // This test pins the contract that `resultData` is passed through to the
+    // AI provider as opaque aggregate. If a caller persists raw GA4 row-level
+    // data containing PII (e.g. a `userPseudoId` dimension), it WILL reach
+    // the AI provider. The prompts.ts and CLAUDE.md tenancy notes both
+    // document this; the assertion below ensures the contract is intentional
+    // rather than hidden behind a sanitization step nobody implemented.
+    const aiMessageMock = vi.fn().mockResolvedValue('analysis');
+    const report = new AnalyticsReport({
+      name: 'PII test',
+      dimensions: '[]',
+      metrics: '[]',
+      dateRangeStart: '7daysAgo',
+      dateRangeEnd: 'today',
+      rowCount: 1,
+      status: ReportStatus.COMPLETED,
+      // Caller-persisted PII inside resultData rows.
+      resultData: JSON.stringify({
+        rows: [
+          {
+            userPseudoId: 'pii-pseudo-id-leak-9999',
+            activeUsers: 1,
+          },
+        ],
+      }),
+    });
+    (report as any).getAiClient = async () => ({
+      message: aiMessageMock,
+    });
+
+    await report.analyzeResults();
+
+    const [text] = aiMessageMock.mock.calls[0];
+    // Both the field name and its value land in the prompt — that is the
+    // documented contract, NOT a regression to be silently fixed.
+    expect(text).toContain('userPseudoId');
+    expect(text).toContain('pii-pseudo-id-leak-9999');
+  });
+
   it('passes empty AI options for the default registered prompt (no ai config)', async () => {
     const { report, aiMessageMock } = makeReport();
 

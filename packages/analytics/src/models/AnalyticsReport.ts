@@ -300,14 +300,23 @@ export class AnalyticsReport extends SmrtObject {
 
     // Resolve `db` from either the canonical `db` option or its `persistence`
     // alias so stored prompt overrides are honored on first call before
-    // `getAiClient()` triggers full initialization.
-    const db = (this.options as any).db ?? (this.options as any).persistence;
+    // `getAiClient()` triggers full initialization. SmrtObject already types
+    // both options on `SmrtClassOptions` so no `any` cast is needed — that
+    // keeps a misspelt option name surfacing as a TypeScript error rather
+    // than silently falling through.
+    const db = this.options.db ?? this.options.persistence;
 
+    // `AnalyticsReport` does not declare a `tenantId` field (the model is
+    // intentionally not `@TenantScoped`), but consumers commonly invoke it
+    // inside a `withTenant(...)` block. We deliberately OMIT `tenantId` from
+    // the resolvePrompt options so that the resolver falls back to the
+    // AsyncLocalStorage tenancy context via `getTenantId()`. Passing
+    // `tenantId: null` explicitly would short-circuit that fallback and
+    // silently ignore tenant-specific prompt overrides.
     const resolvedPrompt = await resolvePrompt(
       smrtAnalyticsAnalyzeResultsPrompt.key,
       {
         db,
-        tenantId: (this as any).tenantId ?? null,
         variables: {
           reportName: this.name || '',
           reportDimensions: this.dimensions || '[]',
@@ -347,13 +356,13 @@ export class AnalyticsReport extends SmrtObject {
   async hasPositiveTrends(): Promise<boolean> {
     const resultData = this.getResultData();
 
-    const db = (this.options as any).db ?? (this.options as any).persistence;
+    // See `analyzeResults` above for the typed-options + tenancy-fallback rationale.
+    const db = this.options.db ?? this.options.persistence;
 
     const resolvedPrompt = await resolvePrompt(
       smrtAnalyticsHasPositiveTrendsPrompt.key,
       {
         db,
-        tenantId: (this as any).tenantId ?? null,
         variables: {
           reportMetrics: this.metrics || '[]',
           reportData: JSON.stringify(resultData),
