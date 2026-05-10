@@ -1,0 +1,334 @@
+<script lang="ts">
+import type { ContentCorrectionData, FactData } from '../../mock-smrt-client';
+import { createClient } from '../../mock-smrt-client';
+import { normalizeApiBaseUrl } from '../api';
+
+export interface Props {
+  apiBaseUrl?: string;
+  contentId: string;
+  defaultRelationship?: string;
+  onCorrectionsChange?: (corrections: ContentCorrectionData[]) => void;
+}
+
+let {
+  apiBaseUrl = '/api/v1',
+  contentId,
+  defaultRelationship = 'supports',
+  onCorrectionsChange = undefined,
+}: Props = $props();
+
+const client = $derived(createClient(normalizeApiBaseUrl(apiBaseUrl)));
+const savedContentId = $derived(
+  contentId && contentId !== 'new' ? contentId : null,
+);
+
+let corrections = $state<ContentCorrectionData[]>([]);
+let facts = $state<FactData[]>([]);
+let busy = $state(false);
+let error = $state<string | null>(null);
+let notice = $state<string | null>(null);
+let loadedContentId = $state<string | null>(null);
+
+let correctionSummary = $state('');
+let correctionFactId = $state('');
+let correctedFactText = $state('');
+let correctionPublicNote = $state('');
+let publishCorrection = $state(true);
+
+$effect(() => {
+  if (!savedContentId) {
+    loadedContentId = null;
+    corrections = [];
+    facts = [];
+    return;
+  }
+
+  if (savedContentId !== loadedContentId) {
+    loadedContentId = savedContentId;
+    void loadCorrections();
+  }
+});
+
+$effect(() => {
+  if (facts.length === 0) {
+    correctionFactId = '';
+    return;
+  }
+
+  const factIds = facts
+    .map((fact) => fact.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (!correctionFactId || !factIds.includes(correctionFactId)) {
+    correctionFactId = factIds[0] ?? '';
+  }
+});
+
+function formatTimestamp(value: string | null | undefined) {
+  if (!value) return 'Not published';
+  return new Date(value).toLocaleString();
+}
+
+function getCorrectionProvenanceCopy(correction: ContentCorrectionData) {
+  const metadata = correction.metadata || {};
+
+  if (metadata.draftVersionNumber) {
+    return `Auto-created draft v${metadata.draftVersionNumber} for editorial follow-up.`;
+  }
+
+  return null;
+}
+
+async function loadCorrections() {
+  if (!savedContentId) return;
+
+  busy = true;
+  error = null;
+
+  try {
+    const [correctionsResponse, factsResponse] = await Promise.all([
+      client.contents.getCorrections(savedContentId),
+      client.contents.getFacts(savedContentId, defaultRelationship),
+    ]);
+    corrections = correctionsResponse.data;
+    facts = factsResponse.data.facts || [];
+    onCorrectionsChange?.(correctionsResponse.data);
+  } catch (err: any) {
+    error = err.message || 'Failed to load corrections';
+  } finally {
+    busy = false;
+  }
+}
+
+async function issueCorrection() {
+  if (!savedContentId) return;
+
+  busy = true;
+  error = null;
+  notice = null;
+
+  try {
+    await client.contents.issueCorrection(savedContentId, {
+      summary: correctionSummary,
+      factId: correctionFactId || undefined,
+      correctedFactText: correctedFactText || undefined,
+      publicNote: correctionPublicNote || undefined,
+      publish: publishCorrection,
+    });
+
+    correctionSummary = '';
+    correctedFactText = '';
+    correctionPublicNote = '';
+    publishCorrection = true;
+
+    notice = 'Correction issued.';
+    await loadCorrections();
+  } catch (err: any) {
+    error = err.message || 'Failed to issue correction';
+  } finally {
+    busy = false;
+  }
+}
+</script>
+
+<div class="governance-tool">
+  {#if error}
+    <p class="tool-error">{error}</p>
+  {/if}
+
+  {#if notice}
+    <p class="tool-notice">{notice}</p>
+  {/if}
+
+  {#if !savedContentId}
+    <p class="empty-copy">Save this content to issue corrections.</p>
+  {:else}
+    <label class="workflow-field">
+      Summary
+      <input
+        type="text"
+        bind:value={correctionSummary}
+        placeholder="What was wrong?"
+      />
+    </label>
+
+    <label class="workflow-field">
+      Related fact
+      <select bind:value={correctionFactId}>
+        <option value="">General correction</option>
+        {#each facts as fact (fact.id)}
+          <option value={fact.id ?? ''}>{fact.textRefined}</option>
+        {/each}
+      </select>
+    </label>
+
+    <label class="workflow-field">
+      Corrected fact text
+      <textarea
+        rows="4"
+        bind:value={correctedFactText}
+        placeholder="Provide the corrected claim or wording"
+      ></textarea>
+    </label>
+
+    <label class="workflow-field">
+      Public note
+      <textarea
+        rows="3"
+        bind:value={correctionPublicNote}
+        placeholder="Optional public-facing correction note"
+      ></textarea>
+    </label>
+
+    <label class="checkbox-row">
+      <input type="checkbox" bind:checked={publishCorrection} />
+      Publish immediately
+    </label>
+
+    <button
+      type="button"
+      disabled={busy || correctionSummary.trim().length === 0}
+      onclick={() => void issueCorrection()}
+    >
+      {busy ? 'Issuing correction...' : 'Issue correction'}
+    </button>
+
+    <div class="tool-list">
+      <div class="section-caption">Published history</div>
+      {#if corrections.length === 0}
+        <p class="empty-copy">No corrections issued.</p>
+      {:else}
+        {#each corrections as correction (correction.id ?? `${correction.correctionType}-${correction.createdAt}`)}
+          <div class="tool-card">
+            <div class="tool-card-header">
+              <strong>{correction.correctionType}</strong>
+              <span class={`pill pill--${correction.status}`}>{correction.status}</span>
+            </div>
+            <p>{correction.summary}</p>
+            <span>{formatTimestamp(correction.publishedAt)}</span>
+            {#if getCorrectionProvenanceCopy(correction)}
+              <span>{getCorrectionProvenanceCopy(correction)}</span>
+            {/if}
+          </div>
+        {/each}
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<style>
+  .governance-tool,
+  .tool-list,
+  .workflow-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .workflow-field {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .workflow-field input,
+  .workflow-field textarea,
+  .workflow-field select {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--smrt-color-outline);
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-on-surface);
+    font-family: inherit;
+  }
+
+  button {
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.7rem 0.95rem;
+    background: var(--smrt-color-primary);
+    color: var(--smrt-color-on-primary, white);
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+  }
+
+  .tool-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: 0.75rem;
+    padding: 0.85rem;
+  }
+
+  .tool-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+
+  .tool-card span,
+  .empty-copy,
+  .section-caption {
+    color: var(--smrt-color-on-surface-variant);
+    font-size: 0.85rem;
+  }
+
+  .tool-card p {
+    margin: 0;
+  }
+
+  .checkbox-row {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    color: var(--smrt-color-on-surface);
+  }
+
+  .pill {
+    border-radius: 999px;
+    padding: 0.2rem 0.55rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: capitalize;
+  }
+
+  .pill--published,
+  .pill--neutral {
+    background: rgba(59, 130, 246, 0.14);
+    color: #1d4ed8;
+  }
+
+  .pill--draft,
+  .pill--retracted {
+    background: rgba(220, 38, 38, 0.14);
+    color: #991b1b;
+  }
+
+  .tool-error,
+  .tool-notice {
+    margin: 0;
+    border-radius: 0.6rem;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.9rem;
+  }
+
+  .tool-error {
+    background: rgba(220, 38, 38, 0.1);
+    color: #991b1b;
+  }
+
+  .tool-notice {
+    background: rgba(37, 99, 235, 0.1);
+    color: #1d4ed8;
+  }
+</style>
