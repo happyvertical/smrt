@@ -12,6 +12,7 @@ Scaffold template for static community news sites with JSON data. Used by `smrt 
 - `template.config.js` — placeholder definitions and post-generation hooks
 - `template/scripts/init-data.ts` — data initialization script
 - `template/src/site.config.ts` — typed access to `smrt.config.js` site section (`initSiteConfig()`/`getSite()`)
+- `template/src/lib/components/WeatherHeader.svelte` — local weather-bar shim (was previously imported from `@happyvertical/smrt-svelte`, but that package dropped the component before the 0.24.x baseline). The shim renders the caelus-shaped `forecast` payload; consumers should customize for their data layer if they pull a different upstream.
 
 ## Key Patterns
 

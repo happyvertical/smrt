@@ -1,7 +1,8 @@
 <script lang="ts">
   import type { LayoutData } from './$types';
   import '../app.css';
-  import { Masthead, WeatherHeader, Footer, Container } from '@happyvertical/smrt-svelte';
+  import { Masthead, Footer, Container } from '@happyvertical/smrt-svelte';
+  import WeatherHeader from '$lib/components/WeatherHeader.svelte';
 
   let { children, data }: { children: any; data: LayoutData } = $props();
 
