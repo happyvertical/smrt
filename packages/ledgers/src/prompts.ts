@@ -21,6 +21,13 @@ import {
 // records (customer/vendor IDs via sourceRef) or contain tenant-private
 // configuration. If a downstream tenant needs richer context they can
 // override the template via PromptOverride.
+// Note: smrt-prompts substitutes `{token}` placeholders. The currency prefix
+// is folded into the `journalTotal` variable value (e.g. "$100.00") rather
+// than written as a literal `$` in the template — earlier revisions used
+// `\${journalTotal}` (a template-literal escape that renders as the literal
+// `${journalTotal}` at runtime). That technically worked because the regex
+// still matched the inner `{journalTotal}` and produced `$100.00`, but it
+// confused reviewers; folding the prefix into the value avoids the trap.
 export const smrtLedgersJournalSummarizePrompt = definePrompt({
   key: 'smrtLedgers.journal.summarize',
   template: `Summarize this accounting journal entry:
@@ -28,7 +35,7 @@ Number: {journalNumber}
 Date: {journalDate}
 Description: {journalDescription}
 Status: {journalStatus}
-Total: \${journalTotal}
+Total: {journalTotal}
 Entries: {entryCount}
 Balanced: {journalBalanced}`,
   editable: {

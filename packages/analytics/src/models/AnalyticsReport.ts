@@ -279,11 +279,21 @@ export class AnalyticsReport extends SmrtObject {
    * `@happyvertical/smrt-prompts`, allowing tenant- or instance-level
    * overrides of the template, model, and parameters at runtime.
    *
-   * Only non-PII fields (report name, dimension/metric labels which are
-   * provider-schema names, date-range window, row count, and the opaque
-   * `resultData` aggregates) are sent to the AI. Internal identifiers
-   * (`id`, `propertyId`, `tenantId`, `lastError`, raw filter expressions)
-   * are excluded — see `../prompts.ts` for the full exclusion rationale.
+   * Internal identifiers (`id`, `propertyId`, `tenantId`, `lastError`, raw
+   * `dimensionFilter` / `metricFilter` JSON) are excluded from the prompt
+   * variables — see `../prompts.ts` for the exclusion rationale.
+   *
+   * **`resultData` is FORWARDED VERBATIM.** The persisted result rows are
+   * JSON-stringified into the `reportData` variable; this package cannot
+   * strip PII because the row schema is determined by which dimensions /
+   * metrics the caller asked the analytics provider to return. If the
+   * persisted rows contain `userPseudoId`, `clientId`, IP-derived
+   * geolocation, or any other identifier, those fields WILL reach the AI
+   * provider. Callers are responsible for excluding PII-bearing dimensions
+   * before persisting, applying a column allowlist at the call site, or
+   * overriding the prompt template via `PromptOverride`. The forwarding is
+   * pinned by a regression test in
+   * `__tests__/analytics-report-prompt.test.ts`.
    *
    * The previous implementation issued a second freeform `this.do()` call
    * to re-summarize "top 3 insights"; that behaviour is now folded into
@@ -349,9 +359,16 @@ export class AnalyticsReport extends SmrtObject {
    *
    * Uses the `smrtAnalytics.report.hasPositiveTrends` prompt registered
    * via `@happyvertical/smrt-prompts`. Only the metric labels and the
-   * aggregate `resultData` JSON are sent to the AI provider. Boolean
-   * coercion uses the same heuristic as `SmrtObject.is()` (truthy if the
-   * response begins with /yes|true/i).
+   * aggregate `resultData` JSON are sent to the AI provider — though as
+   * with `analyzeResults`, `resultData` is forwarded verbatim and may
+   * carry PII the caller persisted; see `analyzeResults` docstring and
+   * `../prompts.ts`.
+   *
+   * Boolean coercion uses `/^\s*(yes|true)\b/i` against the trimmed
+   * response. The registered prompt template explicitly instructs the
+   * model to begin its answer with the literal word "yes" or "no" so
+   * this regex is reliable; tenant overrides MUST preserve that leading-
+   * word convention or the boolean will silently fall to `false`.
    */
   async hasPositiveTrends(): Promise<boolean> {
     const resultData = this.getResultData();

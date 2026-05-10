@@ -274,7 +274,9 @@ export class Journal extends SmrtObject {
           journalDate: this.date.toISOString().split('T')[0],
           journalDescription: this.description || '',
           journalStatus: this.status || '',
-          journalTotal: debits.toFixed(2),
+          // Currency prefix folded into the value rather than the template
+          // — see the `smrtLedgersJournalSummarizePrompt` comment block.
+          journalTotal: `$${debits.toFixed(2)}`,
           entryCount: String(entries.length),
           journalBalanced: balanced ? 'Yes' : 'No',
         },

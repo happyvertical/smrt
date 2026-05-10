@@ -8,7 +8,8 @@
  * `prompts.ts`) and `@happyvertical/smrt-content` (see `content-prompts.ts`).
  *
  * PII / internal-field exclusion policy:
- * The variables sent to the AI provider deliberately exclude:
+ *
+ * Variables that this package never forwards to the AI provider:
  *   - `id`, `tenantId`, `propertyId` and other foreign-key/UUID fields —
  *     they identify internal records and provide no analytic value.
  *   - `apiSecret`, `measurementId`, `externalId`, `siteDomain` — these are
@@ -17,15 +18,29 @@
  *     be tenant-private configuration.
  *   - `providerMetadata` — extensible JSON blob that may contain
  *     credentials, account IDs, or other configuration secrets.
- *   - `lastError`, `dimensionFilter`, `metricFilter`, `resultData` raw
- *     payloads — only aggregate counts and computed deltas are passed; the
- *     raw rows can include cookie IDs, user-pseudo-IDs, IP-derived geos,
- *     and other PII the analytics provider returned.
+ *   - `lastError`, raw `dimensionFilter` / `metricFilter` JSON — internal
+ *     error strings (which may contain auth tokens) and filter expressions
+ *     that may reference cookie IDs or user-pseudo-IDs are kept out of the
+ *     prompt variable set.
  *
- * Acceptable variables: human-readable names, time periods, computed
- * aggregates (row counts, totals), and high-level dimension/metric labels.
- * If a downstream tenant needs richer context they can override the
- * template via PromptOverride.
+ * Variables this package DOES forward (potentially carrying PII the caller
+ * persisted):
+ *   - `reportData` (a JSON.stringify of the persisted `resultData`) — this
+ *     is forwarded VERBATIM to the AI in `analyzeResults` and
+ *     `hasPositiveTrends`. The package cannot strip PII because the row
+ *     schema is determined by which dimensions/metrics the caller asked
+ *     the analytics provider to return. If the persisted rows contain
+ *     `userPseudoId`, `clientId`, IP-derived geolocation, or any other
+ *     identifier, those fields WILL reach the AI provider. The forwarding
+ *     is pinned by a regression test in
+ *     `__tests__/analytics-report-prompt.test.ts`. Callers must either
+ *     exclude PII-bearing dimensions before persisting, apply a column
+ *     allowlist at the call site, or override the prompt template via
+ *     `PromptOverride` to redact rows.
+ *
+ * Acceptable variables (always safe): human-readable names, time periods,
+ * computed aggregates (row counts, totals), and high-level dimension/metric
+ * labels (which are public GA4/Plausible/Matomo schema names).
  */
 
 import {
@@ -102,6 +117,15 @@ Provide:
  * variables as `analyzeResults` minus the descriptive name — only the
  * provider-schema metric labels and the aggregate `resultData` payload are
  * needed to decide whether the trend is positive.
+ *
+ * The template explicitly instructs the model to begin its response with
+ * either "yes" or "no" so the boolean coercion in `hasPositiveTrends()`
+ * (`/^\s*(yes|true)\b/i`) is reliable. Without the leading-word
+ * instruction the model commonly answers with prose that happens to
+ * describe positive trends but starts with a sentence like "The
+ * conversion rate is up..." — the parser would then treat that as
+ * `false` despite a positive analysis. Tenants overriding this template
+ * MUST preserve the leading yes/no convention.
  */
 export const smrtAnalyticsHasPositiveTrendsPrompt = definePrompt({
   key: 'smrtAnalytics.report.hasPositiveTrends',
@@ -110,7 +134,11 @@ export const smrtAnalyticsHasPositiveTrendsPrompt = definePrompt({
 Metrics: {reportMetrics}
 Data: {reportData}
 
-Consider: user growth, engagement, conversions as positive indicators.`,
+Consider: user growth, engagement, conversions as positive indicators.
+
+Begin your response with the single word "yes" or "no" (lower case), then
+optionally provide a one-sentence explanation. Tooling parses the leading
+word — "yes" or "true" means positive, anything else means negative.`,
   editable: {
     template: true,
     profile: true,
