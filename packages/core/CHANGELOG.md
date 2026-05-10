@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.8
+
+### Patch Changes
+
+- ### Other Changes
+
+  - chore: Content & Media packages Phase 2 alignment (epic #1191, category #1212) (#1213)
+  - @happyvertical/smrt-scanner@0.24.8
+  - @happyvertical/smrt-config@0.24.8
+  - @happyvertical/smrt-types@0.24.8
+
 ## 0.24.7
 
 ### Patch Changes
