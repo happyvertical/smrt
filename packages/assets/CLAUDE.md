@@ -55,6 +55,20 @@ The following roles are exported as `ASSET_ROLES` and should be preferred over a
 
 Canonical metadata keys are exported as `ASSET_METADATA_KEYS`: `extractionStatus`, `extractionError`, `extractedAt`, `sourceUrl`, `sourceHash`, `pageNumber`. Extraction status values live in `ASSET_EXTRACTION_STATUS` (`pending | running | succeeded | failed`).
 
+## UI Registry
+
+The `./ui` subpath exports `ASSETS_MODULE_META` and `ASSETS_UI_SLOTS` so registry-driven hosts (smrt-chat, dynamic admin shells) can discover the package's Svelte components without a hard import.
+
+```ts
+import { ASSETS_MODULE_META, ASSETS_UI_SLOTS } from '@happyvertical/smrt-assets/ui';
+import '@happyvertical/smrt-assets/svelte'; // side-effect: ModuleUIRegistry.register(...)
+import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+
+const AssetManager = ModuleUIRegistry.get('@happyvertical/smrt-assets', 'asset-manager');
+```
+
+Registered slots: `asset-manager` (admin), `asset-grid` / `asset-list` (list), `asset-detail` (detail), `asset-toolbar` / `asset-action-bar` (action), `asset-create-modal` (form). Slot IDs are stable contracts — host apps reference them by string.
+
 ## Gotchas
 
 - **Version history manual**: `findVersions()` chaining required — no ORM shortcut
