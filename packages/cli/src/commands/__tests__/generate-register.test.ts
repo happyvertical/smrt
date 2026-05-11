@@ -182,6 +182,24 @@ describe('generate-register', () => {
           extends: 'SmrtCollection',
           visibility: 'public',
         },
+        LegacyWidgetCollection: {
+          className: 'LegacyWidgetCollection',
+          exportName: 'LegacyWidgetCollection',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:LegacyWidgetCollection',
+          collection: 'legacy_widgets',
+          extendsTypeArg: 'Widget',
+          visibility: 'public',
+        },
+        SpecializedWidgetCollection: {
+          className: 'SpecializedWidgetCollection',
+          exportName: 'SpecializedWidgetCollection',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:SpecializedWidgetCollection',
+          collection: 'specialized_widgets',
+          extends: 'WidgetCollection',
+          visibility: 'public',
+        },
       },
     });
 
@@ -194,9 +212,21 @@ describe('generate-register', () => {
       "import { WidgetCollection } from '@happyvertical/pkg';",
     );
     expect(content).toContain(
+      "import { LegacyWidgetCollection } from '@happyvertical/pkg';",
+    );
+    expect(content).toContain(
+      "import { SpecializedWidgetCollection } from '@happyvertical/pkg';",
+    );
+    expect(content).toContain(
       'ObjectRegistry.register(Widget, { name: "Widget", packageName: "@happyvertical/pkg" });',
     );
     expect(content).not.toContain('ObjectRegistry.register(WidgetCollection');
+    expect(content).not.toContain(
+      'ObjectRegistry.register(LegacyWidgetCollection',
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(SpecializedWidgetCollection',
+    );
   });
 
   it('filters out test-visibility objects', async () => {

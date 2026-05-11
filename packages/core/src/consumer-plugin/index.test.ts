@@ -59,6 +59,24 @@ describe('smrtConsumer registration generation', () => {
             methods: {},
             decoratorConfig: {},
           },
+          LegacyThingCollection: {
+            className: 'LegacyThingCollection',
+            exportName: 'LegacyThingCollection',
+            collection: 'legacythings',
+            extendsTypeArg: 'ExternalThing',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          SpecializedThingCollection: {
+            className: 'SpecializedThingCollection',
+            exportName: 'SpecializedThingCollection',
+            collection: 'specializedthings',
+            extends: 'ExternalThingCollection',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
         },
       }),
     );
@@ -90,8 +108,20 @@ describe('smrtConsumer registration generation', () => {
     expect(content).toContain(
       "import { ExternalThingCollection } from '@test/pkg';",
     );
+    expect(content).toContain(
+      "import { LegacyThingCollection } from '@test/pkg';",
+    );
+    expect(content).toContain(
+      "import { SpecializedThingCollection } from '@test/pkg';",
+    );
     expect(content).not.toContain(
       'ObjectRegistry.register(ExternalThingCollection',
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(LegacyThingCollection',
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(SpecializedThingCollection',
     );
   });
 });

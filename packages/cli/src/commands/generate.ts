@@ -364,6 +364,37 @@ export const generateCommands: Record<string, CLICommand> = {
           // packageName is guaranteed to exist due to filter above
           const packageName = manifestInfo.packageName as string;
           let packageObjectCount = 0;
+          const isCollectionClass = (
+            def: any,
+            seen = new Set<string>(),
+          ): boolean => {
+            if (
+              def?.extends === 'SmrtCollection' ||
+              def?.extendsTypeArg !== undefined
+            ) {
+              return true;
+            }
+
+            const parentName = def?.extends;
+            if (!parentName || seen.has(parentName)) {
+              return false;
+            }
+            seen.add(parentName);
+
+            const parentDef = Object.entries(manifestData.objects).find(
+              ([key, value]) => {
+                const candidate = value as any;
+                return (
+                  key === parentName ||
+                  key.endsWith(`:${parentName}`) ||
+                  candidate.className === parentName ||
+                  candidate.exportName === parentName
+                );
+              },
+            )?.[1] as any;
+
+            return parentDef ? isCollectionClass(parentDef, seen) : false;
+          };
 
           for (const [objectName, objectDef] of Object.entries(
             manifestData.objects,
@@ -401,7 +432,6 @@ export const generateCommands: Record<string, CLICommand> = {
             const registrationName =
               def.className || objectName.split(':').pop() || objectName;
             const registrationPackageName = def.packageName || packageName;
-            const isCollectionClass = def.extends === 'SmrtCollection';
 
             // Generate import statement
             if (hasCollection && collectionExportName) {
@@ -412,7 +442,7 @@ export const generateCommands: Record<string, CLICommand> = {
               imports.push(`import { ${exportName} } from '${importPath}';`);
             }
 
-            if (isCollectionClass) {
+            if (isCollectionClass(def)) {
               externalObjectCount++;
               packageObjectCount++;
               continue;

@@ -373,8 +373,32 @@ async function generateRegistrationFile(
   const registrations: string[] = [];
   let externalObjectCount = 0;
 
-  const isCollectionClass = (def: any): boolean =>
-    def?.extends === 'SmrtCollection';
+  const isCollectionClass = (def: any, seen = new Set<string>()): boolean => {
+    if (
+      def?.extends === 'SmrtCollection' ||
+      def?.extendsTypeArg !== undefined
+    ) {
+      return true;
+    }
+
+    const parentName = def?.extends;
+    if (!parentName || seen.has(parentName)) {
+      return false;
+    }
+    seen.add(parentName);
+
+    const parentDef = Object.entries(manifest.objects).find(([key, value]) => {
+      const candidate = value as any;
+      return (
+        key === parentName ||
+        key.endsWith(`:${parentName}`) ||
+        candidate.className === parentName ||
+        candidate.exportName === parentName
+      );
+    })?.[1] as any;
+
+    return parentDef ? isCollectionClass(parentDef, seen) : false;
+  };
 
   for (const [objectName, objectDef] of Object.entries(manifest.objects)) {
     const def = objectDef as any;
