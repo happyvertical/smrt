@@ -7,7 +7,10 @@
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
 import type { ContentEditorAssistantContext } from '../../content-editor-assistant';
-import { contentEditorAssistantContextToChatProps } from '../../content-editor-assistant';
+import {
+  contentEditorAssistantContextToChatProps,
+  sanitizeContentEditorAssistantFieldUpdates,
+} from '../../content-editor-assistant';
 import { joinApiUrl } from '../api';
 
 const AI_MODELS = [
@@ -27,6 +30,7 @@ export interface Props {
   currentEditorState?: string;
   currentReferenceIds?: string[];
   formFields?: Record<string, string>;
+  currentProfileId?: string;
   onapplyfields?: (fields: Record<string, string>) => void;
   onclose?: () => void;
 }
@@ -38,6 +42,7 @@ let {
   currentEditorState = '',
   currentReferenceIds = [],
   formFields = {},
+  currentProfileId = '',
   onapplyfields = undefined,
   onclose = undefined,
 }: Props = $props();
@@ -51,7 +56,6 @@ let loadingSession = $state(true);
 let loadingMessages = $state(false);
 let sendingMessage = $state(false);
 let error = $state<string | null>(null);
-let currentProfileId = $state('user123');
 
 // New Topic State
 let isCreatingTopic = $state(false);
@@ -179,6 +183,8 @@ async function loadSession() {
     data.session.agentName = data.session.agentName || 'AI Assistant';
 
     session = data.session;
+    currentProfileId =
+      currentProfileId || data.session?.participantProfileId || '';
     applySessionModelPreference(session);
     threads = data.threads || [];
 
@@ -314,15 +320,18 @@ async function handleSendMessage(content: string) {
 
     // Auto-apply: extract JSON field update blocks from the AI response
     if (onapplyfields && data.agentMessage?.content) {
-      const jsonBlockRegex = /```json\n([\s\S]*?)```/g;
+      const jsonBlockRegex = /```\s*json\s*\r?\n([\s\S]*?)```/gi;
       let match: RegExpExecArray | null = jsonBlockRegex.exec(
         data.agentMessage.content,
       );
       while (match !== null) {
         try {
           const parsed = JSON.parse(match[1].trim());
-          if (parsed.fields && typeof parsed.fields === 'object') {
-            onapplyfields(parsed.fields);
+          const fields = sanitizeContentEditorAssistantFieldUpdates(
+            parsed.fields,
+          );
+          if (Object.keys(fields).length > 0) {
+            onapplyfields(fields);
           }
         } catch (e) {
           console.warn('Failed to parse AI field update JSON:', e);

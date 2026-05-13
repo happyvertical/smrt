@@ -77,6 +77,7 @@ export interface ResolvedPromptAI extends PromptParams {
   profile?: string;
   provider?: string;
   model?: string;
+  allowedModels?: string[];
   params: PromptParams;
   temperature?: number;
   maxTokens?: number;

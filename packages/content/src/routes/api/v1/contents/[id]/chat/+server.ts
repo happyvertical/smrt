@@ -13,6 +13,17 @@ type ContentChatLocals = {
   } | null;
 };
 
+function resolveProfileId(locals: ContentChatLocals): string | null {
+  return locals.profileId || locals.user?.id || null;
+}
+
+function requestHasTrustedOrigin(request: Request): boolean {
+  const origin = request.headers?.get?.('origin');
+  if (!origin) return true;
+  if (!request.url) return true;
+  return origin === new URL(request.url).origin;
+}
+
 export const GET: RequestHandler = async ({ params, locals }) => {
   const smrtLocals = locals as ContentChatLocals;
   const { id } = params;
@@ -25,10 +36,14 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     const contents = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
     );
-    const tenantId = smrtLocals.tenantId || 'global';
-    const profileId = smrtLocals.profileId || smrtLocals.user?.id || 'system';
+    const tenantId = smrtLocals.tenantId || null;
+    const profileId = resolveProfileId(smrtLocals);
+    if (!profileId) {
+      return json({ error: 'Authentication required' }, { status: 401 });
+    }
     const { session, threads } = await getOrCreateContentEditorChatSession({
       db: contents.db,
+      contents,
       tenantId,
       profileId,
       contentId: id,
@@ -39,6 +54,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
       threads,
     });
   } catch (error: any) {
+    if (error?.message === 'Content not found') {
+      return json({ error: error.message }, { status: 404 });
+    }
     // Gracefully handle missing chat tables (cross-package dependency)
     if (error?.code === 'DB_SCHEMA_MISSING') {
       return json({
@@ -62,6 +80,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
   if (!id) {
     return json({ error: 'Content ID is required' }, { status: 400 });
   }
+  if (!requestHasTrustedOrigin(request)) {
+    return json({ error: 'Invalid request origin' }, { status: 403 });
+  }
 
   const { title, sessionId, model } = await request.json();
 
@@ -76,11 +97,15 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     const contents = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
     );
-    const tenantId = smrtLocals.tenantId || 'global';
-    const profileId = smrtLocals.profileId || smrtLocals.user?.id || 'system';
+    const tenantId = smrtLocals.tenantId || null;
+    const profileId = resolveProfileId(smrtLocals);
+    if (!profileId) {
+      return json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     const { session, thread } = await createContentEditorChatThread({
       db: contents.db,
+      contents,
       tenantId,
       profileId,
       contentId: id,
@@ -112,6 +137,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     });
   } catch (error: any) {
     if (error?.message === 'Active session not found') {
+      return json({ error: error.message }, { status: 404 });
+    }
+    if (error?.message === 'Content not found') {
       return json({ error: error.message }, { status: 404 });
     }
     if (error?.message === 'Active session is missing a chat room') {

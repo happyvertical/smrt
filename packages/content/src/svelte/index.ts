@@ -14,6 +14,7 @@ import { CONTENT_MODULE_META } from '../ui.js';
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import ContentAgentChat from './components/ContentAgentChat.svelte';
 import ContentBodyEditor from './components/ContentBodyEditor.svelte';
 import ContentBodyRenderer from './components/ContentBodyRenderer.svelte';
 import ContentContributionForm from './components/ContentContributionForm.svelte';
@@ -61,6 +62,7 @@ export {
   ContentContributionPortal,
   ContentContributionTypeManager,
   ContentContributorManager,
+  ContentAgentChat,
   ContentBodyEditor,
   ContentBodyRenderer,
   ContentEditor,
@@ -96,6 +98,7 @@ export {
 // Export component prop types
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
+export type ContentAgentChatProps = ComponentProps<typeof ContentAgentChat>;
 export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
 export type ContentBodyEditorProps = ComponentProps<typeof ContentBodyEditor>;
 export type ContentBodyRendererProps = ComponentProps<
@@ -193,6 +196,7 @@ export type {
 export {
   contentEditorAssistantContextToChatProps,
   createContentEditorAssistantContext,
+  sanitizeContentEditorAssistantFieldUpdates,
 } from '../content-editor-assistant.js';
 export type {
   ContentPublishReadinessState,

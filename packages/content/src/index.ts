@@ -141,6 +141,7 @@ export type {
 export {
   contentEditorAssistantContextToChatProps,
   createContentEditorAssistantContext,
+  sanitizeContentEditorAssistantFieldUpdates,
 } from './content-editor-assistant';
 export type {
   ContentFeedFormat,

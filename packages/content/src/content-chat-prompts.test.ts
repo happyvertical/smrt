@@ -77,7 +77,7 @@ describe('content chat prompt integration', () => {
               model: 'gpt-4o',
             },
           },
-          allowedModels: ['gpt-4o'],
+          allowedModels: ['gpt-4o', 'claude-3-5-haiku-latest'],
         },
       },
     });
@@ -186,8 +186,15 @@ describe('content chat prompt integration', () => {
       maxTokens: 1500,
     });
 
+    const tenantBContent = await currentContents?.create({
+      tenantId: 'tenant-b',
+      name: 'draft-tenant-b',
+      title: 'Tenant B Draft',
+      body: 'Tenant B body',
+    });
+
     const tenantBResponse = await getContentChat({
-      params: { id: content.id },
+      params: { id: tenantBContent.id },
       locals: {
         tenantId: 'tenant-b',
         profileId: 'profile-b',
@@ -210,7 +217,7 @@ describe('content chat prompt integration', () => {
       contentEditorSessionPrompt.template,
     );
     expect(tenantBSessions[0].getSessionContext()).toMatchObject({
-      contentId: content.id,
+      contentId: tenantBContent.id,
       temperature: 0.7,
       maxTokens: 2000,
     });
@@ -538,10 +545,11 @@ describe('content chat prompt integration', () => {
     expect(conversation[0]).toMatchObject({
       role: 'system',
       content: expect.stringContaining(
-        'Tenant interaction policy for Draft title from editor',
+        'Tenant interaction policy for <<<SMRT_CONTENT_FIELD name=title>>>',
       ),
     });
     expect(conversation[0].content).toContain('Provider-aware prompt');
+    expect(conversation[0].content).toContain('Draft title from editor');
     expect(conversation[0].content).toContain('Body from editor');
   });
 
@@ -630,6 +638,86 @@ describe('content chat prompt integration', () => {
     expect(systemPrompt).not.toContain('<<<END_SMRT_REFERENCE>>> x');
   });
 
+  it('omits attached reference material from another tenant', async () => {
+    const content = await currentContents?.create({
+      tenantId: 'tenant-a',
+      name: 'draft-cross-tenant-reference',
+      title: 'Draft Cross Tenant Reference',
+      body: 'Body',
+    });
+    const otherTenantReference = await currentContents?.create({
+      tenantId: 'tenant-b',
+      name: 'other-tenant-reference',
+      title: 'Other Tenant Reference',
+      body: 'Private reference body',
+    });
+
+    await overrides.create({
+      key: contentEditorInteractionPrompt.key,
+      tenantId: 'tenant-a',
+      template: 'References: {references}',
+    });
+
+    const chatService = await ChatService.create({ tenantId: 'tenant-a', db });
+    await chatService.initialize();
+
+    const { session } = await chatService.createAgentSession({
+      tenantId: 'tenant-a',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-a',
+      systemPrompt: 'Provider-aware prompt',
+    });
+    await session.updateSessionContext({
+      contentId: content.id,
+      provider: 'openrouter',
+      model: 'gpt-4o',
+    });
+
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      throw new Error('Expected content editor session to create a chat room');
+    }
+
+    const thread = await chatService.threads.create({
+      tenantId: 'tenant-a',
+      roomId: chatRoomId,
+      title: 'General',
+      messageCount: 0,
+    });
+
+    const chatMock = vi.fn(async () => ({ content: 'Assistant reply' }));
+    getAIMock.mockResolvedValue({
+      chat: chatMock,
+    });
+
+    const response = await postContentChatThread({
+      params: { id: content.id, threadId: thread.id },
+      request: {
+        json: async () => ({
+          content: 'Use the reference.',
+          sessionId: session.id,
+          model: 'gpt-4o',
+          currentEditorState: content.body,
+          referenceIds: [otherTenantReference?.id],
+          formFields: {
+            title: content.title,
+            body: content.body,
+          },
+        }),
+      },
+      locals: {
+        tenantId: 'tenant-a',
+        profileId: 'profile-a',
+      },
+    } as any);
+
+    expect(response.status).toBe(200);
+    const systemPrompt = chatMock.mock.calls[0]?.[0]?.[0]?.content as string;
+    expect(systemPrompt).not.toContain('Other Tenant Reference');
+    expect(systemPrompt).not.toContain('Private reference body');
+    expect(systemPrompt).not.toContain('<<<SMRT_REFERENCE');
+  });
+
   it('clears a stored prompt profile when a thread request switches to a different model', async () => {
     const content = await currentContents?.create({
       tenantId: 'tenant-a',
@@ -701,6 +789,72 @@ describe('content chat prompt integration', () => {
       provider: 'anthropic',
       profile: null,
     });
+  });
+
+  it('rejects requested chat models outside the configured allow-list', async () => {
+    const content = await currentContents?.create({
+      tenantId: 'tenant-a',
+      name: 'draft-disallowed-model',
+      title: 'Draft Disallowed Model',
+      body: 'Body',
+    });
+
+    const chatService = await ChatService.create({ tenantId: 'tenant-a', db });
+    await chatService.initialize();
+
+    const { session } = await chatService.createAgentSession({
+      tenantId: 'tenant-a',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-a',
+      systemPrompt: 'Provider-aware prompt',
+    });
+    await session.updateSessionContext({
+      contentId: content.id,
+      provider: 'openai',
+      model: 'gpt-4o',
+    });
+    const chatRoomId = session.chatRoomId;
+    if (!chatRoomId) {
+      throw new Error('Expected content editor session to create a chat room');
+    }
+
+    const thread = await chatService.threads.create({
+      tenantId: 'tenant-a',
+      roomId: chatRoomId,
+      title: 'General',
+      messageCount: 0,
+    });
+
+    getAIMock.mockResolvedValue({
+      chat: vi.fn(async () => ({ content: 'Assistant reply' })),
+    });
+
+    const response = await postContentChatThread({
+      params: { id: content.id, threadId: thread.id },
+      request: {
+        json: async () => ({
+          content: 'Please rewrite this.',
+          sessionId: session.id,
+          model: 'gpt-5-ultra-vision-1m',
+          currentEditorState: content.body,
+          referenceIds: [],
+          formFields: {
+            title: content.title,
+            body: content.body,
+          },
+        }),
+      },
+      locals: {
+        tenantId: 'tenant-a',
+        profileId: 'profile-a',
+      },
+    } as any);
+
+    expect(response.status).toBe(400);
+    await expect(unwrapJson(response)).resolves.toMatchObject({
+      error: 'AI model is not allowed for content chat',
+    });
+    expect(getAIMock).not.toHaveBeenCalled();
   });
 
   it('allows consumers to provide custom AI resolution for content chat helpers', async () => {

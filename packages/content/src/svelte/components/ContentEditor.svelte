@@ -8,7 +8,10 @@ import type {
   ContentEditorAssistantContextChange,
   ContentEditorAssistantRegistration,
 } from '../../content-editor-assistant';
-import { createContentEditorAssistantContext } from '../../content-editor-assistant';
+import {
+  createContentEditorAssistantContext,
+  sanitizeContentEditorAssistantFieldUpdates,
+} from '../../content-editor-assistant';
 import type {
   FactAuditResourceClaimData,
   FactAuditStateData,
@@ -198,14 +201,19 @@ $effect(() => {
 
 /** Called by ContentAgentChat when AI wants to update form fields */
 function applyFieldUpdates(fields: Record<string, string>) {
+  const safeFields = sanitizeContentEditorAssistantFieldUpdates(fields);
+  if (Object.keys(safeFields).length === 0) {
+    return;
+  }
+
   // Snapshot old values for undo
   const oldValues: Record<string, string> = {};
-  for (const key of Object.keys(fields)) {
+  for (const key of Object.keys(safeFields)) {
     oldValues[key] = String(formData[key] ?? '');
-    formData[key] = fields[key];
+    formData[key] = safeFields[key];
   }
   fieldUndoStack = [...fieldUndoStack, oldValues];
-  lastAppliedFields = Object.keys(fields);
+  lastAppliedFields = Object.keys(safeFields);
   showUndoBanner = true;
 }
 

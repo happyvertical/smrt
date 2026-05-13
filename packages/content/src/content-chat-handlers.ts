@@ -21,9 +21,11 @@ import {
 const CONTENT_EDITOR_AGENT_ID = 'content_editor';
 const REFERENCE_TITLE_MAX_LENGTH = 200;
 const REFERENCE_BODY_MAX_LENGTH = 2000;
+const MAX_REFERENCE_IDS = 20;
 
 export type ContentChatAIConfig = AIClientOptions & {
   apiKey?: string;
+  allowedModels?: string[];
   model?: string;
   defaultModel?: string;
   provider?: string;
@@ -37,6 +39,7 @@ export interface ContentChatCollectionLike {
 
 export interface ContentChatSessionInput {
   db: DatabaseInterface;
+  contents?: ContentChatCollectionLike;
   tenantId?: string | null;
   profileId?: string | null;
   contentId: string;
@@ -52,6 +55,7 @@ export interface CreateContentChatThreadInput extends ContentChatSessionInput {
 
 export interface ListContentChatThreadMessagesInput {
   db: DatabaseInterface;
+  contents?: ContentChatCollectionLike;
   tenantId?: string | null;
   profileId?: string | null;
   contentId: string;
@@ -144,12 +148,36 @@ function isActiveSession(session: unknown): boolean {
     : candidate?.status === 'active';
 }
 
+function isSchemaMissingError(error: unknown): boolean {
+  return (
+    (error as { code?: string })?.code === 'DB_SCHEMA_MISSING' ||
+    /no such table|does not exist/i.test(
+      String((error as { message?: unknown })?.message ?? ''),
+    )
+  );
+}
+
 export function contentChatSessionMatchesContent(
   session: unknown,
   contentId: string,
 ): boolean {
   const context = getSessionContext(session);
   return asNonEmptyString(context.contentId) === contentId;
+}
+
+async function assertContentExistsForTenant(
+  contents: ContentChatCollectionLike | undefined,
+  tenantId: string,
+  contentId: string,
+): Promise<void> {
+  if (!contents) {
+    return;
+  }
+
+  const content = await contents.get(contentId);
+  if (!content || !referenceBelongsToTenant(content, tenantId)) {
+    throw new Error('Content not found');
+  }
 }
 
 export function contentChatSessionIsAuthorized(
@@ -201,6 +229,7 @@ export async function getOrCreateContentEditorChatSession(
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
   await chatService.initialize();
+  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
 
   let activeSession = null;
   try {
@@ -215,7 +244,10 @@ export async function getOrCreateContentEditorChatSession(
       agentSessions.find((session: unknown) =>
         contentChatSessionMatchesContent(session, input.contentId),
       ) ?? null;
-  } catch {
+  } catch (error) {
+    if (!isSchemaMissingError(error)) {
+      throw error;
+    }
     // Chat tables may not exist yet. createAgentSession will surface the
     // concrete schema error if the runtime cannot create/use them.
   }
@@ -270,6 +302,7 @@ export async function createContentEditorChatThread(
   const tenantId = resolveTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
+  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
   const session = await chatService.agentSessions.get(input.sessionId);
 
   if (
@@ -312,6 +345,7 @@ export async function listContentEditorChatThreadMessages(
   const tenantId = resolveTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
+  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
   const thread = await chatService.threads.get(input.threadId);
   if (!thread) {
     throw new Error('Thread not found');
@@ -381,6 +415,15 @@ export function resolveDefaultContentChatAI(
     input.requestedModel,
     fallbackModel,
   );
+  const allowedModels =
+    input.aiConfig.allowedModels ?? input.interactionPrompt.ai.allowedModels;
+  if (
+    Array.isArray(allowedModels) &&
+    allowedModels.length > 0 &&
+    !allowedModels.includes(model)
+  ) {
+    throw new Error('AI model is not allowed for content chat');
+  }
   const apiKey = input.aiConfig.apiKey || getEnvApiKey(provider, input.env);
 
   return {
@@ -399,6 +442,7 @@ export function resolveDefaultContentChatAI(
 
 function sanitizeReferenceText(value: unknown, maxLength: number): string {
   const text = stripHtml(sanitizeHtml(String(value ?? '')))
+    .replace(/<<<(?:END_)?SMRT_[^>]*>>>/g, '')
     .replace(/<{2,}/g, '< <')
     .replace(/>{2,}/g, '> >')
     .replace(/\s+/g, ' ')
@@ -411,8 +455,28 @@ function sanitizeReferenceId(value: string): string {
   return value.replace(/[^\w:.-]/g, '_').slice(0, 128);
 }
 
+function getReferenceTenantId(value: unknown): string | null {
+  const candidate = value as {
+    tenantId?: unknown;
+    tenant_id?: unknown;
+  } | null;
+  return (
+    asNonEmptyString(candidate?.tenantId) ??
+    asNonEmptyString(candidate?.tenant_id)
+  );
+}
+
+function referenceBelongsToTenant(ref: unknown, tenantId: string): boolean {
+  const refTenantId = getReferenceTenantId(ref);
+  if (tenantId === 'global') {
+    return !refTenantId || refTenantId === tenantId;
+  }
+  return refTenantId === tenantId;
+}
+
 async function buildReferenceContext(
   contents: ContentChatCollectionLike,
+  tenantId: string,
   referenceIds: unknown,
 ): Promise<string> {
   if (!Array.isArray(referenceIds) || referenceIds.length === 0) {
@@ -420,16 +484,21 @@ async function buildReferenceContext(
   }
 
   const refTexts: string[] = [];
-  for (const refId of referenceIds) {
-    const id = asNonEmptyString(refId);
-    if (!id) {
-      continue;
-    }
+  const ids = [
+    ...new Set(
+      referenceIds
+        .map(asNonEmptyString)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ].slice(0, MAX_REFERENCE_IDS);
+  for (const id of ids) {
     const ref = (await contents.get(id)) as {
       title?: string;
       body?: string;
+      tenantId?: string;
+      tenant_id?: string;
     } | null;
-    if (ref) {
+    if (ref && referenceBelongsToTenant(ref, tenantId)) {
       const safeTitle = sanitizeReferenceText(
         ref.title,
         REFERENCE_TITLE_MAX_LENGTH,
@@ -458,6 +527,7 @@ export async function sendContentEditorChatThreadMessage(
     tenantId,
     db: input.contents.db,
   });
+  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
 
   const session = await chatService.agentSessions.get(input.sessionId);
   if (
@@ -495,6 +565,7 @@ export async function sendContentEditorChatThreadMessage(
 
   const references = await buildReferenceContext(
     input.contents,
+    tenantId,
     input.referenceIds,
   );
   const interactionPrompt = await (input.resolvePromptFn ?? resolvePrompt)(

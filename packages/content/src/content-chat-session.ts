@@ -16,6 +16,8 @@ export interface ContentEditorInteractionInput {
   references?: string | null;
 }
 
+const CONTENT_PROMPT_DELIMITER = 'SMRT_CONTENT_FIELD';
+
 function readString(
   context: SessionContext,
   key: keyof ContentChatAISelection,
@@ -33,11 +35,17 @@ function readNumber(
 }
 
 export function inferProviderFromModel(model: string): string {
-  if (model.includes('claude')) {
+  const normalized = model.toLowerCase();
+  if (
+    normalized.includes('claude') ||
+    normalized.includes('sonnet') ||
+    normalized.includes('haiku') ||
+    normalized.includes('opus')
+  ) {
     return 'anthropic';
   }
 
-  if (model.includes('gemini')) {
+  if (normalized.includes('gemini')) {
     return 'gemini';
   }
 
@@ -123,18 +131,28 @@ function displayValue(value: unknown, fallback = '(empty)'): string {
   return String(value);
 }
 
+function delimitPromptValue(name: string, value: string): string {
+  return `<<<${CONTENT_PROMPT_DELIMITER} name=${name}>>>\n${value.replace(/<<<(?:END_)?SMRT_[^>]*>>>/g, '')}\n<<<END_${CONTENT_PROMPT_DELIMITER}>>>`;
+}
+
 export function buildContentEditorInteractionVariables(
   input: ContentEditorInteractionInput,
 ): Record<string, string> {
   const fields = input.fields ?? {};
 
   return {
-    title: displayValue(fields.title),
-    description: displayValue(fields.description),
+    title: delimitPromptValue('title', displayValue(fields.title)),
+    description: delimitPromptValue(
+      'description',
+      displayValue(fields.description),
+    ),
     type: displayValue(fields.type, 'article'),
     status: displayValue(fields.status, 'draft'),
     state: displayValue(fields.state, 'active'),
-    body: displayValue(fields.body ?? input.currentEditorState),
+    body: delimitPromptValue(
+      'body',
+      displayValue(fields.body ?? input.currentEditorState),
+    ),
     references: input.references ?? '',
   };
 }

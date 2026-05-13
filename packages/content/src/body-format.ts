@@ -221,14 +221,17 @@ export function sanitizeHtml(value: string): string {
   let html = value;
   html = html.replace(/<!--[\s\S]*?-->/g, '');
   html = html.replace(
-    /<\s*(script|style|iframe|object|embed|link|meta|base)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,
+    /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,
     '',
   );
   html = html.replace(
-    /<\s*(script|style|iframe|object|embed|link|meta|base)\b[^>]*\/?>/gi,
+    /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*\/?>/gi,
     '',
   );
-  html = html.replace(/\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
+  html = html.replace(
+    /(?:\s|\/)+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi,
+    '',
+  );
   html = html.replace(
     /\s+data-smrt-(?:selected|moving|resizing)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi,
     '',
