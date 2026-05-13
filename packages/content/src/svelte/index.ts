@@ -57,14 +57,14 @@ import {
 export {
   ArticleCard,
   ArticleList,
+  ContentAgentChat,
+  ContentBodyEditor,
+  ContentBodyRenderer,
   ContentContributionForm,
   ContentContributionInbox,
   ContentContributionPortal,
   ContentContributionTypeManager,
   ContentContributorManager,
-  ContentAgentChat,
-  ContentBodyEditor,
-  ContentBodyRenderer,
   ContentEditor,
   ContentGovernanceAssignmentEditor,
   ContentGovernanceManager,
@@ -99,11 +99,11 @@ export {
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
 export type ContentAgentChatProps = ComponentProps<typeof ContentAgentChat>;
-export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
 export type ContentBodyEditorProps = ComponentProps<typeof ContentBodyEditor>;
 export type ContentBodyRendererProps = ComponentProps<
   typeof ContentBodyRenderer
 >;
+export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
 export type ContentImageChooserProps = ComponentProps<
   typeof ContentImageChooser
 >;

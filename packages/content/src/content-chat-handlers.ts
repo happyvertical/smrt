@@ -100,8 +100,12 @@ export interface ResolvedContentChatAI {
   maxTokens?: number | null;
 }
 
-function resolveTenantId(value: string | null | undefined): string {
-  return value || 'global';
+function resolveTenantScope(value: string | null | undefined): string | null {
+  return asNonEmptyString(value);
+}
+
+function resolveChatTenantId(value: string | null | undefined): string {
+  return resolveTenantScope(value) ?? 'global';
 }
 
 function resolveProfileId(value: string | null | undefined): string {
@@ -149,10 +153,14 @@ function isActiveSession(session: unknown): boolean {
 }
 
 function isSchemaMissingError(error: unknown): boolean {
+  const message = String((error as { message?: unknown })?.message ?? '');
   return (
     (error as { code?: string })?.code === 'DB_SCHEMA_MISSING' ||
-    /no such table|does not exist/i.test(
-      String((error as { message?: unknown })?.message ?? ''),
+    /^no such table:\s+(?:agent_sessions|chat_(?:rooms|threads|messages|participants|reactions))\b/i.test(
+      message,
+    ) ||
+    /relation ["']?(?:agent_sessions|chat_(?:rooms|threads|messages|participants|reactions))["']? does not exist/i.test(
+      message,
     )
   );
 }
@@ -167,7 +175,7 @@ export function contentChatSessionMatchesContent(
 
 async function assertContentExistsForTenant(
   contents: ContentChatCollectionLike | undefined,
-  tenantId: string,
+  tenantScope: string | null,
   contentId: string,
 ): Promise<void> {
   if (!contents) {
@@ -175,7 +183,7 @@ async function assertContentExistsForTenant(
   }
 
   const content = await contents.get(contentId);
-  if (!content || !referenceBelongsToTenant(content, tenantId)) {
+  if (!content || !referenceBelongsToTenant(content, tenantScope)) {
     throw new Error('Content not found');
   }
 }
@@ -225,11 +233,16 @@ export function serializeContentChatMessageForUI(
 export async function getOrCreateContentEditorChatSession(
   input: ContentChatSessionInput,
 ) {
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
   await chatService.initialize();
-  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
 
   let activeSession = null;
   try {
@@ -299,10 +312,15 @@ export async function createContentEditorChatThread(
 ) {
   await input.initializeChatCollections?.();
 
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
-  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
   const session = await chatService.agentSessions.get(input.sessionId);
 
   if (
@@ -328,6 +346,12 @@ export async function createContentEditorChatThread(
 
   if (input.model) {
     const ctx = getSessionContext(session);
+    const allowedModels = Array.isArray(ctx.allowedModels)
+      ? ctx.allowedModels
+      : [];
+    if (allowedModels.length > 0 && !allowedModels.includes(input.model)) {
+      throw new Error('AI model is not allowed for content chat');
+    }
     const updates = buildContentChatModelUpdates(ctx, input.model, input.model);
     if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
       await (
@@ -342,10 +366,15 @@ export async function createContentEditorChatThread(
 export async function listContentEditorChatThreadMessages(
   input: ListContentChatThreadMessagesInput,
 ) {
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
-  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
   const thread = await chatService.threads.get(input.threadId);
   if (!thread) {
     throw new Error('Thread not found');
@@ -466,17 +495,20 @@ function getReferenceTenantId(value: unknown): string | null {
   );
 }
 
-function referenceBelongsToTenant(ref: unknown, tenantId: string): boolean {
+function referenceBelongsToTenant(
+  ref: unknown,
+  tenantScope: string | null,
+): boolean {
   const refTenantId = getReferenceTenantId(ref);
-  if (tenantId === 'global') {
-    return !refTenantId || refTenantId === tenantId;
+  if (tenantScope === null) {
+    return !refTenantId;
   }
-  return refTenantId === tenantId;
+  return refTenantId === tenantScope;
 }
 
 async function buildReferenceContext(
   contents: ContentChatCollectionLike,
-  tenantId: string,
+  tenantScope: string | null,
   referenceIds: unknown,
 ): Promise<string> {
   if (!Array.isArray(referenceIds) || referenceIds.length === 0) {
@@ -498,7 +530,7 @@ async function buildReferenceContext(
       tenantId?: string;
       tenant_id?: string;
     } | null;
-    if (ref && referenceBelongsToTenant(ref, tenantId)) {
+    if (ref && referenceBelongsToTenant(ref, tenantScope)) {
       const safeTitle = sanitizeReferenceText(
         ref.title,
         REFERENCE_TITLE_MAX_LENGTH,
@@ -521,13 +553,18 @@ async function buildReferenceContext(
 export async function sendContentEditorChatThreadMessage(
   input: SendContentChatThreadMessageInput,
 ) {
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({
     tenantId,
     db: input.contents.db,
   });
-  await assertContentExistsForTenant(input.contents, tenantId, input.contentId);
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
 
   const session = await chatService.agentSessions.get(input.sessionId);
   if (
@@ -565,7 +602,7 @@ export async function sendContentEditorChatThreadMessage(
 
   const references = await buildReferenceContext(
     input.contents,
-    tenantId,
+    tenantScope,
     input.referenceIds,
   );
   const interactionPrompt = await (input.resolvePromptFn ?? resolvePrompt)(

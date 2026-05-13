@@ -134,6 +134,7 @@ export type {
   ContentEditorAssistantEditorKind,
   ContentEditorAssistantFactSummary,
   ContentEditorAssistantFields,
+  ContentEditorAssistantFieldUpdateAllowList,
   ContentEditorAssistantGovernanceSummary,
   ContentEditorAssistantRegistration,
   CreateContentEditorAssistantContextInput,

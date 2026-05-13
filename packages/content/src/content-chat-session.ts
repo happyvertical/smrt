@@ -6,6 +6,7 @@ export interface ContentChatAISelection {
   profile: string | null;
   provider: string | null;
   model: string | null;
+  allowedModels: string[] | null;
   temperature: number | null;
   maxTokens: number | null;
 }
@@ -36,16 +37,31 @@ function readNumber(
 
 export function inferProviderFromModel(model: string): string {
   const normalized = model.toLowerCase();
+  const providerPrefix = normalized.match(/^([a-z0-9_-]+)\//)?.[1];
+  if (providerPrefix === 'openrouter') {
+    return 'openrouter';
+  }
+  if (providerPrefix === 'anthropic') {
+    return 'anthropic';
+  }
+  if (providerPrefix === 'gemini' || providerPrefix === 'google') {
+    return 'gemini';
+  }
+  if (providerPrefix === 'openai') {
+    return 'openai';
+  }
+
+  const modelTokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
   if (
-    normalized.includes('claude') ||
-    normalized.includes('sonnet') ||
-    normalized.includes('haiku') ||
-    normalized.includes('opus')
+    modelTokens.includes('claude') ||
+    modelTokens.includes('sonnet') ||
+    modelTokens.includes('haiku') ||
+    modelTokens.includes('opus')
   ) {
     return 'anthropic';
   }
 
-  if (normalized.includes('gemini')) {
+  if (modelTokens.includes('gemini')) {
     return 'gemini';
   }
 
@@ -55,10 +71,16 @@ export function inferProviderFromModel(model: string): string {
 export function getContentChatAISelection(
   context: SessionContext,
 ): ContentChatAISelection {
+  const allowedModels = context.allowedModels;
   return {
     profile: readString(context, 'profile'),
     provider: readString(context, 'provider'),
     model: readString(context, 'model'),
+    allowedModels:
+      Array.isArray(allowedModels) &&
+      allowedModels.every((value) => typeof value === 'string')
+        ? allowedModels
+        : null,
     temperature: readNumber(context, 'temperature'),
     maxTokens: readNumber(context, 'maxTokens'),
   };
@@ -109,6 +131,9 @@ export function buildContentEditorSessionContext(
     ...(prompt.ai.profile ? { profile: prompt.ai.profile } : {}),
     ...(prompt.ai.provider ? { provider: prompt.ai.provider } : {}),
     ...(prompt.ai.model ? { model: prompt.ai.model } : {}),
+    ...(prompt.ai.allowedModels
+      ? { allowedModels: prompt.ai.allowedModels }
+      : {}),
     ...(prompt.ai.temperature !== undefined
       ? { temperature: prompt.ai.temperature }
       : {}),

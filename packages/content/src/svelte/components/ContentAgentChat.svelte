@@ -6,7 +6,10 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
-import type { ContentEditorAssistantContext } from '../../content-editor-assistant';
+import type {
+  ContentEditorAssistantContext,
+  ContentEditorAssistantFieldUpdateAllowList,
+} from '../../content-editor-assistant';
 import {
   contentEditorAssistantContextToChatProps,
   sanitizeContentEditorAssistantFieldUpdates,
@@ -31,6 +34,7 @@ export interface Props {
   currentReferenceIds?: string[];
   formFields?: Record<string, string>;
   currentProfileId?: string;
+  assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
   onapplyfields?: (fields: Record<string, string>) => void;
   onclose?: () => void;
 }
@@ -43,6 +47,7 @@ let {
   currentReferenceIds = [],
   formFields = {},
   currentProfileId = '',
+  assistantFieldAllowList = {},
   onapplyfields = undefined,
   onclose = undefined,
 }: Props = $props();
@@ -66,6 +71,7 @@ let showNewTopicInput = $state(false);
 let selectedModelId = $state(DEFAULT_MODEL_ID);
 let loadedContentId = $state<string | null>(null);
 let loadedApiBaseUrl = $state<string | null>(null);
+let sessionProfileId = $state('');
 const assistantChatProps = $derived(
   assistantContext
     ? contentEditorAssistantContextToChatProps(assistantContext)
@@ -81,6 +87,7 @@ const resolvedCurrentReferenceIds = $derived(
 const resolvedFormFields = $derived(
   assistantChatProps?.formFields ?? formFields,
 );
+const resolvedCurrentProfileId = $derived(currentProfileId || sessionProfileId);
 const canRetrySessionLoad = $derived(
   Boolean(resolvedContentId && resolvedContentId !== 'new'),
 );
@@ -116,6 +123,7 @@ $effect(() => {
   threads = [];
   activeThreadId = null;
   messages = [];
+  sessionProfileId = '';
   error = null;
   void loadSession();
 });
@@ -183,8 +191,7 @@ async function loadSession() {
     data.session.agentName = data.session.agentName || 'AI Assistant';
 
     session = data.session;
-    currentProfileId =
-      currentProfileId || data.session?.participantProfileId || '';
+    sessionProfileId = data.session?.participantProfileId || '';
     applySessionModelPreference(session);
     threads = data.threads || [];
 
@@ -329,6 +336,7 @@ async function handleSendMessage(content: string) {
           const parsed = JSON.parse(match[1].trim());
           const fields = sanitizeContentEditorAssistantFieldUpdates(
             parsed.fields,
+            assistantFieldAllowList,
           );
           if (Object.keys(fields).length > 0) {
             onapplyfields(fields);
@@ -375,14 +383,18 @@ async function handleSendMessage(content: string) {
              <span class="spinner"></span> Loading topic...
            </div>
         {:else}
+          {#if !resolvedCurrentProfileId}
+            <div class="loading-state">Loading participant...</div>
+          {:else}
           <AgentChat 
             session={session} 
             messages={messages} 
-            currentProfileId={currentProfileId}
+            currentProfileId={resolvedCurrentProfileId}
             loading={sendingMessage}
             onsend={handleSendMessage}
             onclose={onclose}
           />
+          {/if}
         {/if}
       </div>
     </div>

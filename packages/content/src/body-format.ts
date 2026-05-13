@@ -220,6 +220,9 @@ export function sanitizeHtml(value: string): string {
 
   let html = value;
   html = html.replace(/<!--[\s\S]*?-->/g, '');
+  // This lightweight sanitizer intentionally removes SVG/MathML instead of
+  // attempting namespace-aware SVG/MathML sanitization. Consumers needing rich
+  // inline diagrams should run a dedicated sanitizer before storing content.
   html = html.replace(
     /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,
     '',

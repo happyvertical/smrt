@@ -4,28 +4,14 @@ import {
   createContentEditorChatThread,
   getOrCreateContentEditorChatSession,
 } from '../../../../../../content-chat-handlers.js';
-
-type ContentChatLocals = {
-  tenantId?: string | null;
-  profileId?: string | null;
-  user?: {
-    id?: string | null;
-  } | null;
-};
-
-function resolveProfileId(locals: ContentChatLocals): string | null {
-  return locals.profileId || locals.user?.id || null;
-}
-
-function requestHasTrustedOrigin(request: Request): boolean {
-  const origin = request.headers?.get?.('origin');
-  if (!origin) return true;
-  if (!request.url) return true;
-  return origin === new URL(request.url).origin;
-}
+import {
+  type ContentChatRouteLocals,
+  requestHasTrustedOrigin,
+  resolveContentChatProfileId,
+} from '../../../../../../content-chat-route-helpers.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-  const smrtLocals = locals as ContentChatLocals;
+  const smrtLocals = locals as ContentChatRouteLocals;
   const { id } = params;
 
   if (!id) {
@@ -37,7 +23,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
-    const profileId = resolveProfileId(smrtLocals);
+    const profileId = resolveContentChatProfileId(smrtLocals);
     if (!profileId) {
       return json({ error: 'Authentication required' }, { status: 401 });
     }
@@ -75,7 +61,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
-  const smrtLocals = locals as ContentChatLocals;
+  const smrtLocals = locals as ContentChatRouteLocals;
   const { id } = params;
   if (!id) {
     return json({ error: 'Content ID is required' }, { status: 400 });
@@ -98,7 +84,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
       '@happyvertical/smrt-content:Content',
     );
     const tenantId = smrtLocals.tenantId || null;
-    const profileId = resolveProfileId(smrtLocals);
+    const profileId = resolveContentChatProfileId(smrtLocals);
     if (!profileId) {
       return json({ error: 'Authentication required' }, { status: 401 });
     }
@@ -141,6 +127,9 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     }
     if (error?.message === 'Content not found') {
       return json({ error: error.message }, { status: 404 });
+    }
+    if (error?.message === 'AI model is not allowed for content chat') {
+      return json({ error: error.message }, { status: 400 });
     }
     if (error?.message === 'Active session is missing a chat room') {
       return json({ error: error.message }, { status: 500 });

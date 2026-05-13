@@ -6,6 +6,7 @@ import { extractBodyImages, resolveBodyFormat } from '../../body-format';
 import type {
   ContentEditorAssistantActions,
   ContentEditorAssistantContextChange,
+  ContentEditorAssistantFieldUpdateAllowList,
   ContentEditorAssistantRegistration,
 } from '../../content-editor-assistant';
 import {
@@ -42,6 +43,7 @@ export interface Props {
   agentChatNotice?: string | null;
   hideActions?: boolean;
   hideChat?: boolean;
+  assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
   onAssistantContextChange?: ContentEditorAssistantContextChange;
   onChange?: (data: any) => void;
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
@@ -60,6 +62,7 @@ let {
   agentChatNotice = null,
   hideActions = false,
   hideChat = false,
+  assistantFieldAllowList = {},
   onAssistantContextChange = undefined,
   onChange = undefined,
   onFactAuditChange = undefined,
@@ -201,7 +204,10 @@ $effect(() => {
 
 /** Called by ContentAgentChat when AI wants to update form fields */
 function applyFieldUpdates(fields: Record<string, string>) {
-  const safeFields = sanitizeContentEditorAssistantFieldUpdates(fields);
+  const safeFields = sanitizeContentEditorAssistantFieldUpdates(
+    fields,
+    assistantFieldAllowList,
+  );
   if (Object.keys(safeFields).length === 0) {
     return;
   }
@@ -1319,6 +1325,7 @@ function removeAsset(id: string) {
               {currentEditorState}
               {currentReferenceIds}
               formFields={agentChatFields}
+              {assistantFieldAllowList}
               onapplyfields={applyFieldUpdates}
               onclose={() => {}}
             />

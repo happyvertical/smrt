@@ -227,6 +227,46 @@ describe('content chat prompt integration', () => {
     expect(tenantBSessions[0].getSessionContext()).not.toHaveProperty('model');
   });
 
+  it('keeps no-tenant content separate from the literal global tenant', async () => {
+    currentContents = await Contents.create({ db });
+    const noTenantContent = await currentContents.create({
+      name: 'no-tenant-draft',
+      title: 'No Tenant Draft',
+      body: 'Body',
+    });
+    const globalTenantContent = await currentContents.create({
+      tenantId: 'global',
+      name: 'global-tenant-draft',
+      title: 'Global Tenant Draft',
+      body: 'Body',
+    });
+
+    const noTenantResponse = await getContentChat({
+      params: { id: noTenantContent.id },
+      locals: {
+        profileId: 'profile-a',
+      },
+    } as any);
+    expect(noTenantResponse.status).toBe(200);
+
+    const noTenantToGlobalResponse = await getContentChat({
+      params: { id: globalTenantContent.id },
+      locals: {
+        profileId: 'profile-a',
+      },
+    } as any);
+    expect(noTenantToGlobalResponse.status).toBe(404);
+
+    const globalTenantResponse = await getContentChat({
+      params: { id: globalTenantContent.id },
+      locals: {
+        tenantId: 'global',
+        profileId: 'profile-a',
+      },
+    } as any);
+    expect(globalTenantResponse.status).toBe(200);
+  });
+
   it('rejects thread reads for sessions without a content editor content binding', async () => {
     const content = await currentContents?.create({
       tenantId: 'tenant-a',
@@ -351,6 +391,51 @@ describe('content chat prompt integration', () => {
       model: 'claude-3-5-haiku-latest',
       provider: 'anthropic',
       profile: null,
+    });
+  });
+
+  it('rejects disallowed models when creating a new topic', async () => {
+    const content = await currentContents?.create({
+      tenantId: 'tenant-a',
+      name: 'draft-topic-disallowed-model',
+      title: 'Draft Topic Disallowed Model',
+      body: 'Body',
+    });
+
+    const chatService = await ChatService.create({ tenantId: 'tenant-a', db });
+    await chatService.initialize();
+
+    const { session } = await chatService.createAgentSession({
+      tenantId: 'tenant-a',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-a',
+      systemPrompt: 'Manual session prompt',
+    });
+    await session.updateSessionContext({
+      contentId: content.id,
+      provider: 'openai',
+      model: 'gpt-4o',
+      allowedModels: ['gpt-4o'],
+    });
+
+    const response = await postContentChat({
+      params: { id: content.id },
+      request: {
+        json: async () => ({
+          title: 'Rewrite',
+          sessionId: session.id,
+          model: 'gpt-5-ultra-vision-1m',
+        }),
+      },
+      locals: {
+        tenantId: 'tenant-a',
+        profileId: 'profile-a',
+      },
+    } as any);
+
+    expect(response.status).toBe(400);
+    await expect(unwrapJson(response)).resolves.toMatchObject({
+      error: 'AI model is not allowed for content chat',
     });
   });
 

@@ -12,6 +12,11 @@ export type ContentEditorAssistantFields = Record<
   ContentEditorAssistantFieldValue
 >;
 
+export interface ContentEditorAssistantFieldUpdateAllowList {
+  textFields?: Iterable<string>;
+  enumFields?: Record<string, Iterable<string>>;
+}
+
 const TEXT_FIELD_KEYS = new Set(['title', 'description', 'body']);
 const ENUM_FIELD_VALUES: Record<string, Set<string>> = {
   type: new Set(['article', 'document', 'mirror']),
@@ -122,19 +127,31 @@ function normalizeChatFields(
 
 export function sanitizeContentEditorAssistantFieldUpdates(
   fields: unknown,
+  allowList: ContentEditorAssistantFieldUpdateAllowList = {},
 ): Record<string, string> {
   if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
     return {};
   }
 
+  const textFieldKeys = new Set([
+    ...TEXT_FIELD_KEYS,
+    ...(allowList.textFields ?? []),
+  ]);
+  const enumFieldValues = new Map<string, Set<string>>(
+    Object.entries(ENUM_FIELD_VALUES),
+  );
+  for (const [key, values] of Object.entries(allowList.enumFields ?? {})) {
+    enumFieldValues.set(key, new Set(values));
+  }
+
   const updates: Record<string, string> = {};
   for (const [key, value] of Object.entries(fields)) {
-    if (TEXT_FIELD_KEYS.has(key)) {
+    if (textFieldKeys.has(key)) {
       updates[key] = normalizeString(value);
       continue;
     }
 
-    const enumValues = ENUM_FIELD_VALUES[key];
+    const enumValues = enumFieldValues.get(key);
     if (!enumValues) {
       continue;
     }
