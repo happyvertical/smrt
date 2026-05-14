@@ -46,4 +46,9 @@ let {
   .content-title-field:focus {
     outline: none;
   }
+
+  .content-title-field:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline-offset: 0.35rem;
+  }
 </style>

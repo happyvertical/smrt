@@ -177,11 +177,12 @@ describe('content editor building block components', () => {
     expect(uploader?.dataset.apiBaseUrl).toBe('/tenant/api/v1');
   });
 
-  it('represents review tray items as pressed buttons, not tabs', () => {
+  it('renders accessible review tray buttons and invokes selection', () => {
     const onSelect = vi.fn();
     const target = renderComponent(ContentReviewStatusTray, {
       activeId: 'facts',
       open: true,
+      label: 'Editorial checks',
       items: [
         {
           id: 'content',
@@ -203,12 +204,23 @@ describe('content editor building block components', () => {
 
     expect(target.querySelector('[role="tablist"]')).toBeNull();
     expect(target.querySelector('[role="tab"]')).toBeNull();
-    expect(target.querySelector('[role="group"]')).toBeTruthy();
+    expect(
+      target.querySelector('[role="group"]')?.getAttribute('aria-label'),
+    ).toBe('Editorial checks');
 
     const buttons = Array.from(target.querySelectorAll('button'));
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map((button) => button.getAttribute('title'))).toEqual([
+      'Content: Ready',
+      'Facts: Review needed',
+    ]);
     expect(
       buttons.map((button) => button.getAttribute('aria-pressed')),
     ).toEqual(['false', 'true']);
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      'Content: Ready',
+      'Facts: Review needed',
+    ]);
 
     buttons[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     flushSync();

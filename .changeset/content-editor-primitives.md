@@ -1,5 +1,5 @@
 ---
-"@happyvertical/smrt-core": minor
+"@happyvertical/smrt-content": minor
 ---
 
 ### Features
