@@ -50,6 +50,33 @@ describe('smrtConsumer registration generation', () => {
             methods: {},
             decoratorConfig: {},
           },
+          ExternalThingCollection: {
+            className: 'ExternalThingCollection',
+            exportName: 'ExternalThingCollection',
+            collection: 'externalthings',
+            extends: 'SmrtCollection',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          LegacyThingCollection: {
+            className: 'LegacyThingCollection',
+            exportName: 'LegacyThingCollection',
+            collection: 'legacythings',
+            extendsTypeArg: 'ExternalThing',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+          SpecializedThingCollection: {
+            className: 'SpecializedThingCollection',
+            exportName: 'SpecializedThingCollection',
+            collection: 'specializedthings',
+            extends: 'ExternalThingCollection',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
         },
       }),
     );
@@ -77,6 +104,27 @@ describe('smrtConsumer registration generation', () => {
     const content = readFileSync(registerPath, 'utf-8');
     expect(content).toContain(
       'ObjectRegistry.register(ExternalThing, { name: "ExternalThing", packageName: "@test/pkg" });',
+    );
+    expect(content).toContain(
+      "console.log('[smrt:register] Registered 1 external object');",
+    );
+    expect(content).toContain(
+      "import { ExternalThingCollection } from '@test/pkg';",
+    );
+    expect(content).toContain(
+      "import { LegacyThingCollection } from '@test/pkg';",
+    );
+    expect(content).toContain(
+      "import { SpecializedThingCollection } from '@test/pkg';",
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(ExternalThingCollection',
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(LegacyThingCollection',
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(SpecializedThingCollection',
     );
   });
 });

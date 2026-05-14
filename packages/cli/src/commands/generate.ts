@@ -348,8 +348,12 @@ export const generateCommands: Record<string, CLICommand> = {
         // Build imports and registrations from external packages
         const imports: string[] = [];
         const registrations: string[] = [];
-        let externalObjectCount = 0;
-        const packageSummary: Record<string, number> = {};
+        let importedEntryCount = 0;
+        let registeredObjectCount = 0;
+        const packageSummary: Record<
+          string,
+          { importedEntries: number; registeredObjects: number }
+        > = {};
 
         // Track seen objects to deduplicate across packages.
         // When packages re-export classes from dependencies, the same object
@@ -363,10 +367,67 @@ export const generateCommands: Record<string, CLICommand> = {
 
           // packageName is guaranteed to exist due to filter above
           const packageName = manifestInfo.packageName as string;
-          let packageObjectCount = 0;
+          let packageImportedEntryCount = 0;
+          let packageRegisteredObjectCount = 0;
+          const manifestObjects = manifestData.objects as Record<string, any>;
+          const manifestObjectLookup = new Map<string, any>();
+          for (const [key, objectDef] of Object.entries(manifestObjects)) {
+            const candidate = objectDef as any;
+            const lookupKeys = [
+              key,
+              key.includes(':') ? key.split(':').pop() : undefined,
+              candidate.qualifiedName,
+              candidate.className,
+              candidate.exportName,
+            ];
+
+            for (const lookupKey of lookupKeys) {
+              if (lookupKey && !manifestObjectLookup.has(lookupKey)) {
+                manifestObjectLookup.set(lookupKey, candidate);
+              }
+            }
+          }
+
+          const collectionClassMemo = new WeakMap<object, boolean>();
+          const isCollectionClass = (
+            def: any,
+            seen = new Set<string>(),
+          ): boolean => {
+            if (!def || typeof def !== 'object') {
+              return false;
+            }
+
+            const cached = collectionClassMemo.get(def);
+            if (cached !== undefined) {
+              return cached;
+            }
+
+            if (
+              def?.extends === 'SmrtCollection' ||
+              def?.extendsTypeArg !== undefined
+            ) {
+              collectionClassMemo.set(def, true);
+              return true;
+            }
+
+            const parentName = def?.extendsQualified || def?.extends;
+            if (!parentName || seen.has(parentName)) {
+              collectionClassMemo.set(def, false);
+              return false;
+            }
+            seen.add(parentName);
+
+            const parentDef = manifestObjectLookup.get(parentName);
+            const isCollection = parentDef
+              ? isCollectionClass(parentDef, seen)
+              : false;
+            collectionClassMemo.set(def, isCollection);
+
+            return isCollection;
+          };
 
           for (const [objectName, objectDef] of Object.entries(
-            manifestData.objects,
+            manifestObjects,
           )) {
             const def = objectDef as any;
 
@@ -410,6 +471,12 @@ export const generateCommands: Record<string, CLICommand> = {
             } else {
               imports.push(`import { ${exportName} } from '${importPath}';`);
             }
+            importedEntryCount++;
+            packageImportedEntryCount++;
+
+            if (isCollectionClass(def)) {
+              continue;
+            }
 
             // Generate registration calls. Keep the class name and package name
             // separate so ObjectRegistry can use package-aware collision policy.
@@ -427,17 +494,25 @@ export const generateCommands: Record<string, CLICommand> = {
               );
             }
 
-            externalObjectCount++;
-            packageObjectCount++;
+            registeredObjectCount++;
+            packageRegisteredObjectCount++;
           }
 
-          packageSummary[packageName] = packageObjectCount;
+          packageSummary[packageName] = {
+            importedEntries: packageImportedEntryCount,
+            registeredObjects: packageRegisteredObjectCount,
+          };
         }
 
-        if (externalObjectCount === 0) {
-          console.warn('⚠️ No external objects found in any package');
+        if (importedEntryCount === 0) {
+          console.warn('⚠️ No external entries found in any package');
           return;
         }
+
+        const registeredObjectLabel =
+          registeredObjectCount === 1 ? 'object' : 'objects';
+        const importedEntryLabel =
+          importedEntryCount === 1 ? 'entry' : 'entries';
 
         // Generate file content
         const content = `/**
@@ -457,7 +532,7 @@ ${registrations.join('\n')}
 
 export function registerAll() {
   // Objects are already registered during module evaluation
-  console.log('[smrt:register] Registered ${externalObjectCount} external objects');
+  console.log('[smrt:register] Registered ${registeredObjectCount} external ${registeredObjectLabel}');
 }
 `;
 
@@ -477,11 +552,17 @@ export function registerAll() {
 
         // Report results
         console.log(
-          `✅ Generated ${outputPath} with ${externalObjectCount} external objects\n`,
+          `✅ Generated ${outputPath} with ${importedEntryCount} external ${importedEntryLabel} (${registeredObjectCount} registered ${registeredObjectLabel})\n`,
         );
         console.log('📦 Packages included:');
-        for (const [pkg, count] of Object.entries(packageSummary)) {
-          console.log(`   - ${pkg} (${count} objects)`);
+        for (const [pkg, counts] of Object.entries(packageSummary)) {
+          const packageRegisteredLabel =
+            counts.registeredObjects === 1 ? 'object' : 'objects';
+          const packageImportedLabel =
+            counts.importedEntries === 1 ? 'entry' : 'entries';
+          console.log(
+            `   - ${pkg} (${counts.registeredObjects} registered ${packageRegisteredLabel}, ${counts.importedEntries} imported ${packageImportedLabel})`,
+          );
         }
         console.log();
 
