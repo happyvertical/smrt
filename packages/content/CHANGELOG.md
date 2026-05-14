@@ -1,5 +1,30 @@
 # @happyvertical/smrt-content
 
+## 1.0.0
+
+### Minor Changes
+
+- 330d2e6: ### Features
+
+  - Export composable content editor primitives from `@happyvertical/smrt-content/svelte`.
+
+  ### Release Notes
+
+  - Uses the next minor release because `@happyvertical/smrt-content@0.24.18` was already published from a side branch before these source changes landed on `main`.
+
+### Patch Changes
+
+- @happyvertical/smrt-assets@1.0.0
+- @happyvertical/smrt-chat@1.0.0
+- @happyvertical/smrt-core@1.0.0
+- @happyvertical/smrt-facts@1.0.0
+- @happyvertical/smrt-images@1.0.0
+- @happyvertical/smrt-messages@1.0.0
+- @happyvertical/smrt-profiles@1.0.0
+- @happyvertical/smrt-prompts@1.0.0
+- @happyvertical/smrt-tenancy@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
 ## 0.24.17
 
 ### Patch Changes
