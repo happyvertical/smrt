@@ -25,6 +25,36 @@ export function readContentEditorFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+export function getContentEditorMimeTypeFromPath(pathname: string): string {
+  const extension = pathname.split('.').pop()?.toLowerCase() ?? '';
+  switch (extension) {
+    case 'avif':
+      return 'image/avif';
+    case 'gif':
+      return 'image/gif';
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg';
+    case 'png':
+      return 'image/png';
+    case 'svg':
+      return 'image/svg+xml';
+    case 'webp':
+      return 'image/webp';
+    default:
+      return 'application/octet-stream';
+  }
+}
+
+function getMimeTypeFromUrl(parsedUrl: URL): string {
+  if (parsedUrl.protocol === 'data:') {
+    const [, mimeType] = parsedUrl.href.match(/^data:([^;,]+)/) ?? [];
+    return mimeType || 'application/octet-stream';
+  }
+
+  return getContentEditorMimeTypeFromPath(parsedUrl.pathname);
+}
+
 export async function createContentEditorImageRecord(
   apiBaseUrl: string,
   input: {
@@ -67,11 +97,17 @@ export async function resolveContentEditorImageSelection(
   }
 
   if (typeof selected === 'string') {
-    const parsedUrl = new URL(selected);
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(selected);
+    } catch {
+      return null;
+    }
+
     return createContentEditorImageRecord(apiBaseUrl, {
       name: parsedUrl.pathname.split('/').pop() || 'External Image',
       sourceUri: selected,
-      mimeType: 'image/jpeg',
+      mimeType: getMimeTypeFromUrl(parsedUrl),
     });
   }
 

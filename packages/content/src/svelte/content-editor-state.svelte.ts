@@ -1,5 +1,4 @@
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
-import type { ContentEditorAssistantFields } from '../content-editor-assistant.js';
 import {
   type ContentEditorAsset,
   type ContentEditorFormData,
@@ -16,11 +15,61 @@ export interface CreateContentEditorStateOptions {
 export type ContentEditorFieldChange = Partial<ContentEditorFormData> &
   Record<string, unknown>;
 
+type FieldUndoSnapshot = Record<string, unknown>;
+
+function cloneFieldValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return [...value];
+  }
+
+  if (value && typeof value === 'object') {
+    return { ...(value as Record<string, unknown>) };
+  }
+
+  return value;
+}
+
+function normalizeFieldUpdateValue(
+  currentValue: unknown,
+  newValue: unknown,
+): { ok: true; value: unknown } | { ok: false } {
+  if (Array.isArray(currentValue)) {
+    return Array.isArray(newValue)
+      ? { ok: true, value: [...newValue] }
+      : { ok: false };
+  }
+
+  if (currentValue === null) {
+    return newValue == null || typeof newValue === 'string'
+      ? { ok: true, value: newValue ?? null }
+      : { ok: false };
+  }
+
+  switch (typeof currentValue) {
+    case 'string':
+      return { ok: true, value: newValue == null ? '' : String(newValue) };
+    case 'number': {
+      const numberValue = Number(newValue);
+      return Number.isFinite(numberValue)
+        ? { ok: true, value: numberValue }
+        : { ok: false };
+    }
+    case 'boolean':
+      return typeof newValue === 'boolean'
+        ? { ok: true, value: newValue }
+        : { ok: false };
+    case 'undefined':
+      return { ok: true, value: cloneFieldValue(newValue) };
+    default:
+      return { ok: true, value: cloneFieldValue(newValue) };
+  }
+}
+
 export class ContentEditorState {
   private _form = $state<ContentEditorFormData>(
     getContentEditorInitialFormData(undefined),
   );
-  private _fieldUndoStack = $state<Record<string, string>[]>([]);
+  private _fieldUndoStack = $state<FieldUndoSnapshot[]>([]);
   private _lastAppliedFields = $state<string[]>([]);
   private _showUndoBanner = $state(false);
 
@@ -66,16 +115,30 @@ export class ContentEditorState {
     };
   }
 
-  applyFieldUpdates(fields: ContentEditorAssistantFields) {
-    const oldValues: Record<string, string> = {};
+  applyFieldUpdates(fields: ContentEditorFieldChange) {
+    const oldValues: FieldUndoSnapshot = {};
+    const appliedFields: string[] = [];
 
     for (const key of Object.keys(fields)) {
-      oldValues[key] = String(this._form[key] ?? '');
-      this._form[key] = fields[key];
+      const normalized = normalizeFieldUpdateValue(
+        this._form[key],
+        fields[key],
+      );
+      if (!normalized.ok) {
+        continue;
+      }
+
+      oldValues[key] = cloneFieldValue(this._form[key]);
+      this._form[key] = normalized.value;
+      appliedFields.push(key);
+    }
+
+    if (appliedFields.length === 0) {
+      return;
     }
 
     this._fieldUndoStack = [...this._fieldUndoStack, oldValues];
-    this._lastAppliedFields = Object.keys(fields);
+    this._lastAppliedFields = appliedFields;
     this._showUndoBanner = true;
   }
 

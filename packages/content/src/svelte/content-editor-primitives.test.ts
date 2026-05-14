@@ -1,8 +1,14 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  type ContentEditorFieldChange,
   createContentEditorState,
   getContentEditorAssetImageSource,
+  resolveContentEditorImageSelection,
 } from './index';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('content editor primitives', () => {
   it('creates editable form state from initial content', () => {
@@ -46,6 +52,43 @@ describe('content editor primitives', () => {
     expect(editor.showUndoBanner).toBe(false);
   });
 
+  it('preserves non-string field values through field update undo', () => {
+    const editor = createContentEditorState({
+      content: {
+        tags: ['council'],
+        thumbnailAssetId: null,
+      },
+    });
+
+    editor.applyFieldUpdates({
+      tags: ['budget', 'capital-plan'],
+      thumbnailAssetId: 'asset-2',
+    });
+
+    expect(editor.form.tags).toEqual(['budget', 'capital-plan']);
+    expect(editor.form.thumbnailAssetId).toBe('asset-2');
+
+    editor.undoLastFieldUpdate();
+
+    expect(editor.form.tags).toEqual(['council']);
+    expect(editor.form.thumbnailAssetId).toBeNull();
+  });
+
+  it('skips incompatible non-string field updates', () => {
+    const editor = createContentEditorState({
+      content: {
+        tags: ['council'],
+      },
+    });
+
+    editor.applyFieldUpdates({
+      tags: 'budget',
+    } as unknown as ContentEditorFieldChange);
+
+    expect(editor.form.tags).toEqual(['council']);
+    expect(editor.undoDepth).toBe(0);
+  });
+
   it('manages editor assets and thumbnail selection', () => {
     const editor = createContentEditorState();
 
@@ -76,5 +119,46 @@ describe('content editor primitives', () => {
         src: 'https://example.com/src.jpg',
       }),
     ).toBe('https://example.com/src.jpg');
+  });
+
+  it('returns null for invalid string image selections', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await expect(
+      resolveContentEditorImageSelection('/api/v1', 'not a url'),
+    ).resolves.toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('uses the URL extension when creating image records from strings', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          data: {
+            id: 'asset-1',
+          },
+        }),
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      ),
+    );
+
+    await expect(
+      resolveContentEditorImageSelection(
+        '/api/v1',
+        'https://example.com/photos/hero.webp?width=1200',
+      ),
+    ).resolves.toEqual({ id: 'asset-1' });
+
+    const [, init] = fetchSpy.mock.calls[0];
+    const body = JSON.parse(String(init?.body));
+    expect(body).toMatchObject({
+      name: 'hero.webp',
+      sourceUri: 'https://example.com/photos/hero.webp?width=1200',
+      mimeType: 'image/webp',
+    });
   });
 });

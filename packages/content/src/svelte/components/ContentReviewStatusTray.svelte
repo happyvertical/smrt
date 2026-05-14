@@ -62,12 +62,11 @@ let {
 {/snippet}
 
 {#if items.length > 0}
-  <div class="content-review-status-tray" role="tablist" aria-label={label}>
+  <div class="content-review-status-tray" role="group" aria-label={label}>
     {#each items as item (item.id)}
       <button
         type="button"
-        role="tab"
-        aria-selected={activeId === item.id && open}
+        aria-pressed={activeId === item.id && open}
         class={`tray-button tray-button--${item.tone}`}
         class:active={activeId === item.id && open}
         title={`${item.label}: ${item.status}`}
