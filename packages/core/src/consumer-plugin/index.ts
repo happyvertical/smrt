@@ -371,9 +371,63 @@ async function generateRegistrationFile(
   // Build import statements and registrations
   const imports: string[] = [];
   const registrations: string[] = [];
-  let externalObjectCount = 0;
+  let importedEntryCount = 0;
+  let registeredObjectCount = 0;
 
-  for (const [objectName, objectDef] of Object.entries(manifest.objects)) {
+  const manifestObjects = manifest.objects as Record<string, any>;
+  const manifestObjectLookup = new Map<string, any>();
+  for (const [key, def] of Object.entries(manifestObjects)) {
+    const candidate = def as any;
+    const lookupKeys = [
+      key,
+      key.includes(':') ? key.split(':').pop() : undefined,
+      candidate.qualifiedName,
+      candidate.className,
+      candidate.exportName,
+    ];
+
+    for (const lookupKey of lookupKeys) {
+      if (lookupKey && !manifestObjectLookup.has(lookupKey)) {
+        manifestObjectLookup.set(lookupKey, candidate);
+      }
+    }
+  }
+
+  const collectionClassMemo = new WeakMap<object, boolean>();
+
+  const isCollectionClass = (def: any, seen = new Set<string>()): boolean => {
+    if (!def || typeof def !== 'object') {
+      return false;
+    }
+
+    const cached = collectionClassMemo.get(def);
+    if (cached !== undefined) {
+      return cached;
+    }
+
+    if (
+      def?.extends === 'SmrtCollection' ||
+      def?.extendsTypeArg !== undefined
+    ) {
+      collectionClassMemo.set(def, true);
+      return true;
+    }
+
+    const parentName = def?.extendsQualified || def?.extends;
+    if (!parentName || seen.has(parentName)) {
+      collectionClassMemo.set(def, false);
+      return false;
+    }
+    seen.add(parentName);
+
+    const parentDef = manifestObjectLookup.get(parentName);
+    const isCollection = parentDef ? isCollectionClass(parentDef, seen) : false;
+    collectionClassMemo.set(def, isCollection);
+
+    return isCollection;
+  };
+
+  for (const [objectName, objectDef] of Object.entries(manifestObjects)) {
     const def = objectDef as any;
 
     // Skip local objects (they're imported from local entry point)
@@ -396,6 +450,11 @@ async function generateRegistrationFile(
     } else {
       imports.push(`import { ${exportName} } from '${importPath}';`);
     }
+    importedEntryCount++;
+
+    if (isCollectionClass(def)) {
+      continue;
+    }
 
     // Generate registration calls
     // The import above already triggers the @smrt() decorator which registers the class
@@ -413,14 +472,17 @@ async function generateRegistrationFile(
       );
     }
 
-    externalObjectCount++;
+    registeredObjectCount++;
   }
 
-  // Skip generation if no external objects
-  if (externalObjectCount === 0) {
-    console.log('[smrt:consumer] No external objects - skipping register.js');
+  // Skip generation if no external entries
+  if (importedEntryCount === 0) {
+    console.log('[smrt:consumer] No external entries - skipping register.js');
     return;
   }
+
+  const registeredObjectLabel =
+    registeredObjectCount === 1 ? 'object' : 'objects';
 
   // Generate file content
   const content = `/**
@@ -440,7 +502,7 @@ ${registrations.join('\n')}
 
 export function registerAll() {
   // Objects are already registered during module evaluation
-  console.log('[smrt:register] Registered ${externalObjectCount} external objects');
+  console.log('[smrt:register] Registered ${registeredObjectCount} external ${registeredObjectLabel}');
 }
 `;
 
@@ -453,7 +515,7 @@ export function registerAll() {
   fs.writeFileSync(registerPath, content, 'utf-8');
 
   console.log(
-    `[smrt:consumer] Generated .smrt/register.js with ${externalObjectCount} external objects`,
+    `[smrt:consumer] Generated .smrt/register.js with ${importedEntryCount} external entries (${registeredObjectCount} registered ${registeredObjectLabel})`,
   );
 }
 

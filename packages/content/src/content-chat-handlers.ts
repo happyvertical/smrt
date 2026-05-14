@@ -337,13 +337,7 @@ export async function createContentEditorChatThread(
     throw new Error('Active session is missing a chat room');
   }
 
-  const thread = await chatService.threads.create({
-    tenantId,
-    roomId: chatRoomId,
-    title: input.title,
-    messageCount: 0,
-  });
-
+  let updates: Record<string, string | null> | null = null;
   if (input.model) {
     const ctx = getSessionContext(session);
     const allowedModels = Array.isArray(ctx.allowedModels)
@@ -352,7 +346,18 @@ export async function createContentEditorChatThread(
     if (allowedModels.length > 0 && !allowedModels.includes(input.model)) {
       throw new Error('AI model is not allowed for content chat');
     }
-    const updates = buildContentChatModelUpdates(ctx, input.model, input.model);
+    updates = buildContentChatModelUpdates(ctx, input.model, input.model);
+  }
+
+  const thread = await chatService.threads.create({
+    tenantId,
+    roomId: chatRoomId,
+    title: input.title,
+    messageCount: 0,
+  });
+
+  if (updates) {
+    const ctx = getSessionContext(session);
     if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
       await (
         session as { updateSessionContext: (value: unknown) => Promise<void> }
@@ -445,7 +450,9 @@ export function resolveDefaultContentChatAI(
     fallbackModel,
   );
   const allowedModels =
-    input.aiConfig.allowedModels ?? input.interactionPrompt.ai.allowedModels;
+    input.aiConfig.allowedModels ??
+    input.interactionPrompt.ai.allowedModels ??
+    storedSelection.allowedModels;
   if (
     Array.isArray(allowedModels) &&
     allowedModels.length > 0 &&
@@ -590,16 +597,6 @@ export async function sendContentEditorChatThreadMessage(
     throw new Error('Active session is missing a chat room');
   }
 
-  const userMessage = await chatService.sendMessage({
-    tenantId,
-    roomId: chatRoomId,
-    threadId: (thread as { id: string }).id,
-    senderProfileId: profileId,
-    content: input.content,
-    role: 'user',
-    agentSessionId: (session as { id: string }).id,
-  });
-
   const references = await buildReferenceContext(
     input.contents,
     tenantScope,
@@ -618,20 +615,6 @@ export async function sendContentEditorChatThreadMessage(
     },
   );
 
-  const history = await chatService.messages.list({
-    where: { threadId: (thread as { id: string }).id },
-    orderBy: 'createdAt DESC',
-    limit: 10,
-  });
-
-  const conversation = history.reverse().map((message: unknown) => {
-    const json = contentChatMessageToJSON(message);
-    return {
-      role: json.role as 'user' | 'assistant' | 'system',
-      content: String(json.content ?? ''),
-    };
-  });
-
   const sessionContext = getSessionContext(session);
   const aiConfig = input.aiConfig ?? {};
   const resolvedAI =
@@ -649,6 +632,30 @@ export async function sendContentEditorChatThreadMessage(
       requestedModel: input.model,
       interactionPrompt,
     });
+
+  const userMessage = await chatService.sendMessage({
+    tenantId,
+    roomId: chatRoomId,
+    threadId: (thread as { id: string }).id,
+    senderProfileId: profileId,
+    content: input.content,
+    role: 'user',
+    agentSessionId: (session as { id: string }).id,
+  });
+
+  const history = await chatService.messages.list({
+    where: { threadId: (thread as { id: string }).id },
+    orderBy: 'createdAt DESC',
+    limit: 10,
+  });
+
+  const conversation = history.reverse().map((message: unknown) => {
+    const json = contentChatMessageToJSON(message);
+    return {
+      role: json.role as 'user' | 'assistant' | 'system',
+      content: String(json.content ?? ''),
+    };
+  });
 
   const ai = await (input.getAIClient ?? getAI)(resolvedAI.clientOptions);
 

@@ -437,6 +437,11 @@ describe('content chat prompt integration', () => {
     await expect(unwrapJson(response)).resolves.toMatchObject({
       error: 'AI model is not allowed for content chat',
     });
+
+    const createdThreads = await chatService.threads.list({
+      where: { roomId: session.chatRoomId },
+    });
+    expect(createdThreads).toHaveLength(0);
   });
 
   it('keeps the stored provider when creating a topic with the current model', async () => {
@@ -940,6 +945,13 @@ describe('content chat prompt integration', () => {
       error: 'AI model is not allowed for content chat',
     });
     expect(getAIMock).not.toHaveBeenCalled();
+
+    const persistedMessages = await chatService.messages.list({
+      where: { threadId: thread.id },
+    });
+    const updatedThread = await chatService.threads.get(thread.id as string);
+    expect(persistedMessages).toHaveLength(0);
+    expect(Number(updatedThread?.messageCount)).toBe(0);
   });
 
   it('allows consumers to provide custom AI resolution for content chat helpers', async () => {

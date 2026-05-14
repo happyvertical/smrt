@@ -17,11 +17,13 @@ import ArticleList from './components/ArticleList.svelte';
 import ContentAgentChat from './components/ContentAgentChat.svelte';
 import ContentBodyEditor from './components/ContentBodyEditor.svelte';
 import ContentBodyRenderer from './components/ContentBodyRenderer.svelte';
+import ContentClaimAuditTool from './components/ContentClaimAuditTool.svelte';
 import ContentContributionForm from './components/ContentContributionForm.svelte';
 import ContentContributionInbox from './components/ContentContributionInbox.svelte';
 import ContentContributionPortal from './components/ContentContributionPortal.svelte';
 import ContentContributionTypeManager from './components/ContentContributionTypeManager.svelte';
 import ContentContributorManager from './components/ContentContributorManager.svelte';
+import ContentCorrectionsTool from './components/ContentCorrectionsTool.svelte';
 import ContentEditor from './components/ContentEditor.svelte';
 import ContentGovernanceAssignmentEditor from './components/ContentGovernanceAssignmentEditor.svelte';
 import ContentGovernanceManager from './components/ContentGovernanceManager.svelte';
@@ -36,6 +38,8 @@ import ContentMetadataFields from './components/ContentMetadataFields.svelte';
 import ContentReferencesPanel from './components/ContentReferencesPanel.svelte';
 import ContentStatusFields from './components/ContentStatusFields.svelte';
 import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
+import ContentTransparencyTool from './components/ContentTransparencyTool.svelte';
+import ContentVersionsTool from './components/ContentVersionsTool.svelte';
 import GovernedContentEditor from './components/GovernedContentEditor.svelte';
 import Markdown from './components/Markdown.svelte';
 import ContentContributionsRoute from './routes/ContentContributionsRoute.svelte';
@@ -60,11 +64,13 @@ export {
   ContentAgentChat,
   ContentBodyEditor,
   ContentBodyRenderer,
+  ContentClaimAuditTool,
   ContentContributionForm,
   ContentContributionInbox,
   ContentContributionPortal,
   ContentContributionTypeManager,
   ContentContributorManager,
+  ContentCorrectionsTool,
   ContentEditor,
   ContentGovernanceAssignmentEditor,
   ContentGovernanceManager,
@@ -79,6 +85,8 @@ export {
   ContentReferencesPanel,
   ContentStatusFields,
   ContentTransparencyReport,
+  ContentTransparencyTool,
+  ContentVersionsTool,
   ContentContributionsRoute,
   ContentFactsRoute,
   ContentGovernanceRoute,
@@ -109,6 +117,18 @@ export type ContentImageChooserProps = ComponentProps<
 >;
 export type ContentImageBrowserProps = ComponentProps<
   typeof ContentImageBrowser
+>;
+export type ContentClaimAuditToolProps = ComponentProps<
+  typeof ContentClaimAuditTool
+>;
+export type ContentCorrectionsToolProps = ComponentProps<
+  typeof ContentCorrectionsTool
+>;
+export type ContentTransparencyToolProps = ComponentProps<
+  typeof ContentTransparencyTool
+>;
+export type ContentVersionsToolProps = ComponentProps<
+  typeof ContentVersionsTool
 >;
 export type ContentMetadataFieldsProps = ComponentProps<
   typeof ContentMetadataFields
@@ -189,6 +209,7 @@ export type {
   ContentEditorAssistantEditorKind,
   ContentEditorAssistantFactSummary,
   ContentEditorAssistantFields,
+  ContentEditorAssistantFieldUpdateAllowList,
   ContentEditorAssistantGovernanceSummary,
   ContentEditorAssistantRegistration,
   CreateContentEditorAssistantContextInput,

@@ -129,6 +129,54 @@ describe('ContentAgentChat component', () => {
     );
   });
 
+  it('uses the first allowed session model when no model preference is stored', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          session: {
+            id: 'session-1',
+            allowedTools: '[]',
+            sessionContext: JSON.stringify({ allowedModels: ['gpt-4o'] }),
+          },
+          threads: [],
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          thread: { id: 'thread-1', title: 'General' },
+          session: { id: 'session-1' },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          messages: [],
+        }),
+      } as Response);
+
+    renderChat({
+      contentId: 'content-1',
+    });
+
+    await vi.waitFor(() =>
+      expect(fetch).toHaveBeenNthCalledWith(
+        2,
+        '/api/v1/contents/content-1/chat',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            title: 'General',
+            sessionId: 'session-1',
+            model: 'gpt-4o',
+            referenceIds: [],
+          }),
+        }),
+      ),
+    );
+  });
+
   it('can be hosted from an external assistant context', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce({

@@ -152,6 +152,92 @@ describe('generate-register', () => {
     );
   });
 
+  it('imports collection entries without registering them as objects', async () => {
+    mockedAutoDiscover.mockResolvedValue({
+      discovered: [
+        {
+          path: '/fake/pkg/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/pkg',
+        },
+      ],
+    } as any);
+
+    mockedLoadManifest.mockResolvedValue({
+      objects: {
+        Widget: {
+          className: 'Widget',
+          exportName: 'Widget',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:Widget',
+          collection: 'widgets',
+          visibility: 'public',
+        },
+        WidgetCollection: {
+          className: 'WidgetCollection',
+          exportName: 'WidgetCollection',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:WidgetCollection',
+          collection: 'widgets',
+          extends: 'SmrtCollection',
+          visibility: 'public',
+        },
+        LegacyWidgetCollection: {
+          className: 'LegacyWidgetCollection',
+          exportName: 'LegacyWidgetCollection',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:LegacyWidgetCollection',
+          collection: 'legacy_widgets',
+          extendsTypeArg: 'Widget',
+          visibility: 'public',
+        },
+        SpecializedWidgetCollection: {
+          className: 'SpecializedWidgetCollection',
+          exportName: 'SpecializedWidgetCollection',
+          packageName: '@happyvertical/pkg',
+          qualifiedName: '@happyvertical/pkg:SpecializedWidgetCollection',
+          collection: 'specialized_widgets',
+          extends: 'WidgetCollection',
+          visibility: 'public',
+        },
+      },
+    });
+
+    await handler([], { 'output-path': outputPath });
+
+    const content = await readFile(outputPath, 'utf-8');
+
+    expect(content).toContain("import { Widget } from '@happyvertical/pkg';");
+    expect(content).toContain(
+      "import { WidgetCollection } from '@happyvertical/pkg';",
+    );
+    expect(content).toContain(
+      "import { LegacyWidgetCollection } from '@happyvertical/pkg';",
+    );
+    expect(content).toContain(
+      "import { SpecializedWidgetCollection } from '@happyvertical/pkg';",
+    );
+    expect(content).toContain(
+      'ObjectRegistry.register(Widget, { name: "Widget", packageName: "@happyvertical/pkg" });',
+    );
+    expect(content).toContain(
+      "console.log('[smrt:register] Registered 1 external object');",
+    );
+    expect(content).not.toContain('ObjectRegistry.register(WidgetCollection');
+    expect(content).not.toContain(
+      'ObjectRegistry.register(LegacyWidgetCollection',
+    );
+    expect(content).not.toContain(
+      'ObjectRegistry.register(SpecializedWidgetCollection',
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('with 4 external entries (1 registered object)'),
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      '   - @happyvertical/pkg (1 registered object, 4 imported entries)',
+    );
+  });
+
   it('filters out test-visibility objects', async () => {
     mockedAutoDiscover.mockResolvedValue({
       discovered: [
