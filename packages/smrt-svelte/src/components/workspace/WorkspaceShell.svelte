@@ -42,7 +42,24 @@ export interface Props {
   modeDetail?: string;
   /** Whether the inspector panel/drawer is currently shown. */
   showInspector?: boolean;
-  /** Invoked when the inspector close button (or Escape) is activated. */
+  /**
+   * Label rendered in the inspector header. Defaults to `'Inspector'`.
+   * Consumers may rename to `'Properties'`, `'Details'`, etc.
+   */
+  inspectorTitle?: string;
+  /**
+   * Invoked when the inspector close button (or Escape) is activated.
+   *
+   * Focus restoration: because `showInspector` is a controlled prop, the
+   * consumer owns when the inspector opens and is therefore responsible
+   * for restoring focus to the activating element after close (WCAG
+   * 2.4.3). A common pattern is to capture `document.activeElement`
+   * immediately before flipping `showInspector` to `true`, then call
+   * `.focus()` on it inside this handler.
+   *
+   * The component-owned mobile drawer handles focus restoration
+   * internally — only the inspector is consumer-driven.
+   */
   onCloseInspector?: () => void;
   /** Sidebar collapsed state (controlled by consumer). */
   collapsed?: boolean;
@@ -74,6 +91,7 @@ const {
   modeStatus = '',
   modeDetail = '',
   showInspector = false,
+  inspectorTitle = 'Inspector',
   onCloseInspector,
   collapsed = false,
   onToggleCollapsed,
@@ -88,13 +106,52 @@ const {
 }: Props = $props();
 
 let mobileNavOpen = $state(false);
+/**
+ * Tracks whether the viewport is in the mobile drawer breakpoint
+ * (≤960px). Used to mark the sidebar `inert` when it's slid off-screen
+ * so keyboard users can't tab into invisible nav links. SSR-safe — stays
+ * `false` until mounted, which matches the desktop-first default layout.
+ */
+let isMobileViewport = $state(false);
+/**
+ * Element that held focus when the mobile drawer was opened. We restore
+ * focus to it when the drawer closes (Escape, backdrop click, etc.) to
+ * satisfy WCAG 2.4.3 Focus Order for the component-owned drawer state.
+ * The inspector's open state is consumer-controlled, so focus restoration
+ * for it is documented as a caller responsibility (see `onCloseInspector`).
+ */
+let lastFocusedBeforeMobileNav: HTMLElement | null = null;
 
 function toggleMobileNav(): void {
-  mobileNavOpen = !mobileNavOpen;
+  if (!mobileNavOpen) {
+    // Capture the currently focused element before we open the drawer so
+    // we can return focus to it on close (WCAG 2.4.3).
+    if (typeof document !== 'undefined') {
+      const active = document.activeElement;
+      lastFocusedBeforeMobileNav =
+        active instanceof HTMLElement ? active : null;
+    }
+    mobileNavOpen = true;
+  } else {
+    closeMobileNav();
+  }
 }
 
 function closeMobileNav(): void {
   mobileNavOpen = false;
+  // Restore focus to the element that opened the drawer (the hamburger
+  // button in the default flow). Guarded so SSR/non-DOM environments are
+  // a no-op, and so a detached/removed element doesn't throw.
+  const target = lastFocusedBeforeMobileNav;
+  lastFocusedBeforeMobileNav = null;
+  if (
+    target &&
+    typeof document !== 'undefined' &&
+    document.contains(target) &&
+    typeof target.focus === 'function'
+  ) {
+    target.focus();
+  }
 }
 
 function handleCollapseToggle(): void {
@@ -105,14 +162,15 @@ function handleInspectorClose(): void {
   onCloseInspector?.();
 }
 
-// Escape closes inspector if open. Mounted-only (SSR-safe via $effect).
+// Escape closes mobile drawer (with focus restoration) or inspector if
+// open. Mounted-only (SSR-safe via $effect).
 $effect(() => {
   if (typeof window === 'undefined') return;
 
   function onKeydown(event: KeyboardEvent) {
     if (event.key !== 'Escape') return;
     if (mobileNavOpen) {
-      mobileNavOpen = false;
+      closeMobileNav();
       return;
     }
     if (showInspector && onCloseInspector) {
@@ -124,8 +182,39 @@ $effect(() => {
   return () => window.removeEventListener('keydown', onKeydown);
 });
 
+// Track mobile breakpoint so the sidebar can be marked `inert` while it
+// is slid off-screen. Mirrors the `@media (max-width: 960px)` block.
+$effect(() => {
+  if (typeof window === 'undefined' || !window.matchMedia) return;
+
+  const mql = window.matchMedia('(max-width: 960px)');
+  isMobileViewport = mql.matches;
+
+  function handleChange(event: MediaQueryListEvent) {
+    isMobileViewport = event.matches;
+  }
+
+  // `addEventListener` is the modern API. Older Safari only has
+  // `addListener` — feature-detect to stay compatible.
+  if (typeof mql.addEventListener === 'function') {
+    mql.addEventListener('change', handleChange);
+    return () => mql.removeEventListener('change', handleChange);
+  }
+  // @ts-expect-error legacy MediaQueryList API
+  mql.addListener(handleChange);
+  return () => {
+    // @ts-expect-error legacy MediaQueryList API
+    mql.removeListener(handleChange);
+  };
+});
+
 const hasInspector = $derived(Boolean(inspector) && showInspector);
 const hasInspectorRail = $derived(Boolean(inspectorRail));
+/**
+ * Mark the sidebar `inert` when it's slid off-screen on mobile so keyboard
+ * users can't tab into invisible nav links / footer controls.
+ */
+const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 </script>
 
 <div
@@ -144,17 +233,30 @@ const hasInspectorRail = $derived(Boolean(inspectorRail));
     onclick={closeMobileNav}
   ></button>
 
-  <!-- Mobile inspector backdrop -->
+  <!--
+    Mobile inspector backdrop. Only renders an interactive button when the
+    consumer provided `onCloseInspector` — otherwise the backdrop would be a
+    focusable no-op. When no close handler is provided we render a passive
+    `<div>` so the visual scrim still appears on mobile.
+  -->
   {#if hasInspector}
-    <button
-      class="inspector-backdrop"
-      type="button"
-      aria-label="Close inspector"
-      onclick={handleInspectorClose}
-    ></button>
+    {#if onCloseInspector}
+      <button
+        class="inspector-backdrop"
+        type="button"
+        aria-label="Close inspector"
+        onclick={handleInspectorClose}
+      ></button>
+    {:else}
+      <div class="inspector-backdrop" aria-hidden="true"></div>
+    {/if}
   {/if}
 
-  <aside class="smrt-workspace-sidebar" aria-label="Primary navigation">
+  <aside
+    class="smrt-workspace-sidebar"
+    aria-label="Primary navigation"
+    inert={sidebarInert}
+  >
     <div class="brand-row">
       <div class="brand">
         {#if brand}
@@ -251,9 +353,14 @@ const hasInspectorRail = $derived(Boolean(inspectorRail));
       </main>
 
       {#if hasInspector}
-        <aside class="smrt-workspace-inspector" aria-label="Inspector panel">
+        <aside
+          class="smrt-workspace-inspector"
+          aria-labelledby="smrt-ws-inspector-title"
+        >
           <div class="inspector-header">
-            <span class="inspector-title">Inspector</span>
+            <span id="smrt-ws-inspector-title" class="inspector-title"
+              >{inspectorTitle}</span
+            >
             {#if onCloseInspector}
               <button
                 class="inspector-close"
@@ -301,6 +408,17 @@ const hasInspectorRail = $derived(Boolean(inspectorRail));
 
   .smrt-workspace-shell.sidebar-collapsed {
     grid-template-columns: var(--smrt-ws-sidebar-collapsed-width) 1fr;
+    /*
+     * When the sidebar is collapsed, recompute the inspector-width clamp
+     * against the collapsed sidebar so narrower desktops with both the
+     * inspector and a collapsed sidebar still fit content. Without this
+     * override, padding-right on `.smrt-workspace-content` would still be
+     * sized as if the sidebar were full-width.
+     */
+    --smrt-ws-inspector-width: min(
+      420px,
+      calc(100vw - var(--smrt-ws-sidebar-collapsed-width) - 1rem)
+    );
   }
 
   /* ─── Sidebar ─────────────────────────────────────────── */
@@ -638,13 +756,36 @@ const hasInspectorRail = $derived(Boolean(inspectorRail));
       .smrt-workspace-topbar {
       padding-right: calc(var(--smrt-ws-rail-width) + 1rem);
     }
+
+    /*
+     * When both the inspector panel AND the icon rail are present, the rail
+     * sits to the left of the panel (see `.has-inspector.has-inspector-rail
+     * .smrt-workspace-inspector-rail` above). Content padding must reserve
+     * room for both, otherwise the rail overlaps the right edge of content
+     * and topbar.
+     */
+    .smrt-workspace-shell.has-inspector.has-inspector-rail
+      .smrt-workspace-content,
+    .smrt-workspace-shell.has-inspector.has-inspector-rail
+      .smrt-workspace-topbar {
+      padding-right: calc(
+        var(--smrt-ws-inspector-width) + var(--smrt-ws-rail-width) + 1rem
+      );
+    }
   }
 
   /* ─── Backdrops (mobile only — hidden otherwise) ──────── */
 
+  /*
+   * Defence-in-depth: `display: none` already hides these on desktop, but a
+   * consumer global like `button { display: flex }` could undo that. Setting
+   * `pointer-events: none` ensures the backdrop can never intercept clicks
+   * on the desktop even if it slips back into the rendering tree.
+   */
   .mobile-backdrop,
   .inspector-backdrop {
     display: none;
+    pointer-events: none;
   }
 
   /* ─── Tablet — collapse sidebar to icon rail ──────────── */
@@ -735,6 +876,7 @@ const hasInspectorRail = $derived(Boolean(inspectorRail));
 
     .inspector-backdrop {
       display: block;
+      pointer-events: auto;
       position: fixed;
       inset: 0;
       background: rgba(3, 7, 14, 0.4);

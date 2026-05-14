@@ -356,4 +356,159 @@ describe('WorkspaceShell', () => {
       unmount(component);
     }
   });
+
+  it('renders an interactive button backdrop only when onCloseInspector is set', () => {
+    const component = mount(WorkspaceShell, {
+      target: container,
+      props: {
+        children: textSnippet('content'),
+        inspector: textSnippet('inspector-content'),
+        showInspector: true,
+        onCloseInspector: () => {},
+      },
+    });
+
+    try {
+      const backdrop = container.querySelector('.inspector-backdrop');
+      expect(backdrop).not.toBeNull();
+      expect(backdrop?.tagName).toBe('BUTTON');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders a non-interactive backdrop when onCloseInspector is omitted', () => {
+    const component = mount(WorkspaceShell, {
+      target: container,
+      props: {
+        children: textSnippet('content'),
+        inspector: textSnippet('inspector-content'),
+        showInspector: true,
+      },
+    });
+
+    try {
+      const backdrop = container.querySelector('.inspector-backdrop');
+      expect(backdrop).not.toBeNull();
+      expect(backdrop?.tagName).toBe('DIV');
+      expect(backdrop?.getAttribute('aria-hidden')).toBe('true');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders the default "Inspector" header label when inspectorTitle is omitted', () => {
+    const component = mount(WorkspaceShell, {
+      target: container,
+      props: {
+        children: textSnippet('content'),
+        inspector: textSnippet('inspector-content'),
+        showInspector: true,
+      },
+    });
+
+    try {
+      const title = container.querySelector('.inspector-title');
+      expect(title?.textContent).toBe('Inspector');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('uses a custom inspectorTitle and wires it via aria-labelledby', () => {
+    const component = mount(WorkspaceShell, {
+      target: container,
+      props: {
+        children: textSnippet('content'),
+        inspector: textSnippet('inspector-content'),
+        showInspector: true,
+        inspectorTitle: 'Properties',
+      },
+    });
+
+    try {
+      const title = container.querySelector('.inspector-title');
+      expect(title?.textContent).toBe('Properties');
+      const aside = container.querySelector('.smrt-workspace-inspector');
+      const labelledBy = aside?.getAttribute('aria-labelledby');
+      expect(labelledBy).toBeTruthy();
+      // The id pointed at by aria-labelledby must resolve to the title node.
+      const referenced = labelledBy
+        ? container.querySelector(`#${labelledBy}`)
+        : null;
+      expect(referenced).toBe(title);
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('marks the sidebar inert on mobile when the drawer is closed', async () => {
+    const originalMatchMedia = window.matchMedia;
+    // Force the mobile breakpoint so `isMobileViewport` becomes true.
+    window.matchMedia = ((query: string) => ({
+      matches: /max-width:\s*960px/.test(query),
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    })) as unknown as typeof window.matchMedia;
+
+    const component = mount(WorkspaceShell, {
+      target: container,
+      props: {
+        children: textSnippet('content'),
+        nav: textSnippet('nav-content'),
+      },
+    });
+
+    try {
+      await tick();
+      const sidebar = container.querySelector('.smrt-workspace-sidebar');
+      // jsdom reflects the `inert` attribute as a boolean property — both
+      // forms are acceptable, the contract is "keyboard tab order skips
+      // the sidebar when it's offscreen".
+      expect(
+        sidebar?.hasAttribute('inert') ||
+          (sidebar as HTMLElement | null)?.inert === true,
+      ).toBe(true);
+    } finally {
+      unmount(component);
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
+  it('restores focus to the hamburger button when the mobile drawer closes via Escape', async () => {
+    const component = mount(WorkspaceShell, {
+      target: container,
+      props: {
+        children: textSnippet('content'),
+        nav: textSnippet('nav-content'),
+      },
+    });
+
+    try {
+      const hamburger =
+        container.querySelector<HTMLButtonElement>('.mobile-menu');
+      expect(hamburger).not.toBeNull();
+      // Simulate keyboard-driven opening of the drawer.
+      hamburger?.focus();
+      expect(document.activeElement).toBe(hamburger);
+      hamburger?.click();
+      await tick();
+      // Move focus elsewhere as a real drawer interaction would.
+      const elsewhere = document.createElement('button');
+      container.appendChild(elsewhere);
+      elsewhere.focus();
+      expect(document.activeElement).toBe(elsewhere);
+
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+      await tick();
+      expect(document.activeElement).toBe(hamburger);
+    } finally {
+      unmount(component);
+    }
+  });
 });
