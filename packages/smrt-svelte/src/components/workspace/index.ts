@@ -13,8 +13,9 @@ export type {
   ToolsDockApi,
   ToolsDockContext,
 } from './types.js';
+export { default as WorkspaceShell } from './WorkspaceShell.svelte';
 
 // Component exports land via implementer PRs:
-//   #1227: WorkspaceShell
+//   #1227: WorkspaceShell (landed)
 //   #1228: NavTree, Breadcrumbs
 //   #1229: ToolsDock, defineToolsDock, useToolsDock
