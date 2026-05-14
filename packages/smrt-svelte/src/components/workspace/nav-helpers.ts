@@ -15,12 +15,19 @@ import type { NavItem } from './types.js';
  *
  * - Exact match → active
  * - `item.exact === true` → only exact match counts
+ * - `item.href === '/'` → only matches `currentPath === '/'`; otherwise
+ *   the descendant-path fallback would degrade to `startsWith('//')`
+ *   and never fire (and we don't want every path counting the root as
+ *   active by ancestry).
  * - Otherwise, active when `currentPath` starts with `item.href + '/'`
  *   (the trailing slash avoids `/foo` matching `/foobar`).
  */
 export function defaultIsActive(item: NavItem, currentPath: string): boolean {
   if (item.href === currentPath) return true;
   if (item.exact) return false;
+  // The root href would produce `startsWith('//')`, which never matches a
+  // real path. Treat root as exact-only when not flagged with `exact`.
+  if (item.href === '/') return false;
   return currentPath.startsWith(`${item.href}/`);
 }
 

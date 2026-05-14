@@ -67,6 +67,25 @@ function checkParentActive(item: NavItem): boolean {
 function checkExpanded(item: NavItem): boolean {
   return isExpandedHelper(item, currentPath, isActive);
 }
+
+/**
+ * In collapsed (icon-rail) mode the children container is hidden, so a
+ * parent whose descendant is active would otherwise lose any visible
+ * "current location" indicator. Promote `parent-active` to `active`
+ * styling in that mode.
+ */
+function checkEffectiveActive(item: NavItem): boolean {
+  if (checkActive(item)) return true;
+  if (collapsed && !!item.children?.length && checkParentActive(item))
+    return true;
+  return false;
+}
+
+/** Stable, HTML-safe id derived from an href for `aria-controls` pairing. */
+function navChildrenId(href: string): string {
+  const slug = href.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return `smrt-nav-children-${slug || 'root'}`;
+}
 </script>
 
 <nav class="smrt-nav-tree" class:collapsed aria-label={ariaLabel}>
@@ -74,9 +93,14 @@ function checkExpanded(item: NavItem): boolean {
     <a
       href={item.href}
       class="nav-item level-1"
-      class:active={checkActive(item) && !item.children?.length}
+      class:active={checkEffectiveActive(item) ||
+        (checkActive(item) && !item.children?.length)}
       class:parent-active={checkParentActive(item) && !!item.children?.length}
       title={collapsed ? item.label : item.description}
+      aria-expanded={item.children?.length ? checkExpanded(item) : undefined}
+      aria-controls={item.children?.length
+        ? navChildrenId(item.href)
+        : undefined}
       onclick={onNavigate}
     >
       <span class="nav-icon-slot" aria-hidden="true">
@@ -105,6 +129,7 @@ function checkExpanded(item: NavItem): boolean {
 
     {#if item.children?.length}
       <div
+        id={navChildrenId(item.href)}
         class="children level-2"
         class:expanded={!collapsed && checkExpanded(item)}
       >
@@ -115,6 +140,12 @@ function checkExpanded(item: NavItem): boolean {
             class:active={checkActive(child) && !child.children?.length}
             class:parent-active={checkParentActive(child) && !!child.children?.length}
             title={child.description}
+            aria-expanded={child.children?.length
+              ? checkExpanded(child)
+              : undefined}
+            aria-controls={child.children?.length
+              ? navChildrenId(child.href)
+              : undefined}
             onclick={onNavigate}
           >
             <span class="nav-icon-slot" aria-hidden="true">
@@ -141,8 +172,9 @@ function checkExpanded(item: NavItem): boolean {
 
           {#if child.children?.length}
             <div
+              id={navChildrenId(child.href)}
               class="children level-3"
-              class:expanded={checkExpanded(child)}
+              class:expanded={!collapsed && checkExpanded(child)}
             >
               {#each child.children as grandchild (grandchild.href)}
                 <a

@@ -140,4 +140,24 @@ describe('deriveCrumbsFromNav', () => {
     });
     expect(a).toEqual(b);
   });
+
+  // Regression for #1231: multi-segment startAfter must match the full
+  // contiguous sequence in the pathname, not just the last token. Previous
+  // implementation used `segments.indexOf(lastStartSegment)` which would
+  // find the wrong offset when an earlier segment repeated the last token.
+  it('matches the full contiguous startAfter sequence even when its trailing token appears earlier in the path', () => {
+    const siteNav: NavItem[] = [
+      { href: '/sites/sites/content', label: 'Content' },
+    ];
+    const crumbs = deriveCrumbsFromNav('/sites/sites/content', siteNav, {
+      startAfter: 'sites/sites',
+    });
+    // If the helper anchored on the first `sites`, basePath would be
+    // `/sites` and we'd emit two extra crumbs (`sites`, `content`). The
+    // correct behavior is to anchor on the second `sites` and emit only
+    // the trailing `content` crumb.
+    expect(crumbs).toEqual([
+      { label: 'Content', href: '/sites/sites/content' },
+    ]);
+  });
 });

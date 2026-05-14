@@ -77,15 +77,25 @@ export function deriveCrumbsFromNav(
   let basePath = '';
   if (startAfter) {
     const startSegments = startAfter.split('/').filter(Boolean);
-    const lastStartSegment = startSegments[startSegments.length - 1];
-    if (lastStartSegment !== undefined) {
-      const found = segments.indexOf(lastStartSegment);
-      if (found === -1) {
+    if (startSegments.length > 0) {
+      // Match the full contiguous `startSegments` sequence in `segments`,
+      // not just the last token — otherwise an ambiguous pathname like
+      // `/sites/sites/content` with `startAfter: 'sites/sites'` would
+      // anchor on the first `sites` and build the wrong base path.
+      let matched = false;
+      outer: for (let i = 0; i <= segments.length - startSegments.length; i++) {
+        for (let j = 0; j < startSegments.length; j++) {
+          if (segments[i + j] !== startSegments[j]) continue outer;
+        }
+        startIndex = i + startSegments.length;
+        basePath = `/${segments.slice(0, startIndex).join('/')}`;
+        matched = true;
+        break;
+      }
+      if (!matched) {
         // startAfter not in path → nothing to walk.
         return result;
       }
-      startIndex = found + 1;
-      basePath = `/${segments.slice(0, startIndex).join('/')}`;
     }
   }
 

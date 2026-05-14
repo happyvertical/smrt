@@ -68,7 +68,11 @@ const lastIndex = $derived(crumbs.length - 1);
           <span class="separator" aria-hidden="true">/</span>
         {/if}
         {#if i === lastIndex || !crumb.href}
-          <span class="current" aria-current="page">{crumb.label}</span>
+          <span
+            class="current"
+            aria-current={i === lastIndex ? 'page' : undefined}
+            >{crumb.label}</span
+          >
         {:else}
           <a href={crumb.href} class="crumb-link">{crumb.label}</a>
         {/if}

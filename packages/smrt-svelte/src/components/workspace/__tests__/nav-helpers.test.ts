@@ -74,6 +74,18 @@ describe('defaultIsActive', () => {
     // '/foo' should not match '/foobar' — the '/' boundary matters.
     expect(defaultIsActive({ href: '/foo', label: '' }, '/foobar')).toBe(false);
   });
+
+  // Regression for #1231: the descendant-path fallback used to be
+  // `currentPath.startsWith(item.href + '/')`. For `item.href === '/'`,
+  // that expands to `startsWith('//')`, which never matches a real path —
+  // and even if it did, we don't want every nested route to count the
+  // root item as active by ancestry.
+  it('treats a root-href item as exact-only even without the exact flag', () => {
+    const root: NavItem = { href: '/', label: 'Home' };
+    expect(defaultIsActive(root, '/')).toBe(true);
+    expect(defaultIsActive(root, '/content')).toBe(false);
+    expect(defaultIsActive(root, '/content/articles')).toBe(false);
+  });
 });
 
 describe('isItemOrChildActive', () => {
