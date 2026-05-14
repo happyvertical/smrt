@@ -4,6 +4,11 @@ import { smrtVitestPlugin } from '../vitest/src/index.ts';
 
 export default defineConfig({
   plugins: [smrtVitestPlugin({ verbose: true }), svelte({ hot: false })],
+  resolve: {
+    // Force Svelte to resolve its browser entry so `mount()` is available
+    // inside jsdom-environment tests.
+    conditions: ['browser'],
+  },
   test: {
     globals: true,
     environment: 'jsdom',
