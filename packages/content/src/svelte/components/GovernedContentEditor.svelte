@@ -36,6 +36,7 @@ export interface Props {
   hideActions?: boolean;
   hideChat?: boolean;
   showFactCatalog?: boolean;
+  showGovernancePanel?: boolean;
   onAssistantContextChange?: ContentEditorAssistantContextChange;
   onSave: (data: GovernedContentEditorSaveData) => void;
   onCancel: () => void;
@@ -58,6 +59,7 @@ let {
   hideActions = false,
   hideChat = false,
   showFactCatalog = false,
+  showGovernancePanel = true,
   onAssistantContextChange = undefined,
   onSave,
   onCancel,
@@ -325,24 +327,26 @@ function handleSave(data: ContentData) {
     onCancel={onCancel}
   />
 
-  <ContentGovernancePanel
-    bind:this={governancePanel}
-    {apiBaseUrl}
-    contentId={resolvedContentId}
-    draftType={draftContent?.type || content?.type}
-    draftVariant={draftContent?.variant || content?.variant}
-    selectedFactIds={selectedFactIds}
-    selectedFacts={selectedFacts}
-    defaultRelationship={defaultRelationship}
-    reviewProfileKey={activeReviewProfileKey}
-    customReviewLabel={customReviewLabel}
-    customReviewInstructions={customReviewInstructions}
-    customReviewPolicyKey={customReviewPolicyKey}
-    {showFactCatalog}
-    onFactsChange={handleFactsChange}
-    onGovernanceStateChange={handleGovernanceStateChange}
-    onFactAuditChange={handleFactAuditChange}
-  />
+  {#if showGovernancePanel}
+    <ContentGovernancePanel
+      bind:this={governancePanel}
+      {apiBaseUrl}
+      contentId={resolvedContentId}
+      draftType={draftContent?.type || content?.type}
+      draftVariant={draftContent?.variant || content?.variant}
+      selectedFactIds={selectedFactIds}
+      selectedFacts={selectedFacts}
+      defaultRelationship={defaultRelationship}
+      reviewProfileKey={activeReviewProfileKey}
+      customReviewLabel={customReviewLabel}
+      customReviewInstructions={customReviewInstructions}
+      customReviewPolicyKey={customReviewPolicyKey}
+      {showFactCatalog}
+      onFactsChange={handleFactsChange}
+      onGovernanceStateChange={handleGovernanceStateChange}
+      onFactAuditChange={handleFactAuditChange}
+    />
+  {/if}
 </div>
 
 <style>

@@ -3,14 +3,13 @@ import type {
   ContentGovernanceStateData,
   FactAuditStateData,
 } from '../../mock-smrt-client';
-import ContentGovernancePanel, {
-  type ContentGovernancePanelSection,
-} from './ContentGovernancePanel.svelte';
+import ContentClaimAuditTool from './ContentClaimAuditTool.svelte';
+import ContentCorrectionsTool from './ContentCorrectionsTool.svelte';
+import ContentTransparencyTool from './ContentTransparencyTool.svelte';
+import ContentVersionsTool from './ContentVersionsTool.svelte';
 
 export type ContentGovernanceToolSection =
   | 'claimAudit'
-  | 'facts'
-  | 'reviews'
   | 'corrections'
   | 'versions'
   | 'transparency';
@@ -30,29 +29,28 @@ let {
   onGovernanceStateChange = undefined,
   onFactAuditChange = undefined,
 }: Props = $props();
-
-const allPanelSections: ContentGovernancePanelSection[] = [
-  'factAudit',
-  'facts',
-  'reviews',
-  'transparency',
-  'corrections',
-  'versions',
-];
-
-const panelSection = $derived<ContentGovernancePanelSection>(
-  section === 'claimAudit' ? 'factAudit' : section,
-);
-const hiddenSections = $derived(
-  allPanelSections.filter((candidate) => candidate !== panelSection),
-);
 </script>
 
-<ContentGovernancePanel
-  {apiBaseUrl}
-  {contentId}
-  {hiddenSections}
-  showFactCatalog={section === 'facts'}
-  {onGovernanceStateChange}
-  {onFactAuditChange}
-/>
+{#if section === 'claimAudit'}
+  <ContentClaimAuditTool
+    {apiBaseUrl}
+    {contentId}
+    {onFactAuditChange}
+  />
+{:else if section === 'corrections'}
+  <ContentCorrectionsTool
+    {apiBaseUrl}
+    {contentId}
+  />
+{:else if section === 'versions'}
+  <ContentVersionsTool
+    {apiBaseUrl}
+    {contentId}
+  />
+{:else if section === 'transparency'}
+  <ContentTransparencyTool
+    {apiBaseUrl}
+    {contentId}
+    {onGovernanceStateChange}
+  />
+{/if}
