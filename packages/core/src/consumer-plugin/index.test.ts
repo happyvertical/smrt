@@ -106,6 +106,9 @@ describe('smrtConsumer registration generation', () => {
       'ObjectRegistry.register(ExternalThing, { name: "ExternalThing", packageName: "@test/pkg" });',
     );
     expect(content).toContain(
+      "console.log('[smrt:register] Registered 1 external object');",
+    );
+    expect(content).toContain(
       "import { ExternalThingCollection } from '@test/pkg';",
     );
     expect(content).toContain(

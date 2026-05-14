@@ -220,12 +220,21 @@ describe('generate-register', () => {
     expect(content).toContain(
       'ObjectRegistry.register(Widget, { name: "Widget", packageName: "@happyvertical/pkg" });',
     );
+    expect(content).toContain(
+      "console.log('[smrt:register] Registered 1 external object');",
+    );
     expect(content).not.toContain('ObjectRegistry.register(WidgetCollection');
     expect(content).not.toContain(
       'ObjectRegistry.register(LegacyWidgetCollection',
     );
     expect(content).not.toContain(
       'ObjectRegistry.register(SpecializedWidgetCollection',
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      expect.stringContaining('with 4 external entries (1 registered object)'),
+    );
+    expect(console.log).toHaveBeenCalledWith(
+      '   - @happyvertical/pkg (1 registered object, 4 imported entries)',
     );
   });
 
