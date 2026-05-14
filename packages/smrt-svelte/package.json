@@ -43,6 +43,12 @@
       "import": "./dist/components/ui/index.js",
       "default": "./dist/components/ui/index.js"
     },
+    "./workspace": {
+      "types": "./dist/components/workspace/index.d.ts",
+      "svelte": "./dist/components/workspace/index.js",
+      "import": "./dist/components/workspace/index.js",
+      "default": "./dist/components/workspace/index.js"
+    },
     "./styles/tokens.css": {
       "default": "./dist/styles/tokens.css"
     },

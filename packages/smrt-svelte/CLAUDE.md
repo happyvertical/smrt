@@ -76,3 +76,23 @@ Two theme systems: `src/theme/` (simple ThemeProvider with design tokens) and `s
 
 - `@happyvertical/smrt-types` (shared types)
 - Peer: `svelte` >=5.18.2, `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users` (all optional)
+
+## Workspace shell primitives
+
+The `./workspace` subpath (`src/components/workspace/`) holds admin-shell primitives:
+`WorkspaceShell`, `NavTree`, `Breadcrumbs`, and `ToolsDock` (plus `defineToolsDock` /
+`useToolsDock`). Shared types live in `workspace/types.ts` and are re-exported via the
+subpath barrel.
+
+**Layering**: primitives first (this folder), opinionated wrapper second (`AdminShell` — deferred),
+domain-specific tools live outside the framework in consumer packages.
+
+**Principles**:
+- SvelteKit-agnostic — no `$app/state` or `$app/navigation` imports
+- SSR-safe — guard all `window` / `localStorage` access
+- No token bridges — consume `var(--smrt-color-*)` directly
+- Tool IDs are arbitrary strings (extensible, not an enum)
+
+See epic [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226) for context;
+implementations land via #1227 (`WorkspaceShell`), #1228 (`NavTree`/`Breadcrumbs`), and #1229
+(`ToolsDock` + registry).
