@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.16
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] Harden content editor assistant chat
+  - @happyvertical/smrt-scanner@0.24.16
+  - @happyvertical/smrt-config@0.24.16
+  - @happyvertical/smrt-types@0.24.16
+
 ## 0.24.15
 
 ### Patch Changes
