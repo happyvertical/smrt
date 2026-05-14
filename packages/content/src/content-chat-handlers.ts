@@ -21,9 +21,11 @@ import {
 const CONTENT_EDITOR_AGENT_ID = 'content_editor';
 const REFERENCE_TITLE_MAX_LENGTH = 200;
 const REFERENCE_BODY_MAX_LENGTH = 2000;
+const MAX_REFERENCE_IDS = 20;
 
 export type ContentChatAIConfig = AIClientOptions & {
   apiKey?: string;
+  allowedModels?: string[];
   model?: string;
   defaultModel?: string;
   provider?: string;
@@ -37,6 +39,7 @@ export interface ContentChatCollectionLike {
 
 export interface ContentChatSessionInput {
   db: DatabaseInterface;
+  contents?: ContentChatCollectionLike;
   tenantId?: string | null;
   profileId?: string | null;
   contentId: string;
@@ -52,6 +55,7 @@ export interface CreateContentChatThreadInput extends ContentChatSessionInput {
 
 export interface ListContentChatThreadMessagesInput {
   db: DatabaseInterface;
+  contents?: ContentChatCollectionLike;
   tenantId?: string | null;
   profileId?: string | null;
   contentId: string;
@@ -96,8 +100,12 @@ export interface ResolvedContentChatAI {
   maxTokens?: number | null;
 }
 
-function resolveTenantId(value: string | null | undefined): string {
-  return value || 'global';
+function resolveTenantScope(value: string | null | undefined): string | null {
+  return asNonEmptyString(value);
+}
+
+function resolveChatTenantId(value: string | null | undefined): string {
+  return resolveTenantScope(value) ?? 'global';
 }
 
 function resolveProfileId(value: string | null | undefined): string {
@@ -144,12 +152,40 @@ function isActiveSession(session: unknown): boolean {
     : candidate?.status === 'active';
 }
 
+function isSchemaMissingError(error: unknown): boolean {
+  const message = String((error as { message?: unknown })?.message ?? '');
+  return (
+    (error as { code?: string })?.code === 'DB_SCHEMA_MISSING' ||
+    /^no such table:\s+(?:agent_sessions|chat_(?:rooms|threads|messages|participants|reactions))\b/i.test(
+      message,
+    ) ||
+    /relation ["']?(?:agent_sessions|chat_(?:rooms|threads|messages|participants|reactions))["']? does not exist/i.test(
+      message,
+    )
+  );
+}
+
 export function contentChatSessionMatchesContent(
   session: unknown,
   contentId: string,
 ): boolean {
   const context = getSessionContext(session);
   return asNonEmptyString(context.contentId) === contentId;
+}
+
+async function assertContentExistsForTenant(
+  contents: ContentChatCollectionLike | undefined,
+  tenantScope: string | null,
+  contentId: string,
+): Promise<void> {
+  if (!contents) {
+    return;
+  }
+
+  const content = await contents.get(contentId);
+  if (!content || !referenceBelongsToTenant(content, tenantScope)) {
+    throw new Error('Content not found');
+  }
 }
 
 export function contentChatSessionIsAuthorized(
@@ -197,10 +233,16 @@ export function serializeContentChatMessageForUI(
 export async function getOrCreateContentEditorChatSession(
   input: ContentChatSessionInput,
 ) {
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
   await chatService.initialize();
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
 
   let activeSession = null;
   try {
@@ -215,7 +257,10 @@ export async function getOrCreateContentEditorChatSession(
       agentSessions.find((session: unknown) =>
         contentChatSessionMatchesContent(session, input.contentId),
       ) ?? null;
-  } catch {
+  } catch (error) {
+    if (!isSchemaMissingError(error)) {
+      throw error;
+    }
     // Chat tables may not exist yet. createAgentSession will surface the
     // concrete schema error if the runtime cannot create/use them.
   }
@@ -267,9 +312,15 @@ export async function createContentEditorChatThread(
 ) {
   await input.initializeChatCollections?.();
 
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
   const session = await chatService.agentSessions.get(input.sessionId);
 
   if (
@@ -286,6 +337,18 @@ export async function createContentEditorChatThread(
     throw new Error('Active session is missing a chat room');
   }
 
+  let updates: Record<string, string | null> | null = null;
+  if (input.model) {
+    const ctx = getSessionContext(session);
+    const allowedModels = Array.isArray(ctx.allowedModels)
+      ? ctx.allowedModels
+      : [];
+    if (allowedModels.length > 0 && !allowedModels.includes(input.model)) {
+      throw new Error('AI model is not allowed for content chat');
+    }
+    updates = buildContentChatModelUpdates(ctx, input.model, input.model);
+  }
+
   const thread = await chatService.threads.create({
     tenantId,
     roomId: chatRoomId,
@@ -293,9 +356,8 @@ export async function createContentEditorChatThread(
     messageCount: 0,
   });
 
-  if (input.model) {
+  if (updates) {
     const ctx = getSessionContext(session);
-    const updates = buildContentChatModelUpdates(ctx, input.model, input.model);
     if (Object.entries(updates).some(([key, value]) => ctx[key] !== value)) {
       await (
         session as { updateSessionContext: (value: unknown) => Promise<void> }
@@ -309,9 +371,15 @@ export async function createContentEditorChatThread(
 export async function listContentEditorChatThreadMessages(
   input: ListContentChatThreadMessagesInput,
 ) {
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({ tenantId, db: input.db });
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
   const thread = await chatService.threads.get(input.threadId);
   if (!thread) {
     throw new Error('Thread not found');
@@ -381,6 +449,17 @@ export function resolveDefaultContentChatAI(
     input.requestedModel,
     fallbackModel,
   );
+  const allowedModels =
+    input.aiConfig.allowedModels ??
+    input.interactionPrompt.ai.allowedModels ??
+    storedSelection.allowedModels;
+  if (
+    Array.isArray(allowedModels) &&
+    allowedModels.length > 0 &&
+    !allowedModels.includes(model)
+  ) {
+    throw new Error('AI model is not allowed for content chat');
+  }
   const apiKey = input.aiConfig.apiKey || getEnvApiKey(provider, input.env);
 
   return {
@@ -399,6 +478,7 @@ export function resolveDefaultContentChatAI(
 
 function sanitizeReferenceText(value: unknown, maxLength: number): string {
   const text = stripHtml(sanitizeHtml(String(value ?? '')))
+    .replace(/<<<(?:END_)?SMRT_[^>]*>>>/g, '')
     .replace(/<{2,}/g, '< <')
     .replace(/>{2,}/g, '> >')
     .replace(/\s+/g, ' ')
@@ -411,8 +491,31 @@ function sanitizeReferenceId(value: string): string {
   return value.replace(/[^\w:.-]/g, '_').slice(0, 128);
 }
 
+function getReferenceTenantId(value: unknown): string | null {
+  const candidate = value as {
+    tenantId?: unknown;
+    tenant_id?: unknown;
+  } | null;
+  return (
+    asNonEmptyString(candidate?.tenantId) ??
+    asNonEmptyString(candidate?.tenant_id)
+  );
+}
+
+function referenceBelongsToTenant(
+  ref: unknown,
+  tenantScope: string | null,
+): boolean {
+  const refTenantId = getReferenceTenantId(ref);
+  if (tenantScope === null) {
+    return !refTenantId;
+  }
+  return refTenantId === tenantScope;
+}
+
 async function buildReferenceContext(
   contents: ContentChatCollectionLike,
+  tenantScope: string | null,
   referenceIds: unknown,
 ): Promise<string> {
   if (!Array.isArray(referenceIds) || referenceIds.length === 0) {
@@ -420,16 +523,21 @@ async function buildReferenceContext(
   }
 
   const refTexts: string[] = [];
-  for (const refId of referenceIds) {
-    const id = asNonEmptyString(refId);
-    if (!id) {
-      continue;
-    }
+  const ids = [
+    ...new Set(
+      referenceIds
+        .map(asNonEmptyString)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ].slice(0, MAX_REFERENCE_IDS);
+  for (const id of ids) {
     const ref = (await contents.get(id)) as {
       title?: string;
       body?: string;
+      tenantId?: string;
+      tenant_id?: string;
     } | null;
-    if (ref) {
+    if (ref && referenceBelongsToTenant(ref, tenantScope)) {
       const safeTitle = sanitizeReferenceText(
         ref.title,
         REFERENCE_TITLE_MAX_LENGTH,
@@ -452,12 +560,18 @@ async function buildReferenceContext(
 export async function sendContentEditorChatThreadMessage(
   input: SendContentChatThreadMessageInput,
 ) {
-  const tenantId = resolveTenantId(input.tenantId);
+  const tenantScope = resolveTenantScope(input.tenantId);
+  const tenantId = resolveChatTenantId(input.tenantId);
   const profileId = resolveProfileId(input.profileId);
   const chatService = await ChatService.create({
     tenantId,
     db: input.contents.db,
   });
+  await assertContentExistsForTenant(
+    input.contents,
+    tenantScope,
+    input.contentId,
+  );
 
   const session = await chatService.agentSessions.get(input.sessionId);
   if (
@@ -483,18 +597,9 @@ export async function sendContentEditorChatThreadMessage(
     throw new Error('Active session is missing a chat room');
   }
 
-  const userMessage = await chatService.sendMessage({
-    tenantId,
-    roomId: chatRoomId,
-    threadId: (thread as { id: string }).id,
-    senderProfileId: profileId,
-    content: input.content,
-    role: 'user',
-    agentSessionId: (session as { id: string }).id,
-  });
-
   const references = await buildReferenceContext(
     input.contents,
+    tenantScope,
     input.referenceIds,
   );
   const interactionPrompt = await (input.resolvePromptFn ?? resolvePrompt)(
@@ -509,20 +614,6 @@ export async function sendContentEditorChatThreadMessage(
       }),
     },
   );
-
-  const history = await chatService.messages.list({
-    where: { threadId: (thread as { id: string }).id },
-    orderBy: 'createdAt DESC',
-    limit: 10,
-  });
-
-  const conversation = history.reverse().map((message: unknown) => {
-    const json = contentChatMessageToJSON(message);
-    return {
-      role: json.role as 'user' | 'assistant' | 'system',
-      content: String(json.content ?? ''),
-    };
-  });
 
   const sessionContext = getSessionContext(session);
   const aiConfig = input.aiConfig ?? {};
@@ -541,6 +632,30 @@ export async function sendContentEditorChatThreadMessage(
       requestedModel: input.model,
       interactionPrompt,
     });
+
+  const userMessage = await chatService.sendMessage({
+    tenantId,
+    roomId: chatRoomId,
+    threadId: (thread as { id: string }).id,
+    senderProfileId: profileId,
+    content: input.content,
+    role: 'user',
+    agentSessionId: (session as { id: string }).id,
+  });
+
+  const history = await chatService.messages.list({
+    where: { threadId: (thread as { id: string }).id },
+    orderBy: 'createdAt DESC',
+    limit: 10,
+  });
+
+  const conversation = history.reverse().map((message: unknown) => {
+    const json = contentChatMessageToJSON(message);
+    return {
+      role: json.role as 'user' | 'assistant' | 'system',
+      content: String(json.content ?? ''),
+    };
+  });
 
   const ai = await (input.getAIClient ?? getAI)(resolvedAI.clientOptions);
 

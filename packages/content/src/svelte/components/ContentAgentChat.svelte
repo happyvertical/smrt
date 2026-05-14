@@ -6,8 +6,14 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
-import type { ContentEditorAssistantContext } from '../../content-editor-assistant';
-import { contentEditorAssistantContextToChatProps } from '../../content-editor-assistant';
+import type {
+  ContentEditorAssistantContext,
+  ContentEditorAssistantFieldUpdateAllowList,
+} from '../../content-editor-assistant';
+import {
+  contentEditorAssistantContextToChatProps,
+  sanitizeContentEditorAssistantFieldUpdates,
+} from '../../content-editor-assistant';
 import { joinApiUrl } from '../api';
 
 const AI_MODELS = [
@@ -27,6 +33,8 @@ export interface Props {
   currentEditorState?: string;
   currentReferenceIds?: string[];
   formFields?: Record<string, string>;
+  currentProfileId?: string;
+  assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
   onapplyfields?: (fields: Record<string, string>) => void;
   onclose?: () => void;
 }
@@ -38,6 +46,8 @@ let {
   currentEditorState = '',
   currentReferenceIds = [],
   formFields = {},
+  currentProfileId = '',
+  assistantFieldAllowList = {},
   onapplyfields = undefined,
   onclose = undefined,
 }: Props = $props();
@@ -51,7 +61,6 @@ let loadingSession = $state(true);
 let loadingMessages = $state(false);
 let sendingMessage = $state(false);
 let error = $state<string | null>(null);
-let currentProfileId = $state('user123');
 
 // New Topic State
 let isCreatingTopic = $state(false);
@@ -60,8 +69,10 @@ let showNewTopicInput = $state(false);
 
 // Active model selected
 let selectedModelId = $state(DEFAULT_MODEL_ID);
+let allowedModelIds = $state<string[]>([]);
 let loadedContentId = $state<string | null>(null);
 let loadedApiBaseUrl = $state<string | null>(null);
+let sessionProfileId = $state('');
 const assistantChatProps = $derived(
   assistantContext
     ? contentEditorAssistantContextToChatProps(assistantContext)
@@ -76,6 +87,17 @@ const resolvedCurrentReferenceIds = $derived(
 );
 const resolvedFormFields = $derived(
   assistantChatProps?.formFields ?? formFields,
+);
+const resolvedCurrentProfileId = $derived(currentProfileId || sessionProfileId);
+const availableAIModels = $derived(
+  allowedModelIds.length > 0
+    ? [
+        ...AI_MODELS.filter((model) => allowedModelIds.includes(model.id)),
+        ...allowedModelIds
+          .filter((id) => !AI_MODELS.some((model) => model.id === id))
+          .map((id) => ({ id, label: id })),
+      ]
+    : AI_MODELS,
 );
 const canRetrySessionLoad = $derived(
   Boolean(resolvedContentId && resolvedContentId !== 'new'),
@@ -94,6 +116,7 @@ $effect(() => {
     activeThreadId = null;
     messages = [];
     loadingSession = false;
+    allowedModelIds = [];
     error = 'Save this draft first to start editorial chat.';
     return;
   }
@@ -112,6 +135,8 @@ $effect(() => {
   threads = [];
   activeThreadId = null;
   messages = [];
+  sessionProfileId = '';
+  allowedModelIds = [];
   error = null;
   void loadSession();
 });
@@ -133,22 +158,72 @@ function normalizeMessage(msg: any): any {
   };
 }
 
-function applySessionModelPreference(sessionValue: any): void {
-  if (!sessionValue?.sessionContext) {
-    return;
+function parseSessionContext(sessionValue: any): Record<string, unknown> {
+  const rawContext = sessionValue?.sessionContext;
+  if (!rawContext) {
+    return {};
+  }
+
+  if (typeof rawContext === 'object' && !Array.isArray(rawContext)) {
+    return rawContext as Record<string, unknown>;
+  }
+
+  if (typeof rawContext !== 'string') {
+    return {};
   }
 
   try {
-    const ctx = JSON.parse(
-      typeof sessionValue.sessionContext === 'string'
-        ? sessionValue.sessionContext
-        : '{}',
-    );
-    if (ctx.model) {
-      selectedModelId = ctx.model;
-    }
+    const parsed = JSON.parse(rawContext);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : {};
   } catch {
-    // Ignore malformed session context and keep the UI default.
+    return {};
+  }
+}
+
+function normalizeAllowedModels(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const models: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') {
+      continue;
+    }
+    const id = item.trim();
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    models.push(id);
+  }
+  return models;
+}
+
+function applySessionModelPreference(sessionValue: any): void {
+  const ctx = parseSessionContext(sessionValue);
+  const sessionAllowedModels = normalizeAllowedModels(ctx.allowedModels);
+  allowedModelIds = sessionAllowedModels;
+
+  const sessionModel =
+    typeof ctx.model === 'string' && ctx.model.trim() ? ctx.model.trim() : '';
+  if (
+    sessionModel &&
+    (sessionAllowedModels.length === 0 ||
+      sessionAllowedModels.includes(sessionModel))
+  ) {
+    selectedModelId = sessionModel;
+    return;
+  }
+
+  if (
+    sessionAllowedModels.length > 0 &&
+    !sessionAllowedModels.includes(selectedModelId)
+  ) {
+    selectedModelId = sessionAllowedModels[0];
   }
 }
 
@@ -179,6 +254,7 @@ async function loadSession() {
     data.session.agentName = data.session.agentName || 'AI Assistant';
 
     session = data.session;
+    sessionProfileId = data.session?.participantProfileId || '';
     applySessionModelPreference(session);
     threads = data.threads || [];
 
@@ -314,15 +390,19 @@ async function handleSendMessage(content: string) {
 
     // Auto-apply: extract JSON field update blocks from the AI response
     if (onapplyfields && data.agentMessage?.content) {
-      const jsonBlockRegex = /```json\n([\s\S]*?)```/g;
+      const jsonBlockRegex = /```\s*json\s*\r?\n([\s\S]*?)```/gi;
       let match: RegExpExecArray | null = jsonBlockRegex.exec(
         data.agentMessage.content,
       );
       while (match !== null) {
         try {
           const parsed = JSON.parse(match[1].trim());
-          if (parsed.fields && typeof parsed.fields === 'object') {
-            onapplyfields(parsed.fields);
+          const fields = sanitizeContentEditorAssistantFieldUpdates(
+            parsed.fields,
+            assistantFieldAllowList,
+          );
+          if (Object.keys(fields).length > 0) {
+            onapplyfields(fields);
           }
         } catch (e) {
           console.warn('Failed to parse AI field update JSON:', e);
@@ -353,7 +433,7 @@ async function handleSendMessage(content: string) {
   {:else if session}
     <div class="model-bar">
       <select class="smrt-select model-select" bind:value={selectedModelId}>
-        {#each AI_MODELS as model}
+        {#each availableAIModels as model}
           <option value={model.id}>{model.label}</option>
         {/each}
       </select>
@@ -366,14 +446,18 @@ async function handleSendMessage(content: string) {
              <span class="spinner"></span> Loading topic...
            </div>
         {:else}
+          {#if !resolvedCurrentProfileId}
+            <div class="loading-state">Loading participant...</div>
+          {:else}
           <AgentChat 
             session={session} 
             messages={messages} 
-            currentProfileId={currentProfileId}
+            currentProfileId={resolvedCurrentProfileId}
             loading={sendingMessage}
             onsend={handleSendMessage}
             onclose={onclose}
           />
+          {/if}
         {/if}
       </div>
     </div>

@@ -134,6 +134,7 @@ export type {
   ContentEditorAssistantEditorKind,
   ContentEditorAssistantFactSummary,
   ContentEditorAssistantFields,
+  ContentEditorAssistantFieldUpdateAllowList,
   ContentEditorAssistantGovernanceSummary,
   ContentEditorAssistantRegistration,
   CreateContentEditorAssistantContextInput,
@@ -141,6 +142,7 @@ export type {
 export {
   contentEditorAssistantContextToChatProps,
   createContentEditorAssistantContext,
+  sanitizeContentEditorAssistantFieldUpdates,
 } from './content-editor-assistant';
 export type {
   ContentFeedFormat,

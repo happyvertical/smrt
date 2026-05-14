@@ -1157,7 +1157,13 @@ describe('ContentEditor component', () => {
       expect.any(Function),
     );
 
-    registration.actions.applyFieldUpdates({ title: 'AI title' });
+    registration.actions.applyFieldUpdates({
+      title: 'AI title',
+      tenantId: 'tenant-b',
+      status: 'definitely-not-valid',
+      state: 'highlighted',
+      metadata: '{"unsafe":true}',
+    });
     flushSync();
 
     const updatedRegistration = onAssistantContextChange.mock.calls
@@ -1166,6 +1172,9 @@ describe('ContentEditor component', () => {
       .at(-1);
     expect(updatedRegistration?.context.title).toBe('AI title');
     expect(updatedRegistration?.context.data.fields.title).toBe('AI title');
+    expect(updatedRegistration?.context.data.fields.status).toBe('draft');
+    expect(updatedRegistration?.context.data.fields.state).toBe('highlighted');
+    expect(updatedRegistration?.context.data.fields.tenantId).toBeUndefined();
     expect(
       onAssistantContextChange.mock.calls.some(([value]) => value === null),
     ).toBe(false);

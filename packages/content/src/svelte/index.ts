@@ -14,6 +14,7 @@ import { CONTENT_MODULE_META } from '../ui.js';
 // Import components
 import ArticleCard from './components/ArticleCard.svelte';
 import ArticleList from './components/ArticleList.svelte';
+import ContentAgentChat from './components/ContentAgentChat.svelte';
 import ContentBodyEditor from './components/ContentBodyEditor.svelte';
 import ContentBodyRenderer from './components/ContentBodyRenderer.svelte';
 import ContentClaimAuditTool from './components/ContentClaimAuditTool.svelte';
@@ -60,6 +61,9 @@ import {
 export {
   ArticleCard,
   ArticleList,
+  ContentAgentChat,
+  ContentBodyEditor,
+  ContentBodyRenderer,
   ContentClaimAuditTool,
   ContentContributionForm,
   ContentContributionInbox,
@@ -67,8 +71,6 @@ export {
   ContentContributionTypeManager,
   ContentContributorManager,
   ContentCorrectionsTool,
-  ContentBodyEditor,
-  ContentBodyRenderer,
   ContentEditor,
   ContentGovernanceAssignmentEditor,
   ContentGovernanceManager,
@@ -104,11 +106,12 @@ export {
 // Export component prop types
 export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
-export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
+export type ContentAgentChatProps = ComponentProps<typeof ContentAgentChat>;
 export type ContentBodyEditorProps = ComponentProps<typeof ContentBodyEditor>;
 export type ContentBodyRendererProps = ComponentProps<
   typeof ContentBodyRenderer
 >;
+export type ContentEditorProps = ComponentProps<typeof ContentEditor>;
 export type ContentImageChooserProps = ComponentProps<
   typeof ContentImageChooser
 >;
@@ -206,6 +209,7 @@ export type {
   ContentEditorAssistantEditorKind,
   ContentEditorAssistantFactSummary,
   ContentEditorAssistantFields,
+  ContentEditorAssistantFieldUpdateAllowList,
   ContentEditorAssistantGovernanceSummary,
   ContentEditorAssistantRegistration,
   CreateContentEditorAssistantContextInput,
@@ -213,6 +217,7 @@ export type {
 export {
   contentEditorAssistantContextToChatProps,
   createContentEditorAssistantContext,
+  sanitizeContentEditorAssistantFieldUpdates,
 } from '../content-editor-assistant.js';
 export type {
   ContentPublishReadinessState,

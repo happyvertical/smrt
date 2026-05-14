@@ -7,17 +7,14 @@ import {
   sendContentEditorChatThreadMessage,
   serializeContentChatMessageForUI,
 } from '../../../../../../../../content-chat-handlers.js';
-
-type ContentChatLocals = {
-  tenantId?: string | null;
-  profileId?: string | null;
-  user?: {
-    id?: string | null;
-  } | null;
-};
+import {
+  type ContentChatRouteLocals,
+  requestHasTrustedOrigin,
+  resolveContentChatProfileId,
+} from '../../../../../../../../content-chat-route-helpers.js';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-  const smrtLocals = locals as ContentChatLocals;
+  const smrtLocals = locals as ContentChatRouteLocals;
   const { id, threadId } = params;
 
   if (!threadId) {
@@ -31,10 +28,14 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     const contentsCollection = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
     );
-    const tenantId = smrtLocals.tenantId || 'global';
-    const profileId = smrtLocals.profileId || smrtLocals.user?.id || 'system';
+    const tenantId = smrtLocals.tenantId || null;
+    const profileId = resolveContentChatProfileId(smrtLocals);
+    if (!profileId) {
+      return json({ error: 'Authentication required' }, { status: 401 });
+    }
     const { thread, messages } = await listContentEditorChatThreadMessages({
       db: contentsCollection.db,
+      contents: contentsCollection,
       tenantId,
       profileId,
       contentId: id,
@@ -46,7 +47,10 @@ export const GET: RequestHandler = async ({ params, locals }) => {
       messages: messages.map(serializeContentChatMessageForUI),
     });
   } catch (error: any) {
-    if (error?.message === 'Thread not found') {
+    if (
+      error?.message === 'Thread not found' ||
+      error?.message === 'Content not found'
+    ) {
       return json({ error: error.message }, { status: 404 });
     }
     console.error(`Error fetching messages for thread ${threadId}:`, error);
@@ -55,13 +59,16 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = async ({ params, request, locals }) => {
-  const smrtLocals = locals as ContentChatLocals;
+  const smrtLocals = locals as ContentChatRouteLocals;
   const { id, threadId } = params;
   if (!id || !threadId) {
     return json(
       { error: 'Content ID and Thread ID are required' },
       { status: 400 },
     );
+  }
+  if (!requestHasTrustedOrigin(request)) {
+    return json({ error: 'Invalid request origin' }, { status: 403 });
   }
 
   const {
@@ -84,8 +91,11 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     const contentsCollection = await getCollection<any>(
       '@happyvertical/smrt-content:Content',
     );
-    const tenantId = smrtLocals.tenantId || 'global';
-    const profileId = smrtLocals.profileId || smrtLocals.user?.id || 'system';
+    const tenantId = smrtLocals.tenantId || null;
+    const profileId = resolveContentChatProfileId(smrtLocals);
+    if (!profileId) {
+      return json({ error: 'Authentication required' }, { status: 401 });
+    }
 
     const config = getSmrtConfig('@happyvertical/smrt-content:Content');
     const aiConfig = (config.ai || {}) as ContentChatAIConfig;
@@ -117,12 +127,16 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
   } catch (error: any) {
     if (
       error?.message === 'Active session not found' ||
-      error?.message === 'Thread not found'
+      error?.message === 'Thread not found' ||
+      error?.message === 'Content not found'
     ) {
       return json({ error: error.message }, { status: 404 });
     }
     if (error?.message === 'Active session is missing a chat room') {
       return json({ error: error.message }, { status: 500 });
+    }
+    if (error?.message === 'AI model is not allowed for content chat') {
+      return json({ error: error.message }, { status: 400 });
     }
     console.error(`Error processing message for thread ${threadId}:`, error);
     return json(

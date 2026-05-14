@@ -32,12 +32,27 @@ describe('content body format utilities', () => {
     expect(html).toContain('src="#"');
   });
 
+  it('removes slash-prefixed event handlers and risky namespaces', () => {
+    const html = sanitizeHtml(
+      '<svg/onload=alert(1)><math href="javascript:alert(1)"></math><img/onerror=alert(2) src="https://example.com/safe.jpg" alt="Safe">',
+    );
+
+    expect(html).toContain(
+      '<img src="https://example.com/safe.jpg" alt="Safe">',
+    );
+    expect(html).not.toContain('<svg');
+    expect(html).not.toContain('<math');
+    expect(html).not.toMatch(/on(?:load|error)/i);
+    expect(html).not.toMatch(/javascript/i);
+  });
+
   it('sanitizes URL-bearing attributes with encoded protocols', () => {
     const html = sanitizeHtml(
       '<svg><a xlink:href="java&#x73;cript&#x3A;alert(1)">click</a></svg><form action="javascript:alert(2)"><button formaction="java&#115;cript:alert(3)">Go</button></form><video poster="javascript:alert(4)"></video><img srcset="javascript:alert(5) 1x, https://example.com/safe.jpg 2x" src="https://example.com/fallback.jpg">',
     );
 
-    expect(html).toContain('xlink:href="#"');
+    expect(html).not.toContain('xlink:href');
+    expect(html).not.toContain('<svg');
     expect(html).toContain('action="#"');
     expect(html).toContain('formaction="#"');
     expect(html).toContain('poster="#"');

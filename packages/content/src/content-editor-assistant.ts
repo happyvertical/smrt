@@ -12,6 +12,18 @@ export type ContentEditorAssistantFields = Record<
   ContentEditorAssistantFieldValue
 >;
 
+export interface ContentEditorAssistantFieldUpdateAllowList {
+  textFields?: Iterable<string>;
+  enumFields?: Record<string, Iterable<string>>;
+}
+
+const TEXT_FIELD_KEYS = new Set(['title', 'description', 'body']);
+const ENUM_FIELD_VALUES: Record<string, Set<string>> = {
+  type: new Set(['article', 'document', 'mirror']),
+  status: new Set(['draft', 'published', 'archived']),
+  state: new Set(['active', 'highlighted', 'deprecated']),
+};
+
 export interface ContentEditorAssistantGovernanceSummary {
   reviewProfileKey?: string | null;
   enforcePublishReadiness?: boolean;
@@ -111,6 +123,46 @@ function normalizeChatFields(
       normalizeString(value),
     ]),
   );
+}
+
+export function sanitizeContentEditorAssistantFieldUpdates(
+  fields: unknown,
+  allowList: ContentEditorAssistantFieldUpdateAllowList = {},
+): Record<string, string> {
+  if (!fields || typeof fields !== 'object' || Array.isArray(fields)) {
+    return {};
+  }
+
+  const textFieldKeys = new Set([
+    ...TEXT_FIELD_KEYS,
+    ...(allowList.textFields ?? []),
+  ]);
+  const enumFieldValues = new Map<string, Set<string>>(
+    Object.entries(ENUM_FIELD_VALUES),
+  );
+  for (const [key, values] of Object.entries(allowList.enumFields ?? {})) {
+    enumFieldValues.set(key, new Set(values));
+  }
+
+  const updates: Record<string, string> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (textFieldKeys.has(key)) {
+      updates[key] = normalizeString(value);
+      continue;
+    }
+
+    const enumValues = enumFieldValues.get(key);
+    if (!enumValues) {
+      continue;
+    }
+
+    const normalizedValue = normalizeString(value).trim();
+    if (enumValues.has(normalizedValue)) {
+      updates[key] = normalizedValue;
+    }
+  }
+
+  return updates;
 }
 
 export function createContentEditorAssistantContext(

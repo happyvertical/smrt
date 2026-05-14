@@ -343,6 +343,9 @@ export function buildResolvedAI(
     profile: ai.profile,
     provider,
     model,
+    ...(config.allowedModels
+      ? { allowedModels: [...config.allowedModels] }
+      : {}),
     params,
   };
 

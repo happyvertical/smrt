@@ -6,6 +6,7 @@ export interface ContentChatAISelection {
   profile: string | null;
   provider: string | null;
   model: string | null;
+  allowedModels: string[] | null;
   temperature: number | null;
   maxTokens: number | null;
 }
@@ -15,6 +16,8 @@ export interface ContentEditorInteractionInput {
   currentEditorState?: unknown;
   references?: string | null;
 }
+
+const CONTENT_PROMPT_DELIMITER = 'SMRT_CONTENT_FIELD';
 
 function readString(
   context: SessionContext,
@@ -33,11 +36,32 @@ function readNumber(
 }
 
 export function inferProviderFromModel(model: string): string {
-  if (model.includes('claude')) {
+  const normalized = model.toLowerCase();
+  const providerPrefix = normalized.match(/^([a-z0-9_-]+)\//)?.[1];
+  if (providerPrefix === 'openrouter') {
+    return 'openrouter';
+  }
+  if (providerPrefix === 'anthropic') {
+    return 'anthropic';
+  }
+  if (providerPrefix === 'gemini' || providerPrefix === 'google') {
+    return 'gemini';
+  }
+  if (providerPrefix === 'openai') {
+    return 'openai';
+  }
+
+  const modelTokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  if (
+    modelTokens.includes('claude') ||
+    modelTokens.includes('sonnet') ||
+    modelTokens.includes('haiku') ||
+    modelTokens.includes('opus')
+  ) {
     return 'anthropic';
   }
 
-  if (model.includes('gemini')) {
+  if (modelTokens.includes('gemini')) {
     return 'gemini';
   }
 
@@ -47,10 +71,16 @@ export function inferProviderFromModel(model: string): string {
 export function getContentChatAISelection(
   context: SessionContext,
 ): ContentChatAISelection {
+  const allowedModels = context.allowedModels;
   return {
     profile: readString(context, 'profile'),
     provider: readString(context, 'provider'),
     model: readString(context, 'model'),
+    allowedModels:
+      Array.isArray(allowedModels) &&
+      allowedModels.every((value) => typeof value === 'string')
+        ? allowedModels
+        : null,
     temperature: readNumber(context, 'temperature'),
     maxTokens: readNumber(context, 'maxTokens'),
   };
@@ -101,6 +131,9 @@ export function buildContentEditorSessionContext(
     ...(prompt.ai.profile ? { profile: prompt.ai.profile } : {}),
     ...(prompt.ai.provider ? { provider: prompt.ai.provider } : {}),
     ...(prompt.ai.model ? { model: prompt.ai.model } : {}),
+    ...(prompt.ai.allowedModels
+      ? { allowedModels: prompt.ai.allowedModels }
+      : {}),
     ...(prompt.ai.temperature !== undefined
       ? { temperature: prompt.ai.temperature }
       : {}),
@@ -123,18 +156,28 @@ function displayValue(value: unknown, fallback = '(empty)'): string {
   return String(value);
 }
 
+function delimitPromptValue(name: string, value: string): string {
+  return `<<<${CONTENT_PROMPT_DELIMITER} name=${name}>>>\n${value.replace(/<<<(?:END_)?SMRT_[^>]*>>>/g, '')}\n<<<END_${CONTENT_PROMPT_DELIMITER}>>>`;
+}
+
 export function buildContentEditorInteractionVariables(
   input: ContentEditorInteractionInput,
 ): Record<string, string> {
   const fields = input.fields ?? {};
 
   return {
-    title: displayValue(fields.title),
-    description: displayValue(fields.description),
+    title: delimitPromptValue('title', displayValue(fields.title)),
+    description: delimitPromptValue(
+      'description',
+      displayValue(fields.description),
+    ),
     type: displayValue(fields.type, 'article'),
     status: displayValue(fields.status, 'draft'),
     state: displayValue(fields.state, 'active'),
-    body: displayValue(fields.body ?? input.currentEditorState),
+    body: delimitPromptValue(
+      'body',
+      displayValue(fields.body ?? input.currentEditorState),
+    ),
     references: input.references ?? '',
   };
 }

@@ -6,9 +6,13 @@ import { extractBodyImages, resolveBodyFormat } from '../../body-format';
 import type {
   ContentEditorAssistantActions,
   ContentEditorAssistantContextChange,
+  ContentEditorAssistantFieldUpdateAllowList,
   ContentEditorAssistantRegistration,
 } from '../../content-editor-assistant';
-import { createContentEditorAssistantContext } from '../../content-editor-assistant';
+import {
+  createContentEditorAssistantContext,
+  sanitizeContentEditorAssistantFieldUpdates,
+} from '../../content-editor-assistant';
 import type {
   FactAuditResourceClaimData,
   FactAuditStateData,
@@ -39,6 +43,7 @@ export interface Props {
   agentChatNotice?: string | null;
   hideActions?: boolean;
   hideChat?: boolean;
+  assistantFieldAllowList?: ContentEditorAssistantFieldUpdateAllowList;
   onAssistantContextChange?: ContentEditorAssistantContextChange;
   onChange?: (data: any) => void;
   onFactAuditChange?: (state: FactAuditStateData | null) => void;
@@ -57,6 +62,7 @@ let {
   agentChatNotice = null,
   hideActions = false,
   hideChat = false,
+  assistantFieldAllowList = {},
   onAssistantContextChange = undefined,
   onChange = undefined,
   onFactAuditChange = undefined,
@@ -198,14 +204,22 @@ $effect(() => {
 
 /** Called by ContentAgentChat when AI wants to update form fields */
 function applyFieldUpdates(fields: Record<string, string>) {
+  const safeFields = sanitizeContentEditorAssistantFieldUpdates(
+    fields,
+    assistantFieldAllowList,
+  );
+  if (Object.keys(safeFields).length === 0) {
+    return;
+  }
+
   // Snapshot old values for undo
   const oldValues: Record<string, string> = {};
-  for (const key of Object.keys(fields)) {
+  for (const key of Object.keys(safeFields)) {
     oldValues[key] = String(formData[key] ?? '');
-    formData[key] = fields[key];
+    formData[key] = safeFields[key];
   }
   fieldUndoStack = [...fieldUndoStack, oldValues];
-  lastAppliedFields = Object.keys(fields);
+  lastAppliedFields = Object.keys(safeFields);
   showUndoBanner = true;
 }
 
@@ -1311,6 +1325,7 @@ function removeAsset(id: string) {
               {currentEditorState}
               {currentReferenceIds}
               formFields={agentChatFields}
+              {assistantFieldAllowList}
               onapplyfields={applyFieldUpdates}
               onclose={() => {}}
             />
