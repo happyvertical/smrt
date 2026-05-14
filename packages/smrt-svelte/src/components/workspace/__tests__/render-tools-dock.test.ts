@@ -7,8 +7,10 @@
  * everything away.
  */
 
-import { flushSync, mount, unmount } from 'svelte';
+import { flushSync, mount, tick, unmount } from 'svelte';
 import { afterEach, describe, expect, it } from 'vitest';
+import type { ToolsDockInstance } from '../tools-dock/define-tools-dock.svelte.js';
+import ContextForwardingHarness from './context-forwarding-harness.svelte';
 import RenderHarness from './render-harness.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
@@ -47,7 +49,7 @@ describe('<ToolsDock> rail layout', () => {
     expect(buttons[1].getAttribute('aria-label')).toBe('Jobs tool');
   });
 
-  it('opens the panel and marks the active button with aria-current when clicked', () => {
+  it('opens the panel and marks the active button with aria-pressed when clicked', () => {
     const target = render({
       tools: [
         { id: 'chat', label: 'Chat' },
@@ -62,12 +64,39 @@ describe('<ToolsDock> rail layout', () => {
     flushSync();
 
     expect(chatBtn.classList.contains('active')).toBe(true);
-    expect(chatBtn.getAttribute('aria-current')).toBe('true');
+    // aria-pressed is the right semantics for a toggle button. aria-current
+    // is reserved for navigation sets (breadcrumbs, paginators, etc.) — using
+    // both on the same control conflicts and should not appear here.
     expect(chatBtn.getAttribute('aria-pressed')).toBe('true');
+    expect(chatBtn.getAttribute('aria-current')).toBeNull();
 
     // Panel header reflects the active tool.
     const heading = target.querySelector('.tools-dock__panel-header h3');
     expect(heading?.textContent).toBe('Chat');
+  });
+
+  it('panel exposes role="dialog" and is inert when closed', () => {
+    const target = render({
+      tools: [{ id: 'chat', label: 'Chat' }],
+    });
+
+    const panel = target.querySelector('.tools-dock__panel') as
+      | (HTMLElement & { inert: boolean })
+      | null;
+    expect(panel?.getAttribute('role')).toBe('dialog');
+    // Closed state: inert is set so tab order skips the off-screen panel.
+    // Svelte 5 sets `inert` via the IDL property; jsdom reflects the property
+    // rather than the HTML attribute, so check both.
+    expect(panel?.inert === true || panel?.hasAttribute('inert')).toBe(true);
+
+    const chatBtn = target.querySelector<HTMLButtonElement>(
+      '.tools-dock__rail-button',
+    );
+    chatBtn?.click();
+    flushSync();
+
+    // Open: inert is cleared so descendants are focusable.
+    expect(panel?.inert === false && !panel?.hasAttribute('inert')).toBe(true);
   });
 
   it('closes when the close button is clicked', () => {
@@ -86,6 +115,49 @@ describe('<ToolsDock> rail layout', () => {
     flushSync();
 
     expect(aside?.classList.contains('tools-dock--open')).toBe(false);
+  });
+
+  it('forwards a late-populated `context` prop into the dock', async () => {
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+
+    let dock: ToolsDockInstance | null = null;
+    let setContextProp:
+      | ((next: { type: string; title: string } | null | undefined) => void)
+      | null = null;
+
+    const component = mount(ContextForwardingHarness, {
+      target,
+      props: {
+        onReady: (api: {
+          dock: ToolsDockInstance;
+          setContextProp: (
+            next: { type: string; title: string } | null | undefined,
+          ) => void;
+        }) => {
+          dock = api.dock;
+          setContextProp = api.setContextProp;
+        },
+      },
+    });
+    mountedComponents.push(component);
+    flushSync();
+
+    // Initial value is undefined — nothing forwarded yet.
+    expect(dock?.context).toBeNull();
+
+    // Populate the prop after mount (simulating async route data arrival).
+    setContextProp?.({ type: 'route', title: 'Hello' });
+    flushSync();
+    await tick();
+
+    expect(dock?.context).toEqual({ type: 'route', title: 'Hello' });
+
+    // Change the prop again — the effect should run idempotently.
+    setContextProp?.({ type: 'route', title: 'World' });
+    flushSync();
+    await tick();
+    expect(dock?.context).toEqual({ type: 'route', title: 'World' });
   });
 
   it('renders an empty state when no tools are available', async () => {

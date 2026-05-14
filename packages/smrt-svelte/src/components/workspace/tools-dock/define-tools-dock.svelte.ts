@@ -93,7 +93,6 @@ export interface ToolsDockInstance<TCtx = unknown> extends ToolsDockApi {
   readonly tools: ReadonlyArray<ToolDef<TCtx>>;
   readonly layout: 'rail' | 'topbar';
   readonly storageKey: string | null;
-  readonly context: ToolsDockContext | null;
   /** Internal: hydrate persisted state from `localStorage` (called by `<ToolsDock>` on mount). */
   hydrate(): void;
   /** Internal: persist current state to `localStorage`. */
@@ -220,10 +219,15 @@ export function defineToolsDock<TCtx = unknown>(
       .filter((t) => byId.has(t.id))
       .map((t) => {
         const reported = byId.get(t.id);
+        // Distinguish "key absent" (fall back to registered default) from
+        // "key present with null" (explicitly clear the badge).
+        const reportedBadge =
+          reported && 'badge' in reported ? reported.badge : undefined;
         return {
           id: t.id,
           label: reported?.label ?? t.label,
-          badge: reported?.badge ?? t.badge ?? null,
+          badge:
+            reportedBadge !== undefined ? reportedBadge : (t.badge ?? null),
         } satisfies AvailableTool;
       });
     // If the active tool is no longer available, clear it.
@@ -249,7 +253,17 @@ export function defineToolsDock<TCtx = unknown>(
     }
     const token = ++availabilityToken;
     const snapshotCtx = context;
-    void Promise.resolve(fetchAvailability(snapshotCtx))
+    // Funnel both synchronous throws (argument validation, undefined
+    // dereferences before the promise is returned) and asynchronous
+    // rejections through the same error path so neither escapes
+    // `setContext` to the component.
+    let pending: Promise<AvailableTool[]>;
+    try {
+      pending = Promise.resolve(fetchAvailability(snapshotCtx));
+    } catch (err) {
+      pending = Promise.reject(err);
+    }
+    void pending
       .then((result) => {
         if (token !== availabilityToken) return; // stale
         applyAvailability(Array.isArray(result) ? result : []);

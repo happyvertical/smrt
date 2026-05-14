@@ -28,6 +28,8 @@ interface Props {
   setContextOnMount?: ToolsDockContext | null;
   /** Force the dock open after setup (for empty-state assertions). */
   forceOpen?: boolean;
+  /** Pass-through `context` prop to <ToolsDock>. */
+  context?: ToolsDockContext | null;
 }
 
 const props: Props = $props();
@@ -58,4 +60,4 @@ onMount(() => {
 });
 </script>
 
-<ToolsDock {dock} />
+<ToolsDock {dock} context={props.context} />

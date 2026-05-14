@@ -35,15 +35,17 @@
   let { dock, context = undefined, closeLabel = 'Close tools panel' }: Props =
     $props();
 
-  // Apply the initial context once on mount. Subsequent calls to dock.setContext
-  // from outside take over normally.
-  let appliedInitialContext = false;
+  // Forward the `context` prop into the dock fully reactively: every time the
+  // prop changes (including from `undefined` to a populated value supplied by
+  // async route data), push it through. `dock.setContext` is idempotent — it
+  // re-runs `fetchAvailability` with token-gated stale-result handling. The
+  // initial-only-flag approach previously here dropped late-arriving values
+  // and interacted badly with Svelte 5's effect dependency tracking when the
+  // early-return branch fired.
   $effect(() => {
-    if (appliedInitialContext) return;
     if (context !== undefined) {
       dock.setContext(context);
     }
-    appliedInitialContext = true;
   });
 
   let panelEl = $state<HTMLDivElement | null>(null);
@@ -93,12 +95,28 @@
 
   // Persist whenever isOpen/activeTool change (defineToolsDock also persists
   // on its mutators; this catches external set-via-getter writes if any).
+  //
+  // The first effect run fires synchronously *after* `onMount(() => dock.hydrate())`
+  // applies persisted state, so we skip it: writing the hydrated values right
+  // back to storage is benign in the common case, but if `hydrate()` rejected
+  // a stale `activeTool` (no longer registered) while `isOpen` was true, that
+  // first persist would silently clear `activeTool` on reload.
   let lastIsOpen: boolean | undefined;
   let lastActive: string | null | undefined;
+  let firstPersistRun = true;
   $effect(() => {
-    if (dock.isOpen !== lastIsOpen || dock.activeTool !== lastActive) {
-      lastIsOpen = dock.isOpen;
-      lastActive = dock.activeTool;
+    // Read both reactive values to register dependencies before any branch.
+    const nextIsOpen = dock.isOpen;
+    const nextActive = dock.activeTool;
+    if (firstPersistRun) {
+      lastIsOpen = nextIsOpen;
+      lastActive = nextActive;
+      firstPersistRun = false;
+      return;
+    }
+    if (nextIsOpen !== lastIsOpen || nextActive !== lastActive) {
+      lastIsOpen = nextIsOpen;
+      lastActive = nextActive;
       dock.persist();
     }
   });
@@ -123,7 +141,6 @@
     class:active={isActive}
     class={variant === 'rail' ? 'tools-dock__rail-button' : 'tools-dock__topbar-button'}
     aria-pressed={isActive}
-    aria-current={isActive ? 'true' : undefined}
     aria-label={`${label} tool`}
     title={label}
     onclick={(event) => handleButtonClick(event, tool.id)}
@@ -146,9 +163,11 @@
   <div
     class="tools-dock__panel"
     class:tools-dock__panel--open={dock.isOpen}
-    role="region"
+    role="dialog"
     aria-label={dock.activeTool ? `${labelFor(dock.activeTool)} tool panel` : 'Tools panel'}
+    aria-modal="false"
     aria-hidden={!dock.isOpen}
+    inert={!dock.isOpen}
     bind:this={panelEl}
   >
     <header class="tools-dock__panel-header">
@@ -467,6 +486,18 @@
       height: 100dvh;
       z-index: 70;
       --tools-dock-panel-width: min(420px, calc(100vw - var(--tools-dock-rail-width)));
+    }
+
+    /* Mobile: keep panel and rail above the close overlay so taps reach the
+       tool UI. The overlay sits at z-index 65 and previously rendered above
+       the panel (no z-index) and rail (z-index: 2) within the same stacking
+       context — every tap hit the close button instead of the tool. */
+    .tools-dock__panel {
+      z-index: 70;
+    }
+
+    .tools-dock__rail {
+      z-index: 70;
     }
   }
 

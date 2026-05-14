@@ -338,6 +338,67 @@ describe('defineToolsDock', () => {
     expect(dock.activeTool).toBeNull();
   });
 
+  it('exposes context on the public ToolsDockApi surface', () => {
+    const { dock } = track(
+      mountDock({
+        tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+      }),
+    );
+
+    expect(dock.context).toBeNull();
+    dock.setContext({ type: 'route', title: 'Home' });
+    flushSync();
+    expect(dock.context).toEqual({ type: 'route', title: 'Home' });
+
+    dock.setContext(null);
+    flushSync();
+    expect(dock.context).toBeNull();
+  });
+
+  it('badge: null in availability clears a registered default (not falls back)', async () => {
+    const fetchAvailability = vi
+      .fn()
+      .mockResolvedValueOnce([{ id: 'chat', badge: null }]);
+
+    const { dock } = track(
+      mountDock({
+        tools: [{ id: 'chat', label: 'Chat', badge: 3, component: noopTool }],
+        fetchAvailability,
+      }),
+    );
+
+    dock.setContext({ type: 'a' });
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+
+    // `badge: null` is explicit ("clear it"), not a fallback signal.
+    expect(dock.availableTools[0].badge).toBeNull();
+  });
+
+  it('handles synchronous throws from fetchAvailability without surfacing them', async () => {
+    const fetchAvailability = vi.fn(() => {
+      throw new Error('sync boom');
+    });
+
+    const { dock } = track(
+      mountDock({
+        tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        fetchAvailability: fetchAvailability as unknown as (
+          ctx: import('../types.js').ToolsDockContext | null,
+        ) => Promise<import('../types.js').AvailableTool[]>,
+      }),
+    );
+
+    // The sync throw must be caught by the wrapped promise chain, not
+    // propagate out of setContext to the caller.
+    expect(() => dock.setContext({ type: 'a' })).not.toThrow();
+
+    // The internal `.catch` applies an empty-availability result.
+    await new Promise((r) => setTimeout(r, 0));
+    flushSync();
+    expect(dock.availableTools).toEqual([]);
+  });
+
   it('clears activeTool when availability removes the active tool', async () => {
     let availability: { id: string }[] = [{ id: 'chat' }, { id: 'jobs' }];
     const fetchAvailability = vi.fn(async () => availability);

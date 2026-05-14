@@ -8,11 +8,15 @@
  * Throws a clear error if called outside a `<ToolsDock>` provider tree so
  * misuse fails loudly during development rather than producing silent nulls.
  *
+ * The returned `dock.context` is the untyped {@link ToolsDockContext} shape.
+ * For typed access from within a tool body, use the `context` prop wired by
+ * `<ToolsDock>` — `ToolDef<TCtx>` parameterizes that prop, not this hook.
+ *
  * @example
  * ```svelte
  * <script lang="ts">
  *   import { useToolsDock } from '@happyvertical/smrt-svelte/workspace';
- *   const dock = useToolsDock<MyContext>();
+ *   const dock = useToolsDock();
  * </script>
  *
  * <button type="button" onclick={() => dock.close()}>Close</button>
@@ -26,11 +30,9 @@ import { TOOLS_DOCK_KEY } from './define-tools-dock.svelte.js';
 /**
  * Retrieve the {@link ToolsDockApi} from Svelte context.
  *
- * @typeParam TCtx - shape of `dock.context` for typed access inside tools
  * @throws Error when called outside a `<ToolsDock>` provider tree
  */
-export function useToolsDock<TCtx = unknown>(): ToolsDockApi {
-  void (null as unknown as TCtx); // type-only param
+export function useToolsDock(): ToolsDockApi {
   const dock = getContext<ToolsDockApi | undefined>(TOOLS_DOCK_KEY);
   if (!dock) {
     throw new Error(
@@ -46,7 +48,6 @@ export function useToolsDock<TCtx = unknown>(): ToolsDockApi {
  * optional integrations where a tool should degrade gracefully if not
  * embedded inside a `<ToolsDock>`.
  */
-export function tryUseToolsDock<TCtx = unknown>(): ToolsDockApi | null {
-  void (null as unknown as TCtx);
+export function tryUseToolsDock(): ToolsDockApi | null {
   return getContext<ToolsDockApi | undefined>(TOOLS_DOCK_KEY) ?? null;
 }
