@@ -30,12 +30,18 @@ $effect(() => {
   if (!savedContentId) {
     loadedContentId = null;
     versions = [];
+    busy = false;
+    error = null;
+    notice = null;
     return;
   }
 
   if (savedContentId !== loadedContentId) {
     loadedContentId = savedContentId;
-    void refreshVersions();
+    versions = [];
+    error = null;
+    notice = null;
+    void refreshVersions(savedContentId);
   }
 });
 
@@ -62,41 +68,50 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   return null;
 }
 
-async function refreshVersions() {
-  if (!savedContentId) return;
+async function refreshVersions(contentIdToLoad = savedContentId) {
+  if (!contentIdToLoad) return;
 
   busy = true;
   error = null;
 
   try {
-    const response = await client.contents.getVersions(savedContentId);
+    const response = await client.contents.getVersions(contentIdToLoad);
+    if (savedContentId !== contentIdToLoad) return;
     versions = response.data;
     onVersionsChange?.(response.data);
   } catch (err: any) {
+    if (savedContentId !== contentIdToLoad) return;
     error = err.message || 'Failed to load versions';
   } finally {
-    busy = false;
+    if (savedContentId === contentIdToLoad) {
+      busy = false;
+    }
   }
 }
 
 async function createSnapshot() {
   if (!savedContentId) return;
 
+  const contentIdToSnapshot = savedContentId;
   busy = true;
   error = null;
   notice = null;
 
   try {
-    await client.contents.createVersion(savedContentId, {
+    await client.contents.createVersion(contentIdToSnapshot, {
       kind: 'manual',
       summary: 'Manual editorial snapshot',
     });
+    if (savedContentId !== contentIdToSnapshot) return;
     notice = 'Snapshot created.';
-    await refreshVersions();
+    await refreshVersions(contentIdToSnapshot);
   } catch (err: any) {
+    if (savedContentId !== contentIdToSnapshot) return;
     error = err.message || 'Failed to create version snapshot';
   } finally {
-    busy = false;
+    if (savedContentId === contentIdToSnapshot) {
+      busy = false;
+    }
   }
 }
 
@@ -107,18 +122,23 @@ async function restoreVersion(versionNumber: number) {
     return;
   }
 
+  const contentIdToRestore = savedContentId;
   busy = true;
   error = null;
   notice = null;
 
   try {
-    await client.contents.restoreVersion(savedContentId, versionNumber);
+    await client.contents.restoreVersion(contentIdToRestore, versionNumber);
+    if (savedContentId !== contentIdToRestore) return;
     notice = `Restored version ${versionNumber}.`;
-    await refreshVersions();
+    await refreshVersions(contentIdToRestore);
   } catch (err: any) {
+    if (savedContentId !== contentIdToRestore) return;
     error = err.message || 'Failed to restore version';
   } finally {
-    busy = false;
+    if (savedContentId === contentIdToRestore) {
+      busy = false;
+    }
   }
 }
 </script>
