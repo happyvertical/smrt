@@ -412,10 +412,17 @@ startup and seeds sample content (3 items) for immediate testing.
 | `ContentEditor` | `content`, `contentId`, `onSave`, `onCancel` | Full content editor with metadata, assets, references |
 | `GovernedContentEditor` | `content`, `contentId`, `onSave`, `onCancel` | Editor with integrated governance panel and review controls |
 | `ContentAgentChat` | `contentId`, `apiBasePath` | AI chat sidebar for content with thread management |
+| `ContentTitleField`, `ContentStatusFields`, `ContentMetadataFields`, `ContentReferencesPanel`, `ContentImageBrowser` | focused field/section props | Composable editor primitives for application-owned layouts |
+| `ContentReviewStatusTray` | `items`, `activeId`, `open`, `onSelect` | Compact review status tray for inline review drawers |
 | `ArticleCard` | `article` | Card display for an article |
 | `ArticleList` | `articles` | List of article cards |
 | `ImageThumbnail` | `src`, `alt` | Thumbnail image display |
 | `Markdown` | `source` | Markdown renderer |
+
+Applications that compose their own article editor can use
+`createContentEditorState`, `getContentEditorAssetImageSource`, and
+`resolveContentEditorImageSelection` to share the same form normalization,
+thumbnail selection, and save payload behavior as the package editors.
 
 ### Governance
 
