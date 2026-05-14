@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.24.14
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - reset governance tool state on content changes (#1223) (content)
+  - @happyvertical/smrt-scanner@0.24.14
+  - @happyvertical/smrt-config@0.24.14
+  - @happyvertical/smrt-types@0.24.14
+
 ## 0.24.13
 
 ### Patch Changes
