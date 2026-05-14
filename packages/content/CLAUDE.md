@@ -74,10 +74,10 @@ Three strategies via ThumbnailGenerator:
 - **static-map**: requires `metadata.latitude`/`longitude` (via `@happyvertical/geo`)
 - **ai-generate**: AI image generation (dynamic import of `@happyvertical/ai`)
 
-## Svelte Components (19 total)
+## Svelte Components
 
 ### Content Management
-`ContentList`, `ContentEditor`, `GovernedContentEditor`, `ContentAgentChat`, `ArticleCard`, `ArticleList`, `ImageThumbnail`, `Markdown`
+`ContentList`, `ContentEditor`, `GovernedContentEditor`, `ContentAgentChat`, `ContentTitleField`, `ContentStatusFields`, `ContentMetadataFields`, `ContentReferencesPanel`, `ContentImageBrowser`, `ContentReviewStatusTray`, `ArticleCard`, `ArticleList`, `ImageThumbnail`, `Markdown`
 
 ### Governance
 `ContentGovernanceManager`, `ContentGovernancePanel`, `ContentGovernancePolicyEditor`, `ContentGovernanceProfileEditor`, `ContentGovernanceAssignmentEditor`, `ContentTransparencyReport`

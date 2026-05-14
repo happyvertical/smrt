@@ -11,6 +11,7 @@ vi.mock('@happyvertical/smrt-images/svelte', async () => ({
 import ContentImageBrowser from './ContentImageBrowser.svelte';
 import ContentMetadataFields from './ContentMetadataFields.svelte';
 import ContentReferencesPanel from './ContentReferencesPanel.svelte';
+import ContentReviewStatusTray from './ContentReviewStatusTray.svelte';
 import ContentStatusFields from './ContentStatusFields.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
@@ -174,5 +175,58 @@ describe('content editor building block components', () => {
       '[data-testid="image-uploader-stub"]',
     ) as HTMLElement | null;
     expect(uploader?.dataset.apiBaseUrl).toBe('/tenant/api/v1');
+  });
+
+  it('renders accessible review tray buttons and invokes selection', () => {
+    const onSelect = vi.fn();
+    const target = renderComponent(ContentReviewStatusTray, {
+      activeId: 'facts',
+      open: true,
+      label: 'Editorial checks',
+      items: [
+        {
+          id: 'content',
+          icon: 'content',
+          label: 'Content',
+          tone: 'neutral',
+          status: 'Ready',
+        },
+        {
+          id: 'facts',
+          icon: 'facts',
+          label: 'Facts',
+          tone: 'warning',
+          status: 'Review needed',
+        },
+      ],
+      onSelect,
+    });
+
+    expect(target.querySelector('[role="tablist"]')).toBeNull();
+    expect(target.querySelector('[role="tab"]')).toBeNull();
+    expect(
+      target.querySelector('[role="group"]')?.getAttribute('aria-label'),
+    ).toBe('Editorial checks');
+
+    const buttons = Array.from(target.querySelectorAll('button'));
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map((button) => button.getAttribute('title'))).toEqual([
+      'Content: Ready',
+      'Facts: Review needed',
+    ]);
+    expect(
+      buttons.map((button) => button.getAttribute('aria-pressed')),
+    ).toEqual(['false', 'true']);
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      'Content: Ready',
+      'Facts: Review needed',
+    ]);
+
+    buttons[1].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    flushSync();
+
+    expect(onSelect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'facts' }),
+    );
   });
 });

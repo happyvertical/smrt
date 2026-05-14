@@ -36,7 +36,9 @@ import ContentImageChooser from './components/ContentImageChooser.svelte';
 import ContentList from './components/ContentList.svelte';
 import ContentMetadataFields from './components/ContentMetadataFields.svelte';
 import ContentReferencesPanel from './components/ContentReferencesPanel.svelte';
+import ContentReviewStatusTray from './components/ContentReviewStatusTray.svelte';
 import ContentStatusFields from './components/ContentStatusFields.svelte';
+import ContentTitleField from './components/ContentTitleField.svelte';
 import ContentTransparencyReport from './components/ContentTransparencyReport.svelte';
 import ContentTransparencyTool from './components/ContentTransparencyTool.svelte';
 import ContentVersionsTool from './components/ContentVersionsTool.svelte';
@@ -83,7 +85,9 @@ export {
   ContentList,
   ContentMetadataFields,
   ContentReferencesPanel,
+  ContentReviewStatusTray,
   ContentStatusFields,
+  ContentTitleField,
   ContentTransparencyReport,
   ContentTransparencyTool,
   ContentVersionsTool,
@@ -108,6 +112,7 @@ export type ArticleCardProps = ComponentProps<typeof ArticleCard>;
 export type ArticleListProps = ComponentProps<typeof ArticleList>;
 export type ContentAgentChatProps = ComponentProps<typeof ContentAgentChat>;
 export type ContentBodyEditorProps = ComponentProps<typeof ContentBodyEditor>;
+export type { ContentBodyEditorChange } from './components/ContentBodyEditor.svelte';
 export type ContentBodyRendererProps = ComponentProps<
   typeof ContentBodyRenderer
 >;
@@ -136,9 +141,18 @@ export type ContentMetadataFieldsProps = ComponentProps<
 export type ContentReferencesPanelProps = ComponentProps<
   typeof ContentReferencesPanel
 >;
+export type ContentReviewStatusTrayProps = ComponentProps<
+  typeof ContentReviewStatusTray
+>;
+export type {
+  ContentReviewStatusIcon,
+  ContentReviewStatusTone,
+  ContentReviewStatusTrayItem,
+} from './components/ContentReviewStatusTray.svelte';
 export type ContentStatusFieldsProps = ComponentProps<
   typeof ContentStatusFields
 >;
+export type ContentTitleFieldProps = ComponentProps<typeof ContentTitleField>;
 export type ContentListProps = ComponentProps<typeof ContentList>;
 export type ContentContributionFormProps = ComponentProps<
   typeof ContentContributionForm
@@ -240,6 +254,20 @@ export {
   getContentEditorSnapshot,
   normalizePublishDate,
 } from './content-editor-form.js';
+export {
+  createContentEditorImageRecord,
+  getContentEditorAssetImageSource,
+  readContentEditorFileAsDataUrl,
+  resolveContentEditorImageSelection,
+} from './content-editor-media.js';
+export type {
+  ContentEditorFieldChange,
+  CreateContentEditorStateOptions,
+} from './content-editor-state.svelte.js';
+export {
+  ContentEditorState,
+  createContentEditorState,
+} from './content-editor-state.svelte.js';
 export type {
   ContentRouteId,
   ContentRouteKey,
