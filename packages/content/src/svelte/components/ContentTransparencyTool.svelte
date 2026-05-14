@@ -36,13 +36,19 @@ $effect(() => {
     governanceState = null;
     transparencyPreview = null;
     publishedTransparency = null;
+    busy = false;
+    error = null;
     onGovernanceStateChange?.(null);
     return;
   }
 
   if (savedContentId !== loadedContentId) {
     loadedContentId = savedContentId;
-    void loadTransparency();
+    governanceState = null;
+    transparencyPreview = null;
+    publishedTransparency = null;
+    error = null;
+    void loadTransparency(savedContentId);
   }
 });
 
@@ -58,8 +64,8 @@ function getReferenceLabel(reference: {
   return reference.title || reference.url || 'Untitled reference';
 }
 
-async function loadTransparency() {
-  if (!savedContentId) return;
+async function loadTransparency(contentIdToLoad = savedContentId) {
+  if (!contentIdToLoad) return;
 
   busy = true;
   error = null;
@@ -70,18 +76,22 @@ async function loadTransparency() {
       transparencyPreviewResponse,
       publishedTransparencyResponse,
     ] = await Promise.all([
-      client.contents.getGovernanceState(savedContentId),
-      client.contents.getTransparencyPreview(savedContentId),
-      client.contents.getPublishedTransparency(savedContentId),
+      client.contents.getGovernanceState(contentIdToLoad),
+      client.contents.getTransparencyPreview(contentIdToLoad),
+      client.contents.getPublishedTransparency(contentIdToLoad),
     ]);
+    if (savedContentId !== contentIdToLoad) return;
     governanceState = governanceResponse.data;
     transparencyPreview = transparencyPreviewResponse.data;
     publishedTransparency = publishedTransparencyResponse.data;
     onGovernanceStateChange?.(governanceResponse.data);
   } catch (err: any) {
+    if (savedContentId !== contentIdToLoad) return;
     error = err.message || 'Failed to load transparency';
   } finally {
-    busy = false;
+    if (savedContentId === contentIdToLoad) {
+      busy = false;
+    }
   }
 }
 </script>

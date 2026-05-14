@@ -35,17 +35,34 @@ let correctedFactText = $state('');
 let correctionPublicNote = $state('');
 let publishCorrection = $state(true);
 
+function resetCorrectionDraft() {
+  correctionSummary = '';
+  correctionFactId = '';
+  correctedFactText = '';
+  correctionPublicNote = '';
+  publishCorrection = true;
+}
+
 $effect(() => {
   if (!savedContentId) {
     loadedContentId = null;
     corrections = [];
     facts = [];
+    busy = false;
+    error = null;
+    notice = null;
+    resetCorrectionDraft();
     return;
   }
 
   if (savedContentId !== loadedContentId) {
     loadedContentId = savedContentId;
-    void loadCorrections();
+    corrections = [];
+    facts = [];
+    error = null;
+    notice = null;
+    resetCorrectionDraft();
+    void loadCorrections(savedContentId);
   }
 });
 
@@ -79,36 +96,41 @@ function getCorrectionProvenanceCopy(correction: ContentCorrectionData) {
   return null;
 }
 
-async function loadCorrections() {
-  if (!savedContentId) return;
+async function loadCorrections(contentIdToLoad = savedContentId) {
+  if (!contentIdToLoad) return;
 
   busy = true;
   error = null;
 
   try {
     const [correctionsResponse, factsResponse] = await Promise.all([
-      client.contents.getCorrections(savedContentId),
-      client.contents.getFacts(savedContentId, defaultRelationship),
+      client.contents.getCorrections(contentIdToLoad),
+      client.contents.getFacts(contentIdToLoad, defaultRelationship),
     ]);
+    if (savedContentId !== contentIdToLoad) return;
     corrections = correctionsResponse.data;
     facts = factsResponse.data.facts || [];
     onCorrectionsChange?.(correctionsResponse.data);
   } catch (err: any) {
+    if (savedContentId !== contentIdToLoad) return;
     error = err.message || 'Failed to load corrections';
   } finally {
-    busy = false;
+    if (savedContentId === contentIdToLoad) {
+      busy = false;
+    }
   }
 }
 
 async function issueCorrection() {
-  if (!savedContentId) return;
+  if (!savedContentId || busy) return;
 
+  const contentIdToCorrect = savedContentId;
   busy = true;
   error = null;
   notice = null;
 
   try {
-    await client.contents.issueCorrection(savedContentId, {
+    await client.contents.issueCorrection(contentIdToCorrect, {
       summary: correctionSummary,
       factId: correctionFactId || undefined,
       correctedFactText: correctedFactText || undefined,
@@ -116,17 +138,18 @@ async function issueCorrection() {
       publish: publishCorrection,
     });
 
-    correctionSummary = '';
-    correctedFactText = '';
-    correctionPublicNote = '';
-    publishCorrection = true;
+    if (savedContentId !== contentIdToCorrect) return;
+    resetCorrectionDraft();
 
     notice = 'Correction issued.';
-    await loadCorrections();
+    await loadCorrections(contentIdToCorrect);
   } catch (err: any) {
+    if (savedContentId !== contentIdToCorrect) return;
     error = err.message || 'Failed to issue correction';
   } finally {
-    busy = false;
+    if (savedContentId === contentIdToCorrect) {
+      busy = false;
+    }
   }
 }
 </script>
