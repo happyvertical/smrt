@@ -125,18 +125,32 @@ and the current role id; renders `<WorkspaceShell>` + `<NavTree>` + `<Breadcrumb
 wired together. Role colors flow through as `--smrt-role-color` CSS custom property.
 
 ```svelte
+<script lang="ts">
+  import { page } from '$app/state';
+  import { RoleShell } from '@happyvertical/smrt-svelte/workspace';
+  import AccountMenu from '$lib/AccountMenu.svelte';
+  import { ROLE_CONFIGS } from '$lib/roles';
+
+  let { data, children } = $props();
+  let mobileNavOpen = $state(false);
+</script>
+
 <RoleShell
   roles={ROLE_CONFIGS}
-  currentRole={currentRole}
+  currentRole={data.currentRole}
   currentPath={page.url.pathname}
   bind:mobileNavOpen
 >
   {#snippet sidebarFooter()}
     <AccountMenu user={data.user} />
   {/snippet}
-  <Outlet />
+  {@render children?.()}
 </RoleShell>
 ```
+
+The `{@render children?.()}` call is the Svelte 5 idiom for rendering a
+layout's child route content — replace with the equivalent slot/render call
+for your framework if you're not using SvelteKit's `+layout.svelte` flow.
 
 The shell intentionally doesn't know about specific role IDs — consumers pick
 whatever set their app needs. Use this for role-based admin dashboards; use

@@ -119,7 +119,16 @@ describe('RoleShell', () => {
     }
   });
 
-  it('throws a descriptive error when currentRole does not match any role.id', () => {
+  it('throws a descriptive error in dev when currentRole does not match any role.id', async () => {
+    // vitest runs with NODE_ENV=test which `esm-env` treats as
+    // development (DEV === true), so the dev-throw branch fires here.
+    // In production builds (`NODE_ENV=production`), the shell falls back
+    // to `roles[0]` rather than crashing — see the DEV check inside
+    // RoleShell's `$derived.by`. The fallback path is statically
+    // wired against esm-env's resolution and can't be cleanly faked in
+    // vitest, so we only assert the loud-error contract here.
+    const { DEV } = await import('esm-env');
+    expect(DEV).toBe(true);
     expect(() =>
       mount(RoleShell, {
         target: container,
@@ -292,7 +301,7 @@ describe('RoleShell', () => {
     }
   });
 
-  it('passes through the inspector and inspectorRail snippets', () => {
+  it('passes through the inspectorRail snippet', () => {
     const component = mount(RoleShell, {
       target: container,
       props: {
@@ -307,6 +316,257 @@ describe('RoleShell', () => {
     try {
       const rail = container.querySelector('.smrt-workspace-inspector-rail');
       expect(rail?.textContent).toContain('rail-button');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders the inspector snippet only when showInspector is true', () => {
+    // The inspector passthrough requires both the snippet AND
+    // `showInspector` because WorkspaceShell gates rendering on the latter.
+    // Regression for happyvertical/smrt#1238 — the original RoleShell
+    // forwarded only the snippet, making the inspector silently
+    // un-renderable through this wrapper.
+    const componentHidden = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        inspector: textSnippet('inspector-body'),
+        children: textSnippet('content'),
+      },
+    });
+    try {
+      expect(container.querySelector('.smrt-workspace-inspector')).toBeNull();
+    } finally {
+      unmount(componentHidden);
+    }
+
+    // Mount a second instance with showInspector: true into the same
+    // container — the inspector should now render.
+    const componentShown = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        inspector: textSnippet('inspector-body'),
+        showInspector: true,
+        children: textSnippet('content'),
+      },
+    });
+    try {
+      const inspector = container.querySelector(
+        '.smrt-workspace-inspector .inspector-body',
+      );
+      expect(inspector?.textContent).toContain('inspector-body');
+    } finally {
+      unmount(componentShown);
+    }
+  });
+
+  it('forwards collapsed + onToggleCollapsed to WorkspaceShell', () => {
+    let toggled = 0;
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        collapsed: true,
+        onToggleCollapsed: () => {
+          toggled += 1;
+        },
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      // The collapse state surfaces as a class on the shell root.
+      const shell = container.querySelector('.smrt-workspace-shell');
+      expect(shell?.classList.contains('sidebar-collapsed')).toBe(true);
+
+      // The toggle button only renders when `onToggleCollapsed` is provided —
+      // clicking it should invoke our callback.
+      const toggle =
+        container.querySelector<HTMLButtonElement>('.shell-toggle');
+      expect(toggle).not.toBeNull();
+      toggle?.click();
+      expect(toggled).toBe(1);
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('forwards mode/eyebrow props to the WorkspaceShell topbar', () => {
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        eyebrow: 'EYE',
+        modeLabel: 'Local-first mode',
+        modeStatus: 'local-only',
+        modeDetail: 'detail line',
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const topbar = container.querySelector('.smrt-workspace-topbar');
+      expect(topbar?.textContent).toContain('Local-first mode');
+      expect(topbar?.textContent).toContain('detail line');
+      const badge = topbar?.querySelector<HTMLElement>('.mode-badge');
+      expect(badge?.dataset.status).toBe('local-only');
+      // The eyebrow appears in the topbar's eyebrow slot.
+      expect(topbar?.querySelector('.topbar-eyebrow')?.textContent).toContain(
+        'EYE',
+      );
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('uses rootCrumb override when provided', () => {
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/dashboard/super/tenants',
+        rootCrumb: { label: 'Dashboard', href: '/dashboard' },
+        breadcrumbStartAfter: 'dashboard',
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const crumbs = container.querySelector('.smrt-breadcrumbs');
+      expect(crumbs).not.toBeNull();
+      const first = crumbs?.querySelector<HTMLAnchorElement>(
+        '.crumb-item:first-child .crumb-link',
+      );
+      expect(first?.textContent).toBe('Dashboard');
+      expect(first?.getAttribute('href')).toBe('/dashboard');
+      // With startAfter=dashboard, the auto-walk skips the `dashboard`
+      // prefix and the resulting trail should NOT contain a duplicate
+      // `Dashboard` fallback crumb.
+      const labels = Array.from(
+        crumbs?.querySelectorAll('.crumb-item') ?? [],
+      ).map((el) => el.textContent ?? '');
+      const dashboardCrumbs = labels.filter((l) => l.includes('Dashboard'));
+      expect(dashboardCrumbs.length).toBe(1);
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders role.icon in the default brand area when no brand snippet is provided', () => {
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const icon = container.querySelector('.smrt-role-shell-icon');
+      expect(icon).not.toBeNull();
+      // RoleConfig.icon is a string glyph — render as text content.
+      expect(icon?.textContent).toContain('⌘');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('omits role.icon when a consumer brand snippet is provided', () => {
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        brand: textSnippet('CustomBrand'),
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      expect(container.querySelector('.smrt-role-shell-icon')).toBeNull();
+      const brand = container.querySelector('.brand');
+      expect(brand?.textContent).toContain('CustomBrand');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('forwards navIconComponent to the inner NavTree', async () => {
+    // Use a tiny stub component so we can assert the icon-rendering branch
+    // fired. NavTree renders `<IconComponent name=... size=... />` in the
+    // icon slot when this prop is provided.
+    const TestIcon = (await import('./test-icon.svelte')).default;
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        navIconComponent: TestIcon,
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const iconStub = container.querySelector(
+        '.smrt-nav-tree [data-testid="custom-icon"]',
+      );
+      expect(iconStub).not.toBeNull();
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('invokes the composed onNavigate callback alongside closing the drawer', async () => {
+    let called = 0;
+    let controls!: {
+      setMobileNavOpen: (next: boolean) => void;
+      getMobileNavOpen: () => boolean;
+    };
+    const component = mount(BindHarness, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        initial: true,
+        onNavigate: () => {
+          called += 1;
+        },
+        onReady: (c) => {
+          controls = c;
+        },
+      },
+    });
+
+    try {
+      await tick();
+      expect(controls.getMobileNavOpen()).toBe(true);
+
+      const navLink = container.querySelector<HTMLAnchorElement>(
+        '.smrt-nav-tree .nav-item',
+      );
+      navLink?.addEventListener('click', (e) => e.preventDefault());
+      navLink?.click();
+      await tick();
+
+      // The internal close still fires AND the consumer callback ran.
+      expect(controls.getMobileNavOpen()).toBe(false);
+      expect(called).toBe(1);
     } finally {
       unmount(component);
     }

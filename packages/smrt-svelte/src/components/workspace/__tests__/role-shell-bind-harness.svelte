@@ -13,6 +13,7 @@ interface Props {
   currentRole: string;
   currentPath?: string;
   initial?: boolean;
+  onNavigate?: () => void;
   onReady?: (controls: {
     setMobileNavOpen: (next: boolean) => void;
     getMobileNavOpen: () => boolean;
@@ -24,6 +25,7 @@ const {
   currentRole,
   currentPath = '/',
   initial = false,
+  onNavigate,
   onReady,
 }: Props = $props();
 
@@ -41,6 +43,12 @@ onReady?.({
 });
 </script>
 
-<RoleShell {roles} {currentRole} {currentPath} bind:mobileNavOpen>
+<RoleShell
+  {roles}
+  {currentRole}
+  {currentPath}
+  {onNavigate}
+  bind:mobileNavOpen
+>
   {@render content()}
 </RoleShell>

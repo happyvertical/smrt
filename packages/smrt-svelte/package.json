@@ -115,7 +115,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@happyvertical/smrt-types": "workspace:*"
+    "@happyvertical/smrt-types": "workspace:*",
+    "esm-env": "^1.2.2"
   },
   "peerDependencies": {
     "@happyvertical/smrt-agents": "workspace:*",

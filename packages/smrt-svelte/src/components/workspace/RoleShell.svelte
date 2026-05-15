@@ -14,14 +14,24 @@
  * SvelteKit imports. Consumers pass `currentPath` explicitly (typically
  * from `page.url.pathname`).
  *
+ * **Missing-role behaviour**: in development a thrown error makes the
+ * misconfiguration loud and immediate. In production we fall back to the
+ * first role in `roles[]` (or, if `roles[]` is empty, a synthetic empty
+ * role) so a brief mismatch — role-switch race, SSR hydration with stale
+ * data, an empty array before data loads — degrades to a harmless empty
+ * shell instead of crashing the component tree. Svelte 5 has no built-in
+ * error boundary, so a hard throw inside `$derived.by` would unmount the
+ * whole shell. See `happyvertical/smrt#1238` review feedback.
+ *
  * See `happyvertical/smrt#1226` (Phase 4b) for design notes. The
  * SmrtObject-aware piece was originally scoped here but has been
  * deferred — this primitive is intentionally cheap and low-blast-radius.
  */
-import type { Snippet } from 'svelte';
+import { DEV } from 'esm-env';
+import type { Component, Snippet } from 'svelte';
 import Breadcrumbs from './Breadcrumbs.svelte';
 import NavTree from './NavTree.svelte';
-import type { RoleConfig } from './types.js';
+import type { BreadcrumbItem, NavItem, RoleConfig } from './types.js';
 import WorkspaceShell from './WorkspaceShell.svelte';
 
 interface Props {
@@ -35,22 +45,78 @@ interface Props {
   title?: string;
   /** Optional: override the shell subtitle; defaults to the current role's description. */
   subtitle?: string;
-  /** Optional: brand snippet — passes through to `WorkspaceShell`. */
+  /** Optional: small uppercase eyebrow label rendered above the title — passes through to `WorkspaceShell`. */
+  eyebrow?: string;
+  /** Optional: topbar mode label — passes through. */
+  modeLabel?: string;
+  /** Optional: topbar mode status — passes through. */
+  modeStatus?:
+    | 'active'
+    | 'offline'
+    | 'local-only'
+    | 'attention'
+    | (string & {});
+  /** Optional: topbar mode detail — passes through. */
+  modeDetail?: string;
+  /** Optional: sidebar collapsed state — passes through to `WorkspaceShell`. */
+  collapsed?: boolean;
+  /** Optional: sidebar collapse handler — passes through to `WorkspaceShell`. */
+  onToggleCollapsed?: () => void;
+  /** Optional: whether the collapse toggle should render — passes through. */
+  collapsible?: boolean;
+  /** Optional: whether the inspector panel is currently shown — passes through. */
+  showInspector?: boolean;
+  /** Optional: inspector header label — passes through. */
+  inspectorTitle?: string;
+  /** Optional: inspector close handler — passes through. */
+  onCloseInspector?: () => void;
+  /** Optional: brand snippet — passes through to `WorkspaceShell`. When omitted, the default brand renders `role.icon` (if any) alongside the resolved title/subtitle. */
   brand?: Snippet;
   /** Optional: sidebar footer (account menu, tenant switcher) — passes through. */
   sidebarFooter?: Snippet;
   /** Optional: topbar actions — passes through. */
   topbarActions?: Snippet;
-  /** Optional: inspector panel — passes through. */
+  /** Optional: inspector panel — passes through. Inspector content only renders when `showInspector` is also true. */
   inspector?: Snippet;
   /** Optional: inspector rail — passes through. */
   inspectorRail?: Snippet;
   /** Required: main content. */
   children: Snippet;
-  /** Optional: bind mobile drawer state for external control. */
+  /**
+   * Mobile drawer open state — bindable via Svelte 5 `$bindable`. Pass as
+   * `bind:mobileNavOpen={...}` to control externally (e.g. close the drawer
+   * after a route change). Defaults to `false`.
+   */
   mobileNavOpen?: boolean;
   /** Optional: show breadcrumbs (default: true). */
   showBreadcrumbs?: boolean;
+  /**
+   * Optional: override the breadcrumb's root crumb. Defaults to
+   * `{ label: role.label, href: '/' + role.id }`. Set this when the shell
+   * is mounted under a prefix (e.g. `/dashboard/[role]/...`,
+   * `/t/:slug/admin`) so the root crumb points at a real route.
+   */
+  rootCrumb?: BreadcrumbItem;
+  /**
+   * Optional: pathname prefix to skip when auto-walking breadcrumbs.
+   * Forwarded to `<Breadcrumbs startAfter={...}>` — useful when the shell
+   * is mounted under e.g. `/dashboard/[role]` and you don't want the
+   * `dashboard` segment to render an extra fallback crumb.
+   */
+  breadcrumbStartAfter?: string;
+  /**
+   * Optional: icon renderer for `NavItem.icon` values, forwarded to the
+   * inner `<NavTree>`. Pass an icon component (lucide-svelte etc.) when
+   * your nav configs use icon *names* rather than emoji glyphs.
+   */
+  navIconComponent?: Component<{ name: string; size?: number }>;
+  /**
+   * Optional: extra side-effect to run after a nav link click. The shell
+   * always closes the mobile drawer on navigation; this callback fires
+   * after that internal close so consumers can layer in analytics,
+   * router-store updates, etc. without losing the drawer behaviour.
+   */
+  onNavigate?: () => void;
 }
 
 let {
@@ -59,7 +125,20 @@ let {
   currentPath,
   title,
   subtitle,
-  brand,
+  eyebrow,
+  modeLabel,
+  modeStatus,
+  modeDetail,
+  collapsed,
+  onToggleCollapsed,
+  collapsible,
+  showInspector,
+  inspectorTitle,
+  onCloseInspector,
+  // Renamed locally so the snippet block below can declare `{#snippet brand()}`
+  // without shadowing the prop (which would cause `{@render brand()}` to
+  // recurse into the new snippet instead of the consumer-supplied one).
+  brand: consumerBrand,
   sidebarFooter,
   topbarActions,
   inspector,
@@ -67,21 +146,45 @@ let {
   children,
   mobileNavOpen = $bindable(false),
   showBreadcrumbs = true,
+  rootCrumb,
+  breadcrumbStartAfter,
+  navIconComponent,
+  onNavigate,
 }: Props = $props();
 
-const role = $derived.by(() => {
+/**
+ * Stable empty fallback used when `roles[]` is empty *and* we're in
+ * production. Constructed once so identity comparisons stay stable across
+ * derivations.
+ */
+const EMPTY_ROLE: RoleConfig = {
+  id: '',
+  label: '',
+  sections: [] as NavItem[],
+};
+
+const role = $derived.by((): RoleConfig => {
   const found = roles.find((r) => r.id === currentRole);
-  if (!found) {
+  if (found) return found;
+  // Dev: fail loud so misconfiguration is caught in test/dev. Prod: fall
+  // back so a brief mismatch (role-switch race, SSR with stale data,
+  // empty array before data loads) degrades to an empty shell rather
+  // than crashing the entire component tree. Svelte 5 has no error
+  // boundary, so a throw inside $derived.by would unmount the shell.
+  if (DEV) {
     throw new Error(
       `[RoleShell] No role found for id "${currentRole}". ` +
         `Available role ids: ${roles.map((r) => r.id).join(', ') || '(none)'}.`,
     );
   }
-  return found;
+  return roles[0] ?? EMPTY_ROLE;
 });
 
 const resolvedTitle = $derived(title ?? role.label);
 const resolvedSubtitle = $derived(subtitle ?? role.description ?? '');
+const resolvedRootCrumb = $derived(
+  rootCrumb ?? { label: role.label, href: `/${role.id}` },
+);
 /**
  * Set the role-color CSS custom property on the shell wrapper when the
  * role config supplies one. Consumer stylesheets can read this via
@@ -92,26 +195,59 @@ const resolvedSubtitle = $derived(subtitle ?? role.description ?? '');
 const wrapperStyle = $derived(
   role.color ? `--smrt-role-color: ${role.color};` : undefined,
 );
+
+function handleNavigate(): void {
+  // Always close the mobile drawer on nav click — this is the behaviour
+  // consumers historically wired up by hand. The optional `onNavigate`
+  // prop lets them layer in additional side-effects (analytics, store
+  // updates, etc.) without losing the close.
+  mobileNavOpen = false;
+  onNavigate?.();
+}
 </script>
 
 <div class="smrt-role-shell" data-role-id={role.id} style={wrapperStyle}>
   <WorkspaceShell
     title={resolvedTitle}
     subtitle={resolvedSubtitle}
-    {brand}
+    {eyebrow}
+    {modeLabel}
+    {modeStatus}
+    {modeDetail}
+    {collapsed}
+    {onToggleCollapsed}
+    {collapsible}
+    {showInspector}
+    {inspectorTitle}
+    {onCloseInspector}
     {sidebarFooter}
     {topbarActions}
     {inspector}
     {inspectorRail}
     bind:mobileNavOpen
   >
+    {#snippet brand()}
+      {#if consumerBrand}
+        {@render consumerBrand()}
+      {:else}
+        {#if role.icon}
+          <span class="smrt-role-shell-icon" aria-hidden="true">{role.icon}</span>
+        {/if}
+        {#if resolvedTitle}
+          <h1>{resolvedTitle}</h1>
+        {/if}
+        {#if resolvedSubtitle}
+          <p class="subtitle">{resolvedSubtitle}</p>
+        {/if}
+      {/if}
+    {/snippet}
+
     {#snippet nav()}
       <NavTree
         items={role.sections}
         {currentPath}
-        onNavigate={() => {
-          mobileNavOpen = false;
-        }}
+        iconComponent={navIconComponent}
+        onNavigate={handleNavigate}
       />
     {/snippet}
 
@@ -119,7 +255,8 @@ const wrapperStyle = $derived(
       <Breadcrumbs
         nav={role.sections}
         pathname={currentPath}
-        rootCrumb={{ label: role.label, href: `/${role.id}` }}
+        rootCrumb={resolvedRootCrumb}
+        startAfter={breadcrumbStartAfter}
       />
     {/if}
     {@render children()}
@@ -135,5 +272,19 @@ const wrapperStyle = $derived(
    */
   .smrt-role-shell {
     display: contents;
+  }
+
+  /*
+   * The default brand snippet renders the role icon as a leading glyph.
+   * Sized to match `<h1>` line-height so the icon stays vertically aligned
+   * with the title baseline. Consumer-provided `brand` snippets bypass
+   * this entirely.
+   */
+  .smrt-role-shell-icon {
+    display: inline-block;
+    margin-right: 0.4rem;
+    font-size: 1.1rem;
+    line-height: 1;
+    color: var(--smrt-role-color, var(--smrt-color-on-surface, #111827));
   }
 </style>
