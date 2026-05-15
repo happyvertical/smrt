@@ -1,5 +1,29 @@
 # @happyvertical/smrt-core
 
+## 0.25.1
+
+### Patch Changes
+
+- ### Features
+
+  - add ToolsDock system (smrt-svelte)
+  - add WorkspaceShell primitive (smrt-svelte)
+  - add NavTree and Breadcrumbs primitives (smrt-svelte)
+
+  ### Bug Fixes
+
+  - address Copilot review comments on workspace primitives (smrt-svelte)
+  - address ToolsDock review findings (smrt-svelte)
+  - address WorkspaceShell review findings (smrt-svelte)
+  - address NavTree + Breadcrumbs review findings (smrt-svelte)
+
+  ### Other Changes
+
+  - chore: scaffold workspace primitives directory + shared types (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.25.1
+  - @happyvertical/smrt-config@0.25.1
+  - @happyvertical/smrt-types@0.25.1
+
 ## 1.0.0
 
 ### Patch Changes

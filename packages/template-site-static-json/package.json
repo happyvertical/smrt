@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-template-site-static-json",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "Static community site template with JSON data storage and SMRT framework",
   "type": "module",
   "main": "index.js",
@@ -32,7 +32,7 @@
     "directory": "packages/template-site-static-json"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-core": "^1.0.0",
-    "@happyvertical/smrt-config": "^1.0.0"
+    "@happyvertical/smrt-core": "^0.25.1",
+    "@happyvertical/smrt-config": "^0.25.1"
   }
 }
