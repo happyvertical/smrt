@@ -429,6 +429,150 @@ describe('RoleShell', () => {
     }
   });
 
+  it('defaults breadcrumbStartAfter to role.id so the role segment is not duplicated', () => {
+    // Regression for happyvertical/smrt#1238 round-3: without a default
+    // skip, the auto-walk on `/super/tenants` produced `Super Admin /
+    // Super / Tenants` (the rootCrumb already represents the role, then
+    // the `/super` segment becomes a duplicate fallback crumb).
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super/tenants',
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const crumbs = container.querySelector('.smrt-breadcrumbs');
+      const labels = Array.from(
+        crumbs?.querySelectorAll('.crumb-item') ?? [],
+      ).map((el) => (el.textContent ?? '').trim());
+
+      expect(labels[0]).toContain('Super Admin');
+      // The duplicate `Super` crumb must NOT appear.
+      expect(labels.some((l) => l === 'Super' || l === '/ Super')).toBe(false);
+      // The Tenants crumb still renders.
+      expect(labels.some((l) => l.includes('Tenants'))).toBe(true);
+      // And the total trail is exactly 2: rootCrumb + Tenants.
+      expect(labels.length).toBe(2);
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('respects an explicit breadcrumbStartAfter override for deeper prefixes', () => {
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/dashboard/super/tenants',
+        rootCrumb: { label: 'Dashboard', href: '/dashboard' },
+        breadcrumbStartAfter: 'dashboard/super',
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const crumbs = container.querySelector('.smrt-breadcrumbs');
+      const labels = Array.from(
+        crumbs?.querySelectorAll('.crumb-item') ?? [],
+      ).map((el) => (el.textContent ?? '').trim());
+      // Explicit override skips `dashboard/super`, leaving Dashboard (root)
+      // + Tenants — the role-id default is not used.
+      expect(labels[0]).toContain('Dashboard');
+      expect(labels.some((l) => l.includes('Tenants'))).toBe(true);
+      expect(labels.length).toBe(2);
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('opts out of the default startAfter when an empty string is passed', () => {
+    // `??` preserves empty string (it is not nullish), so consumers can
+    // explicitly disable the default skip and render the full path walk.
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super/tenants',
+        breadcrumbStartAfter: '',
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const crumbs = container.querySelector('.smrt-breadcrumbs');
+      const labels = Array.from(
+        crumbs?.querySelectorAll('.crumb-item') ?? [],
+      ).map((el) => (el.textContent ?? '').trim());
+      // With the default skip disabled, the `super` segment renders as a
+      // fallback crumb: Super Admin (root) / Super / Tenants. We use
+      // anchor hrefs to disambiguate from the rootCrumb (`/super`) since
+      // the rendered text contents include leading separator glyphs.
+      expect(labels.length).toBe(3);
+      expect(labels[0]).toContain('Super Admin');
+      const links = Array.from(
+        crumbs?.querySelectorAll<HTMLAnchorElement>('.crumb-link') ?? [],
+      );
+      const hrefs = links.map((a) => a.getAttribute('href'));
+      // Both `/super` (from rootCrumb) and `/super` (fallback walk) collapse
+      // to the same href — assert the middle text content shows `Super`.
+      expect(labels[1]).toContain('Super');
+      expect(hrefs).toContain('/super');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('propagates collapsed to the inner NavTree', () => {
+    // Regression for happyvertical/smrt#1238 round-3: WorkspaceShell
+    // switches to the 96px collapsed rail when `collapsed={true}` but
+    // RoleShell previously forgot to forward the flag to NavTree, so
+    // labels/badges rendered full-size and overflowed the rail.
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        collapsed: true,
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const navTree = container.querySelector('.smrt-nav-tree');
+      expect(navTree).not.toBeNull();
+      expect(navTree?.classList.contains('collapsed')).toBe(true);
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('renders the NavTree in its expanded state when collapsed is omitted or false', () => {
+    const component = mount(RoleShell, {
+      target: container,
+      props: {
+        roles: ROLES,
+        currentRole: 'super',
+        currentPath: '/super',
+        children: textSnippet('content'),
+      },
+    });
+
+    try {
+      const navTree = container.querySelector('.smrt-nav-tree');
+      expect(navTree).not.toBeNull();
+      expect(navTree?.classList.contains('collapsed')).toBe(false);
+    } finally {
+      unmount(component);
+    }
+  });
+
   it('uses rootCrumb override when provided', () => {
     const component = mount(RoleShell, {
       target: container,

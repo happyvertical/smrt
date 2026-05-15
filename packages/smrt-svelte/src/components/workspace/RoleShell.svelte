@@ -99,9 +99,12 @@ interface Props {
   rootCrumb?: BreadcrumbItem;
   /**
    * Optional: pathname prefix to skip when auto-walking breadcrumbs.
-   * Forwarded to `<Breadcrumbs startAfter={...}>` — useful when the shell
-   * is mounted under e.g. `/dashboard/[role]` and you don't want the
-   * `dashboard` segment to render an extra fallback crumb.
+   * Forwarded to `<Breadcrumbs startAfter={...}>`. Defaults to `role.id`
+   * so a pathname like `/super/tenants` doesn't render a duplicate
+   * `Super` crumb alongside the `rootCrumb`. Override when the shell is
+   * mounted under a deeper prefix (e.g. `'dashboard/super'` for
+   * `/dashboard/[role]/...`), or pass an empty string to opt out of the
+   * default skip entirely.
    */
   breadcrumbStartAfter?: string;
   /**
@@ -186,6 +189,21 @@ const resolvedRootCrumb = $derived(
   rootCrumb ?? { label: role.label, href: `/${role.id}` },
 );
 /**
+ * Default the breadcrumb's `startAfter` skip-prefix to the role id when
+ * the consumer doesn't supply one. Without this, the auto-walk on a
+ * pathname like `/super/tenants` produces `Super Admin / Super /
+ * Tenants` — the `rootCrumb` already represents the role, so the bare
+ * `/super` segment becomes a duplicate fallback crumb. Skipping
+ * through `role.id` collapses that.
+ *
+ * Consumers mounting the shell under a different prefix (e.g.
+ * `/dashboard/[role]/...`) still need to pass an explicit
+ * `breadcrumbStartAfter='dashboard/super'` — the default only covers
+ * the simpler `/[role]/...` case. Passing an empty string opts out:
+ * `??` preserves it because empty string is not nullish.
+ */
+const resolvedBreadcrumbStartAfter = $derived(breadcrumbStartAfter ?? role.id);
+/**
  * Set the role-color CSS custom property on the shell wrapper when the
  * role config supplies one. Consumer stylesheets can read this via
  * `var(--smrt-role-color)` (e.g. to recolor active-nav highlights). When
@@ -248,6 +266,7 @@ function handleNavigate(): void {
         {currentPath}
         iconComponent={navIconComponent}
         onNavigate={handleNavigate}
+        collapsed={collapsed ?? false}
       />
     {/snippet}
 
@@ -256,7 +275,7 @@ function handleNavigate(): void {
         nav={role.sections}
         pathname={currentPath}
         rootCrumb={resolvedRootCrumb}
-        startAfter={breadcrumbStartAfter}
+        startAfter={resolvedBreadcrumbStartAfter}
       />
     {/if}
     {@render children()}
