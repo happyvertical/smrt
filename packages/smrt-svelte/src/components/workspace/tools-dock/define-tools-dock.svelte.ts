@@ -43,6 +43,7 @@ import type {
   ToolDef,
   ToolsDockApi,
   ToolsDockContext,
+  ToolsDockEvents,
 } from '../types.js';
 
 /**
@@ -177,6 +178,15 @@ export function defineToolsDock<TCtx = unknown>(
   // recent token may apply its result.
   let availabilityToken = 0;
 
+  /**
+   * Set to `true` once the factory has finished wiring the instance. Used
+   * to gate `'change'` emits so handlers can't run before the instance
+   * exists / is registered on context. Mutations issued from inside the
+   * factory body (e.g. `applyAvailability` running during initial
+   * availability snapshot) are silent.
+   */
+  let ready = false;
+
   // Pub/sub bus
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
 
@@ -212,6 +222,24 @@ export function defineToolsDock<TCtx = unknown>(
     };
   }
 
+  /**
+   * Emit a `'change'` event with a snapshot of the current public state.
+   * Guarded by the `ready` flag so handlers can't run during factory
+   * construction (before the instance is fully wired / registered on
+   * Svelte context). Always reads the latest `$state` values so handlers
+   * see the post-update state, regardless of how many updates happened
+   * in a single call.
+   */
+  function emitChange(): void {
+    if (!ready) return;
+    const payload: ToolsDockEvents['change'] = {
+      isOpen,
+      activeTool,
+      context,
+    };
+    emit('change', payload);
+  }
+
   function applyAvailability(next: AvailableTool[]): void {
     // Filter to registered tools, preserve registration order, merge labels/badges.
     const byId = new Map(next.map((t) => [t.id, t]));
@@ -240,6 +268,7 @@ export function defineToolsDock<TCtx = unknown>(
       // don't depend on the <ToolsDock> component being mounted to rescue
       // them via its $effect.
       persist();
+      emitChange();
     }
   }
 
@@ -308,11 +337,13 @@ export function defineToolsDock<TCtx = unknown>(
     }
     isOpen = true;
     persist();
+    emitChange();
   }
 
   function close(): void {
     isOpen = false;
     persist();
+    emitChange();
   }
 
   function toggle(id?: string): void {
@@ -325,6 +356,7 @@ export function defineToolsDock<TCtx = unknown>(
         isOpen = true;
       }
       persist();
+      emitChange();
       return;
     }
     isOpen = !isOpen;
@@ -332,11 +364,16 @@ export function defineToolsDock<TCtx = unknown>(
       activeTool = availableTools[0].id;
     }
     persist();
+    emitChange();
   }
 
   function setContextValue(ctx: ToolsDockContext | null): void {
     context = ctx;
     if (fetchAvailability) refreshAvailability();
+    // Emit AFTER kicking off availability refresh. The refresh is async and
+    // may emit a second `'change'` later if it clears `activeTool` — that
+    // is the intended behaviour (one event per observable state transition).
+    emitChange();
   }
 
   const instance: ToolsDockInstance<TCtx> = {
@@ -368,5 +405,10 @@ export function defineToolsDock<TCtx = unknown>(
   };
 
   setContext(TOOLS_DOCK_KEY, instance);
+  // From this point forward, mutations may emit `'change'`. Anything that
+  // ran during the factory body above (e.g. seeding `availableTools` from
+  // the registered tools) is treated as part of initialization and stays
+  // silent.
+  ready = true;
   return instance;
 }

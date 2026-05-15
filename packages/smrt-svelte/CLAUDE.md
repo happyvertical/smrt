@@ -93,6 +93,16 @@ domain-specific tools live outside the framework in consumer packages.
 - No token bridges — consume `var(--smrt-color-*)` directly
 - Tool IDs are arbitrary strings (extensible, not an enum)
 
+**State-mirroring recipes** (issue #1235):
+- `dock.on('change', ({ isOpen, activeTool, context }) => ...)` fires after every
+  `open()`/`close()`/`toggle()`/`setContext()` (and once more if a context change
+  clears the active tool via availability filtering). Use this instead of
+  threading multiple `$effect`s through every getter to mirror dock state into a
+  workbench store.
+- `WorkspaceShell` exposes `bind:mobileNavOpen` so consumers can lift the drawer
+  state. Pair it with `<NavTree onNavigate={() => mobileNavOpen = false} />` to
+  close the drawer on navigation without any DOM querying.
+
 See epic [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226) for context;
 implementations land via #1227 (`WorkspaceShell`), #1228 (`NavTree`/`Breadcrumbs`), and #1229
 (`ToolsDock` + registry).

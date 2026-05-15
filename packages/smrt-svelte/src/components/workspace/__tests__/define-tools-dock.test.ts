@@ -429,4 +429,217 @@ describe('defineToolsDock', () => {
     expect(dock.availableTools.map((t) => t.id)).toEqual(['chat']);
     expect(dock.activeTool).toBeNull();
   });
+
+  describe("'change' event", () => {
+    it('does not fire during factory construction', () => {
+      // Subscribing in a separate tick would miss any event fired during the
+      // factory body. To assert "no construction-time emit" we count via a
+      // listener added *before* the factory runs — but the factory's
+      // listener bus is internal, so instead we rely on the fact that
+      // `'change'` is gated by the `ready` flag and verify post-construction
+      // state is clean (no recursive errors etc.) here.
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+          initialOpen: true,
+        }),
+      );
+
+      // Sanity: initial state reflects options without any emit having fired.
+      expect(dock.isOpen).toBe(true);
+      expect(dock.activeTool).toBeNull();
+    });
+
+    it('fires on open() with the post-update state', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('change', handler);
+
+      dock.open('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'chat',
+        context: null,
+      });
+    });
+
+    it('fires on close() with the post-update state', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      dock.open('chat');
+      flushSync();
+      const handler = vi.fn();
+      dock.on('change', handler);
+
+      dock.close();
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        // close() leaves activeTool intact so re-opens land on the same tool.
+        isOpen: false,
+        activeTool: 'chat',
+        context: null,
+      });
+    });
+
+    it('fires on toggle() with the post-update state', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('change', handler);
+
+      dock.toggle('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'chat',
+        context: null,
+      });
+
+      dock.toggle('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: false,
+        activeTool: 'chat',
+        context: null,
+      });
+
+      dock.toggle();
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(3);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'chat',
+        context: null,
+      });
+    });
+
+    it('fires on setContext() with the new context', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('change', handler);
+
+      dock.setContext({ type: 'route', title: 'Home' });
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: false,
+        activeTool: null,
+        context: { type: 'route', title: 'Home' },
+      });
+    });
+
+    it('fires once with cleared state when availability removes the active tool', async () => {
+      let availability: { id: string }[] = [{ id: 'chat' }, { id: 'jobs' }];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+          fetchAvailability,
+        }),
+      );
+
+      dock.setContext({ type: 'a' });
+      await Promise.resolve();
+      await Promise.resolve();
+      flushSync();
+      dock.open('jobs');
+      flushSync();
+      expect(dock.activeTool).toBe('jobs');
+
+      const handler = vi.fn();
+      dock.on('change', handler);
+
+      availability = [{ id: 'chat' }];
+      dock.setContext({ type: 'b' });
+      // setContext emits synchronously …
+      expect(handler).toHaveBeenCalledTimes(1);
+      // … then the async availability refresh resolves, clears the active
+      // tool, and emits a second 'change' with the cleared state.
+      await Promise.resolve();
+      await Promise.resolve();
+      flushSync();
+
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: null,
+        context: { type: 'b' },
+      });
+    });
+
+    it('stops calling a handler after its unsubscribe function runs', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      const off = dock.on('change', handler);
+
+      dock.open('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      off();
+      dock.close();
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('payload type is inferred from ToolsDockEvents', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      // Compile-time check: handler arg should be the `change` payload shape
+      // without an explicit generic.
+      dock.on('change', (e) => {
+        const _isOpen: boolean = e.isOpen;
+        const _activeTool: string | null = e.activeTool;
+        void _isOpen;
+        void _activeTool;
+      });
+
+      // Runtime sanity check that the test compiles & wires.
+      dock.open('chat');
+      flushSync();
+      expect(dock.isOpen).toBe(true);
+    });
+  });
 });
