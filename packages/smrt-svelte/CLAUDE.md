@@ -104,6 +104,15 @@ domain-specific tools live outside the framework in consumer packages.
 - `WorkspaceShell` exposes `bind:mobileNavOpen` so consumers can lift the drawer
   state. Pair it with `<NavTree onNavigate={() => mobileNavOpen = false} />` to
   close the drawer on navigation without any DOM querying.
+- `ToolDef.iconComponent?: Component` renders a custom icon inside the rail
+  glyph (matches `NavTree`'s `iconComponent` convention). Takes precedence over
+  the `icon: string` fallback and the `label.charAt(0)` last-resort. Pass a
+  thin wrapper around your icon library of choice (lucide-svelte etc.) — avoids
+  ambiguous single-letter glyphs in dense docks ("Chat" vs "Claim Audit").
+- `dock.refreshAvailability()` forces a re-run of `fetchAvailability` with the
+  current context. `setContext()` short-circuits on strict-equal references, so
+  use this when a side-channel event (job-updated websocket, manual refresh
+  button, etc.) signals availability or badges changed without a context change.
 
 See epic [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226) for context;
 implementations land via #1227 (`WorkspaceShell`), #1228 (`NavTree`/`Breadcrumbs`), and #1229

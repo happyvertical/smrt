@@ -12,6 +12,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { ToolsDockInstance } from '../tools-dock/define-tools-dock.svelte.js';
 import ContextForwardingHarness from './context-forwarding-harness.svelte';
 import RenderHarness from './render-harness.svelte';
+import TestIcon from './test-icon.svelte';
 
 const mountedComponents: Array<ReturnType<typeof mount>> = [];
 
@@ -158,6 +159,58 @@ describe('<ToolsDock> rail layout', () => {
     flushSync();
     await tick();
     expect(dock?.context).toEqual({ type: 'route', title: 'World' });
+  });
+
+  describe('rail glyph rendering', () => {
+    it('renders ToolDef.iconComponent inside the rail glyph when provided', () => {
+      const target = render({
+        tools: [{ id: 'chat', label: 'Chat', iconComponent: TestIcon }],
+      });
+
+      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      expect(glyph).not.toBeNull();
+      // iconComponent rendered → SVG present, first-letter fallback absent.
+      const svg = glyph?.querySelector('svg[data-testid="custom-icon"]');
+      expect(svg).not.toBeNull();
+      // No stray "C" letter text node — only the icon component.
+      expect(glyph?.textContent?.trim()).toBe('');
+    });
+
+    it('renders ToolDef.icon string when no iconComponent is provided', () => {
+      const target = render({
+        tools: [{ id: 'chat', label: 'Chat', icon: 'X' }],
+      });
+
+      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      expect(glyph?.textContent?.trim()).toBe('X');
+      // No iconComponent rendered.
+      expect(glyph?.querySelector('svg')).toBeNull();
+    });
+
+    it('falls back to label.charAt(0).toUpperCase() when neither iconComponent nor icon is set', () => {
+      const target = render({
+        tools: [{ id: 'chat', label: 'chat' }],
+      });
+
+      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      // First letter, uppercased — existing behaviour preserved.
+      expect(glyph?.textContent?.trim()).toBe('C');
+    });
+
+    it('iconComponent takes precedence over icon string when both are provided', () => {
+      const target = render({
+        tools: [
+          { id: 'chat', label: 'Chat', icon: 'X', iconComponent: TestIcon },
+        ],
+      });
+
+      const glyph = target.querySelector('.tools-dock__rail-glyph');
+      // iconComponent wins; the icon string is not rendered.
+      expect(
+        glyph?.querySelector('svg[data-testid="custom-icon"]'),
+      ).not.toBeNull();
+      expect(glyph?.textContent?.trim()).toBe('');
+    });
   });
 
   it('renders an empty state when no tools are available', async () => {

@@ -399,6 +399,108 @@ describe('defineToolsDock', () => {
     expect(dock.availableTools).toEqual([]);
   });
 
+  describe('refreshAvailability()', () => {
+    it('re-runs fetchAvailability with the current context', async () => {
+      let availability: { id: string }[] = [{ id: 'chat' }];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+          fetchAvailability,
+        }),
+      );
+
+      const ctx = { type: 'thing', title: 'A' } as const;
+      dock.setContext(ctx);
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      expect(fetchAvailability).toHaveBeenCalledTimes(1);
+      expect(dock.availableTools.map((t) => t.id)).toEqual(['chat']);
+
+      // Side-channel signal: availability changed without a context change.
+      // setContext(ctx) would short-circuit; refreshAvailability() forces it.
+      availability = [{ id: 'chat' }, { id: 'jobs' }];
+      dock.refreshAvailability();
+      expect(fetchAvailability).toHaveBeenCalledTimes(2);
+      // Called with the same (unchanged) context.
+      expect(fetchAvailability).toHaveBeenLastCalledWith(ctx);
+
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      // Second fetch's result is reflected in availableTools.
+      expect(dock.availableTools.map((t) => t.id)).toEqual(['chat', 'jobs']);
+    });
+
+    it('resets to all registered tools when no fetchAvailability is configured', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+        }),
+      );
+
+      expect(dock.availableTools.map((t) => t.id)).toEqual(['chat', 'jobs']);
+      // No-op semantically (all tools were already available), but the
+      // method should not crash without a fetchAvailability callback.
+      expect(() => dock.refreshAvailability()).not.toThrow();
+      flushSync();
+      expect(dock.availableTools.map((t) => t.id)).toEqual(['chat', 'jobs']);
+    });
+
+    it('drops stale results from a prior refreshAvailability call (race-safety)', async () => {
+      let resolveFirst: ((v: { id: string }[]) => void) | null = null;
+      let resolveSecond: ((v: { id: string }[]) => void) | null = null;
+
+      const fetchAvailability = vi
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise<{ id: string }[]>((r) => {
+              resolveFirst = r;
+            }),
+        )
+        .mockImplementationOnce(
+          () =>
+            new Promise<{ id: string }[]>((r) => {
+              resolveSecond = r;
+            }),
+        );
+
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+          fetchAvailability,
+        }),
+      );
+
+      // First call via refreshAvailability (no prior setContext).
+      dock.refreshAvailability();
+      await Promise.resolve();
+      // Second call before the first resolves.
+      dock.refreshAvailability();
+      await Promise.resolve();
+
+      // Resolve stale first AFTER fresh second was requested.
+      resolveFirst?.([{ id: 'chat' }]);
+      resolveSecond?.([{ id: 'jobs' }]);
+      await Promise.resolve();
+      await Promise.resolve();
+      flushSync();
+
+      // Only the most recent result applies.
+      expect(dock.availableTools.map((t) => t.id)).toEqual(['jobs']);
+    });
+  });
+
   it('clears activeTool when availability removes the active tool', async () => {
     let availability: { id: string }[] = [{ id: 'chat' }, { id: 'jobs' }];
     const fetchAvailability = vi.fn(async () => availability);

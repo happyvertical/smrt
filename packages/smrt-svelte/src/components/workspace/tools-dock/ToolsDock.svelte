@@ -72,6 +72,10 @@
     return dock.tools.find((t) => t.id === dock.activeTool) ?? null;
   }
 
+  function toolDefById(id: string) {
+    return dock.tools.find((t) => t.id === id) ?? null;
+  }
+
   function handleButtonClick(event: MouseEvent, toolId: string): void {
     lastActivatorEl = event.currentTarget as HTMLButtonElement;
     dock.toggle(toolId);
@@ -139,6 +143,9 @@
 {#snippet toolButton(tool: { id: string; label?: string; badge?: number | string | null }, variant: 'rail' | 'topbar')}
   {@const isActive = dock.isOpen && dock.activeTool === tool.id}
   {@const label = tool.label ?? tool.id}
+  {@const def = toolDefById(tool.id)}
+  {@const IconComponent = def?.iconComponent}
+  {@const iconString = def?.icon}
   <button
     type="button"
     class:active={isActive}
@@ -152,7 +159,13 @@
       <span class="tools-dock__topbar-button-label">{label}</span>
     {:else}
       <span class="tools-dock__rail-glyph" aria-hidden="true">
-        {label?.charAt(0).toUpperCase() ?? '?'}
+        {#if IconComponent}
+          <IconComponent />
+        {:else if iconString}
+          {iconString}
+        {:else}
+          {label?.charAt(0).toUpperCase() ?? '?'}
+        {/if}
       </span>
     {/if}
     {#if tool.badge !== null && tool.badge !== undefined && tool.badge !== 0 && tool.badge !== ''}

@@ -440,6 +440,7 @@ export function defineToolsDock<TCtx = unknown>(
     close,
     toggle,
     setContext: setContextValue,
+    refreshAvailability,
     emit,
     on,
     // Framework-only members:
