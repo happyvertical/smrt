@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.25.2
+
+### Patch Changes
+
+- ### Features
+
+  - add ToolsDock 'change' event and bindable mobileNavOpen (smrt-svelte)
+
+  ### Bug Fixes
+
+  - address ToolsDock change-event review feedback (smrt-svelte)
+
+  ### Other Changes
+
+  - refactor: namespace dock events with 'dock:' prefix (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.25.2
+  - @happyvertical/smrt-config@0.25.2
+  - @happyvertical/smrt-types@0.25.2
+
 ## 0.25.1
 
 ### Patch Changes
