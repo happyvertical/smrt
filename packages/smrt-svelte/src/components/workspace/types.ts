@@ -279,22 +279,59 @@ export interface ToolsDockEvents {
   };
 }
 
-export interface ToolsDockApi {
+/**
+ * Public reactive API for a tools dock instance. Two generics carry through
+ * from the factory site so `dock.context` and `dock.setContext()` flow with
+ * the consumer's narrowed types:
+ *
+ * - `TData` types the shape of `context.data`. Defaults to
+ *   `Record<string, unknown>`.
+ * - `TActions` types the shape of `context.actions`. Defaults to
+ *   `Record<string, (...args: any[]) => unknown>` so the untyped pattern
+ *   `dock.setContext({ actions: { triggerSave() {} } })` keeps compiling
+ *   without a generic argument.
+ *
+ * The constraint mirrors {@link ToolsDockContext} — a self-mapped
+ * `{ [K in keyof TActions]: (...args: any[]) => any }` — so interface-style
+ * action maps satisfy the bound without requiring a string index signature.
+ *
+ * @example
+ * ```ts
+ * interface MyData { siteSlug: string }
+ * interface MyActions { triggerSave(): void }
+ *
+ * const dock = defineToolsDock<MyData, MyActions>({ tools: [...] });
+ *
+ * // typed:
+ * dock.setContext({
+ *   type: 'route',
+ *   data: { siteSlug: 'demo' },
+ *   actions: { triggerSave() {} },
+ * });
+ * const slug: string | undefined = dock.context?.data?.siteSlug;
+ * ```
+ */
+export interface ToolsDockApi<
+  TData = Record<string, unknown>,
+  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
+    string,
+    (...args: any[]) => unknown
+  >,
+> {
   readonly activeTool: string | null;
   readonly isOpen: boolean;
   readonly availableTools: ReadonlyArray<AvailableTool>;
   /**
    * The current dock context (route data, selection, etc.) as supplied via
-   * `setContext()`. Default-typed on the API surface — tools that want
-   * typed access to `context.data` / `context.actions` should locally
-   * annotate their own `context` prop with `ToolsDockContext<TData, TActions>`
-   * (see the JSDoc on {@link ToolDef.component}).
+   * `setContext()`. Typed against the factory's `<TData, TActions>` generics —
+   * narrow them at the `defineToolsDock<TData, TActions>(...)` call site for
+   * typed access without a cast.
    */
-  readonly context: ToolsDockContext | null;
+  readonly context: ToolsDockContext<TData, TActions> | null;
   open(id?: string): void;
   close(): void;
   toggle(id?: string): void;
-  setContext(ctx: ToolsDockContext | null): void;
+  setContext(ctx: ToolsDockContext<TData, TActions> | null): void;
   /**
    * Force a re-run of the `fetchAvailability` callback with the current
    * context. Useful when a side-channel event signals that availability or

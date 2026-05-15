@@ -127,11 +127,19 @@ export interface DefineToolsDockOptions<
  * Internal extension of {@link ToolsDockApi} with framework-only members:
  * the registered tools, the configured layout, and the persistence key.
  *
- * Marked as part of the public surface but stamped with a brand symbol so
- * that `<ToolsDock>` and `useToolsDock()` callers can safely destructure
- * without consumers depending on internal field names.
+ * Mirrors the same `<TData, TActions>` generics as {@link ToolsDockApi} so
+ * the narrowed `context` / `setContext()` signatures from
+ * `defineToolsDock<TData, TActions>(...)` flow through to consumers that
+ * hold the returned instance directly. Defaults preserve back-compat for
+ * untyped callers (`defineToolsDock({...})`).
  */
-export interface ToolsDockInstance extends ToolsDockApi {
+export interface ToolsDockInstance<
+  TData = Record<string, unknown>,
+  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
+    string,
+    (...args: any[]) => unknown
+  >,
+> extends ToolsDockApi<TData, TActions> {
   readonly tools: ReadonlyArray<ToolDef>;
   readonly layout: 'rail' | 'topbar';
   readonly storageKey: string | null;
@@ -204,7 +212,9 @@ export function defineToolsDock<
     string,
     (...args: any[]) => unknown
   >,
->(options: DefineToolsDockOptions<TData, TActions>): ToolsDockInstance {
+>(
+  options: DefineToolsDockOptions<TData, TActions>,
+): ToolsDockInstance<TData, TActions> {
   const layout = options.layout ?? 'rail';
   const storageKey = options.storageKey ?? null;
   const fetchAvailability = options.fetchAvailability;
@@ -539,7 +549,9 @@ export function defineToolsDock<
     }
   }
 
-  function setContextValue(ctx: ToolsDockContext | null): void {
+  function setContextValue(
+    ctx: ToolsDockContext<TData, TActions> | null,
+  ): void {
     // Strict-equality short-circuit: passing the same context reference is a
     // no-op. Skips both the availability refresh and the `'dock:change'`
     // emit so consumers (e.g. `<ToolsDock>`'s context-forwarding `$effect`)
@@ -549,9 +561,15 @@ export function defineToolsDock<
     // Compare against `rawContextRef` (a non-reactive shadow) rather than the
     // `$state` value, because Svelte 5 wraps object `$state` in a Proxy and
     // the original input would never `===` the proxied stored value.
-    if (ctx === rawContextRef) return;
-    rawContextRef = ctx;
-    context = ctx;
+    //
+    // Internally the `context` `$state` is typed as the default
+    // `ToolsDockContext` so the runtime store stays generic-erased — the
+    // narrowed type only lives on the public boundary (this function
+    // signature and the `instance.context` getter).
+    const erased = ctx as ToolsDockContext | null;
+    if (erased === rawContextRef) return;
+    rawContextRef = erased;
+    context = erased;
     if (fetchAvailability) refreshAvailability();
     // Emit AFTER kicking off availability refresh. The refresh is async and
     // may emit a second event later if it clears `activeTool` — that is
@@ -562,7 +580,7 @@ export function defineToolsDock<
     emitChange({ stateChanged: false, contextChanged: true });
   }
 
-  const instance: ToolsDockInstance = {
+  const instance: ToolsDockInstance<TData, TActions> = {
     // Reactive getters — keep the api surface read-only.
     get isOpen() {
       return isOpen;
@@ -573,8 +591,15 @@ export function defineToolsDock<
     get availableTools() {
       return availableTools;
     },
+    // Internal `context` `$state` is typed as the default-generic shape so
+    // the runtime store stays homogeneous. Cast at the public boundary —
+    // structurally a `ToolsDockContext<TData, TActions>` IS a
+    // `ToolsDockContext<defaults>` (the generics flow covariantly through
+    // the field shapes); the cast threads the consumer's narrowed type
+    // through to the API surface without forcing the internal store to
+    // carry the generic.
     get context() {
-      return context;
+      return context as ToolsDockContext<TData, TActions> | null;
     },
     open,
     close,

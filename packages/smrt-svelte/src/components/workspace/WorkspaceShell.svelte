@@ -227,15 +227,15 @@ $effect(() => {
   }
 
   // `addEventListener` is the modern API. Older Safari only has
-  // `addListener` — feature-detect to stay compatible.
+  // `addListener` — feature-detect to stay compatible. The deprecated
+  // `addListener`/`removeListener` methods are typed in current lib.dom.d.ts,
+  // so no `@ts-expect-error` is needed.
   if (typeof mql.addEventListener === 'function') {
     mql.addEventListener('change', handleChange);
     return () => mql.removeEventListener('change', handleChange);
   }
-  // @ts-expect-error legacy MediaQueryList API
   mql.addListener(handleChange);
   return () => {
-    // @ts-expect-error legacy MediaQueryList API
     mql.removeListener(handleChange);
   };
 });

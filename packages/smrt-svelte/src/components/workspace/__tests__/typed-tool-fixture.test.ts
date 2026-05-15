@@ -1,17 +1,40 @@
 /**
  * Regression tests for the typed-tool component pattern documented on
- * `ToolDef.component` and `ToolsDockContext`. The static type checks live
- * in `typed-tool-fixture/register-typed-tool.ts` — those files only need
- * to compile under `tsc --noEmit` to prove the documented pattern works.
- * This test verifies the runtime side: the typed component registers
- * cleanly, the dock activates it, and `dock.setContext` accepts both the
- * typed and untyped action shapes.
+ * `ToolDef.component` and `ToolsDockContext`.
  *
- * If the type fixture ever stops compiling, `pnpm typecheck` (and CI) will
- * fail before this file runs — that's the load-bearing assertion. The
- * runtime test below guards against accidental regressions in the
+ * The static type checks live in `typed-tool-fixture/register-typed-tool.ts`
+ * and `typed-tool-fixture/TypedTool.svelte`. They split across two checkers:
+ *
+ * - `tsc --noEmit` (the package's `typecheck` script, run in CI via
+ *   `pnpm turbo run typecheck`) catches the regressions that live in the
+ *   `.ts` files:
+ *     * The factory `<TData, TActions>` generics flow into
+ *       `ToolsDockApi.setContext` / `ToolsDockApi.context`. If they ever
+ *       erase back to the default shape, the `_assertTypedDockFlow`
+ *       function in `register-typed-tool.ts` fails to compile.
+ *     * The `TActions` constraint accepts interface-style action maps
+ *       (no string index signature). If it ever tightens back to
+ *       `Record<string, ...>`, the `typedContext` / `untypedContext`
+ *       literals fail to compile.
+ *
+ * - `svelte-check` (the package's `check` script, run in CI via
+ *   `pnpm turbo run check`) catches the regression that lives in the
+ *   `.svelte` file:
+ *     * `ToolDef.component` is typed `Component<any>` so a tool component
+ *       declaring a narrower `context` prop is assignable at registration.
+ *       Under `tsc --noEmit` alone, `.svelte` imports resolve to
+ *       `Component<any>` via the ambient `declare module '*.svelte'`
+ *       declaration — so the registration-site assertion in
+ *       `register-typed-tool.ts` would compile regardless of what
+ *       `ToolDef.component` actually demands. Only `svelte-check` actually
+ *       resolves `TypedTool.svelte`'s real prop shape and exercises the
+ *       contravariant assignment, which is why the `check` script is part
+ *       of CI alongside `typecheck`.
+ *
+ * The runtime test below guards against accidental regressions in the
  * `ToolDef` storage shape itself (e.g. registering a component that ends
- * up unreachable because of a runtime type assertion).
+ * up unreachable because of a runtime type assertion) and exercises the
+ * round-trip of typed / untyped context shapes through `dock.setContext`.
  */
 
 import { flushSync, mount, unmount } from 'svelte';
