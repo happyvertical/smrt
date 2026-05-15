@@ -103,9 +103,7 @@ export interface ToolDef {
   iconComponent?: Component;
   /**
    * Panel component rendered when this tool is active. Receives the dock's
-   * current `context` (typed as `ToolsDockContext | null` here so the dock
-   * surface stays honest about the type erasure that happens at registration
-   * time) and the dock API.
+   * current `context` and the dock API.
    *
    * Tools that want typed access to `context.data` / `context.actions`
    * should locally type their own props inside the component, e.g.
@@ -125,18 +123,28 @@ export interface ToolDef {
    * </script>
    * ```
    *
+   * The dock erases tool-specific types at registration (tools are stored
+   * as a homogeneous `ToolDef[]`), so the props type is intentionally
+   * `Component<any>`. Svelte component props are checked contravariantly,
+   * which means a hard-coded `Component<{ context: ToolsDockContext | null; ... }>`
+   * slot would reject any component declaring a narrower
+   * `context: ToolsDockContext<MyData, MyActions> | null` prop — defeating
+   * the point of letting consumers type the prop locally. Erasing here
+   * means the per-component prop annotation shown above compiles without
+   * a registration-site cast.
+   *
    * A previous version of this API carried a `<TCtx>` generic on `ToolDef`
    * that flowed into the `context` prop. In practice it was always erased
-   * at registration (the dock stores tools as `ToolDef[]`), so consumers
-   * cast at the registration site and re-declared the prop shape inside
-   * the component anyway. The honest API surface is `context: ToolsDockContext | null` —
-   * consumers thread their typed shape via the per-component prop
-   * annotation shown above.
+   * at registration, so consumers cast at the registration site and
+   * re-declared the prop shape inside the component anyway. The current
+   * shape preserves the typed-context ergonomics while removing both the
+   * useless generic and the registration-site cast.
    */
-  component: Component<{
-    context: ToolsDockContext | null;
-    dock: ToolsDockApi;
-  }>;
+  // Registration is intentionally type-erased; see JSDoc above. The `any`
+  // here is load-bearing — see Copilot/codex/claude review threads on PR
+  // #1239 for the contravariance rationale.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  component: Component<any>;
   badge?: number | string | null;
 }
 
@@ -154,8 +162,18 @@ export interface AvailableTool {
  *   Defaults to `Record<string, unknown>`.
  * - `TActions` types the shape of `actions` — the host-supplied callback
  *   map tools may invoke to reach back into the page (`triggerSave`,
- *   `openDialog`, etc.). Defaults to `Record<string, never>` so callers
- *   who don't pass actions get an empty action surface instead of `any`.
+ *   `openDialog`, etc.). Defaults to a permissive
+ *   `Record<string, (...args: any[]) => unknown>` so the untyped pattern
+ *   `dock.setContext({ actions: { triggerSave() {} } })` keeps compiling
+ *   without a generic argument.
+ *
+ * The constraint is a self-mapped
+ * `{ [K in keyof TActions]: (...args: any[]) => any }` rather than
+ * `Record<string, ...>`. This accepts interface-style action maps without
+ * an explicit string index signature — the common pattern Copilot flagged
+ * in the original PR review. A bare `Record<string, ...>` constraint
+ * rejects interfaces (which have no index signature) under strict TS,
+ * forcing consumers to use type aliases or add `[key: string]: ...`.
  *
  * Recommended consumer pattern: thread these generics into the tool
  * component's own `context` prop so `context?.actions?.foo()` is fully
@@ -163,7 +181,7 @@ export interface AvailableTool {
  *
  * ```ts
  * interface MyData { siteSlug: string; contentId: string }
- * interface MyActions { triggerSave: () => void; openReview: (kind: string) => void }
+ * interface MyActions { triggerSave(): void; openReview(kind: string): void }
  *
  * // factory site:
  * const dock = defineToolsDock<MyData, MyActions>({ ... });
@@ -177,9 +195,9 @@ export interface AvailableTool {
  */
 export interface ToolsDockContext<
   TData = Record<string, unknown>,
-  TActions extends Record<string, (...args: any[]) => any> = Record<
+  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
     string,
-    never
+    (...args: any[]) => unknown
   >,
 > {
   type: string;
@@ -224,6 +242,21 @@ export interface ToolsDockEvents {
    *
    * Useful for consumers that mirror only the context (analytics, server
    * sync) and don't care about open/close transitions.
+   *
+   * The payload uses the default-typed `ToolsDockContext`; the dock's
+   * event registry is shared across all `ToolsDockApi` instances and can't
+   * flow the factory's `<TData, TActions>` through to per-instance
+   * subscribers. Consumers that want typed access should either:
+   *
+   * 1. Cast at the handler site:
+   *    ```ts
+   *    dock.on('dock:context-changed', ({ context }) => {
+   *      const typed = context as ToolsDockContext<MyData, MyActions> | null;
+   *      // ... typed.data?.siteSlug
+   *    });
+   *    ```
+   * 2. Use `dock.context` inside a `$derived` — that read is typed by the
+   *    factory's `<TData, TActions>` generics on the returned instance.
    */
   'dock:context-changed': {
     context: ToolsDockContext | null;

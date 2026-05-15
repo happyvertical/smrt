@@ -60,8 +60,12 @@ export const TOOLS_DOCK_KEY = Symbol('smrt-tools-dock');
  * Defaults to `Record<string, unknown>` so existing callers keep compiling.
  *
  * `TActions` types the shape of `context.actions` and flows the same way.
- * Defaults to `Record<string, never>` so callers who don't pass actions get
- * a strict (empty) action surface instead of `any`.
+ * Defaults to `Record<string, (...args: any[]) => unknown>` so the untyped
+ * `dock.setContext({ actions: { triggerSave() {} } })` pattern keeps
+ * compiling without a generic argument. The constraint is a self-mapped
+ * `{ [K in keyof TActions]: (...args: any[]) => any }` so interface-style
+ * action maps (without a string index signature) satisfy the bound —
+ * see the JSDoc on {@link ToolsDockContext} for rationale.
  *
  * Tools themselves are stored as `ToolDef[]` (the generics are erased at
  * registration). Inside a tool component, type the prop locally — see the
@@ -69,9 +73,9 @@ export const TOOLS_DOCK_KEY = Symbol('smrt-tools-dock');
  */
 export interface DefineToolsDockOptions<
   TData = Record<string, unknown>,
-  TActions extends Record<string, (...args: any[]) => any> = Record<
+  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
     string,
-    never
+    (...args: any[]) => unknown
   >,
 > {
   /** Registered tools. Order is preserved when rendering the activation rail/topbar. */
@@ -196,9 +200,9 @@ function safeWriteStorage(key: string, payload: PersistedState): void {
  */
 export function defineToolsDock<
   TData = Record<string, unknown>,
-  TActions extends Record<string, (...args: any[]) => any> = Record<
+  TActions extends { [K in keyof TActions]: (...args: any[]) => any } = Record<
     string,
-    never
+    (...args: any[]) => unknown
   >,
 >(options: DefineToolsDockOptions<TData, TActions>): ToolsDockInstance {
   const layout = options.layout ?? 'rail';
@@ -374,7 +378,18 @@ export function defineToolsDock<
     let stateChanged = false;
     let anyChange = false;
 
-    // If the active tool is no longer available, clear it.
+    // If the active tool is no longer available, clear it. Auto-close policy:
+    //
+    // - If the available set is now empty, close the dock too (nothing left
+    //   to show — leaving `isOpen: true, activeTool: null` would render a
+    //   floating empty panel in the topbar layout).
+    // - If other tools remain, the dock stays open with `activeTool: null`.
+    //   Consumers see the cleared state via `'dock:state-changed'` and can
+    //   decide what to do (auto-pick the first remaining tool via
+    //   `dock.open(availableTools[0].id)`, or surface a "select a tool"
+    //   hint). The primitive stays policy-free — there's no universally
+    //   correct auto-selection (the previously-active tool's adjacency to
+    //   any specific replacement is consumer-specific).
     if (activeTool && !availableTools.some((t) => t.id === activeTool)) {
       activeTool = null;
       if (isOpen && availableTools.length === 0) {
