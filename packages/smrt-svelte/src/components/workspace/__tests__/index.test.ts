@@ -16,6 +16,10 @@ describe('workspace barrel', () => {
     expect(workspace.Breadcrumbs).toBeDefined();
   });
 
+  it('exports RoleShell', () => {
+    expect(workspace.RoleShell).toBeDefined();
+  });
+
   it('re-exports ToolsDockEvents for typed dock:* event payloads', () => {
     // Compile-time assertion: the type must be importable from the barrel
     // so consumers can reference the built-in `'dock:*'` event payloads in

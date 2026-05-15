@@ -118,6 +118,44 @@ domain-specific tools live outside the framework in consumer packages.
   use this when a side-channel event (job-updated websocket, manual refresh
   button, etc.) signals availability or badges changed without a context change.
 
+### RoleShell
+
+Opinionated thin wrapper for multi-role admin shells. Pass a `RoleConfig[]` list
+and the current role id; renders `<WorkspaceShell>` + `<NavTree>` + `<Breadcrumbs>`
+wired together. Role colors flow through as `--smrt-role-color` CSS custom property.
+
+```svelte
+<script lang="ts">
+  import { page } from '$app/state';
+  import { RoleShell } from '@happyvertical/smrt-svelte/workspace';
+  import AccountMenu from '$lib/AccountMenu.svelte';
+  import { ROLE_CONFIGS } from '$lib/roles';
+
+  let { data, children } = $props();
+  let mobileNavOpen = $state(false);
+</script>
+
+<RoleShell
+  roles={ROLE_CONFIGS}
+  currentRole={data.currentRole}
+  currentPath={page.url.pathname}
+  bind:mobileNavOpen
+>
+  {#snippet sidebarFooter()}
+    <AccountMenu user={data.user} />
+  {/snippet}
+  {@render children?.()}
+</RoleShell>
+```
+
+The `{@render children?.()}` call is the Svelte 5 idiom for rendering a
+layout's child route content — replace with the equivalent slot/render call
+for your framework if you're not using SvelteKit's `+layout.svelte` flow.
+
+The shell intentionally doesn't know about specific role IDs — consumers pick
+whatever set their app needs. Use this for role-based admin dashboards; use
+`<WorkspaceShell>` directly for non-role apps.
+
 See epic [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226) for context;
 implementations land via #1227 (`WorkspaceShell`), #1228 (`NavTree`/`Breadcrumbs`), and #1229
 (`ToolsDock` + registry).
