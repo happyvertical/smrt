@@ -37,12 +37,13 @@
  * (`ToolDef[]`) is what such an adapter would produce.
  */
 
-import { setContext } from 'svelte';
+import { setContext, untrack } from 'svelte';
 import type {
   AvailableTool,
   ToolDef,
   ToolsDockApi,
   ToolsDockContext,
+  ToolsDockEvents,
 } from '../types.js';
 
 /**
@@ -169,6 +170,13 @@ export function defineToolsDock<TCtx = unknown>(
   let isOpen = $state(Boolean(options.initialOpen));
   let activeTool = $state<string | null>(null);
   let context = $state<ToolsDockContext | null>(null);
+  // Shadow of the last raw context reference passed to `setContextValue`.
+  // Used for strict-equality short-circuiting: Svelte 5 wraps stored object
+  // `$state` values in a Proxy, so `ctx === context` would never match the
+  // original input. Comparing against this shadow gives us proxy-free
+  // reference equality and avoids the `state_proxy_equality_mismatch`
+  // warning.
+  let rawContextRef: ToolsDockContext | null = null;
   let availableTools = $state<AvailableTool[]>(
     registeredTools.map((t) => ({ id: t.id, label: t.label, badge: t.badge })),
   );
@@ -176,6 +184,15 @@ export function defineToolsDock<TCtx = unknown>(
   // Race-handle: each fetchAvailability call gets a token; only the most
   // recent token may apply its result.
   let availabilityToken = 0;
+
+  /**
+   * Set to `true` once the factory has finished wiring the instance. Used
+   * to gate `'dock:change'` emits so handlers can't run before the instance
+   * exists / is registered on context. Mutations issued from inside the
+   * factory body (e.g. `applyAvailability` running during initial
+   * availability snapshot) are silent.
+   */
+  let ready = false;
 
   // Pub/sub bus
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -212,6 +229,32 @@ export function defineToolsDock<TCtx = unknown>(
     };
   }
 
+  /**
+   * Emit a `'dock:change'` event with a snapshot of the current public
+   * state. Guarded by the `ready` flag so handlers can't run during
+   * factory construction (before the instance is fully wired / registered
+   * on Svelte context). Always reads the latest `$state` values so
+   * handlers see the post-update state, regardless of how many updates
+   * happened in a single call.
+   *
+   * The `$state` reads are wrapped in `untrack` so that when this is
+   * invoked from inside a Svelte `$effect` (e.g. `<ToolsDock>`'s effect
+   * forwarding the `context` prop into `dock.setContext`), the reads do
+   * NOT become dependencies of that effect. Without this guard, a
+   * subsequent `open()` / `close()` would re-run the calling effect,
+   * which would call `setContext` again, triggering another availability
+   * fetch and another `emitChange` — an infinite-ish feedback loop.
+   */
+  function emitChange(): void {
+    if (!ready) return;
+    const payload = untrack<ToolsDockEvents['dock:change']>(() => ({
+      isOpen,
+      activeTool,
+      context,
+    }));
+    emit('dock:change', payload);
+  }
+
   function applyAvailability(next: AvailableTool[]): void {
     // Filter to registered tools, preserve registration order, merge labels/badges.
     const byId = new Map(next.map((t) => [t.id, t]));
@@ -240,6 +283,7 @@ export function defineToolsDock<TCtx = unknown>(
       // don't depend on the <ToolsDock> component being mounted to rescue
       // them via its $effect.
       persist();
+      emitChange();
     }
   }
 
@@ -300,6 +344,8 @@ export function defineToolsDock<TCtx = unknown>(
   }
 
   function open(id?: string): void {
+    const prevIsOpen = isOpen;
+    const prevActive = activeTool;
     if (id) {
       if (!availableTools.some((t) => t.id === id)) return; // unavailable — no-op
       activeTool = id;
@@ -308,14 +354,29 @@ export function defineToolsDock<TCtx = unknown>(
     }
     isOpen = true;
     persist();
+    // Skip emit when nothing observable changed — avoids spurious
+    // 'dock:change' events when consumers idempotently call open() on the
+    // already-active tool.
+    if (isOpen !== prevIsOpen || activeTool !== prevActive) {
+      emitChange();
+    }
   }
 
   function close(): void {
+    if (!isOpen) {
+      // Already closed — persist (cheap, no-op when nothing changed) but
+      // skip emit so consumers don't see spurious 'dock:change' events.
+      persist();
+      return;
+    }
     isOpen = false;
     persist();
+    emitChange();
   }
 
   function toggle(id?: string): void {
+    const prevIsOpen = isOpen;
+    const prevActive = activeTool;
     if (id) {
       if (!availableTools.some((t) => t.id === id)) return;
       if (isOpen && activeTool === id) {
@@ -325,6 +386,9 @@ export function defineToolsDock<TCtx = unknown>(
         isOpen = true;
       }
       persist();
+      if (isOpen !== prevIsOpen || activeTool !== prevActive) {
+        emitChange();
+      }
       return;
     }
     isOpen = !isOpen;
@@ -332,11 +396,30 @@ export function defineToolsDock<TCtx = unknown>(
       activeTool = availableTools[0].id;
     }
     persist();
+    if (isOpen !== prevIsOpen || activeTool !== prevActive) {
+      emitChange();
+    }
   }
 
   function setContextValue(ctx: ToolsDockContext | null): void {
+    // Strict-equality short-circuit: passing the same context reference is a
+    // no-op. Skips both the availability refresh and the `'dock:change'`
+    // emit so consumers (e.g. `<ToolsDock>`'s context-forwarding `$effect`)
+    // can call this repeatedly without amplifying side effects. Consumers
+    // who want a "force refresh" can pass a fresh object or `null` first.
+    //
+    // Compare against `rawContextRef` (a non-reactive shadow) rather than the
+    // `$state` value, because Svelte 5 wraps object `$state` in a Proxy and
+    // the original input would never `===` the proxied stored value.
+    if (ctx === rawContextRef) return;
+    rawContextRef = ctx;
     context = ctx;
     if (fetchAvailability) refreshAvailability();
+    // Emit AFTER kicking off availability refresh. The refresh is async and
+    // may emit a second `'dock:change'` later if it clears `activeTool` —
+    // that is the intended behaviour (one event per observable state
+    // transition).
+    emitChange();
   }
 
   const instance: ToolsDockInstance<TCtx> = {
@@ -368,5 +451,10 @@ export function defineToolsDock<TCtx = unknown>(
   };
 
   setContext(TOOLS_DOCK_KEY, instance);
+  // From this point forward, mutations may emit `'dock:change'`. Anything
+  // that ran during the factory body above (e.g. seeding `availableTools`
+  // from the registered tools) is treated as part of initialization and
+  // stays silent.
+  ready = true;
   return instance;
 }

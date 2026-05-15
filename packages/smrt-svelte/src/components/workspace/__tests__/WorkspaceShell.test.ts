@@ -9,6 +9,7 @@
 import { createRawSnippet, mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WorkspaceShell from '../WorkspaceShell.svelte';
+import BindHarness from './workspace-shell-bind-harness.svelte';
 
 function textSnippet(text: string) {
   return createRawSnippet(() => ({
@@ -476,6 +477,129 @@ describe('WorkspaceShell', () => {
       unmount(component);
       window.matchMedia = originalMatchMedia;
     }
+  });
+
+  describe('bindable mobileNavOpen', () => {
+    it('opens the drawer when the bound value flips to true externally', async () => {
+      let controls!: {
+        setMobileNavOpen: (next: boolean) => void;
+        getMobileNavOpen: () => boolean;
+      };
+      const component = mount(BindHarness, {
+        target: container,
+        props: {
+          onReady: (c) => {
+            controls = c;
+          },
+        },
+      });
+
+      try {
+        await tick();
+        const shell = container.querySelector('.smrt-workspace-shell');
+        expect(shell?.classList.contains('nav-open')).toBe(false);
+
+        controls.setMobileNavOpen(true);
+        await tick();
+        expect(shell?.classList.contains('nav-open')).toBe(true);
+        expect(controls.getMobileNavOpen()).toBe(true);
+
+        controls.setMobileNavOpen(false);
+        await tick();
+        expect(shell?.classList.contains('nav-open')).toBe(false);
+        expect(controls.getMobileNavOpen()).toBe(false);
+      } finally {
+        unmount(component);
+      }
+    });
+
+    it('propagates internal hamburger clicks back through bind:', async () => {
+      let controls!: {
+        setMobileNavOpen: (next: boolean) => void;
+        getMobileNavOpen: () => boolean;
+      };
+      const component = mount(BindHarness, {
+        target: container,
+        props: {
+          onReady: (c) => {
+            controls = c;
+          },
+        },
+      });
+
+      try {
+        await tick();
+        expect(controls.getMobileNavOpen()).toBe(false);
+
+        const hamburger =
+          container.querySelector<HTMLButtonElement>('.mobile-menu');
+        expect(hamburger).not.toBeNull();
+        hamburger?.click();
+        await tick();
+        expect(controls.getMobileNavOpen()).toBe(true);
+        // Toggle a second time — closes the drawer.
+        hamburger?.click();
+        await tick();
+        expect(controls.getMobileNavOpen()).toBe(false);
+      } finally {
+        unmount(component);
+      }
+    });
+
+    it('propagates internal backdrop clicks back through bind:', async () => {
+      let controls!: {
+        setMobileNavOpen: (next: boolean) => void;
+        getMobileNavOpen: () => boolean;
+      };
+      const component = mount(BindHarness, {
+        target: container,
+        props: {
+          initial: true,
+          onReady: (c) => {
+            controls = c;
+          },
+        },
+      });
+
+      try {
+        await tick();
+        expect(controls.getMobileNavOpen()).toBe(true);
+
+        const backdrop =
+          container.querySelector<HTMLButtonElement>('.mobile-backdrop');
+        expect(backdrop).not.toBeNull();
+        backdrop?.click();
+        await tick();
+        expect(controls.getMobileNavOpen()).toBe(false);
+      } finally {
+        unmount(component);
+      }
+    });
+
+    it('honors a non-default initial value passed by the consumer', async () => {
+      let controls!: {
+        setMobileNavOpen: (next: boolean) => void;
+        getMobileNavOpen: () => boolean;
+      };
+      const component = mount(BindHarness, {
+        target: container,
+        props: {
+          initial: true,
+          onReady: (c) => {
+            controls = c;
+          },
+        },
+      });
+
+      try {
+        await tick();
+        const shell = container.querySelector('.smrt-workspace-shell');
+        expect(shell?.classList.contains('nav-open')).toBe(true);
+        expect(controls.getMobileNavOpen()).toBe(true);
+      } finally {
+        unmount(component);
+      }
+    });
   });
 
   it('restores focus to the hamburger button when the mobile drawer closes via Escape', async () => {

@@ -35,13 +35,17 @@
   let { dock, context = undefined, closeLabel = 'Close tools panel' }: Props =
     $props();
 
-  // Forward the `context` prop into the dock fully reactively: every time the
-  // prop changes (including from `undefined` to a populated value supplied by
-  // async route data), push it through. `dock.setContext` is idempotent — it
-  // re-runs `fetchAvailability` with token-gated stale-result handling. The
-  // initial-only-flag approach previously here dropped late-arriving values
-  // and interacted badly with Svelte 5's effect dependency tracking when the
-  // early-return branch fired.
+  // Forward the `context` prop into the dock fully reactively: every time
+  // the prop changes (including from `undefined` to a populated value
+  // supplied by async route data), push it through.
+  //
+  // Safe to run inside an effect because:
+  //   - `dock.setContext` short-circuits on a strict-equal context, so
+  //     calling it repeatedly with the same reference is a true no-op
+  //     (no availability refetch, no 'dock:change' emit).
+  //   - the dock's `emitChange` reads `$state` values inside `untrack`, so
+  //     subsequent `open()` / `close()` mutations do not retrigger this
+  //     effect via the 'dock:change' payload.
   $effect(() => {
     if (context !== undefined) {
       dock.setContext(context);

@@ -22,5 +22,6 @@ export type {
   ToolDef,
   ToolsDockApi,
   ToolsDockContext,
+  ToolsDockEvents,
 } from './types.js';
 export { default as WorkspaceShell } from './WorkspaceShell.svelte';

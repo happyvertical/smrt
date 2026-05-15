@@ -17,9 +17,16 @@ import type { Snippet } from 'svelte';
  *   becomes a right-side drawer with backdrop.
  *
  * Sidebar collapse is controlled — consumer owns persistence. Mobile drawer
- * state is internal and transient.
+ * state defaults to internal/transient but can be lifted via the bindable
+ * `mobileNavOpen` prop (see below) for consumers that need to close the
+ * drawer in response to events the shell doesn't own (e.g. a route change
+ * fired from a nav-tree click). Pair `bind:mobileNavOpen={...}` on the
+ * shell with `<NavTree onNavigate={() => (mobileNavOpen = false)} />`
+ * inside the `nav` snippet to close the drawer on every link click —
+ * no DOM querying required.
  *
- * See `@happyvertical/smrt#1227` for the issue tracking this primitive.
+ * See `@happyvertical/smrt#1227` for the issue tracking this primitive,
+ * and `happyvertical/smrt#1235` for the bindable-drawer follow-up.
  */
 
 export interface Props {
@@ -81,9 +88,19 @@ export interface Props {
   inspector?: Snippet;
   /** Main content. */
   children: Snippet;
+  /**
+   * Mobile drawer open-state. Defaults to `false` and is managed
+   * internally — the hamburger button, backdrop, and Escape key all
+   * toggle it. Consumers who need to close the drawer in response to
+   * events outside the shell (e.g. a nav-link click in their nav
+   * snippet) can lift the state via `bind:mobileNavOpen={...}` and
+   * mutate it directly. SSR-safe — initial value is honored on the
+   * server (the drawer is only visible on the ≤960px breakpoint).
+   */
+  mobileNavOpen?: boolean;
 }
 
-const {
+let {
   title = '',
   subtitle = '',
   eyebrow = '',
@@ -103,9 +120,9 @@ const {
   inspectorRail,
   inspector,
   children,
+  mobileNavOpen = $bindable(false),
 }: Props = $props();
 
-let mobileNavOpen = $state(false);
 /**
  * Tracks whether the viewport is in the mobile drawer breakpoint
  * (≤960px). Used to mark the sidebar `inert` when it's slid off-screen

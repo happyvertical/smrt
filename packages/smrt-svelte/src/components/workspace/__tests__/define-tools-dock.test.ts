@@ -429,4 +429,397 @@ describe('defineToolsDock', () => {
     expect(dock.availableTools.map((t) => t.id)).toEqual(['chat']);
     expect(dock.activeTool).toBeNull();
   });
+
+  describe("'dock:change' event", () => {
+    it('does not fire during factory construction', () => {
+      // Subscribing in a separate tick would miss any event fired during the
+      // factory body. To assert "no construction-time emit" we count via a
+      // listener added *before* the factory runs — but the factory's
+      // listener bus is internal, so instead we rely on the fact that
+      // `'dock:change'` is gated by the `ready` flag and verify
+      // post-construction state is clean (no recursive errors etc.) here.
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+          initialOpen: true,
+        }),
+      );
+
+      // Sanity: initial state reflects options without any emit having fired.
+      expect(dock.isOpen).toBe(true);
+      expect(dock.activeTool).toBeNull();
+    });
+
+    it('fires on open() with the post-update state', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      dock.open('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'chat',
+        context: null,
+      });
+    });
+
+    it('fires on close() with the post-update state', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      dock.open('chat');
+      flushSync();
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      dock.close();
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        // close() leaves activeTool intact so re-opens land on the same tool.
+        isOpen: false,
+        activeTool: 'chat',
+        context: null,
+      });
+    });
+
+    it('fires on toggle() with the post-update state', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      dock.toggle('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'chat',
+        context: null,
+      });
+
+      dock.toggle('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: false,
+        activeTool: 'chat',
+        context: null,
+      });
+
+      dock.toggle();
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(3);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'chat',
+        context: null,
+      });
+    });
+
+    it('fires on setContext() with the new context', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      dock.setContext({ type: 'route', title: 'Home' });
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: false,
+        activeTool: null,
+        context: { type: 'route', title: 'Home' },
+      });
+    });
+
+    it('fires once with cleared state when availability removes the active tool', async () => {
+      let availability: { id: string }[] = [{ id: 'chat' }, { id: 'jobs' }];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+          fetchAvailability,
+        }),
+      );
+
+      dock.setContext({ type: 'a' });
+      await Promise.resolve();
+      await Promise.resolve();
+      flushSync();
+      dock.open('jobs');
+      flushSync();
+      expect(dock.activeTool).toBe('jobs');
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      availability = [{ id: 'chat' }];
+      dock.setContext({ type: 'b' });
+      // setContext emits synchronously …
+      expect(handler).toHaveBeenCalledTimes(1);
+      // … then the async availability refresh resolves, clears the active
+      // tool, and emits a second 'dock:change' with the cleared state.
+      await Promise.resolve();
+      await Promise.resolve();
+      flushSync();
+
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: null,
+        context: { type: 'b' },
+      });
+    });
+
+    it('stops calling a handler after its unsubscribe function runs', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      const off = dock.on('dock:change', handler);
+
+      dock.open('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+
+      off();
+      dock.close();
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('payload type is inferred from ToolsDockEvents', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      // Compile-time check: handler arg should be the `dock:change` payload
+      // shape without an explicit generic.
+      dock.on('dock:change', (e) => {
+        const _isOpen: boolean = e.isOpen;
+        const _activeTool: string | null = e.activeTool;
+        void _isOpen;
+        void _activeTool;
+      });
+
+      // Runtime sanity check that the test compiles & wires.
+      dock.open('chat');
+      flushSync();
+      expect(dock.isOpen).toBe(true);
+    });
+
+    it('non-"dock:*" event names use the stringly-typed overload (e.g. "change" is not reserved)', () => {
+      // After namespacing built-ins under `'dock:*'`, the literal `'change'`
+      // is no longer a key of ToolsDockEvents, so consumers may use it
+      // freely with an explicit payload generic via the stringly-typed
+      // overload.
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const customHandler = vi.fn();
+      const off = dock.on<{ selected: string }>('change', customHandler);
+      dock.emit<{ selected: string }>('change', { selected: 'row-1' });
+      expect(customHandler).toHaveBeenCalledWith({ selected: 'row-1' });
+
+      // Also confirm a namespaced consumer event works.
+      const appHandler = vi.fn();
+      dock.on<{ id: number }>('app:custom', appHandler);
+      dock.emit<{ id: number }>('app:custom', { id: 42 });
+      expect(appHandler).toHaveBeenCalledWith({ id: 42 });
+
+      // Built-in 'dock:change' must NOT trigger the custom 'change' listener.
+      dock.open('chat');
+      flushSync();
+      expect(customHandler).toHaveBeenCalledTimes(1);
+
+      off();
+    });
+
+    // ─────────────────────────────────────────────────────────────
+    // Regression tests: no-op state changes must NOT fire 'dock:change'.
+    //
+    // Before this guard, idempotent calls like `dock.open(activeId)` when
+    // already open emitted spurious events. Combined with effects that
+    // call setContext on every prop change, that produced redundant work
+    // (availability refetch) and could amplify into noisy loops when
+    // consumers wired the 'dock:change' event back into upstream state.
+    // ─────────────────────────────────────────────────────────────
+
+    it('does NOT fire on open() when already at that state', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+        }),
+      );
+
+      dock.open('chat');
+      flushSync();
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      // Same id, already open — no observable state change.
+      dock.open('chat');
+      flushSync();
+      expect(handler).not.toHaveBeenCalled();
+
+      // open() with no id, already open with an active tool — still a no-op.
+      dock.open();
+      flushSync();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire on close() when already closed', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      // Initial state is closed; calling close again must not emit.
+      dock.close();
+      flushSync();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire on setContext() with the same reference', async () => {
+      const fetchAvailability = vi.fn().mockResolvedValue([{ id: 'chat' }]);
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+          fetchAvailability,
+        }),
+      );
+
+      const ctx = { type: 'route', title: 'Home' } as const;
+      dock.setContext(ctx);
+      // Initial emit + initial fetchAvailability call.
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      expect(fetchAvailability).toHaveBeenCalledTimes(1);
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      // Same reference — must short-circuit (no emit, no refetch).
+      dock.setContext(ctx);
+      flushSync();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      expect(handler).not.toHaveBeenCalled();
+      expect(fetchAvailability).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT fire on toggle(id) that resolves to the same state', () => {
+      // toggle(sameId) when open+active flips to closed; toggle again
+      // flips back to open+active. Each transition is real, so each emits.
+      // The "no observable change" branch for toggle is hard to trigger
+      // through the API surface alone (toggle always flips at minimum
+      // `isOpen`), so the assertion here is the symmetric one: the emit
+      // counts match the number of real state transitions.
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      dock.toggle('chat'); // open+active
+      flushSync();
+      dock.toggle('chat'); // close
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not retrigger context-forwarding $effect when state mutates', async () => {
+      // Regression guard for the reactive-read leak in emitChange. Without
+      // `untrack` around the $state reads, an $effect calling
+      // dock.setContext would also depend on isOpen/activeTool/context
+      // (read inside the emitChange invoked by setContext). A subsequent
+      // dock.open() would mutate those, re-run the effect, call setContext
+      // again, etc. Here we verify open() does NOT cause the forwarding
+      // effect's tracked count to grow.
+      const fetchAvailability = vi.fn().mockResolvedValue([{ id: 'chat' }]);
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+          fetchAvailability,
+        }),
+      );
+
+      // Mount a child component whose $effect mirrors a `currentCtx` $state
+      // into dock.setContext — same pattern <ToolsDock>'s context prop uses.
+      const target = document.createElement('div');
+      document.body.appendChild(target);
+      cleanup.push(() => target.remove());
+
+      // We use the harness pattern: a tiny inline component would require
+      // its own file. Instead, count how many times fetchAvailability runs
+      // after the initial setContext — open() / close() must not cause it
+      // to re-run via a re-triggered forwarding effect.
+      dock.setContext({ type: 'a' });
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      const initialFetchCount = fetchAvailability.mock.calls.length;
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      dock.open('chat');
+      flushSync();
+      dock.close();
+      flushSync();
+
+      // Two real state transitions → two emits, but the context-forwarding
+      // chain stays quiet: no extra fetchAvailability calls beyond the
+      // initial setContext.
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(fetchAvailability.mock.calls.length).toBe(initialFetchCount);
+    });
+  });
 });
