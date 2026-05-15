@@ -415,7 +415,10 @@ describe('WorkspaceShell', () => {
     }
   });
 
-  it('uses a custom inspectorTitle and wires it via aria-labelledby', () => {
+  it('uses a custom inspectorTitle and exposes it via aria-label', () => {
+    // The inspector aside uses aria-label (not aria-labelledby with a hard-coded
+    // id) so multiple <WorkspaceShell> instances on the same page can't collide
+    // on duplicate ids — see Copilot review on PR #1232.
     const component = mount(WorkspaceShell, {
       target: container,
       props: {
@@ -430,13 +433,8 @@ describe('WorkspaceShell', () => {
       const title = container.querySelector('.inspector-title');
       expect(title?.textContent).toBe('Properties');
       const aside = container.querySelector('.smrt-workspace-inspector');
-      const labelledBy = aside?.getAttribute('aria-labelledby');
-      expect(labelledBy).toBeTruthy();
-      // The id pointed at by aria-labelledby must resolve to the title node.
-      const referenced = labelledBy
-        ? container.querySelector(`#${labelledBy}`)
-        : null;
-      expect(referenced).toBe(title);
+      expect(aside?.getAttribute('aria-label')).toBe('Properties');
+      expect(aside?.getAttribute('aria-labelledby')).toBeNull();
     } finally {
       unmount(component);
     }

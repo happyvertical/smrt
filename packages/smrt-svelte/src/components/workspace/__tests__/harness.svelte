@@ -16,7 +16,6 @@ interface Props {
 }
 
 const props: Props = $props();
-// eslint-disable-next-line svelte/valid-prop-names-in-kit-pages
 const dock = defineToolsDock(props.options);
 props.onReady(dock);
 </script>

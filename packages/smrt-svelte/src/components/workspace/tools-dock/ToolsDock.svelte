@@ -48,7 +48,6 @@
     }
   });
 
-  let panelEl = $state<HTMLDivElement | null>(null);
   let lastActivatorEl: HTMLButtonElement | null = null;
   const announcement = $derived(
     dock.isOpen && dock.activeTool
@@ -168,7 +167,6 @@
     aria-modal="false"
     aria-hidden={!dock.isOpen}
     inert={!dock.isOpen}
-    bind:this={panelEl}
   >
     <header class="tools-dock__panel-header">
       <h3>{dock.activeTool ? labelFor(dock.activeTool) : 'Tools'}</h3>

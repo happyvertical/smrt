@@ -236,6 +236,10 @@ export function defineToolsDock<TCtx = unknown>(
       if (isOpen && availableTools.length === 0) {
         isOpen = false;
       }
+      // Persist the cleared state so the factory's persistence guarantees
+      // don't depend on the <ToolsDock> component being mounted to rescue
+      // them via its $effect.
+      persist();
     }
   }
 

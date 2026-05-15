@@ -274,7 +274,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         {/if}
       </div>
 
-      {#if collapsible}
+      {#if collapsible && onToggleCollapsed}
         <button
           class="shell-toggle"
           type="button"
@@ -355,12 +355,10 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       {#if hasInspector}
         <aside
           class="smrt-workspace-inspector"
-          aria-labelledby="smrt-ws-inspector-title"
+          aria-label={inspectorTitle}
         >
           <div class="inspector-header">
-            <span id="smrt-ws-inspector-title" class="inspector-title"
-              >{inspectorTitle}</span
-            >
+            <span class="inspector-title">{inspectorTitle}</span>
             {#if onCloseInspector}
               <button
                 class="inspector-close"
@@ -379,7 +377,12 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       {/if}
 
       {#if hasInspectorRail}
-        <div class="smrt-workspace-inspector-rail" aria-label="Inspector tools">
+        <div
+          class="smrt-workspace-inspector-rail"
+          role="toolbar"
+          aria-label="Inspector tools"
+          aria-orientation="vertical"
+        >
           {@render inspectorRail!()}
         </div>
       {/if}
@@ -855,8 +858,12 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       pointer-events: auto;
     }
 
-    .smrt-workspace-inspector {
-      width: min(100vw, 420px);
+    /* Override the inspector-width variable on mobile so the rail's right
+     * offset (.has-inspector.has-inspector-rail .smrt-workspace-inspector-rail
+     * uses var(--smrt-ws-inspector-width) for `right`) stays in sync with
+     * the actual rendered inspector width. */
+    .smrt-workspace-shell {
+      --smrt-ws-inspector-width: min(100vw, 420px);
     }
 
     .smrt-workspace-shell.has-inspector .smrt-workspace-inspector-rail,
