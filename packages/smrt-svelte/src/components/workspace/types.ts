@@ -33,7 +33,42 @@ export interface BreadcrumbItem {
 export interface ToolDef<TCtx = unknown> {
   id: string;
   label: string;
+  /**
+   * Single-character glyph or emoji rendered in the rail layout when no
+   * `iconComponent` is provided. Defaults to the uppercased first character
+   * of `label` when both are omitted.
+   *
+   * Note: ambiguous in dense docks (e.g. "Chat" and "Claim Audit" both
+   * collapse to "C"). Provide `iconComponent` for production docks — see
+   * the `iconComponent` field below.
+   */
   icon?: string;
+  /**
+   * Component rendered in the rail layout (and as a leading glyph in the
+   * topbar layout) for this tool. Takes precedence over `icon`. Matches
+   * the pattern used by `NavTree` for per-item icons — pass the icon
+   * component from your library of choice (lucide-svelte etc.) directly,
+   * or a thin `.svelte` wrapper around it.
+   *
+   * The component is rendered with no props (`<IconComponent />`); if your
+   * icon library needs sizing, wrap it in a thin `.svelte` component that
+   * hard-codes the dimensions you want (typically ~18px to match
+   * `.tools-dock__rail-glyph`).
+   *
+   * @example
+   * ```ts
+   * import MessageSquare from 'lucide-svelte/icons/message-square';
+   * import ChatPanel from './ChatPanel.svelte';
+   *
+   * const tool: ToolDef = {
+   *   id: 'chat',
+   *   label: 'Chat',
+   *   iconComponent: MessageSquare,
+   *   component: ChatPanel,
+   * };
+   * ```
+   */
+  iconComponent?: Component;
   component: Component<{ context: TCtx; dock: ToolsDockApi }>;
   badge?: number | string | null;
 }
@@ -95,6 +130,20 @@ export interface ToolsDockApi {
   close(): void;
   toggle(id?: string): void;
   setContext(ctx: ToolsDockContext | null): void;
+  /**
+   * Force a re-run of the `fetchAvailability` callback with the current
+   * context. Useful when a side-channel event signals that availability or
+   * badges changed without the dock context itself changing (e.g. a job
+   * completes, a content row's status flips, a websocket "updated" event
+   * arrives). `setContext()` short-circuits on strict-equal references so
+   * the only way to refetch with the same context is to call this method.
+   *
+   * If no `fetchAvailability` is configured, this resets `availableTools`
+   * to the full registered set (same behavior as the implicit initial
+   * snapshot). Concurrent / overlapping calls are token-gated — stale
+   * results are dropped, only the latest fetch applies.
+   */
+  refreshAvailability(): void;
   /**
    * Emit an event to all subscribers. The typed overload covers built-in
    * `'dock:*'` events (see {@link ToolsDockEvents}); the stringly-typed

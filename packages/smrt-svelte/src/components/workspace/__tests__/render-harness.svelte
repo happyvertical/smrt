@@ -4,7 +4,7 @@
  * component so tests can render the actual DOM. Accepts a thin shape that
  * lets each test express only the behavior it cares about.
  */
-import { onMount } from 'svelte';
+import { type Component, onMount } from 'svelte';
 import { defineToolsDock } from '../tools-dock/define-tools-dock.svelte.js';
 import ToolsDock from '../tools-dock/ToolsDock.svelte';
 import type { AvailableTool, ToolsDockContext } from '../types.js';
@@ -13,6 +13,8 @@ interface ToolProp {
   id: string;
   label: string;
   badge?: number | string | null;
+  icon?: string;
+  iconComponent?: Component;
 }
 
 interface Props {

@@ -255,9 +255,38 @@ export function defineToolsDock<TCtx = unknown>(
     emit('dock:change', payload);
   }
 
+  /**
+   * Discriminating comparison of two availability snapshots. Returns true
+   * when the new snapshot differs from the previous one in any user-visible
+   * way (id ordering, badge value, or label). Used by `applyAvailability`
+   * to decide whether to fire a `'dock:change'` event: refreshes that
+   * resolve to byte-identical availability (the common no-op case when a
+   * side-channel signal fires but underlying data didn't change) stay
+   * silent, avoiding spurious work in consumer-side `'dock:change'`
+   * mirrors.
+   *
+   * Both inputs come from `registeredTools.filter(...).map(...)` in the
+   * same registration order, so a positional comparison is sufficient.
+   */
+  function availabilityActuallyChanged(
+    prev: ReadonlyArray<AvailableTool>,
+    next: ReadonlyArray<AvailableTool>,
+  ): boolean {
+    if (prev.length !== next.length) return true;
+    for (let i = 0; i < prev.length; i++) {
+      const a = prev[i];
+      const b = next[i];
+      if (a.id !== b.id) return true;
+      if ((a.badge ?? null) !== (b.badge ?? null)) return true;
+      if ((a.label ?? '') !== (b.label ?? '')) return true;
+    }
+    return false;
+  }
+
   function applyAvailability(next: AvailableTool[]): void {
     // Filter to registered tools, preserve registration order, merge labels/badges.
     const byId = new Map(next.map((t) => [t.id, t]));
+    const prev = availableTools;
     availableTools = registeredTools
       .filter((t) => byId.has(t.id))
       .map((t) => {
@@ -273,6 +302,9 @@ export function defineToolsDock<TCtx = unknown>(
             reportedBadge !== undefined ? reportedBadge : (t.badge ?? null),
         } satisfies AvailableTool;
       });
+
+    let changed = false;
+
     // If the active tool is no longer available, clear it.
     if (activeTool && !availableTools.some((t) => t.id === activeTool)) {
       activeTool = null;
@@ -283,6 +315,19 @@ export function defineToolsDock<TCtx = unknown>(
       // don't depend on the <ToolsDock> component being mounted to rescue
       // them via its $effect.
       persist();
+      changed = true;
+    }
+
+    // Even when the active tool stayed put, the availability set may have
+    // shifted in ways consumers care about (badge counts, label overrides,
+    // tools appearing/disappearing). Emit so consumers mirroring
+    // `availableTools` into their own state (badges in topbars, etc.) see
+    // the update without polling.
+    if (!changed) {
+      changed = availabilityActuallyChanged(prev, availableTools);
+    }
+
+    if (changed) {
       emitChange();
     }
   }
@@ -440,6 +485,7 @@ export function defineToolsDock<TCtx = unknown>(
     close,
     toggle,
     setContext: setContextValue,
+    refreshAvailability,
     emit,
     on,
     // Framework-only members:
