@@ -16,11 +16,12 @@ describe('workspace barrel', () => {
     expect(workspace.Breadcrumbs).toBeDefined();
   });
 
-  it('re-exports ToolsDockEvents for declaration merging', () => {
+  it('re-exports ToolsDockEvents for typed dock:* event payloads', () => {
     // Compile-time assertion: the type must be importable from the barrel
-    // so consumers can declaration-merge their own events into it.
+    // so consumers can reference the built-in `'dock:*'` event payloads in
+    // their own typed wrappers / stores.
     // (No runtime export; the `import type` above is the real check.)
-    const _typeCheck: ToolsDockEvents['change'] = {
+    const _typeCheck: ToolsDockEvents['dock:change'] = {
       isOpen: false,
       activeTool: null,
       context: null,

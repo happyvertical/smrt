@@ -187,7 +187,7 @@ export function defineToolsDock<TCtx = unknown>(
 
   /**
    * Set to `true` once the factory has finished wiring the instance. Used
-   * to gate `'change'` emits so handlers can't run before the instance
+   * to gate `'dock:change'` emits so handlers can't run before the instance
    * exists / is registered on context. Mutations issued from inside the
    * factory body (e.g. `applyAvailability` running during initial
    * availability snapshot) are silent.
@@ -230,12 +230,12 @@ export function defineToolsDock<TCtx = unknown>(
   }
 
   /**
-   * Emit a `'change'` event with a snapshot of the current public state.
-   * Guarded by the `ready` flag so handlers can't run during factory
-   * construction (before the instance is fully wired / registered on
-   * Svelte context). Always reads the latest `$state` values so handlers
-   * see the post-update state, regardless of how many updates happened
-   * in a single call.
+   * Emit a `'dock:change'` event with a snapshot of the current public
+   * state. Guarded by the `ready` flag so handlers can't run during
+   * factory construction (before the instance is fully wired / registered
+   * on Svelte context). Always reads the latest `$state` values so
+   * handlers see the post-update state, regardless of how many updates
+   * happened in a single call.
    *
    * The `$state` reads are wrapped in `untrack` so that when this is
    * invoked from inside a Svelte `$effect` (e.g. `<ToolsDock>`'s effect
@@ -247,12 +247,12 @@ export function defineToolsDock<TCtx = unknown>(
    */
   function emitChange(): void {
     if (!ready) return;
-    const payload = untrack<ToolsDockEvents['change']>(() => ({
+    const payload = untrack<ToolsDockEvents['dock:change']>(() => ({
       isOpen,
       activeTool,
       context,
     }));
-    emit('change', payload);
+    emit('dock:change', payload);
   }
 
   function applyAvailability(next: AvailableTool[]): void {
@@ -354,9 +354,9 @@ export function defineToolsDock<TCtx = unknown>(
     }
     isOpen = true;
     persist();
-    // Skip emit when nothing observable changed — avoids spurious 'change'
-    // events when consumers idempotently call open() on the already-active
-    // tool.
+    // Skip emit when nothing observable changed — avoids spurious
+    // 'dock:change' events when consumers idempotently call open() on the
+    // already-active tool.
     if (isOpen !== prevIsOpen || activeTool !== prevActive) {
       emitChange();
     }
@@ -365,7 +365,7 @@ export function defineToolsDock<TCtx = unknown>(
   function close(): void {
     if (!isOpen) {
       // Already closed — persist (cheap, no-op when nothing changed) but
-      // skip emit so consumers don't see spurious 'change' events.
+      // skip emit so consumers don't see spurious 'dock:change' events.
       persist();
       return;
     }
@@ -403,10 +403,10 @@ export function defineToolsDock<TCtx = unknown>(
 
   function setContextValue(ctx: ToolsDockContext | null): void {
     // Strict-equality short-circuit: passing the same context reference is a
-    // no-op. Skips both the availability refresh and the `'change'` emit so
-    // consumers (e.g. `<ToolsDock>`'s context-forwarding `$effect`) can call
-    // this repeatedly without amplifying side effects. Consumers who want a
-    // "force refresh" can pass a fresh object or `null` first.
+    // no-op. Skips both the availability refresh and the `'dock:change'`
+    // emit so consumers (e.g. `<ToolsDock>`'s context-forwarding `$effect`)
+    // can call this repeatedly without amplifying side effects. Consumers
+    // who want a "force refresh" can pass a fresh object or `null` first.
     //
     // Compare against `rawContextRef` (a non-reactive shadow) rather than the
     // `$state` value, because Svelte 5 wraps object `$state` in a Proxy and
@@ -416,8 +416,9 @@ export function defineToolsDock<TCtx = unknown>(
     context = ctx;
     if (fetchAvailability) refreshAvailability();
     // Emit AFTER kicking off availability refresh. The refresh is async and
-    // may emit a second `'change'` later if it clears `activeTool` — that
-    // is the intended behaviour (one event per observable state transition).
+    // may emit a second `'dock:change'` later if it clears `activeTool` —
+    // that is the intended behaviour (one event per observable state
+    // transition).
     emitChange();
   }
 
@@ -450,10 +451,10 @@ export function defineToolsDock<TCtx = unknown>(
   };
 
   setContext(TOOLS_DOCK_KEY, instance);
-  // From this point forward, mutations may emit `'change'`. Anything that
-  // ran during the factory body above (e.g. seeding `availableTools` from
-  // the registered tools) is treated as part of initialization and stays
-  // silent.
+  // From this point forward, mutations may emit `'dock:change'`. Anything
+  // that ran during the factory body above (e.g. seeding `availableTools`
+  // from the registered tools) is treated as part of initialization and
+  // stays silent.
   ready = true;
   return instance;
 }

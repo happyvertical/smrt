@@ -53,20 +53,28 @@ export interface ToolsDockContext<TData = Record<string, unknown>> {
 }
 
 /**
- * Built-in event names emitted on the {@link ToolsDockApi} pub/sub bus along
- * with their payload shapes. Consumers can extend this map by declaration
- * merging in their own `.d.ts` if they emit additional custom events via
- * {@link ToolsDockApi.emit}.
+ * Typed payloads for dock-owned events. Event names under the `dock:` prefix
+ * are reserved for the workspace primitives. Consumers should pick names in
+ * their own namespace (e.g. `'my-app:foo'`) and use the stringly-typed
+ * overloads of {@link ToolsDockApi.on} / {@link ToolsDockApi.emit}:
  *
- * The `'change'` event fires after any state transition that affects
- * `isOpen`, `activeTool`, or `context` — i.e. `open()`, `close()`,
- * `toggle()`, `setContext()`, and availability changes that clear the
- * active tool. Handlers see the post-update state. Useful for mirroring
- * dock state into a separate store (workbench, analytics, etc.) without
- * threading multiple `$effect`s through every state-bearing getter.
+ * ```ts
+ * dock.on<MyPayload>('my-app:selection-changed', (e) => {
+ *   // ...
+ * });
+ * dock.emit<MyPayload>('my-app:selection-changed', payload);
+ * ```
  */
 export interface ToolsDockEvents {
-  change: {
+  /**
+   * Fired by the dock after `isOpen`, `activeTool`, or `context` change —
+   * i.e. `open()`, `close()`, `toggle()`, `setContext()`, and availability
+   * changes that clear the active tool. Payload reflects post-mutation
+   * values. Useful for mirroring dock state into a separate store
+   * (workbench, analytics, etc.) without threading multiple `$effect`s
+   * through every state-bearing getter.
+   */
+  'dock:change': {
     isOpen: boolean;
     activeTool: string | null;
     context: ToolsDockContext | null;
@@ -88,9 +96,11 @@ export interface ToolsDockApi {
   toggle(id?: string): void;
   setContext(ctx: ToolsDockContext | null): void;
   /**
-   * Emit a custom event to all subscribers. Built-in events (see
-   * {@link ToolsDockEvents}) are emitted by the dock itself; consumers
-   * may emit additional events to coordinate between tools.
+   * Emit an event to all subscribers. The typed overload covers built-in
+   * `'dock:*'` events (see {@link ToolsDockEvents}); the stringly-typed
+   * overload covers any consumer-defined event name. Consumers should pick
+   * names in their own namespace (e.g. `'my-app:foo'`) — `'dock:*'` is
+   * reserved for the workspace primitives.
    */
   emit<K extends keyof ToolsDockEvents>(
     event: K,
@@ -99,12 +109,13 @@ export interface ToolsDockApi {
   emit<TPayload>(event: string, payload: TPayload): void;
   /**
    * Subscribe to a dock event. Returns an unsubscribe function. When the
-   * event name is a key of {@link ToolsDockEvents} the payload type is
-   * inferred automatically; otherwise an explicit `TPayload` may be supplied.
+   * event name is a key of {@link ToolsDockEvents} (i.e. `'dock:*'`), the
+   * payload type is inferred automatically; otherwise an explicit
+   * `TPayload` may be supplied via the stringly-typed overload.
    *
    * @example
    * ```ts
-   * const off = dock.on('change', ({ isOpen, activeTool, context }) => {
+   * const off = dock.on('dock:change', ({ isOpen, activeTool, context }) => {
    *   // mirror to another store
    * });
    * // ...later

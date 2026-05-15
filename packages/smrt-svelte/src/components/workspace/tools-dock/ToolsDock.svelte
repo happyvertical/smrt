@@ -42,10 +42,10 @@
   // Safe to run inside an effect because:
   //   - `dock.setContext` short-circuits on a strict-equal context, so
   //     calling it repeatedly with the same reference is a true no-op
-  //     (no availability refetch, no 'change' emit).
+  //     (no availability refetch, no 'dock:change' emit).
   //   - the dock's `emitChange` reads `$state` values inside `untrack`, so
   //     subsequent `open()` / `close()` mutations do not retrigger this
-  //     effect via the change-event payload.
+  //     effect via the 'dock:change' payload.
   $effect(() => {
     if (context !== undefined) {
       dock.setContext(context);

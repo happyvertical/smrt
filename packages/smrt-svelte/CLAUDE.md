@@ -94,11 +94,13 @@ domain-specific tools live outside the framework in consumer packages.
 - Tool IDs are arbitrary strings (extensible, not an enum)
 
 **State-mirroring recipes** (issue #1235):
-- `dock.on('change', ({ isOpen, activeTool, context }) => ...)` fires after every
-  `open()`/`close()`/`toggle()`/`setContext()` (and once more if a context change
-  clears the active tool via availability filtering). Use this instead of
+- `dock.on('dock:change', ({ isOpen, activeTool, context }) => ...)` fires after
+  every `open()`/`close()`/`toggle()`/`setContext()` (and once more if a context
+  change clears the active tool via availability filtering). Use this instead of
   threading multiple `$effect`s through every getter to mirror dock state into a
-  workbench store.
+  workbench store. The `'dock:*'` event-name prefix is reserved for built-in
+  dock events; consumer events should pick their own namespace (e.g.
+  `'my-app:foo'`) and use the stringly-typed overloads of `dock.on` / `dock.emit`.
 - `WorkspaceShell` exposes `bind:mobileNavOpen` so consumers can lift the drawer
   state. Pair it with `<NavTree onNavigate={() => mobileNavOpen = false} />` to
   close the drawer on navigation without any DOM querying.

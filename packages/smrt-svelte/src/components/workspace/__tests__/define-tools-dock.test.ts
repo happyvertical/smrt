@@ -430,14 +430,14 @@ describe('defineToolsDock', () => {
     expect(dock.activeTool).toBeNull();
   });
 
-  describe("'change' event", () => {
+  describe("'dock:change' event", () => {
     it('does not fire during factory construction', () => {
       // Subscribing in a separate tick would miss any event fired during the
       // factory body. To assert "no construction-time emit" we count via a
       // listener added *before* the factory runs — but the factory's
       // listener bus is internal, so instead we rely on the fact that
-      // `'change'` is gated by the `ready` flag and verify post-construction
-      // state is clean (no recursive errors etc.) here.
+      // `'dock:change'` is gated by the `ready` flag and verify
+      // post-construction state is clean (no recursive errors etc.) here.
       const { dock } = track(
         mountDock({
           tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
@@ -461,7 +461,7 @@ describe('defineToolsDock', () => {
       );
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       dock.open('chat');
       flushSync();
@@ -483,7 +483,7 @@ describe('defineToolsDock', () => {
       dock.open('chat');
       flushSync();
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       dock.close();
       flushSync();
@@ -507,7 +507,7 @@ describe('defineToolsDock', () => {
       );
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       dock.toggle('chat');
       flushSync();
@@ -545,7 +545,7 @@ describe('defineToolsDock', () => {
       );
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       dock.setContext({ type: 'route', title: 'Home' });
       flushSync();
@@ -580,14 +580,14 @@ describe('defineToolsDock', () => {
       expect(dock.activeTool).toBe('jobs');
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       availability = [{ id: 'chat' }];
       dock.setContext({ type: 'b' });
       // setContext emits synchronously …
       expect(handler).toHaveBeenCalledTimes(1);
       // … then the async availability refresh resolves, clears the active
-      // tool, and emits a second 'change' with the cleared state.
+      // tool, and emits a second 'dock:change' with the cleared state.
       await Promise.resolve();
       await Promise.resolve();
       flushSync();
@@ -608,7 +608,7 @@ describe('defineToolsDock', () => {
       );
 
       const handler = vi.fn();
-      const off = dock.on('change', handler);
+      const off = dock.on('dock:change', handler);
 
       dock.open('chat');
       flushSync();
@@ -627,9 +627,9 @@ describe('defineToolsDock', () => {
         }),
       );
 
-      // Compile-time check: handler arg should be the `change` payload shape
-      // without an explicit generic.
-      dock.on('change', (e) => {
+      // Compile-time check: handler arg should be the `dock:change` payload
+      // shape without an explicit generic.
+      dock.on('dock:change', (e) => {
         const _isOpen: boolean = e.isOpen;
         const _activeTool: string | null = e.activeTool;
         void _isOpen;
@@ -642,14 +642,44 @@ describe('defineToolsDock', () => {
       expect(dock.isOpen).toBe(true);
     });
 
+    it('non-"dock:*" event names use the stringly-typed overload (e.g. "change" is not reserved)', () => {
+      // After namespacing built-ins under `'dock:*'`, the literal `'change'`
+      // is no longer a key of ToolsDockEvents, so consumers may use it
+      // freely with an explicit payload generic via the stringly-typed
+      // overload.
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const customHandler = vi.fn();
+      const off = dock.on<{ selected: string }>('change', customHandler);
+      dock.emit<{ selected: string }>('change', { selected: 'row-1' });
+      expect(customHandler).toHaveBeenCalledWith({ selected: 'row-1' });
+
+      // Also confirm a namespaced consumer event works.
+      const appHandler = vi.fn();
+      dock.on<{ id: number }>('app:custom', appHandler);
+      dock.emit<{ id: number }>('app:custom', { id: 42 });
+      expect(appHandler).toHaveBeenCalledWith({ id: 42 });
+
+      // Built-in 'dock:change' must NOT trigger the custom 'change' listener.
+      dock.open('chat');
+      flushSync();
+      expect(customHandler).toHaveBeenCalledTimes(1);
+
+      off();
+    });
+
     // ─────────────────────────────────────────────────────────────
-    // Regression tests: no-op state changes must NOT fire 'change'.
+    // Regression tests: no-op state changes must NOT fire 'dock:change'.
     //
     // Before this guard, idempotent calls like `dock.open(activeId)` when
     // already open emitted spurious events. Combined with effects that
     // call setContext on every prop change, that produced redundant work
     // (availability refetch) and could amplify into noisy loops when
-    // consumers wired the 'change' event back into upstream state.
+    // consumers wired the 'dock:change' event back into upstream state.
     // ─────────────────────────────────────────────────────────────
 
     it('does NOT fire on open() when already at that state', () => {
@@ -666,7 +696,7 @@ describe('defineToolsDock', () => {
       flushSync();
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       // Same id, already open — no observable state change.
       dock.open('chat');
@@ -687,7 +717,7 @@ describe('defineToolsDock', () => {
       );
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       // Initial state is closed; calling close again must not emit.
       dock.close();
@@ -712,7 +742,7 @@ describe('defineToolsDock', () => {
       expect(fetchAvailability).toHaveBeenCalledTimes(1);
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       // Same reference — must short-circuit (no emit, no refetch).
       dock.setContext(ctx);
@@ -737,7 +767,7 @@ describe('defineToolsDock', () => {
       );
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       dock.toggle('chat'); // open+active
       flushSync();
@@ -778,7 +808,7 @@ describe('defineToolsDock', () => {
       const initialFetchCount = fetchAvailability.mock.calls.length;
 
       const handler = vi.fn();
-      dock.on('change', handler);
+      dock.on('dock:change', handler);
 
       dock.open('chat');
       flushSync();
