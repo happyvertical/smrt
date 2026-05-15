@@ -56,6 +56,12 @@ export interface ToolsDockApi {
   readonly activeTool: string | null;
   readonly isOpen: boolean;
   readonly availableTools: ReadonlyArray<AvailableTool>;
+  /**
+   * The current dock context (route data, selection, etc.) as supplied via
+   * `setContext()`. Untyped on the API surface — tools receive a typed
+   * `context` prop via `ToolDef<TCtx>` instead.
+   */
+  readonly context: ToolsDockContext | null;
   open(id?: string): void;
   close(): void;
   toggle(id?: string): void;

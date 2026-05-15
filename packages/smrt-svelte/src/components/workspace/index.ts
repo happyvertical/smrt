@@ -7,6 +7,14 @@
 
 export { default as Breadcrumbs } from './Breadcrumbs.svelte';
 export { default as NavTree } from './NavTree.svelte';
+export {
+  type DefineToolsDockOptions,
+  defineToolsDock,
+  TOOLS_DOCK_KEY,
+  type ToolsDockInstance,
+} from './tools-dock/define-tools-dock.svelte.js';
+export { default as ToolsDock } from './tools-dock/ToolsDock.svelte';
+export { tryUseToolsDock, useToolsDock } from './tools-dock/use-tools-dock.js';
 export type {
   AvailableTool,
   BreadcrumbItem,
@@ -16,8 +24,3 @@ export type {
   ToolsDockContext,
 } from './types.js';
 export { default as WorkspaceShell } from './WorkspaceShell.svelte';
-
-// Component exports land via implementer PRs:
-//   #1227: WorkspaceShell (landed)
-//   #1228: NavTree, Breadcrumbs (landed)
-//   #1229: ToolsDock, defineToolsDock, useToolsDock
