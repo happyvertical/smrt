@@ -7,6 +7,7 @@
 
 export { default as Breadcrumbs } from './Breadcrumbs.svelte';
 export { default as NavTree } from './NavTree.svelte';
+export { default as RoleShell } from './RoleShell.svelte';
 export {
   type DefineToolsDockOptions,
   defineToolsDock,
@@ -19,6 +20,7 @@ export type {
   AvailableTool,
   BreadcrumbItem,
   NavItem,
+  RoleConfig,
   ToolDef,
   ToolsDockApi,
   ToolsDockContext,

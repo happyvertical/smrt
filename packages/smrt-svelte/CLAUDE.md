@@ -118,6 +118,30 @@ domain-specific tools live outside the framework in consumer packages.
   use this when a side-channel event (job-updated websocket, manual refresh
   button, etc.) signals availability or badges changed without a context change.
 
+### RoleShell
+
+Opinionated thin wrapper for multi-role admin shells. Pass a `RoleConfig[]` list
+and the current role id; renders `<WorkspaceShell>` + `<NavTree>` + `<Breadcrumbs>`
+wired together. Role colors flow through as `--smrt-role-color` CSS custom property.
+
+```svelte
+<RoleShell
+  roles={ROLE_CONFIGS}
+  currentRole={currentRole}
+  currentPath={page.url.pathname}
+  bind:mobileNavOpen
+>
+  {#snippet sidebarFooter()}
+    <AccountMenu user={data.user} />
+  {/snippet}
+  <Outlet />
+</RoleShell>
+```
+
+The shell intentionally doesn't know about specific role IDs — consumers pick
+whatever set their app needs. Use this for role-based admin dashboards; use
+`<WorkspaceShell>` directly for non-role apps.
+
 See epic [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226) for context;
 implementations land via #1227 (`WorkspaceShell`), #1228 (`NavTree`/`Breadcrumbs`), and #1229
 (`ToolsDock` + registry).

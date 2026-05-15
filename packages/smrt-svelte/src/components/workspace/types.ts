@@ -26,6 +26,38 @@ export interface BreadcrumbItem {
   label: string;
 }
 
+/**
+ * Configuration for a single role in a multi-role admin shell. The role
+ * determines which navigation sections are shown, the display label, and
+ * an optional color identifier consumers can use to theme the shell.
+ *
+ * Role IDs are arbitrary strings — the framework doesn't know about specific
+ * roles. Consumers pick whatever set fits their app (e.g. 'super', 'admin',
+ * 'tenant-owner', 'editor').
+ *
+ * See `RoleShell` for the renderer that consumes this config and
+ * `happyvertical/smrt#1226` (Phase 4b) for design context.
+ */
+export interface RoleConfig {
+  /** Stable role identifier. */
+  id: string;
+  /** Display label (e.g. "Super Admin"). */
+  label: string;
+  /** Optional subtitle / description. */
+  description?: string;
+  /** Optional icon string/glyph for the role's header area. */
+  icon?: string;
+  /**
+   * Optional color identifier. Rendered as a CSS custom property
+   * `--smrt-role-color: <value>` on the shell root so consumer CSS can
+   * theme child components. Pick a semantic name your design system
+   * understands (e.g. 'blue', 'success', 'primary').
+   */
+  color?: string;
+  /** Navigation sections shown for this role. Same shape as NavItem[]. */
+  sections: NavItem[];
+}
+
 // ────────────────────────────────────────────────
 // Tools dock primitives
 // ────────────────────────────────────────────────
