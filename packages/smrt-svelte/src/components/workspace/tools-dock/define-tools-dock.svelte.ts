@@ -37,7 +37,7 @@
  * (`ToolDef[]`) is what such an adapter would produce.
  */
 
-import { setContext } from 'svelte';
+import { setContext, untrack } from 'svelte';
 import type {
   AvailableTool,
   ToolDef,
@@ -170,6 +170,13 @@ export function defineToolsDock<TCtx = unknown>(
   let isOpen = $state(Boolean(options.initialOpen));
   let activeTool = $state<string | null>(null);
   let context = $state<ToolsDockContext | null>(null);
+  // Shadow of the last raw context reference passed to `setContextValue`.
+  // Used for strict-equality short-circuiting: Svelte 5 wraps stored object
+  // `$state` values in a Proxy, so `ctx === context` would never match the
+  // original input. Comparing against this shadow gives us proxy-free
+  // reference equality and avoids the `state_proxy_equality_mismatch`
+  // warning.
+  let rawContextRef: ToolsDockContext | null = null;
   let availableTools = $state<AvailableTool[]>(
     registeredTools.map((t) => ({ id: t.id, label: t.label, badge: t.badge })),
   );
@@ -229,14 +236,22 @@ export function defineToolsDock<TCtx = unknown>(
    * Svelte context). Always reads the latest `$state` values so handlers
    * see the post-update state, regardless of how many updates happened
    * in a single call.
+   *
+   * The `$state` reads are wrapped in `untrack` so that when this is
+   * invoked from inside a Svelte `$effect` (e.g. `<ToolsDock>`'s effect
+   * forwarding the `context` prop into `dock.setContext`), the reads do
+   * NOT become dependencies of that effect. Without this guard, a
+   * subsequent `open()` / `close()` would re-run the calling effect,
+   * which would call `setContext` again, triggering another availability
+   * fetch and another `emitChange` — an infinite-ish feedback loop.
    */
   function emitChange(): void {
     if (!ready) return;
-    const payload: ToolsDockEvents['change'] = {
+    const payload = untrack<ToolsDockEvents['change']>(() => ({
       isOpen,
       activeTool,
       context,
-    };
+    }));
     emit('change', payload);
   }
 
@@ -329,6 +344,8 @@ export function defineToolsDock<TCtx = unknown>(
   }
 
   function open(id?: string): void {
+    const prevIsOpen = isOpen;
+    const prevActive = activeTool;
     if (id) {
       if (!availableTools.some((t) => t.id === id)) return; // unavailable — no-op
       activeTool = id;
@@ -337,16 +354,29 @@ export function defineToolsDock<TCtx = unknown>(
     }
     isOpen = true;
     persist();
-    emitChange();
+    // Skip emit when nothing observable changed — avoids spurious 'change'
+    // events when consumers idempotently call open() on the already-active
+    // tool.
+    if (isOpen !== prevIsOpen || activeTool !== prevActive) {
+      emitChange();
+    }
   }
 
   function close(): void {
+    if (!isOpen) {
+      // Already closed — persist (cheap, no-op when nothing changed) but
+      // skip emit so consumers don't see spurious 'change' events.
+      persist();
+      return;
+    }
     isOpen = false;
     persist();
     emitChange();
   }
 
   function toggle(id?: string): void {
+    const prevIsOpen = isOpen;
+    const prevActive = activeTool;
     if (id) {
       if (!availableTools.some((t) => t.id === id)) return;
       if (isOpen && activeTool === id) {
@@ -356,7 +386,9 @@ export function defineToolsDock<TCtx = unknown>(
         isOpen = true;
       }
       persist();
-      emitChange();
+      if (isOpen !== prevIsOpen || activeTool !== prevActive) {
+        emitChange();
+      }
       return;
     }
     isOpen = !isOpen;
@@ -364,10 +396,23 @@ export function defineToolsDock<TCtx = unknown>(
       activeTool = availableTools[0].id;
     }
     persist();
-    emitChange();
+    if (isOpen !== prevIsOpen || activeTool !== prevActive) {
+      emitChange();
+    }
   }
 
   function setContextValue(ctx: ToolsDockContext | null): void {
+    // Strict-equality short-circuit: passing the same context reference is a
+    // no-op. Skips both the availability refresh and the `'change'` emit so
+    // consumers (e.g. `<ToolsDock>`'s context-forwarding `$effect`) can call
+    // this repeatedly without amplifying side effects. Consumers who want a
+    // "force refresh" can pass a fresh object or `null` first.
+    //
+    // Compare against `rawContextRef` (a non-reactive shadow) rather than the
+    // `$state` value, because Svelte 5 wraps object `$state` in a Proxy and
+    // the original input would never `===` the proxied stored value.
+    if (ctx === rawContextRef) return;
+    rawContextRef = ctx;
     context = ctx;
     if (fetchAvailability) refreshAvailability();
     // Emit AFTER kicking off availability refresh. The refresh is async and
