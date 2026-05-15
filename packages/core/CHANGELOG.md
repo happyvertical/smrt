@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.25.4
+
+### Patch Changes
+
+- ### Features
+
+  - add RoleShell primitive for multi-role admin shells (smrt-svelte)
+
+  ### Bug Fixes
+
+  - default breadcrumb startAfter to role id and propagate collapsed to NavTree (smrt-svelte)
+  - address RoleShell review feedback (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.25.4
+  - @happyvertical/smrt-config@0.25.4
+  - @happyvertical/smrt-types@0.25.4
+
 ## 0.25.3
 
 ### Patch Changes
