@@ -94,29 +94,37 @@ domain-specific tools live outside the framework in consumer packages.
 - Tool IDs are arbitrary strings (extensible, not an enum)
 
 **State-mirroring recipes** (issue #1235):
-- `dock.on('dock:change', ({ isOpen, activeTool, context }) => ...)` fires after
-  every `open()`/`close()`/`toggle()`/`setContext()` (and once more if a context
-  change clears the active tool via availability filtering). Use this instead of
-  threading multiple `$effect`s through every getter to mirror dock state into a
-  workbench store. The `'dock:*'` event-name prefix is reserved for built-in
-  dock events; consumer events should pick their own namespace (e.g.
-  `'my-app:foo'`) and use the stringly-typed overloads of `dock.on` / `dock.emit`.
+- Dock events. `'dock:state-changed'` fires on `open()`/`close()`/`toggle()` and
+  on availability-driven `activeTool` clears (payload: `{ isOpen, activeTool }`).
+  `'dock:context-changed'` fires on `setContext()` with a different reference
+  (payload: `{ context }`). Legacy `'dock:change'` (payload: `{ isOpen, activeTool, context }`)
+  still fires on every observable transition (incl. badge-only availability
+  refresh) for back-compat with consumers mirroring `availableTools` — it's
+  `@deprecated`; prefer the granular pair. The `'dock:*'` prefix is reserved
+  for built-ins; consumer events should pick a different namespace.
 - `WorkspaceShell` exposes `bind:mobileNavOpen` so consumers can lift the drawer
   state. Pair it with `<NavTree onNavigate={() => mobileNavOpen = false} />` to
   close the drawer on navigation without any DOM querying.
-- `ToolDef.iconComponent?: Component` renders a custom icon inside the rail
-  glyph (and as a leading glyph in the topbar layout). Matches `NavTree`'s
-  `iconComponent` convention; takes precedence over the `icon: string`
-  fallback and the `label.charAt(0)` last-resort. Pass the icon component
-  from your library of choice (lucide-svelte etc.) directly — avoids
-  ambiguous single-letter glyphs in dense docks ("Chat" vs "Claim Audit").
-  The icon component is rendered with no props (`<IconComponent />`); wrap
-  props-bearing icons in a small `.svelte` adapter component if you need
-  to hard-code size or other attributes.
+- `ToolDef.iconComponent?: Component` renders a custom icon (lucide-svelte etc.)
+  inside the rail glyph (and as a leading glyph in topbar layout). Takes
+  precedence over `icon: string`, then `label.charAt(0)` as last resort.
 - `dock.refreshAvailability()` forces a re-run of `fetchAvailability` with the
-  current context. `setContext()` short-circuits on strict-equal references, so
-  use this when a side-channel event (job-updated websocket, manual refresh
-  button, etc.) signals availability or badges changed without a context change.
+  current context. `setContext()` short-circuits on strict-equal references —
+  use refresh when a side-channel event (websocket, button) signals availability
+  or badges changed without a context change.
+- Typed `defineToolsDock<TData, TActions>`. The factory's two generics flow
+  into `fetchAvailability`'s `ctx` param and through `ToolsDockContext<TData, TActions>`
+  for tool components. Inside a tool, type `context` locally:
+  `let { context }: { context: ToolsDockContext<MyData, MyActions> | null } = $props();`.
+  `context?.actions?.foo()` is then fully typed — no per-consumer redeclaration.
+  `ToolDef` itself is no longer generic (stored as a homogeneous `ToolDef[]`);
+  the consumer-side cast at registration is gone, the typed surface lives on
+  the component's `context` prop instead.
+- Layout positioning. `<ToolsDock layout='topbar'>` renders its own
+  `position: fixed` panel — **do not also use `<WorkspaceShell>`'s `inspector`
+  snippet** in that mode (the two panels overlap with no z-index coordination).
+  `'rail'` layout is safe to compose alongside `inspector` — its panel sits
+  inside the dock's own aside.
 
 ### RoleShell
 

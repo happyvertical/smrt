@@ -5,7 +5,16 @@
  * Consumes a {@link ToolsDockInstance} produced by {@link defineToolsDock}
  * and renders either:
  *   - layout='rail'   → a vertical icon rail (right edge) + a sliding panel
- *   - layout='topbar' → inline activation buttons + a separate floating panel
+ *     contained inside the dock's own aside (no fixed positioning at the
+ *     viewport level — safe to compose alongside `<WorkspaceShell>`'s
+ *     `inspector` snippet).
+ *   - layout='topbar' → inline activation buttons + a SEPARATE floating
+ *     `position: fixed` panel anchored to the bottom-right (z-index `40`).
+ *     **Do not also use `<WorkspaceShell>`'s `inspector` snippet in this
+ *     mode** — the shell renders its own `position: fixed` inspector with
+ *     no z-index coordination against the dock, and the two panels will
+ *     visibly overlap. Render `<ToolsDock layout='topbar'>` inside the
+ *     shell's `topbarActions` snippet and leave `inspector` unused.
  *
  * The component takes care of:
  *   - registering the dock on Svelte context (via the factory) so descendants

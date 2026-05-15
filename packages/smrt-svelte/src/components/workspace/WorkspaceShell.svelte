@@ -84,7 +84,22 @@ export interface Props {
   topbarActions?: Snippet;
   /** Optional vertical icon rail along the right edge. */
   inspectorRail?: Snippet;
-  /** Inspector panel content (right side). */
+  /**
+   * Inspector panel content (right side). Rendered into a `position: fixed`
+   * panel anchored to the right edge — z-index `22` on desktop, `22` on
+   * mobile (with a `21` scrim).
+   *
+   * **Positioning conflict**: do NOT use this snippet simultaneously with
+   * `<ToolsDock layout='topbar'>`. In topbar mode, the dock owns its own
+   * `position: fixed` panel anchored to the bottom-right (z-index `40`)
+   * with no z-index coordination against the shell's inspector — both
+   * panels will visibly overlap and compete for clicks. Pick one:
+   *   - For consumer-driven inspector content → use this snippet only,
+   *     and use `<ToolsDock layout='rail'>` (the rail layout renders its
+   *     panel inside its own aside, no positioning conflict)
+   *   - For tools-dock-driven content → leave this snippet unused and
+   *     render `<ToolsDock layout='topbar'>` inside `topbarActions`
+   */
   inspector?: Snippet;
   /** Main content. */
   children: Snippet;

@@ -62,7 +62,7 @@ export interface RoleConfig {
 // Tools dock primitives
 // ────────────────────────────────────────────────
 
-export interface ToolDef<TCtx = unknown> {
+export interface ToolDef {
   id: string;
   label: string;
   /**
@@ -101,7 +101,42 @@ export interface ToolDef<TCtx = unknown> {
    * ```
    */
   iconComponent?: Component;
-  component: Component<{ context: TCtx; dock: ToolsDockApi }>;
+  /**
+   * Panel component rendered when this tool is active. Receives the dock's
+   * current `context` (typed as `ToolsDockContext | null` here so the dock
+   * surface stays honest about the type erasure that happens at registration
+   * time) and the dock API.
+   *
+   * Tools that want typed access to `context.data` / `context.actions`
+   * should locally type their own props inside the component, e.g.
+   *
+   * ```svelte
+   * <script lang="ts">
+   *   import type { ToolsDockApi, ToolsDockContext } from
+   *     '@happyvertical/smrt-svelte/workspace';
+   *
+   *   interface MyData { siteSlug: string; contentId: string }
+   *   interface MyActions { triggerSave(): void }
+   *
+   *   let { context, dock }: {
+   *     context: ToolsDockContext<MyData, MyActions> | null;
+   *     dock: ToolsDockApi;
+   *   } = $props();
+   * </script>
+   * ```
+   *
+   * A previous version of this API carried a `<TCtx>` generic on `ToolDef`
+   * that flowed into the `context` prop. In practice it was always erased
+   * at registration (the dock stores tools as `ToolDef[]`), so consumers
+   * cast at the registration site and re-declared the prop shape inside
+   * the component anyway. The honest API surface is `context: ToolsDockContext | null` —
+   * consumers thread their typed shape via the per-component prop
+   * annotation shown above.
+   */
+  component: Component<{
+    context: ToolsDockContext | null;
+    dock: ToolsDockApi;
+  }>;
   badge?: number | string | null;
 }
 
@@ -111,12 +146,47 @@ export interface AvailableTool {
   badge?: number | string | null;
 }
 
-export interface ToolsDockContext<TData = Record<string, unknown>> {
+/**
+ * Context blob the dock surfaces to tools and `fetchAvailability`. Both
+ * generics default so existing call sites keep compiling:
+ *
+ * - `TData` types the shape of `data` (route data, selection, etc.).
+ *   Defaults to `Record<string, unknown>`.
+ * - `TActions` types the shape of `actions` — the host-supplied callback
+ *   map tools may invoke to reach back into the page (`triggerSave`,
+ *   `openDialog`, etc.). Defaults to `Record<string, never>` so callers
+ *   who don't pass actions get an empty action surface instead of `any`.
+ *
+ * Recommended consumer pattern: thread these generics into the tool
+ * component's own `context` prop so `context?.actions?.foo()` is fully
+ * typed without a cast.
+ *
+ * ```ts
+ * interface MyData { siteSlug: string; contentId: string }
+ * interface MyActions { triggerSave: () => void; openReview: (kind: string) => void }
+ *
+ * // factory site:
+ * const dock = defineToolsDock<MyData, MyActions>({ ... });
+ *
+ * // tool component:
+ * let { context }: {
+ *   context: ToolsDockContext<MyData, MyActions> | null;
+ * } = $props();
+ * context?.actions?.triggerSave(); // typed
+ * ```
+ */
+export interface ToolsDockContext<
+  TData = Record<string, unknown>,
+  TActions extends Record<string, (...args: any[]) => any> = Record<
+    string,
+    never
+  >,
+> {
   type: string;
   title?: string;
   url?: string;
   data?: TData;
-  actions?: Record<string, (...args: any[]) => unknown>;
+  actions?: TActions;
 }
 
 /**
@@ -134,12 +204,40 @@ export interface ToolsDockContext<TData = Record<string, unknown>> {
  */
 export interface ToolsDockEvents {
   /**
+   * Fired when `isOpen` or `activeTool` changes — i.e. `open()`, `close()`,
+   * `toggle()`, and availability-driven `activeTool` clears.
+   * Does NOT fire when only `context` changes (use `'dock:context-changed'`
+   * for that). Payload reflects post-mutation values, no-op-guarded by the
+   * same equality checks as the mutators.
+   *
+   * Useful for consumers that mirror only the open/active surface (a
+   * workbench panel, a route guard) and don't care about context refreshes.
+   */
+  'dock:state-changed': {
+    isOpen: boolean;
+    activeTool: string | null;
+  };
+  /**
+   * Fired only when `context` changes (via `setContext()` with a different
+   * reference). Does NOT fire on `open()` / `close()` / `toggle()`.
+   * No-op-guarded — same-reference `setContext` calls stay silent.
+   *
+   * Useful for consumers that mirror only the context (analytics, server
+   * sync) and don't care about open/close transitions.
+   */
+  'dock:context-changed': {
+    context: ToolsDockContext | null;
+  };
+  /**
    * Fired by the dock after `isOpen`, `activeTool`, or `context` change —
    * i.e. `open()`, `close()`, `toggle()`, `setContext()`, and availability
-   * changes that clear the active tool. Payload reflects post-mutation
-   * values. Useful for mirroring dock state into a separate store
-   * (workbench, analytics, etc.) without threading multiple `$effect`s
-   * through every state-bearing getter.
+   * changes that clear the active tool or shift visible badges. Payload
+   * reflects post-mutation values.
+   *
+   * @deprecated Prefer `'dock:state-changed'` / `'dock:context-changed'`
+   * for finer-grained subscriptions — they let consumers ignore the slice
+   * of change they don't care about. `'dock:change'` continues to fire
+   * (back-compat) and may be removed in a future major.
    */
   'dock:change': {
     isOpen: boolean;
@@ -154,8 +252,10 @@ export interface ToolsDockApi {
   readonly availableTools: ReadonlyArray<AvailableTool>;
   /**
    * The current dock context (route data, selection, etc.) as supplied via
-   * `setContext()`. Untyped on the API surface — tools receive a typed
-   * `context` prop via `ToolDef<TCtx>` instead.
+   * `setContext()`. Default-typed on the API surface — tools that want
+   * typed access to `context.data` / `context.actions` should locally
+   * annotate their own `context` prop with `ToolsDockContext<TData, TActions>`
+   * (see the JSDoc on {@link ToolDef.component}).
    */
   readonly context: ToolsDockContext | null;
   open(id?: string): void;

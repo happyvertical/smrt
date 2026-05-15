@@ -53,10 +53,29 @@ export const TOOLS_DOCK_KEY = Symbol('smrt-tools-dock');
 
 /**
  * Options accepted by {@link defineToolsDock}.
+ *
+ * `TData` types the shape of `context.data` passed through `setContext()` /
+ * `fetchAvailability` — narrow it at the factory site to get a typed
+ * `ctx.data` inside the availability callback without manual casts.
+ * Defaults to `Record<string, unknown>` so existing callers keep compiling.
+ *
+ * `TActions` types the shape of `context.actions` and flows the same way.
+ * Defaults to `Record<string, never>` so callers who don't pass actions get
+ * a strict (empty) action surface instead of `any`.
+ *
+ * Tools themselves are stored as `ToolDef[]` (the generics are erased at
+ * registration). Inside a tool component, type the prop locally — see the
+ * JSDoc on {@link ToolDef.component} for the recommended pattern.
  */
-export interface DefineToolsDockOptions<TCtx = unknown> {
+export interface DefineToolsDockOptions<
+  TData = Record<string, unknown>,
+  TActions extends Record<string, (...args: any[]) => any> = Record<
+    string,
+    never
+  >,
+> {
   /** Registered tools. Order is preserved when rendering the activation rail/topbar. */
-  tools: ToolDef<TCtx>[];
+  tools: ToolDef[];
   /**
    * Optional backend-driven gating callback. Returns the subset of tools that
    * should be exposed for the current `context`. When omitted, every
@@ -65,9 +84,13 @@ export interface DefineToolsDockOptions<TCtx = unknown> {
    * The callback may return tool ids that aren't present in `tools` — these
    * are ignored. Conversely, tools missing from the callback's response are
    * hidden from the dock UI.
+   *
+   * The `ctx` parameter is typed against the factory's `TData` / `TActions`
+   * generics — narrow them at the factory site for typed access to
+   * `ctx.data` / `ctx.actions` here without manual casts.
    */
   fetchAvailability?: (
-    ctx: ToolsDockContext | null,
+    ctx: ToolsDockContext<TData, TActions> | null,
   ) => Promise<AvailableTool[]>;
   /**
    * Optional `localStorage` key. When provided, the dock will persist a small
@@ -76,7 +99,21 @@ export interface DefineToolsDockOptions<TCtx = unknown> {
    * initial render on the server.
    */
   storageKey?: string;
-  /** Activation UI layout. Defaults to `'rail'`. */
+  /**
+   * Activation UI layout. Defaults to `'rail'`.
+   *
+   * - `'rail'`: vertical icon rail with the panel contained inside the
+   *   dock's own aside. Safe to compose alongside `<WorkspaceShell>`'s
+   *   `inspector` snippet — they don't fight for positioning.
+   * - `'topbar'`: inline activation buttons with a SEPARATE
+   *   `position: fixed` panel anchored to the bottom-right of the
+   *   viewport. **Do not also use `<WorkspaceShell>`'s `inspector`
+   *   snippet in this mode** — the shell renders its own
+   *   `position: fixed` inspector with no z-index coordination, and the
+   *   two panels will visibly overlap. Render `<ToolsDock layout='topbar'>`
+   *   inside the shell's `topbarActions` snippet and leave the inspector
+   *   slot unused.
+   */
   layout?: 'rail' | 'topbar';
   /** Initial open state. Hydration from storage takes precedence. Defaults to `false`. */
   initialOpen?: boolean;
@@ -90,8 +127,8 @@ export interface DefineToolsDockOptions<TCtx = unknown> {
  * that `<ToolsDock>` and `useToolsDock()` callers can safely destructure
  * without consumers depending on internal field names.
  */
-export interface ToolsDockInstance<TCtx = unknown> extends ToolsDockApi {
-  readonly tools: ReadonlyArray<ToolDef<TCtx>>;
+export interface ToolsDockInstance extends ToolsDockApi {
+  readonly tools: ReadonlyArray<ToolDef>;
   readonly layout: 'rail' | 'topbar';
   readonly storageKey: string | null;
   /** Internal: hydrate persisted state from `localStorage` (called by `<ToolsDock>` on mount). */
@@ -157,9 +194,13 @@ function safeWriteStorage(key: string, payload: PersistedState): void {
  * @returns the {@link ToolsDockInstance} (a {@link ToolsDockApi} plus
  *   framework metadata `<ToolsDock>` consumes when rendering)
  */
-export function defineToolsDock<TCtx = unknown>(
-  options: DefineToolsDockOptions<TCtx>,
-): ToolsDockInstance<TCtx> {
+export function defineToolsDock<
+  TData = Record<string, unknown>,
+  TActions extends Record<string, (...args: any[]) => any> = Record<
+    string,
+    never
+  >,
+>(options: DefineToolsDockOptions<TData, TActions>): ToolsDockInstance {
   const layout = options.layout ?? 'rail';
   const storageKey = options.storageKey ?? null;
   const fetchAvailability = options.fetchAvailability;
@@ -230,12 +271,11 @@ export function defineToolsDock<TCtx = unknown>(
   }
 
   /**
-   * Emit a `'dock:change'` event with a snapshot of the current public
-   * state. Guarded by the `ready` flag so handlers can't run during
-   * factory construction (before the instance is fully wired / registered
-   * on Svelte context). Always reads the latest `$state` values so
-   * handlers see the post-update state, regardless of how many updates
-   * happened in a single call.
+   * Emit the appropriate dock-owned change events. Guarded by the `ready`
+   * flag so handlers can't run during factory construction (before the
+   * instance is fully wired / registered on Svelte context). Always reads
+   * the latest `$state` values so handlers see the post-update state,
+   * regardless of how many updates happened in a single call.
    *
    * The `$state` reads are wrapped in `untrack` so that when this is
    * invoked from inside a Svelte `$effect` (e.g. `<ToolsDock>`'s effect
@@ -243,16 +283,44 @@ export function defineToolsDock<TCtx = unknown>(
    * NOT become dependencies of that effect. Without this guard, a
    * subsequent `open()` / `close()` would re-run the calling effect,
    * which would call `setContext` again, triggering another availability
-   * fetch and another `emitChange` — an infinite-ish feedback loop.
+   * fetch and another emit — an infinite-ish feedback loop.
+   *
+   * Three events fan out from a single call, each gated by what actually
+   * changed:
+   *   - `'dock:state-changed'` — fired when `stateChanged` is true (open /
+   *     close / toggle / availability cleared the active tool)
+   *   - `'dock:context-changed'` — fired when `contextChanged` is true
+   *     (`setContext` saw a different reference)
+   *   - `'dock:change'` — legacy event, fired whenever this is called.
+   *     Stays for back-compat; consumers should prefer the granular pair.
+   *
+   * Callers that only see a badge/label refresh (no state or context
+   * change) still funnel through here so the legacy `'dock:change'`
+   * subscribers see badge updates — but `stateChanged` / `contextChanged`
+   * both stay `false`, keeping the granular events silent.
    */
-  function emitChange(): void {
+  function emitChange(opts: {
+    stateChanged: boolean;
+    contextChanged: boolean;
+  }): void {
     if (!ready) return;
-    const payload = untrack<ToolsDockEvents['dock:change']>(() => ({
+    const snapshot = untrack(() => ({
       isOpen,
       activeTool,
       context,
     }));
-    emit('dock:change', payload);
+    if (opts.stateChanged) {
+      emit<ToolsDockEvents['dock:state-changed']>('dock:state-changed', {
+        isOpen: snapshot.isOpen,
+        activeTool: snapshot.activeTool,
+      });
+    }
+    if (opts.contextChanged) {
+      emit<ToolsDockEvents['dock:context-changed']>('dock:context-changed', {
+        context: snapshot.context,
+      });
+    }
+    emit<ToolsDockEvents['dock:change']>('dock:change', snapshot);
   }
 
   /**
@@ -303,7 +371,8 @@ export function defineToolsDock<TCtx = unknown>(
         } satisfies AvailableTool;
       });
 
-    let changed = false;
+    let stateChanged = false;
+    let anyChange = false;
 
     // If the active tool is no longer available, clear it.
     if (activeTool && !availableTools.some((t) => t.id === activeTool)) {
@@ -315,7 +384,8 @@ export function defineToolsDock<TCtx = unknown>(
       // don't depend on the <ToolsDock> component being mounted to rescue
       // them via its $effect.
       persist();
-      changed = true;
+      stateChanged = true;
+      anyChange = true;
     }
 
     // Even when the active tool stayed put, the availability set may have
@@ -323,12 +393,16 @@ export function defineToolsDock<TCtx = unknown>(
     // tools appearing/disappearing). Emit so consumers mirroring
     // `availableTools` into their own state (badges in topbars, etc.) see
     // the update without polling.
-    if (!changed) {
-      changed = availabilityActuallyChanged(prev, availableTools);
+    if (!anyChange) {
+      anyChange = availabilityActuallyChanged(prev, availableTools);
     }
 
-    if (changed) {
-      emitChange();
+    if (anyChange) {
+      // Pure badge/label refresh (no `stateChanged`, no context change)
+      // still fires the legacy `'dock:change'` event for back-compat with
+      // consumers mirroring `availableTools` — but stays silent on the
+      // granular pair, which is the point of the U2 split.
+      emitChange({ stateChanged, contextChanged: false });
     }
   }
 
@@ -345,7 +419,11 @@ export function defineToolsDock<TCtx = unknown>(
       return;
     }
     const token = ++availabilityToken;
-    const snapshotCtx = context;
+    // Internally we store `context` as the default-generic shape; the
+    // factory's `TData` / `TActions` only constrain the public callback
+    // signature. Cast at the call boundary to thread the consumer's narrowed
+    // type through without polluting the runtime store with the generic.
+    const snapshotCtx = context as ToolsDockContext<TData, TActions> | null;
     // Funnel both synchronous throws (argument validation, undefined
     // dereferences before the promise is returned) and asynchronous
     // rejections through the same error path so neither escapes
@@ -403,7 +481,7 @@ export function defineToolsDock<TCtx = unknown>(
     // 'dock:change' events when consumers idempotently call open() on the
     // already-active tool.
     if (isOpen !== prevIsOpen || activeTool !== prevActive) {
-      emitChange();
+      emitChange({ stateChanged: true, contextChanged: false });
     }
   }
 
@@ -416,7 +494,7 @@ export function defineToolsDock<TCtx = unknown>(
     }
     isOpen = false;
     persist();
-    emitChange();
+    emitChange({ stateChanged: true, contextChanged: false });
   }
 
   function toggle(id?: string): void {
@@ -432,7 +510,7 @@ export function defineToolsDock<TCtx = unknown>(
       }
       persist();
       if (isOpen !== prevIsOpen || activeTool !== prevActive) {
-        emitChange();
+        emitChange({ stateChanged: true, contextChanged: false });
       }
       return;
     }
@@ -442,7 +520,7 @@ export function defineToolsDock<TCtx = unknown>(
     }
     persist();
     if (isOpen !== prevIsOpen || activeTool !== prevActive) {
-      emitChange();
+      emitChange({ stateChanged: true, contextChanged: false });
     }
   }
 
@@ -461,13 +539,15 @@ export function defineToolsDock<TCtx = unknown>(
     context = ctx;
     if (fetchAvailability) refreshAvailability();
     // Emit AFTER kicking off availability refresh. The refresh is async and
-    // may emit a second `'dock:change'` later if it clears `activeTool` —
-    // that is the intended behaviour (one event per observable state
-    // transition).
-    emitChange();
+    // may emit a second event later if it clears `activeTool` — that is
+    // the intended behaviour (one event per observable state transition).
+    // `contextChanged: true` fires `'dock:context-changed'`; `stateChanged`
+    // stays false here because `setContext` itself doesn't touch isOpen/
+    // activeTool (the async availability refresh handles that).
+    emitChange({ stateChanged: false, contextChanged: true });
   }
 
-  const instance: ToolsDockInstance<TCtx> = {
+  const instance: ToolsDockInstance = {
     // Reactive getters — keep the api surface read-only.
     get isOpen() {
       return isOpen;

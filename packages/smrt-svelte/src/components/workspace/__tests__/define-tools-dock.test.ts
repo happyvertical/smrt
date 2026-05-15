@@ -1024,4 +1024,300 @@ describe('defineToolsDock', () => {
       expect(fetchAvailability.mock.calls.length).toBe(initialFetchCount);
     });
   });
+
+  // ─────────────────────────────────────────────────────────────
+  // Granular events: 'dock:state-changed' and 'dock:context-changed'
+  // split the legacy 'dock:change' so consumers can subscribe to just
+  // the slice they care about. The legacy event still fires (back-compat).
+  // ─────────────────────────────────────────────────────────────
+
+  describe("'dock:state-changed' event", () => {
+    it('fires on open() / close() / toggle() with state-only payload', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:state-changed', handler);
+
+      dock.open('chat');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'chat',
+      });
+
+      dock.close();
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: false,
+        activeTool: 'chat',
+      });
+
+      dock.toggle('jobs');
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(3);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: 'jobs',
+      });
+    });
+
+    it('does NOT fire on setContext() (context-only mutation)', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:state-changed', handler);
+
+      dock.setContext({ type: 'route', title: 'Home' });
+      flushSync();
+      // setContext alone does not change isOpen/activeTool — must stay silent.
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('fires when availability clears the active tool', async () => {
+      let availability: { id: string }[] = [{ id: 'chat' }, { id: 'jobs' }];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+          fetchAvailability,
+        }),
+      );
+
+      dock.setContext({ type: 'a' });
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      dock.open('jobs');
+      flushSync();
+
+      const handler = vi.fn();
+      dock.on('dock:state-changed', handler);
+
+      // Availability shrink → 'jobs' is no longer available, activeTool clears.
+      availability = [{ id: 'chat' }];
+      dock.refreshAvailability();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: null,
+      });
+    });
+
+    it('does NOT fire on no-op open() / close() / toggle()', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      dock.open('chat');
+      flushSync();
+
+      const handler = vi.fn();
+      dock.on('dock:state-changed', handler);
+
+      dock.open('chat'); // already open + active
+      flushSync();
+      dock.close();
+      flushSync();
+      dock.close(); // already closed
+      flushSync();
+
+      // One observable transition (open → close), so exactly one emit.
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('does NOT fire on badge-only availability refresh', async () => {
+      // Pure badge churn: no state change, no context change. The legacy
+      // 'dock:change' event still fires (for back-compat consumers
+      // mirroring availableTools), but 'dock:state-changed' stays silent.
+      let availability: { id: string; badge?: number | null }[] = [
+        { id: 'chat', badge: 0 },
+      ];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+          fetchAvailability,
+        }),
+      );
+
+      dock.setContext({ type: 'a' });
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      const stateHandler = vi.fn();
+      dock.on('dock:state-changed', stateHandler);
+
+      availability = [{ id: 'chat', badge: 7 }];
+      dock.refreshAvailability();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      expect(stateHandler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("'dock:context-changed' event", () => {
+    it('fires on setContext() with a different reference', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:context-changed', handler);
+
+      const ctx = { type: 'route', title: 'Home' } as const;
+      dock.setContext(ctx);
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({ context: ctx });
+
+      dock.setContext(null);
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(2);
+      expect(handler).toHaveBeenLastCalledWith({ context: null });
+    });
+
+    it('does NOT fire on open() / close() / toggle() (state-only mutations)', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const handler = vi.fn();
+      dock.on('dock:context-changed', handler);
+
+      dock.open('chat');
+      flushSync();
+      dock.close();
+      flushSync();
+      dock.toggle('chat');
+      flushSync();
+
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire on setContext() with the same reference', () => {
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+        }),
+      );
+
+      const ctx = { type: 'route' } as const;
+      dock.setContext(ctx);
+      flushSync();
+
+      const handler = vi.fn();
+      dock.on('dock:context-changed', handler);
+
+      dock.setContext(ctx); // same reference — no-op-guarded
+      flushSync();
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('does NOT fire on a badge-only availability refresh', async () => {
+      let availability: { id: string; badge?: number | null }[] = [
+        { id: 'chat', badge: 0 },
+      ];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+          fetchAvailability,
+        }),
+      );
+
+      dock.setContext({ type: 'a' });
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      const handler = vi.fn();
+      dock.on('dock:context-changed', handler);
+
+      availability = [{ id: 'chat', badge: 7 }];
+      dock.refreshAvailability();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      // Context didn't change — badge refresh stays silent on this event.
+      expect(handler).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("'dock:change' event continues to fire (back-compat)", () => {
+    it('fires on state, context, and badge-only availability transitions', async () => {
+      // Use a fetchAvailability that yields the same shape the dock seeded
+      // from the registered tools (no badge), so the post-setContext
+      // availability application is a no-op and we can count emits cleanly.
+      const fetchAvailability = vi
+        .fn()
+        .mockResolvedValue([{ id: 'chat' }] as { id: string }[]);
+
+      const { dock } = track(
+        mountDock({
+          tools: [{ id: 'chat', label: 'Chat', component: noopTool }],
+          fetchAvailability,
+        }),
+      );
+
+      const legacyHandler = vi.fn();
+      dock.on('dock:change', legacyHandler);
+
+      // 1. setContext → 1 synchronous emit. The async availability fetch
+      //    resolves to the same shape the registered tools already had
+      //    (id='chat', no badge), so applyAvailability sees no change and
+      //    does NOT emit a second time.
+      dock.setContext({ type: 'a' });
+      flushSync();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      expect(legacyHandler).toHaveBeenCalledTimes(1);
+
+      // 2. open() → 1 more emit (state change).
+      dock.open('chat');
+      flushSync();
+      expect(legacyHandler).toHaveBeenCalledTimes(2);
+
+      // 3. badge-only availability refresh → 1 more emit. This is the
+      //    back-compat slice: granular 'dock:state-changed' and
+      //    'dock:context-changed' stay silent, but legacy mirrors of
+      //    availableTools still see the update via 'dock:change'.
+      fetchAvailability.mockResolvedValueOnce([{ id: 'chat', badge: 5 }]);
+      dock.refreshAvailability();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      expect(legacyHandler).toHaveBeenCalledTimes(3);
+
+      // 4. close() → 1 more emit (state change).
+      dock.close();
+      flushSync();
+      expect(legacyHandler).toHaveBeenCalledTimes(4);
+    });
+  });
 });
