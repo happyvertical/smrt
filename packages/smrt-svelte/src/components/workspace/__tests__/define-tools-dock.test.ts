@@ -453,6 +453,106 @@ describe('defineToolsDock', () => {
       expect(dock.availableTools.map((t) => t.id)).toEqual(['chat', 'jobs']);
     });
 
+    it("emits 'dock:change' when refresh changes only badge values", async () => {
+      // Regression for the badge-only refresh case: a side-channel signal
+      // fires (e.g. a Jobs-count websocket message) and the consumer calls
+      // `refreshAvailability()` to repaint badges. The tool ids haven't
+      // changed and the active tool stays put, but `availableTools` now
+      // carries a different badge — consumers mirroring this into a topbar
+      // count must see a `'dock:change'` event to repaint without polling.
+      let availability: { id: string; badge?: number | null }[] = [
+        { id: 'chat', badge: 0 },
+        { id: 'jobs', badge: 0 },
+      ];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+          fetchAvailability,
+        }),
+      );
+
+      dock.setContext({ type: 'thing' });
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      // Side-channel update: same tool ids, different badge values.
+      availability = [
+        { id: 'chat', badge: 0 },
+        { id: 'jobs', badge: 7 },
+      ];
+      dock.refreshAvailability();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      // Exactly one emit reflecting the new badge.
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: false,
+        activeTool: null,
+        context: { type: 'thing' },
+      });
+      const jobsAfter = dock.availableTools.find((t) => t.id === 'jobs');
+      expect(jobsAfter?.badge).toBe(7);
+
+      // Calling refreshAvailability again with byte-identical results must
+      // NOT emit a second time. The discriminating shape check keeps no-op
+      // refreshes silent so consumer mirrors don't see spurious updates.
+      dock.refreshAvailability();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("emits 'dock:change' when refresh clears the active tool", async () => {
+      // Direct coverage for the active-tool-clear branch of
+      // `applyAvailability` reached via `refreshAvailability()` (rather
+      // than via a `setContext()` → refresh chain).
+      let availability: { id: string }[] = [{ id: 'chat' }, { id: 'jobs' }];
+      const fetchAvailability = vi.fn(async () => availability);
+
+      const { dock } = track(
+        mountDock({
+          tools: [
+            { id: 'chat', label: 'Chat', component: noopTool },
+            { id: 'jobs', label: 'Jobs', component: noopTool },
+          ],
+          fetchAvailability,
+        }),
+      );
+
+      dock.setContext({ type: 'thing' });
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+      dock.open('jobs');
+      flushSync();
+      expect(dock.activeTool).toBe('jobs');
+
+      const handler = vi.fn();
+      dock.on('dock:change', handler);
+
+      // Side-channel availability shrink — 'jobs' is no longer available.
+      availability = [{ id: 'chat' }];
+      dock.refreshAvailability();
+      await new Promise((r) => setTimeout(r, 0));
+      flushSync();
+
+      expect(dock.activeTool).toBeNull();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(handler).toHaveBeenLastCalledWith({
+        isOpen: true,
+        activeTool: null,
+        context: { type: 'thing' },
+      });
+    });
+
     it('drops stale results from a prior refreshAvailability call (race-safety)', async () => {
       let resolveFirst: ((v: { id: string }[]) => void) | null = null;
       let resolveSecond: ((v: { id: string }[]) => void) | null = null;

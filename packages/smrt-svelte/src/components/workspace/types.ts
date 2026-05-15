@@ -39,26 +39,33 @@ export interface ToolDef<TCtx = unknown> {
    * of `label` when both are omitted.
    *
    * Note: ambiguous in dense docks (e.g. "Chat" and "Claim Audit" both
-   * collapse to "C"). Provide `iconComponent` for production decks — see
+   * collapse to "C"). Provide `iconComponent` for production docks — see
    * the `iconComponent` field below.
    */
   icon?: string;
   /**
    * Component rendered in the rail layout (and as a leading glyph in the
    * topbar layout) for this tool. Takes precedence over `icon`. Matches
-   * the pattern used by `NavTree` for per-item icons — pass a wrapper
-   * component over your icon library of choice (lucide-svelte etc.).
+   * the pattern used by `NavTree` for per-item icons — pass the icon
+   * component from your library of choice (lucide-svelte etc.) directly,
+   * or a thin `.svelte` wrapper around it.
    *
-   * The component is rendered with no required props; if your icon library
-   * needs sizing, wrap it in a thin component that hard-codes the dimensions
-   * you want (typically ~18px to match `.tools-dock__rail-glyph`).
+   * The component is rendered with no props (`<IconComponent />`); if your
+   * icon library needs sizing, wrap it in a thin `.svelte` component that
+   * hard-codes the dimensions you want (typically ~18px to match
+   * `.tools-dock__rail-glyph`).
    *
    * @example
-   * ```svelte
-   * <script>
-   *   import { MessageSquare } from 'lucide-svelte';
-   *   const ChatIcon = () => MessageSquare; // or a wrapper component
-   * </script>
+   * ```ts
+   * import MessageSquare from 'lucide-svelte/icons/message-square';
+   * import ChatPanel from './ChatPanel.svelte';
+   *
+   * const tool: ToolDef = {
+   *   id: 'chat',
+   *   label: 'Chat',
+   *   iconComponent: MessageSquare,
+   *   component: ChatPanel,
+   * };
    * ```
    */
   iconComponent?: Component;

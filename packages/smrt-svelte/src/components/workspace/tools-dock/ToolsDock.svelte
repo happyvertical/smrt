@@ -156,6 +156,15 @@
     onclick={(event) => handleButtonClick(event, tool.id)}
   >
     {#if variant === 'topbar'}
+      {#if IconComponent}
+        <span class="tools-dock__topbar-button-icon" aria-hidden="true">
+          <IconComponent />
+        </span>
+      {:else if iconString}
+        <span class="tools-dock__topbar-button-icon" aria-hidden="true">
+          {iconString}
+        </span>
+      {/if}
       <span class="tools-dock__topbar-button-label">{label}</span>
     {:else}
       <span class="tools-dock__rail-glyph" aria-hidden="true">
@@ -439,6 +448,9 @@
 
   .tools-dock__topbar-button {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
     border: 1px solid var(--smrt-color-outline-variant, #30343a);
     background: var(--smrt-color-surface-container-low, #11161b);
     color: var(--smrt-color-on-surface-variant, #aab2bd);
@@ -453,6 +465,17 @@
   .tools-dock__topbar-button:hover {
     background: var(--smrt-color-surface-container-high, #1d2228);
     color: var(--smrt-color-on-surface, #f8fafc);
+  }
+
+  /* Leading glyph in the topbar layout. Sized to match the surrounding
+     text — consumers wanting a different size can wrap their icon
+     component to hard-code dimensions (see ToolDef.iconComponent docs). */
+  .tools-dock__topbar-button-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    font-size: 0.95rem;
   }
 
   .tools-dock--topbar .tools-dock__panel {

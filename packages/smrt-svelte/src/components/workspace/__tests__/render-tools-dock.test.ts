@@ -213,6 +213,87 @@ describe('<ToolsDock> rail layout', () => {
     });
   });
 
+  describe('topbar button icon rendering', () => {
+    it('renders ToolDef.iconComponent before the label in topbar layout', () => {
+      const target = render({
+        layout: 'topbar',
+        tools: [{ id: 'chat', label: 'Chat', iconComponent: TestIcon }],
+      });
+
+      const btn = target.querySelector<HTMLButtonElement>(
+        '.tools-dock__topbar-button',
+      );
+      expect(btn).not.toBeNull();
+      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
+      const label = btn?.querySelector('.tools-dock__topbar-button-label');
+      expect(icon).not.toBeNull();
+      expect(label?.textContent).toBe('Chat');
+      // Icon hosts the test SVG.
+      expect(
+        icon?.querySelector('svg[data-testid="custom-icon"]'),
+      ).not.toBeNull();
+      // Icon precedes the label in document order so screen-magnifier /
+      // visual layout matches reading order.
+      if (icon && label) {
+        expect(
+          icon.compareDocumentPosition(label) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      }
+    });
+
+    it('renders ToolDef.icon string before the label in topbar layout', () => {
+      const target = render({
+        layout: 'topbar',
+        tools: [{ id: 'chat', label: 'Chat', icon: 'X' }],
+      });
+
+      const btn = target.querySelector<HTMLButtonElement>(
+        '.tools-dock__topbar-button',
+      );
+      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
+      expect(icon?.textContent?.trim()).toBe('X');
+      // No SVG when only the string icon was supplied.
+      expect(icon?.querySelector('svg')).toBeNull();
+    });
+
+    it('omits the icon span entirely when neither iconComponent nor icon is set', () => {
+      const target = render({
+        layout: 'topbar',
+        tools: [{ id: 'chat', label: 'Chat' }],
+      });
+
+      const btn = target.querySelector<HTMLButtonElement>(
+        '.tools-dock__topbar-button',
+      );
+      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
+      const label = btn?.querySelector('.tools-dock__topbar-button-label');
+      // Topbar buttons stay label-only when no icon is provided — unlike
+      // the rail, where we fall back to the first letter of the label.
+      expect(icon).toBeNull();
+      expect(label?.textContent).toBe('Chat');
+    });
+
+    it('iconComponent takes precedence over icon string in topbar layout', () => {
+      const target = render({
+        layout: 'topbar',
+        tools: [
+          { id: 'chat', label: 'Chat', icon: 'X', iconComponent: TestIcon },
+        ],
+      });
+
+      const btn = target.querySelector<HTMLButtonElement>(
+        '.tools-dock__topbar-button',
+      );
+      const icon = btn?.querySelector('.tools-dock__topbar-button-icon');
+      // SVG wins, the string "X" must not appear.
+      expect(
+        icon?.querySelector('svg[data-testid="custom-icon"]'),
+      ).not.toBeNull();
+      expect(icon?.textContent?.trim()).toBe('');
+    });
+  });
+
   it('renders an empty state when no tools are available', async () => {
     const target = render({
       tools: [{ id: 'chat', label: 'Chat' }],

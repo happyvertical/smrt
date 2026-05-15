@@ -105,10 +105,14 @@ domain-specific tools live outside the framework in consumer packages.
   state. Pair it with `<NavTree onNavigate={() => mobileNavOpen = false} />` to
   close the drawer on navigation without any DOM querying.
 - `ToolDef.iconComponent?: Component` renders a custom icon inside the rail
-  glyph (matches `NavTree`'s `iconComponent` convention). Takes precedence over
-  the `icon: string` fallback and the `label.charAt(0)` last-resort. Pass a
-  thin wrapper around your icon library of choice (lucide-svelte etc.) — avoids
+  glyph (and as a leading glyph in the topbar layout). Matches `NavTree`'s
+  `iconComponent` convention; takes precedence over the `icon: string`
+  fallback and the `label.charAt(0)` last-resort. Pass the icon component
+  from your library of choice (lucide-svelte etc.) directly — avoids
   ambiguous single-letter glyphs in dense docks ("Chat" vs "Claim Audit").
+  The icon component is rendered with no props (`<IconComponent />`); wrap
+  props-bearing icons in a small `.svelte` adapter component if you need
+  to hard-code size or other attributes.
 - `dock.refreshAvailability()` forces a re-run of `fetchAvailability` with the
   current context. `setContext()` short-circuits on strict-equal references, so
   use this when a side-channel event (job-updated websocket, manual refresh
