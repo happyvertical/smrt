@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.25.3
+
+### Patch Changes
+
+- ### Features
+
+  - add ToolDef iconComponent and dock.refreshAvailability (smrt-svelte)
+
+  ### Bug Fixes
+
+  - address iconComponent + refreshAvailability review feedback (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.25.3
+  - @happyvertical/smrt-config@0.25.3
+  - @happyvertical/smrt-types@0.25.3
+
 ## 0.25.2
 
 ### Patch Changes
