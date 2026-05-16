@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.25.7
+
+### Patch Changes
+
+- ### Features
+
+  - add dock availability gate composer (server-side) (smrt-svelte)
+
+  ### Bug Fixes
+
+  - self-map TCtx constraint and strict-true gate evaluation (smrt-svelte)
+  - address gate composer review feedback (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.25.7
+  - @happyvertical/smrt-config@0.25.7
+  - @happyvertical/smrt-types@0.25.7
+
 ## 0.25.6
 
 ### Patch Changes
