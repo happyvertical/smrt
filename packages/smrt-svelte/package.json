@@ -49,6 +49,11 @@
       "import": "./dist/components/workspace/index.js",
       "default": "./dist/components/workspace/index.js"
     },
+    "./workspace/server": {
+      "types": "./dist/components/workspace/server/index.d.ts",
+      "import": "./dist/components/workspace/server/index.js",
+      "default": "./dist/components/workspace/server/index.js"
+    },
     "./styles/tokens.css": {
       "default": "./dist/styles/tokens.css"
     },
