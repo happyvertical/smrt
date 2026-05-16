@@ -8,9 +8,12 @@
  * Owns a `$state` ref for the current context so that the test can mutate it
  * post-mount via the `setContextProp` callback exposed via `onReady`.
  */
-import { defineToolsDock } from '../tools-dock/define-tools-dock.svelte.js';
+import {
+  defineToolsDock,
+  type ToolsDockInstance,
+} from '../tools-dock/define-tools-dock.svelte.js';
 import ToolsDock from '../tools-dock/ToolsDock.svelte';
-import type { ToolsDockContext, ToolsDockInstance } from '../types.js';
+import type { ToolsDockContext } from '../types.js';
 
 interface Props {
   onReady: (api: {

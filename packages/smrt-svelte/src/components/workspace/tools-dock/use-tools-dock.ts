@@ -8,9 +8,12 @@
  * Throws a clear error if called outside a `<ToolsDock>` provider tree so
  * misuse fails loudly during development rather than producing silent nulls.
  *
- * The returned `dock.context` is the untyped {@link ToolsDockContext} shape.
- * For typed access from within a tool body, use the `context` prop wired by
- * `<ToolsDock>` — `ToolDef<TCtx>` parameterizes that prop, not this hook.
+ * The returned `dock.context` is the default {@link ToolsDockContext} shape.
+ * For typed access from within a tool body, the recommended pattern is to
+ * type the component's own `context` prop locally — see the JSDoc on
+ * {@link ToolDef.component} for an example. (`ToolDef` deliberately erases
+ * its context generic at registration time so the dock can store tools as
+ * a single homogeneous `ToolDef[]`.)
  *
  * @example
  * ```svelte
