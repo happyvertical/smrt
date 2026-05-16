@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.25.5
+
+### Patch Changes
+
+- ### Features
+
+  - land deferred workspace ergonomics (typed context, granular events) (smrt-svelte)
+
+  ### Bug Fixes
+
+  - parameterize ToolsDockApi generics for typed dock.setContext (smrt-svelte)
+  - repair ToolDef.component and TActions typing for typed tool patterns (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.25.5
+  - @happyvertical/smrt-config@0.25.5
+  - @happyvertical/smrt-types@0.25.5
+
 ## 0.25.4
 
 ### Patch Changes
