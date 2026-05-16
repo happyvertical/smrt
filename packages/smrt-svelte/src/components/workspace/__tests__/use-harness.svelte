@@ -17,5 +17,7 @@ defineToolsDock({
 });
 // useToolsDock reads from the same component init scope's context tree.
 const api = useToolsDock();
+// This harness intentionally snapshots the callback during setup.
+// svelte-ignore state_referenced_locally
 onReady(api);
 </script>

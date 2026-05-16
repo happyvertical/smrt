@@ -19,12 +19,16 @@ interface Props {
 
 const { roles, initialRole, currentPath, onReady }: Props = $props();
 
+// This harness intentionally snapshots the initial role.
+// svelte-ignore state_referenced_locally
 let currentRole = $state(initialRole);
 
 const content = createRawSnippet(() => ({
   render: () => '<span>switch-harness</span>',
 }));
 
+// This harness intentionally snapshots the callback during setup.
+// svelte-ignore state_referenced_locally
 onReady?.({
   setCurrentRole: (id: string) => {
     currentRole = id;

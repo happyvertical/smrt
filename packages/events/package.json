@@ -43,7 +43,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "echo '⏭️  Skipping events typecheck (use npm run check instead)'",
+    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "peerDependencies": {

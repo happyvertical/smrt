@@ -20,12 +20,16 @@ interface Props {
 
 const { initial = false, onReady }: Props = $props();
 
+// This harness intentionally snapshots the initial bindable value.
+// svelte-ignore state_referenced_locally
 let mobileNavOpen = $state(initial);
 
 const content = createRawSnippet(() => ({
   render: () => '<span>content</span>',
 }));
 
+// This harness intentionally snapshots the callback during setup.
+// svelte-ignore state_referenced_locally
 onReady?.({
   setMobileNavOpen: (next: boolean) => {
     mobileNavOpen = next;

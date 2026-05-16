@@ -24,7 +24,6 @@ interface Props {
 
 const props: Props = $props();
 
-// biome-ignore lint/correctness/noUnusedVariables: noop component
 const NoopBody = (() => null) as never;
 
 const dock = defineToolsDock({
@@ -33,6 +32,8 @@ const dock = defineToolsDock({
 
 let currentContext = $state<ToolsDockContext | null | undefined>(undefined);
 
+// This harness intentionally snapshots the callback during component setup.
+// svelte-ignore state_referenced_locally
 props.onReady({
   dock,
   setContextProp: (next) => {

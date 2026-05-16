@@ -13,4 +13,7 @@ import { Image } from '../../image';
 import '../../images';
 
 // Re-register imported objects with explicit package names for bundled runtimes
-ObjectRegistry.register(Image, { packageName: '@happyvertical/smrt-images' });
+ObjectRegistry.register(Image, {
+  name: 'Image',
+  packageName: '@happyvertical/smrt-images',
+});

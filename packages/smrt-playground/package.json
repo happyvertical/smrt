@@ -31,6 +31,7 @@
     "clean": "rm -rf dist",
     "dev": "npm run build:watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."

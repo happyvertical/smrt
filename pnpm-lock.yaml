@@ -228,6 +228,9 @@ importers:
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
       '@happyvertical/smrt-users':
         specifier: workspace:*
         version: link:../users

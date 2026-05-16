@@ -40,7 +40,7 @@
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

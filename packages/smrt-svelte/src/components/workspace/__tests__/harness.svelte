@@ -16,6 +16,10 @@ interface Props {
 }
 
 const props: Props = $props();
+// This harness intentionally snapshots initial options during setup.
+// svelte-ignore state_referenced_locally
 const dock = defineToolsDock(props.options);
+// This harness intentionally snapshots the callback during setup.
+// svelte-ignore state_referenced_locally
 props.onReady(dock);
 </script>
