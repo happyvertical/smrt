@@ -34,7 +34,10 @@ import { config } from './config.js';
 import type { DatabaseConfig } from './database.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
-import { ensureLegacySystemTableCompatibility } from './system/compatibility.js';
+import {
+  ensureLegacySystemTableCompatibility,
+  tableExists,
+} from './system/compatibility.js';
 import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
 const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
@@ -751,6 +754,35 @@ export class SmrtClass {
     return this._ai;
   }
 
+  private async isSystemSchemaVersionApplied(
+    db: DatabaseInterface,
+    version: string,
+  ): Promise<boolean> {
+    const engine = detectEngine(getDatabaseUrl(db), this._dbEngineHint);
+
+    if (
+      engine === 'postgres' &&
+      !(await tableExists(db, '_smrt_migrations', this._dbEngineHint))
+    ) {
+      return false;
+    }
+
+    try {
+      const versionParam = engine === 'postgres' ? '$1' : '?';
+      const rows = await db.query(
+        `SELECT 1 FROM _smrt_migrations WHERE version = ${versionParam} LIMIT 1`,
+        version,
+      );
+      return getQueryRows(rows).length > 0;
+    } catch (error) {
+      if (engine === 'postgres') {
+        throw error;
+      }
+
+      return false;
+    }
+  }
+
   /**
    * Ensure SMRT system tables exist in the database
    *
@@ -883,21 +915,14 @@ export class SmrtClass {
     // For Postgres, this runs after acquiring the advisory lock so concurrent
     // initializers can observe a completed bootstrap and skip replaying DDL.
     const version = SMRT_SCHEMA_VERSION;
-    try {
-      const rows = await db.query(
-        `SELECT 1 FROM _smrt_migrations WHERE version = '${version}' LIMIT 1`,
-      );
-      if (getQueryRows(rows).length > 0) {
-        return;
-      }
-    } catch {
-      // _smrt_migrations doesn't exist yet — fall through to create everything
+    if (await this.isSystemSchemaVersionApplied(db, version)) {
+      return;
     }
 
     // Older installs can have a subset of system columns already created.
     // Upgrade those tables before replaying idempotent DDL so index creation
     // does not fail on missing legacy columns.
-    await ensureLegacySystemTableCompatibility(db);
+    await ensureLegacySystemTableCompatibility(db, this._dbEngineHint);
 
     // Create all system tables
     // Split multi-statement SQL into individual statements to avoid race conditions

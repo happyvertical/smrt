@@ -203,7 +203,8 @@ describe('system table compatibility', () => {
     const query = vi
       .fn()
       .mockImplementation(async (sql: string, ...params: unknown[]) => {
-        if (sql === 'SELECT 1 FROM _smrt_jobs LIMIT 1') {
+        if (sql.includes('information_schema.tables')) {
+          expect(params).toEqual(['_smrt_jobs']);
           return { rows: [{ '?column?': 1 }] };
         }
 
@@ -250,7 +251,8 @@ describe('system table compatibility', () => {
     const query = vi
       .fn()
       .mockImplementation(async (sql: string, ...params: unknown[]) => {
-        if (sql === 'SELECT 1 FROM _smrt_job_events LIMIT 1') {
+        if (sql.includes('information_schema.tables')) {
+          expect(params).toEqual(['_smrt_job_events']);
           return { rows: [{ '?column?': 1 }] };
         }
 
@@ -291,7 +293,8 @@ describe('system table compatibility', () => {
     const query = vi
       .fn()
       .mockImplementation(async (sql: string, ...params: unknown[]) => {
-        if (sql === 'SELECT 1 FROM _smrt_job_events LIMIT 1') {
+        if (sql.includes('information_schema.tables')) {
+          expect(params).toEqual(['_smrt_job_events']);
           return { rows: [{ '?column?': 1 }] };
         }
 
@@ -358,7 +361,8 @@ describe('system table compatibility', () => {
     const query = vi
       .fn()
       .mockImplementation(async (sql: string, ...params: unknown[]) => {
-        if (sql === 'SELECT 1 FROM _smrt_job_events LIMIT 1') {
+        if (sql.includes('information_schema.tables')) {
+          expect(params).toEqual(['_smrt_job_events']);
           return { rows: [{ '?column?': 1 }] };
         }
 
@@ -419,7 +423,8 @@ describe('system table compatibility', () => {
     const query = vi
       .fn()
       .mockImplementation(async (sql: string, ...params: unknown[]) => {
-        if (sql === 'SELECT 1 FROM _smrt_job_events LIMIT 1') {
+        if (sql.includes('information_schema.tables')) {
+          expect(params).toEqual(['_smrt_job_events']);
           return { rows: [{ '?column?': 1 }] };
         }
 

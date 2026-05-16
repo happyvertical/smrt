@@ -59,6 +59,69 @@ class Issue35PostgresLockObject extends SmrtObject {
   value: string = '';
 }
 
+function createPostgresBootstrapTx({
+  migrationsTableExists = false,
+  versionApplied = false,
+  url = `postgresql://localhost:5432/test_${randomUUID()}`,
+}: {
+  migrationsTableExists?: boolean;
+  versionApplied?: boolean;
+  url?: string;
+} = {}) {
+  const txQueries: string[] = [];
+  const tableLookups: string[] = [];
+  const tableLookupParams: unknown[][] = [];
+  const existingTables = new Set(
+    migrationsTableExists ? ['_smrt_migrations'] : [],
+  );
+  const tx = {
+    url,
+    query: vi.fn(async (sql: string, ...params: unknown[]) => {
+      txQueries.push(sql);
+
+      if (sql.includes('pg_advisory_xact_lock')) {
+        return { rows: [{ locked: true }], rowCount: 1 };
+      }
+
+      if (sql.includes('information_schema.tables')) {
+        const tableName = String(params[0]);
+        tableLookups.push(tableName);
+        tableLookupParams.push(params);
+        return {
+          rows: existingTables.has(tableName) ? [{ '?column?': 1 }] : [],
+          rowCount: existingTables.has(tableName) ? 1 : 0,
+        };
+      }
+
+      if (sql.includes('SELECT 1 FROM _smrt_migrations')) {
+        if (!existingTables.has('_smrt_migrations')) {
+          throw new Error(
+            'fresh Postgres version probe would abort the transaction',
+          );
+        }
+
+        return {
+          rows: versionApplied ? [{ '?column?': 1 }] : [],
+          rowCount: versionApplied ? 1 : 0,
+        };
+      }
+
+      if (sql.includes('CREATE TABLE IF NOT EXISTS _smrt_migrations')) {
+        existingTables.add('_smrt_migrations');
+        return { rows: [], rowCount: 0 };
+      }
+
+      return { rows: [], rowCount: 0 };
+    }),
+    execute: vi.fn(async () => undefined),
+    commit: vi.fn(async () => undefined),
+    rollback: vi.fn(async () => undefined),
+    isActive: vi.fn(() => true),
+  } as unknown as TransactionHandle;
+
+  return { tx, txQueries, tableLookups, tableLookupParams };
+}
+
 describe('Issue #35: System Tables Initialization', () => {
   // Clear the WeakSet before each test by creating new classes
   // (WeakSet is static, so we need fresh class instances)
@@ -267,27 +330,8 @@ describe('Issue #35: System Tables Initialization', () => {
     });
 
     it('should use a transaction-scoped advisory lock for Postgres system table bootstrap', async () => {
-      const txQueries: string[] = [];
-      const tx = {
-        url: `postgresql://localhost:5432/test_${randomUUID()}`,
-        query: vi.fn(async (sql: string) => {
-          txQueries.push(sql);
-
-          if (sql.includes('pg_advisory_xact_lock')) {
-            return { rows: [{ locked: true }], rowCount: 1 };
-          }
-
-          if (sql.includes('SELECT 1 FROM _smrt_')) {
-            throw new Error('relation does not exist');
-          }
-
-          return { rows: [], rowCount: 0 };
-        }),
-        execute: vi.fn(async () => undefined),
-        commit: vi.fn(async () => undefined),
-        rollback: vi.fn(async () => undefined),
-        isActive: vi.fn(() => true),
-      } as unknown as TransactionHandle;
+      const { tx, txQueries, tableLookups, tableLookupParams } =
+        createPostgresBootstrapTx();
       const db = {
         url: tx.url,
         query: vi.fn(async () => {
@@ -307,6 +351,11 @@ describe('Issue #35: System Tables Initialization', () => {
         1,
         "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
       );
+      expect(tableLookups[0]).toBe('_smrt_migrations');
+      expect(tableLookupParams[0]).toEqual(['_smrt_migrations']);
+      expect(
+        txQueries.some((sql) => sql.includes('SELECT 1 FROM _smrt_migrations')),
+      ).toBe(false);
       expect(
         txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toBe(true);
@@ -316,24 +365,8 @@ describe('Issue #35: System Tables Initialization', () => {
     });
 
     it('should use transaction callback fallback for Postgres adapters without beginTransaction', async () => {
-      const txQueries: string[] = [];
-      const tx = {
-        url: `postgresql://localhost:5432/test_${randomUUID()}`,
-        query: vi.fn(async (sql: string) => {
-          txQueries.push(sql);
-
-          if (sql.includes('pg_advisory_xact_lock')) {
-            return { rows: [{ locked: true }], rowCount: 1 };
-          }
-
-          if (sql.includes('SELECT 1 FROM _smrt_')) {
-            throw new Error('relation does not exist');
-          }
-
-          return { rows: [], rowCount: 0 };
-        }),
-        execute: vi.fn(async () => undefined),
-      } as unknown as DatabaseInterface;
+      const { tx, txQueries, tableLookups, tableLookupParams } =
+        createPostgresBootstrapTx();
       const transaction = vi.fn(
         async <T>(callback: (tx: DatabaseInterface) => Promise<T>) =>
           callback(tx),
@@ -357,6 +390,11 @@ describe('Issue #35: System Tables Initialization', () => {
         1,
         "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
       );
+      expect(tableLookups[0]).toBe('_smrt_migrations');
+      expect(tableLookupParams[0]).toEqual(['_smrt_migrations']);
+      expect(
+        txQueries.some((sql) => sql.includes('SELECT 1 FROM _smrt_migrations')),
+      ).toBe(false);
       expect(
         txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toBe(true);
@@ -364,24 +402,8 @@ describe('Issue #35: System Tables Initialization', () => {
     });
 
     it('should use explicit Postgres type hint when the database URL is omitted', async () => {
-      const txQueries: string[] = [];
-      const tx = {
-        url: '',
-        query: vi.fn(async (sql: string) => {
-          txQueries.push(sql);
-
-          if (sql.includes('pg_advisory_xact_lock')) {
-            return { rows: [{ locked: true }], rowCount: 1 };
-          }
-
-          if (sql.includes('SELECT 1 FROM _smrt_')) {
-            throw new Error('relation does not exist');
-          }
-
-          return { rows: [], rowCount: 0 };
-        }),
-        execute: vi.fn(async () => undefined),
-      } as unknown as DatabaseInterface;
+      const { tx, txQueries, tableLookups, tableLookupParams } =
+        createPostgresBootstrapTx({ url: '' });
       const transaction = vi.fn(
         async <T>(callback: (tx: DatabaseInterface) => Promise<T>) =>
           callback(tx),
@@ -406,9 +428,43 @@ describe('Issue #35: System Tables Initialization', () => {
         1,
         "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))",
       );
+      expect(tableLookups[0]).toBe('_smrt_migrations');
+      expect(tableLookupParams[0]).toEqual(['_smrt_migrations']);
+      expect(
+        txQueries.some((sql) => sql.includes('SELECT 1 FROM _smrt_migrations')),
+      ).toBe(false);
       expect(
         txQueries.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
       ).toBe(true);
+      expect(db.query).not.toHaveBeenCalled();
+    });
+
+    it('should keep the initialized Postgres fast path free of DDL', async () => {
+      const { tx, txQueries } = createPostgresBootstrapTx({
+        migrationsTableExists: true,
+        versionApplied: true,
+      });
+      const db = {
+        url: tx.url,
+        query: vi.fn(async () => {
+          throw new Error('system table DDL should run through transaction');
+        }),
+        beginTransaction: vi.fn(async () => tx),
+      } as unknown as DatabaseInterface;
+
+      const obj = new Issue35PostgresLockObject({
+        db,
+        value: 'test',
+      });
+      await obj.initialize();
+
+      expect(db.beginTransaction).toHaveBeenCalledOnce();
+      expect(
+        txQueries.filter((sql) => sql.includes('CREATE TABLE IF NOT EXISTS')),
+      ).toHaveLength(0);
+      expect(tx.execute).not.toHaveBeenCalled();
+      expect(tx.commit).toHaveBeenCalledOnce();
+      expect(tx.rollback).not.toHaveBeenCalled();
       expect(db.query).not.toHaveBeenCalled();
     });
   });

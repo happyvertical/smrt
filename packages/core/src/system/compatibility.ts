@@ -3,8 +3,10 @@ import { detectEngine } from '../schema/ddl/index.js';
 
 type DatabaseWithConfig = DatabaseInterface & {
   config?: {
+    type?: string;
     url?: string;
   };
+  type?: string;
 };
 
 function getQueryRows(result: unknown): Record<string, unknown>[] {
@@ -22,11 +24,21 @@ function getQueryRows(result: unknown): Record<string, unknown>[] {
   return [];
 }
 
-async function tableExists(
+export async function tableExists(
   db: DatabaseInterface,
   tableName: string,
+  typeHint?: string,
 ): Promise<boolean> {
   try {
+    const engine = getDatabaseEngine(db, typeHint);
+    if (engine === 'postgres') {
+      const result = await db.query(
+        'SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = $1 LIMIT 1',
+        tableName,
+      );
+      return getQueryRows(result).length > 0;
+    }
+
     await db.query(`SELECT 1 FROM ${tableName} LIMIT 1`);
     return true;
   } catch {
@@ -38,9 +50,10 @@ async function columnExists(
   db: DatabaseInterface,
   tableName: string,
   columnName: string,
+  typeHint?: string,
 ): Promise<boolean> {
   try {
-    const engine = detectEngine(getDatabaseUrl(db));
+    const engine = getDatabaseEngine(db, typeHint);
     if (engine === 'postgres') {
       const result = await db.query(
         'SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2 LIMIT 1',
@@ -60,6 +73,17 @@ async function columnExists(
 function getDatabaseUrl(db: DatabaseInterface): string {
   const dbWithConfig = db as DatabaseWithConfig;
   return db.url || dbWithConfig.config?.url || '';
+}
+
+function getDatabaseEngine(
+  db: DatabaseInterface,
+  typeHint?: string,
+): ReturnType<typeof detectEngine> {
+  const dbWithConfig = db as DatabaseWithConfig;
+  return detectEngine(
+    getDatabaseUrl(db),
+    typeHint || dbWithConfig.type || dbWithConfig.config?.type,
+  );
 }
 
 function isDuplicateColumnError(error: unknown): boolean {
@@ -146,11 +170,12 @@ async function addColumnIfMissing(
   tableName: string,
   columnName: string,
   definition: string,
+  typeHint?: string,
 ): Promise<void> {
-  const engine = detectEngine(getDatabaseUrl(db));
+  const engine = getDatabaseEngine(db, typeHint);
 
   if (engine === 'postgres') {
-    if (await columnExists(db, tableName, columnName)) {
+    if (await columnExists(db, tableName, columnName, typeHint)) {
       return;
     }
 
@@ -160,7 +185,7 @@ async function addColumnIfMissing(
     return;
   }
 
-  if (await columnExists(db, tableName, columnName)) {
+  if (await columnExists(db, tableName, columnName, typeHint)) {
     return;
   }
 
@@ -180,9 +205,10 @@ async function addColumnIfMissing(
 async function indexExists(
   db: DatabaseInterface,
   indexName: string,
+  typeHint?: string,
 ): Promise<boolean> {
   try {
-    const engine = detectEngine(getDatabaseUrl(db));
+    const engine = getDatabaseEngine(db, typeHint);
     if (engine === 'postgres') {
       const result = await db.query(
         'SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() AND indexname = $1 LIMIT 1',
@@ -206,8 +232,9 @@ async function addIndexIfMissing(
   indexName: string,
   tableName: string,
   columnName: string,
+  typeHint?: string,
 ): Promise<void> {
-  if (await indexExists(db, indexName)) {
+  if (await indexExists(db, indexName, typeHint)) {
     return;
   }
 
@@ -217,7 +244,7 @@ async function addIndexIfMissing(
     );
   } catch (error) {
     if (isDuplicateIndexRaceError(error, indexName)) {
-      if (await indexExists(db, indexName)) {
+      if (await indexExists(db, indexName, typeHint)) {
         return;
       }
     }
@@ -228,31 +255,47 @@ async function addIndexIfMissing(
 
 export async function ensureDispatchSystemTableCompatibility(
   db: DatabaseInterface,
+  typeHint?: string,
 ): Promise<void> {
-  if (!(await tableExists(db, '_smrt_dispatch'))) {
+  if (!(await tableExists(db, '_smrt_dispatch', typeHint))) {
     return;
   }
 
-  await addColumnIfMissing(db, '_smrt_dispatch', 'target_subscriber', 'TEXT');
-  await addColumnIfMissing(db, '_smrt_dispatch', 'correlation_id', 'TEXT');
+  await addColumnIfMissing(
+    db,
+    '_smrt_dispatch',
+    'target_subscriber',
+    'TEXT',
+    typeHint,
+  );
+  await addColumnIfMissing(
+    db,
+    '_smrt_dispatch',
+    'correlation_id',
+    'TEXT',
+    typeHint,
+  );
   await addIndexIfMissing(
     db,
     'idx_smrt_dispatch_target',
     '_smrt_dispatch',
     'target_subscriber',
+    typeHint,
   );
   await addIndexIfMissing(
     db,
     'idx_smrt_dispatch_correlation',
     '_smrt_dispatch',
     'correlation_id',
+    typeHint,
   );
 }
 
 export async function ensureDispatchSubscriptionsSystemTableCompatibility(
   db: DatabaseInterface,
+  typeHint?: string,
 ): Promise<void> {
-  if (!(await tableExists(db, '_smrt_dispatch_subscriptions'))) {
+  if (!(await tableExists(db, '_smrt_dispatch_subscriptions', typeHint))) {
     return;
   }
 
@@ -261,64 +304,79 @@ export async function ensureDispatchSubscriptionsSystemTableCompatibility(
     '_smrt_dispatch_subscriptions',
     'delivery',
     "TEXT NOT NULL DEFAULT 'compete'",
+    typeHint,
   );
 }
 
 export async function ensureJobsSystemTableCompatibility(
   db: DatabaseInterface,
+  typeHint?: string,
 ): Promise<void> {
-  if (!(await tableExists(db, '_smrt_jobs'))) {
+  if (!(await tableExists(db, '_smrt_jobs', typeHint))) {
     return;
   }
 
-  await addColumnIfMissing(db, '_smrt_jobs', 'tenant_id', 'TEXT');
+  await addColumnIfMissing(db, '_smrt_jobs', 'tenant_id', 'TEXT', typeHint);
   await addIndexIfMissing(
     db,
     'idx_smrt_jobs_tenant_id',
     '_smrt_jobs',
     'tenant_id',
+    typeHint,
   );
 }
 
 export async function ensureJobEventsSystemTableCompatibility(
   db: DatabaseInterface,
+  typeHint?: string,
 ): Promise<void> {
-  if (!(await tableExists(db, '_smrt_job_events'))) {
+  if (!(await tableExists(db, '_smrt_job_events', typeHint))) {
     return;
   }
 
-  await addColumnIfMissing(db, '_smrt_job_events', 'tenant_id', 'TEXT');
+  await addColumnIfMissing(
+    db,
+    '_smrt_job_events',
+    'tenant_id',
+    'TEXT',
+    typeHint,
+  );
   await addIndexIfMissing(
     db,
     'idx_smrt_job_events_tenant_id',
     '_smrt_job_events',
     'tenant_id',
+    typeHint,
   );
   await addIndexIfMissing(
     db,
     'idx_smrt_job_events_job_id',
     '_smrt_job_events',
     'job_id',
+    typeHint,
   );
   await addIndexIfMissing(
     db,
     'idx_smrt_job_events_type',
     '_smrt_job_events',
     'type',
+    typeHint,
   );
   await addIndexIfMissing(
     db,
     'idx_smrt_job_events_created_at',
     '_smrt_job_events',
     'created_at',
+    typeHint,
   );
 }
 
 export async function ensureLegacySystemTableCompatibility(
   db: DatabaseInterface,
+  typeHint?: string,
 ): Promise<void> {
-  await ensureDispatchSystemTableCompatibility(db);
-  await ensureDispatchSubscriptionsSystemTableCompatibility(db);
-  await ensureJobsSystemTableCompatibility(db);
-  await ensureJobEventsSystemTableCompatibility(db);
+  await ensureDispatchSystemTableCompatibility(db, typeHint);
+  await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);
+  await ensureJobsSystemTableCompatibility(db, typeHint);
+  await ensureJobEventsSystemTableCompatibility(db, typeHint);
 }
