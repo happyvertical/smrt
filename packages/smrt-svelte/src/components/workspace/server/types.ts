@@ -28,12 +28,20 @@ export type GateEvaluationContext = Record<string, unknown>;
  * to context fields without casting. Defaults to the permissive
  * `GateEvaluationContext` so existing call sites keep compiling.
  *
+ * The constraint is a self-mapped `{ [K in keyof TCtx]: unknown }` rather
+ * than `Record<string, unknown>`. This accepts interface-style consumer
+ * contexts without an explicit string index signature — the same trap
+ * Copilot flagged on `TActions` in #1239. A bare `Record<string, unknown>`
+ * constraint rejects interfaces (which have no index signature) under
+ * strict TS, forcing consumers to use type aliases or add
+ * `[key: string]: unknown`.
+ *
  * @param gateId Full gate id, including the prefix (e.g. `'permission:articles.publish'`).
  *               Evaluators typically split on `:` to extract the identifier.
  * @param context The caller-supplied context blob (see {@link GateEvaluationContext}).
  */
 export type GateEvaluator<
-  TCtx extends GateEvaluationContext = GateEvaluationContext,
+  TCtx extends { [K in keyof TCtx]: unknown } = GateEvaluationContext,
 > = (gateId: string, context: TCtx) => Promise<boolean> | boolean;
 
 /**
@@ -58,9 +66,13 @@ export interface GatedToolSummary {
  * permissive `GateEvaluationContext` so existing call sites keep
  * compiling.
  *
+ * The constraint is a self-mapped `{ [K in keyof TCtx]: unknown }` so
+ * interface-style contexts (no string index signature) are accepted —
+ * see the doc on {@link GateEvaluator} for the rationale.
+ *
  * @example
  * ```ts
- * interface MyContext extends GateEvaluationContext {
+ * interface MyContext {
  *   userId: string;
  *   tenantId: string;
  * }
@@ -79,7 +91,7 @@ export interface GatedToolSummary {
  * ```
  */
 export interface ComposeDockAvailabilityOptions<
-  TCtx extends GateEvaluationContext = GateEvaluationContext,
+  TCtx extends { [K in keyof TCtx]: unknown } = GateEvaluationContext,
 > {
   /** Registered tools (or a subset thereof — typically derived from `ToolDef[]`). */
   tools: ReadonlyArray<GatedToolSummary>;

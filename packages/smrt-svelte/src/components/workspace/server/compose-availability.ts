@@ -73,7 +73,7 @@ import type {
  * ```
  */
 export async function composeDockAvailability<
-  TCtx extends GateEvaluationContext = GateEvaluationContext,
+  TCtx extends { [K in keyof TCtx]: unknown } = GateEvaluationContext,
 >(options: ComposeDockAvailabilityOptions<TCtx>): Promise<AvailableTool[]> {
   const { tools, context, evaluators } = options;
 
@@ -107,11 +107,12 @@ export async function composeDockAvailability<
         }),
       );
 
-      // every(Boolean) is intentional: coerces resolved values truthily.
-      // GateEvaluator is typed boolean, but truthy coercion ensures
-      // fail-closed behavior for any untyped evaluator that returns
-      // void/undefined.
-      return gateResults.every(Boolean) ? tool : null;
+      // Strict equality: only literal `true` passes a gate. Any non-boolean
+      // return value (string, object, undefined, etc.) fails-closed —
+      // defensive against untyped evaluators that return wrapped objects or
+      // sentinel strings instead of plain booleans. `Boolean(...)` would
+      // pass `'false'`, `{}`, `[]`, and any truthy garbage, fail-OPEN.
+      return gateResults.every((result) => result === true) ? tool : null;
     }),
   );
 

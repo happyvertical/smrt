@@ -363,4 +363,91 @@ describe('composeDockAvailability', () => {
     expect(observedUserId).toBe('u-1');
     expect(observedTenantId).toBe('t-1');
   });
+
+  // Regression: an interface-style context (no string index signature) must
+  // be accepted by `TCtx`. The round-1 fixup parameterized
+  // `TCtx extends Record<string, unknown>`, which rejected interfaces under
+  // strict TS — the same trap we hit with `TActions` in #1239. The
+  // self-mapped constraint `{ [K in keyof TCtx]: unknown }` accepts
+  // interfaces without forcing the consumer to add an index signature.
+  //
+  // The compile-time guard lives in
+  // `./__tests__/typed-context-fixture/typed-context.ts` — see the JSDoc
+  // there. The runtime check below confirms the same interface-style
+  // context round-trips through evaluators at runtime.
+  it('accepts an interface-style TCtx (no string index signature)', async () => {
+    interface InterfaceContext {
+      userId: string;
+      tenantId: string;
+    }
+
+    let observedUserId: string | undefined;
+
+    const result = await composeDockAvailability<InterfaceContext>({
+      tools: [{ id: 't', label: 'T', gates: ['permission:any'] }],
+      context: { userId: 'u-1', tenantId: 't-1' },
+      evaluators: {
+        permission: (_gateId, ctx) => {
+          // No cast — ctx.userId is typed string.
+          observedUserId = ctx.userId;
+          return true;
+        },
+      },
+    });
+
+    expect(result).toHaveLength(1);
+    expect(observedUserId).toBe('u-1');
+  });
+
+  // Regression for fix #2 of round-3: `.every(Boolean)` fails OPEN for
+  // truthy non-booleans. `Boolean('false')`, `Boolean({})`, `Boolean([])`
+  // are all true, so an untyped evaluator returning a wrapped object, a
+  // sentinel string, or a number would silently grant access. The composer
+  // now uses strict `=== true`.
+  it('fails closed on truthy non-boolean evaluator returns', async () => {
+    // Evaluators MUST return boolean per the type, but consumers in plain
+    // JS or with untyped wrappers can slip non-boolean returns through.
+    // Verify that truthy non-booleans don't grant access.
+    const cases: Array<{ id: string; evaluator: GateEvaluator }> = [
+      {
+        id: 'string-true',
+        evaluator: () => 'true' as unknown as boolean,
+      },
+      {
+        id: 'object',
+        evaluator: () => ({ allowed: false }) as unknown as boolean,
+      },
+      {
+        id: 'array',
+        evaluator: () => [] as unknown as boolean,
+      },
+      {
+        id: 'number-1',
+        evaluator: () => 1 as unknown as boolean,
+      },
+      {
+        id: 'falsestring',
+        evaluator: () => 'false' as unknown as boolean,
+      },
+    ];
+
+    for (const { id, evaluator } of cases) {
+      const result = await composeDockAvailability({
+        tools: [{ id, label: id, gates: ['permission:any'] }],
+        context: {},
+        evaluators: { permission: evaluator },
+      });
+      // fail-closed: gate doesn't pass
+      expect(result).toEqual([]);
+    }
+  });
+
+  it('passes only on literal `true` (not truthy values)', async () => {
+    const result = await composeDockAvailability({
+      tools: [{ id: 'pass-true', label: 'Pass', gates: ['permission:any'] }],
+      context: {},
+      evaluators: { permission: () => true },
+    });
+    expect(result).toEqual([{ id: 'pass-true', label: 'Pass' }]);
+  });
 });
