@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.25.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - avoid postgres bootstrap transaction abort (core)
+  - @happyvertical/smrt-scanner@0.25.6
+  - @happyvertical/smrt-config@0.25.6
+  - @happyvertical/smrt-types@0.25.6
+
 ## 0.25.5
 
 ### Patch Changes
