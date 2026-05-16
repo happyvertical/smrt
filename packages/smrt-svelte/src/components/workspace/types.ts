@@ -146,6 +146,28 @@ export interface ToolDef {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   component: Component<any>;
   badge?: number | string | null;
+  /**
+   * Optional gate IDs that must all evaluate to true for the tool to be
+   * visible. Convention: `<subsystem>:<identifier>`, e.g.:
+   *
+   *   - `'permission:articles.publish'`
+   *   - `'feature:video-tools'`
+   *   - `'user-pref:show-jobs'`
+   *
+   * Gates are evaluated server-side via `composeDockAvailability` from
+   * `@happyvertical/smrt-svelte/workspace/server`. Each gate's prefix
+   * (text before the `:`) selects which evaluator handles it; tools with
+   * unknown prefixes throw at composition time (loud-fail beats
+   * silent-leak).
+   *
+   * Reserved prefixes (used by built-in evaluators):
+   *   - `permission:` — RBAC, via smrt-users
+   *   - `feature:` — feature flags, via smrt-features (if available)
+   *
+   * Consumer-defined prefixes (e.g., `myapp:`) are fine; consumer must
+   * register the evaluator.
+   */
+  gates?: string[];
 }
 
 export interface AvailableTool {

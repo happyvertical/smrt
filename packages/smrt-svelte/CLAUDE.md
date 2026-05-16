@@ -167,3 +167,19 @@ whatever set their app needs. Use this for role-based admin dashboards; use
 See epic [happyvertical/smrt#1226](https://github.com/happyvertical/smrt/issues/1226) for context;
 implementations land via #1227 (`WorkspaceShell`), #1228 (`NavTree`/`Breadcrumbs`), and #1229
 (`ToolsDock` + registry).
+
+### Dock availability gates (server-side)
+
+`ToolDef.gates?: string[]` declares the gates a tool must pass to be visible.
+Convention: `<prefix>:<identifier>` (e.g. `permission:articles.publish`,
+`feature:video-tools`, `myapp:show-jobs`). `composeDockAvailability` from
+`@happyvertical/smrt-svelte/workspace/server` evaluates them — register one
+evaluator per prefix, throws on unknown prefixes (loud-fail beats silent-leak),
+AND semantics across a tool's gates. Node-safe, no Svelte imports.
+
+Recommended pattern: in the consumer's `+server.ts` endpoint that backs
+`fetchAvailability`, wrap `PermissionResolver` (smrt-users) and `FeatureResolver`
+(smrt-features) as evaluators and pass them in. Tools without `gates` stay
+unconditionally visible (back-compat). Anytown's hand-coded
+`apps/dashboard/src/lib/server/content-tool-dock.ts` is a candidate for
+migration in a follow-up.
