@@ -187,7 +187,7 @@ describe('composeDockAvailability', () => {
     const tools: GatedToolSummary[] = [
       { id: 'inbox', label: 'Inbox', badge: 3 },
       { id: 'tasks', label: 'Tasks', badge: 'new' },
-      { id: 'plain', label: 'Plain' }, // no badge
+      { id: 'plain', label: 'Plain' }, // no badge → omitted in output
     ];
 
     const result = await composeDockAvailability({
@@ -199,17 +199,42 @@ describe('composeDockAvailability', () => {
     expect(result).toEqual([
       { id: 'inbox', label: 'Inbox', badge: 3 },
       { id: 'tasks', label: 'Tasks', badge: 'new' },
-      { id: 'plain', label: 'Plain', badge: null },
+      { id: 'plain', label: 'Plain' },
     ]);
   });
 
-  it('defaults a missing `label` to an empty string in the AvailableTool result', async () => {
+  it('omits a missing `label` from the AvailableTool result (lets the dock fall back)', async () => {
     const result = await composeDockAvailability({
       tools: [{ id: 'no-label' } as GatedToolSummary],
       context: {},
       evaluators: {},
     });
-    expect(result[0]).toEqual({ id: 'no-label', label: '', badge: null });
+    // No `label` key at all — `defineToolsDock.applyAvailability` falls
+    // back to the registered ToolDef metadata.
+    expect(result[0]).toEqual({ id: 'no-label' });
+    expect(result[0]).not.toHaveProperty('label');
+    expect(result[0]).not.toHaveProperty('badge');
+  });
+
+  it('omits `badge` when the tool def has no badge (no implicit clear)', async () => {
+    const result = await composeDockAvailability({
+      tools: [{ id: 'chat', label: 'Chat', gates: [] }],
+      context: {},
+      evaluators: {},
+    });
+    // The dock treats `badge: null` as an explicit clear of the
+    // registered default badge. Absence must remain absence.
+    expect(result[0]).toEqual({ id: 'chat', label: 'Chat' });
+    expect(result[0]).not.toHaveProperty('badge');
+  });
+
+  it('preserves explicit `badge: null` when the caller does set it', async () => {
+    const result = await composeDockAvailability({
+      tools: [{ id: 'reset', label: 'Reset', badge: null }],
+      context: {},
+      evaluators: {},
+    });
+    expect(result[0]).toEqual({ id: 'reset', label: 'Reset', badge: null });
   });
 
   it('filters a mixed input correctly (gated + ungated, pass + fail)', async () => {
@@ -267,5 +292,75 @@ describe('composeDockAvailability', () => {
       evaluators: { x: asyncFalse },
     });
     expect(result).toEqual([]);
+  });
+
+  // Regression: a gate prefix that names an inherited `Object.prototype`
+  // property (e.g. `constructor`, `toString`, `hasOwnProperty`, `valueOf`,
+  // `__proto__`) MUST NOT bypass the unknown-prefix fail-loud path. Prior
+  // to the fix, `evaluators[prefix]` resolved to a built-in function and
+  // got invoked, returning a truthy value and silently passing the gate.
+  it('throws on prototype-key gate prefixes (constructor, toString, hasOwnProperty, valueOf, __proto__)', async () => {
+    const evaluators = { permission: () => true };
+    for (const prefix of [
+      'constructor',
+      'toString',
+      'hasOwnProperty',
+      'valueOf',
+      '__proto__',
+    ]) {
+      await expect(
+        composeDockAvailability({
+          tools: [{ id: 'x', label: 'X', gates: [`${prefix}:any`] }],
+          context: {},
+          evaluators,
+        }),
+      ).rejects.toThrow(/No evaluator registered for gate prefix/);
+    }
+  });
+
+  it('throws when an evaluator entry is not a function', async () => {
+    await expect(
+      composeDockAvailability({
+        tools: [{ id: 'x', label: 'X', gates: ['permission:any'] }],
+        context: {},
+        evaluators: {
+          // Intentional non-function evaluator — should fail loud.
+          permission: 'not-a-function',
+        } as unknown as Parameters<
+          typeof composeDockAvailability
+        >[0]['evaluators'],
+      }),
+    ).rejects.toThrow(/No evaluator registered/);
+  });
+
+  // Regression for the TCtx generic parameterization (issue 1242 fix #5).
+  // Verifies the typed-context flow compiles end-to-end: the evaluator
+  // receives a typed `ctx` (string fields, not `unknown`) without a cast.
+  it('preserves the caller-supplied context type through to evaluators (TCtx generic)', async () => {
+    interface MyContext extends GateEvaluationContext {
+      userId: string;
+      tenantId: string;
+    }
+
+    let observedUserId: string | undefined;
+    let observedTenantId: string | undefined;
+
+    const result = await composeDockAvailability<MyContext>({
+      tools: [{ id: 't', label: 'T', gates: ['permission:articles.publish'] }],
+      context: { userId: 'u-1', tenantId: 't-1' },
+      evaluators: {
+        permission: (gateId, ctx) => {
+          // No cast required — ctx.userId and ctx.tenantId are typed string.
+          observedUserId = ctx.userId;
+          observedTenantId = ctx.tenantId;
+          const [, slug] = gateId.split(':', 2);
+          return slug === 'articles.publish';
+        },
+      },
+    });
+
+    expect(result).toHaveLength(1);
+    expect(observedUserId).toBe('u-1');
+    expect(observedTenantId).toBe('t-1');
   });
 });

@@ -177,6 +177,15 @@ Convention: `<prefix>:<identifier>` (e.g. `permission:articles.publish`,
 evaluator per prefix, throws on unknown prefixes (loud-fail beats silent-leak),
 AND semantics across a tool's gates. Node-safe, no Svelte imports.
 
+The framework does NOT ship built-in evaluators — every prefix the dock sees
+must have a caller-supplied evaluator in the map (otherwise composition
+throws). `permission:` and `feature:` are recommended conventions for
+ecosystem cohesion (consumers typically wire `PermissionResolver` from
+smrt-users and `FeatureResolver` from smrt-features as those evaluators), but
+they're not reserved — apps may pick any namespace. App-specific gates
+should use a dedicated namespace (e.g. `myapp:`) to avoid colliding with
+future built-ins.
+
 Recommended pattern: in the consumer's `+server.ts` endpoint that backs
 `fetchAvailability`, wrap `PermissionResolver` (smrt-users) and `FeatureResolver`
 (smrt-features) as evaluators and pass them in. Tools without `gates` stay

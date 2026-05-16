@@ -24,14 +24,17 @@ export type GateEvaluationContext = Record<string, unknown>;
  * (DB query, network call, permission resolver). Sync evaluators that
  * return a plain boolean are also fine.
  *
+ * Generic over the caller's context shape so evaluators get typed access
+ * to context fields without casting. Defaults to the permissive
+ * `GateEvaluationContext` so existing call sites keep compiling.
+ *
  * @param gateId Full gate id, including the prefix (e.g. `'permission:articles.publish'`).
  *               Evaluators typically split on `:` to extract the identifier.
  * @param context The caller-supplied context blob (see {@link GateEvaluationContext}).
  */
-export type GateEvaluator = (
-  gateId: string,
-  context: GateEvaluationContext,
-) => Promise<boolean> | boolean;
+export type GateEvaluator<
+  TCtx extends GateEvaluationContext = GateEvaluationContext,
+> = (gateId: string, context: TCtx) => Promise<boolean> | boolean;
 
 /**
  * Tool definition shape required by `composeDockAvailability`. A subset of
@@ -49,15 +52,42 @@ export interface GatedToolSummary {
 
 /**
  * Options for {@link composeDockAvailability}.
+ *
+ * Generic over the caller's context shape (`TCtx`) so evaluators get
+ * typed access to context fields without casting. Defaults to the
+ * permissive `GateEvaluationContext` so existing call sites keep
+ * compiling.
+ *
+ * @example
+ * ```ts
+ * interface MyContext extends GateEvaluationContext {
+ *   userId: string;
+ *   tenantId: string;
+ * }
+ *
+ * await composeDockAvailability<MyContext>({
+ *   tools: [...],
+ *   context: { userId: 'u-1', tenantId: 't-1' },
+ *   evaluators: {
+ *     permission: async (gateId, ctx) => {
+ *       // ctx.userId and ctx.tenantId are typed `string` — no cast needed
+ *       const [, slug] = gateId.split(':', 2);
+ *       return resolver.hasPermission(ctx.userId, ctx.tenantId, slug);
+ *     },
+ *   },
+ * });
+ * ```
  */
-export interface ComposeDockAvailabilityOptions {
+export interface ComposeDockAvailabilityOptions<
+  TCtx extends GateEvaluationContext = GateEvaluationContext,
+> {
   /** Registered tools (or a subset thereof — typically derived from `ToolDef[]`). */
   tools: ReadonlyArray<GatedToolSummary>;
   /**
    * Caller-supplied context (userId, tenantId, contentId, etc.). Passed
    * through unchanged to each evaluator. The composer doesn't inspect it.
    */
-  context: GateEvaluationContext;
+  context: TCtx;
   /**
    * Map of gate-prefix → evaluator. The prefix is the part of the gate ID
    * before the first `:`. e.g., `'permission'`, `'feature'`, `'myapp'`.
@@ -65,7 +95,7 @@ export interface ComposeDockAvailabilityOptions {
    * Tools whose gates reference an unregistered prefix throw at composition
    * time — misconfiguration should fail loudly, not silently leak tools.
    */
-  evaluators: Record<string, GateEvaluator>;
+  evaluators: Record<string, GateEvaluator<TCtx>>;
 }
 
 // Re-export AvailableTool so consumers can pull both the composer

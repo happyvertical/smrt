@@ -14,7 +14,10 @@
  */
 
 import type { AvailableTool } from '../types.js';
-import type { ComposeDockAvailabilityOptions } from './types.js';
+import type {
+  ComposeDockAvailabilityOptions,
+  GateEvaluationContext,
+} from './types.js';
 
 /**
  * Compose the `availableTools` list for a tools dock by evaluating each
@@ -34,11 +37,21 @@ import type { ComposeDockAvailabilityOptions } from './types.js';
  *
  * @example
  * ```ts
- * import { composeDockAvailability } from '@happyvertical/smrt-svelte/workspace/server';
+ * import {
+ *   composeDockAvailability,
+ *   type GateEvaluationContext,
+ * } from '@happyvertical/smrt-svelte/workspace/server';
  * import { PermissionResolver } from '@happyvertical/smrt-users';
  * import { FeatureResolver } from '@happyvertical/smrt-features';
  *
- * const available = await composeDockAvailability({
+ * // Caller narrows the context shape so evaluators get typed access
+ * // without casts:
+ * interface MyContext extends GateEvaluationContext {
+ *   userId: string;
+ *   tenantId: string;
+ * }
+ *
+ * const available = await composeDockAvailability<MyContext>({
  *   tools: [
  *     { id: 'governance', label: 'Claim Audit', gates: ['permission:content.governance.view'] },
  *     { id: 'video-gen',  label: 'Video',       gates: ['feature:video-tools'] },
@@ -48,24 +61,20 @@ import type { ComposeDockAvailabilityOptions } from './types.js';
  *   evaluators: {
  *     permission: async (gateId, ctx) => {
  *       const [, slug] = gateId.split(':', 2);
- *       return permissionResolver.hasPermission(
- *         ctx.userId as string,
- *         ctx.tenantId as string,
- *         slug,
- *       );
+ *       return permissionResolver.hasPermission(ctx.userId, ctx.tenantId, slug);
  *     },
  *     feature: async (gateId, ctx) => {
  *       const [, key] = gateId.split(':', 2);
- *       return featureResolver.isEnabled(key, { tenantId: ctx.tenantId as string });
+ *       return featureResolver.isEnabled(key, { tenantId: ctx.tenantId });
  *     },
  *   },
  * });
  * // → AvailableTool[] filtered by gates
  * ```
  */
-export async function composeDockAvailability(
-  options: ComposeDockAvailabilityOptions,
-): Promise<AvailableTool[]> {
+export async function composeDockAvailability<
+  TCtx extends GateEvaluationContext = GateEvaluationContext,
+>(options: ComposeDockAvailabilityOptions<TCtx>): Promise<AvailableTool[]> {
   const { tools, context, evaluators } = options;
 
   const evaluations = await Promise.all(
@@ -77,8 +86,16 @@ export async function composeDockAvailability(
       const gateResults = await Promise.all(
         tool.gates.map(async (gateId) => {
           const prefix = gateId.split(':', 1)[0];
-          const evaluator = evaluators[prefix];
-          if (!evaluator) {
+          // Use Object.hasOwn() + a function-type guard so a gate like
+          // `constructor:foo` or `toString:foo` doesn't resolve to an
+          // inherited `Object.prototype` property and silently pass — the
+          // contract is fail-loud on unknown prefix. The function-type
+          // check is belt-and-suspenders: a consumer that accidentally
+          // wires a non-function evaluator should also throw here.
+          const evaluator = Object.hasOwn(evaluators, prefix)
+            ? evaluators[prefix]
+            : undefined;
+          if (typeof evaluator !== 'function') {
             const availablePrefixes =
               Object.keys(evaluators).join(', ') || '(none)';
             throw new Error(
@@ -90,15 +107,25 @@ export async function composeDockAvailability(
         }),
       );
 
+      // every(Boolean) is intentional: coerces resolved values truthily.
+      // GateEvaluator is typed boolean, but truthy coercion ensures
+      // fail-closed behavior for any untyped evaluator that returns
+      // void/undefined.
       return gateResults.every(Boolean) ? tool : null;
     }),
   );
 
   return evaluations
     .filter((t): t is NonNullable<typeof t> => t !== null)
-    .map((tool) => ({
-      id: tool.id,
-      label: tool.label ?? '',
-      badge: tool.badge ?? null,
-    }));
+    .map((tool) => {
+      // Preserve absence: omitting `label` / `badge` here lets
+      // `defineToolsDock.applyAvailability` fall back to the registered
+      // `ToolDef` metadata. Materializing `label: ''` would blank the rail
+      // button, and `badge: null` would explicitly clear any registered
+      // default badge.
+      const out: AvailableTool = { id: tool.id };
+      if (tool.label !== undefined) out.label = tool.label;
+      if (tool.badge !== undefined) out.badge = tool.badge;
+      return out;
+    });
 }

@@ -150,22 +150,25 @@ export interface ToolDef {
    * Optional gate IDs that must all evaluate to true for the tool to be
    * visible. Convention: `<subsystem>:<identifier>`, e.g.:
    *
-   *   - `'permission:articles.publish'`
-   *   - `'feature:video-tools'`
-   *   - `'user-pref:show-jobs'`
+   *   - `'permission:articles.publish'` (consumer wires a `PermissionResolver` as the `permission` evaluator)
+   *   - `'feature:video-tools'`        (consumer wires a `FeatureResolver` as the `feature` evaluator)
+   *   - `'myapp:my-custom-gate'`       (consumer wires their own evaluator)
    *
    * Gates are evaluated server-side via `composeDockAvailability` from
    * `@happyvertical/smrt-svelte/workspace/server`. Each gate's prefix
-   * (text before the `:`) selects which evaluator handles it; tools with
-   * unknown prefixes throw at composition time (loud-fail beats
-   * silent-leak).
+   * (text before the `:`) selects the evaluator from the caller-supplied
+   * map. The framework does NOT ship built-in evaluators — consumers
+   * register evaluators for every prefix they use. Tools with unknown
+   * prefixes throw at composition time (loud-fail beats silent-leak).
    *
-   * Reserved prefixes (used by built-in evaluators):
-   *   - `permission:` — RBAC, via smrt-users
-   *   - `feature:` — feature flags, via smrt-features (if available)
+   * Recommended prefix conventions for ecosystem cohesion (not enforced —
+   * the framework treats every prefix as caller-defined):
+   *   - `permission:` for RBAC checks (typically wraps smrt-users)
+   *   - `feature:` for feature flags (typically wraps smrt-features)
+   *   - `user-pref:` for per-user UI settings
    *
-   * Consumer-defined prefixes (e.g., `myapp:`) are fine; consumer must
-   * register the evaluator.
+   * Consumers writing their own gates should pick an app-specific
+   * namespace (e.g., `myapp:`) to avoid colliding with future built-ins.
    */
   gates?: string[];
 }
