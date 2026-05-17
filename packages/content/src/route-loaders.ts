@@ -35,13 +35,18 @@ export function isContentRouteLoadError(
   );
 }
 
-function getItemData<T>(payload: T | { data?: T; result?: T }): T {
-  if (payload && typeof payload === 'object' && 'result' in payload) {
-    return (payload as { result: T }).result;
+function getItemData<T>(payload: unknown): T {
+  if (!payload || typeof payload !== 'object') {
+    return payload as T;
   }
 
-  if (payload && typeof payload === 'object' && 'data' in payload) {
-    return (payload as { data: T }).data;
+  const wrappedPayload = payload as { data?: unknown; result?: unknown };
+  if ('result' in wrappedPayload) {
+    return wrappedPayload.result as T;
+  }
+
+  if ('data' in wrappedPayload) {
+    return wrappedPayload.data as T;
   }
 
   return payload as T;

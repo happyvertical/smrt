@@ -203,7 +203,7 @@ export function createPackageConfig(
         './packages/core/src/utils/import-workspace-module.js'
       );
       const { smrtPlugin: plugin } = await importWorkspaceModule<
-        typeof import('@happyvertical/smrt-core/vite-plugin')
+        typeof import('./packages/core/src/vite-plugin/index.js')
       >({
         packageName: '@happyvertical/smrt-core/vite-plugin',
         distEntry: 'packages/core/dist/vite-plugin.js',

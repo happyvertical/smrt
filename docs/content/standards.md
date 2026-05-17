@@ -302,6 +302,7 @@ These are already documented in the root `CLAUDE.md` and `.claude/rules/smrt-pat
 - **`./playground` subpath**: exports the package's playground module for use by `smrt-playground`
 - **Svelte peer**: `svelte: ^5.18.0` (uniform). Drop the `^4.0.0 || ^5.0.0` range.
 - **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json`
+- **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks, e.g. `tsc --noEmit && svelte-check --tsconfig ./tsconfig.svelte.json`. SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript and `svelte-check` passes.
 - **`tsconfig.svelte.json`**: extends `tsconfig.package-svelte.json`, includes `ambient.d.ts` and `*.svelte`
 
 ---
@@ -337,6 +338,7 @@ Templates ship a `template/` directory that is copied wholesale by the scaffold 
 - All files referenced in `template/package.json` scripts must actually exist in `template/`
 - `template/README.md` ≥100 lines, explaining the scaffolding flow and runtime parameters
 - CI verifies that `pnpm install && pnpm build` succeeds in each scaffolded template (would have caught the `template-site-static-json` missing-`caelus.ts` bug)
+- Scaffolded SvelteKit templates must ship `typecheck` as a TypeScript pass plus `svelte-check`; otherwise generated projects inherit the `.svelte` ambient typing gap.
 
 ---
 

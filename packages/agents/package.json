@@ -46,6 +46,7 @@
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -66,6 +67,7 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/utils": "catalog:"
   },

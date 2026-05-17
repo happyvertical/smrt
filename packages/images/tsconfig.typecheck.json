@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.package-typecheck.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "**/*.test.ts",
+    "**/*.spec.ts",
+    "src/svelte/**/*",
+    "src/routes/**/*",
+    "src/playground.ts",
+    "src/route-module.ts"
+  ]
+}

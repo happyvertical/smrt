@@ -40,6 +40,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.kit.json",
+    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && svelte-check --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

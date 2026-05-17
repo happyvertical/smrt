@@ -39,9 +39,10 @@ const props: Props = $props();
 // Use a trivial inline component as the tool body; the renderer only checks
 // that ActiveTool is defined and renders a header — the body is irrelevant
 // for these tests.
-// biome-ignore lint/correctness/noUnusedVariables: noop component
 const NoopBody = (() => null) as never;
 
+// This harness intentionally snapshots initial render options during setup.
+// svelte-ignore state_referenced_locally
 const dock = defineToolsDock({
   tools: props.tools.map((t) => ({ ...t, component: NoopBody })),
   fetchAvailability: props.fetchAvailability,
