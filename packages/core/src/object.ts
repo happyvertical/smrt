@@ -76,7 +76,13 @@ function getSTIHierarchyMembers(className: string): string[] {
 
 type PersistenceWritePlan =
   | { type: 'upsert'; conflictColumns: string[] }
-  | { type: 'updateById'; qualifiedMetaType: string };
+  | { type: 'updateById'; qualifiedMetaType: string }
+  // Used when conflict columns contain NULL values (which SQLite/PostgreSQL
+  // treat as distinct in ON CONFLICT). For re-saves of an existing row, we
+  // route to UPDATE-by-id; otherwise the upsert tries to INSERT a duplicate
+  // primary key. See Issue #1246.
+  | { type: 'updateByIdNoMetaType' }
+  | { type: 'insert' };
 
 /**
  * Warn once per process if a consumer has SMRT_SKIP_STI_REHYDRATE set.
@@ -295,6 +301,86 @@ export class SmrtObject extends SmrtClass {
     );
   }
 
+  /**
+   * Detect whether any conflict column value is `null` or `undefined`.
+   *
+   * SQLite (and PostgreSQL with default semantics) treat NULL as distinct
+   * from every other value in ON CONFLICT — so a row inserted with a NULL
+   * conflict column will never be matched by a subsequent UPSERT, even
+   * with the same `id`. Callers use this to route to an UPDATE-by-id path
+   * instead. See Issue #1246.
+   */
+  private hasNullConflictValue(
+    data: Record<string, any>,
+    conflictColumns: string[],
+  ): boolean {
+    if (!conflictColumns || conflictColumns.length === 0) {
+      return false;
+    }
+    return conflictColumns.some((col) => {
+      // `_meta_type` is always set by the STI machinery and never null in
+      // practice; skip it to avoid an unnecessary probe.
+      if (col === '_meta_type') {
+        return false;
+      }
+      const value = data[col];
+      return value === null || value === undefined;
+    });
+  }
+
+  /**
+   * Probe by `id` and choose between UPDATE-by-id and INSERT when the
+   * caller has a NULL conflict-column value (see {@link hasNullConflictValue}).
+   *
+   * Returns `null` when no plan adjustment is needed — caller should fall
+   * through to its default behavior (typically the upsert plan).
+   */
+  private async resolveNullConflictWritePlan(
+    _className: string,
+    tableStrategy: string,
+    data: Record<string, any>,
+    _conflictColumns: string[],
+  ): Promise<PersistenceWritePlan | null> {
+    const id = String(data.id);
+    const existing = await ErrorUtils.withRetry(
+      async () => {
+        try {
+          return await this.db.get(this.tableName, { id });
+        } catch (error) {
+          throw DatabaseError.queryFailed(
+            `get(${this.tableName}, null-conflict id probe)`,
+            error instanceof Error ? error : new Error(String(error)),
+          );
+        }
+      },
+      3,
+      500,
+    );
+
+    if (existing) {
+      // Row already exists — UPDATE in place. For STI rows, also restamp
+      // _meta_type from the incoming payload so legacy-discriminator
+      // upgrades still work (mirrors the existing updateById path).
+      if (
+        tableStrategy === 'sti' &&
+        typeof data._meta_type === 'string' &&
+        data._meta_type.length > 0
+      ) {
+        return {
+          type: 'updateById',
+          qualifiedMetaType: String(data._meta_type),
+        };
+      }
+      return { type: 'updateByIdNoMetaType' };
+    }
+
+    // No row exists — INSERT explicitly to avoid the broken ON CONFLICT
+    // NULL semantic. We intentionally do not fall back to upsert here:
+    // if another row happens to share the non-NULL conflict columns, the
+    // upsert would silently UPDATE that unrelated row.
+    return { type: 'insert' };
+  }
+
   private async planPersistenceWrite(
     className: string,
     tableStrategy: string,
@@ -305,6 +391,23 @@ export class SmrtObject extends SmrtClass {
       type: 'upsert',
       conflictColumns,
     };
+
+    // Issue #1246: When any conflict column value is NULL, the database's
+    // ON CONFLICT clause won't match an existing row by NULL = NULL — so
+    // re-saving the same instance fails on the primary-key UNIQUE on `id`.
+    // Probe by id up front and route to UPDATE-by-id (or explicit INSERT)
+    // depending on what we find.
+    if (data.id && this.hasNullConflictValue(data, conflictColumns)) {
+      const nullSafePlan = await this.resolveNullConflictWritePlan(
+        className,
+        tableStrategy,
+        data,
+        conflictColumns,
+      );
+      if (nullSafePlan) {
+        return nullSafePlan;
+      }
+    }
 
     if (tableStrategy !== 'sti' || !data.id) {
       return upsertPlan;
@@ -1345,6 +1448,11 @@ export class SmrtObject extends SmrtClass {
               const { id: _id, ...updateData } = data;
               await this.db.update(this.tableName, { id: data.id }, updateData);
               this.setMetaType(writePlan.qualifiedMetaType);
+            } else if (writePlan.type === 'updateByIdNoMetaType') {
+              const { id: _id, ...updateData } = data;
+              await this.db.update(this.tableName, { id: data.id }, updateData);
+            } else if (writePlan.type === 'insert') {
+              await this.db.insert(this.tableName, data);
             } else {
               await this.db.upsert(
                 this.tableName,
@@ -1366,10 +1474,18 @@ export class SmrtObject extends SmrtClass {
                 const field = this.extractConstraintField(error.message);
                 throw ValidationError.requiredField(field, className);
               }
-              const operation =
-                writePlan.type === 'updateById'
-                  ? `UPDATE ${this.tableName} (id-targeted)`
-                  : `UPSERT INTO ${this.tableName}`;
+              let operation: string;
+              switch (writePlan.type) {
+                case 'updateById':
+                case 'updateByIdNoMetaType':
+                  operation = `UPDATE ${this.tableName} (id-targeted)`;
+                  break;
+                case 'insert':
+                  operation = `INSERT INTO ${this.tableName}`;
+                  break;
+                default:
+                  operation = `UPSERT INTO ${this.tableName}`;
+              }
               throw DatabaseError.queryFailed(operation, error);
             }
             throw error;
