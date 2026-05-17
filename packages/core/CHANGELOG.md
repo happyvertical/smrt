@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.25.8
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: add svelte-check typechecks (svelte)
+  - @happyvertical/smrt-scanner@0.25.8
+  - @happyvertical/smrt-config@0.25.8
+  - @happyvertical/smrt-types@0.25.8
+
 ## 0.25.7
 
 ### Patch Changes
