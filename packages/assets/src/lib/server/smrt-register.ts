@@ -15,6 +15,7 @@ import { AssetMetafield } from '../../asset-metafield';
 import { AssetStatus } from '../../asset-status';
 import { AssetType } from '../../asset-type';
 import { Folder } from '../../folder';
+import '../../asset-associations';
 import '../../asset-metafields';
 import '../../asset-statuses';
 import '../../asset-types';

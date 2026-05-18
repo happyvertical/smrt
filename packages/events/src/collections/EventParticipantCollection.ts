@@ -6,10 +6,15 @@
  * home/away accessors, statistics, tenant scoping) live alongside.
  */
 
-import { SmrtJunction } from '@happyvertical/smrt-core';
+import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { EventParticipant } from '../models/EventParticipant';
 import type { ParticipantSearchFilters } from '../types';
 
+@smrt({
+  api: false,
+  mcp: false,
+  cli: false,
+})
 export class EventParticipantCollection extends SmrtJunction<EventParticipant> {
   static readonly _itemClass = EventParticipant;
   protected leftField = 'eventId';

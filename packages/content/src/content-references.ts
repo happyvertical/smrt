@@ -2,11 +2,31 @@ import type {
   JunctionAttachOptions,
   SmrtCollectionOptions,
 } from '@happyvertical/smrt-core';
-import { SmrtJunction } from '@happyvertical/smrt-core';
+import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { ContentReference } from './content-reference';
 
 export interface ContentReferencesOptions extends SmrtCollectionOptions {}
 
+/**
+ * Custom-method routes are NOT auto-generated for this collection
+ * (api/mcp/cli: false). The idempotent `attach` override below applies
+ * only to in-process callers (`Content.addReference()` → idempotent;
+ * preserves `id`/`createdAt` on duplicates).
+ *
+ * REST clients hitting `POST /api/v1/contentreferences` go through the
+ * MODEL's CRUD route, which calls `create()` and is upsert-based — id
+ * and createdAt get rewritten on duplicates. If a future caller needs
+ * stable URLs over REST, expose `attach` by hand-writing
+ * `routes/api/v1/contentreferences/attach/+server.ts`. Pre-R2 had a
+ * `/link` route auto-generated from `ContentReferences.link()`; that
+ * route was deleted with R2 and no replacement was wired up — see the
+ * R2 round-6 commit message for context.
+ */
+@smrt({
+  api: false,
+  mcp: false,
+  cli: false,
+})
 export class ContentReferences extends SmrtJunction<ContentReference> {
   static readonly _itemClass = ContentReference;
   protected leftField = 'sourceId';

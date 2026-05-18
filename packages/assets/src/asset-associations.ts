@@ -21,9 +21,15 @@ import {
   type JunctionAttachOptions,
   type JunctionFilterOptions,
   SmrtJunction,
+  smrt,
 } from '@happyvertical/smrt-core';
 import { AssetAssociation } from './asset-association';
 
+@smrt({
+  api: false,
+  mcp: false,
+  cli: false,
+})
 export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
   static readonly _itemClass = AssetAssociation;
 

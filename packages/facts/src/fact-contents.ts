@@ -5,9 +5,14 @@
  * `SmrtJunction`. The remaining methods are tenant-scoping helpers.
  */
 
-import { SmrtJunction } from '@happyvertical/smrt-core';
+import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { FactContent } from './fact-content';
 
+@smrt({
+  api: false,
+  mcp: false,
+  cli: false,
+})
 export class FactContentCollection extends SmrtJunction<FactContent> {
   static readonly _itemClass = FactContent;
   protected leftField = 'factId';
