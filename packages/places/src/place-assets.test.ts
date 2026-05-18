@@ -80,7 +80,9 @@ describe('Place owned assets', () => {
     await place.addAsset(asset, 'hero', 0);
     await place.addAsset(asset, 'hero', 0);
 
-    const links = await placeAssets.getForPlace(place.id as string, 'hero');
+    const links = await placeAssets.byLeft(place.id as string, {
+      relationship: 'hero',
+    });
     expect(links).toHaveLength(1);
     expect(links[0]?.tenantId).toBe('tenant-a');
   });

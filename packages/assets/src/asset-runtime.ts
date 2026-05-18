@@ -389,11 +389,11 @@ export class AssetRuntime implements AssetRuntimeLike {
     });
 
     if (linkAssociation && derived.id) {
-      await this.associations.associate(
-        source.id,
+      await this.associations.attach(
         derivativeMetaType,
         derived.id,
-        role,
+        source.id,
+        { role },
       );
     }
 
@@ -416,11 +416,11 @@ export class AssetRuntime implements AssetRuntimeLike {
     }
     const role = opts.role ?? ASSET_ROLES.DERIVATION_SOURCE;
     const derivativeMetaType = opts.derivativeMetaType ?? 'Asset';
-    return this.associations.associate(
-      source.id,
+    return this.associations.attach(
       derivativeMetaType,
       derivative.id,
-      role,
+      source.id,
+      { role },
     );
   }
 

@@ -281,7 +281,10 @@ export class Place extends SmrtObject {
     }
 
     const placeAssets = await this.getPlaceAssetCollection();
-    const linkedAssets = await placeAssets.getForPlace(this.id, relationship);
+    const linkedAssets = await placeAssets.byLeft(
+      this.id,
+      relationship ? { relationship } : {},
+    );
 
     return resolveOwnedAssetsById(
       this.db,
@@ -303,13 +306,11 @@ export class Place extends SmrtObject {
     assertValidOwnedAssetSortOrder(sortOrder);
 
     const placeAssets = await this.getPlaceAssetCollection();
-    await placeAssets.attach(
-      this.id,
-      asset.id,
+    await placeAssets.attach(this.id, asset.id, {
       relationship,
       sortOrder,
-      this.tenantId,
-    );
+      tenantId: this.tenantId,
+    });
   }
 
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
@@ -318,6 +319,10 @@ export class Place extends SmrtObject {
     }
 
     const placeAssets = await this.getPlaceAssetCollection();
-    await placeAssets.detach(this.id, assetId, relationship);
+    await placeAssets.detach(
+      this.id,
+      assetId,
+      relationship ? { relationship } : {},
+    );
   }
 }

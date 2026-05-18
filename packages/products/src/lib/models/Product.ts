@@ -88,9 +88,9 @@ export class Product extends SmrtObject {
     }
 
     const productAssets = await this.getProductAssetCollection();
-    const linkedAssets = await productAssets.getForProduct(
+    const linkedAssets = await productAssets.byLeft(
       this.id,
-      relationship,
+      relationship ? { relationship } : {},
     );
 
     return resolveOwnedAssetsById(
@@ -112,7 +112,10 @@ export class Product extends SmrtObject {
     assertValidOwnedAssetSortOrder(sortOrder);
 
     const productAssets = await this.getProductAssetCollection();
-    await productAssets.attach(this.id, asset.id, relationship, sortOrder);
+    await productAssets.attach(this.id, asset.id, {
+      relationship,
+      sortOrder,
+    });
   }
 
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
@@ -121,7 +124,11 @@ export class Product extends SmrtObject {
     }
 
     const productAssets = await this.getProductAssetCollection();
-    await productAssets.detach(this.id, assetId, relationship);
+    await productAssets.detach(
+      this.id,
+      assetId,
+      relationship ? { relationship } : {},
+    );
   }
 
   static async searchByText(_query: string): Promise<Product[]> {

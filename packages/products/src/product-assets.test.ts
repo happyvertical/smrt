@@ -77,10 +77,9 @@ describe('Product owned assets', () => {
     await product.addAsset(asset, 'thumbnail', 0);
     await product.addAsset(asset, 'thumbnail', 0);
 
-    const links = await productAssets.getForProduct(
-      product.id as string,
-      'thumbnail',
-    );
+    const links = await productAssets.byLeft(product.id as string, {
+      relationship: 'thumbnail',
+    });
     expect(links).toHaveLength(1);
   });
 

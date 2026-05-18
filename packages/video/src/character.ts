@@ -320,9 +320,9 @@ export class Character extends SmrtObject {
       ? await listCanonicalOwnedAssetIds({
           tableName: 'character_assets',
           loadLinks: async () =>
-            (await this.getCharacterAssetCollection()).getForCharacter(
+            (await this.getCharacterAssetCollection()).byLeft(
               this.id as string,
-              role,
+              role ? { role } : {},
             ),
         })
       : [];
@@ -366,13 +366,11 @@ export class Character extends SmrtObject {
     assertValidVideoAssetSortOrder(sortOrder);
 
     const characterAssets = await this.getCharacterAssetCollection();
-    await characterAssets.attach(
-      this.id,
-      asset.id,
+    await characterAssets.attach(this.id, asset.id, {
       role,
       sortOrder,
-      this.tenantId,
-    );
+      tenantId: this.tenantId,
+    });
 
     if (this.setLegacyFieldAssetId(role, asset.id)) {
       await this.save();
@@ -385,7 +383,7 @@ export class Character extends SmrtObject {
     }
 
     const characterAssets = await this.getCharacterAssetCollection();
-    await characterAssets.detach(this.id, assetId, role);
+    await characterAssets.detach(this.id, assetId, role ? { role } : {});
 
     if (this.clearLegacyFieldAssetId(assetId, role)) {
       await this.save();

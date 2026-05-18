@@ -293,7 +293,10 @@ export class Event extends SmrtObject {
     }
 
     const eventAssets = await this.getEventAssetCollection();
-    const linkedAssets = await eventAssets.getForEvent(this.id, relationship);
+    const linkedAssets = await eventAssets.byLeft(
+      this.id,
+      relationship ? { relationship } : {},
+    );
 
     return resolveOwnedAssetsById(
       this.db,
@@ -315,13 +318,11 @@ export class Event extends SmrtObject {
     assertValidOwnedAssetSortOrder(sortOrder);
 
     const eventAssets = await this.getEventAssetCollection();
-    await eventAssets.attach(
-      this.id,
-      asset.id,
+    await eventAssets.attach(this.id, asset.id, {
       relationship,
       sortOrder,
-      this.tenantId,
-    );
+      tenantId: this.tenantId,
+    });
   }
 
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
@@ -330,7 +331,11 @@ export class Event extends SmrtObject {
     }
 
     const eventAssets = await this.getEventAssetCollection();
-    await eventAssets.detach(this.id, assetId, relationship);
+    await eventAssets.detach(
+      this.id,
+      assetId,
+      relationship ? { relationship } : {},
+    );
   }
 
   /**

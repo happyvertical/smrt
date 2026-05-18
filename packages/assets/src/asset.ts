@@ -268,7 +268,7 @@ export class Asset extends SmrtObject {
     const associations = await AssetAssociationCollection.create({
       db: this.db,
     });
-    return await associations.getForAsset(this.id!);
+    return await associations.byRight(this.id!);
   }
 
   /**
@@ -287,7 +287,7 @@ export class Asset extends SmrtObject {
     const associations = await AssetAssociationCollection.create({
       db: this.db,
     });
-    return await associations.associate(this.id!, metaType, metaId, role);
+    return await associations.attach(metaType, metaId, this.id!, { role });
   }
 
   /**

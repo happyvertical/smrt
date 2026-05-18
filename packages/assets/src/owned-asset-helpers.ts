@@ -19,21 +19,6 @@ export interface AssetOwnerCollection<OwnerType extends AssetOwnerRecord> {
   get(where: { id: string }): Promise<OwnerType | null>;
 }
 
-interface OwnedAssetLinkRecord {
-  delete(): Promise<void>;
-}
-
-interface OwnedAssetLinkListCollection<LinkType extends OwnedAssetLinkRecord> {
-  list(options: {
-    where: Record<string, unknown>;
-    orderBy?: string;
-  }): Promise<LinkType[]>;
-}
-
-interface OwnedAssetLinkCreateCollection<LinkType> {
-  create(data: Record<string, unknown>): Promise<LinkType>;
-}
-
 export function assertValidOwnedAssetRelationship(relationship: string): void {
   if (!OWNED_ASSET_RELATIONSHIP_PATTERN.test(relationship)) {
     throw new Error(
@@ -134,50 +119,4 @@ export async function removeOwnedAssetFromCollection<
   }
 
   await owner.removeAsset(assetId, relationship);
-}
-
-export async function listOwnedAssetLinks<
-  LinkType extends OwnedAssetLinkRecord,
->(
-  collection: OwnedAssetLinkListCollection<LinkType>,
-  ownerIdField: string,
-  ownerId: string,
-  relationship?: string,
-): Promise<LinkType[]> {
-  const where = relationship
-    ? { [ownerIdField]: ownerId, relationship }
-    : { [ownerIdField]: ownerId };
-
-  return (await collection.list({
-    where,
-    orderBy: 'sort_order ASC',
-  })) as LinkType[];
-}
-
-export async function createOwnedAssetLink<LinkType>(
-  collection: OwnedAssetLinkCreateCollection<LinkType>,
-  data: Record<string, unknown>,
-): Promise<LinkType> {
-  return collection.create(data);
-}
-
-export async function deleteOwnedAssetLinks<
-  LinkType extends OwnedAssetLinkRecord,
->(
-  collection: OwnedAssetLinkListCollection<LinkType>,
-  ownerIdField: string,
-  ownerId: string,
-  assetId: string,
-  relationship?: string,
-): Promise<void> {
-  const where: Record<string, string> = {
-    [ownerIdField]: ownerId,
-    assetId,
-  };
-  if (relationship) {
-    where.relationship = relationship;
-  }
-
-  const links = (await collection.list({ where })) as LinkType[];
-  await Promise.all(links.map((link) => link.delete()));
 }

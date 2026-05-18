@@ -68,6 +68,11 @@ export * from './errors';
 export * from './generators/index';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
+export {
+  type JunctionAttachOptions,
+  type JunctionFilterOptions,
+  SmrtJunction,
+} from './junction';
 // Lazy / execute-time config resolvers (for agent_config and similar
 // snapshot-prone payloads — see issue #1161)
 export type {
