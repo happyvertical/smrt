@@ -32,6 +32,7 @@ interface FieldDefinition {
     | 'datetime'
     | 'json'
     | 'foreignKey'
+    | 'crossPackageRef'
     | 'oneToMany'
     | 'manyToMany'
     | 'meta';
@@ -696,6 +697,18 @@ export class ManifestAdapter {
       };
     }
 
+    // @crossPackageRef('@pkg:Class') decorator
+    if (decorator.name === 'crossPackageRef') {
+      const qualifiedName = stripQuotes(decorator.arguments[0]?.trim());
+      const hasDefaultValue = field.initializer !== null;
+      return {
+        type: 'crossPackageRef',
+        related: qualifiedName || undefined,
+        required: !field.optional && !hasDefaultValue,
+        source: 'decorator',
+      };
+    }
+
     // @oneToMany(RelatedClass) decorator
     if (decorator.name === 'oneToMany') {
       const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
@@ -760,6 +773,7 @@ export class ManifestAdapter {
       case 'datetime':
       case 'json':
       case 'foreignKey':
+      case 'crossPackageRef':
       case 'oneToMany':
       case 'manyToMany':
       case 'meta':

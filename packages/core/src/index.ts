@@ -46,6 +46,8 @@ export {
 // Property decorators for field definition
 // Re-export decorator versions with priority over field helpers
 export {
+  type CrossPackageRefOptions,
+  crossPackageRef,
   type FieldOptions,
   field,
   foreignKey,

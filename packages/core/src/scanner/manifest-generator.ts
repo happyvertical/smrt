@@ -1274,6 +1274,8 @@ ${fields}
         return 'any';
       case 'foreignKey':
         return 'string';
+      case 'crossPackageRef':
+        return 'string';
       default:
         return 'any';
     }
@@ -1699,6 +1701,8 @@ ${fields}
       case 'json':
         return 'object';
       case 'foreignKey':
+        return 'string';
+      case 'crossPackageRef':
         return 'string';
       default:
         return 'string';

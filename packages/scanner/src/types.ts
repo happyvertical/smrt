@@ -364,6 +364,7 @@ export interface ExternalManifest {
  * | `datetime` | `DATETIME` | `Date` annotation |
  * | `json` | `JSON` / `TEXT` | Arrays, `Record<>`, object types |
  * | `foreignKey` | `TEXT` (FK column) | `@foreignKey(Class)` decorator |
+ * | `crossPackageRef` | `TEXT` (no FK constraint) | `@crossPackageRef('@pkg:Class')` decorator |
  * | `oneToMany` | — (virtual) | `@oneToMany(Class)` decorator |
  * | `manyToMany` | — (virtual) | `@manyToMany(Class)` decorator |
  * | `meta` | Stored in `_meta_data` | STI child field wrapped in `Meta<T>` |
@@ -379,6 +380,7 @@ export type InferredFieldType =
   | 'datetime'
   | 'json'
   | 'foreignKey'
+  | 'crossPackageRef'
   | 'oneToMany'
   | 'manyToMany'
   | 'meta'

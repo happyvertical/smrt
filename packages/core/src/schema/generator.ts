@@ -66,6 +66,8 @@ export class SchemaGenerator {
         return 'JSON';
       case 'foreignKey':
         return 'TEXT'; // Foreign keys are typically TEXT
+      case 'crossPackageRef':
+        return 'TEXT'; // Cross-package refs are plain TEXT (no DDL FK constraint)
       default:
         return 'TEXT'; // Default fallback
     }

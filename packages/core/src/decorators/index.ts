@@ -53,6 +53,7 @@ export type FieldType =
   | PrimitiveFieldType
   | 'meta'
   | 'foreignKey'
+  | 'crossPackageRef'
   | 'oneToMany'
   | 'manyToMany';
 
@@ -115,7 +116,25 @@ export interface RelationshipFieldOptions extends FieldOptions {
   /** Through table for many-to-many */
   through?: string;
   /** Relationship type */
-  type?: 'foreignKey' | 'oneToMany' | 'manyToMany';
+  type?: 'foreignKey' | 'crossPackageRef' | 'oneToMany' | 'manyToMany';
+}
+
+/**
+ * Options specific to cross-package references.
+ */
+export interface CrossPackageRefOptions
+  extends Omit<RelationshipFieldOptions, 'related' | 'type'> {
+  /**
+   * When `true`, the framework verifies the referenced object exists at save time.
+   * Validation uses the target package's manifest (loaded on demand via
+   * `ObjectRegistry.ensureManifestLoaded()`), so this requires the target manifest
+   * to be discoverable at runtime.
+   *
+   * Empty/null values are always allowed (treated as "no reference set").
+   *
+   * Defaults to `false` — same behavior as a plain string field today.
+   */
+  validate?: boolean;
 }
 
 /**
@@ -227,6 +246,68 @@ export function foreignKey(
           ...options,
           type: 'foreignKey',
           related: relatedClassName,
+        });
+      },
+    );
+  }) as CompatiblePropertyDecorator;
+}
+
+/**
+ * Declares a cross-package foreign key reference.
+ *
+ * Use this for relationships that point to a `SmrtObject` in a *different* package
+ * (e.g. `Customer.profileId` pointing at `@happyvertical/smrt-profiles:Profile`).
+ * Unlike `@foreignKey()`, this decorator does **not** emit a DDL `FOREIGN KEY`
+ * constraint — cross-package classes are not visible at schema-generation time and
+ * adding a constraint would force a circular package dependency. The decorated
+ * property remains a plain `TEXT` column at the database level.
+ *
+ * What you get over a plain string field:
+ * - The relationship is registered with the `ObjectRegistry`, so `loadRelated()`
+ *   and `Collection.list({ include })` can resolve it once the target package's
+ *   manifest is loaded.
+ * - Optional save-time validation (`validate: true`) confirms the referenced
+ *   object exists, catching typos and stale IDs before they hit the database.
+ *
+ * The `qualifiedName` is a fully-qualified class identifier in the form
+ * `@package/scope:ClassName` — for example `@happyvertical/smrt-profiles:Profile`.
+ *
+ * @param qualifiedName - Qualified name of the target class
+ * @param options - Optional field constraints and `validate` flag
+ * @returns A TypeScript property decorator
+ *
+ * @example
+ * ```typescript
+ * @smrt()
+ * class Customer extends SmrtObject {
+ *   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+ *   profileId: string = '';
+ *
+ *   // With save-time validation
+ *   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { validate: true })
+ *   primaryContactId: string = '';
+ * }
+ * ```
+ *
+ * @see {@link foreignKey} for same-package relationships (emits FK constraint)
+ * @see SmrtObject.loadRelated for runtime resolution
+ */
+export function crossPackageRef(
+  qualifiedName: string,
+  options: CrossPackageRefOptions = {},
+) {
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          ...options,
+          type: 'crossPackageRef',
+          related: qualifiedName,
         });
       },
     );

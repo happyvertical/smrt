@@ -516,7 +516,11 @@ export type ValidatorFunction = (
 /**
  * Relationship type for the relationship map
  */
-export type RelationshipType = 'foreignKey' | 'oneToMany' | 'manyToMany';
+export type RelationshipType =
+  | 'foreignKey'
+  | 'crossPackageRef'
+  | 'oneToMany'
+  | 'manyToMany';
 
 /**
  * Metadata about a relationship between classes

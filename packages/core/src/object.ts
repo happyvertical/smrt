@@ -1238,6 +1238,9 @@ export class SmrtObject extends SmrtClass {
       // Validate object state before saving
       await this.validateBeforeSave();
 
+      // Validate cross-package references that opted into save-time validation
+      await this.validateCrossPackageRefs();
+
       // Execute beforeSave interceptors (e.g., tenancy validation)
       const interceptorContext = createInterceptorContext(className, 'save');
       await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
@@ -1484,6 +1487,82 @@ export class SmrtObject extends SmrtClass {
         if (value === null || value === undefined || value === '') {
           throw ValidationError.requiredField(fieldName, className);
         }
+      }
+    }
+  }
+
+  /**
+   * Validates cross-package references that opted in via `validate: true`.
+   *
+   * Iterates registered fields of type `crossPackageRef`. For each one whose
+   * field options include `validate: true` AND has a non-empty value, looks up
+   * the referenced object via the target package's manifest and throws
+   * `ValidationError` if the target row does not exist.
+   *
+   * Empty/null/undefined values are treated as "no reference set" and skipped.
+   * Fields without `validate: true` are always skipped (the registered metadata
+   * still powers eager loading and `loadRelated()`).
+   */
+  protected async validateCrossPackageRefs(): Promise<void> {
+    const className = this.getResolvedClassName();
+    const registered = ObjectRegistry.getClass(className);
+    if (!registered) return;
+
+    const fields = registered.inheritedFields || registered.fields;
+    if (!fields || fields.size === 0) return;
+
+    type CrossRefCheck = {
+      fieldName: string;
+      qualifiedTarget: string;
+      value: string;
+    };
+    const checks: CrossRefCheck[] = [];
+
+    for (const [fieldName, field] of fields) {
+      if (field?.type !== 'crossPackageRef') continue;
+      const opts = field._meta || field;
+      if (!opts.validate) continue;
+      if (!field.related) continue;
+
+      const value = this.getFieldValue(fieldName);
+      if (value === null || value === undefined || value === '') continue;
+
+      checks.push({
+        fieldName,
+        qualifiedTarget: String(field.related),
+        value: String(value),
+      });
+    }
+
+    if (checks.length === 0) return;
+
+    for (const check of checks) {
+      await ObjectRegistry.ensureManifestLoaded(check.qualifiedTarget);
+
+      const targetClass =
+        ObjectRegistry.getClassByQualifiedName(check.qualifiedTarget) ??
+        ObjectRegistry.getClass(check.qualifiedTarget);
+
+      if (!targetClass) {
+        throw new ValidationError(
+          `crossPackageRef target ${check.qualifiedTarget} for ${className}.${check.fieldName} is not registered. ` +
+            `Ensure the target package's manifest is discoverable at runtime.`,
+          'VALIDATION_CROSS_PACKAGE_REF_UNREGISTERED',
+          { className, fieldName: check.fieldName, value: check.value },
+        );
+      }
+
+      const probe = new targetClass.constructor(this.options) as SmrtObject;
+      await probe.initialize();
+      await probe.verifyStorageReady();
+      const row = await probe.db.get(probe.tableName, { id: check.value });
+      if (!row) {
+        throw new ValidationError(
+          `crossPackageRef validation failed: ${className}.${check.fieldName} references ` +
+            `${check.qualifiedTarget} id="${check.value}" but no such row exists.`,
+          'VALIDATION_CROSS_PACKAGE_REF_MISSING',
+          { className, fieldName: check.fieldName, value: check.value },
+        );
       }
     }
   }
@@ -1863,12 +1942,14 @@ export class SmrtObject extends SmrtClass {
       this.constructor.name,
     );
     const relationship = relationships.find(
-      (r) => r.fieldName === fieldName && r.type === 'foreignKey',
+      (r) =>
+        r.fieldName === fieldName &&
+        (r.type === 'foreignKey' || r.type === 'crossPackageRef'),
     );
 
     if (!relationship) {
       throw RuntimeError.invalidState(
-        `Field ${fieldName} is not a foreignKey relationship on ${this.constructor.name}`,
+        `Field ${fieldName} is not a foreignKey or crossPackageRef relationship on ${this.constructor.name}`,
         { fieldName, className: this.constructor.name },
       );
     }
@@ -1881,8 +1962,18 @@ export class SmrtObject extends SmrtClass {
       return null;
     }
 
-    // Get the target class constructor
-    const targetClassInfo = ObjectRegistry.getClass(relationship.targetClass);
+    // For crossPackageRef, the target is a qualified name and the target package's
+    // manifest may not be loaded yet — ensure it's available before lookup.
+    if (relationship.type === 'crossPackageRef') {
+      await ObjectRegistry.ensureManifestLoaded(relationship.targetClass);
+    }
+
+    // Get the target class constructor (try qualified name first for crossPackageRef)
+    const targetClassInfo =
+      relationship.type === 'crossPackageRef'
+        ? (ObjectRegistry.getClassByQualifiedName(relationship.targetClass) ??
+          ObjectRegistry.getClass(relationship.targetClass))
+        : ObjectRegistry.getClass(relationship.targetClass);
     if (!targetClassInfo) {
       throw RuntimeError.invalidState(
         `Target class ${relationship.targetClass} not found in ObjectRegistry`,
