@@ -104,11 +104,11 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
       await link.delete();
     }
 
-    const sortKey = this.sortField;
+    const positionKey = this.positionField;
     for (let i = 0; i < assetIds.length; i++) {
       const rowOpts: JunctionAttachOptions = { ...opts };
-      if (sortKey && rowOpts[sortKey] === undefined) {
-        rowOpts[sortKey] = i;
+      if (positionKey && rowOpts[positionKey] === undefined) {
+        rowOpts[positionKey] = i;
       }
       await this.attach(metaType, metaId, assetIds[i], rowOpts);
     }
