@@ -48,12 +48,14 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
     assetId: string,
     relationship = 'attachment',
     sortOrder = 0,
+    tenantId: string | null = null,
   ): Promise<ProductAsset> {
     return createOwnedAssetLink(this, {
       productId,
       assetId,
       relationship,
       sortOrder,
+      tenantId,
     });
   }
 

@@ -21,12 +21,12 @@
  */
 
 import type {
+  DatabaseConfig,
   DispatchBus,
   DispatchHandler,
   DispatchMetadata,
 } from '@happyvertical/smrt-core';
 import type { StockService } from '@happyvertical/smrt-inventory';
-import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   createProductionService,
   type ProductionService,
@@ -130,16 +130,16 @@ export type InstallManufacturingDispatchHandlersOptions = {
 } & (
   | {
       productionService: ProductionService;
-      db?: DatabaseInterface;
+      db?: DatabaseConfig;
       stockService?: StockService;
     }
   | {
       stockService: StockService;
-      db?: DatabaseInterface;
+      db?: DatabaseConfig;
       productionService?: undefined;
     }
   | {
-      db: DatabaseInterface;
+      db: DatabaseConfig;
       stockService?: undefined;
       productionService?: undefined;
     }
@@ -188,7 +188,7 @@ export async function installManufacturingDispatchHandlers(
     (await createProductionService(
       options.stockService
         ? { stockService: options.stockService }
-        : { db: options.db as DatabaseInterface },
+        : { db: options.db as DatabaseConfig },
     ));
 
   const installed: Array<{ pattern: string; handler: DispatchHandler }> = [];

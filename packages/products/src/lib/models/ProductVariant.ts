@@ -1,10 +1,9 @@
 /**
  * ProductVariant — STI subtype of Product representing one axis-value variant
- * of a Style (or Makeup).
+ * of a parent Product (or any of its subtypes).
  *
- * Common axis examples: colorway, size, length, width. For apparel a typical
- * variant is a colorway (with concrete SKUs hanging below per size). For
- * furniture it might be a finish.
+ * Common axis examples: size, length, width, finish, color, capacity. The
+ * concrete shape is open: consumers choose what their domain varies along.
  *
  * The actual sellable unit (the thing you scan / count / ship) lives in
  * `@happyvertical/smrt-inventory` as `Sku`. ProductVariant is the catalog-side
@@ -27,14 +26,15 @@ export class ProductVariant extends Product {
   override productType: ProductType = ProductType.VARIANT;
 
   /**
-   * ID of the parent product (Style or Makeup) this variant belongs to.
+   * ID of the parent product this variant belongs to. Plain row reference
+   * within the shared `products` table — points at any Product subtype.
    */
   @meta()
   parentProductId: string = '';
 
   /**
    * Variant axis values as a key/value map, e.g.
-   * `{ "color": "Navy" }` or `{ "color": "Navy", "size": "M" }`.
+   * `{ "size": "M" }` or `{ "finish": "matte", "size": "L" }`.
    * Stored as JSON in `_meta_data`.
    */
   @meta()

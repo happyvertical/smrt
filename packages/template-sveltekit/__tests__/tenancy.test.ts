@@ -93,6 +93,26 @@ describe('subdomainStrategyWith', () => {
       tenantId: 'acme',
     });
   });
+
+  it('merges custom reserved subdomains with the built-in defaults', () => {
+    // Custom list adds `admin` but does NOT mention `www` / `api` / `app`.
+    // The merge semantics should keep the defaults reserved.
+    const strategy = subdomainStrategyWith({
+      reservedSubdomains: ['admin'],
+    });
+    expect(strategy(makeEvent('https://admin.demo.local/'))).toEqual({
+      tenantId: null,
+    });
+    expect(strategy(makeEvent('https://www.demo.local/'))).toEqual({
+      tenantId: null,
+    });
+    expect(strategy(makeEvent('https://api.demo.local/'))).toEqual({
+      tenantId: null,
+    });
+    expect(strategy(makeEvent('https://app.demo.local/'))).toEqual({
+      tenantId: null,
+    });
+  });
 });
 
 describe('pathPrefixStrategy', () => {

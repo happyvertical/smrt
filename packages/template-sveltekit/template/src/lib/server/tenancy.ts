@@ -102,15 +102,21 @@ export const subdomainStrategy: TenantResolverStrategy = (event) => {
 /**
  * Customizable subdomain strategy. Use this if you need to extend the
  * reserved-subdomain list (e.g. to also reject `admin.demo.local`).
+ *
+ * The supplied `reservedSubdomains` are merged with the defaults
+ * (`www`, `api`, `app`) — so adding `admin` still leaves `www` reserved.
+ * Pass an empty iterable to start from a fresh set, or pass the value
+ * you want via {@link DEFAULT_RESERVED_SUBDOMAINS} after filtering.
  */
 export function subdomainStrategyWith(opts?: {
   reservedSubdomains?: Iterable<string>;
 }): TenantResolverStrategy {
-  const reserved = new Set(
-    opts?.reservedSubdomains
-      ? Array.from(opts.reservedSubdomains, (s) => s.toLowerCase())
-      : DEFAULT_RESERVED_SUBDOMAINS,
-  );
+  const reserved = new Set<string>(DEFAULT_RESERVED_SUBDOMAINS);
+  if (opts?.reservedSubdomains) {
+    for (const s of opts.reservedSubdomains) {
+      reserved.add(s.toLowerCase());
+    }
+  }
 
   return (event) => {
     const hostname = event.url.hostname.toLowerCase();

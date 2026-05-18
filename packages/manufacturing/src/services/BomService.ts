@@ -23,11 +23,11 @@
  * @packageDocumentation
  */
 
+import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import {
   createStockService,
   type StockService,
 } from '@happyvertical/smrt-inventory';
-import type { DatabaseInterface } from '@happyvertical/sql';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
@@ -85,8 +85,8 @@ export type BomServiceOptions = {
    */
   costResolver?: ComponentCostResolver;
 } & (
-  | { db: DatabaseInterface; stockService?: StockService }
-  | { stockService: StockService; db?: DatabaseInterface }
+  | { db: DatabaseConfig; stockService?: StockService }
+  | { stockService: StockService; db?: DatabaseConfig }
 );
 
 /**
@@ -113,12 +113,14 @@ export class BomService {
   static async create(options: BomServiceOptions): Promise<BomService> {
     const stockService =
       options.stockService ??
-      (await createStockService({ db: options.db as DatabaseInterface }));
+      (await createStockService({ db: options.db as DatabaseConfig }));
     // Share the same db that the StockService uses so reads always hit
     // one connection / pool.
-    const sharedDb =
-      options.db ??
-      (stockService as unknown as { skus: { db: DatabaseInterface } }).skus.db;
+    // Share the same db that the StockService uses so reads always hit one
+    // connection/pool. StockService exposes its db as a public field
+    // specifically so downstream services can compose against it without
+    // reaching into Collection internals.
+    const sharedDb = options.db ?? stockService.db;
     const [boms, lines] = await Promise.all([
       BillOfMaterialsCollection.create({ db: sharedDb }),
       BomLineCollection.create({ db: sharedDb }),

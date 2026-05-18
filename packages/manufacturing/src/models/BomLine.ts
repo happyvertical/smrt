@@ -5,8 +5,8 @@
  * parent product, the quantity-per-unit, the unit of measure (open-ended
  * string — `yards`, `each`, `grams`, `kg`, `m`, anything else the
  * application needs), and an optional `wastePercent` so cost rollups and
- * requirements explosions can account for the fabric scraps, cut-off ends,
- * mis-presses, or material lost to setup.
+ * requirements explosions can account for offcuts, setup losses, and other
+ * material consumed but not incorporated into a finished unit.
  *
  * Cross-package references (`componentSkuId`) are plain string ids — never
  * `@foreignKey()` — so this package can ship without a hard runtime
@@ -101,8 +101,8 @@ export class BomLine extends SmrtObject {
   wastePercent: number = 0.0;
 
   /**
-   * Optional free-form notes — e.g. "main body, grain along length",
-   * "primary glue line, 60-second cure", or "matched batch only".
+   * Optional free-form notes — e.g. "primary structural component",
+   * "60-second cure", or "matched batch only".
    */
   notes: string = '';
 

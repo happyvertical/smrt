@@ -39,13 +39,13 @@
  * @packageDocumentation
  */
 
+import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import type {
   StockMovementReason,
   StockMutationOptions,
   StockService,
 } from '@happyvertical/smrt-inventory';
 import { createStockService } from '@happyvertical/smrt-inventory';
-import type { DatabaseInterface } from '@happyvertical/sql';
 import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollection.js';
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
@@ -145,8 +145,8 @@ export interface ProduceFinishedGoodsOptions {
  * across subsystems.
  */
 export type ProductionServiceOptions =
-  | { db: DatabaseInterface; stockService?: StockService }
-  | { stockService: StockService; db?: DatabaseInterface };
+  | { db: DatabaseConfig; stockService?: StockService }
+  | { stockService: StockService; db?: DatabaseConfig };
 
 /**
  * A single emitted stock movement, returned by
@@ -190,10 +190,10 @@ export class ProductionService {
   ): Promise<ProductionService> {
     const stockService =
       options.stockService ??
-      (await createStockService({ db: options.db as DatabaseInterface }));
-    const sharedDb =
-      options.db ??
-      (stockService as unknown as { skus: { db: DatabaseInterface } }).skus.db;
+      (await createStockService({ db: options.db as DatabaseConfig }));
+    // Share the StockService's db so production + stock writes ride one
+    // connection/pool. StockService.db is exposed publicly for this case.
+    const sharedDb = options.db ?? stockService.db;
     const [boms, lines] = await Promise.all([
       BillOfMaterialsCollection.create({ db: sharedDb }),
       BomLineCollection.create({ db: sharedDb }),

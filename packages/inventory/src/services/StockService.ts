@@ -28,7 +28,7 @@
  * @packageDocumentation
  */
 
-import type { DatabaseInterface } from '@happyvertical/sql';
+import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import {
   InventoryLocationCollection,
   SkuCollection,
@@ -88,11 +88,13 @@ export interface StockMutationOptions {
  */
 export interface StockServiceOptions {
   /**
-   * Database to read/write through. Reused by the internal collections so
-   * the service, level reads, and movement writes always hit the same
-   * connection / pool.
+   * Database to read/write through. Accepts the same shapes that
+   * `SmrtCollection.create({ db })` accepts — a `DatabaseInterface`, a
+   * connection-string URL, or a `{ type, url }` config object. Reused by
+   * the internal collections so the service, level reads, and movement
+   * writes always hit the same connection / pool.
    */
-  db: DatabaseInterface;
+  db: DatabaseConfig;
 }
 
 interface AdjustLevelOptions {
@@ -141,6 +143,15 @@ interface WriteMovementOptions {
  */
 export class StockService {
   private constructor(
+    /**
+     * The database config this service was bound to (URL string, config
+     * object, or already-resolved `DatabaseInterface`). Exposed so
+     * downstream services that compose StockService (e.g. BomService,
+     * ProductionService in `@happyvertical/smrt-manufacturing`) can pass
+     * the same value to their own collection factories without reaching
+     * into private fields on the collections.
+     */
+    public readonly db: DatabaseConfig,
     public readonly levels: StockLevelCollection,
     public readonly movements: StockMovementCollection,
     public readonly skus: SkuCollection,
@@ -156,7 +167,7 @@ export class StockService {
       SkuCollection.create({ db }),
       InventoryLocationCollection.create({ db }),
     ]);
-    return new StockService(levels, movements, skus, locations);
+    return new StockService(db, levels, movements, skus, locations);
   }
 
   /**
@@ -494,13 +505,15 @@ export class StockService {
       return existing;
     }
 
+    // SmrtCollection.create() saves the row before returning, so no further
+    // save() is needed here. Calling save() again would emit a redundant
+    // upsert round-trip on every hot-path first write.
     const level = await this.levels.create({
       skuId: options.skuId,
       locationId: options.locationId,
       state: options.state,
       qty: next,
     });
-    await level.save();
     return level;
   }
 

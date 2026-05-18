@@ -13,7 +13,11 @@ export interface ProductAssetOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'product_assets',
-  conflictColumns: ['product_id', 'asset_id', 'relationship'],
+  // tenant_id is included so two tenants can independently link the same
+  // shared product/asset under the same relationship without their rows
+  // colliding (or worse, one tenant silently overwriting another's link
+  // via UPSERT).
+  conflictColumns: ['product_id', 'asset_id', 'relationship', 'tenant_id'],
   api: false,
   mcp: false,
   cli: false,

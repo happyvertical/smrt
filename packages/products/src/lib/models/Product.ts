@@ -121,6 +121,7 @@ export class Product extends SmrtObject {
     return resolveOwnedAssetsById(
       this.db,
       linkedAssets.map((link) => link.assetId),
+      this.tenantId,
     );
   }
 
@@ -137,7 +138,13 @@ export class Product extends SmrtObject {
     assertValidOwnedAssetSortOrder(sortOrder);
 
     const productAssets = await this.getProductAssetCollection();
-    await productAssets.attach(this.id, asset.id, relationship, sortOrder);
+    await productAssets.attach(
+      this.id,
+      asset.id,
+      relationship,
+      sortOrder,
+      this.tenantId,
+    );
   }
 
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
