@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.25.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - keep contribution workflow status separate from intake decision (content)
+  - @happyvertical/smrt-scanner@0.25.9
+  - @happyvertical/smrt-config@0.25.9
+  - @happyvertical/smrt-types@0.25.9
+
 ## 0.25.8
 
 ### Patch Changes
