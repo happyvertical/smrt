@@ -20,6 +20,16 @@ describe('workspace barrel', () => {
     expect(workspace.RoleShell).toBeDefined();
   });
 
+  it('exports navTreeFromManifest helper', () => {
+    expect(workspace.navTreeFromManifest).toBeDefined();
+    expect(typeof workspace.navTreeFromManifest).toBe('function');
+  });
+
+  it('exports pluralizeClassName helper', () => {
+    expect(workspace.pluralizeClassName).toBeDefined();
+    expect(typeof workspace.pluralizeClassName).toBe('function');
+  });
+
   it('re-exports ToolsDockEvents for typed dock:* event payloads', () => {
     // Compile-time assertion: the type must be importable from the barrel
     // so consumers can reference the built-in `'dock:*'` event payloads in
