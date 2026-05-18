@@ -1,0 +1,194 @@
+/**
+ * dispatch-handlers — opt-in DispatchBus subscribers.
+ *
+ * Verifies that calling installInventoryDispatchHandlers wires up the
+ * documented signals so a `contract:created` emit reserves stock and a
+ * `fulfillment:shipped` emit removes it. dispose() should detach both
+ * subscribers so a second emit after dispose() is a no-op.
+ */
+
+import { existsSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createDispatchBus, type DispatchBus } from '@happyvertical/smrt-core';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import {
+  InventoryLocationCollection,
+  SkuCollection,
+} from '../collections/index.js';
+import { StockLevelCollection } from '../collections/StockLevelCollection.js';
+import { StockMovementCollection } from '../collections/StockMovementCollection.js';
+import { installInventoryDispatchHandlers } from '../services/dispatch-handlers.js';
+import { createStockService } from '../services/StockService.js';
+
+describe('installInventoryDispatchHandlers', () => {
+  let dbPath: string;
+  let db: { type: 'sqlite'; url: string };
+  let bus: DispatchBus;
+  let skus: SkuCollection;
+  let locations: InventoryLocationCollection;
+  let levels: StockLevelCollection;
+  let movements: StockMovementCollection;
+  let skuId: string;
+  let warehouseId: string;
+
+  beforeEach(async () => {
+    dbPath = join(
+      tmpdir(),
+      `smrt-inventory-dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.db`,
+    );
+    db = { type: 'sqlite', url: dbPath };
+    bus = await createDispatchBus({ db });
+
+    skus = await SkuCollection.create({ db });
+    locations = await InventoryLocationCollection.create({ db });
+    levels = await StockLevelCollection.create({ db });
+    movements = await StockMovementCollection.create({ db });
+
+    const sku = await skus.create({
+      productId: 'prod-1',
+      code: 'AUTO-001',
+    });
+    await sku.save();
+    skuId = sku.id!;
+
+    const wh = await locations.create({
+      code: 'WH-AUTO',
+      kind: 'warehouse',
+    });
+    await wh.save();
+    warehouseId = wh.id!;
+  });
+
+  afterEach(async () => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // Ignore cleanup errors.
+      }
+    }
+  });
+
+  it('reserves stock on contract:created and fulfils on fulfillment:shipped', async () => {
+    const service = await createStockService({ db: (skus as any).db });
+    await service.receive(skuId, warehouseId, 10);
+
+    const handlers = await installInventoryDispatchHandlers({
+      dispatchBus: bus,
+      stockService: service,
+    });
+
+    await bus.emit(
+      'contract:created',
+      {
+        contractId: 'C-1',
+        lines: [{ skuId, locationId: warehouseId, qty: 3 }],
+      },
+      { source: 'commerce' },
+    );
+
+    // In-memory handlers are fire-and-forget — emit() returns once the
+    // dispatch row is persisted but the in-memory subscriber's async
+    // work continues in the background. Yield the event loop until the
+    // expected effect has landed (or the timeout trips).
+    await waitFor(async () => {
+      const allocated = await levels.getLevel(skuId, warehouseId, 'allocated');
+      return allocated !== null && Number(allocated.qty) === 3;
+    });
+
+    const allocated = await levels.getLevel(skuId, warehouseId, 'allocated');
+    expect(Number(allocated?.qty)).toBe(3);
+    const reservationMovements = await movements.findByReason('reservation');
+    expect(reservationMovements).toHaveLength(1);
+    expect(reservationMovements[0].sourceType).toBe('Contract');
+    expect(reservationMovements[0].sourceId).toBe('C-1');
+    expect(reservationMovements[0].note).toContain('commerce');
+
+    await bus.emit(
+      'fulfillment:shipped',
+      {
+        fulfillmentId: 'F-1',
+        lines: [{ skuId, locationId: warehouseId, qty: 3 }],
+      },
+      { source: 'commerce' },
+    );
+    await waitFor(async () => {
+      const row = await levels.getLevel(skuId, warehouseId, 'allocated');
+      return row !== null && Number(row.qty) === 0;
+    });
+
+    const allocatedAfter = await levels.getLevel(
+      skuId,
+      warehouseId,
+      'allocated',
+    );
+    expect(Number(allocatedAfter?.qty)).toBe(0);
+    const fulfilmentMovements = await movements.findByReason('fulfillment');
+    expect(fulfilmentMovements).toHaveLength(1);
+    expect(fulfilmentMovements[0].sourceType).toBe('Fulfillment');
+    expect(fulfilmentMovements[0].sourceId).toBe('F-1');
+
+    handlers.dispose();
+
+    // After dispose the bus should not invoke the subscribers; emitting
+    // again must not create any further movement rows.
+    await bus.emit(
+      'contract:created',
+      {
+        contractId: 'C-2',
+        lines: [{ skuId, locationId: warehouseId, qty: 1 }],
+      },
+      { source: 'commerce' },
+    );
+    // Give the (non-)handler a chance to run; if it were still wired,
+    // a second reservation would land within a few ticks.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const reservationsAfterDispose =
+      await movements.findByReason('reservation');
+    expect(reservationsAfterDispose).toHaveLength(1);
+  });
+
+  it('does not subscribe when callers opt the handlers out', async () => {
+    const service = await createStockService({ db: (skus as any).db });
+    await installInventoryDispatchHandlers({
+      dispatchBus: bus,
+      stockService: service,
+      installContractReserved: false,
+      installFulfillmentShipped: false,
+    });
+
+    await bus.emit(
+      'contract:created',
+      {
+        contractId: 'C-3',
+        lines: [{ skuId, locationId: warehouseId, qty: 1 }],
+      },
+      { source: 'commerce' },
+    );
+    // Give the (absent) handler time to run if it were wired.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const reservations = await movements.findByReason('reservation');
+    expect(reservations).toHaveLength(0);
+  });
+});
+
+/**
+ * Spin until `predicate()` returns true or the timeout elapses. Used to
+ * synchronize on fire-and-forget DispatchBus handlers without baking in
+ * an arbitrary `sleep` that would slow every successful run.
+ */
+async function waitFor(
+  predicate: () => Promise<boolean>,
+  timeoutMs = 2_000,
+  intervalMs = 10,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(
+    `waitFor: predicate did not become true within ${timeoutMs}ms`,
+  );
+}
