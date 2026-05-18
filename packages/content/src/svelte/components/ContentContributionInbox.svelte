@@ -39,6 +39,18 @@ const selectedContribution = $derived(
     null,
 );
 
+function workflowStatus(
+  contribution: ContentContributionData | null | undefined,
+) {
+  return contribution?.status || 'submitted';
+}
+
+function approveActionLabel(contribution: ContentContributionData) {
+  return workflowStatus(contribution) === 'approved'
+    ? 'Promote'
+    : 'Approve and promote';
+}
+
 $effect(() => {
   note = selectedContribution?.editorNotes || '';
   targetStatus = 'draft';
@@ -67,7 +79,7 @@ $effect(() => {
           >
             <strong>{contribution.title || contribution.contributionTypeKey || 'Untitled submission'}</strong>
             <span>{contribution.contributorName || contribution.contributorEmail || 'Unknown contributor'}</span>
-            <span class="pill">{contribution.status || 'submitted'}</span>
+            <span class="pill">{workflowStatus(contribution)}</span>
           </button>
         {/each}
       </div>
@@ -79,7 +91,7 @@ $effect(() => {
               <h4>{selectedContribution.title || 'Untitled submission'}</h4>
               <p>{selectedContribution.contributorName || selectedContribution.contributorEmail || 'Unknown contributor'}</p>
             </div>
-            <span class="pill">{selectedContribution.intakeDecision || selectedContribution.status || 'submitted'}</span>
+            <span class="pill">{workflowStatus(selectedContribution)}</span>
           </header>
 
           {#if selectedContribution.body}
@@ -101,6 +113,12 @@ $effect(() => {
               <dt>Promoted content</dt>
               <dd>{selectedContribution.promotedContentId || 'Not promoted yet'}</dd>
             </div>
+            {#if selectedContribution.intakeDecision}
+              <div>
+                <dt>Intake decision</dt>
+                <dd>{selectedContribution.intakeDecision}</dd>
+              </div>
+            {/if}
           </dl>
 
           <label>
@@ -125,7 +143,7 @@ $effect(() => {
                     note,
                   })}
               >
-                Approve
+                {approveActionLabel(selectedContribution)}
               </button>
             {/if}
 
