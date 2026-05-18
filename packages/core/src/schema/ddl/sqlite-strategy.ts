@@ -17,6 +17,18 @@ export class SQLiteStrategy extends BaseDDLStrategy {
   readonly engine: DatabaseEngine = 'sqlite';
 
   /**
+   * SQLite JSON-path index expression — uses the JSON1 `json_extract` function
+   * since SQLite has no native `->>` operator pre-3.38 and we want broad
+   * compatibility with hosted SQLite/libSQL variants.
+   */
+  protected formatJsonPathIndexExpression(
+    jsonColumn: string,
+    path: string,
+  ): string {
+    return `json_extract("${jsonColumn}", '$.${path}')`;
+  }
+
+  /**
    * Map types for SQLite
    * - BOOLEAN → INTEGER (SQLite uses 0/1)
    * - JSON → TEXT (SQLite stores JSON as text, uses JSON1 functions)

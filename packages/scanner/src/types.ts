@@ -414,4 +414,12 @@ export interface FieldTypeInference {
 
   /** Underlying type for meta fields (e.g., 'string' inside Meta<string>) */
   underlyingType?: InferredFieldType;
+
+  /**
+   * Decorator-derived metadata that should be merged into the manifest
+   * field's `_meta` object. Used by `@crossPackageRef`, `@manyToMany`,
+   * `@meta` to carry options (`validate`, `through`, `indexed`, etc.) that
+   * don't fit on the top-level FieldDefinition.
+   */
+  _meta?: Record<string, unknown>;
 }

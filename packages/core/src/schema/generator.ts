@@ -641,6 +641,8 @@ export class SchemaGenerator {
 
     // Track FK columns by class for partial indexes
     const fkColumnsByClass = new Map<string, Set<string>>();
+    // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
+    const indexedMetaFields = new Set<string>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
@@ -651,6 +653,14 @@ export class SchemaGenerator {
         // Skip transient fields
         if (field.transient || field._meta?.transient) {
           continue;
+        }
+
+        // Capture indexed meta fields before the skip-meta branch below
+        if (
+          field.type === 'meta' &&
+          (field.indexed === true || field._meta?.indexed === true)
+        ) {
+          indexedMetaFields.add(fieldName);
         }
 
         // Skip default fields already added
@@ -802,6 +812,16 @@ export class SchemaGenerator {
       }
     }
 
+    // JSON-path indexes for @meta({ indexed: true }) fields
+    for (const fieldName of indexedMetaFields) {
+      indexes.push({
+        name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
+        columns: [],
+        jsonPath: { column: '_meta_data', path: fieldName },
+        description: `JSON-path index for @meta({ indexed: true }) field ${fieldName}`,
+      });
+    }
+
     return {
       tableName,
       columns,
@@ -888,6 +908,8 @@ export class SchemaGenerator {
 
     // Track FK columns by class for partial indexes
     const fkColumnsByClass = new Map<string, Set<string>>();
+    // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
+    const indexedMetaFields = new Set<string>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
@@ -900,6 +922,15 @@ export class SchemaGenerator {
         // Skip transient fields
         if (field.transient || field._meta?.transient) {
           continue;
+        }
+
+        // Capture indexed meta fields before the skip-meta branch below
+        if (
+          field.type === 'meta' &&
+          ((field as any).indexed === true ||
+            (field as any)._meta?.indexed === true)
+        ) {
+          indexedMetaFields.add(fieldName);
         }
 
         // Skip default fields already added
@@ -978,6 +1009,15 @@ export class SchemaGenerator {
       columns: ['_meta_type'],
     });
 
+    // JSON-path indexes for @meta({ indexed: true }) fields
+    for (const fieldName of indexedMetaFields) {
+      indexes.push({
+        name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
+        columns: [],
+        jsonPath: { column: '_meta_data', path: fieldName },
+      });
+    }
+
     // Generate DDL
     const schemaDefinition: SchemaDefinition = {
       tableName,
@@ -986,6 +1026,8 @@ export class SchemaGenerator {
         name: idx.name,
         columns: idx.columns,
         unique: idx.unique,
+        where: idx.where,
+        jsonPath: idx.jsonPath,
       })),
       triggers: [],
       foreignKeys: [],

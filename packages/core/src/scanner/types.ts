@@ -83,6 +83,15 @@ export interface ManifestIndexDefinition {
   name: string;
   columns: string[];
   unique?: boolean;
+  where?: string;
+  /**
+   * Expression-based index target — when set, the DDL strategy renders the
+   * index over a JSON path inside `column` (dialect-specific syntax).
+   */
+  jsonPath?: {
+    column: string;
+    path: string;
+  };
 }
 
 /**

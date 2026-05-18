@@ -1009,9 +1009,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         // Load oneToMany relationships (less optimizable)
         await this.batchLoadOneToMany(instances, fieldName, relationship);
       } else if (relationship.type === 'manyToMany') {
-        console.warn(
-          `manyToMany eager loading not yet implemented for ${fieldName}`,
-        );
+        await this.batchLoadManyToMany(instances, fieldName, relationship);
       }
     }
   }
@@ -1154,6 +1152,111 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     for (const instance of instances) {
       const relatedArray = relatedMap.get(instance.id as string) || [];
       (instance as any)._loadedRelationships.set(fieldName, relatedArray);
+    }
+  }
+
+  /**
+   * Batch-load manyToMany relationships through a junction table.
+   *
+   * Issues two queries instead of N: one against the junction table to map
+   * source IDs to target IDs, and one against the target table to hydrate
+   * the related rows. Results are grouped by source instance.
+   *
+   * @param instances - Instances whose manyToMany field should be populated
+   * @param fieldName - Name of the @manyToMany decorated field
+   * @param relationship - Relationship metadata from the registry
+   * @private
+   */
+  private async batchLoadManyToMany(
+    instances: ModelType[],
+    fieldName: string,
+    relationship: import('./registry').RelationshipMetadata,
+  ): Promise<void> {
+    const instanceIds = instances
+      .map((i) => i.id)
+      .filter((id): id is string => !!id);
+    if (instanceIds.length === 0) return;
+
+    // Delegate join-coordinate resolution to a sample instance — it shares the
+    // same registry metadata as every other instance in this batch.
+    let through: string;
+    let sourceColumn: string;
+    let targetColumn: string;
+    let targetClassName: string;
+    try {
+      const sample: any = instances[0];
+      const join = await sample.resolveManyToManyJoin(fieldName, relationship);
+      through = join.through;
+      sourceColumn = join.sourceColumn;
+      targetColumn = join.targetColumn;
+      targetClassName = join.targetClassName;
+    } catch (error) {
+      console.warn(
+        `Could not resolve manyToMany join for ${fieldName} on ${this._itemClass.name}:`,
+        error,
+      );
+      return;
+    }
+
+    // Default empty arrays for every instance so callers always see an array
+    for (const instance of instances) {
+      (instance as any)._loadedRelationships.set(fieldName, []);
+    }
+
+    // Pull the junction rows in one shot
+    const placeholders = instanceIds.map(() => '?').join(', ');
+    const junctionRows = await this.db.query(
+      `SELECT "${sourceColumn}", "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
+      instanceIds,
+    );
+
+    if (junctionRows.rows.length === 0) return;
+
+    // sourceId -> [targetIds...]
+    const sourceToTargets = new Map<string, string[]>();
+    const allTargetIds = new Set<string>();
+    for (const row of junctionRows.rows as any[]) {
+      const sId = row[sourceColumn];
+      const tId = row[targetColumn];
+      if (typeof sId !== 'string' || typeof tId !== 'string') continue;
+      allTargetIds.add(tId);
+      const list = sourceToTargets.get(sId) ?? [];
+      list.push(tId);
+      sourceToTargets.set(sId, list);
+    }
+
+    if (allTargetIds.size === 0) return;
+
+    // Hydrate all target objects in a single query
+    let targetCollection: SmrtCollection<any>;
+    try {
+      targetCollection = await ObjectRegistry.getCollection(
+        targetClassName,
+        this.options,
+      );
+    } catch (error) {
+      console.warn(
+        `Could not get collection for manyToMany target ${targetClassName}:`,
+        error,
+      );
+      return;
+    }
+    const targetObjects = await targetCollection.list({
+      where: { 'id in': Array.from(allTargetIds) },
+    });
+
+    const targetById = new Map<string, any>();
+    for (const obj of targetObjects) {
+      if (obj.id) targetById.set(obj.id, obj);
+    }
+
+    // Assign grouped results
+    for (const instance of instances) {
+      const targetIds = sourceToTargets.get(instance.id as string) ?? [];
+      const objects = targetIds
+        .map((id) => targetById.get(id))
+        .filter((o) => o !== undefined);
+      (instance as any)._loadedRelationships.set(fieldName, objects);
     }
   }
 

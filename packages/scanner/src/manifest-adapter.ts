@@ -63,6 +63,14 @@ type FieldDecoratorOptions = {
   unique?: boolean;
   /** crossPackageRef opt-in save-time validation */
   validate?: boolean;
+  /** manyToMany junction table name */
+  through?: string;
+  /** manyToMany override of the source-side join column */
+  sourceKey?: string;
+  /** manyToMany override of the target-side join column */
+  targetKey?: string;
+  /** meta opt-in JSON-path index */
+  indexed?: boolean;
   [key: string]: unknown;
 };
 
@@ -528,6 +536,14 @@ export class ManifestAdapter {
       }
     }
 
+    // Carry through decorator-derived _meta (validate, through, indexed, etc.)
+    if (inference._meta && Object.keys(inference._meta).length > 0) {
+      definition._meta = {
+        ...definition._meta,
+        ...inference._meta,
+      };
+    }
+
     // For meta fields, store the underlying type for hydration coercion
     if (inference.underlyingType) {
       definition._meta = {
@@ -683,6 +699,34 @@ export class ManifestAdapter {
       }
     }
 
+    // @meta({ indexed?, required?, nullable?, ... }) decorator — flags the
+    // field as STI meta storage AND preserves opt-in options like `indexed`
+    // so the manifest-only schema path can emit the JSON-path index.
+    if (decorator.name === 'meta') {
+      const parsedOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[0],
+      );
+      const hasDefaultValue = field.initializer !== null;
+      const meta: Record<string, unknown> = {};
+      if (parsedOptions?.indexed !== undefined)
+        meta.indexed = parsedOptions.indexed;
+      if (parsedOptions?.nullable !== undefined)
+        meta.nullable = parsedOptions.nullable;
+      return {
+        type: 'meta',
+        required:
+          parsedOptions?.required !== undefined
+            ? Boolean(parsedOptions.required)
+            : !field.optional && !hasDefaultValue,
+        defaultValue:
+          parsedOptions?.default !== undefined
+            ? parsedOptions.default
+            : undefined,
+        ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
+        source: 'decorator',
+      };
+    }
+
     // @foreignKey(RelatedClass) decorator
     if (decorator.name === 'foreignKey') {
       // First argument is the related class name
@@ -738,13 +782,26 @@ export class ManifestAdapter {
       };
     }
 
-    // @manyToMany(RelatedClass) decorator
+    // @manyToMany(RelatedClass, { through?, sourceKey?, targetKey? }) decorator
     if (decorator.name === 'manyToMany') {
       const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
+      // Preserve junction-table coordinates so manifest-only consumers can
+      // execute manyToMany loads without the decorator firing in-process.
+      const parsedOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[1],
+      );
+      const meta: Record<string, unknown> = {};
+      if (parsedOptions?.through !== undefined)
+        meta.through = parsedOptions.through;
+      if (parsedOptions?.sourceKey !== undefined)
+        meta.sourceKey = parsedOptions.sourceKey;
+      if (parsedOptions?.targetKey !== undefined)
+        meta.targetKey = parsedOptions.targetKey;
       return {
         type: 'manyToMany',
         related: relatedClass || undefined,
         required: false,
+        ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
         source: 'decorator',
       };
     }

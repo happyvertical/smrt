@@ -134,8 +134,15 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     }
 
     for (const index of indexes) {
-      // Skip malformed index entries (missing columns)
-      if (!index || !index.columns || !Array.isArray(index.columns)) {
+      // Skip malformed index entries (missing columns AND no jsonPath)
+      const hasJsonPath = !!(index?.jsonPath?.column && index.jsonPath.path);
+      if (
+        !index ||
+        (!hasJsonPath &&
+          (!index.columns ||
+            !Array.isArray(index.columns) ||
+            index.columns.length === 0))
+      ) {
         console.warn(
           `[DDL] Skipping malformed index: ${JSON.stringify(index)}`,
         );
@@ -148,9 +155,16 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       }
 
       const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
-      const columns = index.columns.map((c) => `"${c}"`).join(', ');
 
-      let sql = `CREATE ${indexType} IF NOT EXISTS "${index.name}" ON "${tableName}" (${columns})`;
+      // JSON-path indexes use a dialect-specific expression
+      const target = hasJsonPath
+        ? `(${this.formatJsonPathIndexExpression(
+            index.jsonPath?.column,
+            index.jsonPath?.path,
+          )})`
+        : index.columns.map((c) => `"${c}"`).join(', ');
+
+      let sql = `CREATE ${indexType} IF NOT EXISTS "${index.name}" ON "${tableName}" (${target})`;
 
       // Partial index condition
       if (index.where) {
@@ -162,6 +176,19 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     }
 
     return statements;
+  }
+
+  /**
+   * Render the SQL expression used to index a JSON path inside a JSONB column.
+   * Subclasses override for dialect-specific syntax.
+   *
+   * Default (ANSI-ish): `<jsonColumn>->>'<path>'` — works on Postgres.
+   */
+  protected formatJsonPathIndexExpression(
+    jsonColumn: string,
+    path: string,
+  ): string {
+    return `"${jsonColumn}"->>'${path}'`;
   }
 
   /**

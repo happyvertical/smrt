@@ -68,6 +68,16 @@ export interface FieldOptions {
   default?: any;
   /** Whether the field is unique */
   unique?: boolean;
+  /**
+   * When `true`, the schema emits a database index targeting this field.
+   *
+   * For regular (column-backed) fields the index is a plain column index.
+   * For `@meta()` fields stored inside `_meta_data` JSONB, the index targets
+   * the JSON path — `json_extract(_meta_data, '$.fieldName')` on SQLite,
+   * `(_meta_data->>'fieldName')` on Postgres — giving WHERE clauses on that
+   * meta key the same performance as a real column.
+   */
+  indexed?: boolean;
   /** Whether the field is nullable */
   nullable?: boolean;
   /** Whether the field should be excluded from database */

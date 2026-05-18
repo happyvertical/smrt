@@ -2100,17 +2100,110 @@ export class SmrtObject extends SmrtClass {
     }
 
     if (relationship.type === 'manyToMany') {
-      // manyToMany requires a join table - not implemented yet
-      throw RuntimeError.invalidState(
-        `manyToMany relationship loading not yet implemented for ${fieldName}`,
-        { fieldName, type: 'manyToMany' },
+      const { through, sourceColumn, targetColumn, targetClassName } =
+        await this.resolveManyToManyJoin(fieldName, relationship);
+
+      if (!this.id) {
+        // No id yet — there can't be any join rows pointing at this instance.
+        this._loadedRelationships.set(fieldName, []);
+        return [];
+      }
+
+      await this.verifyStorageReady();
+
+      const junctionRows = await this.db.query(
+        `SELECT "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" = ?`,
+        [this.id],
       );
+
+      const targetIds = junctionRows.rows
+        .map((row: any) => row[targetColumn])
+        .filter(
+          (id: any): id is string => typeof id === 'string' && id.length > 0,
+        );
+
+      if (targetIds.length === 0) {
+        this._loadedRelationships.set(fieldName, []);
+        return [];
+      }
+
+      const targetCollection = await ObjectRegistry.getCollection(
+        targetClassName,
+        this.options,
+      );
+      const targetObjects = await targetCollection.list({
+        where: { 'id in': targetIds },
+      });
+
+      this._loadedRelationships.set(fieldName, targetObjects);
+      return targetObjects;
     }
 
     throw RuntimeError.invalidState(
       `Field ${fieldName} is not a oneToMany or manyToMany relationship`,
       { fieldName, type: relationship.type },
     );
+  }
+
+  /**
+   * Resolves the junction-table coordinates for a manyToMany relationship.
+   *
+   * Discovers `through`, source-side column, and target-side column from the
+   * registered field metadata. Falls back to convention (`<class>_id`) when
+   * `sourceKey` / `targetKey` are not explicitly set.
+   */
+  protected async resolveManyToManyJoin(
+    fieldName: string,
+    relationship: {
+      sourceClass: string;
+      targetClass: string;
+      options?: any;
+    },
+  ): Promise<{
+    through: string;
+    sourceColumn: string;
+    targetColumn: string;
+    targetClassName: string;
+  }> {
+    const decorator = ObjectRegistry.getFieldDecorator(
+      relationship.sourceClass,
+      fieldName,
+    );
+    const opts = relationship.options || {};
+
+    const through = decorator?.through ?? opts.through ?? opts._meta?.through;
+    if (!through) {
+      throw RuntimeError.invalidState(
+        `manyToMany field ${fieldName} on ${relationship.sourceClass} is missing the 'through' join table name`,
+        { fieldName, type: 'manyToMany' },
+      );
+    }
+
+    // For cross-package qualified targets, derive the simple name for column conventions
+    const targetSimpleName = relationship.targetClass.includes(':')
+      ? relationship.targetClass.split(':').pop()!
+      : relationship.targetClass;
+    const sourceSimpleName = relationship.sourceClass.includes(':')
+      ? relationship.sourceClass.split(':').pop()!
+      : relationship.sourceClass;
+
+    const sourceColumn =
+      decorator?.sourceKey ??
+      opts.sourceKey ??
+      opts._meta?.sourceKey ??
+      `${toSnakeCase(sourceSimpleName)}_id`;
+    const targetColumn =
+      decorator?.targetKey ??
+      opts.targetKey ??
+      opts._meta?.targetKey ??
+      `${toSnakeCase(targetSimpleName)}_id`;
+
+    return {
+      through: String(through),
+      sourceColumn,
+      targetColumn,
+      targetClassName: relationship.targetClass,
+    };
   }
 
   /**

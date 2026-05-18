@@ -243,19 +243,24 @@ export async function getTestDatabase(
       await db.query(ddl);
       createdTables.add(tableName);
 
-      // Create indexes
-      for (const index of schema.indexes) {
-        const uniqueStr = index.unique ? 'UNIQUE ' : '';
-        const quotedColumns = index.columns.map((c) => `"${c}"`).join(', ');
-        const indexSQL = `CREATE ${uniqueStr}INDEX IF NOT EXISTS "${index.name}" ON "${tableName}" (${quotedColumns})`;
-
+      // Create indexes (use DDL strategy so jsonPath / where / etc. render)
+      const ddlStrategy = (
+        await import('../schema/ddl/index.js')
+      ).getDDLStrategy(
+        // Map test database type → DDL engine. We default to sqlite since
+        // getTestDatabase is sqlite-first; if extended for postgres, the
+        // outer schema generator already accounts for engine-specific shapes.
+        'sqlite',
+      );
+      const indexStatements = ddlStrategy.generateIndexes(schema);
+      for (const indexSQL of indexStatements) {
         try {
           await db.query(indexSQL);
         } catch (indexError) {
           // Log but don't fail on index creation errors
           // Some indexes may fail if columns don't exist (STI meta fields)
           console.warn(
-            `[getTestDatabase] Warning: Failed to create index ${index.name}: ${indexError instanceof Error ? indexError.message : String(indexError)}`,
+            `[getTestDatabase] Warning: Failed to create index: ${indexError instanceof Error ? indexError.message : String(indexError)} (SQL: ${indexSQL})`,
           );
         }
       }

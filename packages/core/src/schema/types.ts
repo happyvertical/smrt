@@ -34,6 +34,17 @@ export interface IndexDefinition {
   unique?: boolean;
   where?: string; // Partial index condition
   description?: string;
+  /**
+   * Expression-based index target.
+   *
+   * When set, the DDL strategy renders the index over a JSON path inside
+   * `column` rather than the `columns` list. Used today by `@meta({ indexed: true })`
+   * which targets a key inside the `_meta_data` JSONB column.
+   */
+  jsonPath?: {
+    column: string;
+    path: string;
+  };
 }
 
 export interface TriggerDefinition {
