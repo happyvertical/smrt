@@ -572,6 +572,39 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       signals,
     };
 
+    // Defense-in-depth: SmrtJunction subclasses MUST have their ITEM class
+    // registered with ObjectRegistry — that's where the field metadata,
+    // tableName, and conflictColumns come from, which byLeft/byRight/
+    // attach/detach/setLinks all depend on. The scanner is supposed to
+    // catch every junction subclass via the FRAMEWORK_BASE_CLASSES list
+    // in packages/scanner, but if a future refactor adds a new abstract
+    // junction base without updating that list, or if a class is loaded
+    // outside the normal manifest pipeline, we'd silently fall through to
+    // empty-field-metadata behavior (the issue #1132 class of bug). Fail
+    // loudly here instead of producing wrong results later.
+    //
+    // We check the ITEM class registration (not the collection class) —
+    // collection constructors are stored separately via
+    // registerCollection(itemClassName, ctor), not in the classes map.
+    if ((this as any)._isJunctionBase === true) {
+      const itemCtor = (this as any)._itemClass;
+      const itemRegistered =
+        itemCtor && ObjectRegistry.getClassByConstructor(itemCtor);
+      if (!itemRegistered) {
+        throw new Error(
+          `SmrtJunction subclass "${this.name}" has no registered item class. ` +
+            `The scanner likely didn't pick up its model — usually because the ` +
+            `consuming package's manifest doesn't include "${itemCtor?.name ?? '<unknown>'}". ` +
+            `Check that the scanner's FRAMEWORK_BASE_CLASSES ` +
+            `(packages/scanner/src/inheritance-resolver.ts) recognizes every ` +
+            `framework abstract base in your inheritance chain, that the package ` +
+            `has been built (manifest.json present in dist/), and that runtime ` +
+            `manifest loading (__smrt-register__.ts) runs before any junction ` +
+            `is instantiated.`,
+        );
+      }
+    }
+
     // Create instance using protected constructor
     const instance = new this(collectionOptions);
 

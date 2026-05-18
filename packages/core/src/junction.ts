@@ -49,6 +49,14 @@ function camelToSnake(name: string): string {
 export abstract class SmrtJunction<
   TItem extends SmrtObject,
 > extends SmrtCollection<TItem> {
+  /**
+   * Internal marker used by `SmrtCollection.create` to detect that this
+   * subclass is a junction and apply a registration-presence guard. Static
+   * property is inherited by all subclasses via the constructor chain.
+   * Don't rename or remove without also updating the guard.
+   */
+  static readonly _isJunctionBase = true as const;
+
   /** Field name (camelCase) holding the "left" foreign key, e.g. `'contentId'`. */
   protected abstract leftField: string;
 

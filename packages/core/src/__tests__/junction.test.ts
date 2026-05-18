@@ -166,6 +166,32 @@ describe('SmrtJunction', () => {
     });
   });
 
+  describe('runtime registration guard', () => {
+    it('throws a helpful error when a SmrtJunction subclass has no registered item class', async () => {
+      // Define a class that extends SmrtJunction but whose item class
+      // ('UnregisteredItem') is never registered with ObjectRegistry —
+      // simulating the bug where the scanner failed to pick it up.
+      class UnregisteredItem extends SmrtObject {
+        ownerId = '';
+        assetId = '';
+      }
+
+      class StrayJunctionCollection extends SmrtJunction<any> {
+        // Cast to any to satisfy the abstract type while keeping the class
+        // unregistered in the registry on purpose.
+        static readonly _itemClass = UnregisteredItem as any;
+        protected leftField = 'ownerId';
+        protected rightField = 'assetId';
+      }
+
+      await expect(
+        StrayJunctionCollection.create({
+          db: { type: 'sqlite', url: tmpDbUrl('guard') },
+        }),
+      ).rejects.toThrow(/has no registered item class/);
+    });
+  });
+
   describe('item class config preservation', () => {
     it('collection decorator with empty config does not clobber item class api/mcp/cli', async () => {
       // The test class above declares api/mcp/cli on the MODEL

@@ -13,12 +13,25 @@ import type {
 } from './types.js';
 
 /**
- * Framework base classes that are always recognized
+ * Framework base classes that are always recognized.
+ *
+ * Hardcoded list — every framework abstract base class that consuming
+ * packages can subclass without needing `@smrt()` must appear here, or
+ * the scanner will silently drop undecorated subclasses from the manifest.
+ *
+ * `SmrtJunction` is a stopgap entry pending R3 (hierarchical base) and
+ * R4 (polymorphic association base), which together motivate replacing
+ * this hardcoded list with manifest-driven base-class detection — core
+ * would export its abstract bases in its manifest and dependents would
+ * resolve through them via the existing cross-package chain walker
+ * (see `findClassDefinition`). When R3 lands, retire this list and
+ * delete this comment.
  */
 const FRAMEWORK_BASE_CLASSES = new Set([
   'SmrtObject',
   'SmrtClass',
   'SmrtCollection',
+  'SmrtJunction',
 ]);
 
 /**
