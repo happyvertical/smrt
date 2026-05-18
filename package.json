@@ -90,7 +90,7 @@
       "@happyvertical/repos": "^0.73.4",
       "@happyvertical/secrets": "^0.73.4",
       "@happyvertical/spider": "^0.60.16",
-      "@happyvertical/sql": "^0.73.4",
+      "@happyvertical/sql": "^0.74.0",
       "@happyvertical/utils": "^0.73.4"
     }
   }

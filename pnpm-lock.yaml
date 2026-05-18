@@ -51,7 +51,7 @@ overrides:
   '@happyvertical/repos': ^0.73.4
   '@happyvertical/secrets': ^0.73.4
   '@happyvertical/spider': ^0.60.16
-  '@happyvertical/sql': ^0.73.4
+  '@happyvertical/sql': ^0.74.0
   '@happyvertical/utils': ^0.73.4
 
 importers:
@@ -150,8 +150,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -190,8 +190,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -248,8 +248,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@sentry/node':
         specifier: 'catalog:'
         version: 10.51.0
@@ -300,8 +300,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@sveltejs/package':
         specifier: ^2.5.7
         version: 2.5.7(svelte@5.53.12)(typescript@5.9.3)
@@ -351,8 +351,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -410,8 +410,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -435,8 +435,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -526,8 +526,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -691,8 +691,8 @@ importers:
         specifier: ^0.60.16
         version: 0.60.16(@noble/hashes@2.2.0)(@opentelemetry/api@1.9.1)(@types/node@24.10.9)
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -767,8 +767,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -852,8 +852,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -913,8 +913,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -978,8 +978,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1040,8 +1040,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@sveltejs/kit':
         specifier: ^2.5.7
         version: 2.53.3(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.53.5)(vite@7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(svelte@5.53.5)(typescript@5.9.3)(vite@7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
@@ -1060,6 +1060,34 @@ importers:
       svelte-check:
         specifier: ^4.3.5
         version: 4.4.4(picomatch@4.0.3)(svelte@5.53.5)(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
+
+  packages/inventory:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/sql':
+        specifier: ^0.74.0
+        version: 0.74.0
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -1097,8 +1125,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1164,8 +1192,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
     devDependencies:
       '@happyvertical/smrt-cli':
         specifier: workspace:*
@@ -1217,6 +1245,37 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/manufacturing:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@happyvertical/smrt-inventory':
+        specifier: workspace:*
+        version: link:../inventory
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
+      '@happyvertical/sql':
+        specifier: ^0.74.0
+        version: 0.74.0
+    devDependencies:
+      '@happyvertical/smrt-vitest':
+        specifier: workspace:*
+        version: link:../vitest
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
+
   packages/messages:
     dependencies:
       '@happyvertical/ai':
@@ -1250,8 +1309,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1314,8 +1373,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1356,9 +1415,12 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1424,8 +1486,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1488,8 +1550,8 @@ importers:
         specifier: workspace:*
         version: link:../types
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1543,8 +1605,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
     devDependencies:
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
@@ -1587,8 +1649,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1648,8 +1710,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1689,8 +1751,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -1722,8 +1784,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1897,8 +1959,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@sveltejs/package':
         specifier: ^2.5.7
         version: 2.5.7(svelte@5.53.5)(typescript@5.9.3)
@@ -1939,8 +2001,8 @@ importers:
         specifier: workspace:*
         version: link:../tenancy
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -1972,6 +2034,10 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
 
   packages/tenancy:
     dependencies:
@@ -1985,8 +2051,8 @@ importers:
         specifier: workspace:*
         version: link:../users
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@happyvertical/utils':
         specifier: ^0.73.4
         version: 0.73.4
@@ -2065,8 +2131,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@sveltejs/package':
         specifier: ^2.5.7
         version: 2.5.7(svelte@5.53.5)(typescript@5.9.3)
@@ -2132,8 +2198,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -2153,8 +2219,8 @@ importers:
         specifier: workspace:*
         version: link:../core
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -2200,8 +2266,8 @@ importers:
         specifier: workspace:*
         version: link:../vitest
       '@happyvertical/sql':
-        specifier: ^0.73.4
-        version: 0.73.4
+        specifier: ^0.74.0
+        version: 0.74.0
       '@types/node':
         specifier: 24.10.9
         version: 24.10.9
@@ -3279,8 +3345,8 @@ packages:
     resolution: {integrity: sha512-N1A+62TIqB7pTJhltc5JlJIr6rhRA2enLr/R18ViouIAFl92/X0dp1Qx1/6XBMJ8WTnQHp7pZwLGpd+w1X7Tww==, tarball: https://npm.pkg.github.com/download/@happyvertical/spider/0.60.16/8c93d622e709b0e364f4cc4b9b6737ffb7e4fdaa}
     engines: {node: '>=24', pnpm: '>=9'}
 
-  '@happyvertical/sql@0.73.4':
-    resolution: {integrity: sha512-aVrPi9T2NZSWzlA+49qaEZmjvNahOD6Y+cp4VjnDPyl8EiSW+xW+yQz6yy5K30QjSjqrNpOdJNWQW4pam3pwQw==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.73.4/cb92798c31d625db5aad27ab6572a800e68722cd}
+  '@happyvertical/sql@0.74.0':
+    resolution: {integrity: sha512-aIiC/X7wzUp6qL0Emvp/PcHjo8uGJL1qQGAbN3nW5RxXogmOBiQ/6fPZ66ilj8mLBB+ydx0rRMxXqN+0LV9+VQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/sql/0.74.0/a2ab561e0d27ea578953fd0d6ae8df2fd17ae512}
     hasBin: true
 
   '@happyvertical/utils@0.73.4':
@@ -10980,7 +11046,7 @@ snapshots:
 
   '@happyvertical/jobs@0.73.4(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.76.4)':
     dependencies:
-      '@happyvertical/sql': 0.73.4
+      '@happyvertical/sql': 0.74.0
       '@happyvertical/utils': 0.73.4
     optionalDependencies:
       '@aws-sdk/client-sqs': 3.1038.0
@@ -11061,7 +11127,7 @@ snapshots:
 
   '@happyvertical/secrets@0.73.4':
     dependencies:
-      '@happyvertical/sql': 0.73.4
+      '@happyvertical/sql': 0.74.0
       '@happyvertical/utils': 0.73.4
     transitivePeerDependencies:
       - bufferutil
@@ -11095,7 +11161,7 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@happyvertical/sql@0.73.4':
+  '@happyvertical/sql@0.74.0':
     dependencies:
       '@duckdb/node-api': 1.4.3-r.3
       '@happyvertical/utils': 0.73.4

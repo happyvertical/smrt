@@ -9,19 +9,28 @@
  * row is global), `tenant_id` is `NULL`. SQLite — and PostgreSQL with default
  * settings — treat `NULL` as distinct from every other value in an
  * `ON CONFLICT` clause, so a subsequent UPSERT of the same instance can't
- * match the existing row by its (code, NULL) tuple. The DB then tries to
- * INSERT a second row with the same `id`, which collides on the primary
- * key:
+ * match the existing row by its (code, NULL) tuple. The DB would then try
+ * to INSERT a second row with the same `id`, colliding on the primary key:
  *
  *     SQLITE_CONSTRAINT: UNIQUE constraint failed: inventory_locations.id
  *
- * This is *not* a singleton / cross-test state leak: every `save()` of a
- * persisted row whose conflict columns contain a NULL value will fail on
- * its own.
+ * Resolution
+ * ----------
+ * The fix lives upstream in `@happyvertical/sql@0.74.0` (sdk#1026):
+ * null-aware `upsert()` across all adapters uses `IS NOT DISTINCT FROM`
+ * matching (i.e. `WHERE col IS ?`), so `(code, NULL)` matches an existing
+ * `(code, NULL)` row and routes to UPDATE instead of a colliding INSERT.
+ * Postgres uses native `NULLS NOT DISTINCT` indexes when present and falls
+ * back to advisory-lock transactional probe-then-write otherwise; SQLite
+ * uses per-key in-process locks plus 8-attempt exponential backoff.
  *
- * The fix probes by `id` when any conflict column is NULL and routes to
- * an UPDATE-by-id instead of the upsert. See `planPersistenceWrite()` in
- * `packages/core/src/object.ts`.
+ * This file is now an **upstream-behavior regression test**: it exercises
+ * the smrt-core save() path end-to-end against null-aware upsert and
+ * guards against any future regression in upsert NULL handling — either
+ * smrt's stripping its way back into a tactical workaround layer, or the
+ * upstream sql library losing the null-aware semantics.
+ *
+ * See issue #1261 (cleanup) and sdk#1026 (upstream fix).
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -131,10 +140,19 @@ describe('Issue #1246: save() with NULL conflict column values', () => {
     expect((all[0] as Record<string, unknown>).tenant_id).toBe('tenant-a');
   });
 
-  it('keeps two NULL-tenant rows with the same code as separate rows', async () => {
-    // SQLite (and PG default) say NULL != NULL, so two rows with the same
-    // code but both NULL tenant_id are both valid. The fix must preserve
-    // that semantic — we must NOT collapse them.
+  it('treats two NULL-tenant rows with the same conflict-column tuple as one', async () => {
+    // With the upstream null-aware upsert (sdk#1026), the conflict-column
+    // tuple `(code, tenant_id)` is matched by `IS NOT DISTINCT FROM`, so
+    // `(DC-1, NULL)` matches an existing `(DC-1, NULL)` row. Inserting a
+    // second instance with the same tuple UPDATEs the first row in place
+    // rather than creating a duplicate — exactly what you'd expect from
+    // declaring `conflictColumns: ['code', 'tenant_id']`.
+    //
+    // This is a deliberate semantic change from SQLite's default
+    // `ON CONFLICT` (which treats NULL as distinct). Callers that need
+    // the legacy "NULL != NULL" behavior can pass `nullsDistinct: true`
+    // to upsert directly via the sql library; smrt-core's save() uses
+    // null-aware matching by default.
     const a = new Issue1246Location({ db, code: 'DC-1', name: 'Warehouse A' });
     await a.initialize();
     await a.save();
@@ -143,10 +161,10 @@ describe('Issue #1246: save() with NULL conflict column values', () => {
     await b.initialize();
     await b.save();
 
-    expect(a.id).not.toBe(b.id);
-
     const all = await db.list('issue_1246_locations', {});
-    expect(all).toHaveLength(2);
+    expect(all).toHaveLength(1);
+    // The second save updates the existing (code, NULL) row.
+    expect((all[0] as Record<string, unknown>).name).toBe('Warehouse B');
   });
 
   it('repeats the production failure shape: collection.create then .save()', async () => {
