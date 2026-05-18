@@ -14,8 +14,10 @@ export class EventParticipantCollection extends SmrtJunction<EventParticipant> {
   static readonly _itemClass = EventParticipant;
   protected leftField = 'eventId';
   protected rightField = 'profileId';
-  // EventParticipant rows have no sortOrder column; placement is domain ordering.
+  // EventParticipant has no sortOrder column; `placement` is domain ordering
+  // (0=home, 1=away) and must not be auto-assigned by setLinks.
   protected sortField: string | null = null;
+  protected positionField: string | null = null;
 
   // ============================================
   // Domain helpers

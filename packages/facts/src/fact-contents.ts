@@ -12,8 +12,9 @@ export class FactContentCollection extends SmrtJunction<FactContent> {
   static readonly _itemClass = FactContent;
   protected leftField = 'factId';
   protected rightField = 'contentId';
-  // FactContent rows have no sort column.
+  // FactContent rows have no sort or position column.
   protected sortField: string | null = null;
+  protected positionField: string | null = null;
 
   // ============================================
   // Tenant helpers

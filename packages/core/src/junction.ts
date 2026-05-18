@@ -58,8 +58,27 @@ export abstract class SmrtJunction<
   /**
    * Field name (camelCase) used to ORDER BY when calling `byLeft` / `byRight`.
    * Defaults to `'sortOrder'`. Set to `null` to omit ORDER BY entirely.
+   *
+   * Independent from `positionField` — `sortField` is a *query* concern
+   * (how rows are ordered when read), while `positionField` is a *write*
+   * concern (what column `setLinks` auto-assigns to). Tables that order
+   * by a non-position field (e.g. `'createdAt'`) should set `sortField`
+   * accordingly and leave `positionField` set to `null` or its dedicated
+   * position column name.
    */
   protected sortField: string | null = 'sortOrder';
+
+  /**
+   * Field name (camelCase) that `setLinks` auto-assigns the array index
+   * to when the caller doesn't supply a value. Defaults to `'sortOrder'`.
+   * Set to `null` for tables without a dedicated position column (e.g.
+   * pure-key junctions, or tables ordered by timestamps).
+   *
+   * Writing the array index into a non-position field — like `createdAt`
+   * or `placement` — would corrupt data. Subclasses without a numeric
+   * position column MUST set this to `null`.
+   */
+  protected positionField: string | null = 'sortOrder';
 
   /**
    * Return junction rows where the left FK matches `leftId`, narrowed by
@@ -141,7 +160,7 @@ export abstract class SmrtJunction<
    * Behavior:
    *  1. Snapshots and deletes existing rows matching `{ leftField: leftId, ...opts }`.
    *  2. Creates a new row for each `rightId`, spreading `opts` into the row data.
-   *  3. If `sortField` is set and `opts` doesn't specify it, assigns the array index.
+   *  3. If `positionField` is set and `opts` doesn't specify it, assigns the array index.
    *
    * Not transactional — partial failure leaves the table in a mixed state.
    * For atomic replaces, wrap the call in your own DB transaction.
@@ -158,11 +177,11 @@ export abstract class SmrtJunction<
       await (link as unknown as { delete(): Promise<void> }).delete();
     }
 
-    const sortKey = this.sortField;
+    const positionKey = this.positionField;
     for (let i = 0; i < rightIds.length; i++) {
       const rowOpts: JunctionAttachOptions = { ...opts };
-      if (sortKey && rowOpts[sortKey] === undefined) {
-        rowOpts[sortKey] = i;
+      if (positionKey && rowOpts[positionKey] === undefined) {
+        rowOpts[positionKey] = i;
       }
       await this.attach(leftId, rightIds[i], rowOpts);
     }
