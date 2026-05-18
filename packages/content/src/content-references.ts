@@ -8,6 +8,7 @@ export class ContentReferences extends SmrtJunction<ContentReference> {
   static readonly _itemClass = ContentReference;
   protected leftField = 'sourceId';
   protected rightField = 'targetId';
-  // content_references has no sort_order column — order by created_at ASC instead.
-  protected sortField: string | null = null;
+  // content_references has no sort_order column — preserve insertion order
+  // by sorting on created_at.
+  protected sortField: string | null = 'createdAt';
 }

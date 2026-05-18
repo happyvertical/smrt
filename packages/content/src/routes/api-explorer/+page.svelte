@@ -351,23 +351,13 @@ const groups: EndpointGroup[] = [
       },
       {
         method: 'POST',
-        path: '/api/v1/contentreferences/link',
-        description: 'Link content reference',
-      },
-      {
-        method: 'POST',
-        path: '/api/v1/contentreferences/unlink',
-        description: 'Unlink reference',
+        path: '/api/v1/contentreferences',
+        description: 'Create a content reference (sourceId, targetId)',
       },
       {
         method: 'GET',
-        path: '/api/v1/contentreferences/getForSource?contentId=...',
-        description: 'Get by source content',
-      },
-      {
-        method: 'GET',
-        path: '/api/v1/contentreferences/getForTarget?targetId=...',
-        description: 'Get by target content',
+        path: '/api/v1/contentreferences/[id]',
+        description: 'Get reference by id',
       },
     ],
   },

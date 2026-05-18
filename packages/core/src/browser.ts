@@ -28,6 +28,11 @@ export type {
 // Global configuration (callable function)
 export { config } from './config';
 export * from './errors';
+export {
+  type JunctionAttachOptions,
+  type JunctionFilterOptions,
+  SmrtJunction,
+} from './junction';
 export * from './object';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
