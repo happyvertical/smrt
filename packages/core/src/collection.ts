@@ -20,6 +20,28 @@ import {
 } from './utils';
 
 /**
+ * Maximum size of an `IN (?, ?, ...)` placeholder list per query.
+ *
+ * SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is 999. Postgres allows up to
+ * 65535 bind parameters per query, but a more conservative chunk size keeps
+ * planner time predictable across backends. Hitting this cap inside the
+ * relationship loaders is a real risk now that batch eager loading is
+ * supported — pages of >999 source rows would otherwise throw
+ * `SQLITE_RANGE: bind or column index out of range`.
+ */
+const IN_LIST_CHUNK_SIZE = 900;
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+  if (items.length === 0) return [];
+  if (size <= 0) return [items];
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size));
+  }
+  return chunks;
+}
+
+/**
  * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
  *
  * This helper function allows queries like { _meta_type: 'Image' } to work correctly
@@ -1053,10 +1075,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return;
     }
 
-    // Load all related objects in a single query
-    const relatedObjects = await targetCollection.list({
-      where: { 'id in': Array.from(foreignKeyValues) },
-    });
+    // Load all related objects, chunked to stay under SQLITE_MAX_VARIABLE_NUMBER (999).
+    const fkValueList = Array.from(foreignKeyValues);
+    const relatedObjects: any[] = [];
+    for (const idChunk of chunkArray(fkValueList, IN_LIST_CHUNK_SIZE)) {
+      const batch = await targetCollection.list({
+        where: { 'id in': idChunk },
+      });
+      relatedObjects.push(...batch);
+    }
 
     // Build a map of ID to object for quick lookup
     const relatedMap = new Map();
@@ -1130,10 +1157,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return;
     }
 
-    // Load all related objects in a single query
-    const relatedObjects = await targetCollection.list({
-      where: { [`${inverseForeignKey.fieldName} in`]: instanceIds },
-    });
+    // Load all related objects, chunked to stay under SQLITE_MAX_VARIABLE_NUMBER (999).
+    const relatedObjects: any[] = [];
+    for (const idChunk of chunkArray(instanceIds, IN_LIST_CHUNK_SIZE)) {
+      const batch = await targetCollection.list({
+        where: { [`${inverseForeignKey.fieldName} in`]: idChunk },
+      });
+      relatedObjects.push(...batch);
+    }
 
     // Group related objects by the foreign key value
     const relatedMap = new Map<string, any[]>();
@@ -1203,19 +1234,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       (instance as any)._loadedRelationships.set(fieldName, []);
     }
 
-    // Pull the junction rows in one shot
-    const placeholders = instanceIds.map(() => '?').join(', ');
-    const junctionRows = await this.db.query(
-      `SELECT "${sourceColumn}", "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
-      instanceIds,
-    );
+    // Pull junction rows in chunks. SQLite's default SQLITE_MAX_VARIABLE_NUMBER
+    // is 999, so we cap each IN-list at IN_LIST_CHUNK_SIZE to stay well below
+    // the limit on the supported backends (sqlite/libsql/postgres).
+    const junctionRowsAll: Array<{
+      [key: string]: unknown;
+    }> = [];
+    for (const idChunk of chunkArray(instanceIds, IN_LIST_CHUNK_SIZE)) {
+      const placeholders = idChunk.map(() => '?').join(', ');
+      const result = await this.db.query(
+        `SELECT "${sourceColumn}", "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
+        idChunk,
+      );
+      junctionRowsAll.push(...result.rows);
+    }
 
-    if (junctionRows.rows.length === 0) return;
+    if (junctionRowsAll.length === 0) return;
 
     // sourceId -> [targetIds...]
     const sourceToTargets = new Map<string, string[]>();
     const allTargetIds = new Set<string>();
-    for (const row of junctionRows.rows as any[]) {
+    for (const row of junctionRowsAll as any[]) {
       const sId = row[sourceColumn];
       const tId = row[targetColumn];
       if (typeof sId !== 'string' || typeof tId !== 'string') continue;
@@ -1227,7 +1266,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     if (allTargetIds.size === 0) return;
 
-    // Hydrate all target objects in a single query
+    // Hydrate all target objects. Also chunked so we don't blow the
+    // placeholder limit on a wide manyToMany.
     let targetCollection: SmrtCollection<any>;
     try {
       targetCollection = await ObjectRegistry.getCollection(
@@ -1241,9 +1281,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
       return;
     }
-    const targetObjects = await targetCollection.list({
-      where: { 'id in': Array.from(allTargetIds) },
-    });
+    const targetIdList = Array.from(allTargetIds);
+    const targetObjects: any[] = [];
+    for (const idChunk of chunkArray(targetIdList, IN_LIST_CHUNK_SIZE)) {
+      const batch = await targetCollection.list({
+        where: { 'id in': idChunk },
+      });
+      targetObjects.push(...batch);
+    }
 
     const targetById = new Map<string, any>();
     for (const obj of targetObjects) {

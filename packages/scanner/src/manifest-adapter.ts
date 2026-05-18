@@ -743,21 +743,31 @@ export class ManifestAdapter {
       };
     }
 
-    // @crossPackageRef('@pkg:Class', { validate?: boolean }) decorator
+    // @crossPackageRef('@pkg:Class', { validate?, unique?, nullable?, default?, description? }) decorator
     if (decorator.name === 'crossPackageRef') {
       const qualifiedName = stripQuotes(decorator.arguments[0]?.trim());
       const hasDefaultValue = field.initializer !== null;
-      // Preserve validate (+ standard required/nullable) from the options arg
-      // so manifest-only consumers see the same behavior as decorator-driven.
+      // Preserve every standard field option from the second argument so
+      // manifest-only consumers generate the same schema/constraints that
+      // the runtime decorator would produce.
       const parsedOptions = this.parseFieldDecoratorOptions(
         decorator.arguments[1],
       );
       const meta: Record<string, unknown> = {};
-      if (parsedOptions?.validate !== undefined) {
-        meta.validate = parsedOptions.validate;
-      }
-      if (parsedOptions?.nullable !== undefined) {
-        meta.nullable = parsedOptions.nullable;
+      const META_KEYS = [
+        'validate',
+        'nullable',
+        'unique',
+        'description',
+        'default',
+        'indexed',
+      ] as const;
+      if (parsedOptions) {
+        for (const key of META_KEYS) {
+          if (parsedOptions[key] !== undefined) {
+            meta[key] = parsedOptions[key];
+          }
+        }
       }
       return {
         type: 'crossPackageRef',
@@ -766,6 +776,10 @@ export class ManifestAdapter {
           parsedOptions?.required !== undefined
             ? Boolean(parsedOptions.required)
             : !field.optional && !hasDefaultValue,
+        defaultValue:
+          parsedOptions?.default !== undefined
+            ? parsedOptions.default
+            : undefined,
         ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
         source: 'decorator',
       };

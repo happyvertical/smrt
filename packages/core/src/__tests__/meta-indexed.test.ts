@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { meta, SmrtObject, smrt } from '../index.js';
+import { field, meta, SmrtObject, smrt } from '../index.js';
 import { ObjectRegistry } from '../registry';
 import { SQLiteStrategy } from '../schema/ddl/sqlite-strategy.js';
 import { getTestDatabase } from '../testing/database';
@@ -34,6 +34,19 @@ class IdxMeeting extends IdxBaseEvent {
   roomNumber: string = '';
 
   @meta()
+  notes: string = '';
+}
+
+// Regular (CTI) class with a column-indexed field — verifies that `indexed`
+// on @field() emits a plain column index, not just a JSON-path index.
+@smrt()
+class IdxCustomer extends SmrtObject {
+  name: string = '';
+
+  @field({ indexed: true })
+  externalRef: string = '';
+
+  @field()
   notes: string = '';
 }
 
@@ -84,6 +97,32 @@ describe('@meta({ indexed: true }) (R9)', () => {
     );
     expect(jsonIdxStmt).toBeDefined();
     expect(jsonIdxStmt).toMatch(/CREATE INDEX/);
+  });
+
+  it('emits a plain column index for regular fields tagged @field({ indexed: true })', async () => {
+    await ObjectRegistry.getCollection<typeof IdxCustomer.prototype>(
+      'IdxCustomer',
+      { db },
+    );
+
+    const indexList = await db.query(
+      "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ?",
+      ['idx_customers'],
+    );
+
+    const externalRefIdx = indexList.rows.find((row: any) =>
+      row.name?.includes('external_ref'),
+    );
+    expect(externalRefIdx).toBeDefined();
+    // The index targets the column itself, not a JSON expression
+    expect(externalRefIdx?.sql).toMatch(/"external_ref"/);
+    expect(externalRefIdx?.sql).not.toMatch(/json_extract/);
+
+    // Unindexed fields should not produce an index
+    const notesIdx = indexList.rows.find(
+      (row: any) => row.name?.includes('notes') && !row.name?.includes('id'),
+    );
+    expect(notesIdx).toBeUndefined();
   });
 
   it('actually creates the index in the live SQLite database', async () => {

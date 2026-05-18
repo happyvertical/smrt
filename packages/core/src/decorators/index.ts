@@ -391,8 +391,8 @@ export function oneToMany(
  * be decorated with `@smrt({ conflictColumns: ['...', '...'] })` to use the natural
  * key columns for upsert operations.
  *
- * Note: Runtime eager loading for `manyToMany` relationships is not yet implemented.
- * Use `collection.query()` with a JOIN for now.
+ * Runtime loading: call `instance.loadRelatedMany('field')` to lazy-load, or
+ * pass `include: ['field']` to `collection.list()` for batched eager loading.
  *
  * @param relatedClass - The class constructor of the related objects
  * @param options - Relationship options; `through` specifies the junction table name

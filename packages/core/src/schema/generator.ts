@@ -377,6 +377,10 @@ export class SchemaGenerator {
     // Track timestamp fields to avoid duplicates
     let hasCreatedAt = false;
     let hasUpdatedAt = false;
+    // Track regular (column-backed) fields that opted into a plain column index
+    // via `indexed: true`. FK, unique, and meta fields each go through their
+    // own dedicated index emission paths and are excluded from this set.
+    const indexedColumns = new Set<string>();
 
     // Add fields from ObjectRegistry
     for (const [fieldName, field] of fields.entries()) {
@@ -472,6 +476,20 @@ export class SchemaGenerator {
         }
       }
 
+      // Track opt-in column indexes for regular (non-FK, non-unique) fields.
+      // FK columns already get auto-indexed below; unique columns produce
+      // their own unique index; meta fields go through the jsonPath path.
+      const isIndexed =
+        field._meta?.indexed === true || (field as any).indexed === true;
+      if (
+        isIndexed &&
+        !columnDef.foreignKey &&
+        !columnDef.unique &&
+        !columnDef.primaryKey
+      ) {
+        indexedColumns.add(this.toSnakeCase(fieldName));
+      }
+
       columns[this.toSnakeCase(fieldName)] = columnDef;
     }
 
@@ -538,6 +556,15 @@ export class SchemaGenerator {
           description: `Foreign key index for ${colName}`,
         });
       }
+    }
+
+    // Emit opt-in column indexes for regular fields tagged with `indexed: true`
+    for (const colName of indexedColumns) {
+      indexes.push({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
+        description: `Index for ${colName}`,
+      });
     }
 
     return {
@@ -643,6 +670,8 @@ export class SchemaGenerator {
     const fkColumnsByClass = new Map<string, Set<string>>();
     // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
     const indexedMetaFields = new Set<string>();
+    // Track regular-field columns opted into plain column indexing
+    const indexedStiColumns = new Set<string>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
@@ -748,6 +777,13 @@ export class SchemaGenerator {
           }
         }
 
+        // Track opt-in column indexes for regular STI columns
+        const isIndexed =
+          field._meta?.indexed === true || (field as any).indexed === true;
+        if (isIndexed && !columnDef.foreignKey) {
+          indexedStiColumns.add(columnName);
+        }
+
         columns[columnName] = columnDef;
       }
     }
@@ -819,6 +855,15 @@ export class SchemaGenerator {
         columns: [],
         jsonPath: { column: '_meta_data', path: fieldName },
         description: `JSON-path index for @meta({ indexed: true }) field ${fieldName}`,
+      });
+    }
+
+    // Plain column indexes for regular STI columns opted in via `indexed: true`
+    for (const colName of indexedStiColumns) {
+      indexes.push({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
+        description: `Index for ${colName}`,
       });
     }
 
@@ -910,6 +955,8 @@ export class SchemaGenerator {
     const fkColumnsByClass = new Map<string, Set<string>>();
     // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
     const indexedMetaFields = new Set<string>();
+    // Track regular columns opted into plain column indexing
+    const indexedStiColumns = new Set<string>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
@@ -982,6 +1029,14 @@ export class SchemaGenerator {
           fkColumnsByClass.get(className)?.add(columnName);
         }
 
+        // Track opt-in column indexes for regular STI columns
+        const isIndexed =
+          (field as any).indexed === true ||
+          (field as any)._meta?.indexed === true;
+        if (isIndexed && field.type !== 'foreignKey') {
+          indexedStiColumns.add(columnName);
+        }
+
         columns[columnName] = columnDef;
       }
     }
@@ -1015,6 +1070,14 @@ export class SchemaGenerator {
         name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
         columns: [],
         jsonPath: { column: '_meta_data', path: fieldName },
+      });
+    }
+
+    // Plain column indexes for regular STI columns opted in via `indexed: true`
+    for (const colName of indexedStiColumns) {
+      indexes.push({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
       });
     }
 

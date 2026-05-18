@@ -385,9 +385,10 @@ export class SchemaAggregator {
     const tables = new Map<string, AggregatedTable>();
     // The aggregator only knows sqlite vs postgres; jsonPath rendering
     // treats anything non-sqlite as the postgres-style `->>` form, which
-    // is also what DuckDB accepts.
+    // is also what DuckDB accepts. Default mirrors `AggregateOptions.dialect`
+    // (`@default 'postgres'`) so unspecified callers get the documented shape.
     const engine: 'sqlite' | 'postgres' | 'duckdb' =
-      dialect === 'postgres' ? 'postgres' : 'sqlite';
+      dialect === 'sqlite' ? 'sqlite' : 'postgres';
 
     for (const manifest of manifests) {
       for (const [_key, object] of Object.entries(manifest.objects)) {
