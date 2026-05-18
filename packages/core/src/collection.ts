@@ -994,8 +994,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         continue;
       }
 
-      if (relationship.type === 'foreignKey') {
-        // Batch load foreignKey relationships
+      if (
+        relationship.type === 'foreignKey' ||
+        relationship.type === 'crossPackageRef'
+      ) {
+        // crossPackageRef target lives in another package — make sure its
+        // manifest is loaded before we try to instantiate the target collection.
+        if (relationship.type === 'crossPackageRef') {
+          await ObjectRegistry.ensureManifestLoaded(relationship.targetClass);
+        }
+        // Batch load foreignKey / crossPackageRef relationships
         await this.batchLoadForeignKeys(instances, fieldName, relationship);
       } else if (relationship.type === 'oneToMany') {
         // Load oneToMany relationships (less optimizable)

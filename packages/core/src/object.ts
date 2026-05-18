@@ -2153,7 +2153,10 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Load based on relationship type
-    if (relationship.type === 'foreignKey') {
+    if (
+      relationship.type === 'foreignKey' ||
+      relationship.type === 'crossPackageRef'
+    ) {
       return this.loadRelated(fieldName);
     }
 

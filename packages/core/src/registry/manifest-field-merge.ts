@@ -62,10 +62,16 @@ export function createFieldFromManifest(fieldDef: any): any {
     }
   }
 
-  return {
+  // Preserve top-level `related` for relationship-graph lookups
+  // (foreignKey / crossPackageRef / oneToMany / manyToMany all rely on it).
+  const out: Record<string, any> = {
     type: fieldDef.type,
     _meta: meta,
   };
+  if (fieldDef.related !== undefined) {
+    out.related = fieldDef.related;
+  }
+  return out;
 }
 
 export function mergeManifestField(existingField: any, fieldDef: any): any {

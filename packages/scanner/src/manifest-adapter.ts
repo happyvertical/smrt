@@ -61,6 +61,8 @@ type FieldDecoratorOptions = {
   description?: string;
   transient?: boolean;
   unique?: boolean;
+  /** crossPackageRef opt-in save-time validation */
+  validate?: boolean;
   [key: string]: unknown;
 };
 
@@ -697,14 +699,30 @@ export class ManifestAdapter {
       };
     }
 
-    // @crossPackageRef('@pkg:Class') decorator
+    // @crossPackageRef('@pkg:Class', { validate?: boolean }) decorator
     if (decorator.name === 'crossPackageRef') {
       const qualifiedName = stripQuotes(decorator.arguments[0]?.trim());
       const hasDefaultValue = field.initializer !== null;
+      // Preserve validate (+ standard required/nullable) from the options arg
+      // so manifest-only consumers see the same behavior as decorator-driven.
+      const parsedOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[1],
+      );
+      const meta: Record<string, unknown> = {};
+      if (parsedOptions?.validate !== undefined) {
+        meta.validate = parsedOptions.validate;
+      }
+      if (parsedOptions?.nullable !== undefined) {
+        meta.nullable = parsedOptions.nullable;
+      }
       return {
         type: 'crossPackageRef',
         related: qualifiedName || undefined,
-        required: !field.optional && !hasDefaultValue,
+        required:
+          parsedOptions?.required !== undefined
+            ? Boolean(parsedOptions.required)
+            : !field.optional && !hasDefaultValue,
+        ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
         source: 'decorator',
       };
     }

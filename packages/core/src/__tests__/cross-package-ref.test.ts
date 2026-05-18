@@ -211,5 +211,74 @@ describe('@crossPackageRef (R1)', () => {
       const loaded = await customer.loadRelated('profileId');
       expect(loaded).toBeNull();
     });
+
+    it('getRelated() dispatches a crossPackageRef field via the single-object loader', async () => {
+      const target = new XPRefTargetProfile({
+        displayName: 'Via getRelated',
+        db,
+      });
+      await target.initialize();
+      await target.save();
+
+      const customer = new XPRefSourceCustomer({
+        name: 'Eta',
+        profileId: target.id,
+        db,
+      });
+      await customer.initialize();
+      await customer.save();
+
+      const loaded = (await customer.getRelated(
+        'profileId',
+      )) as XPRefTargetProfile | null;
+      expect(loaded).not.toBeNull();
+      expect(loaded?.id).toBe(target.id);
+      expect(loaded?.displayName).toBe('Via getRelated');
+    });
+  });
+
+  describe('Eager loading via include', () => {
+    it('batch-loads crossPackageRef targets into the relationship cache', async () => {
+      const t1 = new XPRefTargetProfile({ displayName: 'P1', db });
+      await t1.initialize();
+      await t1.save();
+      const t2 = new XPRefTargetProfile({ displayName: 'P2', db });
+      await t2.initialize();
+      await t2.save();
+
+      const c1 = new XPRefSourceCustomer({
+        name: 'Theta-1',
+        profileId: t1.id,
+        db,
+      });
+      await c1.initialize();
+      await c1.save();
+      const c2 = new XPRefSourceCustomer({
+        name: 'Theta-2',
+        profileId: t2.id,
+        db,
+      });
+      await c2.initialize();
+      await c2.save();
+
+      const collection = await ObjectRegistry.getCollection<
+        typeof XPRefSourceCustomer.prototype
+      >('XPRefSourceCustomer', { db });
+      const customers = await collection.list({
+        include: ['profileId'],
+        orderBy: 'name ASC',
+      });
+
+      expect(customers).toHaveLength(2);
+      const c1Loaded: any = customers[0];
+      const c2Loaded: any = customers[1];
+      // Both instances should have their crossPackageRef cached after include
+      expect(c1Loaded._loadedRelationships.has('profileId')).toBe(true);
+      expect(c2Loaded._loadedRelationships.has('profileId')).toBe(true);
+      const t1Loaded = c1Loaded._loadedRelationships.get('profileId');
+      const t2Loaded = c2Loaded._loadedRelationships.get('profileId');
+      expect(t1Loaded?.id).toBe(t1.id);
+      expect(t2Loaded?.id).toBe(t2.id);
+    });
   });
 });
