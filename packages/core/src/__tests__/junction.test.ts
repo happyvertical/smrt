@@ -160,4 +160,59 @@ describe('SmrtJunction', () => {
       expect(owner2).toHaveLength(1);
     });
   });
+
+  describe('setLinks', () => {
+    it('replaces the full right-side set for a leftId (within opts scope)', async () => {
+      await links.attach('owner-1', 'asset-old-1', {
+        relationship: 'attachment',
+      });
+      await links.attach('owner-1', 'asset-old-2', {
+        relationship: 'attachment',
+      });
+
+      await links.setLinks('owner-1', ['asset-new-1', 'asset-new-2'], {
+        relationship: 'attachment',
+      });
+
+      const current = await links.byLeft('owner-1');
+      expect(current.map((l) => l.assetId).sort()).toEqual([
+        'asset-new-1',
+        'asset-new-2',
+      ]);
+    });
+
+    it('setLinks: stripping rightField from opts — stale rows for other rightIds are deleted', async () => {
+      await links.attach('owner-1', 'asset-stale-1');
+      await links.attach('owner-1', 'asset-stale-2');
+
+      // Poisoned opts include the rightField. Under the old code the
+      // delete-snapshot would only target rows with assetId === 'asset-stale-1',
+      // leaving asset-stale-2 in the table after the "replace" — breaking
+      // the "replace the full set" contract.
+      await links.setLinks('owner-1', ['asset-new'], {
+        assetId: 'asset-stale-1',
+      } as any);
+
+      const current = await links.byLeft('owner-1');
+      expect(current).toHaveLength(1);
+      expect(current[0]?.assetId).toBe('asset-new');
+    });
+
+    it('setLinks: respects the discriminator scope in opts', async () => {
+      // Pre-existing rows in two relationships.
+      await links.attach('owner-1', 'asset-a', { relationship: 'thumbnail' });
+      await links.attach('owner-1', 'asset-b', { relationship: 'attachment' });
+
+      // Replace only the 'thumbnail' relationship.
+      await links.setLinks('owner-1', ['asset-c'], {
+        relationship: 'thumbnail',
+      });
+
+      const all = await links.byLeft('owner-1');
+      expect(all.map((l) => `${l.assetId}:${l.relationship}`).sort()).toEqual([
+        'asset-b:attachment',
+        'asset-c:thumbnail',
+      ]);
+    });
+  });
 });

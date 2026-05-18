@@ -185,8 +185,15 @@ export abstract class SmrtJunction<
     rightIds: string[],
     opts: JunctionAttachOptions = {},
   ): Promise<void> {
+    // Strip the right-side key from snapshot opts — leaving it in would
+    // narrow the delete to one specific right id, but `setLinks` is
+    // contractually "replace the full set of right rows for leftId
+    // within the opts scope". A rightField filter contradicts that.
+    const snapshotOpts: JunctionAttachOptions = { ...opts };
+    delete snapshotOpts[this.rightField];
+
     const existing = (await this.list({
-      where: { ...opts, [this.leftField]: leftId },
+      where: { ...snapshotOpts, [this.leftField]: leftId },
     })) as TItem[];
     for (const link of existing) {
       await (link as unknown as { delete(): Promise<void> }).delete();

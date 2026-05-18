@@ -99,8 +99,14 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     assetIds: string[],
     opts: JunctionAttachOptions = {},
   ): Promise<void> {
+    // Strip the right-side key (assetId) from snapshot opts — see the
+    // base class docstring for the rationale; the same contract applies
+    // here.
+    const snapshotOpts: JunctionAttachOptions = { ...opts };
+    delete snapshotOpts.assetId;
+
     const existing = (await this.list({
-      where: { ...opts, metaType, metaId },
+      where: { ...snapshotOpts, metaType, metaId },
     })) as AssetAssociation[];
     for (const link of existing) {
       await link.delete();
