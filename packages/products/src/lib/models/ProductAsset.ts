@@ -1,13 +1,16 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 export interface ProductAssetOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
   productId?: string;
   assetId?: string;
   relationship?: string;
   sortOrder?: number;
 }
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'product_assets',
   conflictColumns: ['product_id', 'asset_id', 'relationship'],
@@ -16,6 +19,9 @@ export interface ProductAssetOptions extends SmrtObjectOptions {
   cli: false,
 })
 export class ProductAsset extends SmrtObject {
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   @field({ required: true })
   productId = '';
 
@@ -30,6 +36,7 @@ export class ProductAsset extends SmrtObject {
 
   constructor(options: ProductAssetOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.productId) this.productId = options.productId;
     if (options.assetId) this.assetId = options.assetId;
     if (options.relationship) this.relationship = options.relationship;

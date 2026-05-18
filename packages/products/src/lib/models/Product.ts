@@ -15,11 +15,15 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { ProductType } from './types';
 
 /**
  * Options for Product initialization
  */
 export interface ProductOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  productType?: ProductType;
   name?: string;
   description?: string;
   category?: string;
@@ -32,8 +36,14 @@ export interface ProductOptions extends SmrtObjectOptions {
 }
 
 /**
- * Product information for knowledge base queries
+ * Product information for knowledge base queries.
+ *
+ * STI base — subclasses (Style, Makeup, ProductVariant, Material) share this
+ * table via the `_meta_type` discriminator and `productType` field. Optional
+ * tenancy lets the same package serve shared global catalogs OR per-merchant
+ * catalogs.
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: {
@@ -45,6 +55,18 @@ export interface ProductOptions extends SmrtObjectOptions {
   cli: true, // Enable CLI commands for admin
 })
 export class Product extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation.
+   * Nullable to support both tenant-scoped and global catalogs.
+   */
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
+  /**
+   * STI discriminator. Subclasses override this with their type.
+   */
+  productType: ProductType = ProductType.PRODUCT;
+
   name = '';
   description = '';
   category = ''; // Reference to category
@@ -57,6 +79,9 @@ export class Product extends SmrtObject {
 
   constructor(options: ProductOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.productType !== undefined)
+      this.productType = options.productType;
     this.name = options.name || '';
     this.description = options.description || '';
     this.category = options.category || '';
