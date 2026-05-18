@@ -10,11 +10,9 @@ import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { EventParticipant } from '../models/EventParticipant';
 import type { ParticipantSearchFilters } from '../types';
 
-@smrt({
-  api: false,
-  mcp: false,
-  cli: false,
-})
+// Decorator with empty config — only needed so the scanner detects the
+// class. See FactContentCollection for the full rationale.
+@smrt()
 export class EventParticipantCollection extends SmrtJunction<EventParticipant> {
   static readonly _itemClass = EventParticipant;
   protected leftField = 'eventId';

@@ -25,11 +25,11 @@ import {
 } from '@happyvertical/smrt-core';
 import { AssetAssociation } from './asset-association';
 
-@smrt({
-  api: false,
-  mcp: false,
-  cli: false,
-})
+// Decorator with empty config — only needed so the scanner detects the
+// class. See FactContentCollection for the full rationale; the short
+// version is: api/mcp/cli on a collection decorator clobber the item
+// class's own config, so leave them off here.
+@smrt()
 export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
   static readonly _itemClass = AssetAssociation;
 

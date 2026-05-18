@@ -14,14 +14,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../decorators/index';
 import { SmrtJunction } from '../junction';
 import { SmrtObject } from '../object';
-import { smrt } from '../registry';
+import { ObjectRegistry, smrt } from '../registry';
 
 @smrt({
   tableName: 'junction_test_links',
   conflictColumns: ['owner_id', 'asset_id', 'relationship'],
-  api: false,
-  mcp: false,
-  cli: false,
+  api: { include: ['list', 'get', 'create', 'delete'] },
+  mcp: { include: ['list', 'get'] },
+  cli: true,
 })
 class JunctionTestLink extends SmrtObject {
   @field({ required: true })
@@ -46,7 +46,12 @@ class JunctionTestLink extends SmrtObject {
   }
 }
 
-@smrt({ api: false, mcp: false, cli: false })
+// Decorator has empty config — only present so the scanner detects the
+// class (FRAMEWORK_BASE_CLASSES doesn't include SmrtJunction). Passing
+// api/mcp/cli here would flow through to the item class via
+// ObjectRegistry.register(itemClass, {...config}) and clobber the
+// model's own decorator config.
+@smrt()
 class JunctionTestLinkCollection extends SmrtJunction<JunctionTestLink> {
   static readonly _itemClass = JunctionTestLink;
   protected leftField = 'ownerId';
@@ -158,6 +163,26 @@ describe('SmrtJunction', () => {
       const owner2 = await links.byLeft('owner-2');
       expect(owner1).toHaveLength(0);
       expect(owner2).toHaveLength(1);
+    });
+  });
+
+  describe('item class config preservation', () => {
+    it('collection decorator with empty config does not clobber item class api/mcp/cli', async () => {
+      // The test class above declares api/mcp/cli on the MODEL
+      // (JunctionTestLink). The collection's @smrt() is intentionally empty
+      // so it doesn't override these on the item class's registration.
+      // Regression test for round-7 codex finding: passing
+      // { api: false, mcp: false, cli: false } on the collection would
+      // overwrite the model's own config via
+      // ObjectRegistry.register(itemClass, {...config}).
+      const registered = ObjectRegistry.getClass('JunctionTestLink');
+      expect(registered).toBeTruthy();
+      const cfg = registered?.config;
+      expect(cfg?.api).toEqual({
+        include: ['list', 'get', 'create', 'delete'],
+      });
+      expect(cfg?.mcp).toEqual({ include: ['list', 'get'] });
+      expect(cfg?.cli).toBe(true);
     });
   });
 

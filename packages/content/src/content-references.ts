@@ -22,11 +22,9 @@ export interface ContentReferencesOptions extends SmrtCollectionOptions {}
  * route was deleted with R2 and no replacement was wired up — see the
  * R2 round-6 commit message for context.
  */
-@smrt({
-  api: false,
-  mcp: false,
-  cli: false,
-})
+// Decorator with empty config — only needed so the scanner detects the
+// class. See FactContentCollection for the full rationale.
+@smrt()
 export class ContentReferences extends SmrtJunction<ContentReference> {
   static readonly _itemClass = ContentReference;
   protected leftField = 'sourceId';

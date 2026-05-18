@@ -8,11 +8,12 @@
 import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { FactContent } from './fact-content';
 
-@smrt({
-  api: false,
-  mcp: false,
-  cli: false,
-})
+// Decorator with empty config — only needed so the scanner detects the
+// class (FRAMEWORK_BASE_CLASSES doesn't include SmrtJunction). Do NOT
+// pass api/mcp/cli here: those flow through to the item class
+// registration via ObjectRegistry.register(itemClass, {...config}) at
+// registry.ts:3094 and would clobber FactContent's own @smrt config.
+@smrt()
 export class FactContentCollection extends SmrtJunction<FactContent> {
   static readonly _itemClass = FactContent;
   protected leftField = 'factId';
