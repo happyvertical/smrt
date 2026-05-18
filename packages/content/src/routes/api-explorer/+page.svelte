@@ -352,7 +352,14 @@ const groups: EndpointGroup[] = [
       {
         method: 'POST',
         path: '/api/v1/contentreferences',
-        description: 'Create a content reference (sourceId, targetId)',
+        description:
+          'Create a reference (sourceId, targetId) — upsert; rewrites id/createdAt on duplicates',
+      },
+      {
+        method: 'POST',
+        path: '/api/v1/contentreferences/attach',
+        description:
+          'Create-or-find a reference idempotently — preserves id/createdAt on duplicates',
       },
       {
         method: 'GET',
