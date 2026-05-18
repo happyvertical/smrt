@@ -578,6 +578,40 @@ it('should persist content references via the ContentReference model', async () 
   expect(references[0]?.id).toBe(target.id);
 });
 
+it('addReference is idempotent: duplicate calls preserve the existing reference row id', async () => {
+  const dbUrl = getTestDbUrl('reference-idempotency');
+  const contents = await Contents.create({ db: { url: dbUrl } });
+
+  const source = await contents.create({
+    name: 'idempotent-source',
+    title: 'Idempotent source',
+    body: 'src',
+    status: 'draft',
+  });
+  const target = await contents.create({
+    name: 'idempotent-target',
+    title: 'Idempotent target',
+    body: 'tgt',
+    status: 'draft',
+  });
+
+  const { ContentReferences } = await import('./content-references');
+  const references = await ContentReferences.create({ db: { url: dbUrl } });
+
+  await source.addReference(target);
+  const firstLink = (await references.byLeft(source.id as string))[0];
+  expect(firstLink).toBeTruthy();
+  const originalLinkId = firstLink.id;
+  const originalCreatedAt = firstLink.createdAt;
+
+  await source.addReference(target);
+
+  const links = await references.byLeft(source.id as string);
+  expect(links).toHaveLength(1);
+  expect(links[0]?.id).toBe(originalLinkId);
+  expect(links[0]?.createdAt?.getTime?.()).toBe(originalCreatedAt?.getTime?.());
+});
+
 it('should create URL reference targets with the source tenantId', async () => {
   const contents = await Contents.create({
     db: {

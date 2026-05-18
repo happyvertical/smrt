@@ -115,8 +115,17 @@ export abstract class SmrtJunction<
   /**
    * Create a new junction row linking `leftId` ↔ `rightId`.
    *
-   * Idempotent when the underlying `@smrt({ conflictColumns })` config covers
-   * `(leftField, rightField, discriminator)` — `SmrtCollection.create` upserts.
+   * Goes through `SmrtCollection.create` which performs an upsert keyed on
+   * the model's `@smrt({ conflictColumns })`. Duplicates on the conflict key
+   * resolve to an UPDATE that rewrites every column — including the row's
+   * `id` and any timestamp columns — to the new instance's values. For most
+   * junctions that's fine: callers identify rows by (left, right, discriminator),
+   * not by junction-row-id, so id rewrites are invisible.
+   *
+   * If your junction table is externally addressable by id (e.g. its rows
+   * are exposed under `/api/v1/<table>/[id]`), override this method with a
+   * find-or-create check to preserve id stability across duplicate calls.
+   * See `ContentReferences.attach` for an example.
    *
    * @param opts - Extra fields to write into the row (e.g. `{ relationship, sortOrder, tenantId }`)
    */
