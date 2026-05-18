@@ -126,6 +126,15 @@ export class Contract extends SmrtObject {
   terms: string = '';
 
   /**
+   * Sales channel that owns this contract.
+   *
+   * Plain string so consumers can model their own channels without an enum
+   * change (e.g. `dtc-web`, `wholesale-b2b`, `pos-store-1`, `marketplace-faire`).
+   * Empty string means "unattributed / legacy".
+   */
+  channelId: string = '';
+
+  /**
    * STI discriminator field
    */
   static readonly _stiField = 'contractType';
@@ -149,6 +158,7 @@ export class Contract extends SmrtObject {
     if (options.reference !== undefined) this.reference = options.reference;
     if (options.notes !== undefined) this.notes = options.notes;
     if (options.terms !== undefined) this.terms = options.terms;
+    if (options.channelId !== undefined) this.channelId = options.channelId;
   }
 
   /**
@@ -237,6 +247,46 @@ export class Agreement extends Contract {
 @smrt()
 export class PurchaseOrder extends Contract {
   override contractType = ContractType.PURCHASE_ORDER;
+}
+
+/**
+ * WholesaleOrder - B2B order placed by a wholesale customer.
+ *
+ * Behaves like an Order but is conventionally created against a customer with
+ * `customerType: 'wholesale'`, uses NET-30/60 payment terms, and is delivered
+ * via the wholesale-portal channel rather than retail checkout.
+ */
+@smrt()
+export class WholesaleOrder extends Contract {
+  override contractType = ContractType.WHOLESALE_ORDER;
+}
+
+/**
+ * ProductionOrder - instruction to commission goods from an internal or
+ * external factory.
+ *
+ * The manufacturing equivalent of a {@link PurchaseOrder} — but instead of
+ * buying finished inventory, you're paying to *make* it. A ProductionOrder
+ * consumes raw materials per a Bill of Materials (see
+ * `@happyvertical/smrt-manufacturing`) and produces finished SKU stock when
+ * posted (see `@happyvertical/smrt-inventory`).
+ */
+@smrt()
+export class ProductionOrder extends Contract {
+  override contractType = ContractType.PRODUCTION_ORDER;
+}
+
+/**
+ * Cart - transient order-in-progress for a shopper.
+ *
+ * Persisted as a Contract so it can hold the same line items, totals, and
+ * customer reference as a real Order, then convert in place (the application
+ * promotes the row from `_meta_type: Cart` to `_meta_type: Order` at checkout
+ * rather than copying data between tables). A Cart is implicitly DRAFT.
+ */
+@smrt()
+export class Cart extends Contract {
+  override contractType = ContractType.CART;
 }
 
 export default Contract;

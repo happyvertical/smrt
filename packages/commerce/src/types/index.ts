@@ -13,6 +13,19 @@ export enum CustomerStatus {
   SUSPENDED = 'suspended',
 }
 
+/**
+ * Customer classification — drives channel access, pricing tier, and credit terms.
+ *
+ * - DTC: direct-to-consumer (end shopper). Pays via storefront checkout.
+ * - WHOLESALE: B2B buyer with negotiated terms (NET-30, line sheets, etc.).
+ * - RETAIL: in-store walk-in / point-of-sale customer.
+ */
+export enum CustomerType {
+  DTC = 'dtc',
+  WHOLESALE = 'wholesale',
+  RETAIL = 'retail',
+}
+
 export enum VendorStatus {
   ACTIVE = 'active',
   INACTIVE = 'inactive',
@@ -29,6 +42,9 @@ export enum ContractType {
   LEASE = 'lease',
   AGREEMENT = 'agreement',
   PURCHASE_ORDER = 'purchase_order',
+  WHOLESALE_ORDER = 'wholesale_order',
+  PRODUCTION_ORDER = 'production_order',
+  CART = 'cart',
 }
 
 export enum ContractStatus {

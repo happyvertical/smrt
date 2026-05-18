@@ -5,7 +5,7 @@
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { type Address, CustomerStatus } from '../types/index.js';
+import { type Address, CustomerStatus, CustomerType } from '../types/index.js';
 
 /**
  * Customer represents the customer role for a Profile.
@@ -78,6 +78,14 @@ export class Customer extends SmrtObject {
   status: CustomerStatus = CustomerStatus.ACTIVE;
 
   /**
+   * Customer classification — DTC, wholesale, or retail.
+   *
+   * Drives channel access (wholesale portal vs. storefront vs. POS), default
+   * price tier, and credit terms. Defaults to DTC for backwards compatibility.
+   */
+  customerType: CustomerType = CustomerType.DTC;
+
+  /**
    * Internal notes about this customer
    */
   notes: string = '';
@@ -97,7 +105,16 @@ export class Customer extends SmrtObject {
     if (options.defaultBillingAddress !== undefined)
       this.defaultBillingAddress = options.defaultBillingAddress;
     if (options.status !== undefined) this.status = options.status;
+    if (options.customerType !== undefined)
+      this.customerType = options.customerType;
     if (options.notes !== undefined) this.notes = options.notes;
+  }
+
+  /**
+   * Convenience predicate: is this a wholesale customer?
+   */
+  isWholesale(): boolean {
+    return this.customerType === CustomerType.WHOLESALE;
   }
 
   /**
