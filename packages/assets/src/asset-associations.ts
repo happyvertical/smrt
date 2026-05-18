@@ -45,7 +45,8 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     opts: JunctionFilterOptions = {},
   ): Promise<AssetAssociation[]> {
     return (await this.list({
-      where: { metaType, metaId, ...opts },
+      // Spread opts first so the fixed polymorphic owner keys always win.
+      where: { ...opts, metaType, metaId },
       orderBy: 'sort_order ASC',
     })) as AssetAssociation[];
   }
@@ -61,10 +62,11 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     opts: JunctionAttachOptions = {},
   ): Promise<AssetAssociation> {
     return (await this.create({
+      // Spread opts first so the fixed key fields always win.
+      ...opts,
       assetId,
       metaType,
       metaId,
-      ...opts,
     } as any)) as AssetAssociation;
   }
 
@@ -79,7 +81,7 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     opts: JunctionFilterOptions = {},
   ): Promise<void> {
     const links = (await this.list({
-      where: { metaType, metaId, assetId, ...opts },
+      where: { ...opts, metaType, metaId, assetId },
     })) as AssetAssociation[];
     for (const link of links) {
       await link.delete();
@@ -98,7 +100,7 @@ export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
     opts: JunctionAttachOptions = {},
   ): Promise<void> {
     const existing = (await this.list({
-      where: { metaType, metaId, ...opts },
+      where: { ...opts, metaType, metaId },
     })) as AssetAssociation[];
     for (const link of existing) {
       await link.delete();

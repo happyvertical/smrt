@@ -89,7 +89,10 @@ export abstract class SmrtJunction<
     opts: JunctionFilterOptions = {},
   ): Promise<TItem[]> {
     return (await this.list({
-      where: { [this.leftField]: leftId, ...opts },
+      // Spread opts FIRST so the fixed key always wins — prevents a
+      // caller-supplied `{ [leftField]: otherId }` from retargeting the
+      // query when opts is forwarded from untrusted input.
+      where: { ...opts, [this.leftField]: leftId },
       ...(this.sortField
         ? { orderBy: `${camelToSnake(this.sortField)} ASC` }
         : {}),
@@ -105,7 +108,7 @@ export abstract class SmrtJunction<
     opts: JunctionFilterOptions = {},
   ): Promise<TItem[]> {
     return (await this.list({
-      where: { [this.rightField]: rightId, ...opts },
+      where: { ...opts, [this.rightField]: rightId },
       ...(this.sortField
         ? { orderBy: `${camelToSnake(this.sortField)} ASC` }
         : {}),
@@ -135,9 +138,12 @@ export abstract class SmrtJunction<
     opts: JunctionAttachOptions = {},
   ): Promise<TItem> {
     return (await this.create({
+      // Spread opts FIRST so the fixed key fields always win — prevents
+      // a caller-supplied `{ [leftField]: otherId }` from retargeting
+      // the write when opts is forwarded from untrusted input.
+      ...opts,
       [this.leftField]: leftId,
       [this.rightField]: rightId,
-      ...opts,
     } as any)) as TItem;
   }
 
@@ -153,9 +159,9 @@ export abstract class SmrtJunction<
   ): Promise<void> {
     const links = (await this.list({
       where: {
+        ...opts,
         [this.leftField]: leftId,
         [this.rightField]: rightId,
-        ...opts,
       },
     })) as TItem[];
     for (const link of links) {
@@ -180,7 +186,7 @@ export abstract class SmrtJunction<
     opts: JunctionAttachOptions = {},
   ): Promise<void> {
     const existing = (await this.list({
-      where: { [this.leftField]: leftId, ...opts },
+      where: { ...opts, [this.leftField]: leftId },
     })) as TItem[];
     for (const link of existing) {
       await (link as unknown as { delete(): Promise<void> }).delete();
