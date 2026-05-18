@@ -30,10 +30,16 @@ export function renderIndexTarget(
     const col = index.jsonPath.column;
     const path = index.jsonPath.path;
     if (engine === 'sqlite') {
+      // SQLite's json_extract is a function call — no extra wrapping needed.
       return `json_extract("${col}", '$.${path}')`;
     }
-    // Postgres / DuckDB JSON path access via ->>
-    return `"${col}"->>'${path}'`;
+    // Postgres / DuckDB JSON path access via `->>`. PostgreSQL requires
+    // operator expressions in index elements to be parenthesized — the
+    // outer `()` in `CREATE INDEX ... ON tbl (...)` is the column list, so
+    // the expression itself needs its own parens. Returning the wrapped
+    // form here keeps the rule local to this helper and works on DuckDB
+    // (extra parens are harmless).
+    return `("${col}"->>'${path}')`;
   }
   return (index.columns ?? []).map((c) => `"${c}"`).join(', ');
 }

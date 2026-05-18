@@ -351,6 +351,18 @@ export class SchemaComparer {
       const dbByName = dbIndexesByName.get(idx.name);
       if (dbByName) {
         claimedDbIndexes.add(idx.name);
+
+        // JSON-path indexes (`@meta({ indexed: true })`) cannot be reliably
+        // compared by DB introspection — SQLite expression indexes surface
+        // as `[null]` columns, so the signature would always mismatch and
+        // every diff run would emit drop+recreate. Trust the name match
+        // here; if the json path itself changes, the index name changes
+        // too (we encode the field name into it), so a name match is a
+        // stronger guarantee than the column list for this index family.
+        if (isJsonPathIndex(idx)) {
+          continue;
+        }
+
         const dbSignature = this.getIndexSignature(
           dbByName.columns,
           dbByName.unique,
