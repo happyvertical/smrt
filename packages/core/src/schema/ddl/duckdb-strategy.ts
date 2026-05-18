@@ -11,6 +11,7 @@
  * not with separate UNIQUE indexes. This is a known DuckDB limitation.
  */
 
+import { renderIndexTarget } from '../index-utils.js';
 import type { SchemaDefinition, SQLDataType } from '../types.js';
 import { BaseDDLStrategy } from './base-strategy.js';
 import type { DatabaseEngine } from './types.js';
@@ -48,8 +49,11 @@ export class DuckDBStrategy extends BaseDDLStrategy {
         continue;
       }
 
-      const columns = index.columns.map((c) => `"${c}"`).join(', ');
-      let sql = `CREATE INDEX IF NOT EXISTS "${index.name}" ON "${tableName}" (${columns})`;
+      const target = renderIndexTarget(index, this.engine);
+      if (!target) {
+        continue;
+      }
+      let sql = `CREATE INDEX IF NOT EXISTS "${index.name}" ON "${tableName}" (${target})`;
 
       if (index.where) {
         sql += ` WHERE ${index.where}`;

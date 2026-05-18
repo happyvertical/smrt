@@ -15,6 +15,7 @@ import type {
   SchemaDiff,
   SQLDataType,
 } from '../schema/types.js';
+import { isJsonPathIndex, renderIndexTarget } from '../schema/utils.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 /**
@@ -336,9 +337,7 @@ export class SchemaComparer {
     // entry "claimed" them by name.
     const manifestSignatureSet = new Set<string>();
     for (const idx of manifest.indexes) {
-      manifestSignatureSet.add(
-        this.getIndexSignature(idx.columns, idx.unique ?? false),
-      );
+      manifestSignatureSet.add(this.getIndexSignature(idx));
     }
 
     // Track which DB indexes a manifest entry has claimed, so the orphan
@@ -346,11 +345,7 @@ export class SchemaComparer {
     const claimedDbIndexes = new Set<string>();
 
     for (const idx of manifest.indexes) {
-      const manifestUnique = idx.unique ?? false;
-      const manifestSignature = this.getIndexSignature(
-        idx.columns,
-        manifestUnique,
-      );
+      const manifestSignature = this.getIndexSignature(idx);
 
       // (a) Same name in DB — verify shape matches.
       const dbByName = dbIndexesByName.get(idx.name);
@@ -457,14 +452,26 @@ export class SchemaComparer {
    * so two partial indexes with the same columns but different WHERE clauses
    * cannot be distinguished and may be incorrectly treated as equivalent.
    *
-   * @param columns - Array of column names (order is preserved)
-   * @param unique - Whether the index is unique
-   * @returns Signature string like "col1,col2:false"
+   * For JSON-path indexes (`@meta({ indexed: true })`) the signature is
+   * derived from the JSON path instead of an empty column list, so the
+   * differ can distinguish two jsonPath indexes against different paths.
+   *
+   * @param idxOrColumns - Either an IndexDefinition or a column array (legacy)
+   * @param uniqueArg - Unique flag (used when first arg is a column array)
+   * @returns Signature string
    */
-  private getIndexSignature(columns: string[], unique: boolean): string {
-    // Preserve column order because it is semantically significant for composite indexes
-    const columnList = columns.join(',');
-    return `${columnList}:${unique}`;
+  private getIndexSignature(
+    idxOrColumns: IndexDefinition | string[],
+    uniqueArg?: boolean,
+  ): string {
+    if (Array.isArray(idxOrColumns)) {
+      return `${idxOrColumns.join(',')}:${Boolean(uniqueArg)}`;
+    }
+    const idx = idxOrColumns;
+    if (isJsonPathIndex(idx) && idx.jsonPath) {
+      return `json:${idx.jsonPath.column}.${idx.jsonPath.path}:${Boolean(idx.unique)}`;
+    }
+    return `${(idx.columns ?? []).join(',')}:${Boolean(idx.unique)}`;
   }
 
   /**
@@ -785,10 +792,8 @@ export class SchemaComparer {
    */
   private generateAddIndexSQL(tableName: string, idx: IndexDefinition): string {
     const uniqueStr = idx.unique ? 'UNIQUE ' : '';
-    const quotedColumns = idx.columns
-      .map((c) => this.quoteIdentifier(c))
-      .join(', ');
-    return `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${quotedColumns})`;
+    const target = renderIndexTarget(idx, this.engine);
+    return `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
   }
 
   /**

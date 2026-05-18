@@ -11,6 +11,7 @@ import type {
   SchemaDefinition,
   SchemaDiff,
 } from '../schema/types.js';
+import { renderIndexTarget } from '../schema/utils.js';
 import { computeChecksum } from './checksum.js';
 import type { DatabaseEngine } from './types.js';
 
@@ -435,16 +436,14 @@ ${downStatementsStr}
     index: import('../schema/types.js').IndexDefinition,
   ): string {
     const uniqueStr = index.unique ? 'UNIQUE ' : '';
-    const quotedColumns = index.columns
-      .map((c) => this.quoteIdentifier(c))
-      .join(', ');
+    const target = renderIndexTarget(index, this.engine);
 
     if (this.engine === 'postgres') {
       // PostgreSQL: use CONCURRENTLY for production safety
-      return `CREATE ${uniqueStr}INDEX CONCURRENTLY IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${quotedColumns})`;
+      return `CREATE ${uniqueStr}INDEX CONCURRENTLY IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
     }
 
-    return `CREATE ${uniqueStr}INDEX IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${quotedColumns})`;
+    return `CREATE ${uniqueStr}INDEX IF NOT EXISTS ${this.quoteIdentifier(index.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
   }
 
   /**

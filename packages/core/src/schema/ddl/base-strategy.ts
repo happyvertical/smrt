@@ -134,11 +134,14 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
     }
 
     for (const index of indexes) {
-      // Skip malformed index entries (missing columns AND no jsonPath)
-      const hasJsonPath = !!(index?.jsonPath?.column && index.jsonPath.path);
+      // Narrow the jsonPath target up-front so the formatter call doesn't
+      // need optional-chained args (and so the malformed-entry check has a
+      // single source of truth).
+      const jsonPath =
+        index?.jsonPath?.column && index.jsonPath.path ? index.jsonPath : null;
       if (
         !index ||
-        (!hasJsonPath &&
+        (!jsonPath &&
           (!index.columns ||
             !Array.isArray(index.columns) ||
             index.columns.length === 0))
@@ -157,10 +160,10 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
       const indexType = index.unique ? 'UNIQUE INDEX' : 'INDEX';
 
       // JSON-path indexes use a dialect-specific expression
-      const target = hasJsonPath
+      const target = jsonPath
         ? `(${this.formatJsonPathIndexExpression(
-            index.jsonPath?.column,
-            index.jsonPath?.path,
+            jsonPath.column,
+            jsonPath.path,
           )})`
         : index.columns.map((c) => `"${c}"`).join(', ');
 

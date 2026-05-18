@@ -13,6 +13,10 @@ import { ObjectRegistry } from '../registry.js';
 import { tableNameFromClass } from '../utils.js';
 import { SchemaManager } from './schema-manager.js';
 
+// Index-rendering helpers live in a separate file to avoid pulling the
+// heavyweight registry/collection module graph into the DDL strategies.
+export { isJsonPathIndex, renderIndexTarget } from './index-utils.js';
+
 /**
  * Generates a complete database schema SQL statement for a class
  *

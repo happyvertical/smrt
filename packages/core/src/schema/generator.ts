@@ -1176,6 +1176,8 @@ export class SchemaGenerator {
         name: idx.name,
         columns: idx.columns,
         unique: idx.unique,
+        where: idx.where,
+        jsonPath: idx.jsonPath,
       })),
       triggers: [],
       foreignKeys: [],
