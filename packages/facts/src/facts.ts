@@ -376,8 +376,8 @@ export class FactCollection extends SmrtCollection<Fact> {
     const { FactContentCollection } = await import('./fact-contents');
     const links = await FactContentCollection.create(this.options);
     const relatedLinks = relationship
-      ? await links.getForContentByRelationship(contentId, relationship)
-      : await links.getForContent(contentId);
+      ? await links.byRight(contentId, { relationship })
+      : await links.byRight(contentId);
 
     const uniqueFactIds = [...new Set(relatedLinks.map((link) => link.factId))];
     const loadedFacts = await Promise.all(

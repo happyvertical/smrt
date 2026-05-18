@@ -1379,7 +1379,10 @@ export class Content
 
     try {
       const contentAssets = await this.getContentAssetCollection();
-      const links = await contentAssets.getForContent(this.id, relationship);
+      const links = await contentAssets.byLeft(
+        this.id,
+        relationship ? { relationship } : {},
+      );
 
       return links
         .filter((link) => link.assetId)
@@ -1601,7 +1604,7 @@ export class Content
     }
 
     const references = await this.getReferenceCollection();
-    await references.link(this.id, target.id, this.tenantId);
+    await references.attach(this.id, target.id, { tenantId: this.tenantId });
     this.references = await this.getReferences();
   }
 
@@ -1616,7 +1619,7 @@ export class Content
     }
 
     const references = await this.getReferenceCollection();
-    await references.unlink(this.id, targetId);
+    await references.detach(this.id, targetId);
     this.references = this.references.filter(
       (reference) => reference.id !== targetId,
     );
@@ -1633,7 +1636,7 @@ export class Content
     }
 
     const references = await this.getReferenceCollection();
-    const linkedReferences = await references.getForSource(this.id);
+    const linkedReferences = await references.byLeft(this.id);
     const targetIds = linkedReferences.map((reference) => reference.targetId);
 
     if (targetIds.length === 0) {
@@ -1673,11 +1676,8 @@ export class Content
 
     const links = await this.getFactContentCollection();
     return options.relationship
-      ? links.getForContentByRelationship(
-          this.id as string,
-          options.relationship,
-        )
-      : links.getForContent(this.id as string);
+      ? links.byRight(this.id as string, { relationship: options.relationship })
+      : links.byRight(this.id as string);
   }
 
   public async getFacts(
@@ -1717,12 +1717,10 @@ export class Content
     }
 
     const links = await this.getFactContentCollection();
-    return links.link(
-      factId,
-      this.id as string,
-      relationship || governance.defaultFactRelationship,
+    return links.attach(factId, this.id as string, {
+      relationship: relationship || governance.defaultFactRelationship,
       metadata,
-    );
+    });
   }
 
   public async removeFact(
@@ -1740,11 +1738,11 @@ export class Content
 
     const links = await this.getFactContentCollection();
     if (relationship) {
-      await links.unlinkByRelationship(factId, this.id as string, relationship);
+      await links.detach(factId, this.id as string, { relationship });
       return;
     }
 
-    await links.unlink(factId, this.id as string);
+    await links.detach(factId, this.id as string);
   }
 
   public async syncFacts(
@@ -1761,10 +1759,9 @@ export class Content
     const links = await this.getFactContentCollection();
     const resolvedRelationship =
       relationship || governance.defaultFactRelationship;
-    const existing = await links.getForContentByRelationship(
-      this.id as string,
-      resolvedRelationship,
-    );
+    const existing = await links.byRight(this.id as string, {
+      relationship: resolvedRelationship,
+    });
 
     const existingIds = new Set(existing.map((link) => link.factId));
     const desiredIds = new Set(uniqueFactIds);
@@ -1776,15 +1773,15 @@ export class Content
       .filter((factId) => !desiredIds.has(factId));
 
     for (const factId of added) {
-      await links.link(factId, this.id as string, resolvedRelationship);
+      await links.attach(factId, this.id as string, {
+        relationship: resolvedRelationship,
+      });
     }
 
     for (const factId of removed) {
-      await links.unlinkByRelationship(
-        factId,
-        this.id as string,
-        resolvedRelationship,
-      );
+      await links.detach(factId, this.id as string, {
+        relationship: resolvedRelationship,
+      });
     }
 
     return { added, kept, removed };
@@ -1942,7 +1939,7 @@ export class Content
   ) {
     const links = await this.getFactContentCollection();
     const existing = (
-      await links.getForContentByRelationship(this.id as string, relationship)
+      await links.byRight(this.id as string, { relationship })
     ).find((link: any) => link.factId === factId);
 
     if (existing) {
@@ -1968,7 +1965,7 @@ export class Content
       return existing;
     }
 
-    return links.link(factId, this.id as string, relationship, metadata);
+    return links.attach(factId, this.id as string, { relationship, metadata });
   }
 
   private async clearGeneratedFactAudit(): Promise<void> {
@@ -2603,10 +2600,7 @@ export class Content
         maxCandidateEvidence: options.maxCandidateEvidence,
       });
     const claimLinks = (
-      await links.getForContentByRelationship(
-        this.id as string,
-        'referenced_in',
-      )
+      await links.byRight(this.id as string, { relationship: 'referenced_in' })
     )
       .map((link: any) => ({
         link,
@@ -3725,13 +3719,11 @@ export class Content
     }
 
     const contentAssets = await this.getContentAssetCollection();
-    await contentAssets.attach(
-      this.id,
-      asset.id,
+    await contentAssets.attach(this.id, asset.id, {
       relationship,
       sortOrder,
-      this.tenantId,
-    );
+      tenantId: this.tenantId,
+    });
   }
 
   /**
@@ -3746,7 +3738,11 @@ export class Content
 
     try {
       const contentAssets = await this.getContentAssetCollection();
-      await contentAssets.detach(this.id, assetId, relationship);
+      await contentAssets.detach(
+        this.id,
+        assetId,
+        relationship ? { relationship } : {},
+      );
     } catch (error) {
       if (!isMissingTableError(error, 'content_assets')) {
         throw error;

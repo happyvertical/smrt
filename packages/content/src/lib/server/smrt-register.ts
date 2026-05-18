@@ -36,7 +36,6 @@ import '../../content-feed-sources';
 import '../../content-governance-assignments';
 import '../../content-governance-policies';
 import '../../content-governance-profiles';
-import '../../content-references';
 import '../../content-reviews';
 import '../../content-versions';
 import '../../contents';

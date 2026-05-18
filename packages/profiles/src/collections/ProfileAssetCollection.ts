@@ -1,14 +1,11 @@
 import type { Asset } from '@happyvertical/smrt-assets';
 import {
   addOwnedAssetFromCollection,
-  createOwnedAssetLink,
-  deleteOwnedAssetLinks,
   getOwnedAssetsFromCollection,
-  listOwnedAssetLinks,
   removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
-import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { ProfileAsset } from '../models/ProfileAsset';
 import type { ProfileCollection } from './ProfileCollection';
 
@@ -19,8 +16,11 @@ export interface ProfileAssetCollectionOptions extends SmrtCollectionOptions {}
   mcp: false,
   cli: false,
 })
-export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
+export class ProfileAssetCollection extends SmrtJunction<ProfileAsset> {
   static readonly _itemClass = ProfileAsset;
+  protected leftField = 'profileId';
+  protected rightField = 'assetId';
+
   private profileCollectionPromise: Promise<ProfileCollection> | null = null;
 
   private async getProfileCollection(): Promise<ProfileCollection> {
@@ -30,47 +30,6 @@ export class ProfileAssetCollection extends SmrtCollection<ProfileAsset> {
     }
 
     return this.profileCollectionPromise;
-  }
-
-  async getForProfile(
-    profileId: string,
-    relationship?: string,
-  ): Promise<ProfileAsset[]> {
-    return listOwnedAssetLinks(this, 'profileId', profileId, relationship);
-  }
-
-  async getForAsset(assetId: string): Promise<ProfileAsset[]> {
-    return listOwnedAssetLinks(this, 'assetId', assetId);
-  }
-
-  async attach(
-    profileId: string,
-    assetId: string,
-    relationship = 'attachment',
-    sortOrder = 0,
-    tenantId: string | null = null,
-  ): Promise<ProfileAsset> {
-    return createOwnedAssetLink(this, {
-      profileId,
-      assetId,
-      relationship,
-      sortOrder,
-      tenantId,
-    });
-  }
-
-  async detach(
-    profileId: string,
-    assetId: string,
-    relationship?: string,
-  ): Promise<void> {
-    await deleteOwnedAssetLinks(
-      this,
-      'profileId',
-      profileId,
-      assetId,
-      relationship,
-    );
   }
 
   async getAssets(profileId: string, relationship?: string): Promise<Asset[]> {

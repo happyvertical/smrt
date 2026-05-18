@@ -1,110 +1,116 @@
 /**
- * AssetAssociationCollection - Collection manager for AssetAssociation instances
+ * AssetAssociationCollection - Polymorphic junction collection.
  *
- * Provides methods for linking/unlinking assets to arbitrary SmrtObjects
- * with role-based categorization and ordering.
+ * Extends `SmrtJunction` with one critical difference: the "left" side of the
+ * join is a composite key (`metaType` + `metaId`), not a single column. As a
+ * result, `byLeft` / `attach` / `detach` / `setLinks` diverge from the base
+ * signatures by taking both halves of the polymorphic owner key.
+ *
+ * - `leftField` is set to `'metaId'` as a placeholder to satisfy the
+ *   `SmrtJunction` contract; the overridden methods never use it.
+ * - `byRight(assetId)` is inherited unchanged from the base — the right side
+ *   is a single column (`assetId`) and behaves like any other junction.
+ *
+ * For non-polymorphic links between two domain models, prefer a dedicated
+ * noun-table junction (e.g. `content_assets`, `place_assets`) extending
+ * `SmrtJunction` directly. Use `AssetAssociation` only for generic/provenance
+ * relationships that aren't worth a dedicated table.
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  type JunctionAttachOptions,
+  type JunctionFilterOptions,
+  SmrtJunction,
+} from '@happyvertical/smrt-core';
 import { AssetAssociation } from './asset-association';
 
-export class AssetAssociationCollection extends SmrtCollection<AssetAssociation> {
+export class AssetAssociationCollection extends SmrtJunction<AssetAssociation> {
   static readonly _itemClass = AssetAssociation;
 
+  // Composite left = (metaType, metaId); right = assetId.
+  // `leftField` placeholder satisfies the abstract base — the overrides below
+  // always handle the composite key explicitly.
+  protected leftField = 'metaId';
+  protected rightField = 'assetId';
+
   /**
-   * Get all associations for a given object
+   * List associations for a polymorphic owner.
    *
-   * @param metaType - Target class name or qualified name (e.g., 'Article' or '@pkg:Article')
-   * @param metaId - Target object ID
-   * @returns Associations ordered by sortOrder
+   * Composite left key — pass both halves.
    */
-  async getForObject(
+  // @ts-expect-error — diverges from SmrtJunction.byLeft(leftId) by arity; see class docstring.
+  async byLeft(
     metaType: string,
     metaId: string,
+    opts: JunctionFilterOptions = {},
   ): Promise<AssetAssociation[]> {
     return (await this.list({
-      where: { metaType, metaId },
+      where: { metaType, metaId, ...opts },
       orderBy: 'sort_order ASC',
     })) as AssetAssociation[];
   }
 
   /**
-   * Get associations for an object filtered by role
-   *
-   * @param metaType - Target class name or qualified name
-   * @param metaId - Target object ID
-   * @param role - Association role (e.g., 'hero', 'thumbnail')
-   * @returns Matching associations ordered by sortOrder
+   * Create an association. Composite left (metaType, metaId) precedes right (assetId).
    */
-  async getForObjectByRole(
+  // @ts-expect-error — diverges from SmrtJunction.attach(leftId, rightId) by arity.
+  async attach(
     metaType: string,
     metaId: string,
-    role: string,
-  ): Promise<AssetAssociation[]> {
-    return (await this.list({
-      where: { metaType, metaId, role },
-      orderBy: 'sort_order ASC',
-    })) as AssetAssociation[];
-  }
-
-  /**
-   * Get all associations for a given asset
-   *
-   * @param assetId - The asset ID
-   * @returns All associations linking this asset to other objects
-   */
-  async getForAsset(assetId: string): Promise<AssetAssociation[]> {
-    return (await this.list({
-      where: { assetId },
-    })) as AssetAssociation[];
-  }
-
-  /**
-   * Create an association between an asset and an object
-   *
-   * @param assetId - The asset ID
-   * @param metaType - Target class name or qualified name
-   * @param metaId - Target object ID
-   * @param role - Association role (default: 'default')
-   * @param sortOrder - Sort order (default: 0)
-   * @returns The created AssetAssociation
-   */
-  async associate(
     assetId: string,
-    metaType: string,
-    metaId: string,
-    role = 'default',
-    sortOrder = 0,
+    opts: JunctionAttachOptions = {},
   ): Promise<AssetAssociation> {
     return (await this.create({
       assetId,
       metaType,
       metaId,
-      role,
-      sortOrder,
-    })) as AssetAssociation;
+      ...opts,
+    } as any)) as AssetAssociation;
   }
 
   /**
-   * Remove association(s) between an asset and an object
-   *
-   * @param assetId - The asset ID
-   * @param metaType - Target class name or qualified name
-   * @param metaId - Target object ID
-   * @param role - Optional role filter; if omitted, removes all roles
+   * Delete matching associations. Composite left (metaType, metaId) precedes right (assetId).
    */
-  async dissociate(
-    assetId: string,
+  // @ts-expect-error — diverges from SmrtJunction.detach(leftId, rightId) by arity.
+  async detach(
     metaType: string,
     metaId: string,
-    role?: string,
+    assetId: string,
+    opts: JunctionFilterOptions = {},
   ): Promise<void> {
-    const where: Record<string, string> = { assetId, metaType, metaId };
-    if (role) where.role = role;
+    const links = (await this.list({
+      where: { metaType, metaId, assetId, ...opts },
+    })) as AssetAssociation[];
+    for (const link of links) {
+      await link.delete();
+    }
+  }
 
-    const associations = (await this.list({ where })) as AssetAssociation[];
-    for (const assoc of associations) {
-      await assoc.delete();
+  /**
+   * Replace all associations for a polymorphic owner with the given asset IDs.
+   * Not transactional — see `SmrtJunction.setLinks` for caveats.
+   */
+  // @ts-expect-error — diverges from SmrtJunction.setLinks(leftId, rightIds) by arity.
+  async setLinks(
+    metaType: string,
+    metaId: string,
+    assetIds: string[],
+    opts: JunctionAttachOptions = {},
+  ): Promise<void> {
+    const existing = (await this.list({
+      where: { metaType, metaId, ...opts },
+    })) as AssetAssociation[];
+    for (const link of existing) {
+      await link.delete();
+    }
+
+    const sortKey = this.sortField;
+    for (let i = 0; i < assetIds.length; i++) {
+      const rowOpts: JunctionAttachOptions = { ...opts };
+      if (sortKey && rowOpts[sortKey] === undefined) {
+        rowOpts[sortKey] = i;
+      }
+      await this.attach(metaType, metaId, assetIds[i], rowOpts);
     }
   }
 }

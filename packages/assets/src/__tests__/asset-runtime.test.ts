@@ -269,7 +269,7 @@ describe('AssetRuntime', () => {
 
       expect(derived.parentId).toBe(source.id);
 
-      const links = await runtime.associations.getForAsset(source.id!);
+      const links = await runtime.associations.byRight(source.id!);
       expect(links).toHaveLength(1);
       expect(links[0].metaId).toBe(derived.id);
       expect(links[0].role).toBe('document_image');
@@ -298,7 +298,7 @@ describe('AssetRuntime', () => {
         },
       );
 
-      const links = await runtime.associations.getForAsset(source.id!);
+      const links = await runtime.associations.byRight(source.id!);
       expect(links).toHaveLength(1);
       expect(links[0].metaId).toBe(derived.id);
       expect(links[0].metaType).toBe('Image');
@@ -324,7 +324,7 @@ describe('AssetRuntime', () => {
       );
 
       expect(derived.parentId).toBe(source.id);
-      const links = await runtime.associations.getForAsset(source.id!);
+      const links = await runtime.associations.byRight(source.id!);
       expect(links).toHaveLength(0);
     });
 

@@ -1,117 +1,32 @@
 /**
- * FactContentCollection - Collection manager for FactContent objects
+ * FactContentCollection — junction collection for Fact ↔ Content links.
  *
- * Provides queries for fact-content links, including
- * link/unlink operations and content-centric lookups.
+ * Generic junction surface (byLeft/byRight/attach/detach/setLinks) comes from
+ * `SmrtJunction`. The remaining methods are tenant-scoping helpers.
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { SmrtJunction } from '@happyvertical/smrt-core';
 import { FactContent } from './fact-content';
-import type { FactContentRelationship } from './types';
 
-export class FactContentCollection extends SmrtCollection<FactContent> {
+export class FactContentCollection extends SmrtJunction<FactContent> {
   static readonly _itemClass = FactContent;
+  protected leftField = 'factId';
+  protected rightField = 'contentId';
+  // FactContent rows have no sort column.
+  protected sortField: string | null = null;
 
-  /**
-   * Get all content links for a fact
-   */
-  async getForFact(factId: string): Promise<FactContent[]> {
-    return this.list({ where: { factId } });
-  }
+  // ============================================
+  // Tenant helpers
+  // ============================================
 
-  /**
-   * Get all fact links for a content item
-   */
-  async getForContent(contentId: string): Promise<FactContent[]> {
-    return this.list({ where: { contentId } });
-  }
-
-  /**
-   * Link a content item to a fact with a relationship type
-   */
-  async link(
-    factId: string,
-    contentId: string,
-    relationship: FactContentRelationship = 'extracted_from',
-    metadata?: Record<string, any>,
-  ): Promise<FactContent> {
-    return this.create({
-      factId,
-      contentId,
-      relationship,
-      metadata: metadata ? JSON.stringify(metadata) : undefined,
-    });
-  }
-
-  /**
-   * Get content links by relationship type for a fact
-   */
-  async getByRelationship(
-    factId: string,
-    relationship: FactContentRelationship,
-  ): Promise<FactContent[]> {
-    return this.list({ where: { factId, relationship } });
-  }
-
-  /**
-   * Get content links by relationship type for a content item
-   */
-  async getForContentByRelationship(
-    contentId: string,
-    relationship: FactContentRelationship,
-  ): Promise<FactContent[]> {
-    return this.list({ where: { contentId, relationship } });
-  }
-
-  /**
-   * Unlink a content item from a fact (removes all relationships)
-   */
-  async unlink(factId: string, contentId: string): Promise<void> {
-    const links = await this.list({
-      where: { factId, contentId },
-    });
-    for (const link of links) {
-      await link.delete();
-    }
-  }
-
-  /**
-   * Unlink a specific relationship between a fact and content item
-   */
-  async unlinkByRelationship(
-    factId: string,
-    contentId: string,
-    relationship: FactContentRelationship,
-  ): Promise<void> {
-    const links = await this.list({
-      where: { factId, contentId, relationship },
-    });
-    for (const link of links) {
-      await link.delete();
-    }
-  }
-
-  // =========================================================================
-  // Tenant Helper Methods
-  // =========================================================================
-
-  /**
-   * Find all fact-content links belonging to a specific tenant
-   */
   async findByTenant(tenantId: string): Promise<FactContent[]> {
     return this.list({ where: { tenantId } });
   }
 
-  /**
-   * Find all global (tenant-less) fact-content links
-   */
   async findGlobal(): Promise<FactContent[]> {
     return this.list({ where: { tenantId: null } });
   }
 
-  /**
-   * Find fact-content links for a tenant including global links
-   */
   async findWithGlobals(tenantId: string): Promise<FactContent[]> {
     return this.query(
       `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,

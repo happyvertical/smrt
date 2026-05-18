@@ -106,12 +106,9 @@ export class ImageDeriver {
     // Link all source images to each derived image
     for (const derived of results) {
       for (const source of sources) {
-        await associations.associate(
-          source.id!,
-          'Image',
-          derived.id!,
-          'derivation-source',
-        );
+        await associations.attach('Image', derived.id!, source.id!, {
+          role: 'derivation-source',
+        });
       }
     }
 

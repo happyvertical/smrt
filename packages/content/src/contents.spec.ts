@@ -469,7 +469,7 @@ it('should persist content assets via content_assets', async () => {
     },
   });
   const reloaded = await reloadedContents.get({ id: content.id });
-  const links = await contentAssets.getForContent(content.id as string);
+  const links = await contentAssets.byLeft(content.id as string);
 
   expect(reloaded).toBeTruthy();
   expect(links).toHaveLength(1);

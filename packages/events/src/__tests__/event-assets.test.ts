@@ -80,10 +80,9 @@ describe('Event owned assets', () => {
     await event.addAsset(asset, 'thumbnail', 0);
     await event.addAsset(asset, 'thumbnail', 0);
 
-    const links = await eventAssets.getForEvent(
-      event.id as string,
-      'thumbnail',
-    );
+    const links = await eventAssets.byLeft(event.id as string, {
+      relationship: 'thumbnail',
+    });
     expect(links).toHaveLength(1);
     expect(links[0]?.tenantId).toBe('tenant-a');
   });

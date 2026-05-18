@@ -52,7 +52,7 @@ describe('Join Tables', () => {
       it('should link content to a fact', async () => {
         const fact = await facts.create({ textRefined: 'Content link test' });
 
-        const link = await contents.link(fact.id as string, 'content-123');
+        const link = await contents.attach(fact.id as string, 'content-123');
 
         expect(link.id).toBeDefined();
         expect(link.factId).toBe(fact.id);
@@ -63,11 +63,9 @@ describe('Join Tables', () => {
       it('should support custom relationship types', async () => {
         const fact = await facts.create({ textRefined: 'Custom rel test' });
 
-        const link = await contents.link(
-          fact.id as string,
-          'content-456',
-          'supports',
-        );
+        const link = await contents.attach(fact.id as string, 'content-456', {
+          relationship: 'supports',
+        });
 
         expect(link.relationship).toBe('supports');
         expect(link.getRelationship()).toBe('supports');
@@ -86,7 +84,9 @@ describe('Join Tables', () => {
         ] as const;
 
         for (const rel of relationships) {
-          const link = await contents.link(factId, `content-${rel}`, rel);
+          const link = await contents.attach(factId, `content-${rel}`, {
+            relationship: rel,
+          });
           expect(link.getRelationship()).toBe(rel);
         }
       });
@@ -97,10 +97,10 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Unlink test' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-123');
-        await contents.unlink(factId, 'content-123');
+        await contents.attach(factId, 'content-123');
+        await contents.detach(factId, 'content-123');
 
-        const links = await contents.getForFact(factId);
+        const links = await contents.byLeft(factId);
         expect(links.length).toBe(0);
       });
 
@@ -108,12 +108,12 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Selective unlink' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-1');
-        await contents.link(factId, 'content-2');
+        await contents.attach(factId, 'content-1');
+        await contents.attach(factId, 'content-2');
 
-        await contents.unlink(factId, 'content-1');
+        await contents.detach(factId, 'content-1');
 
-        const links = await contents.getForFact(factId);
+        const links = await contents.byLeft(factId);
         expect(links.length).toBe(1);
         expect(links[0].contentId).toBe('content-2');
       });
@@ -122,12 +122,16 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Multi-rel unlink' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-1', 'extracted_from');
-        await contents.link(factId, 'content-1', 'supports');
+        await contents.attach(factId, 'content-1', {
+          relationship: 'extracted_from',
+        });
+        await contents.attach(factId, 'content-1', {
+          relationship: 'supports',
+        });
 
-        await contents.unlink(factId, 'content-1');
+        await contents.detach(factId, 'content-1');
 
-        const links = await contents.getForFact(factId);
+        const links = await contents.byLeft(factId);
         expect(links.length).toBe(0);
       });
     });
@@ -137,16 +141,16 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Multi-content' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-1');
-        await contents.link(factId, 'content-2');
-        await contents.link(factId, 'content-3');
+        await contents.attach(factId, 'content-1');
+        await contents.attach(factId, 'content-2');
+        await contents.attach(factId, 'content-3');
 
-        const links = await contents.getForFact(factId);
+        const links = await contents.byLeft(factId);
         expect(links.length).toBe(3);
       });
 
       it('should return empty array for fact with no content', async () => {
-        const result = await contents.getForFact('nonexistent');
+        const result = await contents.byLeft('nonexistent');
         expect(result).toEqual([]);
       });
     });
@@ -156,10 +160,10 @@ describe('Join Tables', () => {
         const fact1 = await facts.create({ textRefined: 'Fact one' });
         const fact2 = await facts.create({ textRefined: 'Fact two' });
 
-        await contents.link(fact1.id as string, 'content-shared');
-        await contents.link(fact2.id as string, 'content-shared');
+        await contents.attach(fact1.id as string, 'content-shared');
+        await contents.attach(fact2.id as string, 'content-shared');
 
-        const links = await contents.getForContent('content-shared');
+        const links = await contents.byRight('content-shared');
         expect(links.length).toBe(2);
       });
 
@@ -167,10 +171,10 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Content ID test' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-a');
-        await contents.link(factId, 'content-b');
+        await contents.attach(factId, 'content-a');
+        await contents.attach(factId, 'content-b');
 
-        const linksA = await contents.getForContent('content-a');
+        const linksA = await contents.byRight('content-a');
         expect(linksA.length).toBe(1);
         expect(linksA[0].contentId).toBe('content-a');
       });
@@ -181,14 +185,19 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Relationship filter' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-1', 'extracted_from');
-        await contents.link(factId, 'content-2', 'supports');
-        await contents.link(factId, 'content-3', 'extracted_from');
+        await contents.attach(factId, 'content-1', {
+          relationship: 'extracted_from',
+        });
+        await contents.attach(factId, 'content-2', {
+          relationship: 'supports',
+        });
+        await contents.attach(factId, 'content-3', {
+          relationship: 'extracted_from',
+        });
 
-        const extracted = await contents.getByRelationship(
-          factId,
-          'extracted_from',
-        );
+        const extracted = await contents.byLeft(factId, {
+          relationship: 'extracted_from',
+        });
         expect(extracted.length).toBe(2);
         expect(
           extracted.every((l) => l.relationship === 'extracted_from'),
@@ -197,12 +206,13 @@ describe('Join Tables', () => {
 
       it('should return empty array when no links match relationship', async () => {
         const fact = await facts.create({ textRefined: 'No match rel' });
-        await contents.link(fact.id as string, 'content-1', 'supports');
+        await contents.attach(fact.id as string, 'content-1', {
+          relationship: 'supports',
+        });
 
-        const result = await contents.getByRelationship(
-          fact.id as string,
-          'contradicts',
-        );
+        const result = await contents.byLeft(fact.id as string, {
+          relationship: 'contradicts',
+        });
         expect(result).toEqual([]);
       });
     });
@@ -212,11 +222,15 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Conflict test' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-1', 'extracted_from');
-        await contents.link(factId, 'content-1', 'extracted_from');
+        await contents.attach(factId, 'content-1', {
+          relationship: 'extracted_from',
+        });
+        await contents.attach(factId, 'content-1', {
+          relationship: 'extracted_from',
+        });
 
         // Upsert should prevent duplicates
-        const links = await contents.getForFact(factId);
+        const links = await contents.byLeft(factId);
         expect(links.length).toBe(1);
       });
 
@@ -224,10 +238,14 @@ describe('Join Tables', () => {
         const fact = await facts.create({ textRefined: 'Diff rel test' });
         const factId = fact.id as string;
 
-        await contents.link(factId, 'content-1', 'extracted_from');
-        await contents.link(factId, 'content-1', 'supports');
+        await contents.attach(factId, 'content-1', {
+          relationship: 'extracted_from',
+        });
+        await contents.attach(factId, 'content-1', {
+          relationship: 'supports',
+        });
 
-        const links = await contents.getForFact(factId);
+        const links = await contents.byLeft(factId);
         expect(links.length).toBe(2);
       });
     });
@@ -267,7 +285,7 @@ describe('Join Tables', () => {
       it('should handle empty metadata', async () => {
         const fact = await facts.create({ textRefined: 'Empty meta' });
 
-        const link = await contents.link(fact.id as string, 'content-1');
+        const link = await contents.attach(fact.id as string, 'content-1');
         const meta = link.getMetadata();
         expect(meta).toEqual({});
       });
@@ -276,7 +294,7 @@ describe('Join Tables', () => {
     describe('navigation', () => {
       it('should navigate to parent fact', async () => {
         const fact = await facts.create({ textRefined: 'Navigate test' });
-        const link = await contents.link(fact.id as string, 'content-1');
+        const link = await contents.attach(fact.id as string, 'content-1');
 
         const parentFact = await link.getFact();
         expect(parentFact).not.toBeNull();
