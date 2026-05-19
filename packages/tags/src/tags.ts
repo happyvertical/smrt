@@ -153,6 +153,7 @@ export class TagCollection extends SmrtCollection<Tag> {
 
     if (!fromTag) throw new Error(`Source tag '${fromSlug}' not found`);
     if (!toTag) throw new Error(`Target tag '${toSlug}' not found`);
+    if (!fromTag.id) throw new Error(`Source tag '${fromSlug}' has no id`);
     if (!toTag.id) throw new Error(`Target tag '${toSlug}' has no id`);
 
     // Move all children of fromTag to toTag

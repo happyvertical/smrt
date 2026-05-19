@@ -97,7 +97,7 @@ export class Tag extends SmrtHierarchical {
    * @param data - Metadata object to store
    */
   setMetadata(data: TagMetadata): void {
-    (this.metadata as any).value = JSON.stringify(data);
+    this.metadata = JSON.stringify(data);
   }
 
   /**
