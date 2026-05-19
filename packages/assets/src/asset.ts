@@ -251,9 +251,12 @@ export class Asset extends SmrtObject {
    * @returns Array of derivative Asset instances
    */
   async getDerivatives(): Promise<Asset[]> {
-    const rows = await this.db.list('assets', {
-      where: { source_asset_id: this.id },
-    });
+    // `db.list` takes a flat where-object as its second argument (not
+    // `{ where: { ... } }`). Pre-R3-D the equivalent `getChildren` method
+    // passed `{ where: { parent_id: this.id } }` which generated invalid
+    // SQL — fortunately nothing called the broken code path, so the bug
+    // was latent. While renaming the method, fix the call shape too.
+    const rows = await this.db.list('assets', { source_asset_id: this.id });
 
     return (rows as any[]).map((row) => {
       const asset = new Asset();
