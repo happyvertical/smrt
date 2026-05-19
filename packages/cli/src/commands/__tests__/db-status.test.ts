@@ -76,6 +76,7 @@ import { dbStatusCommand, summarizeSchemaDiff } from '../db-status.js';
 describe('db:status', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.exitCode = undefined;
 
     getPackageConfigMock.mockReturnValue({
       database: {
@@ -91,7 +92,14 @@ describe('db:status', () => {
     });
 
     autoDiscoverAndLoadMock.mockResolvedValue({
-      discovered: [{ path: '/fake/manifest.json' }],
+      discovered: [
+        {
+          path: '/fake/.smrt/manifest.json',
+          source: 'project',
+          objectCount: 3,
+          objectNames: ['@fake/app:Content'],
+        },
+      ],
       totalObjects: 3,
     });
 
@@ -199,6 +207,20 @@ describe('db:status', () => {
     const parsed = JSON.parse(output);
 
     expect(parsed.manifests.objects).toBe(3);
+    expect(parsed.manifests.details).toEqual([
+      {
+        path: '/fake/.smrt/manifest.json',
+        source: 'project',
+        objectCount: 3,
+        objectNames: ['@fake/app:Content'],
+      },
+    ]);
+    expect(parsed.schemaContract.localManifest).toEqual({
+      ok: true,
+      count: 1,
+      paths: ['/fake/.smrt/manifest.json'],
+    });
+    expect(parsed.schemaContract.ok).toBe(true);
     expect(parsed.database.url).toBe(
       'postgresql://test:***@localhost:5432/test_db',
     );
@@ -222,6 +244,41 @@ describe('db:status', () => {
       other: [],
     });
     expect(closeMock).toHaveBeenCalledOnce();
+  });
+
+  it('fails JSON status when only package manifests were discovered', async () => {
+    autoDiscoverAndLoadMock.mockResolvedValue({
+      discovered: [
+        {
+          path: '/fake/node_modules/@happyvertical/smrt-content/dist/manifest.json',
+          source: 'package',
+          packageName: '@happyvertical/smrt-content',
+          packageVersion: '1.2.3',
+          objectCount: 1,
+          objectNames: ['@happyvertical/smrt-content:Mirror'],
+        },
+      ],
+      totalObjects: 1,
+    });
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(parsed.schemaContract.ok).toBe(false);
+    expect(parsed.schemaContract.failures).toContainEqual(
+      expect.objectContaining({ code: 'missing_local_manifest' }),
+    );
   });
 
   it('classifies failed additive migrations as superseded history when live drift is gone', async () => {

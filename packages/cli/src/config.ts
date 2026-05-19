@@ -8,10 +8,15 @@
 import type {
   MigrationsConfig,
   MigrationsPostgresConfig,
+  SchemaContractConfig,
 } from '@happyvertical/smrt-config';
 
 // Re-export for convenience
-export type { MigrationsConfig, MigrationsPostgresConfig };
+export type {
+  MigrationsConfig,
+  MigrationsPostgresConfig,
+  SchemaContractConfig,
+};
 
 export interface CLIConfig {
   /**
@@ -42,6 +47,11 @@ export interface CLIConfig {
    * Migration configuration
    */
   migrations?: MigrationsConfig;
+
+  /**
+   * Required manifest/object/field/database-shape contract for schema commands.
+   */
+  schemaContract?: SchemaContractConfig;
 
   /**
    * Enable verbose output for debugging
@@ -96,6 +106,7 @@ export const DEFAULT_CLI_CONFIG: Required<CLIConfig> = {
       statementTimeout: '60s',
     },
   },
+  schemaContract: {},
   verbose: false,
   format: 'table',
   timeout: 30000,

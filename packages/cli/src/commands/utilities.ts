@@ -40,6 +40,14 @@ import {
   runtimeCheckCommand,
 } from './runtime-check-command.js';
 import {
+  assertNoUnsupportedMigrationFiles,
+  assertSchemaContract,
+  evaluateSchemaContract,
+  SchemaContractError,
+  UnsupportedFileMigrationsError,
+  UnsupportedMigrationModeError,
+} from './schema-contract.js';
+import {
   repairStiDiscriminatorRows,
   resolveStiDiscriminatorUpgrade,
   type StiDiscriminatorRepairConflict,
@@ -54,6 +62,25 @@ interface ColumnDef {
   defaultValue?: any;
   unique?: boolean;
   primaryKey?: boolean;
+}
+
+function formatSchemaCommandFailureHeader(
+  error: unknown,
+  fallback: string,
+): string {
+  if (error instanceof SchemaContractError) {
+    return '\n❌ Schema contract failed:';
+  }
+
+  if (error instanceof UnsupportedFileMigrationsError) {
+    return '\n❌ File-backed migrations are not supported:';
+  }
+
+  if (error instanceof UnsupportedMigrationModeError) {
+    return '\n❌ Unsupported SMRT migration mode:';
+  }
+
+  return fallback;
 }
 
 /**
@@ -596,6 +623,8 @@ export default testManifest;
         const dbUrl = config.database.url;
         const dbType = config.database.type || 'sqlite';
 
+        await assertNoUnsupportedMigrationFiles(config);
+
         if (options.verbose) {
           console.log(`Database type: ${dbType}`);
           console.log(
@@ -616,6 +645,13 @@ export default testManifest;
 
         console.log(
           `✓ Found ${totalObjects} object(s) in ${discovered.length} manifest(s)\n`,
+        );
+
+        assertSchemaContract(
+          await evaluateSchemaContract({
+            discovered,
+            schemaContract: config.schemaContract,
+          }),
         );
 
         // 4. Get initialization order (topological sort respecting FK dependencies)
@@ -794,7 +830,12 @@ export default testManifest;
         console.log('  - Run: smrt introspect (view discovered objects)');
         console.log();
       } catch (error) {
-        console.error('\n❌ Database setup failed:');
+        console.error(
+          formatSchemaCommandFailureHeader(
+            error,
+            '\n❌ Database setup failed:',
+          ),
+        );
         if (error instanceof Error) {
           console.error(`   ${error.message}`);
           if (options.verbose && error.stack) {
@@ -1137,6 +1178,8 @@ export default testManifest;
         const dbUrl = config.database.url;
         const dbType = config.database.type || 'sqlite';
 
+        await assertNoUnsupportedMigrationFiles(config);
+
         if (options.verbose) {
           console.log(`Database type: ${dbType}`);
           console.log(
@@ -1173,6 +1216,13 @@ export default testManifest;
 
         console.log(
           `✓ Found ${totalObjects} object(s) in ${discovered.length} manifest(s)\n`,
+        );
+
+        assertSchemaContract(
+          await evaluateSchemaContract({
+            discovered,
+            schemaContract: config.schemaContract,
+          }),
         );
 
         // 5. Get initialization order (topological sort respecting FK dependencies)
@@ -1803,13 +1853,25 @@ export default testManifest;
           process.exitCode = 1;
         }
 
+        if (!isDryRun) {
+          assertSchemaContract(
+            await evaluateSchemaContract({
+              discovered,
+              schemaContract: config.schemaContract,
+              db,
+            }),
+          );
+        }
+
         console.log('💡 Next steps:');
         console.log('  - Run: smrt db:status (view migration status)');
         console.log('  - Run: smrt db:history (view migration history)');
         console.log('  - Run: smrt db:validate (verify database integrity)');
         console.log();
       } catch (error) {
-        console.error('\n❌ Migration failed:');
+        console.error(
+          formatSchemaCommandFailureHeader(error, '\n❌ Migration failed:'),
+        );
         if (error instanceof Error) {
           console.error(`   ${error.message}`);
           const ctx = (error as any).context;

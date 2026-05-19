@@ -1,49 +1,47 @@
 /**
  * db:diff Command
  *
- * Compares manifest schemas to database and generates migration files.
+ * Compares manifest schemas to database.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { CLICommand } from '../cli-generator.js';
 import { autoDiscoverAndLoad } from '../discovery/index.js';
 import { closeDatabaseConnection } from './db-command-utils.js';
 
+const UNSUPPORTED_GENERATE_MESSAGE =
+  'File-backed SMRT migrations are not supported. SMRT schema migrations are manifest-driven; update @smrt object definitions and run smrt db:migrate.';
+
 export const dbDiffCommand: CLICommand = {
   name: 'db:diff',
-  description: 'Compare schema to database and generate migration',
+  description: 'Compare manifest schema to database',
   aliases: ['diff', 'schema-diff'],
   args: [],
   options: {
     generate: {
       type: 'boolean',
-      description: 'Generate migration file from diff',
+      description: 'Unsupported: file-backed migrations are not supported',
       default: false,
       short: 'g',
     },
     name: {
       type: 'string',
-      description: 'Migration name (required with --generate)',
+      description: 'Unsupported: file-backed migrations are not supported',
       short: 'n',
     },
     format: {
       type: 'string',
-      description: 'Output format: sql or ts (default: sql)',
-      default: 'sql',
+      description: 'Unsupported: file-backed migrations are not supported',
       short: 'f',
     },
     'with-down': {
       type: 'boolean',
-      description: 'Include DOWN script in generated migration',
-      default: true,
+      description: 'Unsupported: file-backed migrations are not supported',
+      default: false,
     },
     output: {
       type: 'string',
-      description:
-        'Output directory for generated files (default: ./migrations)',
-      default: './migrations',
+      description: 'Unsupported: file-backed migrations are not supported',
       short: 'o',
     },
     json: {
@@ -69,6 +67,29 @@ export const dbDiffCommand: CLICommand = {
     let db: any;
 
     try {
+      const unsupportedFileOptions = [
+        'generate',
+        'name',
+        'format',
+        'with-down',
+        'output',
+      ].filter(
+        (option) => options[option] !== undefined && options[option] !== false,
+      );
+
+      if (unsupportedFileOptions.length > 0) {
+        const message = `${UNSUPPORTED_GENERATE_MESSAGE} Unsupported option(s): ${unsupportedFileOptions
+          .map((option) => `--${option}`)
+          .join(', ')}.`;
+        if (options.json) {
+          console.log(JSON.stringify({ error: message }));
+        } else {
+          console.error(`\n❌ ${message}\n`);
+        }
+        process.exitCode = 1;
+        return;
+      }
+
       // 1. Load CLI config
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
       const { DEFAULT_CLI_CONFIG } = await import('../config.js');
@@ -121,8 +142,9 @@ export const dbDiffCommand: CLICommand = {
       const allSchemas = ObjectRegistry.getAllSchemas();
 
       // 6. Import diff utilities
-      const { SchemaComparer, MigrationGenerator, generateMigrationSequence } =
-        await import('@happyvertical/smrt-core/migrations');
+      const { SchemaComparer } = await import(
+        '@happyvertical/smrt-core/migrations'
+      );
 
       // Convert merged schemas to SchemaDefinition format
       // The allSchemas is Record<tableName, { ddl, tableName, indexes }>
@@ -266,78 +288,11 @@ export const dbDiffCommand: CLICommand = {
         console.log('     (Type changes require manual migration)\n');
       }
 
-      // 9. Generate migration file if requested
-      if (options.generate) {
-        if (!options.name) {
-          console.error('❌ --name is required when using --generate\n');
-          console.error(
-            'Usage: smrt db:diff --generate --name add_users_table\n',
-          );
-          process.exitCode = 1;
-          return;
-        }
-
-        // Get existing migrations to determine sequence
-        const { readdir } = await import('node:fs/promises');
-        const outputDir = resolve(process.cwd(), options.output);
-
-        let existingIds: string[] = [];
-        try {
-          const files = await readdir(outputDir);
-          existingIds = files
-            .filter((f: string) => f.endsWith('.sql') || f.endsWith('.ts'))
-            .map((f: string) => f.replace(/\.(sql|ts)$/, ''));
-        } catch {
-          // Directory doesn't exist yet
-        }
-
-        const sequence = generateMigrationSequence(existingIds);
-        const migrationId = `${sequence}_${options.name}`;
-
-        // Determine database engine
-        const engine = dbType === 'postgres' ? 'postgres' : 'sqlite';
-
-        const generator = new MigrationGenerator({
-          engine,
-          format: options.format === 'ts' ? 'typescript' : 'sql',
-          includeDown: options.withDown ?? true,
-        });
-
-        const migration = generator.generateFromDiff(diff, {
-          name: migrationId,
-          description: `Migration: ${options.name}`,
-          format: options.format === 'ts' ? 'typescript' : 'sql',
-        });
-
-        // Write migration file
-        await mkdir(outputDir, { recursive: true });
-        const filePath = resolve(outputDir, migration.filename);
-        await writeFile(filePath, migration.content, 'utf-8');
-
-        console.log('━'.repeat(50));
-        console.log(`\n✅ Generated migration: ${migration.filename}`);
-        console.log(`   Path: ${filePath}`);
-        console.log(`   Checksum: ${migration.checksum.substring(0, 8)}`);
-        console.log(`   UP statements: ${migration.up.length}`);
-        console.log(`   DOWN statements: ${migration.down.length}\n`);
-
-        if (options.verbose) {
-          console.log('Content:');
-          console.log('━'.repeat(50));
-          console.log(migration.content);
-          console.log('━'.repeat(50));
-          console.log();
-        }
-
-        console.log('💡 Next steps:');
-        console.log('   smrt db:migrate      - Apply the migration');
-        console.log('   smrt db:migrate --dry-run  - Preview changes');
-        console.log();
-      } else {
-        console.log('━'.repeat(50));
-        console.log('\n💡 To generate a migration file:');
-        console.log('   smrt db:diff --generate --name <migration_name>\n');
-      }
+      console.log('━'.repeat(50));
+      console.log('\n💡 Schema migrations are manifest-driven.');
+      console.log(
+        '   Update @smrt object definitions, then run smrt db:migrate.\n',
+      );
     } catch (error) {
       if (options.json) {
         console.log(
