@@ -74,13 +74,29 @@ export class SmrtHierarchical extends SmrtObject {
    * For STI subclasses, queries are issued against the STI base collection
    * so the table/discriminator are correct.
    *
-   * Resolves the class name via `ObjectRegistry.getClassByConstructor(this.
-   * constructor)` first so that two packages declaring hierarchical classes
-   * with the same simple name (e.g. both have a `Document`) don't collide on
-   * a `this.constructor.name`-only lookup. Falls back to the simple
-   * `this.constructor.name` when the constructor isn't registered yet —
-   * `getCollection` itself triggers external-package auto-load on misses,
-   * so that fallback is rarely hit and still produces a clear error.
+   * Disambiguates classes that share a simple name across packages
+   * (e.g. two packages both shipping `Document`) by walking the
+   * constructor prototype chain. Constructor identity is unique even
+   * when class names collide, so this is collision-immune end-to-end:
+   *
+   * 1. Walk `this.constructor`'s prototype chain. For each ancestor
+   *    constructor, ask `ObjectRegistry.getClassByConstructor()` for
+   *    its registration. Track the OLDEST registration whose decorator
+   *    config declares `tableStrategy: 'sti'` — that's the STI base.
+   * 2. If we found an STI base, use its qualified name as the
+   *    collection lookup key.
+   * 3. Otherwise (non-STI), use this constructor's own qualified
+   *    registration name.
+   * 4. Fall back to the simple `this.constructor.name` only when nothing
+   *    is registered (in which case `getCollection` itself will surface
+   *    the existing "not found in ObjectRegistry" error).
+   *
+   * This finishes the qualified-name disambiguation that the prior
+   * implementation only delivered for non-STI hierarchical classes —
+   * `ObjectRegistry.getSTIBase(simpleName)` returns simple ancestor
+   * names from the inheritance chain map, which collapsed the qualified
+   * lookup back to an ambiguous simple key. Walking the runtime
+   * prototype chain sidesteps that entirely.
    */
   protected async _hierarchyCollection(): Promise<SmrtCollection<this>> {
     if (this.constructor === SmrtHierarchical) {
@@ -88,13 +104,35 @@ export class SmrtHierarchical extends SmrtObject {
         'SmrtHierarchical is abstract — extend it from a concrete @smrt() class before calling hierarchy methods.',
       );
     }
-    const registered = ObjectRegistry.getClassByConstructor(
+
+    // Walk the prototype chain looking for the OLDEST ancestor whose
+    // registered config declares STI. Keep overwriting so we end on the
+    // root-most STI declaration (multi-level STI hierarchies put the
+    // shared table on the OLDEST ancestor — see ObjectRegistry.getSTIBase).
+    let stiBaseRegistration: ReturnType<
+      typeof ObjectRegistry.getClassByConstructor
+    >;
+    let ctor: unknown = this.constructor;
+    while (
+      ctor &&
+      ctor !== SmrtHierarchical &&
+      ctor !== (Function as unknown) &&
+      ctor !== (Object as unknown)
+    ) {
+      const reg = ObjectRegistry.getClassByConstructor(ctor as any);
+      if (reg?.config?.tableStrategy === 'sti') {
+        stiBaseRegistration = reg;
+      }
+      ctor = Object.getPrototypeOf(ctor);
+    }
+
+    const ownRegistration = ObjectRegistry.getClassByConstructor(
       this.constructor as any,
     );
-    const className =
-      registered?.qualifiedName ?? registered?.name ?? this.constructor.name;
-    const stiBase = ObjectRegistry.getSTIBase(className);
-    const collectionClass = stiBase ?? className;
+    const resolved = stiBaseRegistration ?? ownRegistration;
+    const collectionClass =
+      resolved?.qualifiedName ?? resolved?.name ?? this.constructor.name;
+
     return await ObjectRegistry.getCollection<this>(
       collectionClass,
       this.options,
