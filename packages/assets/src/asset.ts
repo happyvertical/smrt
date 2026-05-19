@@ -12,7 +12,7 @@
  * `R3-D` changeset for the migration.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { Tag } from '@happyvertical/smrt-tags';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociation } from './asset-association';
@@ -221,24 +221,36 @@ export class Asset extends SmrtObject {
   }
 
   /**
+   * Resolve the AssetCollection lazily. Going through `ObjectRegistry`
+   * mirrors the pattern used by `SmrtHierarchical._hierarchyCollection`
+   * so source/derivative lookups inherit tenant scoping and ORM
+   * hydration without hard-coding an import of `./assets` (which would
+   * also create a module-import cycle).
+   */
+  private async _assetCollection(): Promise<any> {
+    return await ObjectRegistry.getCollection<Asset>('Asset', this.options);
+  }
+
+  /**
    * Get the source asset this one was derived from, if any.
    *
    * Renamed from `getParent` in R3-D. The relationship is "I was produced
    * from that asset" (e.g. a thumbnail's source is its original image),
    * not a structural-hierarchy parent.
    *
+   * Goes through the AssetCollection so tenant interceptors and ORM
+   * hydration apply — important because a tenant-scoped consumer with
+   * cross-tenant derivative chains would otherwise return assets from
+   * tenants the caller cannot see, and a raw `db.get` returns
+   * snake_case rows that leave camelCase props (e.g. `sourceUri`) at
+   * their constructor defaults.
+   *
    * @returns Source Asset instance, or null if this asset has no source
    */
   async getSource(): Promise<Asset | null> {
     if (!this.sourceAssetId) return null;
-
-    const record = await this.db.get('assets', { id: this.sourceAssetId });
-
-    if (!record) return null;
-
-    const asset = new Asset();
-    Object.assign(asset, record);
-    return asset;
+    const collection = await this._assetCollection();
+    return (await collection.get({ id: this.sourceAssetId })) as Asset | null;
   }
 
   /**
@@ -246,23 +258,20 @@ export class Asset extends SmrtObject {
    * transcodes, AI edits).
    *
    * Renamed from `getChildren` in R3-D to match the derivation
-   * semantics. Reads `assets WHERE source_asset_id = this.id`.
+   * semantics. Goes through the AssetCollection so tenant interceptors
+   * and ORM hydration apply (see `getSource` for why this matters —
+   * the pre-R3-D `getChildren` used raw `db.list`, which both bypassed
+   * tenant scoping and dropped camelCase property hydration; that
+   * latent breakage is fixed here).
    *
    * @returns Array of derivative Asset instances
    */
   async getDerivatives(): Promise<Asset[]> {
-    // `db.list` takes a flat where-object as its second argument (not
-    // `{ where: { ... } }`). Pre-R3-D the equivalent `getChildren` method
-    // passed `{ where: { parent_id: this.id } }` which generated invalid
-    // SQL — fortunately nothing called the broken code path, so the bug
-    // was latent. While renaming the method, fix the call shape too.
-    const rows = await this.db.list('assets', { source_asset_id: this.id });
-
-    return (rows as any[]).map((row) => {
-      const asset = new Asset();
-      Object.assign(asset, row);
-      return asset;
-    });
+    if (!this.id) return [];
+    const collection = await this._assetCollection();
+    return (await collection.list({
+      where: { sourceAssetId: this.id },
+    })) as Asset[];
   }
 
   /**
