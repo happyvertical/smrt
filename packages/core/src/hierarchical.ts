@@ -73,6 +73,14 @@ export class SmrtHierarchical extends SmrtObject {
    *
    * For STI subclasses, queries are issued against the STI base collection
    * so the table/discriminator are correct.
+   *
+   * Resolves the class name via `ObjectRegistry.getClassByConstructor(this.
+   * constructor)` first so that two packages declaring hierarchical classes
+   * with the same simple name (e.g. both have a `Document`) don't collide on
+   * a `this.constructor.name`-only lookup. Falls back to the simple
+   * `this.constructor.name` when the constructor isn't registered yet —
+   * `getCollection` itself triggers external-package auto-load on misses,
+   * so that fallback is rarely hit and still produces a clear error.
    */
   protected async _hierarchyCollection(): Promise<SmrtCollection<this>> {
     if (this.constructor === SmrtHierarchical) {
@@ -80,7 +88,11 @@ export class SmrtHierarchical extends SmrtObject {
         'SmrtHierarchical is abstract — extend it from a concrete @smrt() class before calling hierarchy methods.',
       );
     }
-    const className = this.constructor.name;
+    const registered = ObjectRegistry.getClassByConstructor(
+      this.constructor as any,
+    );
+    const className =
+      registered?.qualifiedName ?? registered?.name ?? this.constructor.name;
     const stiBase = ObjectRegistry.getSTIBase(className);
     const collectionClass = stiBase ?? className;
     return await ObjectRegistry.getCollection<this>(
