@@ -19,19 +19,23 @@ import type {
  * packages can subclass without needing `@smrt()` must appear here, or
  * the scanner will silently drop undecorated subclasses from the manifest.
  *
- * `SmrtJunction` is a stopgap entry pending R3 (hierarchical base) and
- * R4 (polymorphic association base), which together motivate replacing
- * this hardcoded list with manifest-driven base-class detection — core
- * would export its abstract bases in its manifest and dependents would
- * resolve through them via the existing cross-package chain walker
- * (see `findClassDefinition`). When R3 lands, retire this list and
- * delete this comment.
+ * `SmrtJunction` and `SmrtHierarchical` are stopgap entries pending a
+ * manifest-driven base-class detection scheme — core would export its
+ * abstract bases in its manifest and dependents would resolve through
+ * them via the existing cross-package chain walker (see
+ * `findClassDefinition`). After tracing the wiring at R3 kickoff
+ * (2026-05-18), generalization was deferred: new `SmartObjectManifest →
+ * ExternalManifest` adapter, new vite-plugin scan-path failure modes,
+ * new sync-I/O surface — large cost for ~two saved lines per future
+ * abstract base. Extend this list instead; revisit only if a third+
+ * abstract base shows up with a concrete motivating case.
  */
 const FRAMEWORK_BASE_CLASSES = new Set([
   'SmrtObject',
   'SmrtClass',
   'SmrtCollection',
   'SmrtJunction',
+  'SmrtHierarchical',
 ]);
 
 /**
@@ -204,7 +208,13 @@ export class InheritanceResolver {
     const isFrameworkBase = this.knownBaseClasses.has(classDef.className);
     const isSTI = effectiveTableStrategy === 'sti';
 
-    // Merge fields for STI classes
+    // Merge fields for STI classes. For non-STI classes, the
+    // ManifestGenerator in core selectively merges fields from framework
+    // abstract bases (e.g. `SmrtHierarchical.parentId`) — see
+    // `FRAMEWORK_ABSTRACT_BASE_NAMES` in
+    // `packages/core/src/scanner/manifest-generator.ts`. Doing that merge
+    // here too would compound with subtly different field shapes and
+    // regress universal-baseline expectations in `fieldsFromClass`.
     const allFields = isSTI
       ? this.mergeFieldsForSTI(inheritanceChain)
       : classDef.fields;

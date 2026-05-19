@@ -66,6 +66,7 @@ export * from './embeddings/index';
 export * from './errors';
 // Code generators (tree-shakeable)
 export * from './generators/index';
+export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
 export {

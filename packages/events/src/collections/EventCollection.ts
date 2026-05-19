@@ -100,17 +100,17 @@ export class EventCollection extends SmrtCollection<Event> {
    */
   async getRootEvents(): Promise<Event[]> {
     const allEvents = await this.list({});
-    return allEvents.filter((event) => !event.parentEventId);
+    return allEvents.filter((event) => !event.parentId);
   }
 
   /**
    * Get children of a parent event
    *
-   * @param parentEventId - Parent event ID
+   * @param parentId - Parent event ID
    * @returns Array of child Event instances
    */
-  async getByParent(parentEventId: string): Promise<Event[]> {
-    return await this.list({ where: { parentEventId } });
+  async getByParent(parentId: string): Promise<Event[]> {
+    return await this.list({ where: { parentId } });
   }
 
   /**

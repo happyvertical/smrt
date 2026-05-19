@@ -96,7 +96,7 @@ export interface EventSeriesOptions extends SmrtObjectOptions {
 export interface EventOptions extends SmrtObjectOptions {
   id?: string;
   seriesId?: string; // Nullable - standalone events don't have series
-  parentEventId?: string; // Nullable - for hierarchical events
+  parentId?: string | null; // Nullable - for hierarchical events
   typeId?: string;
   placeId?: string; // FK to Place from @happyvertical/smrt-places
   name?: string;

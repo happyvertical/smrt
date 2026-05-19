@@ -234,7 +234,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
   private async ensureFromLocation(
     location: Location,
     typeSlug?: string,
-    parentId?: string,
+    parentId?: string | null,
   ): Promise<{ place: Place; created: boolean }> {
     if (location.id) {
       const existing = await this.findByExternalId(location.id);
@@ -255,7 +255,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
   private async createFromLocation(
     location: Location,
     typeSlug?: string,
-    parentId?: string,
+    parentId?: string | null,
   ): Promise<Place> {
     // Get or create place type
     const typeCollection = await (PlaceTypeCollection as any).create(
@@ -271,7 +271,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
     // Create place
     return await this.create({
       typeId: placeType.id,
-      parentId: parentId || '',
+      parentId: parentId ?? null,
       name: location.name,
       description: '',
 

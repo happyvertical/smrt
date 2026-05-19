@@ -5,7 +5,7 @@
  * They can be nested arbitrarily using the parentId self-reference.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ZoneOptions, ZoneTreeNode } from '../types';
 
@@ -15,7 +15,7 @@ import type { ZoneOptions, ZoneTreeNode } from '../types';
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
-export class Zone extends SmrtObject {
+export class Zone extends SmrtHierarchical {
   /**
    * Tenant ID for multi-tenant isolation
    */
@@ -27,10 +27,7 @@ export class Zone extends SmrtObject {
    */
   propertyId: string = '';
 
-  /**
-   * Parent zone ID for hierarchy (null = top-level zone)
-   */
-  parentId: string | null = null;
+  // parentId inherited from SmrtHierarchical (null = top-level zone)
 
   /**
    * Display name
@@ -133,45 +130,11 @@ export class Zone extends SmrtObject {
     return await collection.get({ id: this.propertyId });
   }
 
-  /**
-   * Get the parent zone (if any)
-   */
-  async getParent(): Promise<Zone | null> {
-    if (!this.parentId) return null;
-    const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
-    return await collection.get({ id: this.parentId });
-  }
-
-  /**
-   * Get direct children of this zone
-   */
-  async getChildren(): Promise<Zone[]> {
-    if (!this.id) return [];
-    const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
-    return await collection.findChildren(this.id);
-  }
-
-  /**
-   * Get all ancestors up to the root
-   */
-  async getAncestors(): Promise<Zone[]> {
-    if (!this.id) return [];
-    const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
-    return await collection.getAncestors(this.id);
-  }
-
-  /**
-   * Get all descendants recursively
-   */
-  async getDescendants(): Promise<Zone[]> {
-    if (!this.id) return [];
-    const { ZoneCollection } = await import('../collections/Zones');
-    const collection = await (ZoneCollection as any).create(this.options);
-    return await collection.getDescendants(this.id);
-  }
+  // Hierarchy traversal (getParent / getChildren / getAncestors /
+  // getDescendants / getHierarchy / moveTo) provided by SmrtHierarchical.
+  // The collection-level depth cache in `ZoneCollection.getAncestors` /
+  // `getDescendants` remains available for callers that go through the
+  // collection — the base-class methods do their own batched queries.
 
   /**
    * Get the full path from root to this zone
