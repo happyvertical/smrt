@@ -250,6 +250,72 @@ await createSessionCookie(event, userId, tenantId, { db }); // login
 await destroySessionCookie(event, { db });                   // logout
 ```
 
+### OIDC login with Kanidm or Dex
+
+Kanidm and Dex both work through the generic SMRT OIDC flow. Configure one or
+more providers under `packages.users.auth.oidc.providers`, then add login and
+callback route handlers.
+
+```typescript
+// smrt.config.ts
+import { defineConfig } from '@happyvertical/smrt-config';
+
+export default defineConfig({
+  packages: {
+    users: {
+      auth: {
+        oidc: {
+          defaultProvider: 'kanidm',
+          providers: {
+            kanidm: {
+              kind: 'kanidm',
+              issuer: process.env.KANIDM_ISSUER!,
+              clientId: process.env.KANIDM_CLIENT_ID!,
+              clientSecret: process.env.KANIDM_CLIENT_SECRET,
+              redirectUri: 'http://localhost:5173/auth/kanidm/callback',
+            },
+            dex: {
+              kind: 'dex',
+              issuer: process.env.DEX_ISSUER!,
+              clientId: process.env.DEX_CLIENT_ID!,
+              clientSecret: process.env.DEX_CLIENT_SECRET,
+              redirectUri: 'http://localhost:5173/auth/dex/callback',
+            },
+          },
+        },
+      },
+    },
+  },
+});
+```
+
+```typescript
+// src/routes/auth/[provider]/login/+server.ts
+import { createOidcLoginHandler } from '@happyvertical/smrt-users/sveltekit';
+
+export const GET = createOidcLoginHandler({
+  db: { type: 'postgres', url: process.env.DATABASE_URL! },
+});
+```
+
+```typescript
+// src/routes/auth/[provider]/callback/+server.ts
+import { createOidcCallbackHandler } from '@happyvertical/smrt-users/sveltekit';
+
+export const GET = createOidcCallbackHandler({
+  db: { type: 'postgres', url: process.env.DATABASE_URL! },
+  successRedirect: '/dashboard',
+});
+```
+
+The callback verifies `state`, PKCE, issuer, audience, nonce, and the provider
+JWKS-signed ID token, falling back to the OIDC UserInfo endpoint when the ID
+token omits required profile claims like `email`. Temporary transaction cookies
+are HMAC-signed with the provider `clientSecret` when present; public clients
+can pass `transactionCookieSecret` to the route helpers. On success it creates
+or reuses a SMRT `Profile`, links an `OidcIdentity`, creates or reuses a `User`,
+records `lastLoginAt`, and sets the standard SMRT session cookie.
+
 With `postgresRls: true`, SMRT opens a request-scoped Postgres transaction,
 loads the session, resolves permissions, and sets session variables used by the
 generated RLS helpers:
@@ -353,6 +419,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `registerPermissionDefinitions()` | Register app or integration permissions at runtime and receive an unregister cleanup function. |
 | `generatePostgresPermissionSql()`, `applyPostgresPermissionPolicies()` | Preview or apply Postgres RLS helper functions and table policies. |
 | `SessionService` | High-level session management. `createSession()`, `loadSessionContext()`, `destroySession()`. |
+| `OidcLoginService` | Generic OIDC authorization-code login with PKCE for Kanidm, Dex, and other standards-compliant providers. |
 | `withSessionPermissionContext()` | Loads a session, optionally enters tenancy context, and exposes a request-scoped database/permission context. |
 | `getCurrentSessionPermissionContext()`, `getRequestScopedDatabase()` | Read the active request/session context inside app code. |
 | `TenantService` | Policy-driven tenant lifecycle. `ensureTenantForUser()`, `createTenantWithOwnership()`. |
@@ -365,6 +432,8 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 | `createSessionCookie` | Set session cookie after login |
 | `destroySessionCookie` | Clear session cookie on logout |
 | `switchSessionTenant` | Change tenant context for current session |
+| `beginOidcLogin`, `completeOidcLogin` | Low-level SvelteKit helpers for custom OIDC login routes |
+| `createOidcLoginHandler`, `createOidcCallbackHandler` | Ready-to-use SvelteKit route handlers for OIDC login and callback |
 | `SessionLocals` | Type for `event.locals` (extend in `app.d.ts`) |
 
 ### Types & Constants
@@ -382,6 +451,7 @@ TenantService supports three modes: `flexible` (no auto-create), `personal` (aut
 - `@happyvertical/smrt-core` -- ORM, `@smrt()` decorator, SmrtObject/SmrtCollection
 - `@happyvertical/smrt-types` -- shared enums (UserStatus, SessionStatus, etc.)
 - `@happyvertical/smrt-profiles` -- optional peer dependency for profile linking
+- `jose` -- JWT/JWKS verification for OIDC and magic-link tokens
 - `svelte` -- optional peer dependency for Svelte components
 
 ## License
