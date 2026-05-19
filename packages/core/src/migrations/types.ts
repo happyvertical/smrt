@@ -179,7 +179,7 @@ export interface ParsedMigrationFile {
 /**
  * Migration mode configuration
  */
-export type MigrationMode = 'dynamic' | 'file' | 'hybrid';
+export type MigrationMode = 'dynamic';
 
 /**
  * Data migration for updating existing data (e.g., STI discriminator upgrades)

@@ -8,7 +8,7 @@ Developer CLI with lazy-loaded commands, manifest discovery, and class introspec
 smrt introspect              # Discover SMRT objects in project
 smrt db:status               # Pending schema changes + failed migration classification
 smrt db:migrate              # Apply migrations
-smrt db:diff --generate      # Generate migration from changes
+smrt db:diff                 # Show schema differences without generating migration files
 smrt db:rollback             # Rollback migrations
 smrt docs:claude             # Generate .claude/smrt-framework.md
 smrt generate:mcp            # Generate MCP server
@@ -17,6 +17,9 @@ smrt init                    # Init new project
 smrt gnode                   # Scaffold gnode site
 smrt dispatch:*              # Dispatch management (list/process/retry/cleanup)
 ```
+
+File-backed SQL/TypeScript migration generation is not supported. SMRT schema
+migrations are manifest-driven through registered objects and project manifests.
 
 `smrt test` is **deprecated** — use vitest plugin directly.
 

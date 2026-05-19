@@ -29,6 +29,7 @@ export type {
   LoadConfigOptions,
   MigrationsConfig,
   MigrationsPostgresConfig,
+  SchemaContractConfig,
   // Site configuration types
   SiteConfig,
   SiteLocation,
