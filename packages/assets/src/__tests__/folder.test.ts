@@ -116,6 +116,26 @@ describe('Folder hierarchy traversal', () => {
     expect(path.map((f) => f.slug)).toEqual(['r', 'm', 'l']);
   });
 
+  it('FolderCollection.getTree sorts subtree results by name (R3-D round-2 regression)', async () => {
+    const collection = await FolderCollection.create({ db });
+
+    const root = (await collection.create({
+      name: 'Root',
+      slug: 'root2',
+    })) as Folder;
+    // Create children out of alphabetical order to verify sort.
+    await collection.create({ name: 'Zulu', slug: 'zulu', parentId: root.id });
+    await collection.create({
+      name: 'Alpha',
+      slug: 'alpha',
+      parentId: root.id,
+    });
+    await collection.create({ name: 'Mike', slug: 'mike', parentId: root.id });
+
+    const tree = await collection.getTree(root.id!);
+    expect(tree.map((f) => f.name)).toEqual(['Alpha', 'Mike', 'Zulu']);
+  });
+
   it('moveTo refuses to create a cycle', async () => {
     const collection = await FolderCollection.create({ db });
 

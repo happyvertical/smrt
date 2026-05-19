@@ -38,7 +38,15 @@ export class FolderCollection extends SmrtCollection<Folder> {
 
     const root = (await this.get({ id: rootId })) as Folder | null;
     if (!root) return [];
-    return await root.getDescendants();
+    const descendants = await root.getDescendants();
+    // SmrtHierarchical.getDescendants returns BFS storage order.
+    // Match the historical contract of FolderCollection.getTree by
+    // applying `name ASC` ordering so UIs render deterministically
+    // regardless of insertion order. Stable sort preserves siblings'
+    // BFS-level grouping when names tie.
+    return descendants.sort((a, b) =>
+      (a.name ?? '').localeCompare(b.name ?? ''),
+    );
   }
 
   /**
