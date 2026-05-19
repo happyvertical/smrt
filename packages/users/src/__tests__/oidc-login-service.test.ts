@@ -1,3 +1,4 @@
+import { Buffer } from 'node:buffer';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { clearCache, setConfig } from '@happyvertical/smrt-config';
 import {
@@ -544,7 +545,7 @@ describe('OidcLoginService', () => {
 
   it('form-encodes client credentials for client_secret_basic token requests', async () => {
     const clientId = 'smrt client:dev@local';
-    const clientSecret = 's:e+c ret';
+    const clientSecret = 's:e+c ret ü';
     const server = await startOidcServer({ audience: clientId });
     cleanup.push(server.close);
     const service = new OidcLoginService({
@@ -567,8 +568,18 @@ describe('OidcLoginService', () => {
 
     await service.exchangeCallback(callbackUrl, transaction);
 
+    const encodeForm = (value: string): string => {
+      const params = new URLSearchParams();
+      params.set('value', value);
+      return params.toString().slice('value='.length);
+    };
+    const expectedCredentials = `${encodeForm(clientId)}:${encodeForm(clientSecret)}`;
+
+    expect(expectedCredentials).toBe(
+      'smrt+client%3Adev%40local:s%3Ae%2Bc+ret+%C3%BC',
+    );
     expect(server.tokenRequests[0]?.authorization).toBe(
-      `Basic ${btoa(`${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`)}`,
+      `Basic ${Buffer.from(expectedCredentials, 'utf8').toString('base64')}`,
     );
   });
 

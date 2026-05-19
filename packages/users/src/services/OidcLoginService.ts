@@ -225,10 +225,25 @@ async function pkceChallenge(codeVerifier: string): Promise<string> {
   return bytesToBase64Url(new Uint8Array(digest));
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary);
+}
+
+function formUrlEncode(value: string): string {
+  const params = new URLSearchParams();
+  params.set('value', value);
+  return params.toString().slice('value='.length);
+}
+
 function encodeBasicAuth(clientId: string, clientSecret: string): string {
-  return btoa(
-    `${encodeURIComponent(clientId)}:${encodeURIComponent(clientSecret)}`,
-  );
+  const credentials = `${formUrlEncode(clientId)}:${formUrlEncode(clientSecret)}`;
+  return bytesToBase64(new TextEncoder().encode(credentials));
 }
 
 function asString(value: unknown): string | undefined {
