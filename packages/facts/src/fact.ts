@@ -153,9 +153,13 @@ export class Fact extends SmrtObject {
 
   /**
    * Whether this fact has a predecessor in the evolution chain.
+   *
+   * Returns false for the framework default (`''`) and for any nullish
+   * value — defensive against rows whose `previous_fact_id` column is
+   * NULL (e.g. after a migration that left root facts un-backfilled).
    */
   hasPredecessor(): boolean {
-    return this.previousFactId !== '';
+    return Boolean(this.previousFactId);
   }
 
   /**

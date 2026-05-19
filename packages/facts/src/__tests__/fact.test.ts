@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { Fact } from '../fact';
 import { FactCollection } from '../facts';
 
 describe('Fact', () => {
@@ -250,6 +251,20 @@ describe('Fact', () => {
 
       const successors = await predecessor.getSuccessors();
       expect(successors.length).toBe(2);
+    });
+
+    // Regression: a row whose `previous_fact_id` column is NULL (e.g. a
+    // root fact left un-backfilled by a sloppy migration, or a row
+    // created before the field default existed) must still report
+    // hasPredecessor() === false. We assign null directly because the
+    // sqlite NOT NULL default in the recommended migration usually
+    // prevents this, but the framework should not rely on schema
+    // hygiene for correctness.
+    it('reports no predecessor when previousFactId is null', () => {
+      const orphan = new Fact({ textRefined: 'Orphan root' });
+      // Simulate hydration from a row where the column was NULL.
+      (orphan as any).previousFactId = null;
+      expect(orphan.hasPredecessor()).toBe(false);
     });
   });
 

@@ -55,13 +55,27 @@ genuinely changed.
 **Schema migration consumers must run alongside this upgrade:**
 
 ```sql
-ALTER TABLE facts ADD COLUMN previous_fact_id TEXT;
+-- Add the new column with the same '' default as the field declaration so
+-- root facts (no predecessor) match the in-memory representation.
+ALTER TABLE facts ADD COLUMN previous_fact_id TEXT NOT NULL DEFAULT '';
+
+-- Copy over real predecessor links; root rows already carry '' from the
+-- default above, which is what `hasPredecessor()` expects.
 UPDATE facts
    SET previous_fact_id = parent_id
  WHERE parent_id IS NOT NULL
    AND parent_id != '';
+
 ALTER TABLE facts DROP COLUMN parent_id;
 ```
+
+Why the explicit `DEFAULT ''` matters: without it, the new column is
+NULL for every existing row, and the `UPDATE` above only touches rows
+with a real predecessor. Root facts would then load with
+`previousFactId === null`, which trips `hasPredecessor()` even though
+the in-memory default is `''`. The class also has a defensive
+`Boolean(this.previousFactId)` check in `hasPredecessor()` so that
+mis-migrated databases don't silently report wrong evolution state.
 
 Fact uses `tableStrategy: 'sti'` — `facts` is the actual table name.
 There are no STI subclasses of Fact in the monorepo today, so the
