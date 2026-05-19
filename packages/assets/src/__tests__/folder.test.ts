@@ -158,12 +158,13 @@ describe('Folder hierarchy traversal', () => {
     });
 
     const tree = await collection.getTree(root.id!);
-    // Parent must appear before child even though "Alpha" < "Zulu".
-    const zuluIdx = tree.findIndex((f) => f.name === 'Zulu');
-    const alphaIdx = tree.findIndex((f) => f.name === 'Alpha');
-    expect(zuluIdx).toBeGreaterThanOrEqual(0);
-    expect(alphaIdx).toBeGreaterThanOrEqual(0);
-    expect(zuluIdx).toBeLessThan(alphaIdx);
+    // Parent must appear before child even though "Alpha" < "Zulu". Use
+    // exact positional assertions rather than index-relative checks so a
+    // future regression that adds duplicates, leaks the root into the
+    // result, or scrambles the order is caught directly.
+    expect(tree).toHaveLength(2);
+    expect(tree[0].name).toBe('Zulu');
+    expect(tree[1].name).toBe('Alpha');
   });
 
   it('moveTo refuses to create a cycle', async () => {
