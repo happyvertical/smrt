@@ -50,9 +50,9 @@ const v2 = new Asset({
 });
 await v2.save();
 
-// Derivatives via parentId
+// Derivatives via sourceAssetId (renamed from `parentId` in R3-D)
 const thumb = new Asset({
-  name: 'Thumbnail', slug: 'product-photo-001-thumb', parentId: photo.id,
+  name: 'Thumbnail', slug: 'product-photo-001-thumb', sourceAssetId: photo.id,
   sourceUri: 's3://bucket/products/photo-001-thumb.jpg',
   mimeType: 'image/jpeg', typeSlug: 'image', statusSlug: 'published',
 });
@@ -71,9 +71,12 @@ await assoc.save();
 // Base/domain-owned asset relationships should use dedicated noun joins instead:
 // content_assets, profile_assets, event_assets, place_assets, product_assets
 
-// Folder organization (STI subclass of Asset with typeSlug='folder')
+// Folder organization (its own SmrtHierarchical model, `folders` table)
 const folder = new Folder({ name: 'Product Images', slug: 'product-images' });
 await folder.save();
+// Move an asset into a folder
+photo.folderId = folder.id;
+await photo.save();
 
 // AssetStore -- provider-agnostic file I/O + record creation
 const store = new AssetStore({ collection, filesystem });
@@ -86,12 +89,12 @@ await store.store({ buffer, mimeType: 'image/png', name: 'screenshot' });
 
 | Export | Description |
 |--------|------------|
-| `Asset` | Core asset with versioning (`primaryVersionId`, `version`), hierarchy (`parentId`), `sourceUri`, `mimeType`, `typeSlug`, `statusSlug`, `ownerProfileId` |
+| `Asset` | Core asset with versioning (`primaryVersionId`, `version`), derivation chain (`sourceAssetId`), `sourceUri`, `mimeType`, `typeSlug`, `statusSlug`, `ownerProfileId` |
 | `AssetAssociation` | Generic/provenance polymorphic join: `assetId` + `metaType` + `metaId` + `role` + `sortOrder`; not for base/domain-owned joins that already have noun tables |
 | `AssetType` | Lookup table for asset type classification |
 | `AssetStatus` | Lookup table for lifecycle status |
 | `AssetMetafield` | Custom metadata field definitions with JSON validation rules |
-| `Folder` | STI subclass of Asset (`typeSlug='folder'`) for hierarchical organization |
+| `Folder` | Hierarchical container for assets; own `folders` table extending `SmrtHierarchical` |
 
 ### Collections (SmrtCollection)
 

@@ -247,7 +247,7 @@ describe('AssetRuntime', () => {
   });
 
   describe('storeDerivedAsset', () => {
-    it('persists a derivative with parentId + provenance association by default', async () => {
+    it('persists a derivative with sourceAssetId + provenance association by default', async () => {
       const runtime = await createAssetRuntime({ db, storage: storageDir });
 
       const source = await runtime.storeSourceAsset(
@@ -267,7 +267,7 @@ describe('AssetRuntime', () => {
         },
       );
 
-      expect(derived.parentId).toBe(source.id);
+      expect(derived.sourceAssetId).toBe(source.id);
 
       const links = await runtime.associations.byRight(source.id!);
       expect(links).toHaveLength(1);
@@ -323,7 +323,7 @@ describe('AssetRuntime', () => {
         },
       );
 
-      expect(derived.parentId).toBe(source.id);
+      expect(derived.sourceAssetId).toBe(source.id);
       const links = await runtime.associations.byRight(source.id!);
       expect(links).toHaveLength(0);
     });

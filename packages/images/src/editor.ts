@@ -2,7 +2,8 @@
  * ImageEditor - Standard and AI-powered image editing
  *
  * Creates derivative assets for each edit operation, preserving
- * the original image and linking via parentId.
+ * the original image and linking via sourceAssetId (the derivation
+ * pointer; renamed from `parentId` in R3-D).
  *
  * Standard operations use @happyvertical/images (file-based API).
  * AI operations use @happyvertical/ai.
@@ -257,7 +258,7 @@ export class ImageEditor {
       width: overrides.width ?? source.width,
       height: overrides.height ?? source.height,
       alt: source.alt,
-      parentId: source.id,
+      sourceAssetId: source.id,
       typeSlug,
       description: overrides.description ?? '',
     })) as Image;

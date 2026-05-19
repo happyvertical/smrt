@@ -3,6 +3,13 @@
  *
  * Represents a digital asset with versioning, metadata, and tag support.
  * Supports multi-tenancy with optional tenant scoping.
+ *
+ * Post R3-D: `parentId` was renamed to `sourceAssetId` to reflect what
+ * the column actually means — a derivation pointer ("this asset was
+ * produced from that source asset"), not a structural-hierarchy edge.
+ * Folder, which used `parent_id` for actual hierarchy via STI on this
+ * table, has moved to its own `folders` table. See `folder.ts` and the
+ * `R3-D` changeset for the migration.
  */
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
@@ -74,8 +81,17 @@ export class Asset extends SmrtObject {
   typeSlug = ''; // FK to AssetType.slug
   statusSlug = ''; // FK to AssetStatus.slug
   ownerProfileId: string | null = null; // FK to Profile.id (nullable)
-  parentId: string | null = null; // FK to Asset.id (for derivatives)
-  folderId: string | null = null; // FK to Folder Asset.id
+  /**
+   * FK to the source Asset this one was derived from (e.g. thumbnail
+   * derived from an original image, transcoded video, AI variation).
+   *
+   * Renamed from `parentId` in R3-D to make the derivation semantics
+   * explicit and free `parentId` to mean exactly structural hierarchy
+   * (SmrtHierarchical) across the framework. The column on the assets
+   * table is `source_asset_id`.
+   */
+  sourceAssetId: string | null = null;
+  folderId: string | null = null; // FK to Folder.id
 
   // Provenance fields
   sourceType = ''; // 'local', 'shutterstock', 'google-photos', 'upstream-smrt'
@@ -105,7 +121,8 @@ export class Asset extends SmrtObject {
     if (options.statusSlug) this.statusSlug = options.statusSlug;
     if (options.ownerProfileId !== undefined)
       this.ownerProfileId = options.ownerProfileId;
-    if (options.parentId !== undefined) this.parentId = options.parentId;
+    if (options.sourceAssetId !== undefined)
+      this.sourceAssetId = options.sourceAssetId;
     if (options.folderId !== undefined) this.folderId = options.folderId;
     if (options.sourceType) this.sourceType = options.sourceType;
     if (options.externalId) this.externalId = options.externalId;
@@ -204,14 +221,18 @@ export class Asset extends SmrtObject {
   }
 
   /**
-   * Get the parent asset (if this is a derivative)
+   * Get the source asset this one was derived from, if any.
    *
-   * @returns Parent Asset instance or null
+   * Renamed from `getParent` in R3-D. The relationship is "I was produced
+   * from that asset" (e.g. a thumbnail's source is its original image),
+   * not a structural-hierarchy parent.
+   *
+   * @returns Source Asset instance, or null if this asset has no source
    */
-  async getParent(): Promise<Asset | null> {
-    if (!this.parentId) return null;
+  async getSource(): Promise<Asset | null> {
+    if (!this.sourceAssetId) return null;
 
-    const record = await this.db.get('assets', { id: this.parentId });
+    const record = await this.db.get('assets', { id: this.sourceAssetId });
 
     if (!record) return null;
 
@@ -221,13 +242,17 @@ export class Asset extends SmrtObject {
   }
 
   /**
-   * Get all derivative assets (children)
+   * Get all assets derived from this one (e.g. thumbnails, variants,
+   * transcodes, AI edits).
    *
-   * @returns Array of child Asset instances
+   * Renamed from `getChildren` in R3-D to match the derivation
+   * semantics. Reads `assets WHERE source_asset_id = this.id`.
+   *
+   * @returns Array of derivative Asset instances
    */
-  async getChildren(): Promise<Asset[]> {
+  async getDerivatives(): Promise<Asset[]> {
     const rows = await this.db.list('assets', {
-      where: { parent_id: this.id },
+      where: { source_asset_id: this.id },
     });
 
     return (rows as any[]).map((row) => {
