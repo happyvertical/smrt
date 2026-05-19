@@ -1,7 +1,10 @@
 /**
  * TagCollection - Collection manager for Tag objects
  *
- * Provides hierarchy traversal, context filtering, and advanced tag operations.
+ * Public methods continue to accept slug strings for ergonomic call sites
+ * (declarative tag-tree seeds, CLI tools, etc.), but the underlying FK is
+ * now `Tag.parentId` (UUID, inherited from `SmrtHierarchical`). Each public
+ * method resolves slugs to ids internally before mutating storage.
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
@@ -39,16 +42,22 @@ export class TagCollection extends SmrtCollection<Tag> {
   }
 
   /**
-   * List tags by context with optional parent filtering
+   * List tags by context with optional parent filtering by slug.
    *
    * @param context - The context to filter by
-   * @param parentSlug - Optional parent slug to filter children
+   * @param parentSlug - Optional parent slug to filter children. Pass an
+   *   empty string or `null` to find root tags; pass a slug to find that
+   *   tag's immediate children.
    * @returns Array of matching tags
    */
   async listByContext(context: string, parentSlug?: string): Promise<Tag[]> {
     const where: any = { context };
-    if (parentSlug !== undefined) {
-      where.parentSlug = parentSlug;
+    if (parentSlug === '' || parentSlug === null) {
+      where.parentId = null;
+    } else if (parentSlug !== undefined) {
+      const parent = await this.get({ slug: parentSlug, context });
+      if (!parent?.id) return [];
+      where.parentId = parent.id;
     }
     return await this.list({ where });
   }
@@ -61,20 +70,20 @@ export class TagCollection extends SmrtCollection<Tag> {
    */
   async getRootTags(context: string = 'global'): Promise<Tag[]> {
     return await this.list({
-      where: { context, parentSlug: null },
+      where: { context, parentId: null },
     });
   }
 
   /**
-   * Get immediate children of a parent tag
+   * Get immediate children of a parent tag, looked up by slug.
    *
    * @param parentSlug - The parent tag slug
-   * @returns Array of child tags
+   * @returns Array of child tags, or `[]` if the parent slug doesn't resolve
    */
   async getChildren(parentSlug: string): Promise<Tag[]> {
-    return await this.list({
-      where: { parentSlug },
-    });
+    const parent = await this.get({ slug: parentSlug });
+    if (!parent?.id) return [];
+    return await this.list({ where: { parentId: parent.id } });
   }
 
   /**
@@ -87,42 +96,43 @@ export class TagCollection extends SmrtCollection<Tag> {
     const tag = await this.get({ slug });
     if (!tag) throw new Error(`Tag '${slug}' not found`);
 
-    const ancestors = await this.getAncestors(tag);
-    const descendants = await this.getDescendants(tag);
+    const [ancestors, descendants] = await Promise.all([
+      tag.getAncestors() as Promise<Tag[]>,
+      tag.getDescendants() as Promise<Tag[]>,
+    ]);
 
     return { ancestors, current: tag, descendants };
   }
 
   /**
-   * Move a tag to a new parent (updates level automatically)
+   * Move a tag to a new parent. Slug-based API; UUIDs resolved internally.
+   * Cycle detection is delegated to `SmrtHierarchical.moveTo`. Updates the
+   * denormalised `level` field on the moved tag and recursively on all of
+   * its descendants.
    *
    * @param slug - The tag to move
    * @param newParentSlug - The new parent slug (null for root)
-   * @throws Error if circular reference detected
+   * @throws Error if the source slug doesn't resolve, the new parent slug
+   *   doesn't resolve, or the move would create a cycle.
    */
   async moveTag(slug: string, newParentSlug: string | null): Promise<void> {
     const tag = await this.get({ slug });
     if (!tag) throw new Error(`Tag '${slug}' not found`);
 
-    // Check for circular reference
+    let newParent: Tag | null = null;
     if (newParentSlug) {
-      const hasCircular = await this.hasCircularReference(slug, newParentSlug);
-      if (hasCircular) {
-        throw new Error(
-          `Cannot move tag: circular reference detected (${slug} -> ${newParentSlug})`,
-        );
+      newParent = await this.get({ slug: newParentSlug });
+      if (!newParent) {
+        throw new Error(`Tag '${newParentSlug}' not found`);
       }
     }
 
-    // Calculate new level
-    const newLevel = await this.calculateLevel(newParentSlug);
+    await tag.moveTo(newParent ?? null);
 
-    // Update tag
-    (tag.parentSlug as any).value = newParentSlug || '';
-    tag.level = newLevel;
+    // Recalculate level for the moved tag + every descendant. moveTo already
+    // saved tag.parentId; we just need to update level (denormalised depth).
+    tag.level = newParent ? newParent.level + 1 : 0;
     await tag.save();
-
-    // Recursively update levels for all descendants
     await this.updateDescendantLevels(tag);
   }
 
@@ -130,7 +140,9 @@ export class TagCollection extends SmrtCollection<Tag> {
    * Merge one tag into another (updates all references)
    *
    * Note: This method updates the tag itself but consuming packages
-   * are responsible for updating their join tables (e.g., asset_tags)
+   * are responsible for updating their join tables (e.g., asset_tags).
+   * `TagAlias.tagSlug` is rewritten here because aliases live inside the
+   * tags package.
    *
    * @param fromSlug - The tag to merge from
    * @param toSlug - The tag to merge into
@@ -141,11 +153,14 @@ export class TagCollection extends SmrtCollection<Tag> {
 
     if (!fromTag) throw new Error(`Source tag '${fromSlug}' not found`);
     if (!toTag) throw new Error(`Target tag '${toSlug}' not found`);
+    if (!toTag.id) throw new Error(`Target tag '${toSlug}' has no id`);
 
     // Move all children of fromTag to toTag
-    const children = await this.getChildren(fromSlug);
+    const children = await this.list({
+      where: { parentId: fromTag.id },
+    });
     for (const child of children) {
-      (child.parentSlug as any).value = toSlug;
+      child.parentId = toTag.id;
       await child.save();
     }
 
@@ -188,13 +203,19 @@ export class TagCollection extends SmrtCollection<Tag> {
     let deletedCount = 0;
 
     for (const tag of tags) {
-      // Check if tag has children
-      const children = await this.getChildren(tag.slug);
+      if (!tag.id) continue;
+
+      // Check if tag has children (by parentId — UUID).
+      const children = await this.list({
+        where: { parentId: tag.id },
+        limit: 1,
+      });
       if (children.length > 0) continue;
 
-      // Check if tag has aliases
+      // Check if tag has aliases (still slug-keyed on TagAlias.tagSlug).
       const aliases = await aliasCollection.list({
         where: { tagSlug: tag.slug },
+        limit: 1,
       });
       if (aliases.length > 0) continue;
 
@@ -207,10 +228,10 @@ export class TagCollection extends SmrtCollection<Tag> {
   }
 
   /**
-   * Calculate hierarchy level for a tag
+   * Calculate hierarchy level for a tag, looking the parent up by slug.
    *
-   * @param parentSlug - The parent tag slug (null for root)
-   * @returns The calculated level
+   * @param parentSlug - The parent tag slug (null/empty for root)
+   * @returns The calculated level (root parent → 1, missing parent → 0)
    */
   async calculateLevel(parentSlug: string | null): Promise<number> {
     if (!parentSlug) return 0;
@@ -222,75 +243,15 @@ export class TagCollection extends SmrtCollection<Tag> {
   }
 
   /**
-   * Check if moving a tag would create a circular reference
-   *
-   * @param slug - The tag being moved
-   * @param newParentSlug - The proposed new parent
-   * @returns True if circular reference detected
-   */
-  private async hasCircularReference(
-    slug: string,
-    newParentSlug: string,
-  ): Promise<boolean> {
-    let current = newParentSlug;
-
-    while (current) {
-      if (current === slug) return true; // Circular reference found
-
-      const parent = await this.get({ slug: current });
-      if (!parent || !parent.parentSlug) break;
-
-      current = String(parent.parentSlug);
-    }
-
-    return false;
-  }
-
-  /**
-   * Get all ancestor tags (recursive)
-   *
-   * @param tag - The tag to get ancestors for
-   * @returns Array of ancestor tags from root to immediate parent
-   */
-  private async getAncestors(tag: Tag): Promise<Tag[]> {
-    const ancestors: Tag[] = [];
-    let current = tag;
-
-    while (current.parentSlug) {
-      const parent = await this.get({ slug: current.parentSlug });
-      if (!parent) break;
-      ancestors.unshift(parent); // Add to beginning
-      current = parent;
-    }
-
-    return ancestors;
-  }
-
-  /**
-   * Get all descendant tags (recursive)
-   *
-   * @param tag - The tag to get descendants for
-   * @returns Array of all descendant tags
-   */
-  private async getDescendants(tag: Tag): Promise<Tag[]> {
-    const children = await this.list({ where: { parentSlug: tag.slug } });
-    const descendants: Tag[] = [...children];
-
-    for (const child of children) {
-      const childDescendants = await this.getDescendants(child);
-      descendants.push(...childDescendants);
-    }
-
-    return descendants;
-  }
-
-  /**
    * Update levels for all descendants after moving a tag
    *
    * @param tag - The tag that was moved
    */
   private async updateDescendantLevels(tag: Tag): Promise<void> {
-    const children = await this.getChildren(tag.slug);
+    if (!tag.id) return;
+    const children = await this.list({
+      where: { parentId: tag.id },
+    });
 
     for (const child of children) {
       child.level = tag.level + 1;

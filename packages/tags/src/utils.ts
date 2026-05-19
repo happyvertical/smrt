@@ -39,7 +39,10 @@ export function sanitizeSlug(input: string): string {
  * Validate hierarchy for circular references
  *
  * Checks if setting a parent would create a circular reference
- * (e.g., making a tag its own ancestor).
+ * (e.g., making a tag its own ancestor). The actual move call in
+ * `TagCollection.moveTag` also runs `SmrtHierarchical.moveTo`'s
+ * descendant-cycle check; this helper remains exported for callers that
+ * want to pre-validate a candidate parent without attempting the move.
  *
  * @param slug - The tag being moved
  * @param parentSlug - The proposed new parent
@@ -51,15 +54,18 @@ export async function hasCircularReference(
   parentSlug: string,
   tagCollection: TagCollection,
 ): Promise<boolean> {
-  let current = parentSlug;
+  // Walk up the proposed parent's chain by slug. Resolve each step to its
+  // UUID parent so the iteration matches the new `parentId` FK storage.
+  let current: string | null = parentSlug;
 
   while (current) {
     if (current === slug) return true; // Circular reference found
 
     const parent = await tagCollection.get({ slug: current });
-    if (!parent || !parent.parentSlug) break;
+    if (!parent?.parentId) break;
 
-    current = String(parent.parentSlug);
+    const grand = await tagCollection.get({ id: parent.parentId });
+    current = grand?.slug ?? null;
   }
 
   return false;

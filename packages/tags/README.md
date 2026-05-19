@@ -24,11 +24,17 @@ const tech = new Tag({
 });
 await collection.create(tech);
 
+// Children reference their parent by UUID (`parentId`). Look the parent
+// up by slug first, then create the child. `level` is recalculated by
+// `TagCollection.moveTag` / `mergeTag` for moves; you can pass it
+// explicitly on create or let it stay at 0 and call moveTag later.
+const tech = await collection.get({ slug: 'technology', context: 'blog' });
 const ai = new Tag({
   slug: 'artificial-intelligence',
   name: 'Artificial Intelligence',
   context: 'blog',
-  parentSlug: 'technology',  // level auto-calculated from parent
+  parentId: tech!.id,
+  level: 1,
 });
 await collection.create(ai);
 
@@ -66,7 +72,7 @@ validateSlug('my-tag-123');     // true
 
 | Export | Description |
 |--------|------------|
-| `Tag` | Identified by `slug` + `context`. Hierarchical via `parentSlug`. Auto-calculated `level`. JSON `metadata`. Methods: `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getMetadata()`, `setMetadata()`, `updateMetadata()` |
+| `Tag` | Identified by `slug` + `context`. Hierarchical via `parentId` (UUID, inherited from `SmrtHierarchical`). Denormalised `level` recalculated by `TagCollection.moveTag` / `mergeTag`. JSON `metadata`. Hierarchy methods inherited: `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getHierarchy()`, `moveTo()`. Own helpers: `getMetadata()`, `setMetadata()`, `updateMetadata()` |
 | `TagAlias` | Language-specific translations: `tagSlug`, `alias`, `language` (ISO 639-1), optional `context` |
 
 ### Collections (SmrtCollection)

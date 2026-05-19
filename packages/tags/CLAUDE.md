@@ -4,7 +4,7 @@ Hierarchical tagging with context-scoped slugs and multi-language aliases.
 
 ## Models
 
-- **Tag** (STI): identified by `slug` (not UUID) + `context` (default: 'global'). Hierarchical via `parentSlug`. `level` auto-calculated from parent. Metadata JSON.
+- **Tag** (STI, extends `SmrtHierarchical`): public identifier is `slug` (not UUID) + `context` (default: 'global'), but the hierarchy FK is `parentId` (UUID) since R3-B. `TagCollection.moveTag` / `mergeTag` / `getChildren` keep slug-string signatures and resolve to UUIDs internally. `level` is a denormalised depth recalculated on `moveTag`. Metadata JSON.
 - **TagAlias**: language-specific translations/aliases (ISO 639-1 `language` code, nullable). Optional context scoping.
 
 ## Key Collection Methods
