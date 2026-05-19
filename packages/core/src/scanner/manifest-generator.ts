@@ -30,6 +30,33 @@ import type {
 const require = createRequire(import.meta.url);
 
 /**
+ * Framework abstract base classes whose declared fields must be merged
+ * into every subclass's `fields` map.
+ *
+ * These classes live in `@happyvertical/smrt-core`, have no `@smrt()`
+ * decorator, no table of their own, and contribute structural fields
+ * (e.g. `SmrtHierarchical.parentId`) that subclasses query against —
+ * without merging, downstream WHERE-clause validation rejects queries on
+ * those columns.
+ *
+ * SmrtObject / SmrtClass / SmrtCollection are intentionally NOT in this
+ * set even though they live in core. SmrtObject's universal columns
+ * (`id`, `slug`, `context`, `created_at`, `updated_at`) are added by a
+ * separate universal-baseline mechanism in `fieldsFromClass`, and merging
+ * them here would double-write with subtly different `_meta` payloads
+ * and regress existing field expectations.
+ *
+ * Keep in sync with `FRAMEWORK_BASE_CLASSES` in
+ * `packages/scanner/src/inheritance-resolver.ts` — note that set is
+ * broader: it controls scanner-level chain termination and stub
+ * resolution, while this one only controls field merging.
+ */
+const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
+  'SmrtJunction',
+  'SmrtHierarchical',
+]);
+
+/**
  * Infer visibility from file path and explicit config
  *
  * Priority:
@@ -550,6 +577,59 @@ export class ManifestGenerator {
   }
 
   /**
+   * Check whether `obj` extends a framework abstract base class anywhere
+   * in its chain.
+   *
+   * Framework abstract bases (`SmrtHierarchical`, `SmrtJunction`, …) have
+   * no table of their own — fields they declare must be merged into every
+   * subclass's manifest, even when the subclass uses CTI. Without this,
+   * a class like `Account extends SmrtHierarchical` would silently lose
+   * `parentId` from its `fields` map and downstream WHERE-clause
+   * validation would reject queries on the inherited column.
+   *
+   * Identified by name against the same hardcoded set the scanner's
+   * `FRAMEWORK_BASE_CLASSES` recognizes (`packages/scanner/src/
+   * inheritance-resolver.ts`). Keep the two lists in sync.
+   */
+  private extendsFrameworkAbstractBase(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    manifest: SmartObjectManifest,
+  ): boolean {
+    if (!obj.extends) return false;
+
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) break;
+      visited.add(currentClass);
+
+      if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(currentClass)) {
+        return true;
+      }
+
+      let parentObj = objectsByName.get(currentClass);
+      if (
+        !parentObj &&
+        manifest.smrtDependencies &&
+        manifest.smrtDependencies.length > 0
+      ) {
+        parentObj = this.loadParentFromExternalPackage(
+          currentClass,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+      }
+      if (!parentObj) break;
+
+      currentClass = parentObj.extends;
+    }
+
+    return false;
+  }
+
+  /**
    * Find full STI base class info (className + tableName)
    *
    * Walks up the inheritance chain to find the STI base class and returns
@@ -660,13 +740,25 @@ export class ManifestGenerator {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.extends) continue; // No parent, skip
 
-      // Only merge if using STI (shared table with parent)
-      // For CTI (class table inheritance), each class has its own table and fields
-      // Check if this class or ANY ancestor uses STI (inherited strategy)
+      // Merge inherited fields when ANY of:
+      //   (a) STI is in play — shared table with parent, full chain merges.
+      //   (b) An ancestor in the chain is a framework abstract base class
+      //       (SmrtHierarchical, SmrtJunction, …) — those have no table of
+      //       their own, so structural fields they declare (e.g.
+      //       `SmrtHierarchical.parentId`) must propagate into every CTI
+      //       subclass's manifest, otherwise WHERE-clause validation
+      //       rejects queries against the inherited column.
+      // For plain CTI through a user-defined base with its own table, we
+      // skip merging — each class keeps its own table layout.
       const usesSTI = this.isSTIClass(obj, objectsByName, manifest);
+      const extendsFrameworkBase = this.extendsFrameworkAbstractBase(
+        obj,
+        objectsByName,
+        manifest,
+      );
 
-      if (!usesSTI) {
-        continue; // CTI - no field merging needed
+      if (!usesSTI && !extendsFrameworkBase) {
+        continue; // Plain CTI through a user-defined base — skip.
       }
 
       console.log(
@@ -719,13 +811,28 @@ export class ManifestGenerator {
         `[manifest-generator] Inheritance chain for ${obj.className}: ${inheritanceChain.join(' -> ')}`,
       );
 
-      // Merge fields from all ancestors (base to child)
+      // Merge fields from ancestors (base to child).
+      //
+      // STI path: pull in fields from every ancestor — they all share one
+      // table.
+      //
+      // Non-STI (framework-base) path: pull in fields ONLY from framework
+      // abstract bases (SmrtHierarchical, …). User-defined ancestors with
+      // their own `@smrt()` decorator have their own tables in CTI, so
+      // merging their columns onto a descendant would generate the wrong
+      // schema.
       const mergedFields: Record<string, any> = {};
       const mergedMethods: Record<string, any> = {};
 
       for (const ancestorName of inheritanceChain) {
         const ancestor = objectsByName.get(ancestorName);
         if (!ancestor) continue;
+
+        const ancestorIsFrameworkBase =
+          FRAMEWORK_ABSTRACT_BASE_NAMES.has(ancestorName);
+        if (!usesSTI && !ancestorIsFrameworkBase) {
+          continue;
+        }
 
         // Merge fields (child fields override parent fields with same name)
         for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {

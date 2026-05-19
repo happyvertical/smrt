@@ -28,7 +28,7 @@ export interface PlaceOptions extends SmrtObjectOptions {
   id?: string;
   tenantId?: string | null;
   typeId?: string;
-  parentId?: string;
+  parentId?: string | null;
   name?: string;
   description?: string;
 
@@ -83,7 +83,7 @@ export interface LookupOrCreateOptions {
   /**
    * Set parent place if known
    */
-  parentId?: string;
+  parentId?: string | null;
 
   /**
    * Whether to create if not found (default: true)
@@ -131,7 +131,7 @@ export interface DiscoverNearbyOptions {
   /** Override the PlaceType slug assigned to created rows. */
   typeSlug?: string;
   /** Set parent place on created rows. */
-  parentId?: string;
+  parentId?: string | null;
 }
 
 /**

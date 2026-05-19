@@ -10,7 +10,7 @@ import {
   assertValidOwnedAssetSortOrder,
   resolveOwnedAssetsById,
 } from '@happyvertical/smrt-assets';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventOptions, EventStatus } from '../types';
 
@@ -21,13 +21,13 @@ import type { EventOptions, EventStatus } from '../types';
   mcp: { include: ['list', 'get', 'create', 'update'] },
   cli: true,
 })
-export class Event extends SmrtObject {
+export class Event extends SmrtHierarchical {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
   name: string = '';
   seriesId = ''; // FK to EventSeries (nullable for standalone events)
-  parentEventId = ''; // FK to Event (nullable, self-referencing for hierarchy)
+  // parentId inherited from SmrtHierarchical (self-reference to parent Event)
   typeId = ''; // FK to EventType
   placeId = ''; // FK to Place (from @happyvertical/smrt-places)
   description = '';
@@ -47,8 +47,8 @@ export class Event extends SmrtObject {
     super(options);
 
     if (options.seriesId !== undefined) this.seriesId = options.seriesId;
-    if (options.parentEventId !== undefined)
-      this.parentEventId = options.parentEventId;
+    if (options.parentId !== undefined)
+      this.parentId = options.parentId ?? null;
     if (options.typeId) this.typeId = options.typeId;
     if (options.placeId !== undefined) this.placeId = options.placeId;
     if (options.description !== undefined)
@@ -171,98 +171,17 @@ export class Event extends SmrtObject {
     }
   }
 
-  /**
-   * Get the parent event
-   *
-   * @returns Parent Event instance or null
-   */
-  async getParent(): Promise<Event | null> {
-    if (!this.parentEventId) return null;
-
-    const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await (EventCollection as any).create(this.options);
-
-    return await collection.get({ id: this.parentEventId });
-  }
+  // Hierarchy traversal (getParent / getChildren / getAncestors /
+  // getDescendants / getHierarchy / moveTo) provided by SmrtHierarchical.
 
   /**
-   * Get immediate child events
+   * Get the root event (top-level ancestor) of this event's hierarchy.
    *
-   * @returns Array of child Event instances
-   */
-  async getChildren(): Promise<Event[]> {
-    const { EventCollection } = await import('../collections/EventCollection');
-    const collection = await (EventCollection as any).create(this.options);
-
-    return await collection.list({ where: { parentEventId: this.id } });
-  }
-
-  /**
-   * Get all ancestor events (recursive)
-   *
-   * @returns Array of ancestor events from root to immediate parent
-   */
-  async getAncestors(): Promise<Event[]> {
-    const ancestors: Event[] = [];
-    let currentEvent: Event | null = this;
-
-    while (currentEvent?.parentEventId) {
-      const parent = await currentEvent.getParent();
-      if (!parent) break;
-      ancestors.unshift(parent); // Add to beginning
-      currentEvent = parent;
-    }
-
-    return ancestors;
-  }
-
-  /**
-   * Get all descendant events (recursive)
-   *
-   * @returns Array of all descendant events
-   */
-  async getDescendants(): Promise<Event[]> {
-    const children = await this.getChildren();
-    const descendants: Event[] = [...children];
-
-    for (const child of children) {
-      const childDescendants = await child.getDescendants();
-      descendants.push(...childDescendants);
-    }
-
-    return descendants;
-  }
-
-  /**
-   * Get root event (top-level event with no parent)
-   *
-   * @returns Root event instance
+   * @returns Root event instance — `this` when already root
    */
   async getRootEvent(): Promise<Event> {
     const ancestors = await this.getAncestors();
-    return ancestors.length > 0 ? ancestors[0] : this;
-  }
-
-  /**
-   * Get full hierarchy for this event
-   *
-   * @returns Object with ancestors, current, and descendants
-   */
-  async getHierarchy(): Promise<{
-    ancestors: Event[];
-    current: Event;
-    descendants: Event[];
-  }> {
-    const [ancestors, descendants] = await Promise.all([
-      this.getAncestors(),
-      this.getDescendants(),
-    ]);
-
-    return {
-      ancestors,
-      current: this,
-      descendants,
-    };
+    return (ancestors.length > 0 ? ancestors[0] : this) as Event;
   }
 
   /**
@@ -356,9 +275,9 @@ export class Event extends SmrtObject {
   /**
    * Check if event is a root event (no parent)
    *
-   * @returns True if parentEventId is empty
+   * @returns True if parentId is null/empty
    */
   isRoot(): boolean {
-    return !this.parentEventId;
+    return !this.parentId;
   }
 }
