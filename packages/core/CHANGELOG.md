@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.25.11
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - harden smrt migrations (cli)
+  - @happyvertical/smrt-scanner@0.25.11
+  - @happyvertical/smrt-config@0.25.11
+  - @happyvertical/smrt-types@0.25.11
+
 ## 0.25.10
 
 ### Patch Changes
