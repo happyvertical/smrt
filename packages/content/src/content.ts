@@ -991,7 +991,11 @@ export class Content
         .sort(),
       facts: facts.map((fact: any) => ({
         id: fact.id || null,
-        parentId: fact.parentId || null,
+        // Pre-R3-C this was `parentId`; renamed to `previousFactId` in
+        // smrt-facts. Existing cached fingerprints will invalidate, which
+        // is the correct behaviour — the review surface (a key in the
+        // hash) changed.
+        previousFactId: fact.previousFactId || null,
         status: fact.status || null,
         textRefined: fact.textRefined || '',
         sourceCount: fact.sourceCount ?? 0,
@@ -3501,7 +3505,7 @@ export class Content
         domain: existing.domain,
         status: 'active',
         tenantId: existing.tenantId ?? this.tenantId ?? null,
-        parentId: options.factId,
+        previousFactId: options.factId,
         evolutionType: 'correction',
       } as any);
       existing.status = 'superseded';

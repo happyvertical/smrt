@@ -40,7 +40,7 @@ export type FactEvidenceStatus =
   | 'invalid';
 
 /**
- * How a fact evolved from its parent
+ * How a fact evolved from its predecessor in the evolution chain.
  */
 export type EvolutionType =
   | 'original'
@@ -87,7 +87,11 @@ export interface FactOptions extends SmrtObjectOptions {
   domain?: string;
   textRaw?: string;
   textRefined?: string;
-  parentId?: string;
+  /**
+   * Self-referencing pointer to the predecessor fact in the evolution
+   * chain. NOT a structural hierarchy edge — see Fact.previousFactId.
+   */
+  previousFactId?: string;
   evolutionType?: EvolutionType;
   sourceCount?: number;
   confidence?: number;

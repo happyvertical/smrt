@@ -2,8 +2,8 @@
  * Evolution tree tests - branch, chain, latest, tree
  *
  * Tests for the evolution tracking methods:
- * - branch() - Create a child fact with evolution metadata
- * - getEvolutionChain() - Walk up to root
+ * - branch() - Create a successor fact with evolution metadata
+ * - getEvolutionChain() - Walk up to root via previousFactId
  * - getLatestInChain() - Walk down to leaf (highest confidence)
  * - getEvolutionTree() - Full tree from root
  */
@@ -74,16 +74,16 @@ describe('Evolution tree methods', () => {
   });
 
   describe('branch()', () => {
-    it('should create a child fact with parentId and evolutionType', async () => {
-      const parent = await collection.create({
+    it('should create a successor fact with previousFactId and evolutionType', async () => {
+      const predecessor = await collection.create({
         textRefined: 'Original fact about the budget',
         type: 'assertion',
         domain: 'politics',
         status: 'active',
       });
 
-      const child = await collection.branch(
-        parent.id as string,
+      const successor = await collection.branch(
+        predecessor.id as string,
         {
           textRefined: 'Updated fact about the budget allocation',
           type: 'assertion',
@@ -92,98 +92,98 @@ describe('Evolution tree methods', () => {
         'refinement',
       );
 
-      expect(child.parentId).toBe(parent.id);
-      expect(child.evolutionType).toBe('refinement');
-      expect(child.status).toBe('active');
+      expect(successor.previousFactId).toBe(predecessor.id);
+      expect(successor.evolutionType).toBe('refinement');
+      expect(successor.status).toBe('active');
     });
 
-    it('should mark parent as superseded for correction', async () => {
-      const parent = await collection.create({
+    it('should mark predecessor as superseded for correction', async () => {
+      const predecessor = await collection.create({
         textRefined: 'The budget is $1 million',
         status: 'active',
       });
 
       await collection.branch(
-        parent.id as string,
+        predecessor.id as string,
         { textRefined: 'The budget is actually $2 million' },
         'correction',
       );
 
-      // Reload parent to check status
-      const reloadedParent = await collection.get({ id: parent.id });
-      expect(reloadedParent?.status).toBe('superseded');
+      // Reload predecessor to check status
+      const reloaded = await collection.get({ id: predecessor.id });
+      expect(reloaded?.status).toBe('superseded');
     });
 
-    it('should mark parent as superseded for contradiction', async () => {
-      const parent = await collection.create({
+    it('should mark predecessor as superseded for contradiction', async () => {
+      const predecessor = await collection.create({
         textRefined: 'The meeting was cancelled',
         status: 'active',
       });
 
       await collection.branch(
-        parent.id as string,
+        predecessor.id as string,
         { textRefined: 'The meeting went ahead as scheduled' },
         'contradiction',
       );
 
-      const reloadedParent = await collection.get({ id: parent.id });
-      expect(reloadedParent?.status).toBe('superseded');
+      const reloaded = await collection.get({ id: predecessor.id });
+      expect(reloaded?.status).toBe('superseded');
     });
 
-    it('should NOT mark parent as superseded for extension', async () => {
-      const parent = await collection.create({
+    it('should NOT mark predecessor as superseded for extension', async () => {
+      const predecessor = await collection.create({
         textRefined: 'The council discussed three items',
         status: 'active',
       });
 
       await collection.branch(
-        parent.id as string,
+        predecessor.id as string,
         { textRefined: 'The council also discussed a fourth item' },
         'extension',
       );
 
-      const reloadedParent = await collection.get({ id: parent.id });
-      expect(reloadedParent?.status).toBe('active');
+      const reloaded = await collection.get({ id: predecessor.id });
+      expect(reloaded?.status).toBe('active');
     });
 
-    it('should NOT mark parent as superseded for refinement', async () => {
-      const parent = await collection.create({
+    it('should NOT mark predecessor as superseded for refinement', async () => {
+      const predecessor = await collection.create({
         textRefined: 'The project is underway',
         status: 'active',
       });
 
       await collection.branch(
-        parent.id as string,
+        predecessor.id as string,
         { textRefined: 'The project is 50% complete' },
         'refinement',
       );
 
-      const reloadedParent = await collection.get({ id: parent.id });
-      expect(reloadedParent?.status).toBe('active');
+      const reloaded = await collection.get({ id: predecessor.id });
+      expect(reloaded?.status).toBe('active');
     });
 
-    it('should throw if parent does not exist', async () => {
+    it('should throw if predecessor does not exist', async () => {
       await expect(
         collection.branch('nonexistent-id', { textRefined: 'test' }),
-      ).rejects.toThrow('Parent fact not found');
+      ).rejects.toThrow('Predecessor fact not found');
     });
 
     it('should default to extension evolutionType', async () => {
-      const parent = await collection.create({
+      const predecessor = await collection.create({
         textRefined: 'Base fact',
         status: 'active',
       });
 
-      const child = await collection.branch(parent.id as string, {
+      const successor = await collection.branch(predecessor.id as string, {
         textRefined: 'Extended fact',
       });
 
-      expect(child.evolutionType).toBe('extension');
+      expect(successor.evolutionType).toBe('extension');
     });
   });
 
   describe('getEvolutionChain()', () => {
-    it('should return single fact for root with no parents', async () => {
+    it('should return single fact for root with no predecessor', async () => {
       const root = await collection.create({
         textRefined: 'Root fact',
       });
@@ -198,22 +198,22 @@ describe('Evolution tree methods', () => {
         textRefined: 'Root',
         status: 'active',
       });
-      const child = await collection.create({
-        textRefined: 'Child',
-        parentId: root.id as string,
+      const middle = await collection.create({
+        textRefined: 'Middle',
+        previousFactId: root.id as string,
         evolutionType: 'refinement',
       });
-      const grandchild = await collection.create({
-        textRefined: 'Grandchild',
-        parentId: child.id as string,
+      const leaf = await collection.create({
+        textRefined: 'Leaf',
+        previousFactId: middle.id as string,
         evolutionType: 'correction',
       });
 
-      const chain = await collection.getEvolutionChain(grandchild.id as string);
+      const chain = await collection.getEvolutionChain(leaf.id as string);
       expect(chain.length).toBe(3);
       expect(chain[0].id).toBe(root.id);
-      expect(chain[1].id).toBe(child.id);
-      expect(chain[2].id).toBe(grandchild.id);
+      expect(chain[1].id).toBe(middle.id);
+      expect(chain[2].id).toBe(leaf.id);
     });
 
     it('should return empty array for nonexistent fact', async () => {
@@ -223,7 +223,7 @@ describe('Evolution tree methods', () => {
   });
 
   describe('getLatestInChain()', () => {
-    it('should return the fact itself if it has no children', async () => {
+    it('should return the fact itself if it has no successors', async () => {
       const leaf = await collection.create({
         textRefined: 'Leaf fact',
       });
@@ -239,20 +239,20 @@ describe('Evolution tree methods', () => {
         confidence: 0.5,
       });
 
-      // Create two children with different confidence
+      // Create two successors with different confidence
       await collection.create({
-        textRefined: 'Low confidence child',
-        parentId: root.id as string,
+        textRefined: 'Low confidence successor',
+        previousFactId: root.id as string,
         confidence: 0.3,
       });
-      const highChild = await collection.create({
-        textRefined: 'High confidence child',
-        parentId: root.id as string,
+      const highSuccessor = await collection.create({
+        textRefined: 'High confidence successor',
+        previousFactId: root.id as string,
         confidence: 0.9,
       });
 
       const latest = await collection.getLatestInChain(root.id as string);
-      expect(latest.id).toBe(highChild.id);
+      expect(latest.id).toBe(highSuccessor.id);
     });
 
     it('should traverse multiple levels', async () => {
@@ -262,12 +262,12 @@ describe('Evolution tree methods', () => {
       });
       const middle = await collection.create({
         textRefined: 'Middle',
-        parentId: root.id as string,
+        previousFactId: root.id as string,
         confidence: 0.7,
       });
       const leaf = await collection.create({
         textRefined: 'Leaf',
-        parentId: middle.id as string,
+        previousFactId: middle.id as string,
         confidence: 0.9,
       });
 
@@ -297,17 +297,17 @@ describe('Evolution tree methods', () => {
       const root = await collection.create({
         textRefined: 'Root',
       });
-      const child1 = await collection.create({
-        textRefined: 'Child 1',
-        parentId: root.id as string,
+      const succ1 = await collection.create({
+        textRefined: 'Successor 1',
+        previousFactId: root.id as string,
       });
-      const child2 = await collection.create({
-        textRefined: 'Child 2',
-        parentId: root.id as string,
+      const succ2 = await collection.create({
+        textRefined: 'Successor 2',
+        previousFactId: root.id as string,
       });
-      const grandchild = await collection.create({
-        textRefined: 'Grandchild of child 1',
-        parentId: child1.id as string,
+      const grandSucc = await collection.create({
+        textRefined: 'Grand-successor of successor 1',
+        previousFactId: succ1.id as string,
       });
 
       const tree = await collection.getEvolutionTree(root.id as string);
@@ -315,32 +315,32 @@ describe('Evolution tree methods', () => {
 
       const treeIds = tree.map((f) => f.id);
       expect(treeIds).toContain(root.id);
-      expect(treeIds).toContain(child1.id);
-      expect(treeIds).toContain(child2.id);
-      expect(treeIds).toContain(grandchild.id);
+      expect(treeIds).toContain(succ1.id);
+      expect(treeIds).toContain(succ2.id);
+      expect(treeIds).toContain(grandSucc.id);
     });
 
-    it('should find root when starting from a child', async () => {
+    it('should find root when starting from a successor', async () => {
       const root = await collection.create({
         textRefined: 'Root',
       });
-      const child = await collection.create({
-        textRefined: 'Child',
-        parentId: root.id as string,
+      const middle = await collection.create({
+        textRefined: 'Middle',
+        previousFactId: root.id as string,
       });
-      const grandchild = await collection.create({
-        textRefined: 'Grandchild',
-        parentId: child.id as string,
+      const leaf = await collection.create({
+        textRefined: 'Leaf',
+        previousFactId: middle.id as string,
       });
 
-      // Start from grandchild, should still get full tree
-      const tree = await collection.getEvolutionTree(grandchild.id as string);
+      // Start from leaf, should still get full tree
+      const tree = await collection.getEvolutionTree(leaf.id as string);
       expect(tree.length).toBe(3);
 
       const treeIds = tree.map((f) => f.id);
       expect(treeIds).toContain(root.id);
-      expect(treeIds).toContain(child.id);
-      expect(treeIds).toContain(grandchild.id);
+      expect(treeIds).toContain(middle.id);
+      expect(treeIds).toContain(leaf.id);
     });
 
     it('should return empty array for nonexistent fact', async () => {
@@ -352,19 +352,19 @@ describe('Evolution tree methods', () => {
       const root = await collection.create({ textRefined: 'Root' });
       const branch1 = await collection.create({
         textRefined: 'Branch 1',
-        parentId: root.id as string,
+        previousFactId: root.id as string,
       });
       const branch2 = await collection.create({
         textRefined: 'Branch 2',
-        parentId: root.id as string,
+        previousFactId: root.id as string,
       });
       const leaf1 = await collection.create({
         textRefined: 'Leaf 1',
-        parentId: branch1.id as string,
+        previousFactId: branch1.id as string,
       });
       const leaf2 = await collection.create({
         textRefined: 'Leaf 2',
-        parentId: branch2.id as string,
+        previousFactId: branch2.id as string,
       });
 
       const tree = await collection.getEvolutionTree(root.id as string);

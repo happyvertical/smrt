@@ -3,7 +3,14 @@
  *
  * Core entity for distributed memory. Facts represent individual pieces
  * of knowledge with semantic embeddings for similarity search, evolution
- * tracking via parentId, and confidence scoring.
+ * tracking via previousFactId (self-referencing chain: original →
+ * correction/contradiction/refinement), and confidence scoring.
+ *
+ * Note: this is an evolution chain, not a structural hierarchy. Fact
+ * deliberately does NOT extend SmrtHierarchical — `parentId` is reserved
+ * for true structural hierarchy (Place, Event, Tag, Account, Zone). See
+ * R3-C in the relationships-v2 release for the rationale behind the
+ * semantic distinction.
  */
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
@@ -48,8 +55,16 @@ export class Fact extends SmrtObject {
   @field()
   domain: string = '';
 
+  /**
+   * Self-referencing pointer to the predecessor fact in an evolution chain.
+   *
+   * This is NOT a structural hierarchy edge — Fact does not extend
+   * SmrtHierarchical. The chain represents knowledge evolution: an original
+   * fact, then corrections, refinements, contradictions, or extensions of
+   * that fact. See `evolutionType` for the kind of step.
+   */
   @field()
-  parentId: string = '';
+  previousFactId: string = '';
 
   @field()
   evolutionType: string = 'original';
@@ -78,7 +93,8 @@ export class Fact extends SmrtObject {
     if (options.type !== undefined) this.type = options.type;
     if (options.status !== undefined) this.status = options.status;
     if (options.domain !== undefined) this.domain = options.domain;
-    if (options.parentId !== undefined) this.parentId = options.parentId;
+    if (options.previousFactId !== undefined)
+      this.previousFactId = options.previousFactId;
     if (options.evolutionType !== undefined)
       this.evolutionType = options.evolutionType;
     if (options.sourceCount !== undefined)
@@ -135,28 +151,31 @@ export class Fact extends SmrtObject {
     return this.status === 'superseded';
   }
 
-  hasParent(): boolean {
-    return this.parentId !== '';
+  /**
+   * Whether this fact has a predecessor in the evolution chain.
+   */
+  hasPredecessor(): boolean {
+    return this.previousFactId !== '';
   }
 
   /**
-   * Get the parent fact in the evolution chain
+   * Get the predecessor fact (the prior version in the evolution chain).
    */
-  async getParent(): Promise<Fact | null> {
-    if (!this.parentId) return null;
+  async getPredecessor(): Promise<Fact | null> {
+    if (!this.previousFactId) return null;
 
     const { FactCollection } = await import('./facts');
     const collection = await (FactCollection as any).create(this.options);
-    return await collection.get({ id: this.parentId });
+    return await collection.get({ id: this.previousFactId });
   }
 
   /**
-   * Get child facts (facts that evolved from this one)
+   * Get successor facts (facts that evolved directly from this one).
    */
-  async getChildren(): Promise<Fact[]> {
+  async getSuccessors(): Promise<Fact[]> {
     const { FactCollection } = await import('./facts');
     const collection = await (FactCollection as any).create(this.options);
-    return await collection.list({ where: { parentId: this.id } });
+    return await collection.list({ where: { previousFactId: this.id } });
   }
 
   /**

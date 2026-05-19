@@ -1,5 +1,5 @@
 /**
- * Fact model tests - CRUD, STI, parentId, metadata round-trip
+ * Fact model tests - CRUD, STI, previousFactId, metadata round-trip
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -105,7 +105,7 @@ describe('Fact', () => {
       expect(fact.type).toBe('assertion');
       expect(fact.status).toBe('pending');
       expect(fact.domain).toBe('');
-      expect(fact.parentId).toBe('');
+      expect(fact.previousFactId).toBe('');
       expect(fact.evolutionType).toBe('original');
       expect(fact.sourceCount).toBe(0);
       expect(fact.confidence).toBe(0);
@@ -191,65 +191,65 @@ describe('Fact', () => {
     });
   });
 
-  describe('parentId and evolution', () => {
-    it('should create a fact with a parent', async () => {
-      const parent = await collection.create({
+  describe('previousFactId and evolution', () => {
+    it('should create a fact with a predecessor', async () => {
+      const predecessor = await collection.create({
         textRefined: 'Original fact',
         status: 'active',
       });
 
-      const child = await collection.create({
+      const successor = await collection.create({
         textRefined: 'Corrected version of fact',
-        parentId: parent.id as string,
+        previousFactId: predecessor.id as string,
         evolutionType: 'correction',
       });
 
-      expect(child.parentId).toBe(parent.id);
-      expect(child.evolutionType).toBe('correction');
-      expect(child.hasParent()).toBe(true);
+      expect(successor.previousFactId).toBe(predecessor.id);
+      expect(successor.evolutionType).toBe('correction');
+      expect(successor.hasPredecessor()).toBe(true);
     });
 
-    it('should identify facts without parents', async () => {
+    it('should identify facts without a predecessor', async () => {
       const fact = await collection.create({
         textRefined: 'Root fact',
       });
 
-      expect(fact.hasParent()).toBe(false);
+      expect(fact.hasPredecessor()).toBe(false);
     });
 
-    it('should navigate to parent', async () => {
-      const parent = await collection.create({
-        textRefined: 'Parent fact',
+    it('should navigate to the predecessor', async () => {
+      const predecessor = await collection.create({
+        textRefined: 'Predecessor fact',
       });
 
-      const child = await collection.create({
-        textRefined: 'Child fact',
-        parentId: parent.id as string,
+      const successor = await collection.create({
+        textRefined: 'Successor fact',
+        previousFactId: predecessor.id as string,
       });
 
-      const foundParent = await child.getParent();
-      expect(foundParent).not.toBeNull();
-      expect(foundParent?.textRefined).toBe('Parent fact');
+      const found = await successor.getPredecessor();
+      expect(found).not.toBeNull();
+      expect(found?.textRefined).toBe('Predecessor fact');
     });
 
-    it('should find children of a fact', async () => {
-      const parent = await collection.create({
-        textRefined: 'Parent',
+    it('should find successors of a fact', async () => {
+      const predecessor = await collection.create({
+        textRefined: 'Predecessor',
       });
 
       await collection.create({
-        textRefined: 'Child 1',
-        parentId: parent.id as string,
+        textRefined: 'Successor 1',
+        previousFactId: predecessor.id as string,
         evolutionType: 'refinement',
       });
       await collection.create({
-        textRefined: 'Child 2',
-        parentId: parent.id as string,
+        textRefined: 'Successor 2',
+        previousFactId: predecessor.id as string,
         evolutionType: 'extension',
       });
 
-      const children = await parent.getChildren();
-      expect(children.length).toBe(2);
+      const successors = await predecessor.getSuccessors();
+      expect(successors.length).toBe(2);
     });
   });
 
@@ -313,27 +313,31 @@ describe('Fact', () => {
       expect(politics.length).toBe(2);
     });
 
-    it('should get children by parentId', async () => {
-      const parent = await collection.create({ textRefined: 'Parent' });
-      await collection.create({
-        textRefined: 'Child 1',
-        parentId: parent.id as string,
+    it('should get successors by previousFactId', async () => {
+      const predecessor = await collection.create({
+        textRefined: 'Predecessor',
       });
       await collection.create({
-        textRefined: 'Child 2',
-        parentId: parent.id as string,
+        textRefined: 'Successor 1',
+        previousFactId: predecessor.id as string,
+      });
+      await collection.create({
+        textRefined: 'Successor 2',
+        previousFactId: predecessor.id as string,
       });
 
-      const children = await collection.getChildren(parent.id as string);
-      expect(children.length).toBe(2);
+      const successors = await collection.getSuccessors(
+        predecessor.id as string,
+      );
+      expect(successors.length).toBe(2);
     });
   });
 
   describe('implemented methods', () => {
-    it('branch() should throw for nonexistent parent', async () => {
+    it('branch() should throw for nonexistent predecessor', async () => {
       await expect(
         collection.branch('nonexistent-id', { textRefined: 'test' }),
-      ).rejects.toThrow('Parent fact not found');
+      ).rejects.toThrow('Predecessor fact not found');
     });
 
     it('getEvolutionChain() should return empty for nonexistent id', async () => {
