@@ -101,14 +101,16 @@ CREATE TABLE folders (
 CREATE UNIQUE INDEX folders_slug_context_idx ON folders (slug, context);
 
 -- 2. Copy existing folder rows out of `assets` and into `folders`,
---    preserving id (so any `assets.folder_id` references stay valid)
---    and parent_id (the existing structural-hierarchy edge between
---    folders, which becomes Folder.parentId via SmrtHierarchical).
---    `assets` does not carry a `context` column, so default to ''
---    — adjust if your deployment scoped folders by tenant or some
---    other partition.
+--    preserving id (so any `assets.folder_id` references stay valid),
+--    parent_id (the existing structural-hierarchy edge between
+--    folders, which becomes Folder.parentId via SmrtHierarchical),
+--    and `context` (SmrtObject's slug-partition column — deployments
+--    that scoped folders by tenant or product surface use a non-empty
+--    context value that must round-trip, otherwise scoped slug lookups
+--    break and rows previously separated by context collide on
+--    folders_slug_context_idx).
 INSERT INTO folders (id, slug, context, created_at, updated_at, parent_id, tenant_id, name, description, owner_profile_id)
-SELECT id, slug, '', created_at, updated_at, parent_id, tenant_id, name, description, owner_profile_id
+SELECT id, slug, COALESCE(context, ''), created_at, updated_at, parent_id, tenant_id, name, description, owner_profile_id
   FROM assets
  WHERE type_slug = 'folder';
 
