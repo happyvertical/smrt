@@ -179,9 +179,14 @@ describe('Tag hierarchy (R3-B: slug API → UUID storage)', () => {
       expect(movedFrontend?.id).toBe(frontend.id);
       expect(movedFrontend?.parentId).toBe(data.id);
 
+      // mergeTag deletes the source row. The old code asserted
+      // `oldWeb?.id !== web.id` which was trivially true when the row was
+      // gone — round-2 review flagged that as not actually testing the
+      // delete. Use a direct null check.
       const oldWeb = await tags.get({ slug: 'web', context: 'blog' });
-      // mergeTag deletes the source row.
-      expect(oldWeb?.id).not.toBe(web.id);
+      expect(oldWeb).toBeNull();
+      // Silence the unused-binding lint by referencing the original web.
+      expect(web.id).toBeTruthy();
     });
 
     it('throws when source or target slug does not resolve', async () => {
@@ -196,13 +201,19 @@ describe('Tag hierarchy (R3-B: slug API → UUID storage)', () => {
   });
 
   it('cleanupUnused only deletes leaves with no aliases', async () => {
-    const { news } = await buildForest();
-    // `news` is a leaf root with no aliases — safe to delete.
+    await buildForest();
+    // Leaves (tags with no children) in the forest are: `data` (child
+    // of tech but has no children of its own), `frontend` (child of
+    // web), and `news` (separate root). None has aliases, so all three
+    // are deletable. `tech` and `web` are interior nodes and must stay.
     const deleted = await tags.cleanupUnused('blog');
-    expect(deleted).toBeGreaterThanOrEqual(1);
-    const stillThereTech = await tags.get({ slug: 'tech', context: 'blog' });
-    expect(stillThereTech).not.toBeNull();
-    const goneNews = await tags.get({ slug: 'news', context: 'blog' });
-    expect(goneNews?.id).not.toBe(news.id);
+    expect(deleted).toBe(3);
+
+    expect(await tags.get({ slug: 'tech', context: 'blog' })).not.toBeNull();
+    expect(await tags.get({ slug: 'web', context: 'blog' })).not.toBeNull();
+
+    expect(await tags.get({ slug: 'data', context: 'blog' })).toBeNull();
+    expect(await tags.get({ slug: 'frontend', context: 'blog' })).toBeNull();
+    expect(await tags.get({ slug: 'news', context: 'blog' })).toBeNull();
   });
 });

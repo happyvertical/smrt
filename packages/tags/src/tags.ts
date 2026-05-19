@@ -106,9 +106,16 @@ export class TagCollection extends SmrtCollection<Tag> {
 
   /**
    * Move a tag to a new parent. Slug-based API; UUIDs resolved internally.
-   * Cycle detection is delegated to `SmrtHierarchical.moveTo`. Updates the
-   * denormalised `level` field on the moved tag and recursively on all of
-   * its descendants.
+   *
+   * Cycle detection is inlined here (mirroring `SmrtHierarchical.moveTo`'s
+   * self-loop + descendant checks) so that both `parentId` and the
+   * denormalised `level` field can be persisted in a single `save()`.
+   * Delegating to `moveTo` would write `parentId` first and `level` in a
+   * second save — if the second save failed, the tag would be left with
+   * the new parent but a stale level, breaking the depth cache.
+   *
+   * After the moved tag persists, descendant levels are recalculated
+   * recursively via `updateDescendantLevels`.
    *
    * @param slug - The tag to move
    * @param newParentSlug - The new parent slug (null for root)
@@ -126,11 +133,21 @@ export class TagCollection extends SmrtCollection<Tag> {
         throw new Error(`Tag '${newParentSlug}' not found`);
       }
     }
+    const newParentId = newParent?.id ?? null;
 
-    await tag.moveTo(newParent ?? null);
+    if (newParentId !== null && newParentId === tag.id) {
+      throw new Error(`Cannot move Tag ${tag.id} to itself.`);
+    }
+    if (newParentId !== null) {
+      const descendants = (await tag.getDescendants()) as Tag[];
+      if (descendants.some((d) => d.id === newParentId)) {
+        throw new Error(
+          `Cannot move Tag ${tag.id} under one of its own descendants (${newParentId}) — would create a cycle.`,
+        );
+      }
+    }
 
-    // Recalculate level for the moved tag + every descendant. moveTo already
-    // saved tag.parentId; we just need to update level (denormalised depth).
+    tag.parentId = newParentId;
     tag.level = newParent ? newParent.level + 1 : 0;
     await tag.save();
     await this.updateDescendantLevels(tag);
