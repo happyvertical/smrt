@@ -12,6 +12,29 @@ export {
 } from './MagicLinkService.js';
 
 export {
+  type CreateAuthorizationUrlOptions,
+  decodeOidcTransaction,
+  encodeOidcTransaction,
+  getUsersOidcConfig,
+  type OidcCallbackResult,
+  OidcLoginError,
+  type OidcLoginResult,
+  OidcLoginService,
+  type OidcLoginServiceOptions,
+  type OidcProviderConfig,
+  type OidcProviderKind,
+  type OidcProviderMetadata,
+  type OidcProviderResolution,
+  type OidcProviderResolutionOptions,
+  type OidcTokenEndpointAuthMethod,
+  type OidcTokenSet,
+  type OidcTransaction,
+  type ResolvedOidcProviderConfig,
+  resolveOidcProviderConfig,
+  type UsersOidcConfig,
+} from './OidcLoginService.js';
+
+export {
   type PermissionCatalog,
   PermissionCatalogService,
   type PermissionCatalogSource,
