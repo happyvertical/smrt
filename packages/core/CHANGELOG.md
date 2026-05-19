@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.25.10
+
+### Patch Changes
+
+- ### Features
+
+  - add OIDC login flow (users)
+
+  ### Bug Fixes
+
+  - encode OIDC basic auth credentials (users)
+  - @happyvertical/smrt-scanner@0.25.10
+  - @happyvertical/smrt-config@0.25.10
+  - @happyvertical/smrt-types@0.25.10
+
 ## 0.25.9
 
 ### Patch Changes
