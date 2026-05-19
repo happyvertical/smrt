@@ -527,7 +527,7 @@ export class PlaceCollection extends SmrtCollection<Place> {
    */
   async getRootPlaces(): Promise<Place[]> {
     return await this.list({
-      where: { parentId: '' },
+      where: { parentId: null },
     });
   }
 

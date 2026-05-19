@@ -29,7 +29,7 @@ const game = await events.create({
 
 const quarter = await events.create({
   name: '1st Quarter',
-  parentEventId: game.id, // infinite nesting
+  parentId: game.id, // infinite nesting (via SmrtHierarchical)
   startDate: new Date('2024-01-20T19:30:00'),
 });
 

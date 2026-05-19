@@ -1208,7 +1208,7 @@
           "required": false,
           "default": ""
         },
-        "parentEventId": {
+        "parentId": {
           "type": "text",
           "required": false,
           "default": ""
@@ -1446,7 +1446,7 @@
       "collectionExportName": "EventCollection",
       "schema": {
         "tableName": "events",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" TEXT DEFAULT '',\n  \"parent_event_id\" TEXT DEFAULT '',\n  \"type_id\" TEXT DEFAULT '',\n  \"place_id\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"start_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"end_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" REAL DEFAULT NULL,\n  \"metadata\" TEXT DEFAULT '',\n  \"external_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" TEXT DEFAULT '',\n  \"parent_id\" TEXT DEFAULT '',\n  \"type_id\" TEXT DEFAULT '',\n  \"place_id\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"start_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"end_date\" TIMESTAMP DEFAULT current_timestamp,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" REAL DEFAULT NULL,\n  \"metadata\" TEXT DEFAULT '',\n  \"external_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -1490,7 +1490,7 @@
             "notNull": false,
             "default": ""
           },
-          "parent_event_id": {
+          "parent_id": {
             "type": "TEXT",
             "notNull": false,
             "default": ""
@@ -1681,7 +1681,7 @@
           "async": true,
           "parameters": [
             {
-              "name": "parentEventId",
+              "name": "parentId",
               "type": "string",
               "optional": false
             }
