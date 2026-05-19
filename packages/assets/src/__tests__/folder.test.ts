@@ -136,6 +136,36 @@ describe('Folder hierarchy traversal', () => {
     expect(tree.map((f) => f.name)).toEqual(['Alpha', 'Mike', 'Zulu']);
   });
 
+  it('FolderCollection.getTree preserves parent-before-child ordering (R3-D round-3 regression)', async () => {
+    // Reproduces the codex round-3 finding: a nested tree where a
+    // grandchild name sorts before its parent name. A naive global
+    // sort would put grandchild before parent in the flat list.
+    const collection = await FolderCollection.create({ db });
+
+    const root = (await collection.create({
+      name: 'Root',
+      slug: 'root3',
+    })) as Folder;
+    const zulu = (await collection.create({
+      name: 'Zulu',
+      slug: 'zulu3',
+      parentId: root.id,
+    })) as Folder;
+    await collection.create({
+      name: 'Alpha',
+      slug: 'alpha3',
+      parentId: zulu.id,
+    });
+
+    const tree = await collection.getTree(root.id!);
+    // Parent must appear before child even though "Alpha" < "Zulu".
+    const zuluIdx = tree.findIndex((f) => f.name === 'Zulu');
+    const alphaIdx = tree.findIndex((f) => f.name === 'Alpha');
+    expect(zuluIdx).toBeGreaterThanOrEqual(0);
+    expect(alphaIdx).toBeGreaterThanOrEqual(0);
+    expect(zuluIdx).toBeLessThan(alphaIdx);
+  });
+
   it('moveTo refuses to create a cycle', async () => {
     const collection = await FolderCollection.create({ db });
 

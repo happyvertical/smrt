@@ -36,17 +36,34 @@ export class FolderCollection extends SmrtCollection<Folder> {
       })) as Folder[];
     }
 
-    const root = (await this.get({ id: rootId })) as Folder | null;
-    if (!root) return [];
-    const descendants = await root.getDescendants();
-    // SmrtHierarchical.getDescendants returns BFS storage order.
-    // Match the historical contract of FolderCollection.getTree by
-    // applying `name ASC` ordering so UIs render deterministically
-    // regardless of insertion order. Stable sort preserves siblings'
-    // BFS-level grouping when names tie.
-    return descendants.sort((a, b) =>
-      (a.name ?? '').localeCompare(b.name ?? ''),
-    );
+    // Walk the tree BFS-by-level, sorting siblings by name within each
+    // batch. This preserves two contracts from the pre-R3-D
+    // implementation that `SmrtHierarchical.getDescendants` alone does
+    // not — global name-sort would interleave parents and grandchildren
+    // (root → Zulu → Alpha would surface as `[Alpha, Zulu]`, putting
+    // grandchild before parent), and storage-order BFS would render
+    // unsorted siblings.
+    const result: Folder[] = [];
+    const queue: string[] = [rootId];
+    const visited = new Set<string>([rootId]);
+
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      const children = (await this.list({
+        where: { parentId: currentId },
+        orderBy: 'name ASC',
+      })) as Folder[];
+
+      for (const child of children) {
+        if (child.id && !visited.has(child.id)) {
+          visited.add(child.id);
+          result.push(child);
+          queue.push(child.id);
+        }
+      }
+    }
+
+    return result;
   }
 
   /**
