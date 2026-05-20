@@ -754,7 +754,19 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
   ): string {
-    const parts: string[] = [this.quoteIdentifier(colName), colDef.type];
+    const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
+      ? colDef.type
+      : 'TEXT';
+    if (!isValidSQLDataType(colDef.type)) {
+      console.warn(
+        `[SchemaComparer] Invalid manifest type "${colDef.type}" for ${tableName}.${colName}, treating as TEXT`,
+      );
+    }
+
+    const parts: string[] = [
+      this.quoteIdentifier(colName),
+      this.ddlStrategy.mapType(validatedType),
+    ];
 
     if (colDef.notNull) {
       parts.push('NOT NULL');
@@ -763,14 +775,19 @@ export class SchemaComparer {
       parts.push('UNIQUE');
     }
     if (colDef.defaultValue !== undefined) {
-      const defaultVal =
-        typeof colDef.defaultValue === 'string'
-          ? `'${colDef.defaultValue.replace(/'/g, "''")}'`
-          : String(colDef.defaultValue);
+      const defaultVal = this.ddlStrategy.formatDefaultValue(
+        colDef.defaultValue,
+        validatedType,
+      );
       parts.push(`DEFAULT ${defaultVal}`);
     }
+    if (colDef.check) {
+      parts.push(`CHECK (${colDef.check})`);
+    }
 
-    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${parts.join(' ')}`;
+    const columnDefinition = parts.join(' ');
+
+    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${columnDefinition}`;
   }
 
   /**

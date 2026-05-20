@@ -414,6 +414,126 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(typeUpgrades[0].sql).toContain("SET DEFAULT '{}'::jsonb");
   });
 
+  it('should generate PostgreSQL ADD COLUMN SQL for JSON array defaults', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'contents' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      contents: {
+        tableName: 'contents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          word_timings: { type: 'JSON', defaultValue: [] },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'add_column',
+        table: 'contents',
+        name: 'word_timings',
+        sql: `ALTER TABLE "contents" ADD COLUMN "word_timings" JSONB DEFAULT '[]'`,
+      }),
+    ]);
+  });
+
+  it('should preserve DuckDB UNIQUE constraints in ADD COLUMN SQL', async () => {
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'users' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const duckComparer = new SchemaComparer(mockDuckDb as any);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      users: {
+        tableName: 'users',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          email: { type: 'TEXT', unique: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await duckComparer.compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'add_column',
+        table: 'users',
+        name: 'email',
+        sql: `ALTER TABLE "users" ADD COLUMN "email" TEXT UNIQUE`,
+      }),
+    ]);
+  });
+
+  it('should not emit PRIMARY KEY constraints in ADD COLUMN SQL', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'users' }] }),
+      getTableSchema: async () => ({
+        columns: {},
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      users: {
+        tableName: 'users',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'add_column',
+        table: 'users',
+        name: 'id',
+        sql: `ALTER TABLE "users" ADD COLUMN "id" TEXT`,
+      }),
+    ]);
+  });
+
   it('should generate PostgreSQL USING clause for legacy JSON→TIMESTAMP drift', async () => {
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
