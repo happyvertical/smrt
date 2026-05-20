@@ -9,7 +9,7 @@
       "className": "AssetAssociation",
       "qualifiedName": "@happyvertical/smrt-assets:AssetAssociation",
       "collection": "assetassociations",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-association.ts",
+      "filePath": "packages/assets/src/asset-association.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {
         "assetId": {
@@ -177,7 +177,7 @@
       "className": "AssetAssociationCollection",
       "qualifiedName": "@happyvertical/smrt-assets:AssetAssociationCollection",
       "collection": "assetassociations",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-associations.ts",
+      "filePath": "packages/assets/src/asset-associations.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
@@ -370,7 +370,7 @@
       "className": "AssetMetafield",
       "qualifiedName": "@happyvertical/smrt-assets:AssetMetafield",
       "collection": "assetmetafields",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-metafield.ts",
+      "filePath": "packages/assets/src/asset-metafield.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {
         "created_at": {
@@ -938,7 +938,7 @@
       "className": "AssetMetafieldCollection",
       "qualifiedName": "@happyvertical/smrt-assets:AssetMetafieldCollection",
       "collection": "assetmetafields",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-metafields.ts",
+      "filePath": "packages/assets/src/asset-metafields.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
@@ -1033,7 +1033,7 @@
       "className": "AssetStatus",
       "qualifiedName": "@happyvertical/smrt-assets:AssetStatus",
       "collection": "assetstatuses",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-status.ts",
+      "filePath": "packages/assets/src/asset-status.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {
         "created_at": {
@@ -1579,7 +1579,7 @@
       "className": "AssetStatusCollection",
       "qualifiedName": "@happyvertical/smrt-assets:AssetStatusCollection",
       "collection": "assetstatuses",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-statuses.ts",
+      "filePath": "packages/assets/src/asset-statuses.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
@@ -1674,7 +1674,7 @@
       "className": "AssetType",
       "qualifiedName": "@happyvertical/smrt-assets:AssetType",
       "collection": "assettypes",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-type.ts",
+      "filePath": "packages/assets/src/asset-type.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {
         "created_at": {
@@ -2220,7 +2220,7 @@
       "className": "AssetTypeCollection",
       "qualifiedName": "@happyvertical/smrt-assets:AssetTypeCollection",
       "collection": "assettypes",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset-types.ts",
+      "filePath": "packages/assets/src/asset-types.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
@@ -2315,7 +2315,7 @@
       "className": "Asset",
       "qualifiedName": "@happyvertical/smrt-assets:Asset",
       "collection": "assets",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/asset.ts",
+      "filePath": "packages/assets/src/asset.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {
         "created_at": {
@@ -3155,7 +3155,7 @@
       "className": "AssetCollection",
       "qualifiedName": "@happyvertical/smrt-assets:AssetCollection",
       "collection": "assets",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/assets.ts",
+      "filePath": "packages/assets/src/assets.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {
@@ -3461,7 +3461,7 @@
       "className": "Folder",
       "qualifiedName": "@happyvertical/smrt-assets:Folder",
       "collection": "folders",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/folder.ts",
+      "filePath": "packages/assets/src/folder.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {
         "parentId": {
@@ -3498,7 +3498,7 @@
           "name": "getParent",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<null>",
+          "returnType": "Promise<Folder | null>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3506,7 +3506,7 @@
           "name": "getChildren",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<Folder[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3514,7 +3514,7 @@
           "name": "getAncestors",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<Folder[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3522,7 +3522,7 @@
           "name": "getDescendants",
           "async": true,
           "parameters": [],
-          "returnType": "Promise",
+          "returnType": "Promise<Folder[]>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3530,7 +3530,7 @@
           "name": "getHierarchy",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<HierarchyView>",
+          "returnType": "Promise<HierarchyView<Folder>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3540,7 +3540,7 @@
           "parameters": [
             {
               "name": "newParent",
-              "type": "string | null",
+              "type": "Folder | string | null",
               "optional": false
             }
           ],
@@ -3664,7 +3664,7 @@
       "className": "FolderCollection",
       "qualifiedName": "@happyvertical/smrt-assets:FolderCollection",
       "collection": "folders",
-      "filePath": "/Users/will/Work/happyvertical/repos/smrt/.claude/worktrees/agent-a42203189de73ab6f/packages/assets/src/folders.ts",
+      "filePath": "packages/assets/src/folders.ts",
       "packageName": "@happyvertical/smrt-assets",
       "fields": {},
       "methods": {

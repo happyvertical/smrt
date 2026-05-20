@@ -12,7 +12,12 @@
  * `R3-D` changeset for the migration.
  */
 
-import { ObjectRegistry, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { Tag } from '@happyvertical/smrt-tags';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociation } from './asset-association';
@@ -225,9 +230,15 @@ export class Asset extends SmrtObject {
    * mirrors the pattern used by `SmrtHierarchical._hierarchyCollection`
    * so source/derivative lookups inherit tenant scoping and ORM
    * hydration without hard-coding an import of `./assets` (which would
-   * also create a module-import cycle).
+   * create a module-import cycle).
+   *
+   * The return type is `SmrtCollection<Asset>` (the framework base, type-
+   * only import from core) rather than the concrete `AssetCollection` —
+   * importing the concrete class is what would create the cycle, but the
+   * base-class shape gives callers full `.get()` / `.list()` type
+   * safety here.
    */
-  private async _assetCollection(): Promise<any> {
+  private async _assetCollection(): Promise<SmrtCollection<Asset>> {
     return await ObjectRegistry.getCollection<Asset>('Asset', this.options);
   }
 

@@ -59,7 +59,7 @@ export class Folder extends SmrtHierarchical {
       this.parentId = options.parentId ?? null;
     if (options.ownerProfileId !== undefined)
       this.ownerProfileId = options.ownerProfileId;
-    if (options.tenantId !== undefined) this.tenantId = options.tenantId as any;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
   }
