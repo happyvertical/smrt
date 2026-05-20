@@ -55,6 +55,37 @@ const DEFAULT_OPTIONS = {
   useConcurrentIndexes: true,
 };
 
+class AtomicMigrationRollback extends Error {
+  constructor(
+    public readonly results: MigrationResult[],
+    public readonly failed: MigrationResult,
+  ) {
+    super(`Atomic migration batch failed at ${failed.name}`);
+  }
+}
+
+const CONCURRENT_INDEX_STATEMENT_RE =
+  /(?:(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY|REINDEX(?:\s*\([^)]*\))?\s+(?:INDEX|TABLE|SCHEMA|DATABASE|SYSTEM)\s+CONCURRENTLY)/i;
+
+function findConcurrentIndexStatement(
+  definitions: MigrationDefinition[],
+): { migrationName: string; statement: string } | null {
+  for (const definition of definitions) {
+    const statement = definition.up.find((sql) =>
+      CONCURRENT_INDEX_STATEMENT_RE.test(sql),
+    );
+
+    if (statement) {
+      return {
+        migrationName: definition.id,
+        statement,
+      };
+    }
+  }
+
+  return null;
+}
+
 /**
  * MigrationTracker class
  *
@@ -410,14 +441,31 @@ export class MigrationTracker {
         execution_time_ms: executionTime,
       };
     } catch (error) {
-      // Mark as failed
-      await this.db.query(
-        `UPDATE _smrt_schema_migrations
-         SET status = 'failed', error_message = ?
-         WHERE id = ?`,
-        error instanceof Error ? error.message : String(error),
-        id,
-      );
+      const migrationError =
+        error instanceof Error ? error : new Error(String(error));
+
+      // Mark as failed. In an outer atomic Postgres transaction, a DDL error
+      // aborts the transaction and this status write must be skipped so the
+      // caller can roll back the whole batch while preserving the root error.
+      try {
+        await this.db.query(
+          `UPDATE _smrt_schema_migrations
+           SET status = 'failed', error_message = ?
+           WHERE id = ?`,
+          migrationError.message,
+          id,
+        );
+      } catch (persistError) {
+        // Preserve the migration failure; status persistence is secondary and
+        // may be impossible until the surrounding transaction rolls back.
+        const persistMessage =
+          persistError instanceof Error
+            ? persistError.message
+            : String(persistError);
+        console.error(
+          `Failed to persist failed status for migration ${definition.id}: ${persistMessage}`,
+        );
+      }
 
       return {
         success: false,
@@ -426,7 +474,7 @@ export class MigrationTracker {
         name: definition.id,
         checksum,
         execution_time_ms: Date.now() - startTime,
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: migrationError,
       };
     }
   }
@@ -438,12 +486,81 @@ export class MigrationTracker {
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult[]> {
+    if (options.atomic && !options.dryRun) {
+      if (!this.db.transaction) {
+        throw new Error(
+          'Atomic migration batches require a database adapter with transaction support.',
+        );
+      }
+
+      if (this.dbEngine === 'postgres') {
+        const concurrentStatement = findConcurrentIndexStatement(definitions);
+        if (concurrentStatement) {
+          throw new Error(
+            `Atomic migration batch cannot include CONCURRENTLY index DDL in ${concurrentStatement.migrationName}; PostgreSQL forbids CONCURRENTLY inside a transaction.`,
+          );
+        }
+      }
+
+      try {
+        return await this.db.transaction(async (tx) => {
+          const txDb = {
+            ...tx,
+            transaction: async <T>(
+              callback: (transactionDb: DatabaseInterface) => Promise<T>,
+            ) => callback(tx as DatabaseInterface),
+          } as DatabaseInterface;
+          const txTracker = new MigrationTracker({
+            db: txDb,
+            lockTimeout: this.options.lockTimeout,
+            statementTimeout: this.options.statementTimeout,
+            useConcurrentIndexes: false,
+          });
+          const results = await txTracker.applyAll(definitions, {
+            ...options,
+            atomic: false,
+            continueOnError: false,
+            postgresSafe: false,
+          });
+          const failed = results.find((result) => !result.success);
+
+          if (failed) {
+            throw new AtomicMigrationRollback(results, failed);
+          }
+
+          return results;
+        });
+      } catch (error) {
+        if (error instanceof AtomicMigrationRollback) {
+          return error.results.map((result) => {
+            if (!result.success || !result.applied) {
+              return result;
+            }
+
+            return {
+              ...result,
+              success: false,
+              applied: false,
+              skipped: false,
+              rolled_back: true,
+              error: new Error(
+                `Rolled back because migration ${error.failed.name} failed`,
+              ),
+            };
+          });
+        }
+
+        throw error;
+      }
+    }
+
     const results: MigrationResult[] = [];
     this.currentBatch = await this.getNextBatch();
 
     for (const definition of definitions) {
       const result = await this.apply(definition, options);
       results.push(result);
+      options.onProgress?.(result);
 
       if (!result.success && !options.continueOnError) {
         break;
