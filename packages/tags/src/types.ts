@@ -11,7 +11,7 @@ export interface TagOptions extends SmrtObjectOptions {
   slug?: string;
   name?: string;
   context?: string;
-  parentSlug?: string;
+  parentId?: string | null;
   level?: number;
   description?: string;
   metadata?: string | Record<string, any>;
