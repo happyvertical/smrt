@@ -19,7 +19,8 @@ export interface Props {
   initial?: Partial<ContentContributionData>;
   showContributorFields?: boolean;
   submitLabel?: string;
-  onSubmit: (payload: ContentContributionFormSubmitData) => void;
+  action?: string;
+  onSubmit?: (payload: ContentContributionFormSubmitData) => void;
   onCancel?: () => void;
 }
 
@@ -28,6 +29,7 @@ let {
   initial = {},
   showContributorFields = true,
   submitLabel = 'Submit contribution',
+  action = undefined,
   onSubmit,
   onCancel = undefined,
 }: Props = $props();
@@ -91,7 +93,15 @@ function handleFileChange(event: Event) {
   draft.files = Array.from(target.files || []);
 }
 
-function handleSubmit() {
+function handleSubmit(event: SubmitEvent) {
+  if (!onSubmit) {
+    if (!action?.trim()) {
+      event.preventDefault();
+    }
+    return;
+  }
+
+  event.preventDefault();
   onSubmit({
     typeKey: draft.typeKey,
     contributorEmail: draft.contributorEmail || undefined,
@@ -106,16 +116,16 @@ function handleSubmit() {
 
 <form
   class="contribution-form"
-  onsubmit={(event) => {
-    event.preventDefault();
-    handleSubmit();
-  }}
+  method="post"
+  enctype="multipart/form-data"
+  {action}
+  onsubmit={handleSubmit}
 >
   <h3>Submit a contribution</h3>
 
   <label>
     Contribution type
-    <select bind:value={draft.typeKey} required>
+    <select name="typeKey" bind:value={draft.typeKey} required>
       {#each types.filter((type) => type.enabled !== false) as type (type.key)}
         <option value={type.key}>{type.label}</option>
       {/each}
@@ -126,34 +136,35 @@ function handleSubmit() {
     <div class="grid">
       <label>
         Email
-        <input type="email" bind:value={draft.contributorEmail} required />
+        <input name="contributorEmail" type="email" bind:value={draft.contributorEmail} required />
       </label>
       <label>
         Name
-        <input type="text" bind:value={draft.contributorName} />
+        <input name="contributorName" type="text" bind:value={draft.contributorName} />
       </label>
     </div>
   {/if}
 
   <label>
     Title
-    <input type="text" bind:value={draft.title} />
+    <input name="title" type="text" bind:value={draft.title} />
   </label>
 
   <label>
     Description
-    <textarea bind:value={draft.description} rows="2"></textarea>
+    <textarea name="description" bind:value={draft.description} rows="2"></textarea>
   </label>
 
   <label>
     Body
-    <textarea bind:value={draft.body} rows="8"></textarea>
+    <textarea name="body" bind:value={draft.body} rows="8"></textarea>
   </label>
 
   {#if activeType?.allowFiles !== false}
     <label>
       Attach files
       <input
+        name="files"
         type="file"
         multiple
         onchange={handleFileChange}
