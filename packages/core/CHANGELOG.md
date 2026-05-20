@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.25.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve atomic review followups (migrations)
+  - address atomic review feedback (migrations)
+  - apply schema batches atomically (migrations)
+  - @happyvertical/smrt-scanner@0.25.13
+  - @happyvertical/smrt-config@0.25.13
+  - @happyvertical/smrt-types@0.25.13
+
 ## 0.25.12
 
 ### Patch Changes
