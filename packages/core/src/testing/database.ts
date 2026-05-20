@@ -210,7 +210,7 @@ export async function getTestDatabase(
     // classes still produce their own table instead of being mis-flagged
     // as children.
     const stiBase = ObjectRegistry.getSTIBase(className);
-    const registered = ObjectRegistry.findClass(className);
+    const registered = ObjectRegistry.getClass(className);
     const qualifiedClassName =
       registered?.qualifiedName ?? registered?.name ?? className;
     if (stiBase && stiBase !== qualifiedClassName) {

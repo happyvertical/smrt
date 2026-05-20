@@ -82,7 +82,7 @@ describe('Account STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('EmailAccount');
-      expect(base).toBe('Account');
+      expect(base).toBe('@happyvertical/smrt-messages:Account');
     });
 
     it('should set _meta_type to EmailAccount', async () => {
@@ -139,7 +139,7 @@ describe('Account STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('SlackAccount');
-      expect(base).toBe('Account');
+      expect(base).toBe('@happyvertical/smrt-messages:Account');
     });
 
     it('should set _meta_type to SlackAccount', async () => {
@@ -177,7 +177,7 @@ describe('Account STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('TwitterAccount');
-      expect(base).toBe('Account');
+      expect(base).toBe('@happyvertical/smrt-messages:Account');
     });
 
     it('should set _meta_type to TwitterAccount', async () => {
@@ -245,20 +245,28 @@ describe('Account STI Support', () => {
     it('should build correct inheritance chain for EmailAccount', () => {
       const chain = ObjectRegistry.getInheritanceChain('EmailAccount');
 
-      expect(chain).toContain('Account');
-      expect(chain).toContain('EmailAccount');
+      expect(chain).toContain('@happyvertical/smrt-messages:Account');
+      expect(chain).toContain('@happyvertical/smrt-messages:EmailAccount');
 
-      const accountIdx = chain.indexOf('Account');
-      const emailAccountIdx = chain.indexOf('EmailAccount');
+      const accountIdx = chain.indexOf('@happyvertical/smrt-messages:Account');
+      const emailAccountIdx = chain.indexOf(
+        '@happyvertical/smrt-messages:EmailAccount',
+      );
       expect(emailAccountIdx).toBeGreaterThan(accountIdx);
     });
 
     it('should get all descendants of Account', () => {
       const descendants = ObjectRegistry.getDescendants('Account');
 
-      expect(descendants).toContain('EmailAccount');
-      expect(descendants).toContain('SlackAccount');
-      expect(descendants).toContain('TwitterAccount');
+      expect(descendants).toContain(
+        '@happyvertical/smrt-messages:EmailAccount',
+      );
+      expect(descendants).toContain(
+        '@happyvertical/smrt-messages:SlackAccount',
+      );
+      expect(descendants).toContain(
+        '@happyvertical/smrt-messages:TwitterAccount',
+      );
     });
   });
 });

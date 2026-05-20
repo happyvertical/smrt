@@ -3140,7 +3140,7 @@ export function smrt(config: SmartObjectConfig = {}) {
 
           if (stiBase && stiBase !== itemQualified) {
             // Use STI base's table name
-            const baseReg = ObjectRegistry.findClass(stiBase);
+            const baseReg = ObjectRegistry.getClass(stiBase);
             tableName =
               baseReg?.schema?.tableName ??
               classnameToTablename(baseReg?.name ?? stiBase);
@@ -3217,7 +3217,7 @@ export function smrt(config: SmartObjectConfig = {}) {
             // This is an STI child - use parent's table name. Resolve the
             // qualified stiBaseName to its registration to pick the
             // correct table identifier.
-            const baseReg = ObjectRegistry.findClass(stiBaseName);
+            const baseReg = ObjectRegistry.getClass(stiBaseName);
             tableName =
               baseReg?.schema?.tableName ??
               classnameToTablename(baseReg?.name ?? stiBaseName);
@@ -3244,7 +3244,7 @@ export function smrt(config: SmartObjectConfig = {}) {
           if (stiBaseName) {
             // Use STI base's table name. (R5-canon: see above — qualified
             // stiBaseName resolves to its registration's tableName.)
-            const baseReg = ObjectRegistry.findClass(stiBaseName);
+            const baseReg = ObjectRegistry.getClass(stiBaseName);
             tableName =
               baseReg?.schema?.tableName ??
               classnameToTablename(baseReg?.name ?? stiBaseName);

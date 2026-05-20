@@ -119,9 +119,13 @@ export async function generateSchema(
       );
     }
 
-    // Only generate schema for the base class (not for children)
-    // Children will use the same table as the base
-    if (className === stiBase) {
+    // Only generate schema for the base class (not for children).
+    // R5-canon: `getSTIBase` returns the qualified name; compare against
+    // the qualified form of this class so an STI base isn't
+    // mis-classified as a subclass and skipped.
+    const qualifiedClassName =
+      registeredClass?.qualifiedName ?? registeredClass?.name ?? className;
+    if (qualifiedClassName === stiBase || className === stiBase) {
       // This is the base class - generate STI schema
       schemaDefinition = await generator.generateSTISchemaFromRegistry(
         className,

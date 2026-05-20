@@ -125,7 +125,7 @@ export function getTableName(name: string): string | undefined {
   // (which may be simple) to its registration's qualified form for the
   // comparison.
   const stiBase = ObjectRegistry.getSTIBase(name);
-  const registered = ObjectRegistry.findClass(name);
+  const registered = ObjectRegistry.getClass(name);
   const qualifiedName = registered?.qualifiedName ?? registered?.name ?? name;
   if (stiBase && stiBase !== qualifiedName) {
     return getSchema(stiBase)?.tableName;
