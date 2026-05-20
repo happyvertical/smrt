@@ -898,8 +898,10 @@ export class FactCollection extends SmrtCollection<Fact> {
   }
 
   /**
-   * Find the root of the chain via getEvolutionChain, then collect all
-   * descendants recursively. Returns the full tree as a flat array.
+   * Find the root of the chain via `getEvolutionChain`, then collect every
+   * successor iteratively via BFS (queue-based, with a `visited` set for
+   * cycle protection). Returns the full tree as a flat array in BFS
+   * order — root first, then each level of successors.
    */
   async getEvolutionTree(factId: string): Promise<Fact[]> {
     // Find root
