@@ -14,10 +14,10 @@
 import { existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtHierarchical } from '../hierarchical';
-import { smrt } from '../registry';
+import { ObjectRegistry, smrt } from '../registry';
 
 @smrt({
   tableName: 'hierarchical_test_nodes',
@@ -244,5 +244,166 @@ describe('SmrtHierarchical', () => {
       const subclass = new BareHierarchical({} as any);
       expect(subclass).toBeInstanceOf(SmrtHierarchical);
     });
+  });
+});
+
+/**
+ * Cross-package qualified-name disambiguation
+ *
+ * Exercises the constructor prototype-chain walk in
+ * `_hierarchyCollection`. Two hierarchical classes share the SAME simple
+ * name (`CollisionDoc`) but are registered under different package
+ * contexts. The constructor identities are unique even though the names
+ * collide, so the walk should resolve each instance to ITS package's
+ * qualified registration rather than picking whichever registration won
+ * the simple-name lookup race.
+ *
+ * Pre-PR-#1269 behavior: `_hierarchyCollection` called
+ * `ObjectRegistry.getCollection(this.constructor.name)` — the simple
+ * name `'CollisionDoc'` — and `findClass` would pick one registration
+ * arbitrarily (whichever entry won the classNameMap iteration, or
+ * throw on ambiguity).
+ *
+ * Post-PR-#1269 behavior: the constructor reference uniquely identifies
+ * the right registration regardless of name collision.
+ *
+ * Setting up a true cross-package registry collision in-process is
+ * non-trivial (the registry's package-name inference reads stack
+ * traces and manifest data), so this suite stubs
+ * `ObjectRegistry.getClassByConstructor` to return synthetic
+ * registrations keyed by constructor identity, then asserts the
+ * qualified name produced by `_hierarchyCollection` matches the
+ * constructor that was instantiated. That's exactly the property the
+ * fix is supposed to preserve.
+ */
+describe('SmrtHierarchical cross-package qualified-name disambiguation', () => {
+  // Two distinct constructors with the SAME simple `.name`. The
+  // `class CollisionDoc extends SmrtHierarchical {}` expression literal
+  // gives each `const` a class whose `.name === 'CollisionDoc'`, but
+  // the constructors are distinct values in JS — `DocA !== DocB`.
+  const DocA = class CollisionDoc extends SmrtHierarchical {
+    marker = 'A';
+  };
+  const DocB = class CollisionDoc extends SmrtHierarchical {
+    marker = 'B';
+  };
+
+  // Synthetic registrations keyed by constructor reference, returned
+  // by the stubbed `getClassByConstructor` below.
+  const regByCtor = new Map<Function, any>([
+    [
+      DocA,
+      {
+        name: 'CollisionDoc',
+        qualifiedName: '@test/package-a:CollisionDoc',
+        config: {},
+      },
+    ],
+    [
+      DocB,
+      {
+        name: 'CollisionDoc',
+        qualifiedName: '@test/package-b:CollisionDoc',
+        config: {},
+      },
+    ],
+  ]);
+
+  let getClassByConstructorSpy: ReturnType<typeof vi.spyOn>;
+  let getCollectionSpy: ReturnType<typeof vi.spyOn>;
+  const getCollectionCalls: string[] = [];
+
+  beforeEach(() => {
+    getCollectionCalls.length = 0;
+    getClassByConstructorSpy = vi
+      .spyOn(ObjectRegistry, 'getClassByConstructor')
+      .mockImplementation(
+        (ctor: any) => regByCtor.get(ctor) ?? undefined,
+      ) as any;
+    getCollectionSpy = vi
+      .spyOn(ObjectRegistry, 'getCollection')
+      .mockImplementation(async (className: string) => {
+        getCollectionCalls.push(className);
+        // Return a minimal mock — the test only cares which className
+        // was passed in. Cast as any since SmrtCollection's shape is
+        // larger than what we need here.
+        return { tableName: `mock-table-for-${className}` } as any;
+      }) as any;
+  });
+
+  afterEach(() => {
+    getClassByConstructorSpy.mockRestore();
+    getCollectionSpy.mockRestore();
+  });
+
+  it('resolves each constructor to ITS own qualified name despite sharing a simple name', async () => {
+    const a = new DocA({} as any);
+    const b = new DocB({} as any);
+
+    await (a as any)._hierarchyCollection();
+    await (b as any)._hierarchyCollection();
+
+    expect(getCollectionCalls).toEqual([
+      '@test/package-a:CollisionDoc',
+      '@test/package-b:CollisionDoc',
+    ]);
+  });
+
+  it('walks past intermediate STI subclasses to the OLDEST STI base', async () => {
+    // `Child extends Mid extends StiRoot extends SmrtHierarchical`.
+    // StiRoot declares tableStrategy:'sti'; the walk should land there
+    // (the OLDEST STI ancestor), NOT on Mid or Child.
+    const StiRoot = class StiBase extends SmrtHierarchical {};
+    const Mid = class StiMid extends StiRoot {};
+    const Child = class StiChild extends Mid {};
+
+    regByCtor.set(StiRoot, {
+      name: 'StiBase',
+      qualifiedName: '@test/sti-pkg:StiBase',
+      config: { tableStrategy: 'sti' },
+    });
+    regByCtor.set(Mid, {
+      name: 'StiMid',
+      qualifiedName: '@test/sti-pkg:StiMid',
+      config: {},
+    });
+    regByCtor.set(Child, {
+      name: 'StiChild',
+      qualifiedName: '@test/sti-pkg:StiChild',
+      config: {},
+    });
+
+    const inst = new Child({} as any);
+    await (inst as any)._hierarchyCollection();
+
+    expect(getCollectionCalls).toEqual(['@test/sti-pkg:StiBase']);
+  });
+
+  it('terminates cleanly without registry lookups against Function/Object prototypes', async () => {
+    // Constructor that isn't registered anywhere should walk up its
+    // chain (Function.prototype → Object.prototype → null) without
+    // throwing and without the lookup being invoked with Function or
+    // Object themselves (the loop terminates at the prototype-object
+    // boundaries — round-1 review fix).
+    const Unregistered = class UnregisteredDoc extends SmrtHierarchical {};
+    // Deliberately NOT in regByCtor — getClassByConstructor returns
+    // undefined for it.
+
+    const inst = new Unregistered({} as any);
+    await (inst as any)._hierarchyCollection();
+
+    // collectionClass falls back to `this.constructor.name` since
+    // no registration and no STI base were found. The fix should leave
+    // that fallback path intact.
+    expect(getCollectionCalls).toEqual(['UnregisteredDoc']);
+
+    // Sanity: getClassByConstructor was called for the leaf ctor itself,
+    // never for `Function.prototype` or `Object.prototype` (the
+    // termination conditions skip them).
+    const callArgs = getClassByConstructorSpy.mock.calls.map(
+      (c: any[]) => c[0],
+    );
+    expect(callArgs).not.toContain(Function.prototype);
+    expect(callArgs).not.toContain(Object.prototype);
   });
 });
