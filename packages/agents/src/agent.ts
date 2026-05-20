@@ -1026,14 +1026,24 @@ export abstract class Agent extends SmrtObject {
       // Invalidate cached chain so getTableStrategy rebuilds with complete data
       ObjectRegistry.invalidateInheritanceCache(_className);
 
-      // Add STI discriminator filter if this is an STI child class
+      // Add STI discriminator filter if this is an STI child class.
+      // R5-canon: `getSTIBase` returns the qualified name; compare
+      // against the qualified form of `_className` so a query against
+      // an STI BASE doesn't get an unintended `_meta_type` filter that
+      // would hide its descendants.
       const tableStrategy = ObjectRegistry.getTableStrategy(_className);
       if (tableStrategy === 'sti') {
         const stiBase = ObjectRegistry.getSTIBase(_className);
-        if (stiBase && stiBase !== _className) {
+        const classInfo = ObjectRegistry.getClass(_className);
+        const qualifiedClassName =
+          classInfo?.qualifiedName ?? classInfo?.name ?? _className;
+        if (
+          stiBase &&
+          stiBase !== qualifiedClassName &&
+          stiBase !== _className
+        ) {
           // Get the qualified name for this class (e.g., '@happyvertical/praeco:Meeting')
           // This is what's stored in the _meta_type column in the database
-          const classInfo = ObjectRegistry.getClass(_className);
           const metaTypeValue = classInfo?.qualifiedName || _className;
           // Wrap original where clause and add _meta_type filter
           whereClause = `_meta_type = ? AND (${whereClause})`;

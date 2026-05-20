@@ -651,8 +651,17 @@ export default testManifest;
             const tableStrategy = ObjectRegistry.getTableStrategy(className);
             const stiBase = ObjectRegistry.getSTIBase(className);
 
-            // Skip STI children (they share the base class table)
-            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+            // R5-canon: `getSTIBase` returns the qualified name; compare
+            // against the qualified form so an STI base isn't
+            // mis-classified as a child.
+            const qualifiedClassName =
+              registered.qualifiedName ?? registered.name ?? className;
+            const isSTIChild =
+              tableStrategy === 'sti' &&
+              !!stiBase &&
+              stiBase !== qualifiedClassName &&
+              stiBase !== className;
+            if (isSTIChild) {
               console.log(
                 `-- Table: ${className} (Base: ${stiBase}, Strategy: STI)`,
               );
@@ -753,9 +762,18 @@ export default testManifest;
           try {
             const tableStrategy = ObjectRegistry.getTableStrategy(className);
             const stiBase = ObjectRegistry.getSTIBase(className);
+            // R5-canon: qualified-to-qualified STI-child detection.
+            const registered = ObjectRegistry.getClass(className);
+            const qualifiedClassName =
+              registered?.qualifiedName ?? registered?.name ?? className;
 
             // Skip STI children (schema already created by base class)
-            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+            if (
+              tableStrategy === 'sti' &&
+              stiBase &&
+              stiBase !== qualifiedClassName &&
+              stiBase !== className
+            ) {
               tablesSkipped++;
               if (options.verbose) {
                 console.log(`  ⊙ ${className} (shares table with ${stiBase})`);
@@ -1189,8 +1207,17 @@ export default testManifest;
             const tableName = ObjectRegistry.getTableName(className);
             const tableStrategy = ObjectRegistry.getTableStrategy(className);
             const stiBase = ObjectRegistry.getSTIBase(className);
+            // R5-canon: qualified-to-qualified STI-child detection.
+            const registered = ObjectRegistry.getClass(className);
+            const qualifiedClassName =
+              registered?.qualifiedName ?? registered?.name ?? className;
 
-            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+            if (
+              tableStrategy === 'sti' &&
+              stiBase &&
+              stiBase !== qualifiedClassName &&
+              stiBase !== className
+            ) {
               console.log(
                 `  ${i + 1}. ${className} → ${tableName} (STI child of ${stiBase})`,
               );

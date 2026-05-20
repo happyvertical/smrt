@@ -187,7 +187,13 @@ export async function ensureSchema(
   const tableStrategy = ObjectRegistry.getTableStrategy(className);
   if (tableStrategy === 'sti') {
     const stiBase = ObjectRegistry.getSTIBase(className);
-    if (stiBase && stiBase !== className) {
+    // R5-canon: `getSTIBase` returns the qualified name. Compare
+    // against the qualified form of `className` so an STI base isn't
+    // mis-classified as a child and recursed on. Falls back to a
+    // simple-name compare for classes without a package context.
+    const qualifiedClassName =
+      registered.qualifiedName ?? registered.name ?? className;
+    if (stiBase && stiBase !== qualifiedClassName && stiBase !== className) {
       await ensureSchema(db, stiBase);
       return;
     }
