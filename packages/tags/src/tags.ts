@@ -257,6 +257,21 @@ export class TagCollection extends SmrtCollection<Tag> {
         `Cannot merge '${fromSlug}' (context '${fromTag.context}') into '${toSlug}' (context '${toTag.context}') — contexts must match.`,
       );
     }
+    if (fromTag.id === toTag.id) {
+      throw new Error(`Cannot merge tag '${fromSlug}' into itself.`);
+    }
+
+    // Codex round-4 finding: refuse to merge into a descendant. Without
+    // this guard the children-reparenting loop below could attach
+    // `toTag` (or its ancestor) under itself, producing a cycle; the
+    // recursive `updateDescendantLevels` walk has no visited set and
+    // would stack-overflow before the corruption is observable.
+    const fromDescendants = (await fromTag.getDescendants()) as Tag[];
+    if (fromDescendants.some((d) => d.id === toTag.id)) {
+      throw new Error(
+        `Cannot merge '${fromSlug}' into '${toSlug}' — target is a descendant of source (would create a cycle).`,
+      );
+    }
 
     // Move all direct children of fromTag to toTag. Each child needs its
     // own `level` recomputed because toTag's depth may differ from

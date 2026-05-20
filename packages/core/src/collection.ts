@@ -1768,15 +1768,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      // For STI, use the base class's table name from schema (manifest-derived)
+      // For STI, use the base class's table name from schema (manifest-derived).
+      // R5-canon: use the qualified item name as the lookup key so a
+      // colliding simple name in another package can't yield the wrong
+      // tableStrategy / STI base and route every downstream query
+      // (get/list/count/create) to the wrong table.
       const className = this.getResolvedItemClassName();
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const qualifiedName = this.getResolvedItemQualifiedName();
+      const tableStrategy = ObjectRegistry.getTableStrategy(qualifiedName);
       const fallbackTableName =
         (this._itemClass as any).SMRT_TABLE_NAME ||
         classnameToTablename(className);
 
       if (tableStrategy === 'sti') {
-        const stiBase = ObjectRegistry.getSTIBase(className);
+        const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
         if (stiBase) {
           // Use base class's schema tableName (from manifest)
           const baseSchema = ObjectRegistry.getSchema(stiBase);
@@ -1979,8 +1984,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const fields = this.getFieldsSync();
 
-    // STI: Check if we need polymorphic hydration
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    // STI: Check if we need polymorphic hydration.
+    // R5-canon: pass the qualified item name so a colliding simple
+    // name in another package can't yield the wrong tableStrategy
+    // and feed the wrong `isSTI` boolean into `hydrateResultRow`.
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedItemQualifiedName(),
+    );
     const isSTI = tableStrategy === 'sti';
 
     const instances = await Promise.all(

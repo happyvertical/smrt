@@ -198,6 +198,26 @@ describe('Tag hierarchy (R3-B: slug API → UUID storage)', () => {
         /not found/,
       );
     });
+
+    it('refuses to merge a tag into itself', async () => {
+      // Codex round-4 finding: self-merge must fail fast — otherwise the
+      // children-reparenting loop attaches the source's children to
+      // itself and the recursive level-update walk has no visited set,
+      // so it stack-overflows.
+      await buildForest();
+      await expect(tags.mergeTag('tech', 'tech')).rejects.toThrow(/itself/i);
+    });
+
+    it('refuses to merge a tag into one of its own descendants (cycle)', async () => {
+      // Codex round-4 finding: merging an ancestor into its descendant
+      // would create a cycle (the descendant's ancestors get reparented
+      // under itself), and `updateDescendantLevels` would recurse until
+      // stack overflow. The pre-merge descendant check fails fast.
+      await buildForest();
+      await expect(tags.mergeTag('tech', 'frontend')).rejects.toThrow(
+        /descendant|cycle/i,
+      );
+    });
   });
 
   it('cleanupUnused only deletes leaves with no aliases', async () => {

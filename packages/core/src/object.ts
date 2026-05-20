@@ -64,7 +64,12 @@ function getExpectedMetaType(className: string): string {
 }
 
 function getSTIHierarchyMembers(className: string): string[] {
-  const stiBase = ObjectRegistry.getSTIBase(className);
+  // R5-canon: resolve to the qualified registration name when one
+  // exists so a same-simple-name class in another package can't yield
+  // the wrong STI base. `getDescendants` already accepts both forms.
+  const registered = ObjectRegistry.getClass(className);
+  const lookupKey = registered?.qualifiedName ?? registered?.name ?? className;
+  const stiBase = ObjectRegistry.getSTIBase(lookupKey);
   if (!stiBase) {
     return [];
   }
@@ -677,8 +682,12 @@ export class SmrtObject extends SmrtClass {
     const { formatDataJs } = await import('./utils.js');
     const formattedData = formatDataJs(data, fields);
 
-    // Check if this class uses STI (Single Table Inheritance)
-    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    // Check if this class uses STI (Single Table Inheritance).
+    // R5-canon: pass the qualified name so a colliding simple name in
+    // another package can't yield the wrong tableStrategy here.
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedQualifiedName(),
+    );
     const isSTI = tableStrategy === 'sti';
 
     if (process.env.DEBUG_STI) {
@@ -779,12 +788,16 @@ export class SmrtObject extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      // For STI, use the base class's table name from schema (manifest-derived)
+      // For STI, use the base class's table name from schema (manifest-derived).
+      // R5-canon: use the qualified name as the lookup key so a colliding
+      // simple name in another package can't yield the wrong tableStrategy
+      // / STI base and route every query through the wrong table.
       const className = this.getResolvedClassName();
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const qualifiedName = this.getResolvedQualifiedName();
+      const tableStrategy = ObjectRegistry.getTableStrategy(qualifiedName);
 
       if (tableStrategy === 'sti') {
-        const stiBase = ObjectRegistry.getSTIBase(className);
+        const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
         if (stiBase) {
           // Use base class's schema tableName (from manifest)
           const baseSchema = ObjectRegistry.getSchema(stiBase);
@@ -908,7 +921,11 @@ export class SmrtObject extends SmrtClass {
     };
 
     // Check if this class uses STI (Single Table Inheritance)
-    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    // R5-canon: qualified-key lookup so a colliding simple name in
+    // another package can't yield the wrong STI strategy here.
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedQualifiedName(),
+    );
     const isSTI = tableStrategy === 'sti';
 
     // If STI, add discriminator and prepare meta_data container
@@ -1263,9 +1280,12 @@ export class SmrtObject extends SmrtClass {
       await this.verifyStorageReady();
 
       // Execute save operation with retry logic for transient failures
-      // Use per-adapter upsert method instead of generating SQL
+      // Use per-adapter upsert method instead of generating SQL.
+      // R5-canon: qualified-key lookup avoids cross-package collisions.
 
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const tableStrategy = ObjectRegistry.getTableStrategy(
+        this.getResolvedQualifiedName(),
+      );
 
       // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
       if (process.env.NODE_ENV === 'development') {
