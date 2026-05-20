@@ -1997,26 +1997,29 @@ export class ObjectRegistry {
   /**
    * Get full inheritance chain for a class
    *
-   * Returns array of class names from base (SmrtObject) to child. Chain
-   * entries are **qualified names** (`@package/name:ClassName`) whenever
-   * the corresponding registration has one — i.e. for every class loaded
-   * via a manifest or `@smrt()` decorator with a package context. Classes
-   * registered without a package (some tests) fall back to their simple
-   * name. The framework-base sentinels (`SmrtObject`, `SmrtClass`,
-   * `SmrtCollection`) are still simple names because they are never
-   * registered.
+   * Returns array of registered ancestor class names from the oldest
+   * registered ancestor down to the input class. Framework base classes
+   * (`SmrtObject`, `SmrtClass`, `SmrtCollection`) are **NOT** included
+   * because they are never registered — the walk terminates one step
+   * before them.
+   *
+   * Chain entries are **qualified names** (`@package/name:ClassName`)
+   * whenever the corresponding registration has one — i.e. for every
+   * class loaded via a manifest or `@smrt()` decorator with a package
+   * context. Classes registered without a package (some tests) fall
+   * back to their simple name.
    *
    * Results are cached globally for performance (~100x faster than re-walking).
    *
    * @param className - Name of the registered class (simple or qualified)
-   * @returns Array of class names from base to child, or empty array if not found
+   * @returns Array of class names from oldest registered ancestor to
+   *   the input class, or empty array if not found
    * @example
    * ```typescript
    * const chain = ObjectRegistry.getInheritanceChain(
    *   '@happyvertical/smrt-content:BentleyContent',
    * );
    * // [
-   * //   'SmrtObject',
    * //   '@happyvertical/smrt-content:Content',
    * //   '@happyvertical/smrt-content:PraecoContent',
    * //   '@happyvertical/smrt-content:BentleyContent',

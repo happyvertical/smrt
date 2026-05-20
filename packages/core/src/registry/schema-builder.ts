@@ -180,13 +180,15 @@ export function getAllSchemas(): Record<
     // registerFromManifest() to derive a tableName from class name.
     // For STI subclasses, we need to use the STI base's tableName instead.
     if (!registered.schema?.tableName && registered.extends) {
-      const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
+      // R5-canon: use the qualified key for STI lookups so colliding
+      // simple names don't resolve to the wrong package's class.
+      // `getTableStrategy` / `getSTIBase` both accept qualified names
+      // via `findClass`'s multi-strategy lookup.
+      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const lookupKey = qualifiedName;
+      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        // R5-canon: getSTIBase returns the qualified name; compare against
-        // the qualified form of this class so an STI base isn't
-        // mis-classified as a subclass.
-        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
         if (stiBaseName && stiBaseName !== qualifiedName) {
           const stiBaseClass = findClass(stiBaseName);
           if (stiBaseClass?.schema?.tableName) {
@@ -215,13 +217,12 @@ export function getAllSchemas(): Record<
       // This ensures all STI subclass columns are merged into the parent table
       // (Issue #693: STI subclasses with separate tableName still serialize to parent table)
       let tableName = registered.schema.tableName;
-      const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
+      // R5-canon: same qualified-key strategy as the block above.
+      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const lookupKey = qualifiedName;
+      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        // R5-canon: getSTIBase returns the qualified name; compare against
-        // the qualified form of this class so an STI base isn't
-        // mis-classified as a subclass.
-        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
         if (stiBaseName && stiBaseName !== qualifiedName) {
           // This is an STI subclass - use the base class's tableName
           const stiBaseClass = findClass(stiBaseName);
@@ -383,13 +384,15 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
 
     // Handle STI subclasses with null tableName from external manifests
     if (!registered.schema?.tableName && registered.extends) {
-      const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
+      // R5-canon: use the qualified key for STI lookups so colliding
+      // simple names don't resolve to the wrong package's class.
+      // `getTableStrategy` / `getSTIBase` both accept qualified names
+      // via `findClass`'s multi-strategy lookup.
+      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const lookupKey = qualifiedName;
+      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        // R5-canon: getSTIBase returns the qualified name; compare against
-        // the qualified form of this class so an STI base isn't
-        // mis-classified as a subclass.
-        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
         if (stiBaseName && stiBaseName !== qualifiedName) {
           const stiBaseClass = findClass(stiBaseName);
           if (stiBaseClass?.schema?.tableName) {
