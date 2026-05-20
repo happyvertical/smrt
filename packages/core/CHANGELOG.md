@@ -1,5 +1,14 @@
 # @happyvertical/smrt-core
 
+## 0.25.14
+
+### Patch Changes
+
+- 3930b05: Fix PostgreSQL ADD COLUMN migrations for JSON defaults so array defaults render valid JSONB SQL.
+  - @happyvertical/smrt-scanner@0.25.14
+  - @happyvertical/smrt-config@0.25.14
+  - @happyvertical/smrt-types@0.25.14
+
 ## 0.25.13
 
 ### Patch Changes
