@@ -741,7 +741,7 @@
         },
         "cli": true
       },
-      "extends": "@happyvertical/smrt-core:SmrtHierarchical",
+      "extends": "SmrtHierarchical",
       "exportName": "Tag",
       "collectionExportName": "TagCollection",
       "schema": {
