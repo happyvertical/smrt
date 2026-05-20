@@ -415,15 +415,16 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
     }
 
     if (registered.schema?.tableName) {
-      // For STI subclasses, use the STI base class's tableName
+      // For STI subclasses, use the STI base class's tableName.
+      // R5-canon: qualified-key lookup so a colliding simple name in
+      // another package can't yield the wrong tableStrategy / STI base
+      // and move this class's columns under that other package's table.
       let tableName = registered.schema.tableName;
-      const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
+      const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+      const lookupKey = qualifiedName;
+      const tableStrategy = ObjectRegistry.getTableStrategy(lookupKey);
       if (tableStrategy === 'sti') {
-        const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        // R5-canon: getSTIBase returns the qualified name; compare against
-        // the qualified form of this class so an STI base isn't
-        // mis-classified as a subclass.
-        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        const stiBaseName = ObjectRegistry.getSTIBase(lookupKey);
         if (stiBaseName && stiBaseName !== qualifiedName) {
           const stiBaseClass = findClass(stiBaseName);
           if (stiBaseClass?.schema?.tableName) {
