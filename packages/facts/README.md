@@ -53,18 +53,25 @@ const result = await facts.reconcile({
 });
 // result.action: 'created' | 'merged' | 'branched'
 
-// Evolution chains: branch creates a child fact linked via parentId
-const child = await facts.branch(fact.id, {
+// Evolution chains: branch creates a successor fact linked via previousFactId
+const successor = await facts.branch(fact.id, {
   textRefined: 'The Eiffel Tower is 330 meters tall including the antenna',
 }, 'correction');
-// 'correction' and 'contradiction' mark parent as superseded
+// 'correction' and 'contradiction' mark the predecessor as superseded
 
-// Walk evolution: root -> current
-const chain = await facts.getEvolutionChain(child.id);
-// Find highest-confidence leaf
+// Walk evolution: root -> current (via previousFactId)
+const chain = await facts.getEvolutionChain(successor.id);
+// Find highest-confidence leaf (via getSuccessors)
 const latest = await facts.getLatestInChain(fact.id);
 // Full tree (BFS with cycle detection)
 const tree = await facts.getEvolutionTree(fact.id);
+
+// Per-fact navigation: getPredecessor / getSuccessors / hasPredecessor
+const previous = await successor.getPredecessor();
+const successors = await fact.getSuccessors();
+if (successor.hasPredecessor()) {
+  // ...
+}
 
 // Entity briefing: all facts for a given entity
 const briefing = await facts.getEntityBriefing('Place', placeId);
@@ -77,7 +84,7 @@ const briefing = await facts.getEntityBriefing('Place', placeId);
 
 | Export | Description |
 |--------|------------|
-| `Fact` | Knowledge unit with `textRefined`, `type`, `status`, `confidence`, `parentId` for evolution chains, and auto-generated embeddings |
+| `Fact` | Knowledge unit with `textRefined`, `type`, `status`, `confidence`, `previousFactId` for evolution chains (predecessor pointer; not a structural hierarchy edge), and auto-generated embeddings |
 | `FactSource` | Provenance record with `sourceUrl`, `sourceType`, `credibility` (0-1), `extractedAt` |
 | `FactSubject` | Polymorphic entity link (`entityType` + `entityId`), `conflictColumns: ['fact_id', 'entity_type', 'entity_id']` |
 | `FactContent` | Join table linking facts to Content, `conflictColumns: ['fact_id', 'content_id', 'relationship']` |

@@ -297,7 +297,7 @@ describe('reconcile()', () => {
 
       // Should be branched since AI says 'branch' and similarity is in ambiguous zone
       if (result.action === 'branched') {
-        expect(result.fact.parentId).toBe(existing.id);
+        expect(result.fact.previousFactId).toBe(existing.id);
         expect(result.fact.evolutionType).toBe('correction');
       }
     });
