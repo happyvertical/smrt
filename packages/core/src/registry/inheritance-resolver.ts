@@ -95,7 +95,10 @@ export function getInheritanceChain(className: string): string[] {
     }
     visited.add(current);
 
-    chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
+    // R5-canon: emit qualified names when available, matching the
+    // public `ObjectRegistry.getInheritanceChain` contract. Falls back
+    // to simple name for classes registered without a package context.
+    chain.unshift(current.qualifiedName ?? current.name); // [ancestor, ..., descendant]
     if (!current.extends) break;
 
     // Skip framework base classes that are never registered

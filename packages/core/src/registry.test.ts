@@ -879,11 +879,15 @@ describe('ObjectRegistry', () => {
       registered.inheritanceChain = undefined;
 
       // getInheritanceChain should not throw, and should return a chain
-      // that includes only the registered classes
+      // that includes only the registered classes.
+      // R5-canon: chains return qualified names. Use endsWith matcher
+      // to tolerate whatever package context the test runner derives.
       const chain = ObjectRegistry.getInheritanceChain('ChildClass');
 
       // Chain should contain at least the child class
-      expect(chain).toContain('ChildClass');
+      expect(
+        chain.some((c) => c === 'ChildClass' || c.endsWith(':ChildClass')),
+      ).toBe(true);
 
       // Since NonExistentParent isn't in any manifest, chain should only have ChildClass
       expect(chain.length).toBe(1);
@@ -898,8 +902,12 @@ describe('ObjectRegistry', () => {
       // Get the inheritance chain
       const chain = ObjectRegistry.getInheritanceChain('TestObject');
 
-      // Should contain TestObject but not SmrtObject
-      expect(chain).toContain('TestObject');
+      // Should contain TestObject but not SmrtObject (framework bases stay
+      // as simple sentinel names; they are never registered).
+      // R5-canon: chains return qualified names for registered classes.
+      expect(
+        chain.some((c) => c === 'TestObject' || c.endsWith(':TestObject')),
+      ).toBe(true);
       expect(chain).not.toContain('SmrtObject');
       expect(chain).not.toContain('SmrtClass');
       expect(chain).not.toContain('SmrtCollection');
@@ -1512,11 +1520,15 @@ describe('ObjectRegistry', () => {
       expect(videoShot).toBeDefined();
       expect(videoShot?.extends).toBe('@happyvertical/smrt-video:Content');
 
-      // Verify getInheritanceChain resolves correctly
+      // Verify getInheritanceChain resolves correctly.
+      // R5-canon: chains return qualified names.
       const chain = ObjectRegistry.getInheritanceChain(
         '@happyvertical/smrt-video:VideoShot',
       );
-      expect(chain).toEqual(['Content', 'VideoShot']);
+      expect(chain).toEqual([
+        '@happyvertical/smrt-video:Content',
+        '@happyvertical/smrt-video:VideoShot',
+      ]);
     });
 
     it('should pass through already-qualified extends names', () => {
@@ -1545,11 +1557,16 @@ describe('ObjectRegistry', () => {
       // Already-qualified extends should pass through unchanged
       expect(meeting?.extends).toBe('@happyvertical/smrt-events:Event');
 
-      // Chain should resolve correctly
+      // Chain should resolve correctly.
+      // R5-canon: chains return qualified names — ancestors keep their
+      // declaring package, child keeps its own.
       const chain = ObjectRegistry.getInheritanceChain(
         '@happyvertical/praeco:Meeting',
       );
-      expect(chain).toEqual(['Event', 'Meeting']);
+      expect(chain).toEqual([
+        '@happyvertical/smrt-events:Event',
+        '@happyvertical/praeco:Meeting',
+      ]);
     });
 
     it('should resolve single-package simple extends without issue', () => {
@@ -1578,10 +1595,14 @@ describe('ObjectRegistry', () => {
       // Same-package parent should be qualified
       expect(dog?.extends).toBe('@happyvertical/smrt-zoo:Animal');
 
+      // R5-canon: chains return qualified names.
       const chain = ObjectRegistry.getInheritanceChain(
         '@happyvertical/smrt-zoo:Dog',
       );
-      expect(chain).toEqual(['Animal', 'Dog']);
+      expect(chain).toEqual([
+        '@happyvertical/smrt-zoo:Animal',
+        '@happyvertical/smrt-zoo:Dog',
+      ]);
     });
 
     it('should not qualify framework base classes (SmrtObject, etc.)', () => {
@@ -1617,10 +1638,11 @@ describe('ObjectRegistry', () => {
       expect(standalone).toBeDefined();
       expect(standalone?.extends).toBeUndefined();
 
+      // R5-canon: chains return qualified names.
       const chain = ObjectRegistry.getInheritanceChain(
         '@happyvertical/smrt-misc:Standalone',
       );
-      expect(chain).toEqual(['Standalone']);
+      expect(chain).toEqual(['@happyvertical/smrt-misc:Standalone']);
     });
   });
 });

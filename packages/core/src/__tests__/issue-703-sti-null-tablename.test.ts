@@ -102,8 +102,9 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
 
   describe('getSTIBase()', () => {
     it('should return STI base class for the base class itself', () => {
+      // R5-canon: getSTIBase returns qualified names.
       const stiBase = ObjectRegistry.getSTIBase('Issue703Event');
-      expect(stiBase).toBe('Issue703Event');
+      expect(stiBase).toBe('test-package:Issue703Event');
     });
 
     it('should find STI base for child class even when tableName is derived (null in manifest)', () => {
@@ -113,15 +114,17 @@ describe('Issue #703: STI with null tableName from external manifest', () => {
       //             parent's tableName 'issue703_events'
       // After fix: getSTIBase('Issue703Meeting') returns 'Issue703Event'
       //            because we find the oldest ancestor with explicit tableStrategy: 'sti'
+      // R5-canon: getSTIBase returns qualified names.
       const stiBase = ObjectRegistry.getSTIBase('Issue703Meeting');
-      expect(stiBase).toBe('Issue703Event');
+      expect(stiBase).toBe('test-package:Issue703Event');
     });
 
     it('should find STI base for child class even when tableName explicitly differs', () => {
       // Even with explicitly different tableName, the STI base should be found
-      // because STI inheritance is determined by tableStrategy, not tableName
+      // because STI inheritance is determined by tableStrategy, not tableName.
+      // R5-canon: getSTIBase returns qualified names.
       const stiBase = ObjectRegistry.getSTIBase('Issue703WeatherForecast');
-      expect(stiBase).toBe('Issue703Event');
+      expect(stiBase).toBe('test-package:Issue703Event');
     });
 
     it('should return null for CTI classes', () => {

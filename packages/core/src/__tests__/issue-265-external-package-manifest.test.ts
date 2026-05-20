@@ -79,8 +79,9 @@ describe('Issue #265: External Package Inheritance with Null Manifest', () => {
     // Should still be able to build chain from constructor prototype
     const chain = ObjectRegistry.getInheritanceChain('PraecoTest2');
 
-    // Chain should include the class itself
-    expect(chain).toContain('PraecoTest2');
+    // Chain should include the class itself.
+    // R5-canon: chains return qualified names when class is registered.
+    expect(chain).toContain('@happyvertical/smrt-core:PraecoTest2');
 
     // Chain should NOT include SmrtObject (buildInheritanceChain stops at it)
     expect(chain).not.toContain('SmrtObject');

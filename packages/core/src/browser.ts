@@ -30,10 +30,6 @@ export { config } from './config';
 export * from './errors';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 export {
-  type HierarchyView,
-  SmrtHierarchical,
-} from './hierarchical';
-export {
   type JunctionAttachOptions,
   type JunctionFilterOptions,
   SmrtJunction,

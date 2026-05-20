@@ -88,7 +88,7 @@ describe('Message STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('Email');
-      expect(base).toBe('Message');
+      expect(base).toBe('@happyvertical/smrt-messages:Message');
     });
 
     it('should set _meta_type to Email', async () => {
@@ -170,7 +170,7 @@ describe('Message STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('Tweet');
-      expect(base).toBe('Message');
+      expect(base).toBe('@happyvertical/smrt-messages:Message');
     });
 
     it('should set _meta_type to Tweet', async () => {
@@ -244,7 +244,7 @@ describe('Message STI Support', () => {
 
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('SlackMessage');
-      expect(base).toBe('Message');
+      expect(base).toBe('@happyvertical/smrt-messages:Message');
     });
 
     it('should set _meta_type to SlackMessage', async () => {
@@ -344,20 +344,22 @@ describe('Message STI Support', () => {
     it('should build correct inheritance chain for Email', () => {
       const chain = ObjectRegistry.getInheritanceChain('Email');
 
-      expect(chain).toContain('Message');
-      expect(chain).toContain('Email');
+      expect(chain).toContain('@happyvertical/smrt-messages:Message');
+      expect(chain).toContain('@happyvertical/smrt-messages:Email');
 
-      const messageIdx = chain.indexOf('Message');
-      const emailIdx = chain.indexOf('Email');
+      const messageIdx = chain.indexOf('@happyvertical/smrt-messages:Message');
+      const emailIdx = chain.indexOf('@happyvertical/smrt-messages:Email');
       expect(emailIdx).toBeGreaterThan(messageIdx);
     });
 
     it('should get all descendants of Message', () => {
       const descendants = ObjectRegistry.getDescendants('Message');
 
-      expect(descendants).toContain('Email');
-      expect(descendants).toContain('Tweet');
-      expect(descendants).toContain('SlackMessage');
+      expect(descendants).toContain('@happyvertical/smrt-messages:Email');
+      expect(descendants).toContain('@happyvertical/smrt-messages:Tweet');
+      expect(descendants).toContain(
+        '@happyvertical/smrt-messages:SlackMessage',
+      );
     });
   });
 });

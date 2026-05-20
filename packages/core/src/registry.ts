@@ -1997,15 +1997,33 @@ export class ObjectRegistry {
   /**
    * Get full inheritance chain for a class
    *
-   * Returns array of class names from base (SmrtObject) to child.
+   * Returns array of registered ancestor class names from the oldest
+   * registered ancestor down to the input class. Framework base classes
+   * (`SmrtObject`, `SmrtClass`, `SmrtCollection`) are **NOT** included
+   * because they are never registered — the walk terminates one step
+   * before them.
+   *
+   * Chain entries are **qualified names** (`@package/name:ClassName`)
+   * whenever the corresponding registration has one — i.e. for every
+   * class loaded via a manifest or `@smrt()` decorator with a package
+   * context. Classes registered without a package (some tests) fall
+   * back to their simple name.
+   *
    * Results are cached globally for performance (~100x faster than re-walking).
    *
-   * @param className - Name of the registered class
-   * @returns Array of class names from base to child, or empty array if not found
+   * @param className - Name of the registered class (simple or qualified)
+   * @returns Array of class names from oldest registered ancestor to
+   *   the input class, or empty array if not found
    * @example
    * ```typescript
-   * const chain = ObjectRegistry.getInheritanceChain('BentleyContent');
-   * // ['SmrtObject', 'Content', 'PraecoContent', 'BentleyContent']
+   * const chain = ObjectRegistry.getInheritanceChain(
+   *   '@happyvertical/smrt-content:BentleyContent',
+   * );
+   * // [
+   * //   '@happyvertical/smrt-content:Content',
+   * //   '@happyvertical/smrt-content:PraecoContent',
+   * //   '@happyvertical/smrt-content:BentleyContent',
+   * // ]
    * ```
    */
   static getInheritanceChain(className: string): string[] {
@@ -2055,7 +2073,11 @@ export class ObjectRegistry {
       }
       visited.add(current);
 
-      chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
+      // R5-canon: emit the qualified name when the registration has one
+      // so chain entries are unambiguous across packages. Falls back to
+      // the simple `current.name` for classes that lack a package context
+      // (some tests, or classes that bypassed manifest registration).
+      chain.unshift(current.qualifiedName ?? current.name); // [ancestor, ..., descendant]
       if (!current.extends) break;
 
       // Skip framework base classes that are never registered
@@ -2692,11 +2714,16 @@ export class ObjectRegistry {
    * with `tableStrategy: 'sti'`. This is the class that owns the shared table.
    *
    * **Returns:**
-   * - The base class name if STI is configured in the hierarchy
-   * - null if the class uses CTI strategy
+   * - The base class's **qualified name** (`@package/name:ClassName`) when
+   *   the registration has one — same convention as
+   *   `getInheritanceChain`. Falls back to the simple name only for
+   *   registrations without a package context (some test classes).
+   * - `null` if the class uses CTI strategy.
+   *
+   * Accepts either a simple or a qualified name on input.
    *
    * @param className - Name of the class to find STI base for
-   * @returns Base class name or null if CTI
+   * @returns Qualified base class name or null if CTI
    * @example
    * ```typescript
    * @smrt({ tableStrategy: 'sti' })
@@ -2705,8 +2732,10 @@ export class ObjectRegistry {
    * @smrt()
    * class Meeting extends Event { }
    *
-   * ObjectRegistry.getSTIBase('Meeting'); // 'Event'
-   * ObjectRegistry.getSTIBase('Event'); // 'Event'
+   * ObjectRegistry.getSTIBase('@happyvertical/smrt-events:Meeting');
+   * // '@happyvertical/smrt-events:Event'
+   * ObjectRegistry.getSTIBase('@happyvertical/smrt-events:Event');
+   * // '@happyvertical/smrt-events:Event'
    * ```
    */
   static getSTIBase(className: string): string | null {
@@ -2726,6 +2755,10 @@ export class ObjectRegistry {
     // 2. registerFromManifest() derives a tableName from class name when null
     // 3. This causes tableName mismatch ('meetings' vs 'events')
     // 4. Instead, find the oldest ancestor with EXPLICIT tableStrategy: 'sti'
+    //
+    // R5-canon: chain entries are qualified names (when the class has a
+    // package context), so the returned STI base is also qualified —
+    // ambiguity across packages with same-simple-name STI roots is gone.
     const chain = ObjectRegistry.getInheritanceChain(className);
 
     // Walk the chain (ordered [root, ..., className]) to find oldest STI base
@@ -2738,13 +2771,15 @@ export class ObjectRegistry {
       if (ancestor.config?.tableStrategy === 'sti') {
         // Found the OLDEST ancestor with explicit STI - this is the base
         // All descendants inherit from this table regardless of their tableName
-        return ancestorName;
+        return ancestor.qualifiedName ?? ancestor.name;
       }
     }
 
     // If no explicit STI ancestor found but we detected STI strategy,
-    // this class is its own STI base (it must have declared tableStrategy: 'sti')
-    return className;
+    // this class is its own STI base (it must have declared tableStrategy: 'sti').
+    // Return its qualified name when available.
+    const self = ObjectRegistry.findClass(className);
+    return self?.qualifiedName ?? self?.name ?? className;
   }
 
   /**
@@ -2758,8 +2793,13 @@ export class ObjectRegistry {
    * - Polymorphic queries: Find all types to instantiate
    * - Documentation: Show class hierarchy
    *
-   * @param className - Name of the base class
-   * @returns Array of descendant class names (direct and indirect)
+   * Accepts either a simple or a qualified name on input. The returned
+   * descendant names are **qualified** (`@package/name:ClassName`) when
+   * the registration has one — same convention as `getInheritanceChain`
+   * and `getSTIBase`.
+   *
+   * @param className - Name of the base class (simple or qualified)
+   * @returns Array of qualified descendant class names (direct and indirect)
    * @example
    * ```typescript
    * @smrt({ tableStrategy: 'sti' })
@@ -2771,19 +2811,31 @@ export class ObjectRegistry {
    * @smrt()
    * class HockeyGame extends Event { }
    *
-   * ObjectRegistry.getDescendants('Event'); // ['Meeting', 'HockeyGame']
+   * ObjectRegistry.getDescendants('@happyvertical/smrt-events:Event');
+   * // [
+   * //   '@happyvertical/smrt-events:Meeting',
+   * //   '@happyvertical/smrt-events:HockeyGame',
+   * // ]
    * ```
    */
   static getDescendants(className: string): string[] {
     const descendants: string[] = [];
 
+    // R5-canon: inheritance chains are emitted with qualified names when
+    // available, so the comparison against `className` must accept either
+    // a qualified or simple input from the caller. Resolve once up-front
+    // to whichever form actually appears in the chain.
+    const target = ObjectRegistry.findClass(className);
+    const targetKey = target?.qualifiedName ?? target?.name ?? className;
+
     // Find all classes that extend the given class
-    // Issue #951: Use simple name for comparison since inheritance chains contain simple names
     for (const [_key, childClass] of ObjectRegistry.classes) {
-      const simpleName = childClass.name || _key;
-      const chain = ObjectRegistry.getInheritanceChain(simpleName);
-      if (chain.includes(className) && simpleName !== className) {
-        descendants.push(simpleName);
+      const childKey = childClass.qualifiedName ?? childClass.name ?? _key;
+      if (childKey === targetKey) continue;
+
+      const chain = ObjectRegistry.getInheritanceChain(childKey);
+      if (chain.includes(targetKey)) {
+        descendants.push(childKey);
       }
     }
 
@@ -3079,9 +3131,22 @@ export function smrt(config: SmartObjectConfig = {}) {
           const itemClassName = itemClass.name;
           const stiBase = ObjectRegistry.getSTIBase(itemClassName);
 
-          if (stiBase && stiBase !== itemClassName) {
+          // R5-canon: `getSTIBase` returns a qualified name. Compare against
+          // the item class's own qualified registration (when present) and
+          // derive the table name from the base's actual registration —
+          // feeding a qualified string straight into `classnameToTablename`
+          // would yield a garbled identifier.
+          const itemReg = ObjectRegistry.getClassByConstructor(
+            itemClass as any,
+          );
+          const itemQualified = itemReg?.qualifiedName ?? itemClassName;
+
+          if (stiBase && stiBase !== itemQualified) {
             // Use STI base's table name
-            tableName = classnameToTablename(stiBase);
+            const baseReg = ObjectRegistry.getClass(stiBase);
+            tableName =
+              baseReg?.schema?.tableName ??
+              classnameToTablename(baseReg?.name ?? stiBase);
           } else if (ObjectRegistry.getTableStrategy(itemClassName) === 'sti') {
             // This is the STI base - use its own table name
             tableName = classnameToTablename(itemClassName);
@@ -3134,6 +3199,12 @@ export function smrt(config: SmartObjectConfig = {}) {
           // 3. Test scenarios without manifest generation
           // Note: This relies on parents being registered first, which is why
           // the manifest check above is preferred (it has correct build-time data).
+          //
+          // R5-canon: `getSTIBase` now returns the qualified name. We
+          // resolve back to the registered class and prefer its actual
+          // `schema.tableName` when present; otherwise fall back to the
+          // simple-name-derived table name. Deriving directly from a
+          // qualified string would produce a garbled identifier.
           let proto = Object.getPrototypeOf(ctor);
           let stiBaseName: string | null = null;
 
@@ -3146,8 +3217,13 @@ export function smrt(config: SmartObjectConfig = {}) {
           }
 
           if (stiBaseName) {
-            // This is an STI child - use parent's table name
-            tableName = classnameToTablename(stiBaseName);
+            // This is an STI child - use parent's table name. Resolve the
+            // qualified stiBaseName to its registration to pick the
+            // correct table identifier.
+            const baseReg = ObjectRegistry.getClass(stiBaseName);
+            tableName =
+              baseReg?.schema?.tableName ??
+              classnameToTablename(baseReg?.name ?? stiBaseName);
           } else {
             // This is the actual STI base - use its own table name
             tableName = classnameToTablename(ctor.name);
@@ -3169,8 +3245,12 @@ export function smrt(config: SmartObjectConfig = {}) {
           }
 
           if (stiBaseName) {
-            // Use STI base's table name
-            tableName = classnameToTablename(stiBaseName);
+            // Use STI base's table name. (R5-canon: see above — qualified
+            // stiBaseName resolves to its registration's tableName.)
+            const baseReg = ObjectRegistry.getClass(stiBaseName);
+            tableName =
+              baseReg?.schema?.tableName ??
+              classnameToTablename(baseReg?.name ?? stiBaseName);
           } else {
             // CTI: Use own table name
             tableName = classnameToTablename(ctor.name);

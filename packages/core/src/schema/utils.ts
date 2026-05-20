@@ -119,9 +119,13 @@ export async function generateSchema(
       );
     }
 
-    // Only generate schema for the base class (not for children)
-    // Children will use the same table as the base
-    if (className === stiBase) {
+    // Only generate schema for the base class (not for children).
+    // R5-canon: `getSTIBase` returns the qualified name; compare against
+    // the qualified form of this class so an STI base isn't
+    // mis-classified as a subclass and skipped.
+    const qualifiedClassName =
+      registeredClass?.qualifiedName ?? registeredClass?.name ?? className;
+    if (qualifiedClassName === stiBase || className === stiBase) {
       // This is the base class - generate STI schema
       schemaDefinition = await generator.generateSTISchemaFromRegistry(
         className,
@@ -183,7 +187,13 @@ export async function ensureSchema(
   const tableStrategy = ObjectRegistry.getTableStrategy(className);
   if (tableStrategy === 'sti') {
     const stiBase = ObjectRegistry.getSTIBase(className);
-    if (stiBase && stiBase !== className) {
+    // R5-canon: `getSTIBase` returns the qualified name. Compare
+    // against the qualified form of `className` so an STI base isn't
+    // mis-classified as a child and recursed on. Falls back to a
+    // simple-name compare for classes without a package context.
+    const qualifiedClassName =
+      registered.qualifiedName ?? registered.name ?? className;
+    if (stiBase && stiBase !== qualifiedClassName && stiBase !== className) {
       await ensureSchema(db, stiBase);
       return;
     }

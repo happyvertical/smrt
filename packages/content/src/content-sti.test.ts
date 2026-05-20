@@ -95,7 +95,7 @@ describe('Content STI Support', () => {
       const base = ObjectRegistry.getSTIBase('ContentDocument');
       // ContentDocument inherits STI from Content, so Content is the actual STI base
       // Even though ContentDocument explicitly declares tableStrategy: 'sti', that's redundant
-      expect(base).toBe('Content');
+      expect(base).toBe('@happyvertical/smrt-content:Content');
     });
 
     it('should set _meta_type to ContentDocument', async () => {
@@ -161,7 +161,7 @@ describe('Content STI Support', () => {
     it('should get STI base class', () => {
       const base = ObjectRegistry.getSTIBase('Article');
       // Article inherits STI from Content, so Content is the actual STI base
-      expect(base).toBe('Content');
+      expect(base).toBe('@happyvertical/smrt-content:Content');
     });
 
     it('should set _meta_type to Article', async () => {
@@ -249,12 +249,14 @@ describe('Content STI Support', () => {
       const chain = ObjectRegistry.getInheritanceChain('ContentDocument');
 
       // Should include Content → ContentDocument
-      expect(chain).toContain('Content');
-      expect(chain).toContain('ContentDocument');
+      expect(chain).toContain('@happyvertical/smrt-content:Content');
+      expect(chain).toContain('@happyvertical/smrt-content:ContentDocument');
 
       // ContentDocument should come after Content
-      const contentIdx = chain.indexOf('Content');
-      const docIdx = chain.indexOf('ContentDocument');
+      const contentIdx = chain.indexOf('@happyvertical/smrt-content:Content');
+      const docIdx = chain.indexOf(
+        '@happyvertical/smrt-content:ContentDocument',
+      );
       expect(docIdx).toBeGreaterThan(contentIdx);
     });
 
@@ -262,8 +264,10 @@ describe('Content STI Support', () => {
       const descendants = ObjectRegistry.getDescendants('Content');
 
       // Should include at least ContentDocument and Article
-      expect(descendants).toContain('ContentDocument');
-      expect(descendants).toContain('Article');
+      expect(descendants).toContain(
+        '@happyvertical/smrt-content:ContentDocument',
+      );
+      expect(descendants).toContain('@happyvertical/smrt-content:Article');
     });
   });
 });

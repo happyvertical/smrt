@@ -37,11 +37,12 @@ describe('Multi-level Class Inheritance', () => {
       const chain = ObjectRegistry.getInheritanceChain(
         'InheritanceTestBentleyContent',
       );
-      // SmrtObject is excluded from chains (fixed in #265)
+      // SmrtObject is excluded from chains (fixed in #265).
+      // R5-canon: chains return qualified names.
       expect(chain).toEqual([
-        'InheritanceTestContent',
-        'InheritanceTestPraecoContent',
-        'InheritanceTestBentleyContent',
+        '@happyvertical/smrt-core:InheritanceTestContent',
+        '@happyvertical/smrt-core:InheritanceTestPraecoContent',
+        '@happyvertical/smrt-core:InheritanceTestBentleyContent',
       ]);
     });
 
@@ -49,10 +50,11 @@ describe('Multi-level Class Inheritance', () => {
       const chain = ObjectRegistry.getInheritanceChain(
         'InheritanceTestPraecoContent',
       );
-      // SmrtObject is excluded from chains (fixed in #265)
+      // SmrtObject is excluded from chains (fixed in #265).
+      // R5-canon: chains return qualified names.
       expect(chain).toEqual([
-        'InheritanceTestContent',
-        'InheritanceTestPraecoContent',
+        '@happyvertical/smrt-core:InheritanceTestContent',
+        '@happyvertical/smrt-core:InheritanceTestPraecoContent',
       ]);
     });
 
@@ -60,8 +62,11 @@ describe('Multi-level Class Inheritance', () => {
       const chain = ObjectRegistry.getInheritanceChain(
         'InheritanceTestContent',
       );
-      // SmrtObject is excluded from chains (fixed in #265)
-      expect(chain).toEqual(['InheritanceTestContent']);
+      // SmrtObject is excluded from chains (fixed in #265).
+      // R5-canon: chains return qualified names.
+      expect(chain).toEqual([
+        '@happyvertical/smrt-core:InheritanceTestContent',
+      ]);
     });
 
     it('should return empty array for unregistered class', () => {
