@@ -271,13 +271,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       validFieldNames.add('meta_data');
 
       // Issue #869: For STI classes, also include fields from all ancestor classes
-      // This ensures child class collections can filter by parent class fields
+      // This ensures child class collections can filter by parent class fields.
+      //
+      // R5-canon: inheritanceChain entries are qualified names (when the
+      // registration has one). Compare self against the qualified form;
+      // the framework-base sentinels stay as simple names since they're
+      // never registered. The simple-name `itemClassName` is also checked
+      // as a defensive fall-through for unqualified registrations.
+      const itemQualifiedName = this.getResolvedItemQualifiedName();
       const inheritanceChain =
         ObjectRegistry.getInheritanceChain(itemClassName);
       for (const ancestorName of inheritanceChain) {
         if (
           ancestorName === 'SmrtObject' ||
           ancestorName === 'SmrtClass' ||
+          ancestorName === itemQualifiedName ||
           ancestorName === itemClassName
         ) {
           continue; // Skip framework base classes and self (already included)
@@ -800,9 +808,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
+      // R5-canon: `getSTIBase` returns the qualified name (when available);
+      // compare against the qualified form of the item class to detect a
+      // child collection vs the base itself.
       const stiBase = ObjectRegistry.getSTIBase(itemClassName);
-      // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== itemClassName) {
+      if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
           ...where,
@@ -924,9 +934,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
+      // R5-canon: qualified-to-qualified comparison.
       const stiBase = ObjectRegistry.getSTIBase(itemClassName);
-      // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== itemClassName) {
+      if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
           ...(where || {}),
@@ -1874,9 +1884,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
+      // R5-canon: qualified-to-qualified comparison.
       const stiBase = ObjectRegistry.getSTIBase(itemClassName);
-      // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== itemClassName) {
+      if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
           ...(where || {}),

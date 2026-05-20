@@ -128,12 +128,15 @@ describe('Issue #693: STI subclasses with separate tableName', () => {
     });
 
     it('should find correct STI base class', () => {
-      expect(ObjectRegistry.getSTIBase('Issue693Event')).toBe('Issue693Event');
+      // R5-canon: getSTIBase returns qualified names.
+      expect(ObjectRegistry.getSTIBase('Issue693Event')).toBe(
+        '@happyvertical/smrt-core:Issue693Event',
+      );
       expect(ObjectRegistry.getSTIBase('Issue693Meeting')).toBe(
-        'Issue693Event',
+        '@happyvertical/smrt-core:Issue693Event',
       );
       expect(ObjectRegistry.getSTIBase('Issue693WeatherForecast')).toBe(
-        'Issue693Event',
+        '@happyvertical/smrt-core:Issue693Event',
       );
     });
   });

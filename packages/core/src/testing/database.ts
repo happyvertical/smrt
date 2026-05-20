@@ -204,9 +204,16 @@ export async function getTestDatabase(
   const createdTables = new Set<string>();
 
   for (const className of classNames) {
-    // Skip STI children - their schema is part of the base class table
+    // Skip STI children - their schema is part of the base class table.
+    // R5-canon: `getSTIBase` now returns the qualified name. Compare
+    // against the qualified form of the iteration key so STI base
+    // classes still produce their own table instead of being mis-flagged
+    // as children.
     const stiBase = ObjectRegistry.getSTIBase(className);
-    if (stiBase && stiBase !== className) {
+    const registered = ObjectRegistry.findClass(className);
+    const qualifiedClassName =
+      registered?.qualifiedName ?? registered?.name ?? className;
+    if (stiBase && stiBase !== qualifiedClassName) {
       continue;
     }
 

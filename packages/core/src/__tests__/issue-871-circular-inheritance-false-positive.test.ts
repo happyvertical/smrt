@@ -98,9 +98,15 @@ describe('Issue #871: Circular inheritance false positive', () => {
 
     const chain = ObjectRegistry.getInheritanceChain('Issue871LocalAccount');
 
-    // The chain should use SMRT registered names
-    // Expected: [..., 'Issue871LedgerAccount', 'Issue871LocalAccount']
-    expect(chain).toContain('Issue871LocalAccount');
+    // The chain should use SMRT registered names.
+    // R5-canon: chains return qualified names. The package context may vary,
+    // so accept either bare or qualified form ending with the class name.
+    expect(
+      chain.some(
+        (c) =>
+          c === 'Issue871LocalAccount' || c.endsWith(':Issue871LocalAccount'),
+      ),
+    ).toBe(true);
 
     // Note: The parent might show up as 'Issue871LedgerAccount' or the JS name
     // depending on how the chain is built. The important thing is no circular error.

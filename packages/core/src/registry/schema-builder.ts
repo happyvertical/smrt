@@ -120,9 +120,14 @@ export function getTableName(name: string): string | undefined {
     return collectionTableName;
   }
 
-  // For STI classes, return the STI base class's table name
+  // For STI classes, return the STI base class's table name.
+  // R5-canon: `getSTIBase` returns the qualified name; resolve `name`
+  // (which may be simple) to its registration's qualified form for the
+  // comparison.
   const stiBase = ObjectRegistry.getSTIBase(name);
-  if (stiBase && stiBase !== name) {
+  const registered = ObjectRegistry.findClass(name);
+  const qualifiedName = registered?.qualifiedName ?? registered?.name ?? name;
+  if (stiBase && stiBase !== qualifiedName) {
     return getSchema(stiBase)?.tableName;
   }
   return getSchema(name)?.tableName;
@@ -178,7 +183,11 @@ export function getAllSchemas(): Record<
       const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
       if (tableStrategy === 'sti') {
         const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        if (stiBaseName && stiBaseName !== simpleName) {
+        // R5-canon: getSTIBase returns the qualified name; compare against
+        // the qualified form of this class so an STI base isn't
+        // mis-classified as a subclass.
+        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        if (stiBaseName && stiBaseName !== qualifiedName) {
           const stiBaseClass = findClass(stiBaseName);
           if (stiBaseClass?.schema?.tableName) {
             // Ensure we have a schema object to modify
@@ -209,7 +218,11 @@ export function getAllSchemas(): Record<
       const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
       if (tableStrategy === 'sti') {
         const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        if (stiBaseName && stiBaseName !== simpleName) {
+        // R5-canon: getSTIBase returns the qualified name; compare against
+        // the qualified form of this class so an STI base isn't
+        // mis-classified as a subclass.
+        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        if (stiBaseName && stiBaseName !== qualifiedName) {
           // This is an STI subclass - use the base class's tableName
           const stiBaseClass = findClass(stiBaseName);
           if (stiBaseClass?.schema?.tableName) {
@@ -373,7 +386,11 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
       if (tableStrategy === 'sti') {
         const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        if (stiBaseName && stiBaseName !== simpleName) {
+        // R5-canon: getSTIBase returns the qualified name; compare against
+        // the qualified form of this class so an STI base isn't
+        // mis-classified as a subclass.
+        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        if (stiBaseName && stiBaseName !== qualifiedName) {
           const stiBaseClass = findClass(stiBaseName);
           if (stiBaseClass?.schema?.tableName) {
             if (!registered.schema) {
@@ -400,7 +417,11 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       const tableStrategy = ObjectRegistry.getTableStrategy(simpleName);
       if (tableStrategy === 'sti') {
         const stiBaseName = ObjectRegistry.getSTIBase(simpleName);
-        if (stiBaseName && stiBaseName !== simpleName) {
+        // R5-canon: getSTIBase returns the qualified name; compare against
+        // the qualified form of this class so an STI base isn't
+        // mis-classified as a subclass.
+        const qualifiedName = (registered as any).qualifiedName ?? simpleName;
+        if (stiBaseName && stiBaseName !== qualifiedName) {
           const stiBaseClass = findClass(stiBaseName);
           if (stiBaseClass?.schema?.tableName) {
             tableName = stiBaseClass.schema.tableName;

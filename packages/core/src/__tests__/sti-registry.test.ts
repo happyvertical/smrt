@@ -133,7 +133,8 @@ describe('STI Registry Methods', () => {
         title: string = '';
       }
 
-      expect(ObjectRegistry.getSTIBase('Event')).toBe('Event');
+      // R5-canon: getSTIBase returns qualified names.
+      expect(ObjectRegistry.getSTIBase('Event')).toBe('@vitest/runner:Event');
     });
 
     it('should return the parent class when child inherits STI', () => {
@@ -147,8 +148,9 @@ describe('STI Registry Methods', () => {
         roomNumber: string = '';
       }
 
-      expect(ObjectRegistry.getSTIBase('Event')).toBe('Event');
-      expect(ObjectRegistry.getSTIBase('Meeting')).toBe('Event');
+      // R5-canon: getSTIBase returns qualified names.
+      expect(ObjectRegistry.getSTIBase('Event')).toBe('@vitest/runner:Event');
+      expect(ObjectRegistry.getSTIBase('Meeting')).toBe('@vitest/runner:Event');
     });
 
     it('should return the top-most STI base through multiple levels', () => {
@@ -167,9 +169,14 @@ describe('STI Registry Methods', () => {
         homeTeam: string = '';
       }
 
-      expect(ObjectRegistry.getSTIBase('Event')).toBe('Event');
-      expect(ObjectRegistry.getSTIBase('SportingEvent')).toBe('Event');
-      expect(ObjectRegistry.getSTIBase('HockeyGame')).toBe('Event');
+      // R5-canon: getSTIBase returns qualified names.
+      expect(ObjectRegistry.getSTIBase('Event')).toBe('@vitest/runner:Event');
+      expect(ObjectRegistry.getSTIBase('SportingEvent')).toBe(
+        '@vitest/runner:Event',
+      );
+      expect(ObjectRegistry.getSTIBase('HockeyGame')).toBe(
+        '@vitest/runner:Event',
+      );
     });
 
     it('should reject child with explicit CTI override', () => {
@@ -219,9 +226,10 @@ describe('STI Registry Methods', () => {
       }
 
       const descendants = ObjectRegistry.getDescendants('Event');
+      // R5-canon: getDescendants returns qualified names.
       expect(descendants).toHaveLength(2);
-      expect(descendants).toContain('Meeting');
-      expect(descendants).toContain('HockeyGame');
+      expect(descendants).toContain('@vitest/runner:Meeting');
+      expect(descendants).toContain('@vitest/runner:HockeyGame');
     });
 
     it('should return all descendants (direct and indirect)', () => {
@@ -246,15 +254,16 @@ describe('STI Registry Methods', () => {
       }
 
       const eventDescendants = ObjectRegistry.getDescendants('Event');
+      // R5-canon: getDescendants returns qualified names.
       expect(eventDescendants).toHaveLength(3);
-      expect(eventDescendants).toContain('SportingEvent');
-      expect(eventDescendants).toContain('HockeyGame');
-      expect(eventDescendants).toContain('Meeting');
+      expect(eventDescendants).toContain('@vitest/runner:SportingEvent');
+      expect(eventDescendants).toContain('@vitest/runner:HockeyGame');
+      expect(eventDescendants).toContain('@vitest/runner:Meeting');
 
       const sportingDescendants =
         ObjectRegistry.getDescendants('SportingEvent');
       expect(sportingDescendants).toHaveLength(1);
-      expect(sportingDescendants).toContain('HockeyGame');
+      expect(sportingDescendants).toContain('@vitest/runner:HockeyGame');
     });
 
     it('should not include the base class itself', () => {
@@ -284,8 +293,9 @@ describe('STI Registry Methods', () => {
       }
 
       const descendants = ObjectRegistry.getDescendants('BaseClass');
+      // R5-canon: getDescendants returns qualified names.
       expect(descendants).toHaveLength(1);
-      expect(descendants).toContain('ChildClass');
+      expect(descendants).toContain('@vitest/runner:ChildClass');
     });
   });
 
@@ -312,15 +322,18 @@ describe('STI Registry Methods', () => {
       expect(ObjectRegistry.getTableStrategy('HockeyGame')).toBe('sti');
 
       // Verify base
-      expect(ObjectRegistry.getSTIBase('Event')).toBe('Event');
-      expect(ObjectRegistry.getSTIBase('Meeting')).toBe('Event');
-      expect(ObjectRegistry.getSTIBase('HockeyGame')).toBe('Event');
+      // R5-canon: getSTIBase/getDescendants return qualified names.
+      expect(ObjectRegistry.getSTIBase('Event')).toBe('@vitest/runner:Event');
+      expect(ObjectRegistry.getSTIBase('Meeting')).toBe('@vitest/runner:Event');
+      expect(ObjectRegistry.getSTIBase('HockeyGame')).toBe(
+        '@vitest/runner:Event',
+      );
 
       // Verify descendants
       const descendants = ObjectRegistry.getDescendants('Event');
       expect(descendants).toHaveLength(2);
-      expect(descendants).toContain('Meeting');
-      expect(descendants).toContain('HockeyGame');
+      expect(descendants).toContain('@vitest/runner:Meeting');
+      expect(descendants).toContain('@vitest/runner:HockeyGame');
     });
 
     it('should handle mixed CTI and STI hierarchies', () => {
@@ -352,15 +365,20 @@ describe('STI Registry Methods', () => {
       expect(ObjectRegistry.getSTIBase('Product')).toBeNull();
       expect(ObjectRegistry.getSTIBase('Book')).toBeNull();
 
-      // Verify Event hierarchy uses STI
+      // Verify Event hierarchy uses STI.
+      // R5-canon: getSTIBase/getDescendants return qualified names.
       expect(ObjectRegistry.getTableStrategy('Event')).toBe('sti');
       expect(ObjectRegistry.getTableStrategy('Meeting')).toBe('sti');
-      expect(ObjectRegistry.getSTIBase('Event')).toBe('Event');
-      expect(ObjectRegistry.getSTIBase('Meeting')).toBe('Event');
+      expect(ObjectRegistry.getSTIBase('Event')).toBe('@vitest/runner:Event');
+      expect(ObjectRegistry.getSTIBase('Meeting')).toBe('@vitest/runner:Event');
 
       // Verify descendants are isolated
-      expect(ObjectRegistry.getDescendants('Product')).toEqual(['Book']);
-      expect(ObjectRegistry.getDescendants('Event')).toEqual(['Meeting']);
+      expect(ObjectRegistry.getDescendants('Product')).toEqual([
+        '@vitest/runner:Book',
+      ]);
+      expect(ObjectRegistry.getDescendants('Event')).toEqual([
+        '@vitest/runner:Meeting',
+      ]);
     });
   });
 

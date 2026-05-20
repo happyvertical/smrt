@@ -79,7 +79,10 @@ describe('Downstream events STI schema synthesis', () => {
     const eventClass = ObjectRegistry.findClass('Event');
     expect(eventClass).toBeDefined();
     expect(ObjectRegistry.getTableStrategy('Event')).toBe('sti');
-    expect(ObjectRegistry.getSTIBase('Event')).toBe('Event');
+    // R5-canon: getSTIBase returns qualified names.
+    expect(ObjectRegistry.getSTIBase('Event')).toBe(
+      '@happyvertical/smrt-events:Event',
+    );
 
     // This mirrors a downstream built manifest child: inherited STI metadata
     // is already resolved, but the child still contributes its own fields.
@@ -112,7 +115,10 @@ describe('Downstream events STI schema synthesis', () => {
     );
 
     expect(ObjectRegistry.getTableStrategy('Meeting')).toBe('sti');
-    expect(ObjectRegistry.getSTIBase('Meeting')).toBe('Event');
+    // R5-canon: getSTIBase returns qualified names.
+    expect(ObjectRegistry.getSTIBase('Meeting')).toBe(
+      '@happyvertical/smrt-events:Event',
+    );
 
     const schemas = ObjectRegistry.getAllSchemas();
     expect(schemas.events).toBeDefined();
