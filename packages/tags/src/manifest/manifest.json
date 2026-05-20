@@ -747,7 +747,7 @@
       "collectionExportName": "TagCollection",
       "schema": {
         "tableName": "tags",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tags\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"parent_id\" TEXT DEFAULT '',\n  \"level\" INTEGER DEFAULT 0,\n  \"description\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tags\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"parent_id\" TEXT,\n  \"level\" INTEGER DEFAULT 0,\n  \"description\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -788,8 +788,7 @@
           },
           "parent_id": {
             "type": "TEXT",
-            "notNull": false,
-            "default": ""
+            "notNull": false
           },
           "level": {
             "type": "INTEGER",

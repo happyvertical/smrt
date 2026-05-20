@@ -3245,10 +3245,17 @@ export function smrt(config: SmartObjectConfig = {}) {
           let stiBaseName: string | null = null;
 
           while (proto?.name && proto.name !== 'SmrtObject') {
-            // Use getTableStrategy() to properly detect inherited STI strategy
-            if (ObjectRegistry.getTableStrategy(proto.name) === 'sti') {
+            // Use getTableStrategy() to properly detect inherited STI strategy.
+            // R5-canon: walk via constructor identity (qualified name
+            // from registration) rather than `proto.name`, so a
+            // colliding simple name in another package can't yield the
+            // wrong STI base. Falls through to simple `proto.name` for
+            // unregistered prototypes. Mirrors the sibling branch above.
+            const protoReg = ObjectRegistry.getClassByConstructor(proto as any);
+            const protoKey = protoReg?.qualifiedName ?? proto.name;
+            if (ObjectRegistry.getTableStrategy(protoKey) === 'sti') {
               // Get the actual STI base (may be higher up the chain)
-              stiBaseName = ObjectRegistry.getSTIBase(proto.name);
+              stiBaseName = ObjectRegistry.getSTIBase(protoKey);
               break;
             }
             proto = Object.getPrototypeOf(proto);
