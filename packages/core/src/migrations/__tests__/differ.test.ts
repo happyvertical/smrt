@@ -414,6 +414,47 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(typeUpgrades[0].sql).toContain("SET DEFAULT '{}'::jsonb");
   });
 
+  it('should generate PostgreSQL ADD COLUMN SQL for JSON array defaults', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'contents' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      contents: {
+        tableName: 'contents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          word_timings: { type: 'JSON', defaultValue: [] },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'add_column',
+        table: 'contents',
+        name: 'word_timings',
+        sql: `ALTER TABLE "contents" ADD COLUMN "word_timings" JSONB DEFAULT '[]'`,
+      }),
+    ]);
+  });
+
   it('should generate PostgreSQL USING clause for legacy JSON→TIMESTAMP drift', async () => {
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
