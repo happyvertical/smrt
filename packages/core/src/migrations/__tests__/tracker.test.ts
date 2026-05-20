@@ -6,7 +6,7 @@
 
 import type { DatabaseProvider } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MigrationDefinition } from '../../schema/types.js';
 import { MigrationTracker } from '../tracker.js';
 
@@ -21,6 +21,7 @@ describe('MigrationTracker', () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     if (db && typeof db.close === 'function') {
       try {
         await db.close();
@@ -526,6 +527,7 @@ describe('MigrationTracker', () => {
 
       expect(results).toHaveLength(2);
       expect(results[0].success).toBe(false);
+      expect(results[0].rolled_back).toBe(true);
       expect(results[0].error).toBeInstanceOf(Error);
       expect(String(results[0].error)).toContain(
         'Rolled back because migration 0002_atomic_bad_sql failed',
@@ -568,6 +570,60 @@ describe('MigrationTracker', () => {
           { atomic: true, postgresSafe: true },
         ),
       ).rejects.toThrow(/cannot include CONCURRENTLY index DDL/);
+    });
+
+    it('rejects explicit Postgres REINDEX CONCURRENTLY DDL before starting an atomic batch', async () => {
+      const postgresTracker = new MigrationTracker({
+        db: {
+          url: 'postgresql://test:test@localhost:5432/test',
+          query: async () => ({ rows: [] }),
+          transaction: async () => {
+            throw new Error('transaction should not start');
+          },
+        } as any,
+      });
+
+      await expect(
+        postgresTracker.applyAll(
+          [
+            {
+              id: '0001_concurrent_reindex',
+              description: 'Concurrent reindex',
+              version: '1.0.0',
+              up: ['REINDEX INDEX CONCURRENTLY idx_atomic_name;'],
+              down: [],
+            },
+          ],
+          { atomic: true },
+        ),
+      ).rejects.toThrow(/cannot include CONCURRENTLY index DDL/);
+    });
+
+    it('reports failed-status persistence errors without hiding the migration failure', async () => {
+      const originalQuery = db.query.bind(db);
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      (db as any).query = async (sql: string, ...params: unknown[]) => {
+        if (sql.includes("SET status = 'failed'")) {
+          throw new Error('failed-status write failed');
+        }
+
+        return originalQuery(sql, ...params);
+      };
+
+      const result = await tracker.apply({
+        id: '0001_bad_sql',
+        description: 'Bad SQL',
+        version: '1.0.0',
+        up: ['THIS IS NOT VALID SQL;'],
+        down: [],
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBeInstanceOf(Error);
+      expect(String(result.error)).toContain('Failed to execute raw query');
+      expect(errorSpy.mock.calls.flat().join('\n')).toContain(
+        'Failed to persist failed status for migration 0001_bad_sql: failed-status write failed',
+      );
     });
   });
 

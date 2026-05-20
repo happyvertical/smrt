@@ -65,7 +65,7 @@ class AtomicMigrationRollback extends Error {
 }
 
 const CONCURRENT_INDEX_STATEMENT_RE =
-  /(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY/i;
+  /(?:(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY|REINDEX(?:\s*\([^)]*\))?\s+(?:INDEX|TABLE|SCHEMA|DATABASE|SYSTEM)\s+CONCURRENTLY)/i;
 
 function findConcurrentIndexStatement(
   definitions: MigrationDefinition[],
@@ -455,9 +455,16 @@ export class MigrationTracker {
           migrationError.message,
           id,
         );
-      } catch {
+      } catch (persistError) {
         // Preserve the migration failure; status persistence is secondary and
         // may be impossible until the surrounding transaction rolls back.
+        const persistMessage =
+          persistError instanceof Error
+            ? persistError.message
+            : String(persistError);
+        console.error(
+          `Failed to persist failed status for migration ${definition.id}: ${persistMessage}`,
+        );
       }
 
       return {
@@ -535,6 +542,7 @@ export class MigrationTracker {
               success: false,
               applied: false,
               skipped: false,
+              rolled_back: true,
               error: new Error(
                 `Rolled back because migration ${error.failed.name} failed`,
               ),
@@ -552,6 +560,7 @@ export class MigrationTracker {
     for (const definition of definitions) {
       const result = await this.apply(definition, options);
       results.push(result);
+      options.onProgress?.(result);
 
       if (!result.success && !options.continueOnError) {
         break;

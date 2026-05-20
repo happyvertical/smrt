@@ -11,6 +11,7 @@ import type {
   IndexDefinition as SqlIndexDefinition,
   TableSchemaInfo as SqlTableSchemaInfo,
 } from '@happyvertical/sql';
+import type { MigrationResult } from '../schema/types.js';
 
 export type {
   SqlColumnDefinitionWithName,
@@ -138,6 +139,8 @@ export interface ApplyMigrationsOptions {
   reconcile?: boolean;
   /** Use PostgreSQL-safe operations (CONCURRENTLY, lock timeout) */
   postgresSafe?: boolean;
+  /** Called after each migration attempt completes, before the batch continues */
+  onProgress?: (result: MigrationResult) => void;
 }
 
 /**

@@ -9,7 +9,7 @@ const {
   getInitializationOrderMock,
   getPackageConfigMock,
   getTableNameMock,
-  migrationApplyOptions,
+  migrationApplyAllOptions,
   migrationAttempts,
   MockMigrationTracker,
   MockSchemaComparer,
@@ -17,7 +17,12 @@ const {
   transactionRolledBack,
 } = vi.hoisted(() => {
   const migrationAttempts: string[] = [];
-  const migrationApplyOptions: Array<{ postgresSafe?: boolean }> = [];
+  const migrationApplyAllOptions: Array<{
+    atomic?: boolean;
+    force?: boolean;
+    postgresSafe?: boolean;
+    reconcile?: boolean;
+  }> = [];
   const committedAppliedMigrations: string[] = [];
   const trackerOptions: Array<{ useConcurrentIndexes?: boolean }> = [];
   const transactionRolledBack = { value: false };
@@ -42,36 +47,78 @@ const {
       return 'postgres';
     }
 
-    async apply(
-      definition: { id: string },
-      options: { postgresSafe?: boolean } = {},
+    async applyAll(
+      definitions: Array<{ id: string }>,
+      options: {
+        atomic?: boolean;
+        force?: boolean;
+        onProgress?: (result: any) => void;
+        postgresSafe?: boolean;
+        reconcile?: boolean;
+      } = {},
     ) {
-      migrationAttempts.push(definition.id);
-      migrationApplyOptions.push({
+      migrationApplyAllOptions.push({
+        atomic: options.atomic,
+        force: options.force,
         postgresSafe: options.postgresSafe,
+        reconcile: options.reconcile,
       });
 
-      if (definition.id === 'add_column_contents_second_column') {
-        return {
-          success: false,
-          applied: false,
-          skipped: false,
-          name: definition.id,
-          checksum: 'bad',
-          execution_time_ms: 1,
-          error: new Error('synthetic failure'),
-        };
+      const results: any[] = [];
+      let failedName: string | undefined;
+
+      try {
+        await this.db.transaction(async (tx: any) => {
+          for (const definition of definitions) {
+            migrationAttempts.push(definition.id);
+
+            if (definition.id === 'add_column_contents_second_column') {
+              failedName = definition.id;
+              const failed = {
+                success: false,
+                applied: false,
+                skipped: false,
+                name: definition.id,
+                checksum: 'bad',
+                execution_time_ms: 1,
+                error: new Error('synthetic failure'),
+              };
+              results.push(failed);
+              options.onProgress?.(failed);
+              throw failed.error;
+            }
+
+            tx.appliedMigrations.push(definition.id);
+            const result = {
+              success: true,
+              applied: true,
+              skipped: false,
+              name: definition.id,
+              checksum: 'ok',
+              execution_time_ms: 1,
+            };
+            results.push(result);
+            options.onProgress?.(result);
+          }
+        });
+      } catch {
+        return results.map((result) =>
+          result.success
+            ? {
+                ...result,
+                success: false,
+                applied: false,
+                skipped: false,
+                rolled_back: true,
+                error: new Error(
+                  `Rolled back because migration ${failedName} failed`,
+                ),
+              }
+            : result,
+        );
       }
 
-      this.db.appliedMigrations.push(definition.id);
-      return {
-        success: true,
-        applied: true,
-        skipped: false,
-        name: definition.id,
-        checksum: 'ok',
-        execution_time_ms: 1,
-      };
+      return results;
     }
   }
 
@@ -86,7 +133,7 @@ const {
     getInitializationOrderMock: vi.fn(),
     getPackageConfigMock: vi.fn(),
     getTableNameMock: vi.fn(),
-    migrationApplyOptions,
+    migrationApplyAllOptions,
     migrationAttempts,
     transactionRolledBack,
     MockMigrationTracker,
@@ -129,7 +176,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.resetModules();
     vi.clearAllMocks();
     process.exitCode = undefined;
-    migrationApplyOptions.length = 0;
+    migrationApplyAllOptions.length = 0;
     migrationAttempts.length = 0;
     committedAppliedMigrations.length = 0;
     trackerOptions.length = 0;
@@ -223,16 +270,67 @@ describe('db:migrate atomic schema execution', () => {
     expect(committedAppliedMigrations).toEqual([]);
     expect(
       trackerOptions.map((options) => options.useConcurrentIndexes),
-    ).toEqual([true, false]);
-    expect(
-      migrationApplyOptions.map((options) => options.postgresSafe),
-    ).toEqual([false, false]);
+    ).toEqual([true]);
+    expect(migrationApplyAllOptions).toEqual([
+      {
+        atomic: true,
+        force: false,
+        postgresSafe: false,
+        reconcile: true,
+      },
+    ]);
     expect(process.exitCode).toBe(1);
 
     const stdout = logSpy.mock.calls.flat().join('\n');
     const stderr = errorSpy.mock.calls.flat().join('\n');
-    expect(stdout).not.toContain('Added column contents.first_column');
+    expect(stdout).toContain('Added column contents.first_column');
     expect(stderr).toContain('atomic schema migration failed');
-    expect(stderr).toContain('Rolled back all schema changes');
+    expect(stderr).toContain(
+      'add_column_contents_second_column: synthetic failure',
+    );
+    expect(stderr).toContain('successful steps shown above');
+  });
+
+  it('warns when postgres-safe index operations are folded into the atomic batch', async () => {
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: true,
+      changes: [
+        {
+          type: 'add_index',
+          table: 'contents',
+          index: {
+            name: 'contents_first_column_idx',
+            columns: ['first_column'],
+          },
+          sql: 'CREATE INDEX "contents_first_column_idx" ON "contents" ("first_column")',
+        },
+      ],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const { utilityCommands } = await import('../utilities.js');
+
+    await utilityCommands['db:migrate'].handler([], { 'postgres-safe': true });
+
+    expect(warnSpy.mock.calls.flat().join('\n')).toContain(
+      '--postgres-safe requested',
+    );
+    expect(migrationAttempts).toEqual([
+      expect.stringMatching(/^add_index_contents_first_column_idx_/),
+    ]);
+    expect(migrationApplyAllOptions[0]).toMatchObject({
+      atomic: true,
+      postgresSafe: false,
+      reconcile: true,
+    });
+    expect(errorSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('atomic schema migration failed'),
+    );
+    expect(logSpy.mock.calls.flat().join('\n')).toContain(
+      'Created index contents_first_column_idx on contents',
+    );
   });
 });
