@@ -109,6 +109,13 @@ export class SmrtHierarchical extends SmrtObject {
     // registered config declares STI. Keep overwriting so we end on the
     // root-most STI declaration (multi-level STI hierarchies put the
     // shared table on the OLDEST ancestor — see ObjectRegistry.getSTIBase).
+    //
+    // Terminate at SmrtHierarchical (the typical case for any concrete
+    // subclass) and at `Function.prototype` / `Object.prototype` — those
+    // are what `Object.getPrototypeOf(ctor)` ultimately surfaces at the
+    // top of the chain (not the `Function` / `Object` constructors), so
+    // an explicit check against the prototypes avoids running the
+    // registry lookup on irrelevant non-class objects.
     let stiBaseRegistration: ReturnType<
       typeof ObjectRegistry.getClassByConstructor
     >;
@@ -116,8 +123,8 @@ export class SmrtHierarchical extends SmrtObject {
     while (
       ctor &&
       ctor !== SmrtHierarchical &&
-      ctor !== (Function as unknown) &&
-      ctor !== (Object as unknown)
+      ctor !== Function.prototype &&
+      ctor !== Object.prototype
     ) {
       const reg = ObjectRegistry.getClassByConstructor(ctor as any);
       if (reg?.config?.tableStrategy === 'sti') {
