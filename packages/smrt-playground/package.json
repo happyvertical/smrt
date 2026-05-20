@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-playground",
-  "version": "0.25.11",
+  "version": "0.25.12",
   "description": "Shared playground discovery, runtime, and host components for SMRT UI packages",
   "type": "module",
   "main": "./dist/index.js",

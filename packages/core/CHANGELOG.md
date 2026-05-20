@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.25.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - address contribution form review (content)
+  - add native contribution form contracts (content)
+  - @happyvertical/smrt-scanner@0.25.12
+  - @happyvertical/smrt-config@0.25.12
+  - @happyvertical/smrt-types@0.25.12
+
 ## 0.25.11
 
 ### Patch Changes
