@@ -216,4 +216,108 @@ describe('Tag hierarchy (R3-B: slug API → UUID storage)', () => {
     expect(await tags.get({ slug: 'frontend', context: 'blog' })).toBeNull();
     expect(await tags.get({ slug: 'news', context: 'blog' })).toBeNull();
   });
+
+  describe('context-aware slug resolution (Copilot review findings)', () => {
+    /**
+     * Build a small two-context forest:
+     *
+     *   'blog'  context:  reviews (root) → tech (root) → web
+     *   'forum' context:  tech   (root)            ← same slug, different context
+     */
+    async function buildAmbiguousForest() {
+      const blogReviews = await tags.getOrCreate('reviews', 'blog');
+      const blogTech = await tags.getOrCreate('tech', 'blog');
+      const blogWeb = await tags.create({
+        slug: 'web',
+        name: 'Web',
+        context: 'blog',
+        parentId: blogTech.id,
+        level: 1,
+      });
+      await blogWeb.save();
+      const forumTech = await tags.getOrCreate('tech', 'forum');
+      return { blogReviews, blogTech, blogWeb, forumTech };
+    }
+
+    it('moveTag throws when the slug is ambiguous across contexts', async () => {
+      await buildAmbiguousForest();
+      // Two 'tech' rows now exist (one in 'blog', one in 'forum'). Without
+      // an explicit context the resolver can't tell them apart and must
+      // refuse rather than silently picking one.
+      await expect(tags.moveTag('tech', 'reviews')).rejects.toThrow(
+        /ambiguous|multiple/i,
+      );
+    });
+
+    it('moveTag resolves within the supplied context', async () => {
+      const { blogReviews } = await buildAmbiguousForest();
+      // Explicit context disambiguates — move blog's tech under
+      // blog's reviews. forum's tech is untouched.
+      await tags.moveTag('tech', 'reviews', 'blog');
+
+      const movedBlogTech = await tags.get({ slug: 'tech', context: 'blog' });
+      expect(movedBlogTech?.parentId).toBe(blogReviews.id);
+
+      const forumTechAfter = await tags.get({
+        slug: 'tech',
+        context: 'forum',
+      });
+      expect(forumTechAfter?.parentId).toBeNull();
+    });
+
+    it('moveTag refuses to cross context boundaries', async () => {
+      await buildAmbiguousForest();
+      // 'tech' in blog, 'tech' in forum — moving blog/tech under
+      // forum/tech should fail with a clear "contexts must match" error
+      // because the resolver picks the source's context for the parent
+      // lookup, then mismatches.
+      await expect(tags.moveTag('tech', 'tech', 'blog')).rejects.toThrow(
+        /itself|cycle|contexts must match/,
+      );
+    });
+
+    it('mergeTag throws when slugs are ambiguous across contexts', async () => {
+      await buildAmbiguousForest();
+      // Both 'tech' rows could match — fail rather than picking one.
+      await expect(tags.mergeTag('tech', 'reviews')).rejects.toThrow(
+        /ambiguous|multiple|not found/i,
+      );
+    });
+
+    it('mergeTag recalculates child level when source and target sit at different depths', async () => {
+      // Forest: rootA → midA → leafA  (leafA.level = 2)
+      //         rootB                 (rootB.level = 0)
+      // Merge midA into rootB. leafA was at depth 2 under rootA→midA.
+      // After merge, leafA hangs off rootB at depth 1 — level must
+      // recalc, the old code left it at 2.
+      const rootA = await tags.getOrCreate('root-a', 'blog');
+      const midA = await tags.create({
+        slug: 'mid-a',
+        name: 'Mid A',
+        context: 'blog',
+        parentId: rootA.id,
+        level: 1,
+      });
+      await midA.save();
+      const leafA = await tags.create({
+        slug: 'leaf-a',
+        name: 'Leaf A',
+        context: 'blog',
+        parentId: midA.id,
+        level: 2,
+      });
+      await leafA.save();
+      const rootB = await tags.getOrCreate('root-b', 'blog');
+
+      await tags.mergeTag('mid-a', 'root-b');
+
+      const reloadedLeaf = await tags.get({
+        slug: 'leaf-a',
+        context: 'blog',
+      });
+      expect(reloadedLeaf?.parentId).toBe(rootB.id);
+      // rootB.level = 0, so leafA's new level is rootB.level + 1 = 1.
+      expect(reloadedLeaf?.level).toBe(1);
+    });
+  });
 });
