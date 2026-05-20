@@ -3,9 +3,21 @@
  *
  * Represents a digital asset with versioning, metadata, and tag support.
  * Supports multi-tenancy with optional tenant scoping.
+ *
+ * Post R3-D: `parentId` was renamed to `sourceAssetId` to reflect what
+ * the column actually means — a derivation pointer ("this asset was
+ * produced from that source asset"), not a structural-hierarchy edge.
+ * Folder, which used `parent_id` for actual hierarchy via STI on this
+ * table, has moved to its own `folders` table. See `folder.ts` and the
+ * `R3-D` changeset for the migration.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  ObjectRegistry,
+  type SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { Tag } from '@happyvertical/smrt-tags';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AssetAssociation } from './asset-association';
@@ -74,8 +86,17 @@ export class Asset extends SmrtObject {
   typeSlug = ''; // FK to AssetType.slug
   statusSlug = ''; // FK to AssetStatus.slug
   ownerProfileId: string | null = null; // FK to Profile.id (nullable)
-  parentId: string | null = null; // FK to Asset.id (for derivatives)
-  folderId: string | null = null; // FK to Folder Asset.id
+  /**
+   * FK to the source Asset this one was derived from (e.g. thumbnail
+   * derived from an original image, transcoded video, AI variation).
+   *
+   * Renamed from `parentId` in R3-D to make the derivation semantics
+   * explicit and free `parentId` to mean exactly structural hierarchy
+   * (SmrtHierarchical) across the framework. The column on the assets
+   * table is `source_asset_id`.
+   */
+  sourceAssetId: string | null = null;
+  folderId: string | null = null; // FK to Folder.id
 
   // Provenance fields
   sourceType = ''; // 'local', 'shutterstock', 'google-photos', 'upstream-smrt'
@@ -105,7 +126,8 @@ export class Asset extends SmrtObject {
     if (options.statusSlug) this.statusSlug = options.statusSlug;
     if (options.ownerProfileId !== undefined)
       this.ownerProfileId = options.ownerProfileId;
-    if (options.parentId !== undefined) this.parentId = options.parentId;
+    if (options.sourceAssetId !== undefined)
+      this.sourceAssetId = options.sourceAssetId;
     if (options.folderId !== undefined) this.folderId = options.folderId;
     if (options.sourceType) this.sourceType = options.sourceType;
     if (options.externalId) this.externalId = options.externalId;
@@ -204,37 +226,63 @@ export class Asset extends SmrtObject {
   }
 
   /**
-   * Get the parent asset (if this is a derivative)
+   * Resolve the AssetCollection lazily. Going through `ObjectRegistry`
+   * mirrors the pattern used by `SmrtHierarchical._hierarchyCollection`
+   * so source/derivative lookups inherit tenant scoping and ORM
+   * hydration without hard-coding an import of `./assets` (which would
+   * create a module-import cycle).
    *
-   * @returns Parent Asset instance or null
+   * The return type is `SmrtCollection<Asset>` (the framework base, type-
+   * only import from core) rather than the concrete `AssetCollection` —
+   * importing the concrete class is what would create the cycle, but the
+   * base-class shape gives callers full `.get()` / `.list()` type
+   * safety here.
    */
-  async getParent(): Promise<Asset | null> {
-    if (!this.parentId) return null;
-
-    const record = await this.db.get('assets', { id: this.parentId });
-
-    if (!record) return null;
-
-    const asset = new Asset();
-    Object.assign(asset, record);
-    return asset;
+  private async _assetCollection(): Promise<SmrtCollection<Asset>> {
+    return await ObjectRegistry.getCollection<Asset>('Asset', this.options);
   }
 
   /**
-   * Get all derivative assets (children)
+   * Get the source asset this one was derived from, if any.
    *
-   * @returns Array of child Asset instances
+   * Renamed from `getParent` in R3-D. The relationship is "I was produced
+   * from that asset" (e.g. a thumbnail's source is its original image),
+   * not a structural-hierarchy parent.
+   *
+   * Goes through the AssetCollection so tenant interceptors and ORM
+   * hydration apply — important because a tenant-scoped consumer with
+   * cross-tenant derivative chains would otherwise return assets from
+   * tenants the caller cannot see, and a raw `db.get` returns
+   * snake_case rows that leave camelCase props (e.g. `sourceUri`) at
+   * their constructor defaults.
+   *
+   * @returns Source Asset instance, or null if this asset has no source
    */
-  async getChildren(): Promise<Asset[]> {
-    const rows = await this.db.list('assets', {
-      where: { parent_id: this.id },
-    });
+  async getSource(): Promise<Asset | null> {
+    if (!this.sourceAssetId) return null;
+    const collection = await this._assetCollection();
+    return (await collection.get({ id: this.sourceAssetId })) as Asset | null;
+  }
 
-    return (rows as any[]).map((row) => {
-      const asset = new Asset();
-      Object.assign(asset, row);
-      return asset;
-    });
+  /**
+   * Get all assets derived from this one (e.g. thumbnails, variants,
+   * transcodes, AI edits).
+   *
+   * Renamed from `getChildren` in R3-D to match the derivation
+   * semantics. Goes through the AssetCollection so tenant interceptors
+   * and ORM hydration apply (see `getSource` for why this matters —
+   * the pre-R3-D `getChildren` used raw `db.list`, which both bypassed
+   * tenant scoping and dropped camelCase property hydration; that
+   * latent breakage is fixed here).
+   *
+   * @returns Array of derivative Asset instances
+   */
+  async getDerivatives(): Promise<Asset[]> {
+    if (!this.id) return [];
+    const collection = await this._assetCollection();
+    return (await collection.list({
+      where: { sourceAssetId: this.id },
+    })) as Asset[];
   }
 
   /**

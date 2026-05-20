@@ -112,7 +112,7 @@ describe('smrt-assets local processor', () => {
     });
     expect(generated?.asset.mimeType).toBe('image/webp');
     expect(generated?.asset.typeSlug).toBe('image-variant');
-    expect(generated?.asset.parentId).toBe(source.id);
+    expect(generated?.asset.sourceAssetId).toBe(source.id);
     expect(generated?.asset.externalId).toContain('smrt-assets:variant');
     expect(generated?.asset.getMetadata()).toMatchObject({
       assetVariant: {

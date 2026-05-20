@@ -4,10 +4,10 @@ Provider-agnostic asset management with versioning, type classification, and gen
 
 ## Models
 
-- **Asset** (STI base): versioning via `primaryVersionId` chain + `version` number. `ownerProfileId`, `typeSlug`, `statusSlug`, `mimeType`, `sourceUri`. Hierarchical via `parentId` (for derivatives).
+- **Asset** (STI base): versioning via `primaryVersionId` chain + `version` number. `ownerProfileId`, `typeSlug`, `statusSlug`, `mimeType`, `sourceUri`. Derivation chain via `sourceAssetId` (R3-D — was `parentId` before the rename; column `source_asset_id`).
 - **AssetType** / **AssetStatus**: lookup tables for classification and lifecycle.
 - **AssetMetafield**: custom metadata field definitions with JSON validation rules.
-- **Folder**: STI subclass (typeSlug='folder') for hierarchical organization.
+- **Folder**: hierarchical container for assets. Own `SmrtHierarchical` model with its own `folders` table (R3-D — was an STI subclass of Asset before). `Asset.folderId` points to the folder.
 - **AssetAssociation**: generic/provenance polymorphic join — `assetId` + `metaType` + `metaId` + `role` + `sortOrder`. Use it when a relationship is not owned by a base/domain model join table like `content_assets`, `profile_assets`, `event_assets`, `place_assets`, or `product_assets`.
 
 ## Key Patterns
@@ -23,7 +23,7 @@ Apps and agents should depend on the public **asset runtime** rather than hand-w
 
 - `createAssetRuntime({ db, storage })` → `AssetRuntime` bundling `AssetCollection`, `AssetAssociationCollection`, and an initialized `AssetStore`.
 - `AssetRuntime.storeSourceAsset(name, data, opts)` — create a new source asset (record + bytes).
-- `AssetRuntime.storeDerivedAsset(source, name, data, opts)` — create a derivative with `parentId` set and (by default) a provenance `AssetAssociation` under a chosen role.
+- `AssetRuntime.storeDerivedAsset(source, name, data, opts)` — create a derivative with `sourceAssetId` set and (by default) a provenance `AssetAssociation` under a chosen role.
 - `AssetRuntime.linkDerivation(source, derivative, { role })` — record provenance without touching bytes.
 - `AssetRuntime.setExtractionStatus(asset, status, { error?, extractedAt? })` — write canonical extraction metadata into the asset's description JSON sidecar. Non-destructive: if `description` is free-form prose or non-object JSON, the original value is preserved under the reserved `text` key instead of being overwritten. Existing JSON objects are merged into.
 
@@ -73,6 +73,6 @@ Registered slots: `asset-manager` (admin), `asset-grid` / `asset-list` (list), `
 
 - **Version history manual**: `findVersions()` chaining required — no ORM shortcut
 - **Tag management uses raw SQL**: `asset_tags` is a join table, not an SMRT model
-- **Folder tree traversal manual**: via `parentId` lookups, no built-in tree methods
+- **Folder tree traversal**: via `SmrtHierarchical` (`getParent`/`getChildren`/`getAncestors`/`getDescendants`/`getHierarchy`/`moveTo`); `FolderCollection.getTree(rootId?)` and `getPath(folderId)` wrap these for convenience
 - **AssetAssociation polymorphic FK**: requires manual `metaType` string matching
 - **Optional tenancy**: assets can be global (tenantId=null) or tenant-scoped

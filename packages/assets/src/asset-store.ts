@@ -46,8 +46,12 @@ export interface StoreOptions {
   /** Asset type slug (e.g., 'video', 'audio', 'image', 'reference-image') */
   typeSlug?: string;
 
-  /** Parent asset ID (for derivatives like thumbnails) */
-  parentId?: string;
+  /**
+   * Source asset ID (for derivatives like thumbnails, variants, AI edits).
+   *
+   * Renamed from `parentId` in R3-D — see Asset.sourceAssetId.
+   */
+  sourceAssetId?: string;
 
   /** Asset status slug */
   statusSlug?: string;
@@ -374,7 +378,7 @@ export class AssetStore {
       mimeType: opts.mimeType,
       typeSlug,
       statusSlug: opts.statusSlug ?? 'active',
-      parentId: opts.parentId ?? null,
+      sourceAssetId: opts.sourceAssetId ?? null,
       description: opts.description ?? '',
       sourceType: opts.sourceType ?? '',
       externalId: opts.externalId ?? '',

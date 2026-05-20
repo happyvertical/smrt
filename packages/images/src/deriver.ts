@@ -68,7 +68,7 @@ export class ImageDeriver {
         name: `derived-${sources[0].name}-${i + 1}`,
         mimeType: 'image/png',
         sourceUri: '',
-        parentId: sources[0].id,
+        sourceAssetId: sources[0].id,
         typeSlug: 'image',
         description: `Derived: ${prompt}`,
       })) as Image;

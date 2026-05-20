@@ -25,7 +25,7 @@ export const POST: RequestHandler = async ({ params, request }) => {
     width: image.width,
     height: image.height,
     alt: `Variant of ${image.name}: ${prompt}`,
-    parentId: image.id,
+    sourceAssetId: image.id,
     description: `AI Edited: ${prompt}`,
     typeSlug: 'image',
   });
