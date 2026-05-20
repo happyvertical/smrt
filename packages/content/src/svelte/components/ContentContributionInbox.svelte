@@ -34,6 +34,8 @@ let {
 
 let note = $state('');
 let targetStatus = $state<'draft' | 'review'>('draft');
+const workflowIntents = ['approve', 'request-changes', 'reject'] as const;
+type WorkflowIntent = (typeof workflowIntents)[number];
 
 const selectedContribution = $derived(
   contributions.find((item) => item.id === selectedId) ||
@@ -56,16 +58,26 @@ function approveActionLabel(contribution: ContentContributionData) {
     : 'Approve and promote';
 }
 
+function isWorkflowIntent(
+  intent: string | undefined,
+): intent is WorkflowIntent {
+  return workflowIntents.includes(intent as WorkflowIntent);
+}
+
 function handleWorkflowSubmit(event: SubmitEvent) {
   const submitter = event.submitter as HTMLButtonElement | null;
   const intent = submitter?.value;
+  const hasNativeWorkflowTarget =
+    Boolean(workflowFormAction) &&
+    Boolean(selectedContribution?.id) &&
+    isWorkflowIntent(intent);
   const shouldHandleWithCallback =
     Boolean(selectedContribution) &&
     ((intent === 'approve' && Boolean(onApprove)) ||
       (intent === 'request-changes' && Boolean(onRequestChanges)) ||
       (intent === 'reject' && Boolean(onReject)));
 
-  if (!workflowFormAction || shouldHandleWithCallback) {
+  if (!hasNativeWorkflowTarget || shouldHandleWithCallback) {
     event.preventDefault();
   }
 

@@ -165,4 +165,19 @@ describe('ContentContributionForm', () => {
 
     expect(event.defaultPrevented).toBe(false);
   });
+
+  it('prevents native submission when neither callback nor action is provided', () => {
+    const target = renderForm({
+      types: [
+        { key: 'letter', label: 'Letter', enabled: true, allowFiles: true },
+      ],
+    });
+
+    const form = target.querySelector('form') as HTMLFormElement;
+    const event = new Event('submit', { bubbles: true, cancelable: true });
+
+    form.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
 });

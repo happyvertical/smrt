@@ -95,6 +95,9 @@ function handleFileChange(event: Event) {
 
 function handleSubmit(event: SubmitEvent) {
   if (!onSubmit) {
+    if (!action?.trim()) {
+      event.preventDefault();
+    }
     return;
   }
 

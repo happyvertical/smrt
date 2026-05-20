@@ -178,6 +178,30 @@ describe('ContentContributionInbox', () => {
     expect(event.defaultPrevented).toBe(false);
   });
 
+  it('prevents native workflow form submission when no intent is provided', () => {
+    const target = renderInbox({
+      workflowFormAction: '?/reviewContribution',
+      contributions: [
+        {
+          id: 'contribution-1',
+          title: 'Letter',
+          contributorEmail: 'reader@example.com',
+          status: 'submitted',
+        },
+      ],
+    });
+
+    const form = target.querySelector('form') as HTMLFormElement;
+    const event = new Event('submit', {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    form.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('prevents browser submission when a workflow callback handles the intent', () => {
     const onApprove = vi.fn();
     const target = renderInbox({
@@ -240,6 +264,19 @@ describe('ContentContributionInbox', () => {
       true,
       true,
     ]);
+
+    const event = new Event('submit', {
+      bubbles: true,
+      cancelable: true,
+    }) as SubmitEvent;
+    Object.defineProperty(event, 'submitter', {
+      value: buttons[0],
+      configurable: true,
+    });
+
+    form.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
   });
 
   it('emits approve, request-changes, and reject actions with the current note', () => {
