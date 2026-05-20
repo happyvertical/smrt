@@ -19,7 +19,7 @@ function renderForm(props: Record<string, any>) {
 }
 
 function setValue(
-  element: HTMLInputElement | HTMLTextAreaElement,
+  element: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement,
   value: string,
 ) {
   element.value = value;
@@ -86,5 +86,83 @@ describe('ContentContributionForm', () => {
         files: [file],
       }),
     );
+  });
+
+  it('exposes a native POST form contract for contribution fields', () => {
+    const target = renderForm({
+      types: [
+        { key: 'letter', label: 'Letter', enabled: true, allowFiles: true },
+        { key: 'news-tip', label: 'News tip', enabled: true, allowFiles: true },
+      ],
+      action: '/contentcontributions/submit',
+    });
+
+    const form = target.querySelector('form') as HTMLFormElement;
+    const typeSelect = target.querySelector(
+      'select[name="typeKey"]',
+    ) as HTMLSelectElement;
+    const emailInput = target.querySelector(
+      'input[name="contributorEmail"]',
+    ) as HTMLInputElement;
+    const contributorNameInput = target.querySelector(
+      'input[name="contributorName"]',
+    ) as HTMLInputElement;
+    const titleInput = target.querySelector(
+      'input[name="title"]',
+    ) as HTMLInputElement;
+    const descriptionTextarea = target.querySelector(
+      'textarea[name="description"]',
+    ) as HTMLTextAreaElement;
+    const bodyTextarea = target.querySelector(
+      'textarea[name="body"]',
+    ) as HTMLTextAreaElement;
+    const fileInput = target.querySelector(
+      'input[name="files"]',
+    ) as HTMLInputElement;
+
+    expect(form.method).toBe('post');
+    expect(form.enctype).toBe('multipart/form-data');
+    expect(form.getAttribute('action')).toBe('/contentcontributions/submit');
+
+    setValue(typeSelect, 'news-tip');
+    setValue(emailInput, 'reader@example.com');
+    setValue(contributorNameInput, 'Reader');
+    setValue(titleInput, 'Letter title');
+    setValue(descriptionTextarea, 'Short description');
+    setValue(bodyTextarea, 'Longer body text');
+
+    const file = new File(['hello'], 'photo.jpg', { type: 'image/jpeg' });
+    Object.defineProperty(fileInput, 'files', {
+      value: [file],
+      configurable: true,
+    });
+
+    const formData = new FormData(form);
+
+    expect(Object.fromEntries(formData.entries())).toMatchObject({
+      typeKey: 'news-tip',
+      contributorEmail: 'reader@example.com',
+      contributorName: 'Reader',
+      title: 'Letter title',
+      description: 'Short description',
+      body: 'Longer body text',
+    });
+    expect(formData.getAll('files')).toEqual([file]);
+  });
+
+  it('allows native form submission when no submit callback is provided', () => {
+    const target = renderForm({
+      types: [
+        { key: 'letter', label: 'Letter', enabled: true, allowFiles: true },
+      ],
+      action: '/contentcontributions/submit',
+    });
+
+    const form = target.querySelector('form') as HTMLFormElement;
+    const event = new Event('submit', { bubbles: true, cancelable: true });
+
+    form.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(false);
   });
 });
