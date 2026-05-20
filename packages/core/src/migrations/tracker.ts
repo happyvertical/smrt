@@ -513,6 +513,7 @@ export class MigrationTracker {
             ...options,
             atomic: false,
             continueOnError: false,
+            postgresSafe: false,
           });
           const failed = results.find((result) => !result.success);
 

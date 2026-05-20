@@ -9,6 +9,7 @@ const {
   getInitializationOrderMock,
   getPackageConfigMock,
   getTableNameMock,
+  migrationApplyOptions,
   migrationAttempts,
   MockMigrationTracker,
   MockSchemaComparer,
@@ -16,6 +17,7 @@ const {
   transactionRolledBack,
 } = vi.hoisted(() => {
   const migrationAttempts: string[] = [];
+  const migrationApplyOptions: Array<{ postgresSafe?: boolean }> = [];
   const committedAppliedMigrations: string[] = [];
   const trackerOptions: Array<{ useConcurrentIndexes?: boolean }> = [];
   const transactionRolledBack = { value: false };
@@ -40,8 +42,14 @@ const {
       return 'postgres';
     }
 
-    async apply(definition: { id: string }) {
+    async apply(
+      definition: { id: string },
+      options: { postgresSafe?: boolean } = {},
+    ) {
       migrationAttempts.push(definition.id);
+      migrationApplyOptions.push({
+        postgresSafe: options.postgresSafe,
+      });
 
       if (definition.id === 'add_column_contents_second_column') {
         return {
@@ -78,6 +86,7 @@ const {
     getInitializationOrderMock: vi.fn(),
     getPackageConfigMock: vi.fn(),
     getTableNameMock: vi.fn(),
+    migrationApplyOptions,
     migrationAttempts,
     transactionRolledBack,
     MockMigrationTracker,
@@ -120,6 +129,7 @@ describe('db:migrate atomic schema execution', () => {
     vi.resetModules();
     vi.clearAllMocks();
     process.exitCode = undefined;
+    migrationApplyOptions.length = 0;
     migrationAttempts.length = 0;
     committedAppliedMigrations.length = 0;
     trackerOptions.length = 0;
@@ -214,6 +224,9 @@ describe('db:migrate atomic schema execution', () => {
     expect(
       trackerOptions.map((options) => options.useConcurrentIndexes),
     ).toEqual([true, false]);
+    expect(
+      migrationApplyOptions.map((options) => options.postgresSafe),
+    ).toEqual([false, false]);
     expect(process.exitCode).toBe(1);
 
     const stdout = logSpy.mock.calls.flat().join('\n');

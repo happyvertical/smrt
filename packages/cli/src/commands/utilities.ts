@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  tableExists as coreTableExists,
   isQualifiedName,
   ObjectRegistry,
   SchemaComparer,
@@ -83,10 +84,6 @@ function formatSchemaCommandFailureHeader(
   return fallback;
 }
 
-function getRows(result: unknown): any[] {
-  return Array.isArray(result) ? result : ((result as any)?.rows ?? []);
-}
-
 function createAtomicSchemaMigrationDb(tx: any, dbType: string): any {
   const migrationDb: any = {
     ...tx,
@@ -96,29 +93,8 @@ function createAtomicSchemaMigrationDb(tx: any, dbType: string): any {
   migrationDb.transaction = async <T>(callback: (txDb: any) => Promise<T>) =>
     callback(migrationDb);
 
-  migrationDb.tableExists = async (tableName: string): Promise<boolean> => {
-    if (dbType === 'postgres') {
-      const result = await migrationDb.query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = ? AND table_schema = 'public') as exists`,
-        tableName,
-      );
-      return Boolean(getRows(result)[0]?.exists);
-    }
-
-    if (dbType === 'duckdb') {
-      const result = await migrationDb.query(
-        `SELECT table_name FROM information_schema.tables WHERE table_name = ?`,
-        tableName,
-      );
-      return getRows(result).length > 0;
-    }
-
-    const result = await migrationDb.query(
-      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
-      tableName,
-    );
-    return getRows(result).length > 0;
-  };
+  migrationDb.tableExists = (tableName: string): Promise<boolean> =>
+    coreTableExists(migrationDb, tableName, dbType);
 
   return migrationDb;
 }
@@ -1565,7 +1541,7 @@ export default testManifest;
                   };
 
                   const result = await batchTracker.apply(migrationDef, {
-                    postgresSafe: options['postgres-safe'] ?? false,
+                    postgresSafe: false,
                     force: options.force ?? false,
                   });
 
@@ -1645,7 +1621,7 @@ export default testManifest;
 
                   // Apply migration - tracker handles checksum validation and idempotency
                   const result = await batchTracker.apply(migrationDef, {
-                    postgresSafe: options['postgres-safe'] ?? false,
+                    postgresSafe: false,
                     force: options.force ?? false,
                     // The diff was computed from the live schema moments earlier, so
                     // missing columns/indexes must be repaired even if a previous
