@@ -116,6 +116,8 @@ export type DatabaseEngine = 'sqlite' | 'postgres' | 'duckdb';
  * Options for batch migration application
  */
 export interface ApplyMigrationsOptions {
+  /** Apply the full batch in one transaction and roll back all applied changes on first failure */
+  atomic?: boolean;
   /** Continue applying migrations even if one fails */
   continueOnError?: boolean;
   /** Dry run - don't actually apply migrations */

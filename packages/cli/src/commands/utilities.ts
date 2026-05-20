@@ -83,6 +83,46 @@ function formatSchemaCommandFailureHeader(
   return fallback;
 }
 
+function getRows(result: unknown): any[] {
+  return Array.isArray(result) ? result : ((result as any)?.rows ?? []);
+}
+
+function createAtomicSchemaMigrationDb(tx: any, dbType: string): any {
+  const migrationDb: any = {
+    ...tx,
+    syncSchema: undefined,
+  };
+
+  migrationDb.transaction = async <T>(callback: (txDb: any) => Promise<T>) =>
+    callback(migrationDb);
+
+  migrationDb.tableExists = async (tableName: string): Promise<boolean> => {
+    if (dbType === 'postgres') {
+      const result = await migrationDb.query(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = ? AND table_schema = 'public') as exists`,
+        tableName,
+      );
+      return Boolean(getRows(result)[0]?.exists);
+    }
+
+    if (dbType === 'duckdb') {
+      const result = await migrationDb.query(
+        `SELECT table_name FROM information_schema.tables WHERE table_name = ?`,
+        tableName,
+      );
+      return getRows(result).length > 0;
+    }
+
+    const result = await migrationDb.query(
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
+      tableName,
+    );
+    return getRows(result).length > 0;
+  };
+
+  return migrationDb;
+}
+
 /**
  * Index definition type for migration comparison
  */
@@ -1298,7 +1338,7 @@ export default testManifest;
         // This uses the same comparison logic as core (including equivalent index detection)
         const migrations: MigrationAction[] = [];
         const manualInterventions: MigrationAction[] = [];
-        let tableErrorCount = 0;
+        const tableErrorCount = 0;
         const isDryRun = options['dry-run'] ?? false;
         const applySchemaMigrations = shouldApplySchemaMigrations({
           dryRun: isDryRun,
@@ -1335,76 +1375,18 @@ export default testManifest;
           return tableName;
         };
 
-        // Create new tables that don't exist yet
-        if (diff.added_tables.length > 0) {
-          const { ensureSchema } = await import(
-            '@happyvertical/smrt-core/schema/utils'
-          );
-
+        // Preview new tables that don't exist yet. Actual schema changes are
+        // applied below in one transaction with the generated migrations.
+        if (diff.added_tables.length > 0 && isDryRun) {
           for (const schema of diff.added_tables) {
             const className = getClassForTable(schema.tableName);
 
-            if (isDryRun) {
-              const fields = Object.keys(schema.columns).length;
-              console.log(
-                `  📦 ${schema.tableName} (${className}): Would create table (${fields} columns)`,
-              );
-              if (options.verbose && schema.ddl) {
-                console.log(`     ${schema.ddl}`);
-              }
-            } else {
-              try {
-                await ensureSchema(db, className);
-
-                // Track table creation as a migration.
-                // Note: ensureSchema generates and executes its own DDL.
-                // We record schema.ddl (from SchemaComparer) for reference;
-                // it should match what ensureSchema produced.
-                const migrationName = `create_table_${schema.tableName}`;
-                const upSql =
-                  schema.ddl ||
-                  `-- Table created via ensureSchema('${className}')`;
-                const migrationDef = {
-                  id: migrationName,
-                  description: `Create table ${schema.tableName}`,
-                  version: '1.0.0',
-                  up: [upSql],
-                  down: [`DROP TABLE IF EXISTS "${schema.tableName}"`],
-                };
-
-                const result = await tracker.apply(migrationDef, {
-                  postgresSafe: options['postgres-safe'] ?? false,
-                  force: options.force ?? false,
-                });
-
-                if (result.success) {
-                  const fields = Object.keys(schema.columns).length;
-                  console.log(
-                    `  ✓ Created table ${schema.tableName} (${fields} columns, ${shortChecksum(result.checksum)})`,
-                  );
-                } else {
-                  tableErrorCount++;
-                  const errorMsg =
-                    result.error instanceof Error
-                      ? result.error.message
-                      : String(
-                          result.error || 'Unknown migration tracking error',
-                        );
-                  console.error(
-                    `  ✗ Failed to track ${schema.tableName}: ${errorMsg}`,
-                  );
-                }
-              } catch (error) {
-                tableErrorCount++;
-                const errorMsg =
-                  error instanceof Error ? error.message : String(error);
-                console.error(
-                  `  ✗ Failed to create ${schema.tableName}: ${errorMsg}`,
-                );
-                if (options.verbose && error instanceof Error && error.stack) {
-                  console.error(`\n${error.stack}\n`);
-                }
-              }
+            const fields = Object.keys(schema.columns).length;
+            console.log(
+              `  📦 ${schema.tableName} (${className}): Would create table (${fields} columns)`,
+            );
+            if (options.verbose && schema.ddl) {
+              console.log(`     ${schema.ddl}`);
             }
           }
 
@@ -1530,102 +1512,178 @@ export default testManifest;
         let errorCount = 0;
         let stiErrorCount = 0;
 
-        // Only show migration execution header if there are migrations to apply
-        if (applySchemaMigrations && migrations.length > 0) {
-          console.log(`🔨 Applying ${migrations.length} migration(s)...\n`);
+        const schemaChangeCount = diff.added_tables.length + migrations.length;
+
+        // Only show migration execution header if there are schema changes to apply
+        if (applySchemaMigrations && schemaChangeCount > 0) {
+          console.log(
+            `🔨 Applying ${schemaChangeCount} schema change(s) atomically...\n`,
+          );
         }
 
-        if (applySchemaMigrations) {
-          for (const migration of migrations) {
+        if (applySchemaMigrations && schemaChangeCount > 0) {
+          if (!db.transaction) {
+            errorCount++;
+            console.error(
+              '  ✗ atomic schema migration failed: database adapter does not support transactions',
+            );
+          } else {
+            const logLines: string[] = [];
+            let batchSuccessCount = 0;
+            let batchSkippedCount = 0;
+
             try {
-              // Generate a unique migration name based on the action
-              const migrationName =
-                getSyntheticMigrationNameForAction(migration);
-              if (!migrationName) {
-                continue;
-              }
-              let migrationSql: string;
-              let actionDesc: string;
+              await db.transaction(async (tx: any) => {
+                const migrationDb = createAtomicSchemaMigrationDb(tx, dbType);
+                const { ensureSchema } = await import(
+                  '@happyvertical/smrt-core/schema/utils'
+                );
+                const batchTracker = new MigrationTracker({
+                  db: migrationDb,
+                  useConcurrentIndexes: false,
+                });
+                await batchTracker.initialize();
 
-              if (migration.type === 'add_column' && migration.column) {
-                migrationSql = migration.sql || '';
-                actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
-              } else if (
-                migration.type === 'type_upgrade' &&
-                migration.column
-              ) {
-                migrationSql = migration.sql || '';
-                actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
-              } else if (migration.type === 'add_index' && migration.index) {
-                migrationSql = migration.sql || '';
-                actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
-              } else if (
-                migration.type === 'drop_index' &&
-                migration.indexName
-              ) {
-                migrationSql = migration.sql || '';
-                actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
-              } else {
-                continue;
-              }
-              const migrationSqlStatements =
-                migration.sqlStatements ?? (migrationSql ? [migrationSql] : []);
+                for (const schema of diff.added_tables) {
+                  const className = getClassForTable(schema.tableName);
+                  await ensureSchema(migrationDb, className);
 
-              // Create migration definition - tracker handles idempotency
-              const migrationDef = {
-                id: migrationName,
-                description:
-                  migration.type === 'add_column'
-                    ? `Add column ${migration.column?.name} to ${migration.tableName}`
-                    : migration.type === 'type_upgrade'
-                      ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
-                      : migration.type === 'drop_index'
-                        ? `Drop index ${migration.indexName} on ${migration.tableName}`
-                        : `Add index ${migration.index?.name} on ${migration.tableName}`,
-                version: '1.0.0',
-                // Auto-migrations don't carry a DOWN script. For shape-drift
-                // index recreates (drop_index + add_index), this means a
-                // rollback would leave the table without the index entirely.
-                // Issue #1165 — surfaced and accepted: the alternative is
-                // capturing the DB-side index shape we just dropped, which
-                // we don't have the introspection wiring for yet.
-                up: migrationSqlStatements,
-                down: [],
-              };
+                  // Track table creation as a migration.
+                  // Note: ensureSchema generates and executes its own DDL.
+                  // We record schema.ddl (from SchemaComparer) for reference;
+                  // it should match what ensureSchema produced.
+                  const migrationName = `create_table_${schema.tableName}`;
+                  const upSql =
+                    schema.ddl ||
+                    `-- Table created via ensureSchema('${className}')`;
+                  const migrationDef = {
+                    id: migrationName,
+                    description: `Create table ${schema.tableName}`,
+                    version: '1.0.0',
+                    up: [upSql],
+                    down: [`DROP TABLE IF EXISTS "${schema.tableName}"`],
+                  };
 
-              // Apply migration - tracker handles checksum validation and idempotency
-              const result = await tracker.apply(migrationDef, {
-                postgresSafe: options['postgres-safe'] ?? false,
-                force: options.force ?? false,
-                // The diff was computed from the live schema moments earlier, so
-                // missing columns/indexes must be repaired even if a previous
-                // synthetic migration record says "completed".
-                reconcile: true,
-              });
+                  const result = await batchTracker.apply(migrationDef, {
+                    postgresSafe: options['postgres-safe'] ?? false,
+                    force: options.force ?? false,
+                  });
 
-              if (result.success) {
-                // Check if this was already applied (execution_time_ms = 0 means skipped)
-                if (result.execution_time_ms === 0) {
-                  if (options.verbose) {
-                    console.log(
-                      `  ⊙ ${migrationName} already applied (${shortChecksum(result.checksum)})`,
+                  if (!result.success) {
+                    throw (
+                      result.error ||
+                      new Error(`Failed to track ${schema.tableName}`)
                     );
                   }
-                  skippedCount++;
-                } else {
-                  console.log(
-                    `  ✓ ${actionDesc} (${shortChecksum(result.checksum)})`,
+
+                  const fields = Object.keys(schema.columns).length;
+                  logLines.push(
+                    `  ✓ Created table ${schema.tableName} (${fields} columns, ${shortChecksum(result.checksum)})`,
                   );
-                  successCount++;
+                  batchSuccessCount++;
                 }
-              } else if (result.error) {
-                throw result.error;
+
+                for (const migration of migrations) {
+                  // Generate a unique migration name based on the action
+                  const migrationName =
+                    getSyntheticMigrationNameForAction(migration);
+                  if (!migrationName) {
+                    continue;
+                  }
+                  let migrationSql: string;
+                  let actionDesc: string;
+
+                  if (migration.type === 'add_column' && migration.column) {
+                    migrationSql = migration.sql || '';
+                    actionDesc = `Added column ${migration.tableName}.${migration.column.name}`;
+                  } else if (
+                    migration.type === 'type_upgrade' &&
+                    migration.column
+                  ) {
+                    migrationSql = migration.sql || '';
+                    actionDesc = `Upgraded column ${migration.tableName}.${migration.column.name} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`;
+                  } else if (
+                    migration.type === 'add_index' &&
+                    migration.index
+                  ) {
+                    migrationSql = migration.sql || '';
+                    actionDesc = `Created index ${migration.index.name} on ${migration.tableName}`;
+                  } else if (
+                    migration.type === 'drop_index' &&
+                    migration.indexName
+                  ) {
+                    migrationSql = migration.sql || '';
+                    actionDesc = `Dropped index ${migration.indexName} on ${migration.tableName}`;
+                  } else {
+                    continue;
+                  }
+                  const migrationSqlStatements =
+                    migration.sqlStatements ??
+                    (migrationSql ? [migrationSql] : []);
+
+                  // Create migration definition - tracker handles idempotency
+                  const migrationDef = {
+                    id: migrationName,
+                    description:
+                      migration.type === 'add_column'
+                        ? `Add column ${migration.column?.name} to ${migration.tableName}`
+                        : migration.type === 'type_upgrade'
+                          ? `Upgrade column ${migration.column?.name} on ${migration.tableName} from ${migration.mismatch?.actual} to ${migration.mismatch?.expected}`
+                          : migration.type === 'drop_index'
+                            ? `Drop index ${migration.indexName} on ${migration.tableName}`
+                            : `Add index ${migration.index?.name} on ${migration.tableName}`,
+                    version: '1.0.0',
+                    // Auto-migrations don't carry a DOWN script. For shape-drift
+                    // index recreates (drop_index + add_index), this means a
+                    // rollback would leave the table without the index entirely.
+                    // Issue #1165 — surfaced and accepted: the alternative is
+                    // capturing the DB-side index shape we just dropped, which
+                    // we don't have the introspection wiring for yet.
+                    up: migrationSqlStatements,
+                    down: [],
+                  };
+
+                  // Apply migration - tracker handles checksum validation and idempotency
+                  const result = await batchTracker.apply(migrationDef, {
+                    postgresSafe: options['postgres-safe'] ?? false,
+                    force: options.force ?? false,
+                    // The diff was computed from the live schema moments earlier, so
+                    // missing columns/indexes must be repaired even if a previous
+                    // synthetic migration record says "completed".
+                    reconcile: true,
+                  });
+
+                  if (!result.success) {
+                    throw result.error || new Error(`${migration.type} failed`);
+                  }
+
+                  // Check if this was already applied (execution_time_ms = 0 means skipped)
+                  if (result.execution_time_ms === 0) {
+                    if (options.verbose) {
+                      logLines.push(
+                        `  ⊙ ${migrationName} already applied (${shortChecksum(result.checksum)})`,
+                      );
+                    }
+                    batchSkippedCount++;
+                  } else {
+                    logLines.push(
+                      `  ✓ ${actionDesc} (${shortChecksum(result.checksum)})`,
+                    );
+                    batchSuccessCount++;
+                  }
+                }
+              });
+
+              for (const line of logLines) {
+                console.log(line);
               }
+              successCount += batchSuccessCount;
+              skippedCount += batchSkippedCount;
             } catch (error) {
               errorCount++;
               const errorMsg =
                 error instanceof Error ? error.message : String(error);
-              console.error(`  ✗ ${migration.type} failed: ${errorMsg}`);
+              console.error(`  ✗ atomic schema migration failed: ${errorMsg}`);
               // Show underlying database error if available
               if (
                 error instanceof Error &&
@@ -1639,6 +1697,9 @@ export default testManifest;
               if (options.verbose && error instanceof Error && error.stack) {
                 console.error(`\n${error.stack}\n`);
               }
+              console.error(
+                '     Rolled back all schema changes from this migration batch.',
+              );
             }
           }
         }
@@ -1811,7 +1872,7 @@ export default testManifest;
         // Data repairs have their own summary printed above.
         if (
           applySchemaMigrations &&
-          (migrations.length > 0 || errorCount > 0 || skippedCount > 0)
+          (schemaChangeCount > 0 || errorCount > 0 || skippedCount > 0)
         ) {
           console.log();
           if (errorCount > 0) {

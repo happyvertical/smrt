@@ -499,6 +499,78 @@ describe('MigrationTracker', () => {
     });
   });
 
+  describe('applyAll', () => {
+    beforeEach(async () => {
+      await tracker.initialize();
+    });
+
+    it('should roll back prior migrations in an atomic batch when a later migration fails', async () => {
+      const migrations: MigrationDefinition[] = [
+        {
+          id: '0001_atomic_first',
+          description: 'First migration',
+          version: '1.0.0',
+          up: ['CREATE TABLE atomic_first (id TEXT PRIMARY KEY);'],
+          down: [],
+        },
+        {
+          id: '0002_atomic_bad_sql',
+          description: 'Bad SQL',
+          version: '1.0.0',
+          up: ['THIS IS NOT VALID SQL;'],
+          down: [],
+        },
+      ];
+
+      const results = await tracker.applyAll(migrations, { atomic: true });
+
+      expect(results).toHaveLength(2);
+      expect(results[0].success).toBe(false);
+      expect(results[0].error).toBeInstanceOf(Error);
+      expect(String(results[0].error)).toContain(
+        'Rolled back because migration 0002_atomic_bad_sql failed',
+      );
+      expect(results[1].success).toBe(false);
+
+      const tables = await db.query<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name='atomic_first'`,
+      );
+      expect(tables.rows).toHaveLength(0);
+
+      const history = await tracker.getHistory();
+      expect(history).toHaveLength(0);
+    });
+
+    it('rejects explicit Postgres CONCURRENTLY index DDL before starting an atomic batch', async () => {
+      const postgresTracker = new MigrationTracker({
+        db: {
+          url: 'postgresql://test:test@localhost:5432/test',
+          query: async () => ({ rows: [] }),
+          transaction: async () => {
+            throw new Error('transaction should not start');
+          },
+        } as any,
+      });
+
+      await expect(
+        postgresTracker.applyAll(
+          [
+            {
+              id: '0001_concurrent_index',
+              description: 'Concurrent index',
+              version: '1.0.0',
+              up: [
+                'CREATE INDEX CONCURRENTLY idx_atomic_name ON atomic_first (name);',
+              ],
+              down: [],
+            },
+          ],
+          { atomic: true, postgresSafe: true },
+        ),
+      ).rejects.toThrow(/cannot include CONCURRENTLY index DDL/);
+    });
+  });
+
   describe('rollback', () => {
     beforeEach(async () => {
       await tracker.initialize();
