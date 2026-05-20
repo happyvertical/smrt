@@ -237,9 +237,19 @@ export class Asset extends SmrtObject {
    * importing the concrete class is what would create the cycle, but the
    * base-class shape gives callers full `.get()` / `.list()` type
    * safety here.
+   *
+   * R5-canon: use the qualified-name lookup so a different package
+   * also registering a class called `Asset` can't be picked by
+   * `findClass`'s multi-strategy fallback. The constructor-side
+   * `_smrtQualifiedName` static (set at registration) is read off
+   * `this.constructor`; falls back to the literal package-qualified
+   * key for the early-construction path before registration completes.
    */
   private async _assetCollection(): Promise<SmrtCollection<Asset>> {
-    return await ObjectRegistry.getCollection<Asset>('Asset', this.options);
+    const lookupKey =
+      (this.constructor as unknown as { _smrtQualifiedName?: string })
+        ._smrtQualifiedName ?? '@happyvertical/smrt-assets:Asset';
+    return await ObjectRegistry.getCollection<Asset>(lookupKey, this.options);
   }
 
   /**

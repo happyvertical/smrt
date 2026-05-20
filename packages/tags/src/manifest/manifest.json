@@ -590,8 +590,7 @@
         },
         "parentId": {
           "type": "text",
-          "required": false,
-          "default": ""
+          "required": false
         },
         "level": {
           "type": "integer",
@@ -742,7 +741,7 @@
         },
         "cli": true
       },
-      "extends": "SmrtObject",
+      "extends": "@happyvertical/smrt-core:SmrtHierarchical",
       "exportName": "Tag",
       "collectionExportName": "TagCollection",
       "schema": {
