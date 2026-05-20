@@ -763,13 +763,29 @@ export class SchemaComparer {
       );
     }
 
-    const columnDefinition = this.ddlStrategy.generateColumnDefinition(
-      colName,
-      {
-        ...colDef,
-        type: validatedType,
-      },
-    );
+    const parts: string[] = [
+      this.quoteIdentifier(colName),
+      this.ddlStrategy.mapType(validatedType),
+    ];
+
+    if (colDef.notNull) {
+      parts.push('NOT NULL');
+    }
+    if (colDef.unique) {
+      parts.push('UNIQUE');
+    }
+    if (colDef.defaultValue !== undefined) {
+      const defaultVal = this.ddlStrategy.formatDefaultValue(
+        colDef.defaultValue,
+        validatedType,
+      );
+      parts.push(`DEFAULT ${defaultVal}`);
+    }
+    if (colDef.check) {
+      parts.push(`CHECK (${colDef.check})`);
+    }
+
+    const columnDefinition = parts.join(' ');
 
     return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${columnDefinition}`;
   }
