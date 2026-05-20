@@ -218,6 +218,59 @@ describe('Tag hierarchy (R3-B: slug API → UUID storage)', () => {
         /descendant|cycle/i,
       );
     });
+
+    it("doesn't rewrite aliases in OTHER contexts when merge is context-scoped", async () => {
+      // Codex round-7 finding (and round-2 deferred): when
+      // `mergeTag('foo', 'bar', 'blog')` is called, only blog-context
+      // aliases for `foo` should be rewritten. Aliases for `foo` in
+      // other contexts (e.g. 'forum') must be left alone — they
+      // belong to a different tag entirely (slug+context is the
+      // natural key).
+      const aliases = await TagAliasCollection.create({
+        db: { type: 'sqlite', url: dbUrl },
+      });
+
+      // Build same-slug tags in two different contexts.
+      const blogFoo = await tags.getOrCreate('foo', 'blog');
+      const blogBar = await tags.getOrCreate('bar', 'blog');
+      const forumFoo = await tags.getOrCreate('foo', 'forum');
+      // Silence unused-binding lints — we reference these in the
+      // assertions below.
+      expect(blogFoo.id).toBeTruthy();
+      expect(blogBar.id).toBeTruthy();
+      expect(forumFoo.id).toBeTruthy();
+
+      await aliases.create({
+        tagSlug: 'foo',
+        alias: 'BlogFoo',
+        language: 'en',
+        context: 'blog',
+      });
+      await aliases.create({
+        tagSlug: 'foo',
+        alias: 'ForumFoo',
+        language: 'en',
+        context: 'forum',
+      });
+
+      await tags.mergeTag('foo', 'bar', 'blog');
+
+      // The blog-context alias should have been rewritten to `bar`.
+      const blogAliases = await aliases.list({
+        where: { context: 'blog', tagSlug: 'bar' },
+      });
+      expect(blogAliases.map((a) => a.alias)).toContain('BlogFoo');
+
+      // The forum-context alias must be untouched — still pointing at
+      // `foo`, NOT rewritten to `bar`.
+      const forumAliases = await aliases.list({
+        where: { context: 'forum' },
+      });
+      const forumFooAliases = forumAliases.filter((a) => a.tagSlug === 'foo');
+      expect(forumFooAliases.map((a) => a.alias)).toContain('ForumFoo');
+      const forumBarAliases = forumAliases.filter((a) => a.tagSlug === 'bar');
+      expect(forumBarAliases).toHaveLength(0);
+    });
   });
 
   it('cleanupUnused only deletes leaves with no aliases', async () => {
