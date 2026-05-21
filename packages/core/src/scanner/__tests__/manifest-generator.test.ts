@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ManifestGenerator } from '../manifest-generator';
-import type { ScanResult, SmartObjectDefinition } from '../types';
+import type {
+  ScanResult,
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../types';
 
 describe('ManifestGenerator', () => {
   describe('class name collision detection', () => {
@@ -277,6 +281,284 @@ describe('ManifestGenerator', () => {
       );
 
       expect(endpoints).toBe('GET /documents/facts');
+    });
+  });
+
+  describe('tenant scoped schema contract', () => {
+    it('injects tenantId fields before generating schemas', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/secret.ts',
+          objects: [
+            {
+              name: 'secret',
+              className: 'Secret',
+              collection: 'secrets',
+              filePath: '/path/to/secret.ts',
+              fields: {},
+              methods: {},
+              decoratorConfig: { tenantScoped: true },
+              exportName: 'Secret',
+              collectionExportName: 'SecretCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const secret = manifest.objects.secret;
+      expect(secret.fields.tenantId).toEqual(
+        expect.objectContaining({
+          type: 'text',
+          _meta: expect.objectContaining({
+            sqlType: 'TEXT',
+            __tenancy: expect.objectContaining({
+              isTenantIdField: true,
+              mode: 'required',
+              field: 'tenantId',
+            }),
+          }),
+        }),
+      );
+      expect(secret.schema?.columns.tenant_id).toEqual(
+        expect.objectContaining({ type: 'TEXT' }),
+      );
+    });
+
+    it('preserves explicit tenantId fields while adding tenancy metadata', () => {
+      const generator = new ManifestGenerator();
+
+      const manifest = generator.generateManifest([
+        {
+          filePath: '/path/to/scoped-membership.ts',
+          objects: [
+            {
+              name: 'scopedMembership',
+              className: 'ScopedMembership',
+              collection: 'scoped_memberships',
+              filePath: '/path/to/scoped-membership.ts',
+              fields: {
+                tenantId: {
+                  type: 'foreignKey',
+                  related: 'Tenant',
+                  _meta: {
+                    sqlType: 'text',
+                    indexed: true,
+                  },
+                },
+              },
+              methods: {},
+              decoratorConfig: { tenantScoped: true },
+              exportName: 'ScopedMembership',
+              collectionExportName: 'ScopedMembershipCollection',
+            },
+          ],
+          imports: [],
+          exports: [],
+        },
+      ]);
+
+      const membership = manifest.objects.scopedMembership;
+      expect(membership.fields.tenantId).toEqual(
+        expect.objectContaining({
+          type: 'foreignKey',
+          related: 'Tenant',
+          _meta: expect.objectContaining({
+            sqlType: 'TEXT',
+            indexed: true,
+            __tenancy: expect.objectContaining({
+              isTenantIdField: true,
+              mode: 'required',
+              field: 'tenantId',
+            }),
+          }),
+        }),
+      );
+      expect(membership.schema?.columns.tenant_id).toEqual(
+        expect.objectContaining({ type: 'TEXT' }),
+      );
+    });
+
+    it('rejects tenant scoped objects with non-text tenant fields', () => {
+      const generator = new ManifestGenerator();
+
+      expect(() =>
+        generator.generateManifest([
+          {
+            filePath: '/path/to/secret.ts',
+            objects: [
+              {
+                name: 'secret',
+                className: 'Secret',
+                collection: 'secrets',
+                filePath: '/path/to/secret.ts',
+                fields: {
+                  tenantId: {
+                    type: 'integer',
+                  },
+                },
+                methods: {},
+                decoratorConfig: { tenantScoped: true },
+                exportName: 'Secret',
+                collectionExportName: 'SecretCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ]),
+      ).toThrow(
+        /Secret: tenant-scoped field "tenantId" must use type "text" or "foreignKey"; received "integer"/,
+      );
+    });
+
+    it('rejects tenant scoped objects with non-text tenant SQL columns', () => {
+      const generator = new ManifestGenerator();
+
+      expect(() =>
+        generator.generateManifest([
+          {
+            filePath: '/path/to/secret.ts',
+            objects: [
+              {
+                name: 'secret',
+                className: 'Secret',
+                collection: 'secrets',
+                filePath: '/path/to/secret.ts',
+                fields: {
+                  tenantId: {
+                    type: 'text',
+                    _meta: {
+                      sqlType: 'INTEGER',
+                    },
+                  },
+                },
+                methods: {},
+                decoratorConfig: { tenantScoped: true },
+                exportName: 'Secret',
+                collectionExportName: 'SecretCollection',
+              },
+            ],
+            imports: [],
+            exports: [],
+          },
+        ]),
+      ).toThrow(
+        /Secret: tenant-scoped field "tenantId" must use SQL type "TEXT"; received "INTEGER"/,
+      );
+    });
+
+    it('fails when a tenant scoped object is missing its tenant field', () => {
+      const generator = new ManifestGenerator();
+      const manifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          secret: {
+            name: 'secret',
+            className: 'Secret',
+            collection: 'secrets',
+            filePath: '/path/to/secret.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: { tenantScoped: true },
+            exportName: 'Secret',
+            collectionExportName: 'SecretCollection',
+          },
+        },
+      };
+
+      expect(() =>
+        generator.assertTenantScopedSchemaContract(manifest),
+      ).toThrow(/Secret: missing tenant-scoped field "tenantId"/);
+    });
+
+    it('fails when a tenant scoped schema has not been generated', () => {
+      const generator = new ManifestGenerator();
+      const manifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          secret: {
+            name: 'secret',
+            className: 'Secret',
+            collection: 'secrets',
+            filePath: '/path/to/secret.ts',
+            fields: {
+              tenantId: {
+                type: 'text',
+                _meta: {
+                  sqlType: 'TEXT',
+                  __tenancy: {
+                    isTenantIdField: true,
+                    mode: 'required',
+                    field: 'tenantId',
+                  },
+                },
+              },
+            },
+            methods: {},
+            decoratorConfig: { tenantScoped: true },
+            exportName: 'Secret',
+            collectionExportName: 'SecretCollection',
+          },
+        },
+      };
+
+      expect(() =>
+        generator.assertTenantScopedSchemaContract(manifest),
+      ).toThrow(
+        /Secret: schema has not been generated for tenant-scoped column "tenant_id"/,
+      );
+    });
+
+    it('fails when a tenant scoped schema is missing its SQL column', () => {
+      const generator = new ManifestGenerator();
+      const manifest: SmartObjectManifest = {
+        version: '1.0.0',
+        timestamp: 0,
+        objects: {
+          secret: {
+            name: 'secret',
+            className: 'Secret',
+            collection: 'secrets',
+            filePath: '/path/to/secret.ts',
+            fields: {
+              tenantId: {
+                type: 'text',
+                _meta: {
+                  sqlType: 'TEXT',
+                  __tenancy: {
+                    isTenantIdField: true,
+                    mode: 'required',
+                    field: 'tenantId',
+                  },
+                },
+              },
+            },
+            methods: {},
+            decoratorConfig: { tenantScoped: true },
+            exportName: 'Secret',
+            collectionExportName: 'SecretCollection',
+            schema: {
+              tableName: 'secrets',
+              ddl: 'CREATE TABLE "secrets" ("id" TEXT PRIMARY KEY)',
+              columns: {
+                id: { type: 'TEXT', primaryKey: true },
+              },
+              indexes: [],
+              version: 'test',
+            },
+          },
+        },
+      };
+
+      expect(() =>
+        generator.assertTenantScopedSchemaContract(manifest),
+      ).toThrow(/Secret: schema is missing tenant-scoped column "tenant_id"/);
     });
   });
 });

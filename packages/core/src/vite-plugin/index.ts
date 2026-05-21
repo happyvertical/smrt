@@ -703,12 +703,14 @@ export default testManifest;
         dist: '../scanner.js',
       });
       const manifestGen = new ManifestGenerator();
-      // IMPORTANT: Must merge inherited fields BEFORE generating schemas
-      // This ensures STI subclasses inherit tableName from their base class
+      // IMPORTANT: Materialize tenantScoped fields and merge inherited fields
+      // BEFORE generating schemas so migration manifests contain every column.
+      manifestGen.injectTenantScopedFields(newManifest);
       manifestGen.mergeInheritedFields(newManifest);
       manifestGen.generateValidationRules(newManifest);
       manifestGen.generateSchemas(newManifest);
-      // Fifth pass: Generate agent manifests for Agent subclasses
+      manifestGen.assertTenantScopedSchemaContract(newManifest);
+      // Final pass: Generate agent manifests for Agent subclasses
       // Derives permissions, features, menuItems, and components from code
       manifestGen.generateAgentManifests(newManifest, packageName, packageJson);
 
