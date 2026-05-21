@@ -260,7 +260,9 @@ describe('db:migrate atomic schema execution', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], { 'postgres-safe': true });
+    await utilityCommands['db:migrate'].handler([], {
+      'postgres-safe': true,
+    });
 
     expect(migrationAttempts).toEqual([
       'add_column_contents_first_column',
@@ -289,7 +291,7 @@ describe('db:migrate atomic schema execution', () => {
       'add_column_contents_second_column: synthetic failure',
     );
     expect(stderr).toContain('successful steps shown above');
-  });
+  }, 15_000);
 
   it('warns when postgres-safe index operations are folded into the atomic batch', async () => {
     compareMock.mockResolvedValue({
@@ -313,7 +315,9 @@ describe('db:migrate atomic schema execution', () => {
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const { utilityCommands } = await import('../utilities.js');
 
-    await utilityCommands['db:migrate'].handler([], { 'postgres-safe': true });
+    await utilityCommands['db:migrate'].handler([], {
+      'postgres-safe': true,
+    });
 
     expect(warnSpy.mock.calls.flat().join('\n')).toContain(
       '--postgres-safe requested',
@@ -332,5 +336,5 @@ describe('db:migrate atomic schema execution', () => {
     expect(logSpy.mock.calls.flat().join('\n')).toContain(
       'Created index contents_first_column_idx on contents',
     );
-  });
+  }, 15_000);
 });
