@@ -133,8 +133,7 @@ export async function installInventoryDispatchHandlers(
   } = options;
 
   const stockService =
-    options.stockService ??
-    (await createStockService({ db: options.db as DatabaseConfig }));
+    options.stockService ?? (await buildStockService(options));
 
   const installed: Array<{ pattern: string; handler: DispatchHandler }> = [];
 
@@ -215,4 +214,21 @@ async function handleFulfillmentShipped(
       baseOptions,
     );
   }
+}
+
+/**
+ * Build a `StockService` when no pre-built one was supplied. The option
+ * union guarantees `db` is present in that branch, but TypeScript can't
+ * narrow from a `??` value check, so this helper validates at runtime
+ * with a clear error message.
+ */
+async function buildStockService(
+  options: InstallInventoryDispatchHandlersOptions,
+): Promise<StockService> {
+  if (!options.db) {
+    throw new Error(
+      'installInventoryDispatchHandlers: either `stockService` or `db` is required',
+    );
+  }
+  return createStockService({ db: options.db });
 }

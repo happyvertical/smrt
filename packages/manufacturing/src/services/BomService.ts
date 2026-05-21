@@ -112,14 +112,11 @@ export class BomService {
   /** Factory — prefer {@link createBomService}. */
   static async create(options: BomServiceOptions): Promise<BomService> {
     const stockService =
-      options.stockService ??
-      (await createStockService({ db: options.db as DatabaseConfig }));
+      options.stockService ?? (await buildStockService(options));
     // Share the same db that the StockService uses so reads always hit
-    // one connection / pool.
-    // Share the same db that the StockService uses so reads always hit one
-    // connection/pool. StockService exposes its db as a public field
-    // specifically so downstream services can compose against it without
-    // reaching into Collection internals.
+    // one connection / pool. StockService exposes its `db` as a public
+    // field specifically so downstream services can compose against it
+    // without reaching into Collection internals.
     const sharedDb = options.db ?? stockService.db;
     const [boms, lines] = await Promise.all([
       BillOfMaterialsCollection.create({ db: sharedDb }),
@@ -297,6 +294,24 @@ function assertPositiveQty(qty: number, op: string): void {
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new Error(`${op}: qty must be a positive finite number (got ${qty})`);
   }
+}
+
+/**
+ * Build a `StockService` from a `db` config in the options. Called only
+ * when the caller did not pass a pre-built `stockService` — the option
+ * union guarantees `db` is present in that case, but TypeScript can't
+ * narrow the discriminated union from a `??` value check, so this helper
+ * validates at runtime with a clear message.
+ */
+async function buildStockService(
+  options: BomServiceOptions,
+): Promise<StockService> {
+  if (!options.db) {
+    throw new Error(
+      'BomService.create: either `db` or `stockService` is required',
+    );
+  }
+  return createStockService({ db: options.db });
 }
 
 /**

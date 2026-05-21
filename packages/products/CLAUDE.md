@@ -59,6 +59,13 @@ Auto-generated via Vite plugins: `@happyvertical/smrt-client` (TypeScript client
 
 Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). Separate `product-store.server.svelte.ts` vs `product-store.client.svelte.ts` for SSR safety.
 
+## Schema migrations (Phase 1 release)
+
+This package's schema changed shape between the previous release and the Phase 1 apparel-ERP release. Consumers upgrading need to migrate two tables:
+
+- **`Sku` rows moved tables.** Previously `Sku` shipped in `@happyvertical/smrt-inventory` under table `inventory_skus`. It now lives here under `product_skus`. **Upgrade SQL**: `CREATE TABLE product_skus AS SELECT * FROM inventory_skus;` then `DROP TABLE inventory_skus;`. Cross-package refs (`StockLevel.skuId`, `BomLine.componentSkuId`) carry plain string ids that still resolve.
+- **`ProductVariant` changed shape entirely.** Previously it was a Product STI subtype carrying `parentProductId` + `axisValues` JSON, stored as rows in the shared `products` table with `_meta_type='@happyvertical/smrt-products:ProductVariant'`. It is now a standalone model on its own `product_variants` table, with columns `productId`, `axisName`, `allowedValues`, `label`, `sortOrder`. **There is no automatic data conversion** — the old grouping concept no longer maps 1:1 to the new axis-declaration concept. Consumers that had ProductVariant rows should treat them as historical and re-author axis declarations against the new shape.
+
 ## Gotchas
 
 - **`ProductVariant` and `Sku` are NOT Product STI subtypes** — they each have their own table (`product_variants`, `product_skus`) because their shapes don't fit the Product schema. Don't try to query them via `ProductCollection`.

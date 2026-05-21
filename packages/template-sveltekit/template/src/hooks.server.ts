@@ -6,16 +6,20 @@
  *      interceptor with `GlobalInterceptors` at priority 100, so any class
  *      decorated with `@TenantScoped` is auto-filtered by the tenant in
  *      AsyncLocalStorage. Idempotent — safe to call on every module load.
- *   2. `createSessionHandler({ enterTenantContext: true })` from
+ *   2. A subdomain-based tenant resolver (`tenancyHandle`) — if the URL has
+ *      a leading subdomain (e.g. `acme.demo.local`), the request runs inside
+ *      `withTenant({ tenantId: 'acme' })`.
+ *   3. `createSessionHandler({ enterTenantContext: true })` from
  *      @happyvertical/smrt-users/sveltekit — populates
  *      `event.locals.{user, permissions, tenantId, sessionId}` and pushes
- *      the session's tenant into the AsyncLocalStorage context that
- *      generated REST routes consume.
- *   3. A subdomain-based tenant resolver (`tenancyHandle`) — if the URL has
- *      a leading subdomain (e.g. `acme.demo.local`), the request runs inside
- *      `withTenant({ tenantId: 'acme' })`. The session handler runs *after*
- *      this so a session-bound tenant can still override the host-derived
- *      tenant when both are present.
+ *      the session's tenant into the AsyncLocalStorage context.
+ *   4. `reconcileTenantLocals` — final reconciliation step. The session
+ *      handler initializes `event.locals.tenantId = null` before reading
+ *      the session, so for unauthenticated public requests it clobbers the
+ *      subdomain value set by step 2. This handle restores the subdomain
+ *      tenant on `event.locals.tenantId` when no session tenant set it,
+ *      so layout/page/action code reads a consistent value regardless of
+ *      auth state.
  *
  * To swap the resolution strategy, edit `src/lib/server/tenancy.ts`.
  */
@@ -27,6 +31,7 @@ import { createSessionHandler } from '@happyvertical/smrt-users/sveltekit';
 import {
   createSvelteKitHandle,
   enableTenancy,
+  getTenantId,
 } from '@happyvertical/smrt-tenancy';
 
 import { resolveTenant } from '$lib/server/tenancy';
@@ -61,4 +66,27 @@ const sessionHandle: Handle = createSessionHandler({
   enterTenantContext: true,
 });
 
-export const handle: Handle = sequence(tenancyHandle, sessionHandle);
+/**
+ * Final reconciliation: read the active AsyncLocalStorage tenant (already
+ * set correctly by tenancyHandle + sessionHandle, with session winning
+ * over subdomain when both are present) and ensure `event.locals.tenantId`
+ * matches. Without this, `createSessionHandler` resets `tenantId` to `null`
+ * for unauthenticated requests, even when a tenant was resolved from the
+ * subdomain — causing layouts and actions to read `null` while generated
+ * REST routes (which consume the ALS context) read the correct tenant.
+ */
+const reconcileTenantLocals: Handle = async ({ event, resolve }) => {
+  if (!event.locals.tenantId) {
+    const tenantFromContext = getTenantId();
+    if (tenantFromContext) {
+      event.locals.tenantId = tenantFromContext;
+    }
+  }
+  return resolve(event);
+};
+
+export const handle: Handle = sequence(
+  tenancyHandle,
+  sessionHandle,
+  reconcileTenantLocals,
+);

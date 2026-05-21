@@ -30,7 +30,6 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-products": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:"
   },

@@ -50,7 +50,7 @@ import { BillOfMaterialsCollection } from '../collections/BillOfMaterialsCollect
 import { BomLineCollection } from '../collections/BomLineCollection.js';
 import type { BillOfMaterials } from '../models/BillOfMaterials.js';
 import type { BomLine } from '../models/BomLine.js';
-import { NoActiveBomForProductError } from '../types.js';
+import { BomNotFoundError, NoActiveBomForProductError } from '../types.js';
 
 /**
  * Minimal shape of a production order this service needs. We deliberately
@@ -189,8 +189,7 @@ export class ProductionService {
     options: ProductionServiceOptions,
   ): Promise<ProductionService> {
     const stockService =
-      options.stockService ??
-      (await createStockService({ db: options.db as DatabaseConfig }));
+      options.stockService ?? (await buildStockService(options));
     // Share the StockService's db so production + stock writes ride one
     // connection/pool. StockService.db is exposed publicly for this case.
     const sharedDb = options.db ?? stockService.db;
@@ -310,17 +309,26 @@ export class ProductionService {
   /**
    * Resolve the BOM for a production order. Order of preference:
    *
-   * 1. Explicit `order.bomId` if supplied.
+   * 1. Explicit `order.bomId` if supplied — the caller pinned a specific
+   *    revision; we honor that pin or fail. We deliberately do NOT fall
+   *    back to the active BOM when `order.bomId` is stale or mistyped,
+   *    because silently switching recipes would have the production run
+   *    consume materials against a different BOM than the order locked.
    * 2. The active BOM for `order.productId`.
    *
-   * Throws {@link NoActiveBomForProductError} when neither is available.
+   * Throws {@link BomNotFoundError} when an explicit `order.bomId` is
+   * supplied but doesn't resolve to a row.
+   *
+   * Throws {@link NoActiveBomForProductError} when no `bomId` was supplied
+   * and the product has no active BOM (or `productId` is empty).
    */
   private async resolveBom(
     order: ProductionOrderRef,
   ): Promise<BillOfMaterials> {
     if (order.bomId) {
       const bom = await this.boms.get(order.bomId);
-      if (bom) return bom;
+      if (!bom) throw new BomNotFoundError(order.bomId);
+      return bom;
     }
     const productId = order.productId ?? '';
     if (!productId) {
@@ -342,6 +350,24 @@ function assertLocationId(locationId: string, op: string): void {
   if (!locationId || typeof locationId !== 'string') {
     throw new Error(`${op}: locationId is required`);
   }
+}
+
+/**
+ * Build a `StockService` from a `db` config in the options. Called only
+ * when the caller did not pass a pre-built `stockService` — the option
+ * union guarantees `db` is present in that case, but TypeScript can't
+ * narrow the discriminated union from a `??` value check, so this helper
+ * validates at runtime with a clear message.
+ */
+async function buildStockService(
+  options: ProductionServiceOptions,
+): Promise<StockService> {
+  if (!options.db) {
+    throw new Error(
+      'ProductionService.create: either `db` or `stockService` is required',
+    );
+  }
+  return createStockService({ db: options.db });
 }
 
 /**

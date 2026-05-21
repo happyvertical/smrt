@@ -57,6 +57,17 @@ This subscribes to:
 
 Per-handler toggles: `installContractReserved`, `installFulfillmentShipped`. The `production_order:posted` hook is deliberately not installed here — it depends on the BOM model and ships in `@happyvertical/smrt-manufacturing` (issue #1250).
 
+## Schema migration (Phase 1 release)
+
+The `Sku` model moved out of this package and into `@happyvertical/smrt-products`. Previously it lived in this package's `inventory_skus` table; it now lives in `product_skus` over there. **Upgrade SQL** for deployed consumers:
+
+```sql
+CREATE TABLE product_skus AS SELECT * FROM inventory_skus;
+DROP TABLE inventory_skus;
+```
+
+`StockLevel.skuId` and `StockMovement.skuId` carry plain string ids that still resolve to the same rows after the rename.
+
 ## Gotchas
 
 - **Movements are append-only.** The materialized `StockLevel` row is derived state; the `StockMovement` ledger is the source of truth. Never let CRUD UIs expose update/delete on the movement table. If you find yourself wanting to "fix" a movement row, write a compensating `adjust()` call instead.

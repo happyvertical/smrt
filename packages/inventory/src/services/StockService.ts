@@ -520,7 +520,11 @@ export class StockService {
    * append-only entry.
    */
   private async writeMovement(options: WriteMovementOptions): Promise<void> {
-    const movement = await this.movements.create({
+    // SmrtCollection.create() persists the row before returning. A
+    // follow-up save() would emit a redundant upsert round-trip on every
+    // single stock mutation (one or two per service call) — and the
+    // movement table is append-only, so there's nothing to re-save.
+    await this.movements.create({
       skuId: options.skuId,
       locationId: options.locationId,
       fromState: options.fromState,
@@ -532,7 +536,6 @@ export class StockService {
       note: options.note ?? '',
       occurredAt: new Date(),
     });
-    await movement.save();
   }
 }
 

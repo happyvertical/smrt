@@ -184,12 +184,7 @@ export async function installManufacturingDispatchHandlers(
   } = options;
 
   const productionService =
-    options.productionService ??
-    (await createProductionService(
-      options.stockService
-        ? { stockService: options.stockService }
-        : { db: options.db as DatabaseConfig },
-    ));
+    options.productionService ?? (await buildProductionService(options));
 
   const installed: Array<{ pattern: string; handler: DispatchHandler }> = [];
 
@@ -285,4 +280,25 @@ async function handleProductionCompleted(
       note: metadata.source ? `auto-produce via ${metadata.source}` : undefined,
     },
   );
+}
+
+/**
+ * Build a `ProductionService` for the dispatch installer when no
+ * pre-built service was supplied. The discriminated option union
+ * guarantees one of `stockService` / `db` is set in that branch, but
+ * TypeScript can't narrow from a `??` value check on a sibling property,
+ * so we validate at runtime with a clear error message.
+ */
+async function buildProductionService(
+  options: InstallManufacturingDispatchHandlersOptions,
+): Promise<ProductionService> {
+  if (options.stockService) {
+    return createProductionService({ stockService: options.stockService });
+  }
+  if (!options.db) {
+    throw new Error(
+      'installManufacturingDispatchHandlers: one of `productionService`, `stockService`, or `db` is required',
+    );
+  }
+  return createProductionService({ db: options.db });
 }
