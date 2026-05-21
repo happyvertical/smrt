@@ -227,6 +227,48 @@ function isPublicEntry(entry: SmrtManifestEntryLike): boolean {
 }
 
 /**
+ * True when an entry is an STI subtype whose REST route would be the
+ * same as its base class's. The SMRT scanner copies the STI parent's
+ * `collection` field onto every child entry — `Material`, `Style`,
+ * `Cart`, `Order`, `ProductionOrder` etc. all carry the parent's
+ * `collection` value (`products`, `contracts`). If we emitted a nav
+ * item per entry, the user would see "Materials" and "Products" both
+ * linking to `/api/v1/products`, with no way to tell which list they
+ * landed on. Suppressing the child entries keeps the base class's
+ * single nav link — the REST endpoint already exposes the full
+ * polymorphic list, which is the conventional shape for STI tables.
+ *
+ * Detection: the entry has a non-base `extends` AND another entry in
+ * the manifest with `className === entry.extends` carries the same
+ * `collection` value. Bare-bones manifests that omit a base entry fall
+ * through and keep the subtype visible (better to show one link than
+ * none).
+ */
+function looksLikeStiSubtypeOfParentRoute(
+  entry: SmrtManifestEntryLike,
+  manifest: SmrtManifestLike,
+): boolean {
+  const parentName = entry.extends;
+  if (
+    !parentName ||
+    parentName === 'SmrtObject' ||
+    parentName === 'SmrtClass'
+  ) {
+    return false;
+  }
+  // Search every entry — manifest.objects is keyed by qualified name,
+  // so we can't index by className directly.
+  for (const other of Object.values(manifest.objects)) {
+    if (other.className !== parentName) continue;
+    if (other.collection && other.collection === entry.collection) {
+      return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/**
  * Whether an entry exposes a `list` route through the REST generator.
  *
  * Join-table / link / asset models commonly declare `@smrt({ api: false })`
@@ -304,9 +346,12 @@ function entryQualifier(entry: SmrtManifestEntryLike): string {
  *      they're plumbing / fixtures and never belong in admin nav.
  *   3. Drop entries that don't expose a REST `list` route (`@smrt({ api: false })`,
  *      `include` without `list`, or `exclude` containing `list`).
- *   4. If `permittedResources` is provided, drop entries whose qualified
+ *   4. Drop STI subtypes that share their parent's `collection` value —
+ *      the REST endpoint at the shared collection URL is polymorphic and
+ *      shows all subtypes through one link.
+ *   5. If `permittedResources` is provided, drop entries whose qualified
  *      name isn't in the list. Otherwise keep all remaining entries.
- *   5. Group remaining entries by their resolved section title.
+ *   6. Group remaining entries by their resolved section title.
  *   4. For each entry, emit a `NavItem` with:
  *       - `label` = `decoratorConfig.ui.label` ?? `pluralizeClassName(className)`
  *       - `href`  = `${basePath}/${collection}` (defaults to `/api/v1/{collection}`)
@@ -367,6 +412,7 @@ export function navTreeFromManifest(
     if (looksLikeCollectionClass(entry)) continue;
     if (!isPublicEntry(entry)) continue;
     if (!hasListRoute(entry)) continue;
+    if (looksLikeStiSubtypeOfParentRoute(entry, manifest)) continue;
 
     const qualifier = entryQualifier(entry);
     if (permitted && !permitted.has(qualifier)) continue;

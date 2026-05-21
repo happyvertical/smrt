@@ -374,6 +374,80 @@ describe('navTreeFromManifest', () => {
     expect(result[0].children?.map((c) => c.label)).toEqual(['Publics']);
   });
 
+  it('suppresses STI subtype entries that share their parent collection', () => {
+    // SMRT's scanner copies the STI parent's `collection` field onto
+    // every child entry. Without dedup, the nav helper would emit nine
+    // links for the Contract STI hierarchy that all point at
+    // /api/v1/contracts — confusing to users and a footgun for
+    // role-permission filtering. The parent's link covers the entire
+    // polymorphic list at that endpoint.
+    const manifest: SmrtManifestLike = {
+      objects: {
+        '@acme/shop:Contract': {
+          qualifiedName: '@acme/shop:Contract',
+          className: 'Contract',
+          packageName: '@acme/shop',
+          collection: 'contracts',
+          extends: 'SmrtObject',
+          decoratorConfig: {},
+        },
+        '@acme/shop:Order': {
+          qualifiedName: '@acme/shop:Order',
+          className: 'Order',
+          packageName: '@acme/shop',
+          collection: 'contracts',
+          extends: 'Contract',
+          decoratorConfig: {},
+        },
+        '@acme/shop:Cart': {
+          qualifiedName: '@acme/shop:Cart',
+          className: 'Cart',
+          packageName: '@acme/shop',
+          collection: 'contracts',
+          extends: 'Contract',
+          decoratorConfig: {},
+        },
+      },
+    };
+    const result = navTreeFromManifest(manifest);
+    expect(result).toHaveLength(1);
+    expect(result[0].children).toHaveLength(1);
+    expect(result[0].children?.[0].label).toBe('Contracts');
+    expect(result[0].children?.[0].href).toBe('/api/v1/contracts');
+  });
+
+  it('keeps STI subtypes whose collection differs from the parent', () => {
+    // If a subtype overrides `@smrt({ tableName/collection })`, its
+    // route IS distinct from the parent's and the nav helper should
+    // keep both. Tests the `entry.collection === parent.collection`
+    // half of the gate — not just the `entry.extends !== 'SmrtObject'` half.
+    const manifest: SmrtManifestLike = {
+      objects: {
+        '@acme/x:Asset': {
+          qualifiedName: '@acme/x:Asset',
+          className: 'Asset',
+          packageName: '@acme/x',
+          collection: 'assets',
+          extends: 'SmrtObject',
+          decoratorConfig: {},
+        },
+        '@acme/x:Image': {
+          qualifiedName: '@acme/x:Image',
+          className: 'Image',
+          packageName: '@acme/x',
+          collection: 'images', // distinct route
+          extends: 'Asset',
+          decoratorConfig: {},
+        },
+      },
+    };
+    const result = navTreeFromManifest(manifest);
+    expect(result[0].children?.map((c) => c.label).sort()).toEqual([
+      'Assets',
+      'Images',
+    ]);
+  });
+
   it('keeps entries with visibility = "public" or unset', () => {
     const manifest: SmrtManifestLike = {
       objects: {

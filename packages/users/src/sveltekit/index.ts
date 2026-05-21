@@ -16,6 +16,15 @@
  * ```
  */
 
+// Consumers that import from this subpath (e.g.
+// `@happyvertical/smrt-users/sveltekit`) typically do NOT also import the
+// package root, so the root's `__smrt-register__` side effect never runs
+// — and `SessionService` / `Session` would then evaluate their @smrt()
+// decorators against an empty manifest, falling back to zero-field
+// metadata (the original bug from issue #1132). Importing the registration
+// shim here makes this subpath self-sufficient.
+import '../__smrt-register__.js';
+
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
 import { withSessionPermissionContext } from '../services/SessionPermissionContext.js';

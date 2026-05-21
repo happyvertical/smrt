@@ -232,7 +232,13 @@ async function handleProductionPosted(
   metadata: DispatchMetadata,
   shouldProduce: boolean,
 ): Promise<void> {
-  if (!payload || !payload.productionOrderId) return;
+  if (!payload || !payload.productionOrderId) {
+    // Mirror the inventory-handler observability pattern: producer
+    // contract drift goes silent without this warn (the dispatch bus
+    // would just see a quick return and never surface anything).
+    warnMalformedPayload('production_order:posted', payload, metadata);
+    return;
+  }
 
   // If `producedOnPosted` is enabled, the produce leg is required — not
   // optional. Validate `finishedSkuId` before consuming materials so we
@@ -298,7 +304,10 @@ async function handleProductionCompleted(
   payload: ProductionOrderCompletedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (!payload || !payload.productionOrderId) return;
+  if (!payload || !payload.productionOrderId) {
+    warnMalformedPayload('production_order:completed', payload, metadata);
+    return;
+  }
   await productionService.produceFinishedGoods(
     { id: payload.productionOrderId },
     {
@@ -307,6 +316,29 @@ async function handleProductionCompleted(
       finishedSkuId: payload.finishedSkuId,
       note: metadata.source ? `auto-produce via ${metadata.source}` : undefined,
     },
+  );
+}
+
+/**
+ * Surface dispatch payloads that don't match the documented shape.
+ * Mirrors the inventory package's `warnMalformedPayload` so a
+ * misshapen `production_order:*` event leaves a trace (signal name,
+ * source attribution, payload-key summary) instead of vanishing into
+ * the dispatch bus's silent-success path. Without this, producer
+ * drift only surfaces as "stock didn't move" / "audit log empty" bugs
+ * a long way from the handler.
+ */
+function warnMalformedPayload(
+  signal: string,
+  payload: unknown,
+  metadata: DispatchMetadata,
+): void {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[@happyvertical/smrt-manufacturing] dispatch handler ignored a ${signal} ` +
+      'event with a malformed payload (missing productionOrderId). ' +
+      `Source: ${metadata.source ?? '<unknown>'}; payload keys: ` +
+      `${payload && typeof payload === 'object' ? Object.keys(payload).join(',') : typeof payload}`,
   );
 }
 

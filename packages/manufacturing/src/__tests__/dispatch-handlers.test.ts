@@ -263,6 +263,54 @@ describe('installManufacturingDispatchHandlers', () => {
     expect(byOrder[0].reasonCode).toBe('production_produce');
   });
 
+  it('warns and ignores production_order:posted events with malformed payloads', async () => {
+    // Mirror of the inventory-handler observability test: a producer
+    // emitting the wrong shape should leave a trace in the logs rather
+    // than vanish into the bus's silent-success path. Without the
+    // warn, "stock didn't move" bugs surface a long way from the
+    // dispatch layer.
+    await installManufacturingDispatchHandlers({
+      dispatchBus: bus,
+      stockService,
+    });
+
+    const consoleWarns: unknown[] = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      consoleWarns.push(args);
+    };
+
+    try {
+      // Empty productionOrderId — handler should warn and bail.
+      await bus.emit(
+        'production_order:posted',
+        {
+          productionOrderId: '',
+          productId: parentProductId,
+          locationId: factoryId,
+          qty: 1,
+        },
+        { source: 'commerce' },
+      );
+      await waitFor(async () => consoleWarns.length > 0, 1_000);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+
+    expect(consoleWarns.length).toBeGreaterThan(0);
+    const firstWarn = String(consoleWarns[0]);
+    expect(firstWarn).toContain('production_order:posted');
+    expect(firstWarn).toContain('commerce');
+    // No ProductionOrder-attributed movements should exist — the
+    // empty productionOrderId payload bailed before any stock motion.
+    // (The `beforeEach` pre-stocks fabric via `stockService.receive`
+    // which writes a `receipt` movement; that one is unrelated.)
+    const byOrder = await movements.findBySource('ProductionOrder', '');
+    expect(byOrder).toHaveLength(0);
+    const consumeMovs = await movements.findByReason('production_consume');
+    expect(consumeMovs).toHaveLength(0);
+  });
+
   it('does not subscribe when callers opt every handler out', async () => {
     await installManufacturingDispatchHandlers({
       dispatchBus: bus,

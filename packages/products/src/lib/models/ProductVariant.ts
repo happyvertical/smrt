@@ -92,6 +92,14 @@ export class ProductVariant extends SmrtObject {
     if (options.allowedValues !== undefined)
       this.setValues(options.allowedValues);
     if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
+
+    // Default the label to axisName when no explicit label was supplied.
+    // The field docstring promises this behavior and admin UIs render
+    // `variant.label` directly; without this fallback an axis declared
+    // as `{ axisName: 'size' }` would render with a blank label.
+    if (!this.label && this.axisName) {
+      this.label = this.axisName;
+    }
   }
 
   /**
