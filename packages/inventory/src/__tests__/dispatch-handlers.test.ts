@@ -195,6 +195,44 @@ describe('installInventoryDispatchHandlers', () => {
     expect(Number(allocated?.qty ?? 0)).toBe(0);
   });
 
+  it('rejects contract:created payloads missing contractId (no audit attribution)', async () => {
+    // Regression for the round-7 finding: a payload that has a valid
+    // `lines` array but missing `contractId` would previously reserve
+    // stock with an empty sourceId, breaking the audit trail. The
+    // handler should refuse to mutate state and log instead.
+    const service = await createStockService({ db });
+    await service.receive(skuId, warehouseId, 10);
+    await installInventoryDispatchHandlers({
+      dispatchBus: bus,
+      stockService: service,
+    });
+
+    const consoleWarns: unknown[] = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      consoleWarns.push(args);
+    };
+
+    try {
+      await bus.emit(
+        'contract:created',
+        {
+          // contractId missing
+          lines: [{ skuId, locationId: warehouseId, qty: 1 }],
+        },
+        { source: 'commerce' },
+      );
+      await waitFor(async () => consoleWarns.length > 0, 1_000);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+
+    expect(consoleWarns.length).toBeGreaterThan(0);
+    // No reservations should have landed.
+    const reservations = await movements.findByReason('reservation');
+    expect(reservations).toHaveLength(0);
+  });
+
   it('does not subscribe when callers opt the handlers out', async () => {
     const service = await createStockService({ db });
     await installInventoryDispatchHandlers({

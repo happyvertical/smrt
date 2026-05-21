@@ -33,6 +33,13 @@ export interface CategoryOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
+  // See the matching note on `Product` — overriding `conflictColumns`
+  // to include `tenant_id` causes a SQLite `ON CONFLICT clause does not
+  // match any … UNIQUE constraint` error because the core schema
+  // generator's hardcoded STI unique index is `(slug, context,
+  // _meta_type)` and does not include the tenant column. Until the
+  // upstream framework fix lands, two tenants cannot share a category
+  // slug at the schema level.
   api: {
     include: ['list', 'get', 'create', 'update'], // Standard CRUD except delete
   },

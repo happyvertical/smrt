@@ -94,6 +94,51 @@ describe('subdomainStrategyWith', () => {
     });
   });
 
+  it('correctly handles multi-label public suffixes when baseDomain is set', () => {
+    // Regression for the round-7 finding: without baseDomain, the
+    // label-count heuristic would treat `example.co.uk` (3 labels) as
+    // `example` being a tenant on the `co.uk` apex. With baseDomain
+    // set, the strategy strips the apex and reads only what's left.
+    const strategy = subdomainStrategyWith({
+      baseDomain: 'example.co.uk',
+    });
+    // Apex itself: not a tenant.
+    expect(strategy(makeEvent('https://example.co.uk/'))).toEqual({
+      tenantId: null,
+    });
+    // Real tenant subdomain.
+    expect(strategy(makeEvent('https://acme.example.co.uk/'))).toEqual({
+      tenantId: 'acme',
+    });
+    // Multi-label tenant subdomain — take only the leading label.
+    expect(strategy(makeEvent('https://acme.beta.example.co.uk/'))).toEqual({
+      tenantId: 'acme',
+    });
+    // Reserved subdomain.
+    expect(strategy(makeEvent('https://www.example.co.uk/'))).toEqual({
+      tenantId: null,
+    });
+    // Host that doesn't match the configured apex — explicitly null.
+    expect(strategy(makeEvent('https://other.com/'))).toEqual({
+      tenantId: null,
+    });
+  });
+
+  it('falls back to the label-count heuristic when baseDomain is omitted', () => {
+    // The heuristic IS incorrect for `.co.uk`-style apex domains;
+    // this test documents the known limitation so an unsuspecting
+    // user gets a deterministic (if wrong) answer rather than a
+    // silent surprise.
+    const strategy = subdomainStrategyWith();
+    expect(strategy(makeEvent('https://example.co.uk/'))).toEqual({
+      tenantId: 'example', // <-- the documented misread
+    });
+    // Single-label TLD case works as expected.
+    expect(strategy(makeEvent('https://acme.example.com/'))).toEqual({
+      tenantId: 'acme',
+    });
+  });
+
   it('merges custom reserved subdomains with the built-in defaults', () => {
     // Custom list adds `admin` but does NOT mention `www` / `api` / `app`.
     // The merge semantics should keep the defaults reserved.

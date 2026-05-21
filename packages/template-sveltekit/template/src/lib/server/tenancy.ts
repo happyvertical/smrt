@@ -101,15 +101,35 @@ export const subdomainStrategy: TenantResolverStrategy = (event) => {
 
 /**
  * Customizable subdomain strategy. Use this if you need to extend the
- * reserved-subdomain list (e.g. to also reject `admin.demo.local`).
+ * reserved-subdomain list (e.g. to also reject `admin.demo.local`) or
+ * to deploy on a multi-label public suffix like `example.co.uk` where
+ * a naive label count would treat the apex itself as a tenant.
  *
  * The supplied `reservedSubdomains` are merged with the defaults
  * (`www`, `api`, `app`) — so adding `admin` still leaves `www` reserved.
  * Pass an empty iterable to start from a fresh set, or pass the value
  * you want via {@link DEFAULT_RESERVED_SUBDOMAINS} after filtering.
+ *
+ * `baseDomain` (strongly recommended for production) anchors the apex.
+ * When set, the strategy strips the matching suffix and treats whatever
+ * leading labels remain as the tenant. `example.co.uk` with
+ * `baseDomain: 'example.co.uk'` → no tenant; `acme.example.co.uk` →
+ * `'acme'`. Without `baseDomain` the strategy falls back to a label-
+ * count heuristic that works for `.com`/`.net`/`.dev`-style single-
+ * label TLDs but mis-identifies multi-label public suffixes (`.co.uk`,
+ * `.com.au`, `.gov.uk`, …) as tenant subdomains.
  */
 export function subdomainStrategyWith(opts?: {
   reservedSubdomains?: Iterable<string>;
+  /**
+   * Apex domain to anchor tenant detection against. Highly recommended
+   * for production deployments on multi-label public suffixes
+   * (`example.co.uk`, `example.com.au`, …). When set, a request for
+   * exactly that host returns `{ tenantId: null }`, and a request for
+   * `<tenant>.<baseDomain>` returns `{ tenantId: '<tenant>' }`. Subdomain
+   * resolution stops being label-count-dependent.
+   */
+  baseDomain?: string;
 }): TenantResolverStrategy {
   const reserved = new Set<string>(DEFAULT_RESERVED_SUBDOMAINS);
   if (opts?.reservedSubdomains) {
@@ -117,6 +137,7 @@ export function subdomainStrategyWith(opts?: {
       reserved.add(s.toLowerCase());
     }
   }
+  const baseDomain = opts?.baseDomain?.toLowerCase().replace(/^\.+|\.+$/g, '');
 
   return (event) => {
     const hostname = event.url.hostname.toLowerCase();
@@ -130,6 +151,36 @@ export function subdomainStrategyWith(opts?: {
       return { tenantId: null };
     }
 
+    // Preferred path: caller supplied a baseDomain. Strip it and read
+    // whatever's left as the tenant. This works correctly for both
+    // simple TLDs (`example.com`) and multi-label public suffixes
+    // (`example.co.uk`).
+    if (baseDomain) {
+      if (hostname === baseDomain) {
+        return { tenantId: null };
+      }
+      const suffix = `.${baseDomain}`;
+      if (hostname.endsWith(suffix)) {
+        const leading = hostname.slice(0, -suffix.length);
+        // Take only the first label of whatever's left so
+        // `acme.beta.example.co.uk` still resolves to `acme`.
+        const candidate = leading.split('.')[0];
+        if (!candidate || reserved.has(candidate)) {
+          return { tenantId: null };
+        }
+        return { tenantId: candidate };
+      }
+      // Host doesn't match the configured apex — out of scope for this
+      // strategy, treat as tenant-less rather than guess.
+      return { tenantId: null };
+    }
+
+    // Fallback path: no baseDomain configured. Use a label-count
+    // heuristic that works for single-label TLDs. **This is incorrect
+    // for multi-label public suffixes** (`example.co.uk` has three
+    // labels and would be misread as `example` being a tenant on the
+    // `co.uk` root). Pass `baseDomain` to opt out of the heuristic on
+    // any production deployment that uses such a TLD.
     const labels = hostname.split('.');
 
     // Need at least 3 labels for a tenant subdomain: <tenant>.<root>.<tld>.

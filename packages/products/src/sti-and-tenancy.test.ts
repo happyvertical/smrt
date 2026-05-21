@@ -198,6 +198,38 @@ describe('ProductVariant axis-declaration model', () => {
     expect(axes.map((a) => a.axisName)).toEqual(['color', 'size']);
   });
 
+  it('defaults label to axisName when no explicit label is supplied', async () => {
+    // The field docstring promises this fallback; admin UIs render
+    // variant.label directly and would otherwise show a blank for the
+    // common `{ axisName: 'size' }` shape used throughout the docs.
+    const variants = await ProductVariantCollection.create({ db });
+    const sizeAxis = await variants.create({
+      productId: 'style-1',
+      axisName: 'size',
+      allowedValues: ['S', 'M'],
+    });
+    await sizeAxis.save();
+    expect(sizeAxis.label).toBe('size');
+
+    // Explicit empty string still goes through `if (options.label !== undefined)`
+    // and lands as ''; the fallback then promotes it to axisName so the
+    // UI never renders blank.
+    const colorAxis = new ProductVariant({
+      productId: 'style-1',
+      axisName: 'color',
+      label: '',
+    });
+    expect(colorAxis.label).toBe('color');
+
+    // Explicit label wins over the default.
+    const finishAxis = new ProductVariant({
+      productId: 'style-1',
+      axisName: 'finish',
+      label: 'Surface treatment',
+    });
+    expect(finishAxis.label).toBe('Surface treatment');
+  });
+
   it('lives in its own table, not the products STI table', () => {
     // Sanity: a Product STI subtype would share table 'products' and
     // declare 'sti' as its strategy. ProductVariant must do neither.
@@ -297,6 +329,40 @@ describe('Product and Category tenancy', () => {
       'Empty-parent',
       'Null-parent',
     ]);
+  });
+
+  it('isolates Material between tenants via its own @TenantScoped decoration', async () => {
+    // Regression for the round-7 finding: @TenantScoped registers per
+    // concrete className. Material extending Product is NOT enough —
+    // MaterialCollection passes 'Material' (not 'Product') to the
+    // tenant interceptor, which then misses the lookup unless Material
+    // itself is decorated. Without that, materials would save without
+    // auto-populated tenantId and `MaterialCollection.list()` would
+    // return rows across tenants.
+    const materials = await MaterialCollection.create({ db });
+
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const fabric = await materials.create({
+        name: 'Tenant A fabric',
+        materialKind: 'fabric',
+      });
+      await fabric.save();
+      expect(fabric.tenantId).toBe('tenant-a');
+    });
+
+    await withTenant({ tenantId: 'tenant-b' }, async () => {
+      const thread = await materials.create({
+        name: 'Tenant B thread',
+        materialKind: 'thread',
+      });
+      await thread.save();
+      expect(thread.tenantId).toBe('tenant-b');
+    });
+
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const rows = await materials.list({});
+      expect(rows.map((r) => r.name)).toEqual(['Tenant A fabric']);
+    });
   });
 
   it('isolates Category between tenants the same way', async () => {

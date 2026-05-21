@@ -10,7 +10,8 @@
  * @packageDocumentation
  */
 
-import { meta, smrt } from '@happyvertical/smrt-core';
+import { type Meta, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import { Product, type ProductOptions } from './Product';
 import { type MaterialKind, ProductType } from './types';
 
@@ -20,24 +21,36 @@ export interface MaterialOptions extends ProductOptions {
   costPerUnit?: number;
 }
 
+// @TenantScoped is registered per concrete class, so inheriting from
+// Product is NOT enough — `MaterialCollection.list()` passes 'Material'
+// (not 'Product') to the interceptor, which then fails its
+// `isTenantScopedClass(className)` lookup and skips tenant auto-filter
+// + auto-populate. Repeat the decorator here so material rows
+// participate in the same tenant isolation as their Product parent.
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Material extends Product {
   override productType: ProductType = ProductType.MATERIAL;
 
+  // STI child-specific fields use the `Meta<T>` type wrapper rather than
+  // the runtime `@meta()` decorator. The scanner detects the wrapper at
+  // build time (via the type annotation) and emits the field with
+  // `type: 'meta'` in the manifest, which routes it through `_meta_data`
+  // JSON storage at schema-generation time. The runtime decorator path
+  // doesn't reach the manifest, so STI children that only use `@meta()`
+  // get materialized as ordinary columns on the parent's table.
+
   /** Classification — fabric, trim, thread, label, packaging, component, ... */
-  @meta()
-  materialKind: MaterialKind = 'component';
+  materialKind: Meta<MaterialKind> = 'component';
 
   /** Unit of measure — "yards", "meters", "each", "grams", "lbs". */
-  @meta()
-  uom: string = 'each';
+  uom: Meta<string> = 'each';
 
   /**
    * Latest known cost per UOM. For sophisticated cost rollup, manufacturing
    * may pull from purchase-order history instead of this denormalised value.
    */
-  @meta()
-  costPerUnit: number = 0.0;
+  costPerUnit: Meta<number> = 0.0;
 
   constructor(options: MaterialOptions = {}) {
     super(options);

@@ -177,10 +177,18 @@ async function handleContractCreated(
   payload: ContractCreatedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (!payload || !Array.isArray(payload.lines)) {
+  if (
+    !payload ||
+    !Array.isArray(payload.lines) ||
+    !payload.contractId ||
+    typeof payload.contractId !== 'string'
+  ) {
     // Silent return would hide upstream contract drift — producers
-    // emitting the wrong shape never get feedback. Log enough to find
-    // the bad emitter from the source attribution alone.
+    // emitting the wrong shape never get feedback. Source id is
+    // required: without it the resulting StockMovements carry empty
+    // `sourceId`, breaking the audit trail back to the originating
+    // contract. Reject up front rather than emit unattributable
+    // mutations.
     warnMalformedPayload('contract:created', payload, metadata);
     return;
   }
@@ -206,7 +214,15 @@ async function handleFulfillmentShipped(
   payload: FulfillmentShippedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (!payload || !Array.isArray(payload.lines)) {
+  if (
+    !payload ||
+    !Array.isArray(payload.lines) ||
+    !payload.fulfillmentId ||
+    typeof payload.fulfillmentId !== 'string'
+  ) {
+    // Same rationale as `handleContractCreated`: reject when the
+    // source id is missing rather than emit StockMovements with no
+    // audit attribution.
     warnMalformedPayload('fulfillment:shipped', payload, metadata);
     return;
   }

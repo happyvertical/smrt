@@ -228,7 +228,7 @@ function isPublicEntry(entry: SmrtManifestEntryLike): boolean {
 
 /**
  * True when an entry is an STI subtype whose REST route would be the
- * same as its base class's. The SMRT scanner copies the STI parent's
+ * same as some ancestor's. The SMRT scanner copies the STI parent's
  * `collection` field onto every child entry — `Material`, `Style`,
  * `Cart`, `Order`, `ProductionOrder` etc. all carry the parent's
  * `collection` value (`products`, `contracts`). If we emitted a nav
@@ -238,34 +238,68 @@ function isPublicEntry(entry: SmrtManifestEntryLike): boolean {
  * single nav link — the REST endpoint already exposes the full
  * polymorphic list, which is the conventional shape for STI tables.
  *
- * Detection: the entry has a non-base `extends` AND another entry in
- * the manifest with `className === entry.extends` carries the same
- * `collection` value. Bare-bones manifests that omit a base entry fall
- * through and keep the subtype visible (better to show one link than
- * none).
+ * **Walks the ancestor chain.** A two-level hierarchy like
+ * `Product → Material → FabricMaterial` may have its intermediate
+ * `Material` entry stripped from a partial manifest while `Product`
+ * remains. A one-level check would let `FabricMaterial` through
+ * (parent absent → return false → keep) and duplicate the `Product`
+ * link. Walking the chain handles this case: as long as any ancestor
+ * with a matching `collection` is reachable through the chain, the
+ * subtype is suppressed. Fully-orphaned entries (no resolvable
+ * ancestor in the manifest) stay visible — better to show one link
+ * than none.
+ *
+ * Detection: starting at `entry.extends`, look up that className in
+ * the manifest. If found and `collection` matches, suppress this
+ * entry. Otherwise recurse into THAT entry's `extends` and try again.
+ * Stop at `SmrtObject`/`SmrtClass`, when no manifest entry resolves,
+ * or when a cycle is detected.
  */
 function looksLikeStiSubtypeOfParentRoute(
   entry: SmrtManifestEntryLike,
   manifest: SmrtManifestLike,
 ): boolean {
-  const parentName = entry.extends;
-  if (
-    !parentName ||
-    parentName === 'SmrtObject' ||
-    parentName === 'SmrtClass'
-  ) {
-    return false;
-  }
-  // Search every entry — manifest.objects is keyed by qualified name,
-  // so we can't index by className directly.
-  for (const other of Object.values(manifest.objects)) {
-    if (other.className !== parentName) continue;
-    if (other.collection && other.collection === entry.collection) {
+  const byClassName = entryIndexByClassName(manifest);
+  const visited = new Set<string>();
+  let cursor: string | undefined = entry.extends;
+  while (cursor && cursor !== 'SmrtObject' && cursor !== 'SmrtClass') {
+    if (visited.has(cursor)) return false; // pathological cycle
+    visited.add(cursor);
+    const ancestor = byClassName.get(cursor);
+    if (!ancestor) return false; // chain broken, keep this entry visible
+    if (ancestor.collection && ancestor.collection === entry.collection) {
       return true;
     }
-    return false;
+    cursor = ancestor.extends;
   }
   return false;
+}
+
+/**
+ * Build a className → entry lookup over the manifest. Memoised per
+ * manifest via WeakMap so a typical `navTreeFromManifest` call only
+ * walks `Object.values(manifest.objects)` once even when many entries
+ * trigger `looksLikeStiSubtypeOfParentRoute`. When two entries share
+ * a className (shouldn't happen in a well-formed manifest), the first
+ * one wins — duplicates would still produce the same dedup answer
+ * because both would carry the same parent chain.
+ */
+const manifestClassNameIndex = new WeakMap<
+  SmrtManifestLike,
+  Map<string, SmrtManifestEntryLike>
+>();
+
+function entryIndexByClassName(
+  manifest: SmrtManifestLike,
+): Map<string, SmrtManifestEntryLike> {
+  const cached = manifestClassNameIndex.get(manifest);
+  if (cached) return cached;
+  const idx = new Map<string, SmrtManifestEntryLike>();
+  for (const e of Object.values(manifest.objects)) {
+    if (!idx.has(e.className)) idx.set(e.className, e);
+  }
+  manifestClassNameIndex.set(manifest, idx);
+  return idx;
 }
 
 /**

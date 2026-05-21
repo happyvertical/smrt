@@ -195,7 +195,23 @@ export interface RunProductionResult {
  */
 export class ProductionService {
   private constructor(
+    /**
+     * BOM collection bound to the OUTER (non-tx) database. Used for
+     * pre-flight reads in `prepareConsume()` — those run before the
+     * stock-service transaction opens, by design (read-then-tx keeps
+     * the transaction window narrow and rollback only covers actual
+     * mutations). DO NOT add BOM writes that depend on the stock-tx
+     * rolling them back together — this collection is not tx-scoped
+     * and writes here would commit independently. If joint BOM-plus-
+     * stock mutations are ever needed, build tx-scoped BOM collections
+     * inside the `stockService.withTransaction` callback (mirror the
+     * pattern in StockService.withTransaction itself).
+     */
     public readonly boms: BillOfMaterialsCollection,
+    /**
+     * BomLine collection bound to the OUTER database. Same caveat as
+     * {@link boms} — pre-flight reads only.
+     */
     public readonly lines: BomLineCollection,
     public readonly stockService: StockService,
   ) {}

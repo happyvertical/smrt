@@ -46,6 +46,22 @@ export interface ProductOptions extends SmrtObjectOptions {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
+  // KNOWN LIMITATION (tracked for framework follow-up): the core schema
+  // generator hardcodes the STI unique index as
+  // `(slug, context, _meta_type)` and does not include `tenant_id`
+  // even when the class is `@TenantScoped`. As a result two tenants
+  // cannot save a row with the same slug+context+type — the UNIQUE
+  // constraint at the SQL layer rejects the second insert.
+  //
+  // We deliberately do NOT override `conflictColumns` here to add
+  // `tenant_id`: doing so would put the runtime upsert path
+  // (`ON CONFLICT ('slug','context','_meta_type','tenant_id')`) out of
+  // step with the actual unique index, producing `SQLITE_ERROR: ON
+  // CONFLICT clause does not match any … UNIQUE constraint` on every
+  // save. Production callers should either (a) namespace their slugs
+  // per tenant on the application side (e.g. `${tenantId}-widget`), or
+  // (b) wait for the upstream framework fix that extends the STI
+  // unique index with `tenant_id` for tenant-scoped tables.
   api: {
     include: ['list', 'get', 'create', 'update'], // Standard CRUD except delete
   },
