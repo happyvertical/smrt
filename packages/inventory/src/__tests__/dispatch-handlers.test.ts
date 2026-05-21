@@ -195,6 +195,54 @@ describe('installInventoryDispatchHandlers', () => {
     expect(Number(allocated?.qty ?? 0)).toBe(0);
   });
 
+  it('rejects contract:created with malformed lines (null entry / wrong types)', async () => {
+    // Regression for the round-10 finding: a `lines` array with a null
+    // entry (e.g. from a serialized sparse array) would previously be
+    // skipped with a `continue`, leaving the contract partially
+    // reserved while looking successful to the caller. The fail-fast
+    // validation rejects the whole event so the audit trail stays
+    // honest and producers get observability.
+    const service = await createStockService({ db });
+    await service.receive(skuId, warehouseId, 10);
+    await installInventoryDispatchHandlers({
+      dispatchBus: bus,
+      stockService: service,
+    });
+
+    const consoleWarns: unknown[] = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      consoleWarns.push(args);
+    };
+
+    try {
+      // Two well-formed lines bracketing a null entry. The handler
+      // must drop the WHOLE event (including the well-formed lines)
+      // rather than partially reserve.
+      await bus.emit(
+        'contract:created',
+        {
+          contractId: 'C-MALFORMED',
+          lines: [
+            { skuId, locationId: warehouseId, qty: 1 },
+            null,
+            { skuId, locationId: warehouseId, qty: 2 },
+          ],
+        },
+        { source: 'commerce' },
+      );
+      await waitFor(async () => consoleWarns.length > 0, 1_000);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+
+    expect(consoleWarns.length).toBeGreaterThan(0);
+    // No reservations should have landed — neither the bracketing
+    // well-formed lines nor the null one.
+    const reservations = await movements.findByReason('reservation');
+    expect(reservations).toHaveLength(0);
+  });
+
   it('rejects contract:created payloads missing contractId (no audit attribution)', async () => {
     // Regression for the round-7 finding: a payload that has a valid
     // `lines` array but missing `contractId` would previously reserve

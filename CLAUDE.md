@@ -39,8 +39,10 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Business
 | Package | Purpose |
 |---------|---------|
-| commerce | Customer/Vendor, Contract (5 STI types), Invoice with ledger integration, Fulfillment |
-| products | Product catalog — reference template for triple-consumption (npm/federation/standalone) |
+| commerce | Customer/Vendor, Contract (8 STI types: Estimate/Order/Lease/Agreement/PurchaseOrder/WholesaleOrder/ProductionOrder/Cart), Invoice with ledger integration, Fulfillment |
+| products | Product catalog (Product/Material STI, Sku, ProductVariant axis-declaration) — reference template for triple-consumption (npm/federation/standalone) |
+| inventory | Multi-location stock tracking: InventoryLocation, StockLevel (materialized; service-managed), StockMovement (append-only audit), StockService with transactional mutations |
+| manufacturing | Bills of materials, cost rollup, production orders: BillOfMaterials/BomLine + BomService (planning), ProductionService (consume/produce with joint-atomic `runProduction`) |
 | ads | Ad delivery: priority waterfall, weighted A/B variations, immutable event tracking |
 | affiliates | Revenue sharing: multi-type partners, multi-tier commissions, payout processing |
 | ledgers | Double-entry accounting, balance enforcement (EPSILON=0.01), journal lifecycle |

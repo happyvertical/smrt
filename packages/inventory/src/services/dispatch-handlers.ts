@@ -192,6 +192,16 @@ async function handleContractCreated(
     warnMalformedPayload('contract:created', payload, metadata);
     return;
   }
+  // Validate every line BEFORE opening a transaction. A silent skip on
+  // a null/undefined / shape-broken entry would look like a successful
+  // commit while only reserving part of the contract — defeating the
+  // "atomic across lines" guarantee just below. Fail the whole event
+  // instead so producers get feedback and downstream observers see no
+  // partial state.
+  if (!areLinesWellFormed(payload.lines)) {
+    warnMalformedPayload('contract:created', payload, metadata);
+    return;
+  }
   const baseOptions: StockMutationOptions = {
     sourceType: 'Contract',
     sourceId: payload.contractId,
@@ -203,7 +213,6 @@ async function handleContractCreated(
   // async handler error — no compensating release would ever fire.
   await stockService.withTransaction(async (tx) => {
     for (const line of payload.lines) {
-      if (!line) continue;
       await tx.reserve(line.skuId, line.locationId, line.qty, baseOptions);
     }
   });
@@ -226,6 +235,13 @@ async function handleFulfillmentShipped(
     warnMalformedPayload('fulfillment:shipped', payload, metadata);
     return;
   }
+  // Validate lines up front for the same reason as
+  // `handleContractCreated`: a silent skip would partially fulfill the
+  // shipment while looking successful.
+  if (!areLinesWellFormed(payload.lines)) {
+    warnMalformedPayload('fulfillment:shipped', payload, metadata);
+    return;
+  }
   const baseOptions: StockMutationOptions = {
     sourceType: 'Fulfillment',
     sourceId: payload.fulfillmentId,
@@ -237,10 +253,33 @@ async function handleFulfillmentShipped(
   // inconsistent and no compensating reservation-restore would ever fire.
   await stockService.withTransaction(async (tx) => {
     for (const line of payload.lines) {
-      if (!line) continue;
       await tx.fulfill(line.skuId, line.locationId, line.qty, baseOptions);
     }
   });
+}
+
+/**
+ * Validate that every entry in a dispatch `lines` array is a usable
+ * line shape. Returns `false` as soon as it sees a null/undefined entry
+ * (e.g. a serialized sparse array hole), a missing/non-string
+ * `skuId` / `locationId`, or a non-finite `qty`. Used by both contract
+ * and fulfilment handlers to fail-fast before opening a transaction —
+ * a silent `continue` over a bad entry would partially mutate state
+ * while making the malformed event look successful.
+ */
+function areLinesWellFormed(
+  lines: ReadonlyArray<
+    ContractCreatedLine | FulfillmentShippedLine | null | undefined
+  >,
+): boolean {
+  for (const line of lines) {
+    if (!line) return false;
+    if (typeof line.skuId !== 'string' || !line.skuId) return false;
+    if (typeof line.locationId !== 'string' || !line.locationId) return false;
+    if (typeof line.qty !== 'number' || !Number.isFinite(line.qty))
+      return false;
+  }
+  return true;
 }
 
 /**
