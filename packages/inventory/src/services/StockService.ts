@@ -5,11 +5,24 @@
  * `release`, `fulfill`, `transfer`, `adjust`). Each one:
  *
  * 1. Updates the materialized {@link StockLevel} row(s) for the affected
- *    `(skuId, locationId, state)` tuples via the
- *    collection's upsert path.
+ *    `(skuId, locationId, state)` tuples via the collection's upsert path.
  * 2. Writes exactly one append-only {@link StockMovement} (or two for
  *    `transfer`, one per leg) carrying the reason, source attribution,
  *    quantity, and from/to state transition.
+ *
+ * **Atomicity**: each method runs every write inside a single database
+ * transaction (`db.transaction(...)` on `@happyvertical/sql >= 0.74.0`).
+ * Partial failure — e.g. the level write succeeds but the movement
+ * write throws — rolls the entire mutation back, so the materialized
+ * balance and the audit ledger never disagree. `transfer` writes both
+ * legs (source out, destination in) plus both movement rows in one tx,
+ * so a failure mid-`transfer` is also fully rolled back.
+ *
+ * If the underlying adapter does not expose `transaction()` (rare —
+ * sqlite, postgres, and duckdb all do as of 0.74.0; the JSON adapter
+ * does too), the service degrades to serial writes and emits a one-time
+ * `console.warn`. Tests and consumers that observe that warning should
+ * upgrade their adapter.
  *
  * Callers should never reach into the level or movement collections
  * directly to mutate balances — doing so silently desyncs the audit
@@ -18,12 +31,11 @@
  * Concurrency: each method is a read-modify-write on the underlying
  * StockLevel row. Awaited (serial) callers always see a consistent
  * balance. Unawaited `Promise.all([reserve, reserve, ...])` against the
- * same `(skuId, locationId)` can over-allocate because the current
- * `@happyvertical/sql` adapter does not lock per-key — callers that
- * need hard atomicity across concurrent reservations should serialise
- * upstream (e.g. via the job runner from `@happyvertical/smrt-jobs`).
- * The audit ledger still emits exactly one StockMovement per successful
- * call, so reconciliation remains intact.
+ * same `(skuId, locationId)` can still over-allocate — the per-tx
+ * locking guarantees atomicity of each individual call, not isolation
+ * across concurrent transactions. Callers that need hard atomicity
+ * across concurrent reservations should serialise upstream (e.g. via
+ * the job runner from `@happyvertical/smrt-jobs`).
  *
  * @packageDocumentation
  */
@@ -154,6 +166,14 @@ export class StockService {
     public readonly levels: StockLevelCollection,
     public readonly movements: StockMovementCollection,
     public readonly locations: InventoryLocationCollection,
+    /**
+     * Marks a service instance handed to a {@link withTransaction}
+     * callback. Public mutation methods on a tx-bound instance skip
+     * opening a nested transaction and just execute against the already-
+     * bound collections; outer (non-tx) instances open a fresh
+     * transaction per mutation. Internal flag — consumers never set it.
+     */
+    private readonly inTransaction: boolean = false,
   ) {}
 
   /** Internal factory — prefer {@link createStockService}. */
@@ -168,6 +188,76 @@ export class StockService {
   }
 
   /**
+   * Run `work` inside a single database transaction with a tx-bound
+   * {@link StockService} instance. All mutation calls on `tx` commit
+   * atomically when `work` resolves and roll back if it throws.
+   *
+   * Use this when you need atomicity ACROSS multiple stock-service
+   * calls — e.g. consuming materials for every line of a production
+   * order in `@happyvertical/smrt-manufacturing`'s `ProductionService`,
+   * or a custom workflow that reserves + fulfills + writes a custom
+   * audit comment in one indivisible step. Individual mutation methods
+   * (`receive`, `reserve`, etc.) are already atomic on their own — you
+   * only need `withTransaction` for cross-call composition.
+   *
+   * Nesting is safe: calling `tx.withTransaction(...)` inside an
+   * already-tx-bound callback simply runs the inner `work` on the same
+   * transaction without opening a savepoint.
+   *
+   * When the underlying adapter does not expose `transaction()`, falls
+   * through to a serial run on the regular collections with a one-time
+   * warning. All four built-in adapters in `@happyvertical/sql >= 0.74.0`
+   * support it; only test stubs would hit this branch.
+   */
+  async withTransaction<T>(work: (tx: StockService) => Promise<T>): Promise<T> {
+    if (this.inTransaction) return work(this);
+
+    const underlying = (this.levels as unknown as { db?: unknown }).db as
+      | { transaction?: (cb: (txDb: unknown) => Promise<T>) => Promise<T> }
+      | undefined;
+
+    if (typeof underlying?.transaction !== 'function') {
+      warnNonTransactional();
+      return work(this);
+    }
+
+    return underlying.transaction(async (txDb) => {
+      const [levels, movements, locations] = await Promise.all([
+        StockLevelCollection.create({ db: txDb as DatabaseConfig }),
+        StockMovementCollection.create({ db: txDb as DatabaseConfig }),
+        InventoryLocationCollection.create({ db: txDb as DatabaseConfig }),
+      ]);
+      const tx = new StockService(
+        this.db,
+        levels,
+        movements,
+        locations,
+        /* inTransaction */ true,
+      );
+      return work(tx);
+    });
+  }
+
+  /**
+   * Internal: run a single-method mutation in a transaction. If we're
+   * already inside one (the instance was handed to a `withTransaction`
+   * callback), reuse it; otherwise open a fresh one.
+   */
+  private async runAtomically<T>(
+    work: (tx: {
+      levels: StockLevelCollection;
+      movements: StockMovementCollection;
+    }) => Promise<T>,
+  ): Promise<T> {
+    if (this.inTransaction) {
+      return work({ levels: this.levels, movements: this.movements });
+    }
+    return this.withTransaction(async (tx) =>
+      work({ levels: tx.levels, movements: tx.movements }),
+    );
+  }
+
+  /**
    * Add `qty` to available stock at the given location. Used for
    * purchase-order receipts, customer returns going back into available
    * inventory, and the "produce" leg of a production order.
@@ -179,22 +269,24 @@ export class StockService {
     options: StockMutationOptions = {},
   ): Promise<void> {
     assertPositiveQty(qty, 'receive');
-    await this.adjustLevel({
-      skuId,
-      locationId,
-      state: 'available',
-      delta: qty,
-    });
-    await this.writeMovement({
-      skuId,
-      locationId,
-      fromState: null,
-      toState: 'available',
-      qty,
-      reasonCode: options.reasonCode ?? 'receipt',
-      sourceType: options.sourceType,
-      sourceId: options.sourceId,
-      note: options.note,
+    await this.runAtomically(async (tx) => {
+      await adjustLevel(tx.levels, {
+        skuId,
+        locationId,
+        state: 'available',
+        delta: qty,
+      });
+      await writeMovement(tx.movements, {
+        skuId,
+        locationId,
+        fromState: null,
+        toState: 'available',
+        qty,
+        reasonCode: options.reasonCode ?? 'receipt',
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        note: options.note,
+      });
     });
   }
 
@@ -210,16 +302,18 @@ export class StockService {
     options: StockMutationOptions = {},
   ): Promise<void> {
     assertPositiveQty(qty, 'reserve');
-    await this.transitionState({
-      skuId,
-      locationId,
-      fromState: 'available',
-      toState: 'allocated',
-      qty,
-      reasonCode: options.reasonCode ?? 'reservation',
-      sourceType: options.sourceType,
-      sourceId: options.sourceId,
-      note: options.note,
+    await this.runAtomically(async (tx) => {
+      await transitionState(tx, {
+        skuId,
+        locationId,
+        fromState: 'available',
+        toState: 'allocated',
+        qty,
+        reasonCode: options.reasonCode ?? 'reservation',
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        note: options.note,
+      });
     });
   }
 
@@ -235,16 +329,18 @@ export class StockService {
     options: StockMutationOptions = {},
   ): Promise<void> {
     assertPositiveQty(qty, 'release');
-    await this.transitionState({
-      skuId,
-      locationId,
-      fromState: 'allocated',
-      toState: 'available',
-      qty,
-      reasonCode: options.reasonCode ?? 'release',
-      sourceType: options.sourceType,
-      sourceId: options.sourceId,
-      note: options.note,
+    await this.runAtomically(async (tx) => {
+      await transitionState(tx, {
+        skuId,
+        locationId,
+        fromState: 'allocated',
+        toState: 'available',
+        qty,
+        reasonCode: options.reasonCode ?? 'release',
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        note: options.note,
+      });
     });
   }
 
@@ -260,26 +356,28 @@ export class StockService {
     options: StockMutationOptions = {},
   ): Promise<void> {
     assertPositiveQty(qty, 'fulfill');
-    await this.assertAvailable(skuId, locationId, 'allocated', qty);
-    await this.adjustLevel({
-      skuId,
-      locationId,
-      state: 'allocated',
-      delta: -qty,
-      // Already enforced via assertAvailable; skipping the second check
-      // avoids a needless extra DB round-trip in the hot path.
-      enforceNonNegative: false,
-    });
-    await this.writeMovement({
-      skuId,
-      locationId,
-      fromState: 'allocated',
-      toState: null,
-      qty,
-      reasonCode: options.reasonCode ?? 'fulfillment',
-      sourceType: options.sourceType,
-      sourceId: options.sourceId,
-      note: options.note,
+    await this.runAtomically(async (tx) => {
+      await assertAvailable(tx.levels, skuId, locationId, 'allocated', qty);
+      await adjustLevel(tx.levels, {
+        skuId,
+        locationId,
+        state: 'allocated',
+        delta: -qty,
+        // Already enforced via assertAvailable; skipping the second check
+        // avoids a needless extra DB round-trip in the hot path.
+        enforceNonNegative: false,
+      });
+      await writeMovement(tx.movements, {
+        skuId,
+        locationId,
+        fromState: 'allocated',
+        toState: null,
+        qty,
+        reasonCode: options.reasonCode ?? 'fulfillment',
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        note: options.note,
+      });
     });
   }
 
@@ -289,6 +387,11 @@ export class StockService {
    * leg, one for the `transfer_in` leg — so the audit log preserves the
    * lineage in both directions. Throws {@link InsufficientStockError} if
    * source available stock would go negative.
+   *
+   * Both legs (level writes + movement rows) run inside one transaction
+   * — a failure mid-`transfer` rolls back the source debit so there's no
+   * "ghost stock disappearance" (source decremented, destination never
+   * credited).
    */
   async transfer(
     skuId: string,
@@ -303,45 +406,47 @@ export class StockService {
         `transfer: fromLocationId and toLocationId must differ (got ${fromLocationId})`,
       );
     }
-    await this.assertAvailable(skuId, fromLocationId, 'available', qty);
+    await this.runAtomically(async (tx) => {
+      await assertAvailable(tx.levels, skuId, fromLocationId, 'available', qty);
 
-    // Source leg: decrement available at origin.
-    await this.adjustLevel({
-      skuId,
-      locationId: fromLocationId,
-      state: 'available',
-      delta: -qty,
-      enforceNonNegative: false,
-    });
-    await this.writeMovement({
-      skuId,
-      locationId: fromLocationId,
-      fromState: 'available',
-      toState: null,
-      qty,
-      reasonCode: options.reasonCode ?? 'transfer_out',
-      sourceType: options.sourceType,
-      sourceId: options.sourceId,
-      note: options.note,
-    });
+      // Source leg: decrement available at origin.
+      await adjustLevel(tx.levels, {
+        skuId,
+        locationId: fromLocationId,
+        state: 'available',
+        delta: -qty,
+        enforceNonNegative: false,
+      });
+      await writeMovement(tx.movements, {
+        skuId,
+        locationId: fromLocationId,
+        fromState: 'available',
+        toState: null,
+        qty,
+        reasonCode: options.reasonCode ?? 'transfer_out',
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        note: options.note,
+      });
 
-    // Destination leg: increment available at destination.
-    await this.adjustLevel({
-      skuId,
-      locationId: toLocationId,
-      state: 'available',
-      delta: qty,
-    });
-    await this.writeMovement({
-      skuId,
-      locationId: toLocationId,
-      fromState: null,
-      toState: 'available',
-      qty,
-      reasonCode: options.reasonCode ?? 'transfer_in',
-      sourceType: options.sourceType,
-      sourceId: options.sourceId,
-      note: options.note,
+      // Destination leg: increment available at destination.
+      await adjustLevel(tx.levels, {
+        skuId,
+        locationId: toLocationId,
+        state: 'available',
+        delta: qty,
+      });
+      await writeMovement(tx.movements, {
+        skuId,
+        locationId: toLocationId,
+        fromState: null,
+        toState: 'available',
+        qty,
+        reasonCode: options.reasonCode ?? 'transfer_in',
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        note: options.note,
+      });
     });
   }
 
@@ -368,64 +473,74 @@ export class StockService {
       );
     }
     const state = options.state ?? 'available';
-    if (delta < 0) {
-      await this.assertAvailable(skuId, locationId, state, -delta);
-    }
-    await this.adjustLevel({
-      skuId,
-      locationId,
-      state,
-      delta,
-      enforceNonNegative: false,
-    });
-    await this.writeMovement({
-      skuId,
-      locationId,
-      fromState: delta < 0 ? state : null,
-      toState: delta > 0 ? state : null,
-      qty: Math.abs(delta),
-      reasonCode: options.reasonCode ?? 'adjustment',
-      sourceType: options.sourceType,
-      sourceId: options.sourceId,
-      note: options.note,
-    });
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Internal helpers
-  // ─────────────────────────────────────────────────────────────────────────
-
-  /**
-   * Read the current level row, sanity-check the result, and throw
-   * {@link InsufficientStockError} when the requested quantity is not
-   * available. Helper around the common "guard the negative" pattern
-   * used by `reserve`, `fulfill`, `transfer`, and `adjust(-delta)`.
-   */
-  private async assertAvailable(
-    skuId: string,
-    locationId: string,
-    state: StockState,
-    requested: number,
-  ): Promise<void> {
-    const level = await this.levels.getLevel(skuId, locationId, state);
-    const available = level ? Number(level.qty ?? 0) : 0;
-    if (available < requested) {
-      throw new InsufficientStockError(
+    await this.runAtomically(async (tx) => {
+      if (delta < 0) {
+        await assertAvailable(tx.levels, skuId, locationId, state, -delta);
+      }
+      await adjustLevel(tx.levels, {
         skuId,
         locationId,
         state,
-        requested,
-        available,
-      );
-    }
+        delta,
+        enforceNonNegative: false,
+      });
+      await writeMovement(tx.movements, {
+        skuId,
+        locationId,
+        fromState: delta < 0 ? state : null,
+        toState: delta > 0 ? state : null,
+        qty: Math.abs(delta),
+        reasonCode: options.reasonCode ?? 'adjustment',
+        sourceType: options.sourceType,
+        sourceId: options.sourceId,
+        note: options.note,
+      });
+    });
   }
+}
 
-  /**
-   * Atomically transition `qty` from one state to another at a single
-   * location. Used by `reserve` and `release`. Composes
-   * `assertAvailable` with two paired `adjustLevel` calls.
-   */
-  private async transitionState(args: {
+// ─────────────────────────────────────────────────────────────────────────
+// Tx-scoped helpers
+//
+// These are module-level functions rather than instance methods so each
+// call site can pass tx-scoped collections through cleanly. The previous
+// versions read `this.levels` / `this.movements` directly which bypassed
+// the transaction. Public methods now wrap everything in
+// `runAtomically` and call these helpers with the tx-scoped pair.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read the current level row, sanity-check the result, and throw
+ * {@link InsufficientStockError} when the requested quantity is not
+ * available.
+ */
+async function assertAvailable(
+  levels: StockLevelCollection,
+  skuId: string,
+  locationId: string,
+  state: StockState,
+  requested: number,
+): Promise<void> {
+  const level = await levels.getLevel(skuId, locationId, state);
+  const available = level ? Number(level.qty ?? 0) : 0;
+  if (available < requested) {
+    throw new InsufficientStockError(
+      skuId,
+      locationId,
+      state,
+      requested,
+      available,
+    );
+  }
+}
+
+/**
+ * Atomically transition `qty` from one state to another at a single
+ * location. Used by `reserve` and `release`.
+ */
+async function transitionState(
+  tx: { levels: StockLevelCollection; movements: StockMovementCollection },
+  args: {
     skuId: string;
     locationId: string;
     fromState: StockState;
@@ -435,108 +550,113 @@ export class StockService {
     sourceType?: string;
     sourceId?: string;
     note?: string;
-  }): Promise<void> {
-    await this.assertAvailable(
-      args.skuId,
-      args.locationId,
-      args.fromState,
-      args.qty,
-    );
-    await this.adjustLevel({
-      skuId: args.skuId,
-      locationId: args.locationId,
-      state: args.fromState,
-      delta: -args.qty,
-      enforceNonNegative: false,
-    });
-    await this.adjustLevel({
-      skuId: args.skuId,
-      locationId: args.locationId,
-      state: args.toState,
-      delta: args.qty,
-    });
-    await this.writeMovement({
-      skuId: args.skuId,
-      locationId: args.locationId,
-      fromState: args.fromState,
-      toState: args.toState,
-      qty: args.qty,
-      reasonCode: args.reasonCode,
-      sourceType: args.sourceType,
-      sourceId: args.sourceId,
-      note: args.note,
-    });
-  }
+  },
+): Promise<void> {
+  await assertAvailable(
+    tx.levels,
+    args.skuId,
+    args.locationId,
+    args.fromState,
+    args.qty,
+  );
+  await adjustLevel(tx.levels, {
+    skuId: args.skuId,
+    locationId: args.locationId,
+    state: args.fromState,
+    delta: -args.qty,
+    enforceNonNegative: false,
+  });
+  await adjustLevel(tx.levels, {
+    skuId: args.skuId,
+    locationId: args.locationId,
+    state: args.toState,
+    delta: args.qty,
+  });
+  await writeMovement(tx.movements, {
+    skuId: args.skuId,
+    locationId: args.locationId,
+    fromState: args.fromState,
+    toState: args.toState,
+    qty: args.qty,
+    reasonCode: args.reasonCode,
+    sourceType: args.sourceType,
+    sourceId: args.sourceId,
+    note: args.note,
+  });
+}
 
-  /**
-   * Read-modify-write a level row by `delta`. Creates the row when it
-   * doesn't exist yet. When `enforceNonNegative` is set, refuses to
-   * write a negative `qty` and throws {@link InsufficientStockError}
-   * with the original (non-decremented) balance — gives callers a
-   * symmetric error path for "no row exists yet, you can't fulfill from
-   * an empty bucket".
-   */
-  private async adjustLevel(options: AdjustLevelOptions): Promise<StockLevel> {
-    const enforce = options.enforceNonNegative ?? options.delta < 0;
-    const existing = await this.levels.getLevel(
+/**
+ * Read-modify-write a level row by `delta`. Creates the row when it
+ * doesn't exist yet. When `enforceNonNegative` is set, refuses to
+ * write a negative `qty` and throws {@link InsufficientStockError}
+ * with the original (non-decremented) balance.
+ */
+async function adjustLevel(
+  levels: StockLevelCollection,
+  options: AdjustLevelOptions,
+): Promise<StockLevel> {
+  const enforce = options.enforceNonNegative ?? options.delta < 0;
+  const existing = await levels.getLevel(
+    options.skuId,
+    options.locationId,
+    options.state,
+  );
+  const previous = existing ? Number(existing.qty ?? 0) : 0;
+  const next = previous + options.delta;
+
+  if (enforce && next < 0) {
+    throw new InsufficientStockError(
       options.skuId,
       options.locationId,
       options.state,
+      Math.abs(options.delta),
+      previous,
     );
-    const previous = existing ? Number(existing.qty ?? 0) : 0;
-    const next = previous + options.delta;
-
-    if (enforce && next < 0) {
-      throw new InsufficientStockError(
-        options.skuId,
-        options.locationId,
-        options.state,
-        Math.abs(options.delta),
-        previous,
-      );
-    }
-
-    if (existing) {
-      existing.qty = next;
-      await existing.save();
-      return existing;
-    }
-
-    // SmrtCollection.create() saves the row before returning, so no further
-    // save() is needed here. Calling save() again would emit a redundant
-    // upsert round-trip on every hot-path first write.
-    const level = await this.levels.create({
-      skuId: options.skuId,
-      locationId: options.locationId,
-      state: options.state,
-      qty: next,
-    });
-    return level;
   }
 
-  /**
-   * Append a movement to the audit log. Never updates an existing row —
-   * the natural key is the surrogate id, so each call writes a fresh
-   * append-only entry.
-   */
-  private async writeMovement(options: WriteMovementOptions): Promise<void> {
-    // SmrtCollection.create() persists the row before returning. A
-    // follow-up save() would emit a redundant upsert round-trip on every
-    // single stock mutation (one or two per service call) — and the
-    // movement table is append-only, so there's nothing to re-save.
-    await this.movements.create({
-      skuId: options.skuId,
-      locationId: options.locationId,
-      fromState: options.fromState,
-      toState: options.toState,
-      qty: options.qty,
-      reasonCode: options.reasonCode,
-      sourceType: options.sourceType ?? '',
-      sourceId: options.sourceId ?? '',
-      note: options.note ?? '',
-      occurredAt: new Date(),
-    });
+  if (existing) {
+    existing.qty = next;
+    await existing.save();
+    return existing;
   }
+
+  // SmrtCollection.create() saves the row before returning, so no further
+  // save() is needed here. Calling save() again would emit a redundant
+  // upsert round-trip on every hot-path first write.
+  const level = await levels.create({
+    skuId: options.skuId,
+    locationId: options.locationId,
+    state: options.state,
+    qty: next,
+  });
+  return level;
+}
+
+/**
+ * Append a movement to the audit log. Never updates an existing row —
+ * the natural key is the surrogate id, so each call writes a fresh
+ * append-only entry.
+ */
+async function writeMovement(
+  movements: StockMovementCollection,
+  options: WriteMovementOptions,
+): Promise<void> {
+  // SmrtCollection.create() persists the row before returning. A
+  // follow-up save() would emit a redundant upsert round-trip on every
+  // single stock mutation (one or two per service call) — and the
+  // movement table is append-only, so there's nothing to re-save.
+  await movements.create({
+    skuId: options.skuId,
+    locationId: options.locationId,
+    fromState: options.fromState,
+    toState: options.toState,
+    qty: options.qty,
+    reasonCode: options.reasonCode,
+    sourceType: options.sourceType ?? '',
+    sourceId: options.sourceId ?? '',
+    note: options.note ?? '',
+    occurredAt: new Date(),
+  });
 }
 
 /**
@@ -548,6 +668,27 @@ function assertPositiveQty(qty: number, op: string): void {
   if (!Number.isFinite(qty) || qty <= 0) {
     throw new Error(`${op}: qty must be a positive finite number (got ${qty})`);
   }
+}
+
+let warnedNonTransactional = false;
+
+/**
+ * Emit a one-time `console.warn` when the underlying SQL adapter does
+ * not expose `transaction()`. All four `@happyvertical/sql >= 0.74.0`
+ * adapters implement it — only test stubs or third-party adapters would
+ * trip this branch.
+ */
+function warnNonTransactional(): void {
+  if (warnedNonTransactional) return;
+  warnedNonTransactional = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[@happyvertical/smrt-inventory] StockService: underlying SQL adapter ' +
+      'does not expose `transaction()`. Stock mutations are degrading to ' +
+      'non-atomic serial writes — partial failures may leave the materialized ' +
+      'level and the audit ledger out of sync. Upgrade @happyvertical/sql to ' +
+      '>= 0.74.0 or use one of its built-in adapters.',
+  );
 }
 
 /**

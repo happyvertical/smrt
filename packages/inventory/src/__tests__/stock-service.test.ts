@@ -364,38 +364,72 @@ describe('StockService', () => {
       expect(reservationMovements).toHaveLength(10);
     });
 
-    it('rejects parallel over-allocation eventually, even if some calls race ahead', async () => {
-      // The current adapter does not provide per-key locking across
-      // unawaited promises, so a Promise.all() of read-modify-write
-      // reservations is allowed to over-allocate. The contract this
-      // package guarantees is:
-      //   1. every successful reserve() writes exactly one movement;
-      //   2. some calls in a contended Promise.all may complete that
-      //      should have raised InsufficientStockError. Callers MUST
-      //      serialize reservations against the same (sku, location)
-      //      themselves (job runner, queue, mutex) when they expect
-      //      hard guarantees.
-      // This test pins the current behaviour so a future per-key
-      // locking change in @happyvertical/sql will surface as a
-      // tightening, not a regression.
+    it('serial reservations guarantee 1-movement-per-success under transactions', async () => {
+      // StockService wraps every mutation in db.transaction() (see
+      // @happyvertical/sql >= 0.74.0). For SERIAL callers this means a
+      // committed reservation movement implies a fulfilled reserve()
+      // and vice versa — the audit ledger and the materialized level
+      // never disagree.
+      //
+      // With 50 available + 10 reserve(10), exactly 5 succeed and the
+      // 6th throws InsufficientStockError (rolling its movement write
+      // back); 7..10 see 0 available and also throw. End state: 5
+      // movements committed, 5 reservations succeeded.
+      //
+      // Concurrent / Promise.all reservations on the SAME (sku,
+      // location) require serialization upstream — drive through
+      // smrt-jobs, an in-process mutex, or a database with a real
+      // connection pool (Postgres). SQLite's single-connection model
+      // can't support concurrent transactions cleanly.
       await service.receive(skuA, warehouse, 50);
-      const results = await Promise.allSettled(
-        Array.from({ length: 10 }, () =>
-          service.reserve(skuA, warehouse, 10, {
+
+      let succeeded = 0;
+      let insufficient = 0;
+      for (let i = 0; i < 10; i++) {
+        try {
+          await service.reserve(skuA, warehouse, 10, {
             sourceType: 'Contract',
-            sourceId: 'racing',
-          }),
-        ),
+            sourceId: `serial-${i}`,
+          });
+          succeeded++;
+        } catch (err) {
+          if (err instanceof InsufficientStockError) {
+            insufficient++;
+          } else {
+            throw err;
+          }
+        }
+      }
+
+      expect(succeeded).toBe(5);
+      expect(insufficient).toBe(5);
+      const reservationMovements = await movements.findByReason('reservation');
+      expect(reservationMovements).toHaveLength(succeeded);
+      const allocated = await levels.getLevel(skuA, warehouse, 'allocated');
+      expect(Number(allocated?.qty)).toBe(50);
+      const available = await levels.getLevel(skuA, warehouse, 'available');
+      expect(Number(available?.qty)).toBe(0);
+    });
+
+    it('rolled-back transactions leave no movements behind', async () => {
+      // Direct atomicity test: a fulfill() that fails (over-pull from
+      // allocated) must NOT leave the level write committed without a
+      // movement, NOR a movement committed without the level update.
+      await service.receive(skuA, warehouse, 5);
+      await service.reserve(skuA, warehouse, 3);
+      // Now: 2 available, 3 allocated. Try to fulfill 10 — should throw.
+      await expect(service.fulfill(skuA, warehouse, 10)).rejects.toThrow(
+        InsufficientStockError,
       );
 
-      const fulfilled = results.filter((r) => r.status === 'fulfilled').length;
-      const reservationMovements = await movements.findByReason('reservation');
-      // One movement per successful reservation — no phantom or
-      // duplicate audit rows even when some calls race.
-      expect(reservationMovements).toHaveLength(fulfilled);
-      // At least one reservation must have succeeded; at most 10.
-      expect(fulfilled).toBeGreaterThanOrEqual(1);
-      expect(fulfilled).toBeLessThanOrEqual(10);
+      // Level should be unchanged: 2 available, 3 allocated, no
+      // fulfillment movement.
+      const allocated = await levels.getLevel(skuA, warehouse, 'allocated');
+      expect(Number(allocated?.qty)).toBe(3);
+      const available = await levels.getLevel(skuA, warehouse, 'available');
+      expect(Number(available?.qty)).toBe(2);
+      const fulfillmentMovements = await movements.findByReason('fulfillment');
+      expect(fulfillmentMovements).toHaveLength(0);
     });
   });
 

@@ -207,13 +207,19 @@ export class ProductionService {
    * 'ProductionOrder'` and `sourceId: order.id`. Returns the list of
    * movements emitted so callers can log / surface them.
    *
-   * Throws {@link NoActiveBomForProductError} if no BOM id is supplied on
-   * the order *and* no active BOM exists for the order's `productId`.
-   * Throws plain `Error` on missing `locationId` or non-positive `qty`.
-   * Re-throws `InsufficientStockError` from `StockService.adjust` if a
-   * line would drive `available` below zero — the caller is expected to
-   * either pre-flight with {@link BomService.canProduce} or handle the
-   * partial-failure case explicitly.
+   * **Atomic across lines**: all per-line deductions and their audit
+   * movements run inside a single `stockService.withTransaction(...)`
+   * scope. An `InsufficientStockError` on line N+1 rolls back lines 1..N
+   * so production-order posting never leaves materials half-consumed.
+   * Pre-flight with {@link BomService.canProduce} when you'd rather know
+   * upfront than discover the shortfall mid-run.
+   *
+   * Throws {@link NoActiveBomForProductError} if no BOM id is supplied
+   * on the order *and* no active BOM exists for the order's `productId`.
+   * Throws {@link BomNotFoundError} if `order.bomId` is supplied but
+   * doesn't resolve. Throws plain `Error` on missing `locationId` or
+   * non-positive `qty`. Re-throws `InsufficientStockError` from
+   * `StockService.adjust` if a line would drive `available` below zero.
    */
   async consumeMaterials(
     order: ProductionOrderRef,
@@ -237,23 +243,25 @@ export class ProductionService {
       note: options.note,
     };
 
-    const emitted: ConsumeResult[] = [];
-    for (const line of lines) {
-      const qty = line.effectiveQtyPerUnit() * options.qty;
-      if (qty <= 0) continue;
-      await this.stockService.adjust(
-        line.componentSkuId,
-        options.locationId,
-        -qty,
-        mutationOptions,
-      );
-      emitted.push({
-        componentSkuId: line.componentSkuId,
-        qty,
-        locationId: options.locationId,
-      });
-    }
-    return emitted;
+    return this.stockService.withTransaction(async (tx) => {
+      const emitted: ConsumeResult[] = [];
+      for (const line of lines) {
+        const qty = line.effectiveQtyPerUnit() * options.qty;
+        if (qty <= 0) continue;
+        await tx.adjust(
+          line.componentSkuId,
+          options.locationId,
+          -qty,
+          mutationOptions,
+        );
+        emitted.push({
+          componentSkuId: line.componentSkuId,
+          qty,
+          locationId: options.locationId,
+        });
+      }
+      return emitted;
+    });
   }
 
   /**
