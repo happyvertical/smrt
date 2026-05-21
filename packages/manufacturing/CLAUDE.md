@@ -118,7 +118,7 @@ const handlers = await installManufacturingDispatchHandlers({
 
 This subscribes to:
 
-- `production_order:posted` → `production.consumeMaterials(...)`, optionally `produceFinishedGoods(...)` when `producedOnPosted: true`
+- `production_order:posted` → `production.consumeMaterials(...)`; when `producedOnPosted: true` the handler instead calls `production.runProduction(...)` so consume + produce share one transaction. Process crashes or adapter errors between the two legs can never leave materials deducted with no finished-goods receipt.
 - `production_order:completed` → `production.produceFinishedGoods(...)` (opt-in)
 
 The companion handlers for `contract:created` (reserve) and `fulfillment:shipped` (fulfil) live in `@happyvertical/smrt-inventory` — wire both packages' installers from `smrt.ts` to get the full lifecycle.

@@ -249,36 +249,48 @@ async function handleProductionPosted(
     );
   }
 
-  const note = metadata.source
+  const order = {
+    id: payload.productionOrderId,
+    productId: payload.productId,
+    bomId: payload.bomId,
+  };
+  const consumeNote = metadata.source
     ? `auto-consume via ${metadata.source}`
     : undefined;
 
-  await productionService.consumeMaterials(
-    {
-      id: payload.productionOrderId,
-      productId: payload.productId,
-      bomId: payload.bomId,
-    },
-    {
-      locationId: payload.locationId,
-      qty: payload.qty,
-      note,
-    },
-  );
-
+  // When producedOnPosted is on, route through runProduction so consume
+  // and produce share a single transaction. The two calls below would
+  // otherwise open separate transactions, and a process crash or adapter
+  // error between them would leave materials deducted with no
+  // finished-goods receipt to balance the audit ledger.
   if (shouldProduce && payload.finishedSkuId) {
-    await productionService.produceFinishedGoods(
-      { id: payload.productionOrderId, productId: payload.productId },
-      {
+    const produceNote = metadata.source
+      ? `auto-produce via ${metadata.source}`
+      : undefined;
+    await productionService.runProduction(order, {
+      consume: {
+        locationId: payload.locationId,
+        qty: payload.qty,
+        note: consumeNote,
+      },
+      produce: {
         locationId: payload.locationId,
         qty: payload.qty,
         finishedSkuId: payload.finishedSkuId,
-        note: metadata.source
-          ? `auto-produce via ${metadata.source}`
-          : undefined,
+        note: produceNote,
       },
-    );
+    });
+    return;
   }
+
+  // Consume-only path — the produce leg lives on the separate
+  // `production_order:completed` event (or is not modeled at all in
+  // this workflow). consumeMaterials is itself atomic across BOM lines.
+  await productionService.consumeMaterials(order, {
+    locationId: payload.locationId,
+    qty: payload.qty,
+    note: consumeNote,
+  });
 }
 
 async function handleProductionCompleted(

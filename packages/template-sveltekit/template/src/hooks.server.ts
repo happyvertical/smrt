@@ -93,6 +93,22 @@ const sessionHandle: Handle = createSessionHandler({
  * `locals.tenantId` and `locals.tenantContext` keeps the three vantage
  * points (locals.tenantId, locals.tenantContext, ALS-scoped queries) in
  * sync regardless of auth state.
+ *
+ * **ALS-scope dependency:** this handle reads `getCurrentTenant()` from
+ * AsyncLocalStorage, which only works because both upstream handles
+ * call `resolve(event)` *inside* their own ALS scope:
+ *   - `createSvelteKitHandle` (smrt-tenancy) wraps in `withTenant(ctx, () => resolve(event))`.
+ *   - `createSessionHandler` (smrt-users) wraps in `withSessionPermissionContext`,
+ *     which internally calls `withTenant(sessionCtx, fn)` when the session
+ *     has a tenantId.
+ * If a future refactor moved either handle's `resolve()` call outside
+ * its ALS scope, `getCurrentTenant()` here would return `undefined` and
+ * the reconciliation would silently no-op. We deliberately do NOT fall
+ * back to `event.locals.tenantId` here — that would re-introduce the
+ * stale-tenantContext bug from the subdomain handler. If the upstream
+ * scoping ever changes, this handle should be updated to read from a
+ * dedicated cross-handler carrier (e.g. `event.locals._tenantSource`)
+ * rather than guessing.
  */
 const reconcileTenantLocals: Handle = async ({ event, resolve }) => {
   const activeContext = getCurrentTenant();

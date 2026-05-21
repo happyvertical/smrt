@@ -227,8 +227,17 @@ export class StockService {
         StockMovementCollection.create({ db: txDb as DatabaseConfig }),
         InventoryLocationCollection.create({ db: txDb as DatabaseConfig }),
       ]);
+      // Expose the tx-scoped db (not `this.db`) as the tx instance's
+      // public `db` field. Callers compose this through `tx.db` when
+      // spinning up adjacent services that should also write in the same
+      // transaction — e.g. `BomService.create({ db: tx.db })` or
+      // `MyCollection.create({ db: tx.db })`. If we leaked the outer db
+      // here, those companion writes would commit independently of the
+      // stock mutations, defeating the documented "everything-in-one-tx"
+      // guarantee. Internal mutation methods don't read `tx.db`; they
+      // use the tx-scoped collections passed alongside.
       const tx = new StockService(
-        this.db,
+        txDb as DatabaseConfig,
         levels,
         movements,
         locations,

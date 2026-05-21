@@ -264,6 +264,41 @@ describe('Product and Category tenancy', () => {
     expect(global.tenantId).toBeNull();
   });
 
+  it('getRootCategories matches both empty-string and NULL parentId', async () => {
+    // SMRT serializes undefined string fields as '' on insert, so a freshly
+    // created Category lands with parent_id = ''. But migrations / imported
+    // data / direct DB writes can produce parent_id IS NULL. SQL's IN
+    // operator does not match NULL — getRootCategories has to do two
+    // queries and merge for the union to be complete.
+    const categories = await CategoryCollection.create({ db });
+
+    // Created via framework — parent_id = ''.
+    const empty = await categories.create({ name: 'Empty-parent' });
+    await empty.save();
+
+    // Simulate a direct DB write that left parent_id NULL. Inlining
+    // the id literal is safe — it's a framework-generated UUID and
+    // never contains quote characters.
+    const nullRow = await categories.create({ name: 'Null-parent' });
+    await nullRow.save();
+    await db.query(
+      `UPDATE categories SET parent_id = NULL WHERE id = '${nullRow.id}'`,
+    );
+
+    // And a non-root row with a real parent.
+    const childRow = await categories.create({
+      name: 'Child',
+      parentId: empty.id,
+    });
+    await childRow.save();
+
+    const roots = await categories.getRootCategories();
+    expect(roots.map((r) => r.name).sort()).toEqual([
+      'Empty-parent',
+      'Null-parent',
+    ]);
+  });
+
   it('isolates Category between tenants the same way', async () => {
     const categories = await CategoryCollection.create({ db });
 

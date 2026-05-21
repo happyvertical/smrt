@@ -175,6 +175,67 @@ describe('installManufacturingDispatchHandlers', () => {
     expect(reasons).toEqual(['production_consume', 'production_produce']);
   });
 
+  it('rolls back consume when the producedOnPosted path cannot finish', async () => {
+    // Bring fabric stock down to 1 unit — well below the 50 * 2 = 100
+    // the BOM needs. Without the joint-atomic path the dispatch handler
+    // would commit consume in its own tx, then the produce call would
+    // either fail or succeed independently. With runProduction wiring,
+    // an InsufficientStockError on consume rolls back the produce leg
+    // too, so the audit ledger never carries a half-run.
+    await stockService.adjust(fabricSkuId, factoryId, -499); // 500 - 499 = 1
+    await installManufacturingDispatchHandlers({
+      dispatchBus: bus,
+      stockService,
+      producedOnPosted: true,
+    });
+
+    // Dispatch swallows handler rejections to console.error; intercept
+    // so we can synchronize on "the handler finished and rolled back".
+    const consoleErrors: unknown[] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      consoleErrors.push(args);
+    };
+
+    try {
+      await bus.emit('production_order:posted', {
+        productionOrderId: 'PO-ROLLBACK',
+        productId: parentProductId,
+        locationId: factoryId,
+        qty: 50,
+        finishedSkuId,
+      });
+      await waitFor(async () => consoleErrors.length > 0, 1_000);
+    } finally {
+      console.error = originalConsoleError;
+    }
+
+    expect(consoleErrors.length).toBeGreaterThan(0);
+    // No movements landed at all — consume rolled back and produce
+    // never ran.
+    const byOrder = await movements.findBySource(
+      'ProductionOrder',
+      'PO-ROLLBACK',
+    );
+    expect(byOrder).toHaveLength(0);
+    // Materials untouched.
+    const fabricLevel = await levels.getLevel(
+      fabricSkuId,
+      factoryId,
+      'available',
+    );
+    expect(Number(fabricLevel?.qty)).toBe(1);
+    // Finished goods untouched.
+    const finishedLevel = await levels.getLevel(
+      finishedSkuId,
+      factoryId,
+      'available',
+    );
+    expect(finishedLevel === null || Number(finishedLevel.qty) === 0).toBe(
+      true,
+    );
+  });
+
   it('produces finished goods on a separate production_order:completed when configured', async () => {
     await installManufacturingDispatchHandlers({
       dispatchBus: bus,

@@ -177,7 +177,13 @@ async function handleContractCreated(
   payload: ContractCreatedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (!payload || !Array.isArray(payload.lines)) return;
+  if (!payload || !Array.isArray(payload.lines)) {
+    // Silent return would hide upstream contract drift — producers
+    // emitting the wrong shape never get feedback. Log enough to find
+    // the bad emitter from the source attribution alone.
+    warnMalformedPayload('contract:created', payload, metadata);
+    return;
+  }
   const baseOptions: StockMutationOptions = {
     sourceType: 'Contract',
     sourceId: payload.contractId,
@@ -200,7 +206,10 @@ async function handleFulfillmentShipped(
   payload: FulfillmentShippedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (!payload || !Array.isArray(payload.lines)) return;
+  if (!payload || !Array.isArray(payload.lines)) {
+    warnMalformedPayload('fulfillment:shipped', payload, metadata);
+    return;
+  }
   const baseOptions: StockMutationOptions = {
     sourceType: 'Fulfillment',
     sourceId: payload.fulfillmentId,
@@ -216,6 +225,28 @@ async function handleFulfillmentShipped(
       await tx.fulfill(line.skuId, line.locationId, line.qty, baseOptions);
     }
   });
+}
+
+/**
+ * Surface dispatch payloads that don't match the documented shape. The
+ * subscribers used to silently return on a missing `lines` array, which
+ * hid producer drift — emitters using stale shapes never got feedback
+ * and the resulting "stock didn't move" bugs were a long way from the
+ * dispatch layer. The warning carries the source attribution so the
+ * culprit shows up in logs.
+ */
+function warnMalformedPayload(
+  signal: string,
+  payload: unknown,
+  metadata: DispatchMetadata,
+): void {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[@happyvertical/smrt-inventory] dispatch handler ignored a ${signal} ` +
+      'event with a malformed payload (missing/non-array `lines`). ' +
+      `Source: ${metadata.source ?? '<unknown>'}; payload keys: ` +
+      `${payload && typeof payload === 'object' ? Object.keys(payload).join(',') : typeof payload}`,
+  );
 }
 
 /**
