@@ -40,9 +40,17 @@ export interface StockLevelOptions extends SmrtObjectOptions {
 @smrt({
   tableName: 'inventory_stock_levels',
   conflictColumns: ['sku_id', 'location_id', 'state', 'tenant_id'],
+  // StockLevel is materialized state, written only by StockService.
+  // Mirror the read-only api/mcp posture on the CLI — `cli: true` would
+  // generate create/update/delete subcommands that let a CLI user
+  // mutate `qty` (or delete a row) without writing a paired
+  // StockMovement, silently desyncing the audit ledger from the
+  // materialized balance. The Gotchas section in CLAUDE.md spells out
+  // the "never call StockLevel.save() directly" rule; the CLI must
+  // follow the same constraint.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { include: ['list', 'get'] },
 })
 export class StockLevel extends SmrtObject {
   /** Tenant scope. `null` means the level row is global. */

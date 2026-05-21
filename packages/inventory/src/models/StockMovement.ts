@@ -57,10 +57,14 @@ export interface StockMovementOptions extends SmrtObjectOptions {
   // overwrite history.
   conflictColumns: ['id'],
   // Movements are an audit log — never mutate or delete via generated
-  // CRUD. Reads are fine for reporting and admin tooling.
+  // CRUD. Reads are fine for reporting and admin tooling. CLI follows
+  // the same posture as api/mcp; `cli: true` would generate
+  // create/update/delete subcommands that could rewrite or remove
+  // audit rows from the shell, defeating the append-only invariant
+  // documented in CLAUDE.md.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { include: ['list', 'get'] },
 })
 export class StockMovement extends SmrtObject {
   /** Tenant scope. `null` means the movement is global. */
