@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  type Meta,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { ContractStatus, ContractType } from '../types/index.js';
 import { Customer } from './Customer.js';
@@ -285,11 +290,42 @@ export class WholesaleOrder extends Contract {
  * consumes raw materials per a Bill of Materials (see
  * `@happyvertical/smrt-manufacturing`) and produces finished SKU stock when
  * posted (see `@happyvertical/smrt-inventory`).
+ *
+ * Carries two STI-meta fields that `ProductionService.consumeMaterials` /
+ * `runProduction` read from the loaded row to resolve which BOM to walk:
+ *
+ *   - `productId` — plain string ref to the upstream `Product` (or any
+ *     STI subtype, e.g. apparel `Style`). Used to look up the *active*
+ *     BOM via `BomService.findActiveForProduct` when no explicit
+ *     revision was pinned at the time the order was placed.
+ *   - `bomId` — optional pin to a specific BOM revision. When set, the
+ *     manufacturing service consumes against that exact revision even
+ *     if a newer BOM has become active in the meantime (keeps a
+ *     posted run from silently switching recipes mid-flight).
+ *
+ * Both fields are `Meta<string>` so the scanner routes them into the
+ * shared `_meta_data` JSON column on the Contract STI table instead of
+ * widening the base schema with manufacturing-specific columns.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()
 export class ProductionOrder extends Contract {
   override contractType = ContractType.PRODUCTION_ORDER;
+
+  /**
+   * Plain string reference to the upstream product the order is asked
+   * to make. Cross-package id; never `@foreignKey()`. Required by
+   * `ProductionService.consumeMaterials` unless `bomId` is supplied.
+   */
+  productId: Meta<string> = '';
+
+  /**
+   * Optional explicit BOM revision the order locked to at posting
+   * time. When set, manufacturing uses this exact row even if the
+   * product's active BOM has since changed. When empty, falls back
+   * to the active BOM for `productId`.
+   */
+  bomId: Meta<string> = '';
 }
 
 /**

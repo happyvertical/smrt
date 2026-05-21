@@ -9,7 +9,7 @@ Sits on top of `@happyvertical/smrt-inventory` (stock) and works alongside the `
 | Model | Purpose |
 |---|---|
 | `BillOfMaterials` | Recipe for a finished product. `productId` (plain string) references the upstream `Product` or any STI subtype. Multiple revisions per product via `version` + `status` (`draft` / `active` / `superseded`). `conflictColumns: ['product_id', 'version', 'tenant_id']`. |
-| `BomLine` | One component on a BOM. `bomId` (FK), `componentSkuId` (plain string ref to a `smrt-inventory` `Sku`), `qtyPerUnit`, `uom` (open-ended — `yards`, `each`, `grams`, `kg`, ...), `wastePercent`, `notes`. `conflictColumns: ['bom_id', 'component_sku_id', 'tenant_id']`. |
+| `BomLine` | One component on a BOM. `bomId` (FK), `componentSkuId` (plain string ref — the `Sku` model lives in `@happyvertical/smrt-products`; inventory tracks stock motion against the id), `qtyPerUnit`, `uom` (open-ended — `yards`, `each`, `grams`, `kg`, ...), `wastePercent`, `notes`. `conflictColumns: ['bom_id', 'component_sku_id', 'tenant_id']`. |
 
 Both models are `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId` so they can be used either tenant-scoped or globally.
 
@@ -152,6 +152,6 @@ These join cleanly with the standard inventory reason codes (`receipt`, `reserva
 | Package | Purpose |
 |---|---|
 | `@happyvertical/smrt-core` | SmrtObject / SmrtCollection / DispatchBus |
-| `@happyvertical/smrt-inventory` | StockService, Sku lookups, levels, movements |
+| `@happyvertical/smrt-inventory` | StockService, stock levels, movements (the `Sku` model itself lives in `@happyvertical/smrt-products`; inventory tracks stock motion against the id) |
 | `@happyvertical/smrt-tenancy` | Optional tenant scoping |
 | `@happyvertical/sql` | Database adapter |

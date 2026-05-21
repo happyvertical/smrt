@@ -116,6 +116,29 @@ describe('Contract STI extensions', () => {
       expect(loaded?.reference).toBe('PO-CUT-2026-001');
     });
 
+    it('persists ProductionOrder.productId and bomId so manufacturing can resolve them', async () => {
+      // Regression for the round-12 finding: ProductionService.consumeMaterials
+      // reads `productId` and `bomId` from a loaded ProductionOrder. Both
+      // fields are declared as `Meta<string>` on the subtype so they ride
+      // the shared `_meta_data` JSON column on the Contract STI table.
+      // Without these fields, a reloaded production order would arrive at
+      // the manufacturing service with no way to resolve which BOM to walk.
+      const po = new ProductionOrder({
+        vendorId: 'factory-1',
+        totalAmount: 5000,
+        productId: 'style-ST-1001',
+        bomId: 'bom-revision-7',
+        db: { type: 'sqlite', url: dbPath },
+      });
+      await po.initialize();
+      await po.save();
+
+      const loaded = (await contracts.get({ id: po.id! })) as ProductionOrder;
+      expect(loaded).toBeInstanceOf(ProductionOrder);
+      expect(loaded.productId).toBe('style-ST-1001');
+      expect(loaded.bomId).toBe('bom-revision-7');
+    });
+
     it('persists a Cart and round-trips it', async () => {
       const cart = new Cart({
         customerId: 'cust-guest-123',

@@ -416,6 +416,55 @@ describe('navTreeFromManifest', () => {
     expect(result[0].children?.[0].href).toBe('/api/v1/contracts');
   });
 
+  it('keeps the base nav link when only an STI subtype is in permittedResources', () => {
+    // Regression for the round-12 finding: when a role's
+    // `permittedResources` only lists an STI subtype (e.g. Cart) and
+    // not its base (Contract), the dedup step would suppress Cart
+    // (subtype sharing parent collection) and the permission filter
+    // would drop Contract — leaving the role with no link to the
+    // /api/v1/contracts polymorphic endpoint. The expansion remaps
+    // each permitted subtype to its parent's qualifier when they
+    // share the same collection.
+    const manifest: SmrtManifestLike = {
+      objects: {
+        '@acme/shop:Contract': {
+          qualifiedName: '@acme/shop:Contract',
+          className: 'Contract',
+          packageName: '@acme/shop',
+          collection: 'contracts',
+          extends: 'SmrtObject',
+          decoratorConfig: {},
+        },
+        '@acme/shop:Cart': {
+          qualifiedName: '@acme/shop:Cart',
+          className: 'Cart',
+          packageName: '@acme/shop',
+          collection: 'contracts',
+          extends: 'Contract',
+          decoratorConfig: {},
+        },
+        '@acme/shop:Order': {
+          qualifiedName: '@acme/shop:Order',
+          className: 'Order',
+          packageName: '@acme/shop',
+          collection: 'contracts',
+          extends: 'Contract',
+          decoratorConfig: {},
+        },
+      },
+    };
+    const result = navTreeFromManifest(manifest, {
+      permittedResources: ['@acme/shop:Cart'],
+    });
+    // Role gets one nav link to the shared /api/v1/contracts route,
+    // via the base entry (Contract) — Cart was suppressed by the
+    // dedup but the permission expansion re-introduced Contract.
+    expect(result).toHaveLength(1);
+    expect(result[0].children).toHaveLength(1);
+    expect(result[0].children?.[0].label).toBe('Contracts');
+    expect(result[0].children?.[0].href).toBe('/api/v1/contracts');
+  });
+
   it('suppresses multi-level STI grandchildren even when the intermediate parent is absent', () => {
     // Regression for the round-7 finding: a partial manifest with
     // Product (root) and FabricMaterial (grandchild) but no Material

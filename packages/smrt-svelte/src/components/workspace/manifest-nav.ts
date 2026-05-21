@@ -371,6 +371,53 @@ function entryQualifier(entry: SmrtManifestEntryLike): string {
 }
 
 /**
+ * Expand a permitted-qualifiers set so it includes the parent
+ * qualifier of every STI subtype that shares its parent's `collection`
+ * value. Without this expansion, a role permitted to access an STI
+ * subtype (e.g. `Cart`) would lose its nav link, because the dedup
+ * step suppresses subtypes that share the parent's REST route and
+ * the permission filter would then drop the parent. The expansion
+ * threads through the inheritance chain (handles multi-level STI)
+ * with a visited-set cycle guard.
+ *
+ * Pure: returns a new Set; never mutates the caller's set. The
+ * className index is the same memoised one used by
+ * `looksLikeStiSubtypeOfParentRoute`.
+ */
+function expandPermittedThroughStiParents(
+  permitted: Set<string>,
+  manifest: SmrtManifestLike,
+): Set<string> {
+  const byClassName = entryIndexByClassName(manifest);
+  // Also need to resolve qualifier → entry, because permitted set
+  // entries are qualified names (`@pkg/x:Class`), not raw classNames.
+  const byQualifier = new Map<string, SmrtManifestEntryLike>();
+  for (const entry of Object.values(manifest.objects)) {
+    byQualifier.set(entryQualifier(entry), entry);
+  }
+  const expanded = new Set<string>(permitted);
+  for (const qualifier of permitted) {
+    const entry = byQualifier.get(qualifier);
+    if (!entry) continue;
+    const visited = new Set<string>();
+    let cursor: string | undefined = entry.extends;
+    let lastSeenCollection = entry.collection;
+    while (cursor && cursor !== 'SmrtObject' && cursor !== 'SmrtClass') {
+      if (visited.has(cursor)) break;
+      visited.add(cursor);
+      const ancestor = byClassName.get(cursor);
+      if (!ancestor) break;
+      if (ancestor.collection && ancestor.collection === lastSeenCollection) {
+        expanded.add(entryQualifier(ancestor));
+      }
+      lastSeenCollection = ancestor.collection ?? lastSeenCollection;
+      cursor = ancestor.extends;
+    }
+  }
+  return expanded;
+}
+
+/**
  * Walk a SMRT manifest and emit the `NavSection[]` shape that
  * `<NavTree items={...}>` and `RoleConfig.sections` consume.
  *
@@ -433,8 +480,19 @@ export function navTreeFromManifest(
   options: NavTreeFromManifestOptions = {},
 ): NavSection[] {
   const { permittedResources, sectionHints, basePath = '/api/v1' } = options;
+  // Build the *effective* permitted set. When the caller permits a
+  // role to access an STI subtype (e.g. `@acme/shop:Cart`) but not
+  // its base (`Contract`), the role still needs the base's nav link
+  // because every STI subtype routes through the parent's shared
+  // collection URL. Walk each permitted qualifier up the inheritance
+  // chain — if any ancestor in the same manifest carries the same
+  // `collection` value, that ancestor is the actual link target, so
+  // add its qualifier to the permitted set. Without this remap the
+  // dedup step below would drop the subtype, the original permission
+  // check would drop the base, and the role would lose every link to
+  // the shared route.
   const permitted = permittedResources
-    ? new Set(permittedResources)
+    ? expandPermittedThroughStiParents(new Set(permittedResources), manifest)
     : undefined;
 
   // Group items by their resolved section title. Map preserves insertion

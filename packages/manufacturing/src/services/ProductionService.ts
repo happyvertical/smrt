@@ -249,9 +249,11 @@ export class ProductionService {
    * Throws {@link NoActiveBomForProductError} if no BOM id is supplied
    * on the order *and* no active BOM exists for the order's `productId`.
    * Throws {@link BomNotFoundError} if `order.bomId` is supplied but
-   * doesn't resolve. Throws plain `Error` on missing `locationId` or
-   * non-positive `qty`. Re-throws `InsufficientStockError` from
-   * `StockService.adjust` if a line would drive `available` below zero.
+   * doesn't resolve. Throws plain `Error` on missing `locationId`,
+   * non-positive `qty`, or when both `order.bomId` and `order.productId`
+   * are absent (a programmer error — neither input identifies a BOM).
+   * Re-throws `InsufficientStockError` from `StockService.adjust` if a
+   * line would drive `available` below zero.
    */
   async consumeMaterials(
     order: ProductionOrderRef,
@@ -430,7 +432,12 @@ export class ProductionService {
    * supplied but doesn't resolve to a row.
    *
    * Throws {@link NoActiveBomForProductError} when no `bomId` was supplied
-   * and the product has no active BOM (or `productId` is empty).
+   * and the product has no active BOM.
+   *
+   * Throws plain `Error` when neither `order.bomId` nor `order.productId`
+   * is supplied — there's nothing to resolve against, so we surface that
+   * as a programmer error with a distinct message rather than overload
+   * `NoActiveBomForProductError` with an empty product id.
    */
   private async resolveBom(
     order: ProductionOrderRef,
