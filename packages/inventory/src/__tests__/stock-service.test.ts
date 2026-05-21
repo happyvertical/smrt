@@ -8,6 +8,7 @@
  * inventory manifest is generated before the @smrt() decorators fire.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -19,7 +20,6 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   InventoryLocationCollection,
-  SkuCollection,
   StockLevelCollection,
   StockMovementCollection,
 } from '../collections/index.js';
@@ -33,7 +33,6 @@ describe('StockService', () => {
   let dbPath: string;
   let db: { type: 'sqlite'; url: string };
   let service: StockService;
-  let skus: SkuCollection;
   let locations: InventoryLocationCollection;
   let levels: StockLevelCollection;
   let movements: StockMovementCollection;
@@ -48,24 +47,16 @@ describe('StockService', () => {
     );
     db = { type: 'sqlite', url: dbPath };
 
-    skus = await SkuCollection.create({ db });
     locations = await InventoryLocationCollection.create({ db });
     levels = await StockLevelCollection.create({ db });
     movements = await StockMovementCollection.create({ db });
 
-    // Use the same db handle the collections allocated so the service
-    // shares the connection / pool rather than opening a second one.
-    service = await createStockService({ db: (skus as any).db });
+    service = await createStockService({ db });
 
-    const sku = await skus.create({
-      productId: 'prod-1',
-      code: 'WIDGET-001',
-      barcode: '0123456789012',
-      name: 'Standard widget',
-      attributes: { finish: 'matte' },
-    });
-    await sku.save();
-    skuA = sku.id!;
+    // skuId is a plain string ref to a row in `@happyvertical/smrt-products`.
+    // Inventory's stock-motion logic never reads from the Sku table, so
+    // tests can use opaque ids without going through SkuCollection.
+    skuA = randomUUID();
 
     const wh = await locations.create({
       code: 'WH-EAST',
@@ -465,48 +456,34 @@ describe('StockService', () => {
 
       // Tenant A: receive and reserve.
       await withTenant({ tenantId: tenantA }, async () => {
-        const tenantSkus = await SkuCollection.create({ db });
         const tenantLocs = await InventoryLocationCollection.create({ db });
-        const tenantService = await createStockService({
-          db: (tenantSkus as any).db,
-        });
+        const tenantService = await createStockService({ db });
 
-        const sku = await tenantSkus.create({
-          productId: 'prod-A',
-          code: 'A-001',
-        });
-        await sku.save();
+        const skuId = randomUUID();
         const loc = await tenantLocs.create({
           code: 'WH-A',
           kind: 'warehouse',
         });
         await loc.save();
 
-        await tenantService.receive(sku.id!, loc.id!, 10);
-        await tenantService.reserve(sku.id!, loc.id!, 4);
+        await tenantService.receive(skuId, loc.id!, 10);
+        await tenantService.reserve(skuId, loc.id!, 4);
       });
 
       // Tenant B: independent inventory.
       await withTenant({ tenantId: tenantB }, async () => {
-        const tenantSkus = await SkuCollection.create({ db });
         const tenantLocs = await InventoryLocationCollection.create({ db });
         const tenantLevels = await StockLevelCollection.create({ db });
-        const tenantService = await createStockService({
-          db: (tenantSkus as any).db,
-        });
+        const tenantService = await createStockService({ db });
 
-        const sku = await tenantSkus.create({
-          productId: 'prod-B',
-          code: 'B-001',
-        });
-        await sku.save();
+        const skuId = randomUUID();
         const loc = await tenantLocs.create({
           code: 'WH-B',
           kind: 'warehouse',
         });
         await loc.save();
 
-        await tenantService.receive(sku.id!, loc.id!, 99);
+        await tenantService.receive(skuId, loc.id!, 99);
 
         const all = await tenantLevels.list({});
         // Tenant B sees only its own rows.

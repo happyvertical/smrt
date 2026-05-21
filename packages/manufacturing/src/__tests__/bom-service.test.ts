@@ -8,13 +8,13 @@
  * file keeps the tenancy fixture minimal so the run stays fast.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createStockService,
   InventoryLocationCollection,
-  SkuCollection,
   type StockService,
 } from '@happyvertical/smrt-inventory';
 import {
@@ -35,7 +35,6 @@ describe('BomService', () => {
   let db: { type: 'sqlite'; url: string };
   let boms: BillOfMaterialsCollection;
   let lines: BomLineCollection;
-  let skus: SkuCollection;
   let locations: InventoryLocationCollection;
   let stockService: StockService;
   let warehouseId: string;
@@ -53,32 +52,17 @@ describe('BomService', () => {
 
     boms = await BillOfMaterialsCollection.create({ db });
     lines = await BomLineCollection.create({ db });
-    skus = await SkuCollection.create({ db });
     locations = await InventoryLocationCollection.create({ db });
-    stockService = await createStockService({ db: (skus as any).db });
+    stockService = await createStockService({ db });
 
     parentProductId = 'product-finished-good';
 
-    const fabric = await skus.create({
-      productId: 'material-fabric',
-      code: 'MAT-FAB-001',
-    });
-    await fabric.save();
-    fabricSkuId = fabric.id!;
-
-    const button = await skus.create({
-      productId: 'material-button',
-      code: 'MAT-BTN-001',
-    });
-    await button.save();
-    buttonSkuId = button.id!;
-
-    const zipper = await skus.create({
-      productId: 'material-zipper',
-      code: 'MAT-ZIP-001',
-    });
-    await zipper.save();
-    zipperSkuId = zipper.id!;
+    // componentSkuId is a plain string ref. BomService.canProduce queries
+    // StockLevel by skuId but never reads the Sku catalog table, so tests
+    // can use opaque UUIDs.
+    fabricSkuId = randomUUID();
+    buttonSkuId = randomUUID();
+    zipperSkuId = randomUUID();
 
     const warehouse = await locations.create({
       code: 'WH-FACTORY',

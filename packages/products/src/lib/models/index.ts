@@ -23,5 +23,7 @@ export type { ProductAssetOptions } from './ProductAsset';
 export { ProductAsset } from './ProductAsset';
 export type { ProductVariantOptions } from './ProductVariant';
 export { ProductVariant } from './ProductVariant';
+export type { SkuOptions } from './Sku';
+export { Sku } from './Sku';
 export type { MaterialKind } from './types';
 export { ProductType } from './types';

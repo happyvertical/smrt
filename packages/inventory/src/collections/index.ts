@@ -12,6 +12,5 @@
 import '../__smrt-register__.js';
 
 export { InventoryLocationCollection } from './InventoryLocationCollection.js';
-export { SkuCollection } from './SkuCollection.js';
 export { StockLevelCollection } from './StockLevelCollection.js';
 export { StockMovementCollection } from './StockMovementCollection.js';

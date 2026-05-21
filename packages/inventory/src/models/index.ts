@@ -15,6 +15,5 @@ export {
   InventoryLocation,
   type InventoryLocationOptions,
 } from './InventoryLocation.js';
-export { Sku, type SkuOptions } from './Sku.js';
 export { StockLevel, type StockLevelOptions } from './StockLevel.js';
 export { StockMovement, type StockMovementOptions } from './StockMovement.js';

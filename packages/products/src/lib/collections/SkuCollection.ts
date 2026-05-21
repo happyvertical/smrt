@@ -5,14 +5,14 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
-import { Sku } from '../models/Sku.js';
+import { Sku } from '../models/Sku';
 
 export class SkuCollection extends SmrtCollection<Sku> {
   static readonly _itemClass = Sku;
 
   /**
-   * Look up a SKU by its tenant-scoped `code` (UPC, internal part number,
-   * etc.). Returns `null` when no row matches.
+   * Look up a SKU by its tenant-scoped `code` (UPC, internal part
+   * number, etc.). Returns `null` when no row matches.
    */
   async findByCode(code: string): Promise<Sku | null> {
     const matches = await this.list({ where: { code }, limit: 1 });
@@ -30,10 +30,10 @@ export class SkuCollection extends SmrtCollection<Sku> {
   }
 
   /**
-   * Find every SKU pointing at the given upstream `Product` id (or any
-   * Product STI subtype id — `Material` upstream, vertical subtypes
-   * defined in templates). Useful for listing the SKUs that back a
-   * single product card.
+   * Find every SKU pointing at the given `Product` id (or any Product
+   * STI subtype id — `Material` upstream, vertical subtypes defined in
+   * templates). Useful for listing the SKUs that back a single product
+   * card.
    */
   async findByProduct(productId: string): Promise<Sku[]> {
     return this.list({ where: { productId }, orderBy: 'code ASC' });
@@ -48,7 +48,7 @@ export class SkuCollection extends SmrtCollection<Sku> {
     return this.list({ where: { parentSkuId }, orderBy: 'code ASC' });
   }
 
-  /** Find every active SKU, optionally narrowed by upstream product id. */
+  /** Find every active SKU, optionally narrowed by parent product id. */
   async findActive(productId?: string): Promise<Sku[]> {
     const where: Record<string, unknown> = { active: true };
     if (productId) where.productId = productId;

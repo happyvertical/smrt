@@ -8,6 +8,7 @@
  * dispose() teardown.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,7 +16,6 @@ import { createDispatchBus, type DispatchBus } from '@happyvertical/smrt-core';
 import {
   createStockService,
   InventoryLocationCollection,
-  SkuCollection,
   StockLevelCollection,
   StockMovementCollection,
   type StockService,
@@ -33,7 +33,6 @@ describe('installManufacturingDispatchHandlers', () => {
   let bus: DispatchBus;
   let boms: BillOfMaterialsCollection;
   let lines: BomLineCollection;
-  let skus: SkuCollection;
   let locations: InventoryLocationCollection;
   let levels: StockLevelCollection;
   let movements: StockMovementCollection;
@@ -53,27 +52,16 @@ describe('installManufacturingDispatchHandlers', () => {
 
     boms = await BillOfMaterialsCollection.create({ db });
     lines = await BomLineCollection.create({ db });
-    skus = await SkuCollection.create({ db });
     locations = await InventoryLocationCollection.create({ db });
     levels = await StockLevelCollection.create({ db });
     movements = await StockMovementCollection.create({ db });
-    stockService = await createStockService({ db: (skus as any).db });
+    stockService = await createStockService({ db });
 
     parentProductId = 'product-x';
 
-    const fabric = await skus.create({
-      productId: 'mat-fab',
-      code: 'D-FAB',
-    });
-    await fabric.save();
-    fabricSkuId = fabric.id!;
-
-    const finished = await skus.create({
-      productId: parentProductId,
-      code: 'D-FIN',
-    });
-    await finished.save();
-    finishedSkuId = finished.id!;
+    // Manufacturing operates on skuIds as opaque strings.
+    fabricSkuId = randomUUID();
+    finishedSkuId = randomUUID();
 
     const fac = await locations.create({
       code: 'D-FAC',

@@ -7,3 +7,4 @@ export { MaterialCollection } from './MaterialCollection';
 export { ProductAssetCollection } from './ProductAssetCollection';
 export { ProductCollection } from './ProductCollection';
 export { ProductVariantCollection } from './ProductVariantCollection';
+export { SkuCollection } from './SkuCollection';

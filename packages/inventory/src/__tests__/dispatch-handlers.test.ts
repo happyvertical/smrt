@@ -7,15 +7,13 @@
  * subscribers so a second emit after dispose() is a no-op.
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createDispatchBus, type DispatchBus } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  InventoryLocationCollection,
-  SkuCollection,
-} from '../collections/index.js';
+import { InventoryLocationCollection } from '../collections/index.js';
 import { StockLevelCollection } from '../collections/StockLevelCollection.js';
 import { StockMovementCollection } from '../collections/StockMovementCollection.js';
 import { installInventoryDispatchHandlers } from '../services/dispatch-handlers.js';
@@ -25,7 +23,6 @@ describe('installInventoryDispatchHandlers', () => {
   let dbPath: string;
   let db: { type: 'sqlite'; url: string };
   let bus: DispatchBus;
-  let skus: SkuCollection;
   let locations: InventoryLocationCollection;
   let levels: StockLevelCollection;
   let movements: StockMovementCollection;
@@ -40,17 +37,13 @@ describe('installInventoryDispatchHandlers', () => {
     db = { type: 'sqlite', url: dbPath };
     bus = await createDispatchBus({ db });
 
-    skus = await SkuCollection.create({ db });
     locations = await InventoryLocationCollection.create({ db });
     levels = await StockLevelCollection.create({ db });
     movements = await StockMovementCollection.create({ db });
 
-    const sku = await skus.create({
-      productId: 'prod-1',
-      code: 'AUTO-001',
-    });
-    await sku.save();
-    skuId = sku.id!;
+    // skuId is a plain string ref — inventory's stock-motion logic
+    // never reads from the Sku table.
+    skuId = randomUUID();
 
     const wh = await locations.create({
       code: 'WH-AUTO',
@@ -71,7 +64,7 @@ describe('installInventoryDispatchHandlers', () => {
   });
 
   it('reserves stock on contract:created and fulfils on fulfillment:shipped', async () => {
-    const service = await createStockService({ db: (skus as any).db });
+    const service = await createStockService({ db });
     await service.receive(skuId, warehouseId, 10);
 
     const handlers = await installInventoryDispatchHandlers({
@@ -150,7 +143,7 @@ describe('installInventoryDispatchHandlers', () => {
   });
 
   it('does not subscribe when callers opt the handlers out', async () => {
-    const service = await createStockService({ db: (skus as any).db });
+    const service = await createStockService({ db });
     await installInventoryDispatchHandlers({
       dispatchBus: bus,
       stockService: service,

@@ -1,20 +1,21 @@
 /**
  * Sku — smallest sellable and countable unit.
  *
- * A SKU is what your inventory actually tracks. It references a higher-level
- * concept in `@happyvertical/smrt-products` (a `Product` or any of its STI
- * subtypes) via the plain string `productId` field — kept as a string, not
- * a `@foreignKey()`, so cross-package refs stay loose and the two packages
- * can evolve independently. The same pattern serves apparel (one SKU per
- * size/color), furniture (one SKU per finish), automotive parts, grocery
- * (one SKU per pack size), or any other vertical that needs to count
- * discrete units.
+ * A SKU is the concrete catalog row that downstream inventory counts.
+ * It references a higher-level concept in this same package (a
+ * {@link Product} or any of its STI subtypes) via the plain string
+ * `productId` field. The same pattern serves apparel (one SKU per
+ * size/color), furniture (one SKU per finish), automotive parts,
+ * grocery (one SKU per pack size), or any other vertical that needs
+ * to count discrete units.
  *
  * Axis values such as `{ size: 'M', color: 'navy' }`, `{ finish: 'walnut' }`,
- * or `{ packSize: '12oz' }` are stored as opaque JSON in `attributes`; the
- * declarative axis catalog lives in `ProductVariant` from
- * `@happyvertical/smrt-products` (re-exported from this package's barrel
- * for convenience).
+ * or `{ packSize: '12oz' }` are stored as opaque JSON in `attributes`;
+ * the declarative axis catalog lives in {@link ProductVariant} in this
+ * same package.
+ *
+ * Stock balance and movement history for a SKU live in
+ * `@happyvertical/smrt-inventory` as `StockLevel` and `StockMovement`.
  *
  * @packageDocumentation
  */
@@ -44,7 +45,7 @@ export interface SkuOptions extends SmrtObjectOptions {
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  tableName: 'inventory_skus',
+  tableName: 'product_skus',
   conflictColumns: ['code', 'tenant_id'],
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get'] },
@@ -56,19 +57,17 @@ export class Sku extends SmrtObject {
   tenantId: string | null = null;
 
   /**
-   * Plain string reference to a row in `@happyvertical/smrt-products` —
-   * typically a `Product` id (or any of its STI subtypes, such as
-   * `Material` upstream or `Style` / `Makeup` in the apparel template).
-   * Cross-package id, intentionally not a `@foreignKey()` — keeps the
-   * dependency graph loose.
+   * Plain string reference to a row in this package — typically a
+   * `Product` id (or any of its STI subtypes, such as `Material`
+   * upstream or `Style` / `Makeup` in the apparel template).
    */
   productId: string = '';
 
   /**
-   * Stable, human-meaningful identifier such as a UPC, internal SKU code,
-   * or part number. Together with `tenantId` this is the natural key
-   * (`conflictColumns: ['code', 'tenant_id']`), so re-saving an identical
-   * row is an upsert rather than a UNIQUE violation.
+   * Stable, human-meaningful identifier such as a UPC, internal SKU
+   * code, or part number. Together with `tenantId` this is the natural
+   * key (`conflictColumns: ['code', 'tenant_id']`), so re-saving an
+   * identical row is an upsert rather than a UNIQUE violation.
    */
   @field({ required: true })
   code: string = '';
@@ -95,14 +94,13 @@ export class Sku extends SmrtObject {
 
   /**
    * Optional self-reference for bundles / kits — set to the id of the
-   * "parent" SKU that this SKU is a component of. Plain string id, not
-   * a `@foreignKey()`, so kits can span tables in pathological cases.
+   * "parent" SKU that this SKU is a component of.
    */
   parentSkuId: string = '';
 
   /**
-   * Soft-active flag. Inactive SKUs stay queryable for history but should
-   * not be offered for sale or production planning.
+   * Soft-active flag. Inactive SKUs stay queryable for history but
+   * should not be offered for sale or production planning.
    */
   active: boolean = true;
 
@@ -123,9 +121,9 @@ export class Sku extends SmrtObject {
   }
 
   /**
-   * Parse and return the {@link attributes} JSON. Returns an empty object
-   * if the stored value is invalid JSON so callers don't have to wrap
-   * every read in a try/catch.
+   * Parse and return the {@link attributes} JSON. Returns an empty
+   * object if the stored value is invalid JSON so callers don't have
+   * to wrap every read in a try/catch.
    */
   getAttributes(): Record<string, unknown> {
     if (!this.attributes) return {};
@@ -140,9 +138,9 @@ export class Sku extends SmrtObject {
   }
 
   /**
-   * Serialize axis values back into the stored {@link attributes} string.
-   * Accepts either an object (will be `JSON.stringify`'d) or a raw JSON
-   * string that the caller has already serialized.
+   * Serialize axis values back into the stored {@link attributes}
+   * string. Accepts either an object (will be `JSON.stringify`'d) or a
+   * raw JSON string that the caller has already serialized.
    */
   setAttributes(value: Record<string, unknown> | string): void {
     if (typeof value === 'string') {

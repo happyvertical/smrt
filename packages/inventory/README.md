@@ -16,8 +16,8 @@ pnpm add @happyvertical/smrt-inventory
 import {
   createStockService,
   InventoryLocationCollection,
-  SkuCollection,
 } from '@happyvertical/smrt-inventory';
+import { SkuCollection } from '@happyvertical/smrt-products';
 
 const db = { type: 'sqlite', url: 'app.db' };
 const skus = await SkuCollection.create({ db });
@@ -165,7 +165,6 @@ Per-handler toggles (`installContractReserved`, `installFulfillmentShipped`) let
 
 | Export | Description |
 |---|---|
-| `Sku` | Smallest sellable / countable unit. `productId` is a plain string reference to upstream catalog. |
 | `InventoryLocation` | Physical or virtual stocking site with open-ended `kind`. |
 | `StockLevel` | Materialized `(skuId, locationId, state) → qty` row. **Never mutate directly — use `StockService`.** |
 | `StockMovement` | Append-only audit row. One per mutation; two for transfers. |
@@ -174,12 +173,11 @@ Per-handler toggles (`installContractReserved`, `installFulfillmentShipped`) let
 
 | Export | Description |
 |---|---|
-| `SkuCollection` | `findByCode`, `findByBarcode`, `findByProduct`, `findByParent`, `findActive` |
 | `InventoryLocationCollection` | `findByCode`, `findByKind`, `findByPlace`, `findActive` |
 | `StockLevelCollection` | `getLevel`, `findBySku`, `findByLocation`, `totalForSku`, `totalForLocation` |
 | `StockMovementCollection` | `findBySku`, `findByLocation`, `findBySource`, `findByReason` |
 
-The axis-declaration model `ProductVariant` (e.g. "this product varies on `size` with values `[XS, S, M, L, XL]`") lives in [`@happyvertical/smrt-products`](../products) — import it from there directly.
+All catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in [`@happyvertical/smrt-products`](../products). This package adds the stock-motion layer (`InventoryLocation`, `StockLevel`, `StockMovement`, `StockService`) on top.
 
 ### Service
 

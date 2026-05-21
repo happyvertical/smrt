@@ -6,6 +6,7 @@
  * StockMovements, and tenant isolation through withTenant().
  */
 
+import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +14,6 @@ import {
   createStockService,
   InsufficientStockError,
   InventoryLocationCollection,
-  SkuCollection,
   StockLevelCollection,
   StockMovementCollection,
   type StockService,
@@ -36,7 +36,6 @@ describe('ProductionService', () => {
   let db: { type: 'sqlite'; url: string };
   let boms: BillOfMaterialsCollection;
   let lines: BomLineCollection;
-  let skus: SkuCollection;
   let locations: InventoryLocationCollection;
   let levels: StockLevelCollection;
   let movements: StockMovementCollection;
@@ -58,35 +57,19 @@ describe('ProductionService', () => {
 
     boms = await BillOfMaterialsCollection.create({ db });
     lines = await BomLineCollection.create({ db });
-    skus = await SkuCollection.create({ db });
     locations = await InventoryLocationCollection.create({ db });
     levels = await StockLevelCollection.create({ db });
     movements = await StockMovementCollection.create({ db });
-    stockService = await createStockService({ db: (skus as any).db });
+    stockService = await createStockService({ db });
     production = await ProductionService.create({ stockService });
 
     parentProductId = 'product-finished-good';
 
-    const fabric = await skus.create({
-      productId: 'material-fabric',
-      code: 'MAT-FAB-001',
-    });
-    await fabric.save();
-    fabricSkuId = fabric.id!;
-
-    const button = await skus.create({
-      productId: 'material-button',
-      code: 'MAT-BTN-001',
-    });
-    await button.save();
-    buttonSkuId = button.id!;
-
-    const finished = await skus.create({
-      productId: parentProductId,
-      code: 'FG-001',
-    });
-    await finished.save();
-    finishedSkuId = finished.id!;
+    // ProductionService treats skuIds as opaque strings — it queries
+    // StockLevel by skuId but never reads the upstream catalog row.
+    fabricSkuId = randomUUID();
+    buttonSkuId = randomUUID();
+    finishedSkuId = randomUUID();
 
     const factory = await locations.create({
       code: 'FACTORY-1',
@@ -459,23 +442,11 @@ describe('ProductionService', () => {
       await withTenant({ tenantId: tenantA }, async () => {
         const tBoms = await BillOfMaterialsCollection.create({ db });
         const tLines = await BomLineCollection.create({ db });
-        const tSkus = await SkuCollection.create({ db });
         const tLocations = await InventoryLocationCollection.create({ db });
-        const tStock = await createStockService({
-          db: (tSkus as any).db,
-        });
+        const tStock = await createStockService({ db });
         const tProd = await ProductionService.create({ stockService: tStock });
 
-        const fab = await tSkus.create({
-          productId: 'mat-fab',
-          code: 'A-FAB',
-        });
-        await fab.save();
-        const fin = await tSkus.create({
-          productId: 'prod-A',
-          code: 'A-FIN',
-        });
-        await fin.save();
+        const fabSkuId = randomUUID();
         const fac = await tLocations.create({
           code: 'A-FAC',
           kind: 'factory',
@@ -490,13 +461,13 @@ describe('ProductionService', () => {
         await bom.save();
         const line = await tLines.create({
           bomId: bom.id!,
-          componentSkuId: fab.id!,
+          componentSkuId: fabSkuId,
           qtyPerUnit: 1,
           uom: 'each',
         });
         await line.save();
 
-        await tStock.receive(fab.id!, fac.id!, 100);
+        await tStock.receive(fabSkuId, fac.id!, 100);
         const order = { id: 'a-po-1', productId: 'prod-A' };
         await tProd.consumeMaterials(order, {
           locationId: fac.id!,
@@ -505,7 +476,7 @@ describe('ProductionService', () => {
         await tProd.produceFinishedGoods(order, {
           locationId: fac.id!,
           qty: 10,
-          finishedSkuId: fin.id!,
+          finishedSkuId: randomUUID(),
         });
       });
 

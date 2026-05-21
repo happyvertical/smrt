@@ -31,7 +31,6 @@
 import type { DatabaseConfig } from '@happyvertical/smrt-core';
 import {
   InventoryLocationCollection,
-  SkuCollection,
   StockLevelCollection,
   StockMovementCollection,
 } from '../collections/index.js';
@@ -154,20 +153,18 @@ export class StockService {
     public readonly db: DatabaseConfig,
     public readonly levels: StockLevelCollection,
     public readonly movements: StockMovementCollection,
-    public readonly skus: SkuCollection,
     public readonly locations: InventoryLocationCollection,
   ) {}
 
   /** Internal factory — prefer {@link createStockService}. */
   static async create(options: StockServiceOptions): Promise<StockService> {
     const { db } = options;
-    const [levels, movements, skus, locations] = await Promise.all([
+    const [levels, movements, locations] = await Promise.all([
       StockLevelCollection.create({ db }),
       StockMovementCollection.create({ db }),
-      SkuCollection.create({ db }),
       InventoryLocationCollection.create({ db }),
     ]);
-    return new StockService(db, levels, movements, skus, locations);
+    return new StockService(db, levels, movements, locations);
   }
 
   /**

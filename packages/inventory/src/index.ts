@@ -6,13 +6,13 @@
  * automotive, CPG, electronics, and any other vertical that needs to
  * count discrete units across locations.
  *
- * **Model hierarchy**
+ * **Layering**
  *
- * - {@link Sku} — smallest sellable and countable unit. Plain-string
- *   `productId` reference to the upstream product catalog.
- * - `ProductVariant` — declarative axis definition driving SKU attributes
- *   (e.g. `axisName: 'size'`, `allowedValues: ['XS','S','M','L','XL']`).
- *   Lives in `@happyvertical/smrt-products`; import from there directly.
+ * Catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live
+ * in `@happyvertical/smrt-products`. This package adds the
+ * stock-motion layer on top: where the unit lives, how many are there,
+ * and an append-only ledger of every change.
+ *
  * - {@link InventoryLocation} — physical or virtual stocking site.
  * - {@link StockLevel} — materialized `(skuId, locationId, state) → qty`
  *   view; mutated only by {@link StockService}.
@@ -23,6 +23,16 @@
  * `transfer` / `adjust`). Each call writes one (or two, for transfers)
  * StockMovement rows so the audit ledger stays in lockstep with the
  * materialized levels.
+ *
+ * Consumers typically import from both packages:
+ *
+ *     import { Sku, ProductVariant } from '@happyvertical/smrt-products';
+ *     import { StockService, InventoryLocation } from '@happyvertical/smrt-inventory';
+ *
+ * We deliberately do NOT re-export catalog shapes from this barrel
+ * because the products main entry pulls in vite virtual modules — that
+ * would complicate downstream test setups in packages that depend
+ * transitively on inventory.
  *
  * @packageDocumentation
  */
@@ -38,22 +48,9 @@ import './__smrt-register__.js';
 // ─────────────────────────────────────────────────────────────────────────────
 export {
   InventoryLocationCollection,
-  SkuCollection,
   StockLevelCollection,
   StockMovementCollection,
 } from './collections/index.js';
-
-// The axis-declaration model (`ProductVariant`) used to live in this
-// package as `Variant`; it now lives in `@happyvertical/smrt-products`
-// alongside the catalog primitives. Consumers needing both:
-//
-//     import { Sku, StockService } from '@happyvertical/smrt-inventory';
-//     import { ProductVariant } from '@happyvertical/smrt-products';
-//
-// We deliberately do NOT re-export from products here — the main entry
-// pulls in vite virtual modules, which complicates downstream builds
-// (e.g. running tests in @happyvertical/smrt-manufacturing without
-// first building products).
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Models (and per-model options interfaces)
@@ -61,8 +58,6 @@ export {
 export {
   InventoryLocation,
   type InventoryLocationOptions,
-  Sku,
-  type SkuOptions,
   StockLevel,
   type StockLevelOptions,
   StockMovement,

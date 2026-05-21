@@ -6,7 +6,8 @@ Product catalog — reference template for triple-consumption: npm package libra
 
 - **Product**: STI base. Tenant-scoped (`@TenantScoped({ mode: 'optional' })`, nullable `tenantId`). Knowledge base product with specs, tags, and the `productType` discriminator. Consumers subclass this with vertical-specific subtypes (apparel `Style`, automotive `Model`, furniture `Design`, etc.).
 - **Material**: STI subtype. Raw input consumed by manufacturing (fabric, trim, thread, packaging, component). Meta fields: `materialKind`, `uom`, `costPerUnit`. Materials are first-class products in the catalog — the SAP/NetSuite pattern. Bills of materials in `@happyvertical/smrt-manufacturing` reference Materials by id.
-- **ProductVariant**: standalone (NOT a Product STI subtype). Declarative axis definition: `productId`, `axisName` (e.g. `'size'`, `'color'`, `'finish'`), `allowedValues` (JSON-stored array), optional `label` and `sortOrder`. Per-SKU value pins live on `Sku.attributes` in `@happyvertical/smrt-inventory`. Lives in its own `product_variants` table; `conflictColumns: ['product_id', 'axis_name', 'tenant_id']`.
+- **ProductVariant**: standalone (NOT a Product STI subtype). Declarative axis definition: `productId`, `axisName` (e.g. `'size'`, `'color'`, `'finish'`), `allowedValues` (JSON-stored array), optional `label` and `sortOrder`. Per-SKU value pins live on `Sku.attributes`. Lives in its own `product_variants` table; `conflictColumns: ['product_id', 'axis_name', 'tenant_id']`.
+- **Sku**: standalone. The smallest sellable / countable unit. `productId` points at a `Product` or any of its STI subtypes; `code` is the human-meaningful identifier; `attributes` JSON pins each axis value (`{ size: 'M', color: 'navy' }`). Lives in its own `product_skus` table; `conflictColumns: ['code', 'tenant_id']`. Stock balance and movement history for a Sku live in `@happyvertical/smrt-inventory`.
 - **ProductAsset**: dedicated owned-asset join in `product_assets` with `relationship` and `sortOrder`. Tenant-scoped to match Product.
 - **Category**: hierarchical (parentId, level, productCount). STI base, tenant-scoped.
 
@@ -25,8 +26,10 @@ Each is a small subclass: `@smrt()`, override `productType`, add `@meta()` field
 
 The framework's variant story uses two distinct primitives that look similar but do different jobs:
 
-- **`ProductVariant`** (this package) — *axis declaration*. "For product X, axis `size` accepts the values `[XS, S, M, L, XL]`." Drives form/UI choices. Lives here because it's catalog-side metadata.
-- **`Sku.attributes`** (in `@happyvertical/smrt-inventory`) — *per-unit value pins*. `{ color: 'navy', size: 'M' }` on each concrete sellable SKU. Lives there because SKU is what inventory counts.
+- **`ProductVariant`** — *axis declaration*. "For product X, axis `size` accepts the values `[XS, S, M, L, XL]`." Drives form/UI choices.
+- **`Sku.attributes`** — *per-unit value pins*. `{ color: 'navy', size: 'M' }` on each concrete sellable SKU.
+
+Both live in this package — all catalog shapes are here. Stock motion (where the SKU is, how many, history) lives in `@happyvertical/smrt-inventory`.
 
 There is deliberately no separate "catalog grouping above SKU" row (a la a "Navy colorway" row sitting between the Product and its Skus). Group SKUs by axis value via `attributes.color = 'navy'` queries; attach per-axis-value assets via `ProductAsset` rows with relationship metadata. Matches how Shopify, Stripe Products, and most e-commerce platforms model the same shape.
 
@@ -35,6 +38,7 @@ There is deliberately no separate "catalog grouping above SKU" row (a la a "Navy
 - **ProductCollection** — base. Polymorphic queries return the correct subclass instance per row.
 - **MaterialCollection** — STI-filtered subclass. Override `_itemClass`; framework auto-filters by `_meta_type`.
 - **ProductVariantCollection** — standalone collection over `product_variants`. Helpers: `findForProduct(productId)`, `findAxis(productId, axisName)`.
+- **SkuCollection** — standalone collection over `product_skus`. Helpers: `findByCode`, `findByBarcode`, `findByProduct`, `findByParent`, `findActive`.
 - **CategoryCollection** — standard Category CRUD with `getRootCategories()`.
 - **ProductAssetCollection** — direct access to `product_assets` rows and product asset helper wrappers.
 
@@ -57,7 +61,7 @@ Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). Separate `product-s
 
 ## Gotchas
 
-- **`ProductVariant` is NOT a Product STI subtype** — it has its own `product_variants` table because the shape (axis declaration) doesn't fit the Product schema. Don't try to query it via `ProductCollection`.
+- **`ProductVariant` and `Sku` are NOT Product STI subtypes** — they each have their own table (`product_variants`, `product_skus`) because their shapes don't fit the Product schema. Don't try to query them via `ProductCollection`.
 - **`npm run build` emits the published library surface directly**: package consumers read model, collection, and helper exports from `dist/lib`. Cross-package imports from this package should target `/models` or `/collections` subpaths (not the main entry) when the consumer isn't a vite app — the main entry pulls in vite virtual modules.
 - **Use `npm run build:all` only when you need standalone or federation bundles** in addition to the library output
 - **Constructor must explicitly assign all properties**: `Object.assign` doesn't work reliably with decorators
