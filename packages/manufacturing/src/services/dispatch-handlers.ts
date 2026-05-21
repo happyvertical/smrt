@@ -232,10 +232,18 @@ async function handleProductionPosted(
   metadata: DispatchMetadata,
   shouldProduce: boolean,
 ): Promise<void> {
-  if (!payload || !payload.productionOrderId) {
-    // Mirror the inventory-handler observability pattern: producer
-    // contract drift goes silent without this warn (the dispatch bus
-    // would just see a quick return and never surface anything).
+  if (
+    !payload ||
+    !payload.productionOrderId ||
+    typeof payload.productionOrderId !== 'string'
+  ) {
+    // Mirror the inventory-handler observability + strictness pattern:
+    // producer contract drift goes silent without this warn (the
+    // dispatch bus would just see a quick return and never surface
+    // anything), and a non-string `productionOrderId` (e.g. a numeric
+    // primary key coming from a Postgres source) would otherwise land
+    // as a non-string `sourceId` on every emitted StockMovement —
+    // breaking the audit-trail-by-source-id pattern.
     warnMalformedPayload('production_order:posted', payload, metadata);
     return;
   }
@@ -304,7 +312,11 @@ async function handleProductionCompleted(
   payload: ProductionOrderCompletedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (!payload || !payload.productionOrderId) {
+  if (
+    !payload ||
+    !payload.productionOrderId ||
+    typeof payload.productionOrderId !== 'string'
+  ) {
     warnMalformedPayload('production_order:completed', payload, metadata);
     return;
   }
@@ -353,7 +365,18 @@ async function buildProductionService(
   options: InstallManufacturingDispatchHandlersOptions,
 ): Promise<ProductionService> {
   if (options.stockService) {
-    return createProductionService({ stockService: options.stockService });
+    // Pass `db` through when supplied alongside `stockService` so the
+    // resulting ProductionService points its BOM collections at the
+    // caller-supplied manufacturing database. Dropping `db` here would
+    // make the BOM collections fall back to `stockService.db`, which
+    // is the *inventory* connection in deployments where the two
+    // packages target different databases. ProductionService.create
+    // already accepts both fields together; the discriminated option
+    // union just doesn't make the combined shape obvious.
+    return createProductionService({
+      stockService: options.stockService,
+      ...(options.db ? { db: options.db } : {}),
+    });
   }
   if (!options.db) {
     throw new Error(

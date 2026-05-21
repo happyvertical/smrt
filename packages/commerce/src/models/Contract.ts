@@ -209,9 +209,19 @@ export class Contract extends SmrtObject {
   }
 }
 
+// Every STI child below MUST repeat the `@TenantScoped` decoration. The
+// tenancy registry keys off the concrete className passed by the
+// collection, not the inheritance chain — `OrderCollection.list()` sends
+// `'Order'` to the interceptor, which then misses the `'Contract'`
+// registration and skips tenant auto-filter/auto-populate. Without an
+// explicit `@TenantScoped` on each subclass, saves end up with
+// `tenantId: null` (the row becomes global / invisible to tenant-scoped
+// queries) and lists return rows across tenants.
+
 /**
  * Estimate - Quote or proposal for a customer
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Estimate extends Contract {
   override contractType = ContractType.ESTIMATE;
@@ -220,6 +230,7 @@ export class Estimate extends Contract {
 /**
  * Order - Customer purchase order
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Order extends Contract {
   override contractType = ContractType.ORDER;
@@ -228,6 +239,7 @@ export class Order extends Contract {
 /**
  * Lease - Rental or lease agreement
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Lease extends Contract {
   override contractType = ContractType.LEASE;
@@ -236,6 +248,7 @@ export class Lease extends Contract {
 /**
  * Agreement - Service or maintenance agreement
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Agreement extends Contract {
   override contractType = ContractType.AGREEMENT;
@@ -244,6 +257,7 @@ export class Agreement extends Contract {
 /**
  * PurchaseOrder - Order sent to vendor/supplier
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class PurchaseOrder extends Contract {
   override contractType = ContractType.PURCHASE_ORDER;
@@ -256,6 +270,7 @@ export class PurchaseOrder extends Contract {
  * `customerType: 'wholesale'`, uses NET-30/60 payment terms, and is delivered
  * via the wholesale-portal channel rather than retail checkout.
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class WholesaleOrder extends Contract {
   override contractType = ContractType.WHOLESALE_ORDER;
@@ -271,6 +286,7 @@ export class WholesaleOrder extends Contract {
  * `@happyvertical/smrt-manufacturing`) and produces finished SKU stock when
  * posted (see `@happyvertical/smrt-inventory`).
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class ProductionOrder extends Contract {
   override contractType = ContractType.PRODUCTION_ORDER;
@@ -284,6 +300,7 @@ export class ProductionOrder extends Contract {
  * promotes the row from `_meta_type: Cart` to `_meta_type: Order` at checkout
  * rather than copying data between tables). A Cart is implicitly DRAFT.
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Cart extends Contract {
   override contractType = ContractType.CART;

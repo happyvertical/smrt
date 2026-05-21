@@ -41,30 +41,40 @@ import { getSmrtConfig } from '$lib/server/smrt';
 // guards against duplicate registration internally.
 enableTenancy();
 
+// Both upstream factories (`createSvelteKitHandle` from smrt-tenancy and
+// `createSessionHandler` from smrt-users/sveltekit) declare a structural
+// event type with `locals: Record<string, unknown>` to avoid taking a
+// hard dependency on `@sveltejs/kit`. SvelteKit's own `Handle` expects
+// `event.locals: App.Locals` — a strict named interface without an
+// index signature — so the two shapes aren't directly assignable under
+// strict typechecking. The casts below adapt the upstream return types
+// to SvelteKit's `Handle` once. Runtime behaviour is unchanged; the
+// types still flow through `Handle` to the `sequence(...)` composition.
+
 /**
  * Subdomain → tenantId handle. Runs BEFORE the session handler so generated
  * routes have a tenant in context even for unauthenticated public requests
  * (e.g. tenant-scoped catalog endpoints). If a session also carries a
  * tenant, the session handler's inner `withTenant()` will override.
  */
-const tenancyHandle: Handle = createSvelteKitHandle({
+const tenancyHandle = createSvelteKitHandle({
   resolveTenantId: async (event) => {
     // The createSvelteKitHandle adapter passes a structural event; our
     // resolver accepts that same shape.
     const result = await resolveTenant(event as RequestEvent);
     return result.tenantId;
   },
-});
+}) as unknown as Handle;
 
 /**
  * Session handle from @happyvertical/smrt-users. `enterTenantContext: true`
  * makes it call `enterTenantContext()` after loading the session, so
  * downstream code sees the *session's* tenant id when one is present.
  */
-const sessionHandle: Handle = createSessionHandler({
+const sessionHandle = createSessionHandler({
   ...getSmrtConfig('Session'),
   enterTenantContext: true,
-});
+}) as unknown as Handle;
 
 /**
  * Final reconciliation: read the active AsyncLocalStorage tenant (already

@@ -311,6 +311,46 @@ describe('installManufacturingDispatchHandlers', () => {
     expect(consumeMovs).toHaveLength(0);
   });
 
+  it('rejects production_order:posted with a non-string productionOrderId', async () => {
+    // Regression for the round-8 finding: the original guard
+    // `if (!payload.productionOrderId)` rejected empty string and
+    // null/undefined, but a numeric primary key (e.g. coming from a
+    // Postgres source where IDs are bigint) would pass and land as a
+    // non-string `sourceId` on every emitted StockMovement. The
+    // tightened typeof guard rejects non-strings up-front.
+    await installManufacturingDispatchHandlers({
+      dispatchBus: bus,
+      stockService,
+    });
+
+    const consoleWarns: unknown[] = [];
+    const originalConsoleWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      consoleWarns.push(args);
+    };
+
+    try {
+      await bus.emit(
+        'production_order:posted',
+        {
+          productionOrderId: 12345 as unknown as string,
+          productId: parentProductId,
+          locationId: factoryId,
+          qty: 1,
+        },
+        { source: 'commerce' },
+      );
+      await waitFor(async () => consoleWarns.length > 0, 1_000);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+
+    expect(consoleWarns.length).toBeGreaterThan(0);
+    // Confirm no production_consume movement landed.
+    const consumeMovs = await movements.findByReason('production_consume');
+    expect(consumeMovs).toHaveLength(0);
+  });
+
   it('does not subscribe when callers opt every handler out', async () => {
     await installManufacturingDispatchHandlers({
       dispatchBus: bus,

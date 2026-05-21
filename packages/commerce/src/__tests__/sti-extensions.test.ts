@@ -165,6 +165,50 @@ describe('Contract STI extensions', () => {
     });
   });
 
+  describe('STI subtype tenancy', () => {
+    it('auto-populates tenantId on every STI subtype save', async () => {
+      // Regression for the round-8 finding: @TenantScoped registers per
+      // concrete className. Cart / Order / WholesaleOrder /
+      // ProductionOrder etc. inheriting from a tenant-scoped Contract
+      // were NOT automatically tenant-scoped themselves; the dispatch
+      // tenant interceptor missed the lookup and `tenantId` stayed null
+      // on save. Repeating the decorator on every subtype fixes it.
+      // Import here to keep the top-of-file import surface stable.
+      const { enableTenancy, disableTenancy, withTenant } = await import(
+        '@happyvertical/smrt-tenancy'
+      );
+      try {
+        enableTenancy();
+        const customer = await customers.create({ profileId: 'p-tenancy' });
+        await customer.save();
+
+        const captured: Array<{ kind: string; tenantId: string | null }> = [];
+        await withTenant({ tenantId: 'tenant-a' }, async () => {
+          for (const kind of [
+            'WholesaleOrder',
+            'ProductionOrder',
+            'Cart',
+            'Order',
+            'Estimate',
+          ] as const) {
+            const c = await contracts.create({
+              _meta_type: `@happyvertical/smrt-commerce:${kind}`,
+              customerId: customer.id!,
+              totalAmount: 1,
+            });
+            await c.save();
+            captured.push({ kind, tenantId: c.tenantId });
+          }
+        });
+        for (const row of captured) {
+          expect(row.tenantId, `tenantId for ${row.kind}`).toBe('tenant-a');
+        }
+      } finally {
+        disableTenancy();
+      }
+    });
+  });
+
   describe('Contract.channelId', () => {
     it('defaults to empty string for backwards compatibility', async () => {
       const customer = await customers.create({ profileId: 'p1' });
