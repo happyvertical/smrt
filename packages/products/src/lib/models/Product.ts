@@ -116,6 +116,7 @@ export class Product extends SmrtObject {
     const linkedAssets = await productAssets.getForProduct(
       this.id,
       relationship,
+      this.tenantId,
     );
 
     return resolveOwnedAssetsById(
@@ -153,7 +154,7 @@ export class Product extends SmrtObject {
     }
 
     const productAssets = await this.getProductAssetCollection();
-    await productAssets.detach(this.id, assetId, relationship);
+    await productAssets.detach(this.id, assetId, relationship, this.tenantId);
   }
 
   static async searchByText(_query: string): Promise<Product[]> {

@@ -233,6 +233,22 @@ async function handleProductionPosted(
   shouldProduce: boolean,
 ): Promise<void> {
   if (!payload || !payload.productionOrderId) return;
+
+  // If `producedOnPosted` is enabled, the produce leg is required — not
+  // optional. Validate `finishedSkuId` before consuming materials so we
+  // don't leave inventory depleted with no corresponding receipt. (Without
+  // this guard the consume leg would land, the produce leg would silently
+  // skip due to the falsy `finishedSkuId`, and the audit log would carry
+  // production_consume movements but no matching production_produce.)
+  if (shouldProduce && !payload.finishedSkuId) {
+    throw new Error(
+      `production_order:posted handler: producedOnPosted is enabled but ` +
+        `payload.finishedSkuId is missing (productionOrderId=${payload.productionOrderId}). ` +
+        `Either supply finishedSkuId on the event, or disable producedOnPosted ` +
+        `and emit production_order:completed separately.`,
+    );
+  }
+
   const note = metadata.source
     ? `auto-consume via ${metadata.source}`
     : undefined;

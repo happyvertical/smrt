@@ -54,6 +54,15 @@ export interface SmrtManifestEntryLike {
       icon?: string;
       label?: string;
     };
+    /**
+     * Subset of the `@smrt({ api })` shape we care about for nav filtering —
+     * entries with `api: false` (or an `include` that drops `list` / an
+     * `exclude` that drops `list`) don't get a REST list route and so
+     * can't anchor a nav link.
+     */
+    api?:
+      | boolean
+      | { include?: string[]; exclude?: string[]; [key: string]: unknown };
     [key: string]: unknown;
   };
 }
@@ -182,6 +191,35 @@ function looksLikeCollectionClass(entry: SmrtManifestEntryLike): boolean {
 }
 
 /**
+ * Whether an entry exposes a `list` route through the REST generator.
+ *
+ * Join-table / link / asset models commonly declare `@smrt({ api: false })`
+ * because they're plumbing, not catalog. Linking a nav item to them would
+ * 404 — the route literally isn't generated. Conservatively skip those.
+ *
+ * Handles the three shapes `@smrt({ api })` can take:
+ *
+ *   - `undefined` / `true` → default routes (list included)
+ *   - `false` → no routes
+ *   - `{ include: [...] }` → only listed routes
+ *   - `{ exclude: [...] }` → all except listed routes
+ */
+function hasListRoute(entry: SmrtManifestEntryLike): boolean {
+  const api = entry.decoratorConfig?.api;
+  if (api === undefined || api === true) return true;
+  if (api === false) return false;
+  if (typeof api !== 'object' || api === null) return true;
+  const obj = api as { include?: unknown; exclude?: unknown };
+  if (Array.isArray(obj.include)) {
+    return obj.include.includes('list');
+  }
+  if (Array.isArray(obj.exclude)) {
+    return !obj.exclude.includes('list');
+  }
+  return true;
+}
+
+/**
  * Derive a section title for an entry. Order of preference:
  *  1. First `sectionHints` key whose substring appears in the qualified name.
  *  2. The package suffix between the last `/` and the `:` of the qualified
@@ -287,6 +325,7 @@ export function navTreeFromManifest(
 
   for (const entry of Object.values(manifest.objects)) {
     if (looksLikeCollectionClass(entry)) continue;
+    if (!hasListRoute(entry)) continue;
 
     const qualifier = entryQualifier(entry);
     if (permitted && !permitted.has(qualifier)) continue;

@@ -35,12 +35,27 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
   async getForProduct(
     productId: string,
     relationship?: string,
+    tenantId?: string | null,
   ): Promise<ProductAsset[]> {
-    return listOwnedAssetLinks(this, 'productId', productId, relationship);
+    const rows = await listOwnedAssetLinks(
+      this,
+      'productId',
+      productId,
+      relationship,
+    );
+    return tenantId === undefined
+      ? rows
+      : rows.filter((row) => row.tenantId === tenantId);
   }
 
-  async getForAsset(assetId: string): Promise<ProductAsset[]> {
-    return listOwnedAssetLinks(this, 'assetId', assetId);
+  async getForAsset(
+    assetId: string,
+    tenantId?: string | null,
+  ): Promise<ProductAsset[]> {
+    const rows = await listOwnedAssetLinks(this, 'assetId', assetId);
+    return tenantId === undefined
+      ? rows
+      : rows.filter((row) => row.tenantId === tenantId);
   }
 
   async attach(
@@ -63,14 +78,36 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
     productId: string,
     assetId: string,
     relationship?: string,
+    tenantId?: string | null,
   ): Promise<void> {
-    await deleteOwnedAssetLinks(
+    if (tenantId === undefined) {
+      // No tenant constraint — caller is explicit about wanting to remove
+      // every matching row regardless of tenant (e.g. a super-admin sweep).
+      await deleteOwnedAssetLinks(
+        this,
+        'productId',
+        productId,
+        assetId,
+        relationship,
+      );
+      return;
+    }
+    // Tenant-scoped delete: read links first, filter by tenant, then
+    // delete each matching row by id so we never touch another tenant's row.
+    const rows = await listOwnedAssetLinks(
       this,
       'productId',
       productId,
-      assetId,
       relationship,
     );
+    const toRemove = rows.filter(
+      (row) => row.assetId === assetId && row.tenantId === tenantId,
+    );
+    for (const row of toRemove) {
+      if (row.id) {
+        await this.delete(row.id);
+      }
+    }
   }
 
   async getAssets(productId: string, relationship?: string): Promise<Asset[]> {

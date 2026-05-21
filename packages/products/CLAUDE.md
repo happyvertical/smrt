@@ -61,10 +61,53 @@ Svelte 5 stores use runes (`$state`, `$derived`, `$effect`). Separate `product-s
 
 ## Schema migrations (Phase 1 release)
 
-This package's schema changed shape between the previous release and the Phase 1 apparel-ERP release. Consumers upgrading need to migrate two tables:
+This package's schema changed shape between the previous release and the Phase 1 apparel-ERP release. Consumers upgrading need to migrate two tables.
 
-- **`Sku` rows moved tables.** Previously `Sku` shipped in `@happyvertical/smrt-inventory` under table `inventory_skus`. It now lives here under `product_skus`. **Upgrade SQL**: `CREATE TABLE product_skus AS SELECT * FROM inventory_skus;` then `DROP TABLE inventory_skus;`. Cross-package refs (`StockLevel.skuId`, `BomLine.componentSkuId`) carry plain string ids that still resolve.
-- **`ProductVariant` changed shape entirely.** Previously it was a Product STI subtype carrying `parentProductId` + `axisValues` JSON, stored as rows in the shared `products` table with `_meta_type='@happyvertical/smrt-products:ProductVariant'`. It is now a standalone model on its own `product_variants` table, with columns `productId`, `axisName`, `allowedValues`, `label`, `sortOrder`. **There is no automatic data conversion** — the old grouping concept no longer maps 1:1 to the new axis-declaration concept. Consumers that had ProductVariant rows should treat them as historical and re-author axis declarations against the new shape.
+### `Sku` rows moved tables
+
+Previously `Sku` shipped in `@happyvertical/smrt-inventory` under table `inventory_skus`. It now lives here under `product_skus`. Cross-package refs (`StockLevel.skuId`, `BomLine.componentSkuId`) carry plain string ids that still resolve.
+
+**Upgrade procedure** (works on SQLite + Postgres; does NOT rely on `CREATE TABLE AS` which strips constraints):
+
+1. **Boot the new version once** so the framework's lazy `syncSchema` creates `product_skus` with the right PRIMARY KEY, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes derived from the `Sku` model.
+
+2. **Idempotently copy rows**:
+
+   ```sql
+   BEGIN;
+   INSERT INTO product_skus (
+     id, slug, context, created_at, updated_at,
+     tenant_id, product_id, code, barcode, name,
+     attributes, weight_grams, parent_sku_id, active
+   )
+   SELECT
+     id, slug, context, created_at, updated_at,
+     tenant_id, product_id, code, barcode, name,
+     attributes, weight_grams, parent_sku_id, active
+   FROM inventory_skus
+   WHERE NOT EXISTS (
+     SELECT 1 FROM product_skus p WHERE p.id = inventory_skus.id
+   );
+   COMMIT;
+   ```
+
+3. **Drop the legacy table** once row counts match:
+
+   ```sql
+   DROP TABLE IF EXISTS inventory_skus;
+   ```
+
+### `ProductVariant` changed shape entirely
+
+Previously a Product STI subtype carrying `parentProductId` + `axisValues` JSON inside `_meta_data` on the shared `products` table (`_meta_type='@happyvertical/smrt-products:ProductVariant'`). It is now a **standalone model** on its own `product_variants` table, with columns `productId`, `axisName`, `allowedValues`, `label`, `sortOrder`.
+
+**There is no automatic data conversion.** The old "catalog grouping above SKU" concept doesn't map 1:1 to the new "per-axis declaration" concept. Recommended procedure:
+
+1. Inspect the old rows: `SELECT * FROM products WHERE _meta_type = '@happyvertical/smrt-products:ProductVariant';`. Treat them as historical reference.
+2. Re-author axis declarations against the new shape (one `ProductVariant` row per `(productId, axisName)` pair, with `allowedValues` listing the values).
+3. Once the new declarations are populated and verified, remove the legacy rows: `DELETE FROM products WHERE _meta_type = '@happyvertical/smrt-products:ProductVariant';`.
+
+If you had per-colorway / per-variant images attached via `ProductAsset` rows pointing at old ProductVariant ids, repoint those to the parent Product id; group-by-axis-value queries on `Sku.attributes` cover the same use case at the SKU level.
 
 ## Gotchas
 

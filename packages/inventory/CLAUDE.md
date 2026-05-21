@@ -59,14 +59,39 @@ Per-handler toggles: `installContractReserved`, `installFulfillmentShipped`. The
 
 ## Schema migration (Phase 1 release)
 
-The `Sku` model moved out of this package and into `@happyvertical/smrt-products`. Previously it lived in this package's `inventory_skus` table; it now lives in `product_skus` over there. **Upgrade SQL** for deployed consumers:
+The `Sku` model moved out of this package and into `@happyvertical/smrt-products`. Previously it lived in this package's `inventory_skus` table; it now lives in `product_skus` over there.
 
-```sql
-CREATE TABLE product_skus AS SELECT * FROM inventory_skus;
-DROP TABLE inventory_skus;
-```
+**Upgrade procedure** for deployed consumers:
 
-`StockLevel.skuId` and `StockMovement.skuId` carry plain string ids that still resolve to the same rows after the rename.
+1. **Let the framework create the destination table first.** Boot the new version once with `@happyvertical/smrt-products` registered in your `SmrtClassOptions`; the lazy `syncSchema` path will create `product_skus` with the right primary key, NOT NULL, UNIQUE (`code`, `tenant_id`), and indexes — they're derived from the `Sku` model decorators and would be stripped by a raw `CREATE TABLE AS SELECT`.
+
+2. **Idempotently copy rows across.** SQLite + Postgres:
+
+   ```sql
+   BEGIN;
+   INSERT INTO product_skus (
+     id, slug, context, created_at, updated_at,
+     tenant_id, product_id, code, barcode, name,
+     attributes, weight_grams, parent_sku_id, active
+   )
+   SELECT
+     id, slug, context, created_at, updated_at,
+     tenant_id, product_id, code, barcode, name,
+     attributes, weight_grams, parent_sku_id, active
+   FROM inventory_skus
+   WHERE NOT EXISTS (
+     SELECT 1 FROM product_skus p WHERE p.id = inventory_skus.id
+   );
+   COMMIT;
+   ```
+
+3. **Drop the legacy table** once you've verified row counts match:
+
+   ```sql
+   DROP TABLE IF EXISTS inventory_skus;
+   ```
+
+`StockLevel.skuId` and `StockMovement.skuId` carry plain string ids that still resolve to the same rows after the rename, so no inventory data has to move.
 
 ## Gotchas
 
@@ -75,6 +100,11 @@ DROP TABLE inventory_skus;
 - **Cross-industry constraint.** This package's vocabulary stays generic: `InventoryLocation`, `StockLevel`, `StockMovement`. Apparel-specific concepts (`Style`, `Makeup`, `Colorway`, fashion `Season`, tech-pack metadata) and their analogues in furniture / automotive / CPG live in the relevant template package, never here. PRs that introduce industry vocabulary should be rejected.
 - **Cross-package references are plain strings.** `skuId`, `placeId`, `sourceId` — all plain string ids, never `@foreignKey()`. Inventory's stock-motion logic only ever reads StockLevel/StockMovement; it doesn't follow `skuId` back to the catalog's Sku table, so the layering stays loose.
 - **`conflictColumns` include `tenant_id`** on `InventoryLocation` and `StockLevel`. NULL-matching semantics (`(code, NULL) IS NOT DISTINCT FROM (code, NULL)`) are handled by `@happyvertical/sql >= 0.74.0` natively, so two saves with the same `(code, NULL)` tuple correctly merge in place. Pass `nullsDistinct: true` at the sql layer to opt back into NULL-distinct semantics.
+- **Split-write atomicity — known gap.** Every `StockService` method does a read-modify-write across two statements: it updates `StockLevel` (one or two rows for `transfer`), then writes a `StockMovement` audit row. The two are NOT wrapped in a transaction. If the second write fails (transient DB error, dropped connection, validation surfaced post-update), the level mutation lands without a matching audit row — or, for `transfer`, the `transfer_out` row may exist with no `transfer_in`. Consequences:
+  - `receive` / `reserve` / `release` / `fulfill` / `adjust` partial failure: stock balance is correct but the ledger is missing a row, so reconciliation reports won't tie out.
+  - `transfer` partial failure (between source and destination legs): "ghost stock" — source debited, destination not credited, source audit row written, destination audit row missing.
+
+  Awaited / serial callers in production environments with a healthy DB rarely hit this in practice. For high-stakes workflows, drive `StockService` calls through `@happyvertical/smrt-jobs` so a failed job retries with the same idempotency key, or wrap each call in an application-level transaction once `@happyvertical/sql` exposes a friendlier transaction API. Tracked for a follow-up release that introduces a `StockService.withTransaction(fn)` wrapper.
 - **Concurrent reservations: tightened, not bulletproof.** `@happyvertical/sql >= 0.74.0` serialises null-aware upserts via a per-key in-process lock (SQLite) or advisory lock (Postgres), so concurrent saves on the same row no longer race at the storage layer. But each `StockService` method is still a read-modify-write across multiple statements (`SELECT` current level → compute → `UPDATE`), and that compound sequence is not held in a single transaction. Under high concurrency a `Promise.all([reserve, reserve, ...])` against the same `(skuId, locationId)` can still over-allocate. Awaited (serial) calls always behave correctly. Use a job queue (e.g. `@happyvertical/smrt-jobs`) or your own mutex when you need hard atomicity across concurrent callers. Wrapping each method in `BEGIN TRANSACTION ... SELECT FOR UPDATE` would close this fully; deferred until we see a real high-contention workload that warrants it.
 
 ## Source attribution
