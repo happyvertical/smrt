@@ -18,4 +18,3 @@ export {
 export { Sku, type SkuOptions } from './Sku.js';
 export { StockLevel, type StockLevelOptions } from './StockLevel.js';
 export { StockMovement, type StockMovementOptions } from './StockMovement.js';
-export { Variant, type VariantOptions } from './Variant.js';

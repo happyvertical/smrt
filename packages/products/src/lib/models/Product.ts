@@ -38,10 +38,10 @@ export interface ProductOptions extends SmrtObjectOptions {
 /**
  * Product information for knowledge base queries.
  *
- * STI base — subclasses (Style, Makeup, ProductVariant, Material) share this
- * table via the `_meta_type` discriminator and `productType` field. Optional
- * tenancy lets the same package serve shared global catalogs OR per-merchant
- * catalogs.
+ * STI base — subclasses (e.g. `Material` upstream, `Style`/`Makeup` in the
+ * apparel template) share this table via the `_meta_type` discriminator
+ * and `productType` field. Optional tenancy lets the same package serve
+ * shared global catalogs OR per-merchant catalogs.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({

@@ -1,49 +1,123 @@
 /**
- * ProductVariant — STI subtype of Product representing one axis-value variant
- * of a parent Product (or any of its subtypes).
+ * ProductVariant — declarative description of one axis along which a
+ * product's SKUs differ.
  *
- * Common axis examples: size, length, width, finish, color, capacity. The
- * concrete shape is open: consumers choose what their domain varies along.
+ * A `ProductVariant` row says "for product X, axis Y has the following
+ * allowed values". The actual per-SKU value lives on `Sku.attributes`
+ * (in `@happyvertical/smrt-inventory`), keyed by `axisName`. This split
+ * keeps the axis catalog (form choices, UI grouping, ordering) separate
+ * from the per-unit instances.
  *
- * The actual sellable unit (the thing you scan / count / ship) lives in
- * `@happyvertical/smrt-inventory` as `Sku`. ProductVariant is the catalog-side
- * grouping above Sku.
+ * Deliberately generic. `axisName` is free-form — apparel teams might
+ * use `'size'` and `'color'`, automotive teams `'trim'` and `'engine'`,
+ * CPG teams `'packSize'` and `'flavor'`. The framework never inspects
+ * the axis name.
+ *
+ * NOT a Product STI subtype — it's its own model with its own table,
+ * because the shape (axis declaration) doesn't fit the Product schema
+ * (no name, no price, no category — it's metadata about a Product, not
+ * a Product itself).
  *
  * @packageDocumentation
  */
 
-import { meta, smrt } from '@happyvertical/smrt-core';
-import { Product, type ProductOptions } from './Product';
-import { ProductType } from './types';
+import {
+  field,
+  SmrtObject,
+  type SmrtObjectOptions,
+  smrt,
+} from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
-export interface ProductVariantOptions extends ProductOptions {
-  parentProductId?: string;
-  axisValues?: Record<string, string>;
+/**
+ * Options accepted by the {@link ProductVariant} constructor.
+ */
+export interface ProductVariantOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
+  productId?: string;
+  axisName?: string;
+  label?: string;
+  allowedValues?: string[] | string;
+  sortOrder?: number;
 }
 
-@smrt()
-export class ProductVariant extends Product {
-  override productType: ProductType = ProductType.VARIANT;
+@TenantScoped({ mode: 'optional' })
+@smrt({
+  tableName: 'product_variants',
+  conflictColumns: ['product_id', 'axis_name', 'tenant_id'],
+  api: { include: ['list', 'get', 'create', 'update'] },
+  mcp: { include: ['list', 'get'] },
+  cli: true,
+})
+export class ProductVariant extends SmrtObject {
+  /** Tenant scope. `null` means the variant axis is global. */
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
 
   /**
-   * ID of the parent product this variant belongs to. Plain row reference
-   * within the shared `products` table — points at any Product subtype.
+   * Plain string reference to the {@link Product} this axis belongs to
+   * (or any Product STI subtype — `Material`, or vertical subtypes
+   * defined in templates such as the apparel `Style` / `Makeup`).
    */
-  @meta()
-  parentProductId: string = '';
+  @field({ required: true })
+  productId: string = '';
 
   /**
-   * Variant axis values as a key/value map, e.g.
-   * `{ "size": "M" }` or `{ "finish": "matte", "size": "L" }`.
-   * Stored as JSON in `_meta_data`.
+   * The name of the axis (`'size'`, `'color'`, `'finish'`, `'voltage'`,
+   * `'packSize'`, …). Free-form — the framework treats this as opaque.
    */
-  @meta()
-  axisValues: Record<string, string> = {};
+  @field({ required: true })
+  axisName: string = '';
+
+  /** Optional human-friendly label for forms / UIs (defaults to `axisName`). */
+  label: string = '';
+
+  /**
+   * Allowed values for this axis, stored as a JSON string. Named
+   * `allowedValues` (rather than `values`) because the unprefixed name
+   * collides with the SQL `VALUES` keyword on several engines. Use
+   * {@link getValues} / {@link setValues} to round-trip the array form.
+   */
+  allowedValues: string = '[]';
+
+  /** Sort order for displaying multiple axes in a consistent column order. */
+  sortOrder: number = 0;
 
   constructor(options: ProductVariantOptions = {}) {
     super(options);
-    if (options.parentProductId !== undefined)
-      this.parentProductId = options.parentProductId;
-    if (options.axisValues !== undefined) this.axisValues = options.axisValues;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+    if (options.productId !== undefined) this.productId = options.productId;
+    if (options.axisName !== undefined) this.axisName = options.axisName;
+    if (options.label !== undefined) this.label = options.label;
+    if (options.allowedValues !== undefined)
+      this.setValues(options.allowedValues);
+    if (options.sortOrder !== undefined) this.sortOrder = options.sortOrder;
+  }
+
+  /**
+   * Parse and return the {@link allowedValues} JSON array. Returns an
+   * empty array if the stored value cannot be parsed as an array.
+   */
+  getValues(): string[] {
+    if (!this.allowedValues) return [];
+    try {
+      const parsed = JSON.parse(this.allowedValues);
+      return Array.isArray(parsed) ? parsed.map((value) => String(value)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Serialize the allowed values back into the stored
+   * {@link allowedValues} string. Accepts either an array or a
+   * pre-serialized JSON string.
+   */
+  setValues(value: string[] | string): void {
+    if (typeof value === 'string') {
+      this.allowedValues = value;
+      return;
+    }
+    this.allowedValues = JSON.stringify(Array.isArray(value) ? value : []);
   }
 }

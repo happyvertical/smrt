@@ -2,17 +2,19 @@
  * Sku — smallest sellable and countable unit.
  *
  * A SKU is what your inventory actually tracks. It references a higher-level
- * concept in `@happyvertical/smrt-products` (typically a `ProductVariant`)
- * via the plain string `productId` field — kept as a string, not a
- * `@foreignKey()`, so this package doesn't pull in `smrt-products` and the
- * two can evolve independently. The same pattern serves apparel (one SKU
- * per size/color), furniture (one SKU per finish), automotive parts,
- * grocery (one SKU per pack size), or any other vertical that needs to
- * count discrete units.
+ * concept in `@happyvertical/smrt-products` (a `Product` or any of its STI
+ * subtypes) via the plain string `productId` field — kept as a string, not
+ * a `@foreignKey()`, so cross-package refs stay loose and the two packages
+ * can evolve independently. The same pattern serves apparel (one SKU per
+ * size/color), furniture (one SKU per finish), automotive parts, grocery
+ * (one SKU per pack size), or any other vertical that needs to count
+ * discrete units.
  *
  * Axis values such as `{ size: 'M', color: 'navy' }`, `{ finish: 'walnut' }`,
  * or `{ packSize: '12oz' }` are stored as opaque JSON in `attributes`; the
- * declarative axis catalog lives in the {@link Variant} model.
+ * declarative axis catalog lives in `ProductVariant` from
+ * `@happyvertical/smrt-products` (re-exported from this package's barrel
+ * for convenience).
  *
  * @packageDocumentation
  */
@@ -54,10 +56,11 @@ export class Sku extends SmrtObject {
   tenantId: string | null = null;
 
   /**
-   * Plain string reference to the related entity in
-   * `@happyvertical/smrt-products` (typically a `ProductVariant.id`).
-   * Cross-package id, intentionally not a `@foreignKey()` — keeps this
-   * package free of an upstream product dependency.
+   * Plain string reference to a row in `@happyvertical/smrt-products` —
+   * typically a `Product` id (or any of its STI subtypes, such as
+   * `Material` upstream or `Style` / `Makeup` in the apparel template).
+   * Cross-package id, intentionally not a `@foreignKey()` — keeps the
+   * dependency graph loose.
    */
   productId: string = '';
 

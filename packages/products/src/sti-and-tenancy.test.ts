@@ -1,15 +1,18 @@
 /**
- * Tests for the upstream STI subtypes (ProductVariant, Material) and tenant
- * isolation on Product / Category.
+ * Tests for the products package:
+ * - Material STI subtype on the shared `products` table
+ * - The standalone `ProductVariant` axis-declaration model
+ * - Tenant isolation on Product / Category / ProductVariant
  *
- * Vertical-specific subtypes (apparel `Style`/`Makeup`, automotive `Model`/`Trim`,
- * etc.) are intentionally NOT in this package — consumers subclass `Product`
- * themselves. See the apparel template for an example.
+ * Vertical-specific Product STI subtypes (apparel `Style` / `Makeup`,
+ * automotive `Model` / `Trim`, furniture `Design` / `Configuration`,
+ * etc.) are intentionally NOT in this package — consumers subclass
+ * `Product` themselves. See the apparel template for an example.
  *
- * STI uses `_meta_type` discriminator; subtype-specific fields are stored in
- * `_meta_data` JSONB. Tenancy is optional (`@TenantScoped({ mode: 'optional' })`)
- * so all queries auto-filter when wrapped in `withTenant()` and fall through
- * when no context is set.
+ * STI uses `_meta_type` discriminator; subtype-specific fields are
+ * stored in `_meta_data` JSONB. Tenancy is optional (`@TenantScoped({
+ * mode: 'optional' })`) so all queries auto-filter when wrapped in
+ * `withTenant()` and fall through when no context is set.
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
@@ -48,11 +51,14 @@ describe('Product STI subtypes', () => {
       expect(ObjectRegistry.getTableStrategy('Product')).toBe('sti');
     });
 
-    it.each([
-      ['ProductVariant', ProductVariant],
-      ['Material', Material],
-    ])('resolves Product as STI base for %s', (name) => {
-      expect(ObjectRegistry.getSTIBase(name)).toBe('Product');
+    it('resolves Product as STI base for Material', () => {
+      expect(ObjectRegistry.getSTIBase('Material')).toBe('Product');
+    });
+
+    it('does NOT treat ProductVariant as a Product STI subtype', () => {
+      // ProductVariant is a standalone model with its own table; it must
+      // not appear in Product's STI hierarchy.
+      expect(ObjectRegistry.getSTIBase('ProductVariant')).toBeFalsy();
     });
   });
 
@@ -65,23 +71,16 @@ describe('Product STI subtypes', () => {
       );
     });
 
-    it.each([
-      [
-        ProductVariant,
-        '@happyvertical/smrt-products:ProductVariant',
-        ProductType.VARIANT,
-      ],
-      [Material, '@happyvertical/smrt-products:Material', ProductType.MATERIAL],
-    ])('stamps %s with the right discriminator and productType', async (cls, expected, typeValue) => {
-      const instance = new (cls as any)({ name: 'thing' });
-      await instance.initialize();
-      const json = instance.toJSON();
-      expect(json._meta_type).toBe(expected);
-      expect(instance.productType).toBe(typeValue);
+    it('stamps Material with the right discriminator and productType', async () => {
+      const material = new Material({ name: 'thing' });
+      await material.initialize();
+      const json = material.toJSON();
+      expect(json._meta_type).toBe('@happyvertical/smrt-products:Material');
+      expect(material.productType).toBe(ProductType.MATERIAL);
     });
   });
 
-  describe('Subtype persistence and polymorphic retrieval', () => {
+  describe('Material persistence', () => {
     it('persists Material meta fields and round-trips them', async () => {
       const materials = await MaterialCollection.create({ db });
 
@@ -102,16 +101,10 @@ describe('Product STI subtypes', () => {
       expect(loaded?.productType).toBe(ProductType.MATERIAL);
     });
 
-    it('returns the right subclass instance from a base collection list', async () => {
-      const variants = await ProductVariantCollection.create({ db });
+    it('returns Material instances from a base Product collection list', async () => {
       const materials = await MaterialCollection.create({ db });
       const products = await ProductCollection.create({ db });
 
-      const variant = await variants.create({
-        name: 'Variant A',
-        parentProductId: 'parent-1',
-      });
-      await variant.save();
       const material = await materials.create({
         name: 'Cotton thread',
         materialKind: 'thread',
@@ -119,54 +112,99 @@ describe('Product STI subtypes', () => {
       await material.save();
 
       const all = await products.list({ orderBy: 'created_at ASC' });
-      expect(all.length).toBe(2);
-
-      const variantRow = all.find((p) => p.id === variant.id);
-      const materialRow = all.find((p) => p.id === material.id);
-      expect(variantRow).toBeInstanceOf(ProductVariant);
-      expect(materialRow).toBeInstanceOf(Material);
+      expect(all).toHaveLength(1);
+      expect(all[0]).toBeInstanceOf(Material);
+      expect(all[0].id).toBe(material.id);
     });
+  });
+});
 
-    it('filters STI subtype collections to their own rows only', async () => {
-      const variants = await ProductVariantCollection.create({ db });
-      const materials = await MaterialCollection.create({ db });
+describe('ProductVariant axis-declaration model', () => {
+  let db: DatabaseInterface;
 
-      await (
-        await variants.create({ name: 'V1', parentProductId: 'p1' })
-      ).save();
-      await (
-        await variants.create({ name: 'V2', parentProductId: 'p1' })
-      ).save();
-      await (
-        await materials.create({
-          name: 'Cotton thread',
-          materialKind: 'thread',
-        })
-      ).save();
+  beforeEach(async () => {
+    db = await getTestDatabase();
+  });
 
-      const allVariants = await variants.list({});
-      const allMaterials = await materials.list({});
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
 
-      expect(allVariants).toHaveLength(2);
-      expect(allMaterials).toHaveLength(1);
-      expect(allVariants.every((v) => v instanceof ProductVariant)).toBe(true);
-      expect(allMaterials.every((m) => m instanceof Material)).toBe(true);
+  it('persists axis declarations and round-trips allowedValues', async () => {
+    const variants = await ProductVariantCollection.create({ db });
+
+    const sizeAxis = await variants.create({
+      productId: 'style-st-1001',
+      axisName: 'size',
+      label: 'Size',
+      allowedValues: ['XS', 'S', 'M', 'L', 'XL'],
     });
+    await sizeAxis.save();
 
-    it('stores ProductVariant axis values as a JSON map', async () => {
-      const variants = await ProductVariantCollection.create({ db });
+    const loaded = await variants.get({ id: sizeAxis.id! });
+    expect(loaded).not.toBeNull();
+    expect(loaded?.productId).toBe('style-st-1001');
+    expect(loaded?.axisName).toBe('size');
+    expect(loaded?.label).toBe('Size');
+    expect(loaded?.getValues()).toEqual(['XS', 'S', 'M', 'L', 'XL']);
+  });
 
-      const navy = await variants.create({
-        name: 'Navy variant',
-        parentProductId: 'parent-1',
-        axisValues: { color: 'Navy' },
-      });
-      await navy.save();
+  it('looks up an axis by (productId, axisName)', async () => {
+    const variants = await ProductVariantCollection.create({ db });
 
-      const loaded = await variants.get({ id: navy.id! });
-      expect(loaded?.axisValues).toEqual({ color: 'Navy' });
-      expect(loaded?.parentProductId).toBe('parent-1');
-    });
+    await (
+      await variants.create({
+        productId: 'style-1',
+        axisName: 'size',
+        allowedValues: ['S', 'M', 'L'],
+      })
+    ).save();
+    await (
+      await variants.create({
+        productId: 'style-1',
+        axisName: 'color',
+        allowedValues: ['navy', 'white'],
+      })
+    ).save();
+
+    const axis = await variants.findAxis('style-1', 'color');
+    expect(axis).not.toBeNull();
+    expect(axis?.getValues()).toEqual(['navy', 'white']);
+  });
+
+  it('returns every axis for a product in sortOrder', async () => {
+    const variants = await ProductVariantCollection.create({ db });
+
+    await (
+      await variants.create({
+        productId: 'style-1',
+        axisName: 'size',
+        allowedValues: ['S', 'M'],
+        sortOrder: 1,
+      })
+    ).save();
+    await (
+      await variants.create({
+        productId: 'style-1',
+        axisName: 'color',
+        allowedValues: ['navy', 'white'],
+        sortOrder: 0,
+      })
+    ).save();
+
+    const axes = await variants.findForProduct('style-1');
+    expect(axes.map((a) => a.axisName)).toEqual(['color', 'size']);
+  });
+
+  it('lives in its own table, not the products STI table', () => {
+    // Sanity: a Product STI subtype would share table 'products' and
+    // declare 'sti' as its strategy. ProductVariant must do neither.
+    expect(ObjectRegistry.getTableStrategy('ProductVariant')).not.toBe('sti');
+    expect(ObjectRegistry.getTableName('ProductVariant')).toBe(
+      'product_variants',
+    );
   });
 });
 
@@ -239,6 +277,38 @@ describe('Product and Category tenancy', () => {
     await withTenant({ tenantId: 'tenant-a' }, async () => {
       const rows = await categories.list({});
       expect(rows.map((r) => r.name)).toEqual(['Tops']);
+    });
+  });
+
+  it('isolates ProductVariant axis declarations between tenants', async () => {
+    const variants = await ProductVariantCollection.create({ db });
+
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      await (
+        await variants.create({
+          productId: 'style-1',
+          axisName: 'size',
+          allowedValues: ['S', 'M'],
+        })
+      ).save();
+    });
+    await withTenant({ tenantId: 'tenant-b' }, async () => {
+      await (
+        await variants.create({
+          productId: 'style-1',
+          axisName: 'size',
+          allowedValues: ['XS', 'XL'],
+        })
+      ).save();
+    });
+
+    await withTenant({ tenantId: 'tenant-a' }, async () => {
+      const axis = await variants.findAxis('style-1', 'size');
+      expect(axis?.getValues()).toEqual(['S', 'M']);
+    });
+    await withTenant({ tenantId: 'tenant-b' }, async () => {
+      const axis = await variants.findAxis('style-1', 'size');
+      expect(axis?.getValues()).toEqual(['XS', 'XL']);
     });
   });
 });

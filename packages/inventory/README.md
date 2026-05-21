@@ -166,7 +166,6 @@ Per-handler toggles (`installContractReserved`, `installFulfillmentShipped`) let
 | Export | Description |
 |---|---|
 | `Sku` | Smallest sellable / countable unit. `productId` is a plain string reference to upstream catalog. |
-| `Variant` | Declarative axis definition driving form / UI choices. |
 | `InventoryLocation` | Physical or virtual stocking site with open-ended `kind`. |
 | `StockLevel` | Materialized `(skuId, locationId, state) → qty` row. **Never mutate directly — use `StockService`.** |
 | `StockMovement` | Append-only audit row. One per mutation; two for transfers. |
@@ -176,10 +175,11 @@ Per-handler toggles (`installContractReserved`, `installFulfillmentShipped`) let
 | Export | Description |
 |---|---|
 | `SkuCollection` | `findByCode`, `findByBarcode`, `findByProduct`, `findByParent`, `findActive` |
-| `VariantCollection` | `findByProduct`, `findByAxis` |
 | `InventoryLocationCollection` | `findByCode`, `findByKind`, `findByPlace`, `findActive` |
 | `StockLevelCollection` | `getLevel`, `findBySku`, `findByLocation`, `totalForSku`, `totalForLocation` |
 | `StockMovementCollection` | `findBySku`, `findByLocation`, `findBySource`, `findByReason` |
+
+The axis-declaration model `ProductVariant` (e.g. "this product varies on `size` with values `[XS, S, M, L, XL]`") lives in [`@happyvertical/smrt-products`](../products) — import it from there directly.
 
 ### Service
 

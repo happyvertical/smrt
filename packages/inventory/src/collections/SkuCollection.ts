@@ -30,9 +30,10 @@ export class SkuCollection extends SmrtCollection<Sku> {
   }
 
   /**
-   * Find every SKU pointing at the given upstream product id (typically a
-   * `ProductVariant.id` from `@happyvertical/smrt-products`). Useful for
-   * listing the SKUs that back a single product card.
+   * Find every SKU pointing at the given upstream `Product` id (or any
+   * Product STI subtype id — `Material` upstream, vertical subtypes
+   * defined in templates). Useful for listing the SKUs that back a
+   * single product card.
    */
   async findByProduct(productId: string): Promise<Sku[]> {
     return this.list({ where: { productId }, orderBy: 'code ASC' });

@@ -13,14 +13,16 @@
  * generic primitives:
  *
  * - {@link ProductType.PRODUCT} — plain catalog item (base)
- * - {@link ProductType.VARIANT} — axis-value variant grouping (above SKU)
  * - {@link ProductType.MATERIAL} — raw input consumed by manufacturing
+ *
+ * The axis-declaration concept ("this product varies along `size` with
+ * values `[XS, S, M, L, XL]`") is NOT a Product STI subtype — it lives in
+ * its own model, {@link ProductVariant}, with a separate table. Per-SKU
+ * value pins live on `Sku.attributes` from `@happyvertical/smrt-inventory`.
  */
 export enum ProductType {
   /** Generic catalog item (default). */
   PRODUCT = 'product',
-  /** Concrete variant grouping (e.g. a colorway). */
-  VARIANT = 'variant',
   /** A raw input — fabric, trim, packaging, etc. — consumed by manufacturing. */
   MATERIAL = 'material',
 }
