@@ -31,7 +31,7 @@ import { createSessionHandler } from '@happyvertical/smrt-users/sveltekit';
 import {
   createSvelteKitHandle,
   enableTenancy,
-  getTenantId,
+  getCurrentTenant,
 } from '@happyvertical/smrt-tenancy';
 
 import { resolveTenant } from '$lib/server/tenancy';
@@ -69,18 +69,36 @@ const sessionHandle: Handle = createSessionHandler({
 /**
  * Final reconciliation: read the active AsyncLocalStorage tenant (already
  * set correctly by tenancyHandle + sessionHandle, with session winning
- * over subdomain when both are present) and ensure `event.locals.tenantId`
- * matches. Without this, `createSessionHandler` resets `tenantId` to `null`
- * for unauthenticated requests, even when a tenant was resolved from the
- * subdomain — causing layouts and actions to read `null` while generated
- * REST routes (which consume the ALS context) read the correct tenant.
+ * over subdomain when both are present) and align BOTH `event.locals.tenantId`
+ * AND `event.locals.tenantContext` to it.
+ *
+ * Two failure modes this guards against:
+ *
+ *   1. **Public requests with a subdomain.** `createSessionHandler` resets
+ *      `event.locals.tenantId` to `null` before checking for a session
+ *      cookie. With no session, the session handler returns without
+ *      repopulating it, so the subdomain-resolved tenant goes missing
+ *      from layouts/actions even though the ALS context (set by
+ *      `tenancyHandle`) still carries it.
+ *   2. **Authenticated requests where the session's tenant differs from
+ *      the subdomain.** The session handler calls `withTenant(sessionCtx, ...)`
+ *      — switching the ALS context to the session tenant — and updates
+ *      `event.locals.tenantId` to match. But it does NOT touch
+ *      `event.locals.tenantContext`, which is still the subdomain context
+ *      previously written by `tenancyHandle`. Layouts/actions reading
+ *      `tenantContext` would then see stale permissions/superAdminBypass
+ *      that don't match the tenant their queries are scoped to.
+ *
+ * Reading the live ALS context here and writing it back to BOTH
+ * `locals.tenantId` and `locals.tenantContext` keeps the three vantage
+ * points (locals.tenantId, locals.tenantContext, ALS-scoped queries) in
+ * sync regardless of auth state.
  */
 const reconcileTenantLocals: Handle = async ({ event, resolve }) => {
-  if (!event.locals.tenantId) {
-    const tenantFromContext = getTenantId();
-    if (tenantFromContext) {
-      event.locals.tenantId = tenantFromContext;
-    }
+  const activeContext = getCurrentTenant();
+  if (activeContext) {
+    event.locals.tenantId = activeContext.tenantId;
+    event.locals.tenantContext = activeContext;
   }
   return resolve(event);
 };

@@ -183,15 +183,16 @@ async function handleContractCreated(
     sourceId: payload.contractId,
     note: metadata.source ? `auto-reserve via ${metadata.source}` : undefined,
   };
-  for (const line of payload.lines) {
-    if (!line) continue;
-    await stockService.reserve(
-      line.skuId,
-      line.locationId,
-      line.qty,
-      baseOptions,
-    );
-  }
+  // Atomic across lines: a shortfall on line N rolls back lines 1..N-1.
+  // Without this wrapper, an `InsufficientStockError` mid-loop would leave
+  // a partially-reserved contract, and `DispatchBus` would only log the
+  // async handler error — no compensating release would ever fire.
+  await stockService.withTransaction(async (tx) => {
+    for (const line of payload.lines) {
+      if (!line) continue;
+      await tx.reserve(line.skuId, line.locationId, line.qty, baseOptions);
+    }
+  });
 }
 
 async function handleFulfillmentShipped(
@@ -205,15 +206,16 @@ async function handleFulfillmentShipped(
     sourceId: payload.fulfillmentId,
     note: metadata.source ? `auto-fulfill via ${metadata.source}` : undefined,
   };
-  for (const line of payload.lines) {
-    if (!line) continue;
-    await stockService.fulfill(
-      line.skuId,
-      line.locationId,
-      line.qty,
-      baseOptions,
-    );
-  }
+  // Atomic across lines: a shortfall on line N rolls back lines 1..N-1.
+  // Same rationale as `handleContractCreated` above — without the tx
+  // wrapper, a failing fulfilment leg would leave the audit ledger
+  // inconsistent and no compensating reservation-restore would ever fire.
+  await stockService.withTransaction(async (tx) => {
+    for (const line of payload.lines) {
+      if (!line) continue;
+      await tx.fulfill(line.skuId, line.locationId, line.qty, baseOptions);
+    }
+  });
 }
 
 /**

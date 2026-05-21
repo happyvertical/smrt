@@ -142,6 +142,59 @@ describe('installInventoryDispatchHandlers', () => {
     expect(reservationsAfterDispose).toHaveLength(1);
   });
 
+  it('rolls back earlier lines when a later line throws (contract:created)', async () => {
+    // One sku with 5 units; the contract asks for 3 on line A (would
+    // succeed in isolation) and 10 on line B (overdraws). Without the
+    // tx wrapper the dispatch handler would commit line A's reservation
+    // and then throw on line B, leaving the contract partially
+    // reserved. With the wrapper, neither line lands.
+    const service = await createStockService({ db });
+    await service.receive(skuId, warehouseId, 5);
+
+    const handlers = await installInventoryDispatchHandlers({
+      dispatchBus: bus,
+      stockService: service,
+    });
+
+    // DispatchBus swallows in-memory handler errors and routes them to
+    // `console.error` (see `bus.ts` ~line 612). Intercept that log so we
+    // can synchronize on "the handler finished and failed" without
+    // depending on internal bus state.
+    const consoleErrors: unknown[] = [];
+    const originalConsoleError = console.error;
+    console.error = (...args: unknown[]) => {
+      consoleErrors.push(args);
+    };
+
+    try {
+      await bus.emit(
+        'contract:created',
+        {
+          contractId: 'C-ATOMIC',
+          lines: [
+            { skuId, locationId: warehouseId, qty: 3 },
+            { skuId, locationId: warehouseId, qty: 10 },
+          ],
+        },
+        { source: 'commerce' },
+      );
+      // Wait for the handler's rejection to reach console.error.
+      await waitFor(async () => consoleErrors.length > 0, 1_000);
+    } finally {
+      console.error = originalConsoleError;
+      handlers.dispose();
+    }
+
+    expect(consoleErrors.length).toBeGreaterThan(0);
+    // No reservations should have landed — the whole emit rolled back.
+    const reservations = await movements.findByReason('reservation');
+    expect(reservations).toHaveLength(0);
+    const available = await levels.getLevel(skuId, warehouseId, 'available');
+    expect(Number(available?.qty ?? 0)).toBe(5);
+    const allocated = await levels.getLevel(skuId, warehouseId, 'allocated');
+    expect(Number(allocated?.qty ?? 0)).toBe(0);
+  });
+
   it('does not subscribe when callers opt the handlers out', async () => {
     const service = await createStockService({ db });
     await installInventoryDispatchHandlers({

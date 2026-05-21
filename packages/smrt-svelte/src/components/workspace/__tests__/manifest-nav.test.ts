@@ -316,6 +316,90 @@ describe('navTreeFromManifest', () => {
     });
     expect(result[0].label).toBe('HV');
   });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // Visibility filtering — `@smrt({ visibility: 'internal' | 'test' })`
+  // marks classes as plumbing / fixtures that should never appear in
+  // admin nav, regardless of whether they have a REST list route.
+  // ──────────────────────────────────────────────────────────────────────
+
+  it('drops entries with top-level visibility = "internal"', () => {
+    const manifest: SmrtManifestLike = {
+      objects: {
+        '@acme/widgets:Public': {
+          qualifiedName: '@acme/widgets:Public',
+          className: 'Public',
+          packageName: '@acme/widgets',
+          collection: 'publics',
+          decoratorConfig: {},
+        },
+        '@acme/widgets:InternalJoin': {
+          qualifiedName: '@acme/widgets:InternalJoin',
+          className: 'InternalJoin',
+          packageName: '@acme/widgets',
+          collection: 'internal-joins',
+          visibility: 'internal',
+          decoratorConfig: {},
+        },
+      },
+    };
+    const result = navTreeFromManifest(manifest);
+    expect(result).toHaveLength(1);
+    expect(result[0].children).toHaveLength(1);
+    expect(result[0].children?.[0].label).toBe('Publics');
+  });
+
+  it('drops entries with visibility = "test" (decoratorConfig fallback)', () => {
+    const manifest: SmrtManifestLike = {
+      objects: {
+        '@acme/widgets:Public': {
+          qualifiedName: '@acme/widgets:Public',
+          className: 'Public',
+          packageName: '@acme/widgets',
+          collection: 'publics',
+          decoratorConfig: {},
+        },
+        '@acme/widgets:TestFixture': {
+          qualifiedName: '@acme/widgets:TestFixture',
+          className: 'TestFixture',
+          packageName: '@acme/widgets',
+          collection: 'test-fixtures',
+          // No top-level visibility — the helper falls back to decoratorConfig.
+          decoratorConfig: { visibility: 'test' },
+        },
+      },
+    };
+    const result = navTreeFromManifest(manifest);
+    expect(result).toHaveLength(1);
+    expect(result[0].children?.map((c) => c.label)).toEqual(['Publics']);
+  });
+
+  it('keeps entries with visibility = "public" or unset', () => {
+    const manifest: SmrtManifestLike = {
+      objects: {
+        '@acme/widgets:Explicit': {
+          qualifiedName: '@acme/widgets:Explicit',
+          className: 'Explicit',
+          packageName: '@acme/widgets',
+          collection: 'explicits',
+          visibility: 'public',
+          decoratorConfig: {},
+        },
+        '@acme/widgets:Implicit': {
+          qualifiedName: '@acme/widgets:Implicit',
+          className: 'Implicit',
+          packageName: '@acme/widgets',
+          collection: 'implicits',
+          decoratorConfig: {},
+        },
+      },
+    };
+    const result = navTreeFromManifest(manifest);
+    expect(result[0].children?.map((c) => c.label).sort()).toEqual([
+      'Explicits',
+      'Implicits',
+    ]);
+  });
 });
 
 // ────────────────────────────────────────────────────────────────────────

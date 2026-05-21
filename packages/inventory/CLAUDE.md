@@ -52,8 +52,10 @@ const handlers = await installInventoryDispatchHandlers({
 ```
 
 This subscribes to:
-- `contract:created` → calls `service.reserve()` for every line, attributed to `('Contract', payload.contractId)`
-- `fulfillment:shipped` → calls `service.fulfill()` for every line, attributed to `('Fulfillment', payload.fulfillmentId)`
+- `contract:created` → calls `service.reserve()` for every line inside one `stockService.withTransaction(...)`, attributed to `('Contract', payload.contractId)`
+- `fulfillment:shipped` → calls `service.fulfill()` for every line inside one `stockService.withTransaction(...)`, attributed to `('Fulfillment', payload.fulfillmentId)`
+
+Both handlers are atomic across lines: a shortfall on line N rolls back lines 1..N-1 so the event is all-or-nothing. Without this guarantee, `DispatchBus` would only log the async handler error and a partially-reserved (or partially-fulfilled) contract would have no compensating event to fix it.
 
 Per-handler toggles: `installContractReserved`, `installFulfillmentShipped`. The `production_order:posted` hook is deliberately not installed here — it depends on the BOM model and ships in `@happyvertical/smrt-manufacturing` (issue #1250).
 

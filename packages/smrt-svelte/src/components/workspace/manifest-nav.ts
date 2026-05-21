@@ -32,6 +32,13 @@
 // into the workspace barrel.
 // ────────────────────────────────────────────────────────────────────────
 
+/**
+ * Visibility flavours emitted by `@smrt({ visibility })`. Mirrors
+ * `SmrtVisibility` in `@happyvertical/smrt-core` without importing it
+ * (see the file-top note on why we avoid a core peer dep).
+ */
+type ManifestVisibility = 'public' | 'internal' | 'test';
+
 /** Subset of `SmartObjectDefinition` the nav helper reads from. */
 export interface SmrtManifestEntryLike {
   /** Qualified name in `@package/name:ClassName` form. Primary key. */
@@ -44,6 +51,13 @@ export interface SmrtManifestEntryLike {
   collection?: string;
   /** Base class name as written in source. */
   extends?: string;
+  /**
+   * Top-level visibility flag — `SmartObjectDefinition` hoists this out of
+   * `decoratorConfig` so it can be read without parsing the raw config. The
+   * helper reads here first, then falls back to `decoratorConfig.visibility`
+   * for older / hand-built manifests.
+   */
+  visibility?: ManifestVisibility;
   /**
    * The `@smrt({...})` config object captured by the AST scanner. Fields
    * are optional in the structural type so partial manifests still satisfy
@@ -63,6 +77,11 @@ export interface SmrtManifestEntryLike {
     api?:
       | boolean
       | { include?: string[]; exclude?: string[]; [key: string]: unknown };
+    /**
+     * Raw visibility flag as written in source. Read as a fallback when
+     * the top-level `visibility` field is absent.
+     */
+    visibility?: ManifestVisibility;
     [key: string]: unknown;
   };
 }
@@ -191,6 +210,23 @@ function looksLikeCollectionClass(entry: SmrtManifestEntryLike): boolean {
 }
 
 /**
+ * Whether an entry is publicly visible in the manifest. Classes marked
+ * `@smrt({ visibility: 'internal' })` are package-only and should never
+ * surface in admin nav — they're typically join tables, sync helpers, or
+ * cross-package plumbing. `'test'` fixtures should obviously never leak
+ * either. Default (`undefined` / `'public'`) keeps the entry visible.
+ *
+ * Reads the top-level `visibility` field first (the shape published by
+ * `SmartObjectDefinition`) and falls back to `decoratorConfig.visibility`
+ * for older / hand-built manifests.
+ */
+function isPublicEntry(entry: SmrtManifestEntryLike): boolean {
+  const visibility =
+    entry.visibility ?? entry.decoratorConfig?.visibility ?? 'public';
+  return visibility === 'public';
+}
+
+/**
  * Whether an entry exposes a `list` route through the REST generator.
  *
  * Join-table / link / asset models commonly declare `@smrt({ api: false })`
@@ -264,9 +300,13 @@ function entryQualifier(entry: SmrtManifestEntryLike): string {
  *
  * Algorithm:
  *   1. Drop collection classes (`*Collection` / `extends: 'SmrtCollection'`).
- *   2. If `permittedResources` is provided, drop entries whose qualified
- *      name isn't in the list. Otherwise keep all visible entries.
- *   3. Group remaining entries by their resolved section title.
+ *   2. Drop entries marked `@smrt({ visibility: 'internal' | 'test' })` —
+ *      they're plumbing / fixtures and never belong in admin nav.
+ *   3. Drop entries that don't expose a REST `list` route (`@smrt({ api: false })`,
+ *      `include` without `list`, or `exclude` containing `list`).
+ *   4. If `permittedResources` is provided, drop entries whose qualified
+ *      name isn't in the list. Otherwise keep all remaining entries.
+ *   5. Group remaining entries by their resolved section title.
  *   4. For each entry, emit a `NavItem` with:
  *       - `label` = `decoratorConfig.ui.label` ?? `pluralizeClassName(className)`
  *       - `href`  = `${basePath}/${collection}` (defaults to `/api/v1/{collection}`)
@@ -325,6 +365,7 @@ export function navTreeFromManifest(
 
   for (const entry of Object.values(manifest.objects)) {
     if (looksLikeCollectionClass(entry)) continue;
+    if (!isPublicEntry(entry)) continue;
     if (!hasListRoute(entry)) continue;
 
     const qualifier = entryQualifier(entry);

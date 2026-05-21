@@ -7,18 +7,25 @@
  * simply reads the order's `productId`, looks up the active BOM, and
  * writes the right stock movements through {@link StockService}.
  *
- * Two methods:
+ * Three methods:
  *
  * - {@link consumeMaterials} — for each BOM line, deduct
  *   `qtyPerUnit * (1 + wastePercent / 100) * runQty` from `available` at
  *   the production location. Stamps every movement with
  *   `sourceType: 'ProductionOrder'` + the production order id so audit
- *   queries can roll them up later.
+ *   queries can roll them up later. Atomic across BOM lines (one tx).
  * - {@link produceFinishedGoods} — receive `runQty` of the finished
  *   product's SKU into `available` at the production location. The caller
  *   supplies the SKU id (the production order references a *product*, not
  *   a *SKU*; in practice the production-order-level "what we are making"
  *   gets resolved to a specific SKU per variant on the line items).
+ * - {@link runProduction} — consume materials AND receive finished
+ *   goods in one transaction. Use this when consume + produce should be
+ *   jointly atomic (e.g. a make-to-stock workflow where the factory step
+ *   is invisible). Calling `consumeMaterials` then `produceFinishedGoods`
+ *   separately is NOT jointly atomic — each opens its own transaction
+ *   and a failure between them can leave materials deducted with no
+ *   finished SKU receipt to balance it.
  *
  * ## Location convention (explicit-arg design)
  *
@@ -175,6 +182,15 @@ export interface ProduceResult {
 }
 
 /**
+ * Result of {@link ProductionService.runProduction} — the consume + produce
+ * pair, run inside one transaction.
+ */
+export interface RunProductionResult {
+  consumed: ConsumeResult[];
+  produced: ProduceResult;
+}
+
+/**
  * Operational bridge between a production order and the inventory ledger.
  */
 export class ProductionService {
@@ -225,43 +241,10 @@ export class ProductionService {
     order: ProductionOrderRef,
     options: ConsumeMaterialsOptions,
   ): Promise<ConsumeResult[]> {
-    assertLocationId(options.locationId, 'consumeMaterials');
-    assertPositiveQty(options.qty, 'consumeMaterials');
-    const orderId = order.id ?? '';
-    if (!orderId) {
-      throw new Error(
-        'consumeMaterials: order.id is required for source attribution',
-      );
-    }
-
-    const bom = await this.resolveBom(order);
-    const lines = await this.lines.findByBom(bom.id!);
-    const mutationOptions: StockMutationOptions = {
-      sourceType: 'ProductionOrder',
-      sourceId: orderId,
-      reasonCode: options.reasonCode ?? 'production_consume',
-      note: options.note,
-    };
-
-    return this.stockService.withTransaction(async (tx) => {
-      const emitted: ConsumeResult[] = [];
-      for (const line of lines) {
-        const qty = line.effectiveQtyPerUnit() * options.qty;
-        if (qty <= 0) continue;
-        await tx.adjust(
-          line.componentSkuId,
-          options.locationId,
-          -qty,
-          mutationOptions,
-        );
-        emitted.push({
-          componentSkuId: line.componentSkuId,
-          qty,
-          locationId: options.locationId,
-        });
-      }
-      return emitted;
-    });
+    const ctx = await this.prepareConsume(order, options);
+    return this.stockService.withTransaction(async (tx) =>
+      this.consumeMaterialsWith(tx, ctx),
+    );
   }
 
   /**
@@ -277,42 +260,145 @@ export class ProductionService {
     order: ProductionOrderRef,
     options: ProduceFinishedGoodsOptions,
   ): Promise<ProduceResult> {
-    assertLocationId(options.locationId, 'produceFinishedGoods');
-    assertPositiveQty(options.qty, 'produceFinishedGoods');
-    if (!options.finishedSkuId) {
-      throw new Error(
-        'produceFinishedGoods: finishedSkuId is required (the production order references a productId; the caller picks which SKU is being produced)',
-      );
-    }
-    const orderId = order.id ?? '';
-    if (!orderId) {
-      throw new Error(
-        'produceFinishedGoods: order.id is required for source attribution',
-      );
-    }
-
-    await this.stockService.receive(
-      options.finishedSkuId,
-      options.locationId,
-      options.qty,
-      {
-        sourceType: 'ProductionOrder',
-        sourceId: orderId,
-        reasonCode: options.reasonCode ?? 'production_produce',
-        note: options.note,
-      },
+    const ctx = prepareProduce(order, options);
+    return this.stockService.withTransaction(async (tx) =>
+      this.produceFinishedGoodsWith(tx, ctx),
     );
+  }
 
-    return {
-      finishedSkuId: options.finishedSkuId,
-      qty: options.qty,
-      locationId: options.locationId,
-    };
+  /**
+   * Atomically consume materials AND receive finished goods for one
+   * production run.
+   *
+   * Both calls share a single `stockService.withTransaction(...)` scope:
+   *
+   * - Materials are deducted line-by-line via {@link StockService.adjust}.
+   * - Finished goods are received via {@link StockService.receive}.
+   * - If ANY step throws — a BOM-line shortage, the produce-leg adapter
+   *   failing, a tenancy mismatch surfaced by an interceptor — every
+   *   write in the transaction rolls back. The materials are restored
+   *   and the finished SKU's `available` row is unchanged. Callers
+   *   never observe "materials deducted but finished goods missing".
+   *
+   * Use this when consume + produce should be one indivisible event —
+   * e.g. a make-to-stock workflow posting `production_order:completed`
+   * where the shop floor step is invisible to the ledger.
+   *
+   * The two-call form (call {@link consumeMaterials} then {@link
+   * produceFinishedGoods} separately) is still appropriate when the
+   * factory step is a real wall-clock gap that other observers need to
+   * see — work-in-progress dashboards, partial-run reporting, etc.
+   *
+   * Throws the same errors as the individual methods: missing args
+   * (plain `Error`), unresolvable BOM ({@link BomNotFoundError} /
+   * {@link NoActiveBomForProductError}), or `InsufficientStockError`
+   * if a line would drive `available` below zero.
+   */
+  async runProduction(
+    order: ProductionOrderRef,
+    options: {
+      consume: ConsumeMaterialsOptions;
+      produce: ProduceFinishedGoodsOptions;
+    },
+  ): Promise<RunProductionResult> {
+    const consumeCtx = await this.prepareConsume(order, options.consume);
+    const produceCtx = prepareProduce(order, options.produce);
+    return this.stockService.withTransaction(async (tx) => {
+      const consumed = await this.consumeMaterialsWith(tx, consumeCtx);
+      const produced = await this.produceFinishedGoodsWith(tx, produceCtx);
+      return { consumed, produced };
+    });
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // Internal helpers
   // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Validate consume args, resolve the BOM + lines, and pre-compute the
+   * mutation attribution. Anything that can throw without a tx open
+   * happens here so the transaction we open later doesn't have to roll
+   * back over a validation miss.
+   */
+  private async prepareConsume(
+    order: ProductionOrderRef,
+    options: ConsumeMaterialsOptions,
+  ): Promise<ConsumeContext> {
+    assertLocationId(options.locationId, 'consumeMaterials');
+    assertPositiveQty(options.qty, 'consumeMaterials');
+    const orderId = order.id ?? '';
+    if (!orderId) {
+      throw new Error(
+        'consumeMaterials: order.id is required for source attribution',
+      );
+    }
+    const bom = await this.resolveBom(order);
+    const lines = await this.lines.findByBom(bom.id!);
+    return {
+      orderId,
+      lines,
+      runQty: options.qty,
+      locationId: options.locationId,
+      mutationOptions: {
+        sourceType: 'ProductionOrder',
+        sourceId: orderId,
+        reasonCode: options.reasonCode ?? 'production_consume',
+        note: options.note,
+      },
+    };
+  }
+
+  /**
+   * Execute the consume leg against a caller-supplied tx-bound
+   * {@link StockService}. Public entry points (`consumeMaterials`,
+   * `runProduction`) open the tx and call through here. Each per-line
+   * `tx.adjust(...)` shares the same transaction so a shortfall on
+   * line N+1 rolls back lines 1..N.
+   */
+  private async consumeMaterialsWith(
+    tx: StockService,
+    ctx: ConsumeContext,
+  ): Promise<ConsumeResult[]> {
+    const emitted: ConsumeResult[] = [];
+    for (const line of ctx.lines) {
+      const qty = line.effectiveQtyPerUnit() * ctx.runQty;
+      if (qty <= 0) continue;
+      await tx.adjust(
+        line.componentSkuId,
+        ctx.locationId,
+        -qty,
+        ctx.mutationOptions,
+      );
+      emitted.push({
+        componentSkuId: line.componentSkuId,
+        qty,
+        locationId: ctx.locationId,
+      });
+    }
+    return emitted;
+  }
+
+  /**
+   * Execute the produce leg against a caller-supplied tx-bound
+   * {@link StockService}. Public entry points (`produceFinishedGoods`,
+   * `runProduction`) open the tx and call through here.
+   */
+  private async produceFinishedGoodsWith(
+    tx: StockService,
+    ctx: ProduceContext,
+  ): Promise<ProduceResult> {
+    await tx.receive(
+      ctx.finishedSkuId,
+      ctx.locationId,
+      ctx.qty,
+      ctx.mutationOptions,
+    );
+    return {
+      finishedSkuId: ctx.finishedSkuId,
+      qty: ctx.qty,
+      locationId: ctx.locationId,
+    };
+  }
 
   /**
    * Resolve the BOM for a production order. Order of preference:
@@ -346,6 +432,66 @@ export class ProductionService {
     if (!active) throw new NoActiveBomForProductError(productId);
     return active;
   }
+}
+
+/**
+ * Pre-computed consume work that an open transaction can apply without
+ * any further validation. Built by {@link ProductionService.prepareConsume}.
+ */
+interface ConsumeContext {
+  orderId: string;
+  lines: BomLine[];
+  runQty: number;
+  locationId: string;
+  mutationOptions: StockMutationOptions;
+}
+
+/**
+ * Pre-computed produce work that an open transaction can apply without
+ * any further validation. Built by {@link prepareProduce}.
+ */
+interface ProduceContext {
+  orderId: string;
+  finishedSkuId: string;
+  qty: number;
+  locationId: string;
+  mutationOptions: StockMutationOptions;
+}
+
+/**
+ * Validate produce args and pre-compute the mutation attribution.
+ * Mirrors {@link ProductionService.prepareConsume}; it's a free function
+ * because the produce leg doesn't need access to any collection state.
+ */
+function prepareProduce(
+  order: ProductionOrderRef,
+  options: ProduceFinishedGoodsOptions,
+): ProduceContext {
+  assertLocationId(options.locationId, 'produceFinishedGoods');
+  assertPositiveQty(options.qty, 'produceFinishedGoods');
+  if (!options.finishedSkuId) {
+    throw new Error(
+      'produceFinishedGoods: finishedSkuId is required (the production order references a productId; the caller picks which SKU is being produced)',
+    );
+  }
+  const orderId = order.id ?? '';
+  if (!orderId) {
+    throw new Error(
+      'produceFinishedGoods: order.id is required for source attribution',
+    );
+  }
+  return {
+    orderId,
+    finishedSkuId: options.finishedSkuId,
+    qty: options.qty,
+    locationId: options.locationId,
+    mutationOptions: {
+      sourceType: 'ProductionOrder',
+      sourceId: orderId,
+      reasonCode: options.reasonCode ?? 'production_produce',
+      note: options.note,
+    },
+  };
 }
 
 function assertPositiveQty(qty: number, op: string): void {

@@ -61,9 +61,26 @@ const produced = await production.produceFinishedGoods(
   { id: order.id, productId: order.productId },
   { locationId: factory.id, qty: runQty, finishedSkuId: variant.id },
 );
+
+// Or run both in one transaction — see "Joint atomicity" below.
+const { consumed, produced } = await production.runProduction(
+  { id: order.id, productId: order.productId, bomId: order.bomId },
+  {
+    consume: { locationId: factory.id, qty: runQty },
+    produce: { locationId: factory.id, qty: runQty, finishedSkuId: variant.id },
+  },
+);
 ```
 
-Both methods write through `StockService` and stamp every emitted `StockMovement` with `sourceType: 'ProductionOrder'` + the production order id so audit queries can roll them up later.
+All three methods write through `StockService` and stamp every emitted `StockMovement` with `sourceType: 'ProductionOrder'` + the production order id so audit queries can roll them up later.
+
+### Joint atomicity — `runProduction` vs the two-call form
+
+`consumeMaterials` and `produceFinishedGoods` are each individually atomic, but calling them as two separate awaits is NOT jointly atomic — each opens its own `stockService.withTransaction(...)` scope. If something goes wrong between the two calls (process crash, transient adapter failure on the produce leg), you can land in a state where materials are deducted but no finished SKU receipt balances them. The audit ledger stays consistent within each call; what's missing is the cross-call invariant.
+
+When you need that invariant — typically make-to-stock flows where the factory step is invisible to the ledger — use `runProduction(order, { consume, produce })`. Both legs run inside one transaction; any failure (BOM shortage, adapter error, interceptor reject) rolls back both legs together.
+
+When NOT to use it: workflows where consume and produce represent a real wall-clock gap that downstream observers need to see (WIP dashboards, partial-run reporting, separate "materials posted" and "production completed" events on the dispatch bus). There, the two-call form is the right shape — each call is its own ledger event.
 
 ### Location convention — explicit-arg design
 
@@ -113,6 +130,7 @@ The companion handlers for `contract:created` (reserve) and `fulfillment:shipped
 - **`canProduce` sums available stock across every location.** The planning question is "do we have it at all?". The operational question of "which warehouse do we pull from?" is left to the caller of `consumeMaterials`, which targets a single `locationId` per call.
 - **`consumeMaterials` propagates `InsufficientStockError`.** If a line would drive `available` below zero, the underlying `StockService.adjust` throws. Pre-flight with `canProduce` before posting if you want to avoid partial-failure mid-run.
 - **`consumeMaterials` is atomic across BOM lines.** All per-line deductions and their audit rows run inside a single `stockService.withTransaction(...)` scope (powered by `@happyvertical/sql >= 0.74.0`'s native `db.transaction()`). An `InsufficientStockError` on line N+1 rolls back lines 1..N so production-order posting never leaves materials half-consumed. The recommended pre-flight (`BomService.canProduce(orderId, qty)`) is still useful when you'd rather know upfront than discover the shortfall mid-run, but a missed pre-flight no longer corrupts state.
+- **`consumeMaterials` + `produceFinishedGoods` are NOT jointly atomic.** Each opens its own transaction. A failure on the produce leg leaves materials deducted with no finished SKU receipt to balance it. Use `runProduction(order, { consume, produce })` when you need both legs to commit or roll back together.
 - **Cross-package references are plain strings.** `productId`, `componentSkuId`, `bomId` (within this package) — all plain string ids, never `@foreignKey()`. Keeps the dependency graph DAG-shaped and lets each upstream package evolve independently.
 - **`conflictColumns` include `tenant_id`** on both models. NULL-matching semantics are handled by `@happyvertical/sql >= 0.74.0`; two saves with the same `(product_id, version, NULL)` tuple merge in place.
 - **Lazy table creation.** Like everything else in SMRT, the `manufacturing_boms` and `manufacturing_bom_lines` tables are created on first DB op via `syncSchema`. Safe for SSR.

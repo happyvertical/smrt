@@ -426,6 +426,73 @@ describe('ProductionService', () => {
     });
   });
 
+  describe('runProduction', () => {
+    it('consumes materials and receives finished goods in one transaction', async () => {
+      await stockService.receive(fabricSkuId, factoryId, 500);
+      await stockService.receive(buttonSkuId, factoryId, 1000);
+
+      const order = { id: 'po-30', productId: parentProductId };
+      const result = await production.runProduction(order, {
+        consume: { locationId: factoryId, qty: 50 },
+        produce: { locationId: factoryId, qty: 50, finishedSkuId },
+      });
+
+      expect(result.consumed.map((c) => c.componentSkuId).sort()).toEqual(
+        [buttonSkuId, fabricSkuId].sort(),
+      );
+      expect(result.produced.finishedSkuId).toBe(finishedSkuId);
+      expect(result.produced.qty).toBe(50);
+
+      const finishedLevel = await levels.getLevel(
+        finishedSkuId,
+        factoryId,
+        'available',
+      );
+      expect(Number(finishedLevel?.qty)).toBe(50);
+    });
+
+    it('rolls back the produce leg when a consume line throws', async () => {
+      // Only 1 unit of fabric in stock — consume needs 50 * 2.2 = 110.
+      await stockService.receive(fabricSkuId, factoryId, 1);
+      await stockService.receive(buttonSkuId, factoryId, 1000);
+
+      const order = { id: 'po-31', productId: parentProductId };
+      await expect(
+        production.runProduction(order, {
+          consume: { locationId: factoryId, qty: 50 },
+          produce: { locationId: factoryId, qty: 50, finishedSkuId },
+        }),
+      ).rejects.toThrow();
+
+      // Neither the consume nor the produce leg should have committed.
+      const finishedLevel = await levels.getLevel(
+        finishedSkuId,
+        factoryId,
+        'available',
+      );
+      expect(finishedLevel === null || Number(finishedLevel.qty) === 0).toBe(
+        true,
+      );
+      // Materials untouched (the 1 unit is still there; nothing burned).
+      const fabricLevel = await levels.getLevel(
+        fabricSkuId,
+        factoryId,
+        'available',
+      );
+      expect(Number(fabricLevel?.qty)).toBe(1);
+      const buttonLevel = await levels.getLevel(
+        buttonSkuId,
+        factoryId,
+        'available',
+      );
+      expect(Number(buttonLevel?.qty)).toBe(1000);
+
+      // No movements should be present at all.
+      const byOrder = await movements.findBySource('ProductionOrder', 'po-31');
+      expect(byOrder).toHaveLength(0);
+    });
+  });
+
   describe('tenant isolation', () => {
     beforeEach(() => {
       enableTenancy();
