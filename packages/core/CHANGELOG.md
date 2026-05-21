@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.25.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - materialize tenant-scoped manifest columns
+
+  ### Other Changes
+
+  - test: allow atomic migration tests more time in ci
+  - @happyvertical/smrt-scanner@0.25.15
+  - @happyvertical/smrt-config@0.25.15
+  - @happyvertical/smrt-types@0.25.15
+
 ## 0.25.14
 
 ### Patch Changes
