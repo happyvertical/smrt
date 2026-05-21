@@ -245,6 +245,18 @@ export function cloneManifestSchemaColumns(
       const clonedColumn = {
         ...(column as ColumnDefinition & Record<string, unknown>),
       } as ColumnDefinition;
+      const manifestDefault = (
+        clonedColumn as ColumnDefinition & {
+          default?: unknown;
+        }
+      ).default;
+
+      if (
+        clonedColumn.defaultValue === undefined &&
+        manifestDefault !== undefined
+      ) {
+        clonedColumn.defaultValue = manifestDefault;
+      }
 
       if (clonedColumn.foreignKey) {
         clonedColumn.foreignKey = { ...clonedColumn.foreignKey };

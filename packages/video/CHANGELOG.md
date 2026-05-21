@@ -1,5 +1,83 @@
 # @happyvertical/smrt-video
 
+## 0.25.15
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.25.15
+  - @happyvertical/smrt-assets@0.25.15
+  - @happyvertical/smrt-content@0.25.15
+  - @happyvertical/smrt-profiles@0.25.15
+  - @happyvertical/smrt-tenancy@0.25.15
+  - @happyvertical/smrt-voice@0.25.15
+  - @happyvertical/smrt-config@0.25.15
+
+## 0.25.14
+
+### Patch Changes
+
+- Updated dependencies [3930b05]
+  - @happyvertical/smrt-core@0.25.14
+  - @happyvertical/smrt-assets@0.25.14
+  - @happyvertical/smrt-content@0.25.14
+  - @happyvertical/smrt-profiles@0.25.14
+  - @happyvertical/smrt-tenancy@0.25.14
+  - @happyvertical/smrt-voice@0.25.14
+  - @happyvertical/smrt-config@0.25.14
+
+## 0.25.13
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.25.13
+  - @happyvertical/smrt-assets@0.25.13
+  - @happyvertical/smrt-content@0.25.13
+  - @happyvertical/smrt-profiles@0.25.13
+  - @happyvertical/smrt-tenancy@0.25.13
+  - @happyvertical/smrt-voice@0.25.13
+  - @happyvertical/smrt-config@0.25.13
+
+## 0.25.12
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.25.12
+  - @happyvertical/smrt-assets@0.25.12
+  - @happyvertical/smrt-content@0.25.12
+  - @happyvertical/smrt-profiles@0.25.12
+  - @happyvertical/smrt-tenancy@0.25.12
+  - @happyvertical/smrt-voice@0.25.12
+  - @happyvertical/smrt-config@0.25.12
+
+## 0.25.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.25.11
+  - @happyvertical/smrt-assets@0.25.11
+  - @happyvertical/smrt-content@0.25.11
+  - @happyvertical/smrt-profiles@0.25.11
+  - @happyvertical/smrt-tenancy@0.25.11
+  - @happyvertical/smrt-voice@0.25.11
+  - @happyvertical/smrt-config@0.25.11
+
+## 0.25.10
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.25.10
+  - @happyvertical/smrt-assets@0.25.10
+  - @happyvertical/smrt-content@0.25.10
+  - @happyvertical/smrt-profiles@0.25.10
+  - @happyvertical/smrt-tenancy@0.25.10
+  - @happyvertical/smrt-voice@0.25.10
+  - @happyvertical/smrt-config@0.25.10
+
 ## 0.25.9
 
 ### Patch Changes

@@ -23,6 +23,31 @@ describe('manifest-discovery', () => {
     await rm(tempDir, { recursive: true, force: true });
   });
 
+  describe('project manifest preference', () => {
+    it('prefers schema-command manifest locations over legacy static manifests', async () => {
+      await mkdir(join(tempDir, '.smrt'), { recursive: true });
+
+      await writeFile(
+        join(tempDir, 'static-manifest.js'),
+        'export default { objects: { Legacy: { className: "Legacy" } } };',
+      );
+      await writeFile(
+        join(tempDir, '.smrt', 'manifest.json'),
+        JSON.stringify({ objects: { Current: { className: 'Current' } } }),
+      );
+
+      const discovered = await discoverManifests(tempDir);
+      const projectManifest = discovered.find(
+        (manifest) => manifest.source === 'project',
+      );
+
+      expect(projectManifest?.path).toBe(
+        join(tempDir, '.smrt', 'manifest.json'),
+      );
+      expect(projectManifest?.objectNames).toEqual(['Current']);
+    });
+  });
+
   describe('deduplication', () => {
     it('should deduplicate packages with same name@version but different paths', async () => {
       const nodeModules = join(tempDir, 'node_modules');

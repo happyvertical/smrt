@@ -218,8 +218,6 @@ export class SecretService {
         context: tenantId, // Per-tenant uniqueness
         tenantId,
       });
-      (secret as Secret & { tenantId?: string | null }).tenantId = tenantId;
-      await secret.save();
 
       await this.audit(secret.id ?? null, name, userId, 'create', 'success');
       return secret;

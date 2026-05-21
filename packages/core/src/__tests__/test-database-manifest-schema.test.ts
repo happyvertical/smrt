@@ -113,6 +113,63 @@ describe('getTestDatabase manifest schemas', () => {
     restoreRegistry();
   });
 
+  it('normalizes manifest column defaults into runtime schema definitions', () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:ManifestDefaultedFeedSource',
+      {
+        className: 'ManifestDefaultedFeedSource',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'manifest_defaulted_feed_sources',
+        },
+        schema: {
+          tableName: 'manifest_defaulted_feed_sources',
+          ddl: `CREATE TABLE IF NOT EXISTS "manifest_defaulted_feed_sources" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "poll_interval_minutes" INTEGER NOT NULL DEFAULT 15
+)`,
+          columns: {
+            id: { type: 'TEXT', notNull: true, primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT', notNull: true, default: '' },
+            created_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            updated_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            poll_interval_minutes: {
+              type: 'INTEGER',
+              notNull: true,
+              default: 15,
+            },
+          },
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/pkg',
+    );
+
+    const schema =
+      ObjectRegistry.getAllSchemasAsDefinitions()
+        .manifest_defaulted_feed_sources;
+
+    expect(schema.columns.context.defaultValue).toBe('');
+    expect(schema.columns.created_at.defaultValue).toBe('current_timestamp');
+    expect(schema.columns.updated_at.defaultValue).toBe('current_timestamp');
+    expect(schema.columns.poll_interval_minutes.defaultValue).toBe(15);
+  });
+
   it('preserves manifest-defined unique conflict indexes for test databases', async () => {
     ObjectRegistry.registerFromManifest(
       '@test/pkg:ManifestIndexedJoin',

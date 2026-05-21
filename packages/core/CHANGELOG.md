@@ -1,5 +1,80 @@
 # @happyvertical/smrt-core
 
+## 0.25.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - materialize tenant-scoped manifest columns
+
+  ### Other Changes
+
+  - test: allow atomic migration tests more time in ci
+  - @happyvertical/smrt-scanner@0.25.15
+  - @happyvertical/smrt-config@0.25.15
+  - @happyvertical/smrt-types@0.25.15
+
+## 0.25.14
+
+### Patch Changes
+
+- 3930b05: Fix PostgreSQL ADD COLUMN migrations for JSON defaults so array defaults render valid JSONB SQL.
+  - @happyvertical/smrt-scanner@0.25.14
+  - @happyvertical/smrt-config@0.25.14
+  - @happyvertical/smrt-types@0.25.14
+
+## 0.25.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve atomic review followups (migrations)
+  - address atomic review feedback (migrations)
+  - apply schema batches atomically (migrations)
+  - @happyvertical/smrt-scanner@0.25.13
+  - @happyvertical/smrt-config@0.25.13
+  - @happyvertical/smrt-types@0.25.13
+
+## 0.25.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - address contribution form review (content)
+  - add native contribution form contracts (content)
+  - @happyvertical/smrt-scanner@0.25.12
+  - @happyvertical/smrt-config@0.25.12
+  - @happyvertical/smrt-types@0.25.12
+
+## 0.25.11
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - harden smrt migrations (cli)
+  - @happyvertical/smrt-scanner@0.25.11
+  - @happyvertical/smrt-config@0.25.11
+  - @happyvertical/smrt-types@0.25.11
+
+## 0.25.10
+
+### Patch Changes
+
+- ### Features
+
+  - add OIDC login flow (users)
+
+  ### Bug Fixes
+
+  - encode OIDC basic auth credentials (users)
+  - @happyvertical/smrt-scanner@0.25.10
+  - @happyvertical/smrt-config@0.25.10
+  - @happyvertical/smrt-types@0.25.10
+
 ## 0.25.9
 
 ### Patch Changes

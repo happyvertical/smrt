@@ -27,6 +27,19 @@ import '../__smrt-register__.js';
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
+import {
+  decodeOidcTransaction,
+  encodeOidcTransaction,
+  getUsersOidcConfig,
+  OidcLoginError,
+  type OidcLoginResult,
+  OidcLoginService,
+  type OidcProviderConfig,
+  type OidcProviderResolutionOptions,
+  type OidcTransaction,
+  type ResolvedOidcProviderConfig,
+  resolveOidcProviderConfig,
+} from '../services/OidcLoginService.js';
 import { withSessionPermissionContext } from '../services/SessionPermissionContext.js';
 import { SessionService } from '../services/SessionService.js';
 
@@ -73,13 +86,87 @@ type HandleInput = {
       delete: (name: string, options?: Record<string, unknown>) => void;
     };
     locals: Record<string, unknown>;
-    url: { pathname: string };
+    url: { pathname: string; protocol?: string };
     request: { headers: Headers };
   };
   resolve: (event: unknown) => Promise<Response>;
 };
 
 type Handle = (input: HandleInput) => Promise<Response>;
+
+type SvelteKitRequestEvent = {
+  cookies: HandleInput['event']['cookies'];
+  getClientAddress?: () => string;
+  locals?: Record<string, unknown>;
+  params?: Record<string, string | undefined>;
+  request: Request;
+  url: URL;
+};
+
+type OidcProviderResolver =
+  | string
+  | ((event: SvelteKitRequestEvent) => string | undefined);
+
+type OidcStringResolver<T> =
+  | T
+  | ((result: OidcLoginResult, event: SvelteKitRequestEvent) => T | Promise<T>);
+
+export interface OidcSvelteKitOptions
+  extends SmrtClassOptions,
+    OidcProviderResolutionOptions {
+  /** Optional fetch override for tests or custom runtimes. */
+  fetch?: typeof fetch;
+  /** JWT clock tolerance passed to jose. */
+  clockTolerance?: number | string;
+  /** Provider name, or a resolver. Defaults to event.params.provider. */
+  provider?: OidcProviderResolver;
+  /** Callback path used when provider.redirectUri is omitted. */
+  callbackPath?: string | ((providerName: string) => string);
+  /** Query parameter used to preserve post-login redirects. */
+  returnToParam?: string;
+  /** Prefix for the temporary OIDC transaction cookie. */
+  transactionCookiePrefix?: string;
+  /** Temporary transaction cookie TTL in seconds. Default: 10 minutes. */
+  transactionTtl?: number;
+  /** Cookie path for the temporary OIDC transaction. */
+  transactionCookiePath?: string;
+  /** Secure flag for the temporary OIDC transaction cookie. */
+  transactionCookieSecure?: boolean;
+  /** SameSite value for the temporary OIDC transaction cookie. */
+  transactionCookieSameSite?: 'strict' | 'lax' | 'none';
+  /** HMAC secret for transaction cookie integrity. Defaults to clientSecret. */
+  transactionCookieSecret?: string;
+  /** Session cookie name. Defaults to sid. */
+  sessionCookieName?: string;
+  /** Session cookie path. Defaults to /. */
+  sessionCookiePath?: string;
+  /** Secure flag for the session cookie. Defaults to true on HTTPS. */
+  sessionCookieSecure?: boolean;
+  /** SameSite value for the session cookie. */
+  sessionCookieSameSite?: 'strict' | 'lax' | 'none';
+  /** Session TTL in seconds. Defaults to the package session default. */
+  sessionTtl?: number;
+  /** Optional tenant to bind to the session. */
+  tenantId?: OidcStringResolver<string | null | undefined>;
+  /** Redirect target after successful callback. */
+  successRedirect?: OidcStringResolver<string>;
+  /** Redirect target after failed callback. If omitted, failures return 401. */
+  failureRedirect?:
+    | string
+    | ((error: unknown, event: SvelteKitRequestEvent) => string);
+}
+
+export interface BeginOidcLoginResult {
+  providerName: string;
+  transaction: OidcTransaction;
+  url: URL;
+}
+
+export interface CompleteOidcLoginResult extends OidcLoginResult {
+  providerName: string;
+  returnTo?: string;
+  sessionId: string;
+}
 
 /**
  * Creates a SvelteKit handle hook for session management.
@@ -258,9 +345,7 @@ export async function createSessionCookie(
   const ttl = options.ttl ?? DEFAULT_SESSION_TTL;
   const cookiePath = options.cookiePath ?? '/';
   const cookieSameSite = options.cookieSameSite ?? 'lax';
-  // Default to secure in production (check for localhost in URL)
-  const cookieSecure =
-    options.cookieSecure ?? !event.url.pathname.includes('localhost');
+  const cookieSecure = options.cookieSecure ?? event.url.protocol === 'https:';
 
   const service = await getOrCreateSessionService(options, ttl);
 
@@ -366,4 +451,397 @@ export async function switchSessionTenant(
 
   const service = await getOrCreateSessionService(options, ttl);
   return service.switchTenant(sessionId, tenantId);
+}
+
+function getOidcProviderName(
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): string | undefined {
+  if (typeof options.provider === 'function') {
+    return options.provider(event);
+  }
+
+  return options.provider ?? event.params?.provider ?? options.defaultProvider;
+}
+
+function getOidcTransactionCookieName(
+  providerName: string,
+  options: OidcSvelteKitOptions,
+): string {
+  const prefix = options.transactionCookiePrefix ?? 'smrt_oidc';
+  const safeProvider = providerName.replace(/[^a-z0-9_-]/giu, '_');
+  return `${prefix}_${safeProvider}`;
+}
+
+function useSecureCookie(
+  event: SvelteKitRequestEvent,
+  explicit?: boolean,
+): boolean {
+  return explicit ?? event.url.protocol === 'https:';
+}
+
+function resolveCallbackPath(
+  providerName: string,
+  options: OidcSvelteKitOptions,
+): string {
+  if (typeof options.callbackPath === 'function') {
+    return options.callbackPath(providerName);
+  }
+
+  return options.callbackPath ?? `/auth/${providerName}/callback`;
+}
+
+function resolveProviderWithRedirectUri(
+  event: SvelteKitRequestEvent,
+  providerName: string,
+  provider: OidcProviderConfig,
+  options: OidcSvelteKitOptions,
+): ResolvedOidcProviderConfig {
+  return {
+    ...provider,
+    redirectUri:
+      provider.redirectUri ??
+      new URL(
+        resolveCallbackPath(providerName, options),
+        event.url.origin,
+      ).toString(),
+  };
+}
+
+function createOidcService(
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): OidcLoginService {
+  const providerName = getOidcProviderName(event, options);
+  const resolved = resolveOidcProviderConfig(providerName, options);
+  const provider = resolveProviderWithRedirectUri(
+    event,
+    resolved.providerName,
+    resolved.provider,
+    options,
+  );
+
+  return new OidcLoginService({
+    ...options,
+    provider,
+    providerName: resolved.providerName,
+  });
+}
+
+function getReturnTo(
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): string | undefined {
+  const param = options.returnToParam ?? 'returnTo';
+  return getLocalReturnTo(event.url.searchParams.get(param));
+}
+
+function getLocalReturnTo(
+  returnTo: string | null | undefined,
+): string | undefined {
+  if (!returnTo) return undefined;
+  // Keep return targets local to avoid open redirects.
+  if (returnTo.startsWith('/') && !returnTo.startsWith('//')) {
+    return returnTo;
+  }
+
+  return undefined;
+}
+
+function getTransactionCookieSameSite(
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): 'strict' | 'lax' | 'none' {
+  if (options.transactionCookieSameSite) {
+    return options.transactionCookieSameSite;
+  }
+
+  return useSecureCookie(event, options.transactionCookieSecure)
+    ? 'none'
+    : 'lax';
+}
+
+function getTransactionCookieSecret(
+  provider: ResolvedOidcProviderConfig,
+  options: OidcSvelteKitOptions,
+): string | undefined {
+  const secret = options.transactionCookieSecret ?? provider.clientSecret;
+  return secret && secret.length > 0 ? secret : undefined;
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary)
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/u, '');
+}
+
+async function signTransactionPayload(
+  payload: string,
+  secret: string,
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { hash: 'SHA-256', name: 'HMAC' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    key,
+    new TextEncoder().encode(payload),
+  );
+  return bytesToBase64Url(new Uint8Array(signature));
+}
+
+function timingSafeEqual(left: string, right: string): boolean {
+  const leftBytes = new TextEncoder().encode(left);
+  const rightBytes = new TextEncoder().encode(right);
+  let diff = leftBytes.length ^ rightBytes.length;
+  const length = Math.max(leftBytes.length, rightBytes.length);
+
+  for (let index = 0; index < length; index += 1) {
+    diff |= (leftBytes[index] ?? 0) ^ (rightBytes[index] ?? 0);
+  }
+
+  return diff === 0;
+}
+
+async function encodeOidcTransactionCookie(
+  transaction: OidcTransaction,
+  secret?: string,
+): Promise<string> {
+  const payload = encodeOidcTransaction(transaction);
+  if (!secret) return payload;
+
+  const signature = await signTransactionPayload(payload, secret);
+  return `${payload}.${signature}`;
+}
+
+async function decodeOidcTransactionCookie(
+  value: string,
+  secret?: string,
+): Promise<OidcTransaction> {
+  if (!secret) return decodeOidcTransaction(value);
+
+  const separatorIndex = value.lastIndexOf('.');
+  if (separatorIndex < 0) {
+    throw new OidcLoginError('Invalid OIDC login transaction signature.');
+  }
+
+  const payload = value.slice(0, separatorIndex);
+  const signature = value.slice(separatorIndex + 1);
+  const expectedSignature = await signTransactionPayload(payload, secret);
+  if (!timingSafeEqual(signature, expectedSignature)) {
+    throw new OidcLoginError('Invalid OIDC login transaction signature.');
+  }
+
+  return decodeOidcTransaction(payload);
+}
+
+function getTransactionTtl(options: OidcSvelteKitOptions): number {
+  return (
+    options.transactionTtl ?? getUsersOidcConfig().transactionTtl ?? 10 * 60
+  );
+}
+
+async function resolveTenantId(
+  result: OidcLoginResult,
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): Promise<string | null | undefined> {
+  if (typeof options.tenantId === 'function') {
+    return options.tenantId(result, event);
+  }
+
+  return options.tenantId;
+}
+
+function redirectResponse(location: string | URL): Response {
+  return new Response(null, {
+    headers: { location: location.toString() },
+    status: 303,
+  });
+}
+
+function failureResponse(error: unknown): Response {
+  const message = error instanceof Error ? error.message : 'OIDC login failed.';
+  return new Response(message, {
+    status: 401,
+    headers: {
+      'content-type': 'text/plain; charset=utf-8',
+    },
+  });
+}
+
+function resolveSuccessRedirect(
+  result: CompleteOidcLoginResult,
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): string | Promise<string> {
+  if (typeof options.successRedirect === 'function') {
+    return options.successRedirect(result, event);
+  }
+
+  return options.successRedirect ?? result.returnTo ?? '/';
+}
+
+function resolveFailureRedirect(
+  error: unknown,
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): string | undefined {
+  if (!options.failureRedirect) return undefined;
+
+  if (typeof options.failureRedirect === 'function') {
+    return options.failureRedirect(error, event);
+  }
+
+  return options.failureRedirect;
+}
+
+/**
+ * Start an OIDC login from a SvelteKit route.
+ *
+ * Sets a short-lived, HTTP-only transaction cookie containing state, nonce,
+ * and PKCE verifier, then returns the provider authorization URL.
+ */
+export async function beginOidcLogin(
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): Promise<BeginOidcLoginResult> {
+  const service = createOidcService(event, options);
+  const transaction = service.createTransaction(getReturnTo(event, options));
+  const result = await service.createAuthorizationUrl({ transaction });
+
+  event.cookies.set(
+    getOidcTransactionCookieName(service.providerName, options),
+    await encodeOidcTransactionCookie(
+      transaction,
+      getTransactionCookieSecret(service.provider, options),
+    ),
+    {
+      httpOnly: true,
+      maxAge: getTransactionTtl(options),
+      path: options.transactionCookiePath ?? '/',
+      sameSite: getTransactionCookieSameSite(event, options),
+      secure: useSecureCookie(event, options.transactionCookieSecure),
+    },
+  );
+
+  return {
+    providerName: service.providerName,
+    transaction,
+    url: result.url,
+  };
+}
+
+/**
+ * Complete an OIDC callback, create or update the SMRT user/profile, and set
+ * the session cookie.
+ */
+export async function completeOidcLogin(
+  event: SvelteKitRequestEvent,
+  options: OidcSvelteKitOptions,
+): Promise<CompleteOidcLoginResult> {
+  const service = createOidcService(event, options);
+  const cookieName = getOidcTransactionCookieName(
+    service.providerName,
+    options,
+  );
+  const cookiePath = options.transactionCookiePath ?? '/';
+
+  try {
+    const rawTransaction = event.cookies.get(cookieName);
+    if (!rawTransaction) {
+      throw new OidcLoginError('Missing OIDC login transaction cookie.');
+    }
+
+    const decodedTransaction = await decodeOidcTransactionCookie(
+      rawTransaction,
+      getTransactionCookieSecret(service.provider, options),
+    );
+    const transaction = {
+      ...decodedTransaction,
+      returnTo: getLocalReturnTo(decodedTransaction.returnTo),
+    };
+    const ttl = getTransactionTtl(options);
+    if (Date.now() - transaction.createdAt > ttl * 1000) {
+      throw new OidcLoginError('OIDC login transaction has expired.');
+    }
+
+    const result = await service.completeLogin(event.url, transaction);
+    const tenantId = await resolveTenantId(result, event, options);
+    const sessionId = await createSessionCookie(
+      event as unknown as HandleInput['event'],
+      result.user.id as string,
+      tenantId ?? undefined,
+      {
+        ...options,
+        cookieName: options.sessionCookieName,
+        cookiePath: options.sessionCookiePath,
+        cookieSameSite: options.sessionCookieSameSite,
+        cookieSecure: useSecureCookie(event, options.sessionCookieSecure),
+        data: {
+          oidcIssuer: result.claims.iss,
+          oidcProvider: service.providerName,
+        },
+        ipAddress: event.getClientAddress?.(),
+        ttl: options.sessionTtl,
+        userAgent: event.request.headers.get('user-agent') ?? undefined,
+      },
+    );
+
+    return {
+      ...result,
+      providerName: service.providerName,
+      returnTo: transaction.returnTo,
+      sessionId,
+    };
+  } finally {
+    event.cookies.delete(cookieName, { path: cookiePath });
+  }
+}
+
+/**
+ * Create a SvelteKit GET handler that redirects to an OIDC provider.
+ *
+ * @example
+ * ```typescript
+ * // src/routes/auth/[provider]/login/+server.ts
+ * import { createOidcLoginHandler } from '@happyvertical/smrt-users/sveltekit';
+ *
+ * export const GET = createOidcLoginHandler({
+ *   db: { type: 'postgres', url: process.env.DATABASE_URL! },
+ * });
+ * ```
+ */
+export function createOidcLoginHandler(options: OidcSvelteKitOptions) {
+  return async (event: SvelteKitRequestEvent): Promise<Response> => {
+    const { url } = await beginOidcLogin(event, options);
+    return redirectResponse(url);
+  };
+}
+
+/**
+ * Create a SvelteKit GET handler for the provider callback.
+ */
+export function createOidcCallbackHandler(options: OidcSvelteKitOptions) {
+  return async (event: SvelteKitRequestEvent): Promise<Response> => {
+    try {
+      const result = await completeOidcLogin(event, options);
+      const redirectTo = await resolveSuccessRedirect(result, event, options);
+      return redirectResponse(redirectTo);
+    } catch (error) {
+      const failureRedirect = resolveFailureRedirect(error, event, options);
+      if (failureRedirect) return redirectResponse(failureRedirect);
+      return failureResponse(error);
+    }
+  };
 }
