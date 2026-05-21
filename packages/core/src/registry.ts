@@ -3127,19 +3127,22 @@ export function smrt(config: SmartObjectConfig = {}) {
         let tableName = config.tableName;
 
         if (!tableName) {
-          // Check if this class or any parent uses STI
+          // Check if this class or any parent uses STI.
+          // R5-canon: resolve the item class to its qualified
+          // registration first, then pass that qualified key to
+          // `getSTIBase` / `getTableStrategy` so a colliding simple
+          // name in another package can't yield the wrong base.
+          // Falls back to the simple name when no registration exists
+          // yet. Feeding a qualified string straight into
+          // `classnameToTablename` would yield a garbled identifier —
+          // route through the registered class's actual `schema.tableName`
+          // when present.
           const itemClassName = itemClass.name;
-          const stiBase = ObjectRegistry.getSTIBase(itemClassName);
-
-          // R5-canon: `getSTIBase` returns a qualified name. Compare against
-          // the item class's own qualified registration (when present) and
-          // derive the table name from the base's actual registration —
-          // feeding a qualified string straight into `classnameToTablename`
-          // would yield a garbled identifier.
           const itemReg = ObjectRegistry.getClassByConstructor(
             itemClass as any,
           );
           const itemQualified = itemReg?.qualifiedName ?? itemClassName;
+          const stiBase = ObjectRegistry.getSTIBase(itemQualified);
 
           if (stiBase && stiBase !== itemQualified) {
             // Use STI base's table name
@@ -3147,7 +3150,7 @@ export function smrt(config: SmartObjectConfig = {}) {
             tableName =
               baseReg?.schema?.tableName ??
               classnameToTablename(baseReg?.name ?? stiBase);
-          } else if (ObjectRegistry.getTableStrategy(itemClassName) === 'sti') {
+          } else if (ObjectRegistry.getTableStrategy(itemQualified) === 'sti') {
             // This is the STI base - use its own table name
             tableName = classnameToTablename(itemClassName);
           } else {
@@ -3209,8 +3212,15 @@ export function smrt(config: SmartObjectConfig = {}) {
           let stiBaseName: string | null = null;
 
           while (proto?.name && proto.name !== 'SmrtObject') {
-            if (ObjectRegistry.getTableStrategy(proto.name) === 'sti') {
-              stiBaseName = ObjectRegistry.getSTIBase(proto.name);
+            // R5-canon: walk via constructor identity (qualified name
+            // from registration) rather than `proto.name`, so a
+            // colliding simple name in another package can't yield the
+            // wrong STI base. Falls through to simple `proto.name` for
+            // unregistered prototypes.
+            const protoReg = ObjectRegistry.getClassByConstructor(proto as any);
+            const protoKey = protoReg?.qualifiedName ?? proto.name;
+            if (ObjectRegistry.getTableStrategy(protoKey) === 'sti') {
+              stiBaseName = ObjectRegistry.getSTIBase(protoKey);
               break;
             }
             proto = Object.getPrototypeOf(proto);
@@ -3235,10 +3245,17 @@ export function smrt(config: SmartObjectConfig = {}) {
           let stiBaseName: string | null = null;
 
           while (proto?.name && proto.name !== 'SmrtObject') {
-            // Use getTableStrategy() to properly detect inherited STI strategy
-            if (ObjectRegistry.getTableStrategy(proto.name) === 'sti') {
+            // Use getTableStrategy() to properly detect inherited STI strategy.
+            // R5-canon: walk via constructor identity (qualified name
+            // from registration) rather than `proto.name`, so a
+            // colliding simple name in another package can't yield the
+            // wrong STI base. Falls through to simple `proto.name` for
+            // unregistered prototypes. Mirrors the sibling branch above.
+            const protoReg = ObjectRegistry.getClassByConstructor(proto as any);
+            const protoKey = protoReg?.qualifiedName ?? proto.name;
+            if (ObjectRegistry.getTableStrategy(protoKey) === 'sti') {
               // Get the actual STI base (may be higher up the chain)
-              stiBaseName = ObjectRegistry.getSTIBase(proto.name);
+              stiBaseName = ObjectRegistry.getSTIBase(protoKey);
               break;
             }
             proto = Object.getPrototypeOf(proto);

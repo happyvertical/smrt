@@ -237,9 +237,23 @@ export class Asset extends SmrtObject {
    * importing the concrete class is what would create the cycle, but the
    * base-class shape gives callers full `.get()` / `.list()` type
    * safety here.
+   *
+   * R5-canon: hardcode the base Asset's qualified key so a different
+   * package also registering a class called `Asset` can't be picked
+   * by `findClass`'s multi-strategy fallback. Crucially we DON'T
+   * resolve via `this.constructor._smrtQualifiedName` — for an STI
+   * subclass like `Image`, that would yield the Image collection
+   * (which auto-filters `_meta_type = '...:Image'` on `get`/`list`),
+   * and `getSource()` / `getDerivatives()` would miss cross-type
+   * derivation links (Image derived from a plain Asset, etc.).
+   * `sourceAssetId` is a base-table derivation link, so it always
+   * resolves through the base Asset collection.
    */
   private async _assetCollection(): Promise<SmrtCollection<Asset>> {
-    return await ObjectRegistry.getCollection<Asset>('Asset', this.options);
+    return await ObjectRegistry.getCollection<Asset>(
+      '@happyvertical/smrt-assets:Asset',
+      this.options,
+    );
   }
 
   /**

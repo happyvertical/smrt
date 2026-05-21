@@ -260,9 +260,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     validFieldNames.add('created_at');
     validFieldNames.add('updated_at');
 
-    // Add STI discriminator field for polymorphic queries
+    // Add STI discriminator field for polymorphic queries.
+    // R5-canon: use the qualified item name as the lookup key so a
+    // same-simple-name class in another package can't yield the wrong
+    // tableStrategy.
     const itemClassName = this.getResolvedItemClassName();
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     if (tableStrategy === 'sti') {
       // Add both with and without leading underscore (toSnakeCase strips leading _)
       validFieldNames.add('_meta_type');
@@ -273,14 +277,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       // Issue #869: For STI classes, also include fields from all ancestor classes
       // This ensures child class collections can filter by parent class fields.
       //
-      // R5-canon: inheritanceChain entries are qualified names (when the
+      // inheritanceChain entries are qualified names (when the
       // registration has one). Compare self against the qualified form;
       // the framework-base sentinels stay as simple names since they're
       // never registered. The simple-name `itemClassName` is also checked
       // as a defensive fall-through for unqualified registrations.
-      const itemQualifiedName = this.getResolvedItemQualifiedName();
       const inheritanceChain =
-        ObjectRegistry.getInheritanceChain(itemClassName);
+        ObjectRegistry.getInheritanceChain(itemQualifiedName);
       for (const ancestorName of inheritanceChain) {
         if (
           ancestorName === 'SmrtObject' ||
@@ -803,15 +806,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           : { slug: interceptedFilter, context: '' }
         : interceptedFilter;
 
-    // Fix for issue #386: Add _meta_type filter for STI child collections
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // Fix for issue #386: Add _meta_type filter for STI child collections.
+    // R5-canon: use the qualified item name as the LOOKUP KEY too, not
+    // just for the comparison — passing the simple `itemClassName` can
+    // resolve to another package's same-simple-name class via
+    // `findClass`'s multi-strategy lookup, which would yield the WRONG
+    // table-strategy / STI base.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      // R5-canon: `getSTIBase` returns the qualified name (when available);
-      // compare against the qualified form of the item class to detect a
-      // child collection vs the base itself.
-      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
@@ -929,13 +934,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     let { where, offset, limit, orderBy } = interceptedOptions;
 
-    // STI: Child collections should automatically filter by _meta_type
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // STI: Child collections should automatically filter by _meta_type.
+    // R5-canon: qualified-key lookup so a same-simple-name class in
+    // another package can't yield the wrong table strategy / STI base.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      // R5-canon: qualified-to-qualified comparison.
-      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
@@ -1388,8 +1394,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
 
-    // STI: Check for polymorphic instantiation
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // STI: Check for polymorphic instantiation.
+    // R5-canon: qualified-key lookup so colliding simple names across
+    // packages don't yield the wrong table strategy.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
 
     if (tableStrategy === 'sti' && options._meta_type) {
       // Use polymorphic instantiation for STI child classes
@@ -1760,15 +1768,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      // For STI, use the base class's table name from schema (manifest-derived)
+      // For STI, use the base class's table name from schema (manifest-derived).
+      // R5-canon: use the qualified item name as the lookup key so a
+      // colliding simple name in another package can't yield the wrong
+      // tableStrategy / STI base and route every downstream query
+      // (get/list/count/create) to the wrong table.
       const className = this.getResolvedItemClassName();
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const qualifiedName = this.getResolvedItemQualifiedName();
+      const tableStrategy = ObjectRegistry.getTableStrategy(qualifiedName);
       const fallbackTableName =
         (this._itemClass as any).SMRT_TABLE_NAME ||
         classnameToTablename(className);
 
       if (tableStrategy === 'sti') {
-        const stiBase = ObjectRegistry.getSTIBase(className);
+        const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
         if (stiBase) {
           // Use base class's schema tableName (from manifest)
           const baseSchema = ObjectRegistry.getSchema(stiBase);
@@ -1874,18 +1887,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async count(options: { where?: Record<string, any> } = {}) {
     await this.ensureStorageReady();
-    const itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     let { where } = options;
 
-    // Fix for issue #386: Add _meta_type filter for STI child collections
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // Fix for issue #386: Add _meta_type filter for STI child collections.
+    // R5-canon: qualified-key lookup throughout — pass `itemQualifiedName`
+    // to both `getTableStrategy` and `getSTIBase` so a colliding
+    // simple-name class in another package can't yield the wrong table
+    // strategy / STI base.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      // R5-canon: qualified-to-qualified comparison.
-      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
       if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
@@ -1969,8 +1984,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const fields = this.getFieldsSync();
 
-    // STI: Check if we need polymorphic hydration
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    // STI: Check if we need polymorphic hydration.
+    // R5-canon: pass the qualified item name so a colliding simple
+    // name in another package can't yield the wrong tableStrategy
+    // and feed the wrong `isSTI` boolean into `hydrateResultRow`.
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedItemQualifiedName(),
+    );
     const isSTI = tableStrategy === 'sti';
 
     const instances = await Promise.all(

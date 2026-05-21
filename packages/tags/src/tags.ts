@@ -257,6 +257,21 @@ export class TagCollection extends SmrtCollection<Tag> {
         `Cannot merge '${fromSlug}' (context '${fromTag.context}') into '${toSlug}' (context '${toTag.context}') — contexts must match.`,
       );
     }
+    if (fromTag.id === toTag.id) {
+      throw new Error(`Cannot merge tag '${fromSlug}' into itself.`);
+    }
+
+    // Codex round-4 finding: refuse to merge into a descendant. Without
+    // this guard the children-reparenting loop below could attach
+    // `toTag` (or its ancestor) under itself, producing a cycle; the
+    // recursive `updateDescendantLevels` walk has no visited set and
+    // would stack-overflow before the corruption is observable.
+    const fromDescendants = (await fromTag.getDescendants()) as Tag[];
+    if (fromDescendants.some((d) => d.id === toTag.id)) {
+      throw new Error(
+        `Cannot merge '${fromSlug}' into '${toSlug}' — target is a descendant of source (would create a cycle).`,
+      );
+    }
 
     // Move all direct children of fromTag to toTag. Each child needs its
     // own `level` recomputed because toTag's depth may differ from
@@ -274,14 +289,19 @@ export class TagCollection extends SmrtCollection<Tag> {
       await this.updateDescendantLevels(child);
     }
 
-    // Copy aliases from fromTag to toTag
+    // Copy aliases from fromTag to toTag.
+    // R3-B follow-up (codex caught this across multiple rounds): scope
+    // the alias rewrite to the merge's resolved context, not the bare
+    // slug. Otherwise `mergeTag('foo', 'bar', 'blog')` rewrites
+    // `foo`'s aliases in EVERY context (forum, etc.), corrupting tag
+    // data outside the requested merge scope.
     const { TagAliasCollection } = await import('./tag-aliases');
     const aliasCollection = await (TagAliasCollection as any).create(
       this.options,
     );
 
     const aliases = await aliasCollection.list({
-      where: { tagSlug: fromSlug },
+      where: { tagSlug: fromSlug, context: fromTag.context },
     });
     for (const alias of aliases) {
       alias.tagSlug = toSlug;
