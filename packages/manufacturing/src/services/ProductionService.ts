@@ -442,7 +442,16 @@ export class ProductionService {
     }
     const productId = order.productId ?? '';
     if (!productId) {
-      throw new NoActiveBomForProductError(productId);
+      // The order carries neither an explicit `bomId` nor a `productId`,
+      // so there is nothing for us to resolve against. Surface that as a
+      // distinct, actionable error rather than constructing
+      // `NoActiveBomForProductError('')` — the empty-string message
+      // ("No active Bill of Materials found for product: ...") buries
+      // the actual misuse (missing input field) under a SQL-flavoured
+      // "no row found" error that doesn't reflect what went wrong.
+      throw new Error(
+        'consumeMaterials: order.productId is required when order.bomId is not supplied',
+      );
     }
     const active = await this.boms.findActiveForProduct(productId);
     if (!active) throw new NoActiveBomForProductError(productId);

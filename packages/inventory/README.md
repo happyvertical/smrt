@@ -17,7 +17,11 @@ import {
   createStockService,
   InventoryLocationCollection,
 } from '@happyvertical/smrt-inventory';
-import { SkuCollection } from '@happyvertical/smrt-products';
+// The `@happyvertical/smrt-products` root entry pulls in Vite virtual
+// modules (`@smrt/client` etc.) and won't resolve under plain Node /
+// tsx. Import from the `/collections` subpath for server-side scripts,
+// tests, and SSR runtimes that don't run the Vite plugin.
+import { SkuCollection } from '@happyvertical/smrt-products/collections';
 
 const db = { type: 'sqlite', url: 'app.db' };
 const skus = await SkuCollection.create({ db });

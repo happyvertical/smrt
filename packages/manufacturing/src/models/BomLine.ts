@@ -10,7 +10,9 @@
  *
  * Cross-package references (`componentSkuId`) are plain string ids — never
  * `@foreignKey()` — so this package can ship without a hard runtime
- * dependency on `@happyvertical/smrt-inventory` even though they almost
+ * dependency on `@happyvertical/smrt-products` (the `Sku` model lives
+ * there) or `@happyvertical/smrt-inventory` (which holds the stock
+ * levels / movements addressed by the id) even though all three almost
  * always travel together.
  *
  * @packageDocumentation
@@ -66,9 +68,11 @@ export class BomLine extends SmrtObject {
   bomId: string = '';
 
   /**
-   * Plain string reference to the component {@link Sku} (raw material,
-   * trim, sub-assembly) from `@happyvertical/smrt-inventory`. Cross-package
-   * id; never `@foreignKey()`.
+   * Plain string reference to the component SKU id (raw material, trim,
+   * sub-assembly). The `Sku` model itself lives in
+   * `@happyvertical/smrt-products`; `@happyvertical/smrt-inventory` uses
+   * this id to track stock levels and movements. Cross-package id;
+   * never `@foreignKey()`.
    */
   @field({ required: true })
   componentSkuId: string = '';

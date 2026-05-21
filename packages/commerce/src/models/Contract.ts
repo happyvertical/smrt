@@ -298,7 +298,13 @@ export class ProductionOrder extends Contract {
  * Persisted as a Contract so it can hold the same line items, totals, and
  * customer reference as a real Order, then convert in place (the application
  * promotes the row from `_meta_type: Cart` to `_meta_type: Order` at checkout
- * rather than copying data between tables). A Cart is implicitly DRAFT.
+ * rather than copying data between tables).
+ *
+ * A Cart starts in {@link ContractStatus.DRAFT} via the base `Contract.status`
+ * default — the subclass doesn't need its own override. Application code
+ * is responsible for promoting the row to `ContractStatus.PENDING` /
+ * `ACCEPTED` at checkout time; the framework doesn't enforce a state
+ * machine on the cart → order transition.
  */
 @TenantScoped({ mode: 'optional' })
 @smrt()

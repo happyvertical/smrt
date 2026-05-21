@@ -18,7 +18,10 @@
  * The axis-declaration concept ("this product varies along `size` with
  * values `[XS, S, M, L, XL]`") is NOT a Product STI subtype — it lives in
  * its own model, {@link ProductVariant}, with a separate table. Per-SKU
- * value pins live on `Sku.attributes` from `@happyvertical/smrt-inventory`.
+ * value pins live on `Sku.attributes` (also in this package — `Sku` was
+ * relocated from `@happyvertical/smrt-inventory` to here in Phase 1 so
+ * every catalog primitive lives under one roof; inventory only holds
+ * stock levels and movements now).
  */
 export enum ProductType {
   /** Generic catalog item (default). */

@@ -4,9 +4,10 @@
  *
  * A `ProductVariant` row says "for product X, axis Y has the following
  * allowed values". The actual per-SKU value lives on `Sku.attributes`
- * (in `@happyvertical/smrt-inventory`), keyed by `axisName`. This split
- * keeps the axis catalog (form choices, UI grouping, ordering) separate
- * from the per-unit instances.
+ * (also in this package — `Sku` was relocated to `@happyvertical/smrt-products`
+ * in Phase 1; inventory only holds stock motion now), keyed by `axisName`.
+ * This split keeps the axis catalog (form choices, UI grouping, ordering)
+ * separate from the per-unit instances.
  *
  * Deliberately generic. `axisName` is free-form — apparel teams might
  * use `'size'` and `'color'`, automotive teams `'trim'` and `'engine'`,

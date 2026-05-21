@@ -129,10 +129,18 @@ export class Product extends SmrtObject {
     }
 
     const productAssets = await this.getProductAssetCollection();
+    // Don't pass `this.tenantId` here. ProductAsset is @TenantScoped,
+    // so the tenancy interceptor auto-filters the underlying list() by
+    // the active context. Passing `this.tenantId` would apply a second
+    // explicit filter on TOP of the interceptor's — and when this
+    // Product is a global/shared row (`tenantId === null`), that second
+    // filter would drop every per-tenant link to it. The interceptor
+    // is the right boundary: in a tenant scope it returns that
+    // tenant's links; outside any scope it returns everything. See the
+    // `ProductAsset` model comment about cross-tenant linking.
     const linkedAssets = await productAssets.getForProduct(
       this.id,
       relationship,
-      this.tenantId,
     );
 
     return resolveOwnedAssetsById(
@@ -155,13 +163,12 @@ export class Product extends SmrtObject {
     assertValidOwnedAssetSortOrder(sortOrder);
 
     const productAssets = await this.getProductAssetCollection();
-    await productAssets.attach(
-      this.id,
-      asset.id,
-      relationship,
-      sortOrder,
-      this.tenantId,
-    );
+    // Same rationale as `getAssets` — the interceptor's auto-populate
+    // sets the new row's `tenantId` from the active context, so we
+    // don't hard-wire `this.tenantId`. When this Product is global
+    // (`tenantId === null`) but a tenant is linking it, the link
+    // should land under that tenant, not under the global namespace.
+    await productAssets.attach(this.id, asset.id, relationship, sortOrder);
   }
 
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
@@ -170,7 +177,13 @@ export class Product extends SmrtObject {
     }
 
     const productAssets = await this.getProductAssetCollection();
-    await productAssets.detach(this.id, assetId, relationship, this.tenantId);
+    // Tenant-scoped delete: pass `undefined` so `detach` lets the
+    // interceptor scope the underlying list to the active tenant,
+    // rather than constraining to `this.tenantId` (which on a global
+    // product would never match a tenant-owned link). System-style
+    // callers without a tenant context will sweep every matching row,
+    // which is what the existing `detach` semantics already do.
+    await productAssets.detach(this.id, assetId, relationship);
   }
 
   static async searchByText(_query: string): Promise<Product[]> {

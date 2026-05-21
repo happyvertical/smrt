@@ -235,13 +235,24 @@ export class BomService {
    */
   async canProduce(bomId: string, qty: number): Promise<CanProduceResult> {
     const requirements = await this.explodeRequirements(bomId, qty);
-    const shortages: MaterialShortage[] = [];
 
-    for (const requirement of requirements) {
-      const available = await this.stockService.levels.totalForSku(
-        requirement.componentSkuId,
-        'available',
-      );
+    // Fan the per-component availability queries out in parallel so a
+    // BOM with N components costs O(1) round-trips of latency instead
+    // of O(N). `totalForSku` is a single aggregate read per component
+    // — independent across SKUs — so there's no ordering or
+    // consistency concern from running them concurrently.
+    const availabilities = await Promise.all(
+      requirements.map(async (requirement) => ({
+        requirement,
+        available: await this.stockService.levels.totalForSku(
+          requirement.componentSkuId,
+          'available',
+        ),
+      })),
+    );
+
+    const shortages: MaterialShortage[] = [];
+    for (const { requirement, available } of availabilities) {
       if (available < requirement.totalQty) {
         shortages.push({
           componentSkuId: requirement.componentSkuId,

@@ -105,10 +105,13 @@ export const subdomainStrategy: TenantResolverStrategy = (event) => {
  * to deploy on a multi-label public suffix like `example.co.uk` where
  * a naive label count would treat the apex itself as a tenant.
  *
- * The supplied `reservedSubdomains` are merged with the defaults
- * (`www`, `api`, `app`) — so adding `admin` still leaves `www` reserved.
- * Pass an empty iterable to start from a fresh set, or pass the value
- * you want via {@link DEFAULT_RESERVED_SUBDOMAINS} after filtering.
+ * The supplied `reservedSubdomains` are **merged with** the built-in
+ * defaults (`www`, `api`, `app`) — `www`, `api`, and `app` always stay
+ * reserved regardless of what you pass. Pass `[]` or omit the option
+ * if you only need the defaults; the merge is additive-only. Replacing
+ * the default list outright is not currently supported via this
+ * strategy — fork the function or wire your own `TenantResolverStrategy`
+ * if you need that.
  *
  * `baseDomain` (strongly recommended for production) anchors the apex.
  * When set, the strategy strips the matching suffix and treats whatever

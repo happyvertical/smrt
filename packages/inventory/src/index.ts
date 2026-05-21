@@ -26,7 +26,14 @@
  *
  * Consumers typically import from both packages:
  *
+ *     // Vite apps can import from the products main entry:
  *     import { Sku, ProductVariant } from '@happyvertical/smrt-products';
+ *     // Non-Vite runtimes (Node scripts, tsx, plain SSR) MUST use the
+ *     // /models or /collections subpath to skip the Vite virtual modules
+ *     // wired into the main entry:
+ *     import { Sku } from '@happyvertical/smrt-products/models';
+ *     import { SkuCollection } from '@happyvertical/smrt-products/collections';
+ *
  *     import { StockService, InventoryLocation } from '@happyvertical/smrt-inventory';
  *
  * We deliberately do NOT re-export catalog shapes from this barrel

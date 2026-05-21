@@ -28,7 +28,11 @@ export type BomStatus = 'draft' | 'active' | 'superseded';
  * recomputing on the client.
  */
 export interface BomLineCost {
-  /** Plain string reference to the component {@link Sku} from `smrt-inventory`. */
+  /**
+   * Plain string reference to a component SKU id. The `Sku` model
+   * itself lives in `@happyvertical/smrt-products`; inventory only
+   * tracks stock motion against that id.
+   */
   componentSkuId: string;
   /** Quantity per produced unit (pre-waste). */
   qtyPerUnit: number;
