@@ -63,12 +63,23 @@ function getExpectedMetaType(className: string): string {
   return registeredClass?.qualifiedName || className;
 }
 
-function getSTIHierarchyMembers(className: string): string[] {
-  // R5-canon: resolve to the qualified registration name when one
-  // exists so a same-simple-name class in another package can't yield
-  // the wrong STI base. `getDescendants` already accepts both forms.
-  const registered = ObjectRegistry.getClass(className);
-  const lookupKey = registered?.qualifiedName ?? registered?.name ?? className;
+/**
+ * Get all STI hierarchy members (base + descendants) for a class.
+ *
+ * R5-canon (Copilot follow-up): callers should pass a QUALIFIED name
+ * (e.g. via `this.getResolvedQualifiedName()`). Passing a bare simple
+ * name still works in single-package scenarios, but when two packages
+ * register classes sharing the same simple name, `ObjectRegistry.
+ * getClass(simpleName)` resolves to whichever match the multi-strategy
+ * lookup picks first — which can be the wrong package. Passing the
+ * qualified form makes STI sibling discovery collision-safe.
+ */
+function getSTIHierarchyMembers(qualifiedOrSimpleName: string): string[] {
+  // Best-effort qualify in case a caller passed a simple name; the
+  // collision risk for that case is documented in the docstring above.
+  const registered = ObjectRegistry.getClass(qualifiedOrSimpleName);
+  const lookupKey =
+    registered?.qualifiedName ?? registered?.name ?? qualifiedOrSimpleName;
   const stiBase = ObjectRegistry.getSTIBase(lookupKey);
   if (!stiBase) {
     return [];
@@ -945,9 +956,13 @@ export class SmrtObject extends SmrtClass {
       registered?.inheritedFields || ObjectRegistry.getFields(className);
 
     // In STI mode, we need to know about ALL sibling class fields to provide default values
-    // for fields that exist in siblings but not in this class (Issue #391)
+    // for fields that exist in siblings but not in this class (Issue #391).
+    // R5-canon (Copilot follow-up): pass the qualified name so STI
+    // sibling discovery is collision-safe across packages.
     if (isSTI) {
-      const descendants = getSTIHierarchyMembers(className);
+      const descendants = getSTIHierarchyMembers(
+        this.getResolvedQualifiedName(),
+      );
       if (descendants.length > 0) {
         const allSTIFields = new Map(registeredFields);
 
@@ -1312,8 +1327,12 @@ export class SmrtObject extends SmrtClass {
         // this loop away via eager invalidation at re-registration time
         // is tracked as a separate follow-up (#1139).
         warnIfSkipRehydrateSet();
+        // R5-canon (Copilot follow-up): pass the qualified name to
+        // `getSTIHierarchyMembers` so STI sibling discovery is
+        // collision-safe across packages with same-simple-name classes.
+        const qualifiedName = this.getResolvedQualifiedName();
         const classesNeedingFreshSTIFieldState = Array.from(
-          new Set([className, ...getSTIHierarchyMembers(className)]),
+          new Set([qualifiedName, ...getSTIHierarchyMembers(qualifiedName)]),
         );
         for (const stiClassName of classesNeedingFreshSTIFieldState) {
           await ObjectRegistry.getAllFields(stiClassName);
