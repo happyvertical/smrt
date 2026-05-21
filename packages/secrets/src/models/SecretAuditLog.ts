@@ -77,6 +77,11 @@ export type SecretAuditResult = 'success' | 'failure' | 'denied';
 })
 export class SecretAuditLog extends SmrtObject {
   /**
+   * Tenant associated with the audited secret operation.
+   */
+  tenantId: string | null = null;
+
+  /**
    * ID of the secret (may be null for deleted secrets)
    */
   secretId: string | null = null;
@@ -119,8 +124,7 @@ export class SecretAuditLog extends SmrtObject {
   constructor(options: any = {}) {
     super(options);
     if (options.tenantId !== undefined) {
-      (this as SecretAuditLog & { tenantId?: string | null }).tenantId =
-        options.tenantId;
+      this.tenantId = options.tenantId;
     }
     if (options.secretId !== undefined) this.secretId = options.secretId;
     if (options.secretName !== undefined) this.secretName = options.secretName;
