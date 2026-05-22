@@ -60,7 +60,16 @@ export class Sku extends SmrtObject {
    * Plain string reference to a row in this package — typically a
    * `Product` id (or any of its STI subtypes, such as `Material`
    * upstream or `Style` / `Makeup` in the apparel template).
+   *
+   * Marked required so the framework rejects a save with `productId`
+   * empty or unset. Without this, downstream consumers (inventory
+   * stock motion, manufacturing BOM resolution) would have to filter
+   * out orphan SKU rows that point at no product — a sharp footgun
+   * the moment one slips through. The `@field({ required: true })`
+   * decorator also surfaces the constraint in generated REST/MCP
+   * schemas.
    */
+  @field({ required: true })
   productId: string = '';
 
   /**
