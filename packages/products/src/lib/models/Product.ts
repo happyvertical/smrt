@@ -15,7 +15,11 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
-import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getCurrentTenant,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import { ProductType } from './types';
 
 /**
@@ -143,10 +147,23 @@ export class Product extends SmrtObject {
       relationship,
     );
 
+    // Use the ACTIVE tenant context's tenantId, not `this.tenantId`,
+    // when resolving the underlying assets. `resolveOwnedAssetsById`
+    // treats its `tenantId` arg as the caller's identity: when set, it
+    // enters `withSystemContext` to bypass the interceptor and then
+    // includes both that-tenant-owned AND global (tenantId === null)
+    // assets in the visible set. Passing `this.tenantId` would force
+    // a global Product (`tenantId === null`) running inside a tenant
+    // request into the "no caller tenant" branch — the interceptor
+    // would then filter to only the tenant's own assets and drop
+    // every global asset linked to the shared product. Reading the
+    // active context fixes both directions: tenant requests see
+    // tenant + global assets; system requests see everything.
+    const ctxTenantId = getCurrentTenant()?.tenantId ?? null;
     return resolveOwnedAssetsById(
       this.db,
       linkedAssets.map((link) => link.assetId),
-      this.tenantId,
+      ctxTenantId,
     );
   }
 

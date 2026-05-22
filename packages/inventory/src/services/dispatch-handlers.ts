@@ -177,19 +177,20 @@ async function handleContractCreated(
   payload: ContractCreatedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (
-    !payload ||
-    !Array.isArray(payload.lines) ||
-    !payload.contractId ||
-    typeof payload.contractId !== 'string'
-  ) {
-    // Silent return would hide upstream contract drift — producers
-    // emitting the wrong shape never get feedback. Source id is
-    // required: without it the resulting StockMovements carry empty
-    // `sourceId`, breaking the audit trail back to the originating
-    // contract. Reject up front rather than emit unattributable
-    // mutations.
-    warnMalformedPayload('contract:created', payload, metadata);
+  // Silent return on any of these would hide upstream contract drift —
+  // producers emitting the wrong shape never get feedback. Source id
+  // (`contractId`) is required: without it the resulting StockMovements
+  // carry empty `sourceId`, breaking the audit trail back to the
+  // originating contract. Each branch reports its specific reason so
+  // the emitter can be diagnosed quickly.
+  const reason = malformedContractPayloadReason(payload);
+  if (reason || !payload) {
+    warnMalformedPayload(
+      'contract:created',
+      payload,
+      metadata,
+      reason ?? 'payload is null/undefined',
+    );
     return;
   }
   // Validate every line BEFORE opening a transaction. A silent skip on
@@ -199,7 +200,12 @@ async function handleContractCreated(
   // instead so producers get feedback and downstream observers see no
   // partial state.
   if (!areLinesWellFormed(payload.lines)) {
-    warnMalformedPayload('contract:created', payload, metadata);
+    warnMalformedPayload(
+      'contract:created',
+      payload,
+      metadata,
+      'one or more entries in `lines` are null/undefined or missing required fields (skuId: string, locationId: string, qty: finite number)',
+    );
     return;
   }
   const baseOptions: StockMutationOptions = {
@@ -223,23 +229,30 @@ async function handleFulfillmentShipped(
   payload: FulfillmentShippedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (
-    !payload ||
-    !Array.isArray(payload.lines) ||
-    !payload.fulfillmentId ||
-    typeof payload.fulfillmentId !== 'string'
-  ) {
-    // Same rationale as `handleContractCreated`: reject when the
-    // source id is missing rather than emit StockMovements with no
-    // audit attribution.
-    warnMalformedPayload('fulfillment:shipped', payload, metadata);
+  // Same rationale as `handleContractCreated`: reject when the
+  // source id (`fulfillmentId`) is missing rather than emit
+  // StockMovements with no audit attribution; surface the specific
+  // failure so producers can diagnose quickly.
+  const reason = malformedFulfillmentPayloadReason(payload);
+  if (reason || !payload) {
+    warnMalformedPayload(
+      'fulfillment:shipped',
+      payload,
+      metadata,
+      reason ?? 'payload is null/undefined',
+    );
     return;
   }
   // Validate lines up front for the same reason as
   // `handleContractCreated`: a silent skip would partially fulfill the
   // shipment while looking successful.
   if (!areLinesWellFormed(payload.lines)) {
-    warnMalformedPayload('fulfillment:shipped', payload, metadata);
+    warnMalformedPayload(
+      'fulfillment:shipped',
+      payload,
+      metadata,
+      'one or more entries in `lines` are null/undefined or missing required fields (skuId: string, locationId: string, qty: finite number)',
+    );
     return;
   }
   const baseOptions: StockMutationOptions = {
@@ -256,6 +269,47 @@ async function handleFulfillmentShipped(
       await tx.fulfill(line.skuId, line.locationId, line.qty, baseOptions);
     }
   });
+}
+
+/**
+ * Determine whether a `contract:created` payload is structurally
+ * unusable and, if so, return a single human-readable reason naming
+ * the specific field that failed. Returns `null` when the top-level
+ * shape is acceptable. Line-level validation is a separate step.
+ */
+function malformedContractPayloadReason(
+  payload: ContractCreatedPayload | null | undefined,
+): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return 'payload is null/undefined or not an object';
+  }
+  if (!payload.contractId || typeof payload.contractId !== 'string') {
+    return 'missing or non-string `contractId` (required for audit-trail source attribution)';
+  }
+  if (!Array.isArray(payload.lines)) {
+    return 'missing or non-array `lines`';
+  }
+  return null;
+}
+
+/**
+ * Same shape as {@link malformedContractPayloadReason} but for
+ * `fulfillment:shipped` events. The required source id field is
+ * `fulfillmentId` here.
+ */
+function malformedFulfillmentPayloadReason(
+  payload: FulfillmentShippedPayload | null | undefined,
+): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return 'payload is null/undefined or not an object';
+  }
+  if (!payload.fulfillmentId || typeof payload.fulfillmentId !== 'string') {
+    return 'missing or non-string `fulfillmentId` (required for audit-trail source attribution)';
+  }
+  if (!Array.isArray(payload.lines)) {
+    return 'missing or non-array `lines`';
+  }
+  return null;
 }
 
 /**
@@ -287,18 +341,22 @@ function areLinesWellFormed(
  * subscribers used to silently return on a missing `lines` array, which
  * hid producer drift — emitters using stale shapes never got feedback
  * and the resulting "stock didn't move" bugs were a long way from the
- * dispatch layer. The warning carries the source attribution so the
- * culprit shows up in logs.
+ * dispatch layer. The warning carries the source attribution AND the
+ * specific reason the payload was rejected so producers can fix the
+ * emitter quickly. Each call site supplies its own `reason` string;
+ * the generic shell wraps it with the signal name and payload-key
+ * summary for forensic logging.
  */
 function warnMalformedPayload(
   signal: string,
   payload: unknown,
   metadata: DispatchMetadata,
+  reason: string,
 ): void {
   // eslint-disable-next-line no-console
   console.warn(
     `[@happyvertical/smrt-inventory] dispatch handler ignored a ${signal} ` +
-      'event with a malformed payload (missing/non-array `lines`). ' +
+      `event with a malformed payload (${reason}). ` +
       `Source: ${metadata.source ?? '<unknown>'}; payload keys: ` +
       `${payload && typeof payload === 'object' ? Object.keys(payload).join(',') : typeof payload}`,
   );
