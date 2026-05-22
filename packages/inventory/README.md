@@ -122,7 +122,7 @@ try {
 
 ### Multi-tenancy
 
-All five models use `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId`. Wrap mutations in `withTenant()` from `@happyvertical/smrt-tenancy` to scope queries automatically.
+The three inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`) use `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId`. The catalog shapes (`Sku`, `Product`, `ProductVariant`, `Material`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there; the cross-package id refs flow through unchanged. Wrap mutations in `withTenant()` from `@happyvertical/smrt-tenancy` to scope queries automatically.
 
 ```typescript
 import { withTenant } from '@happyvertical/smrt-tenancy';

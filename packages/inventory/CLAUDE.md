@@ -11,7 +11,7 @@ Multi-location stock tracking. Strictly industry-neutral — the same primitives
 | `StockLevel` | Materialized `qty` for a `(skuId, locationId, state)` tuple. Upserted in place. **Mutated only by `StockService`.** States: `available`, `allocated`, `wip`, `qc_hold`, `damaged`. |
 | `StockMovement` | Append-only audit log. Every `StockService` mutation writes one (or two for `transfer`). `sourceType` + `sourceId` carry cross-package attribution. |
 
-All five models use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally.
+All three inventory models (`InventoryLocation`, `StockLevel`, `StockMovement`) use `@TenantScoped({ mode: 'optional' })` + nullable `tenantId` so they can be used either tenant-scoped or globally. The catalog shapes (`Product`, `Material`, `ProductVariant`, `Sku`) live in `@happyvertical/smrt-products` and carry their own tenant decoration there.
 
 ## StockService — the only sanctioned way to mutate stock
 
