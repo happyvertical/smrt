@@ -83,6 +83,25 @@ export class Vendor extends SmrtObject {
    */
   notes: string = '';
 
+  /**
+   * Per-currency payout destinations for this vendor.
+   *
+   * Stored as a JSON column. Keys are payout-rail-qualified currency codes —
+   * the code must encode both the asset and the rail (e.g. `USDC-base`,
+   * `USDC-solana`, `BTC`, `USD-stripe`, `USD-wire`). Values are whatever the
+   * receiving rail needs as a destination (EVM address, BTC address, Stripe
+   * Connect account id, IBAN, etc.).
+   *
+   * MVP shape: a flat map on the vendor row. A vendor with no entry for a
+   * given currency cannot be paid in that currency — filtering is the
+   * consumer's responsibility (the upstream `PaymentIntent` builder filters
+   * `paymentOptions` at quote time against this map).
+   *
+   * Use {@link getPayoutAddress} for a `Map.get`-style lookup that returns
+   * `undefined` for missing entries; direct property access is also fine.
+   */
+  payoutAddresses: Record<string, string> = {};
+
   constructor(options: any = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -100,6 +119,40 @@ export class Vendor extends SmrtObject {
       this.defaultContactPhone = options.defaultContactPhone;
     if (options.status !== undefined) this.status = options.status;
     if (options.notes !== undefined) this.notes = options.notes;
+    if (options.payoutAddresses !== undefined) {
+      this.payoutAddresses = Vendor.normalizePayoutAddresses(
+        options.payoutAddresses,
+      );
+    }
+  }
+
+  /**
+   * The framework's {@link SmrtObject.initialize} re-applies `options` keys on
+   * top of constructor-set values so option data always wins over field
+   * initializers. That means our constructor's normalization runs *before*
+   * `initializePropertiesFromOptions` overwrites `payoutAddresses` with the
+   * raw cloned value. Re-normalize once super has finished so consumers
+   * who pass a string, a partially-typed map, or `null` end up with a
+   * clean `Record<string, string>` before any save / read happens.
+   */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    this.payoutAddresses = Vendor.normalizePayoutAddresses(
+      this.payoutAddresses as unknown,
+    );
+    return this;
+  }
+
+  /**
+   * Save with a final normalization pass so direct field assignments
+   * (`vendor.payoutAddresses = somethingFunny`) can't smuggle non-string
+   * values into the persisted row.
+   */
+  override async save(): Promise<this> {
+    this.payoutAddresses = Vendor.normalizePayoutAddresses(
+      this.payoutAddresses as unknown,
+    );
+    return super.save() as Promise<this>;
   }
 
   /**
@@ -129,6 +182,80 @@ export class Vendor extends SmrtObject {
    */
   getProfileId(): string {
     return this.profileId;
+  }
+
+  /**
+   * Look up the payout destination for a single currency. Returns
+   * `undefined` if the vendor has no entry for that currency — caller's
+   * job to decide whether that means "skip the option" or "raise a
+   * configuration error". The lookup is case-sensitive; the contract is
+   * that the currency code passed in matches exactly what was stored
+   * (`USDC-base`, not `usdc-base`).
+   */
+  getPayoutAddress(currency: string): string | undefined {
+    const map = this.payoutAddresses;
+    if (!map || typeof map !== 'object') return undefined;
+    const value = (map as Record<string, unknown>)[currency];
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  /**
+   * Set the payout destination for a single currency. Mutates the live
+   * map and returns `this` for chaining. Pass `undefined` (or call
+   * {@link clearPayoutAddress}) to remove a single entry.
+   */
+  setPayoutAddress(currency: string, destination: string): this {
+    this.payoutAddresses = {
+      ...(this.payoutAddresses ?? {}),
+      [currency]: destination,
+    };
+    return this;
+  }
+
+  /**
+   * Remove a single currency entry from the payout map. No-op if the
+   * currency was already absent.
+   */
+  clearPayoutAddress(currency: string): this {
+    if (!this.payoutAddresses || !(currency in this.payoutAddresses)) {
+      return this;
+    }
+    const next = { ...this.payoutAddresses };
+    delete next[currency];
+    this.payoutAddresses = next;
+    return this;
+  }
+
+  /**
+   * Normalize an input value (object, pre-serialized JSON string, or
+   * `null`/`undefined`) into a plain `Record<string, string>`. Used by
+   * the constructor so consumers can pass either shape into
+   * `VendorCollection.create({ payoutAddresses: ... })`.
+   *
+   * Non-string values inside an input object are silently dropped — a
+   * `Record<string, string>` invariant is what consumers downstream
+   * (`PaymentIntent` builders, payout SDK adapters) rely on.
+   */
+  private static normalizePayoutAddresses(
+    value: unknown,
+  ): Record<string, string> {
+    if (value == null) return {};
+    let parsed: unknown = value;
+    if (typeof value === 'string') {
+      try {
+        parsed = JSON.parse(value);
+      } catch {
+        return {};
+      }
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    const out: Record<string, string> = {};
+    for (const [key, v] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof v === 'string') out[key] = v;
+    }
+    return out;
   }
 }
 
