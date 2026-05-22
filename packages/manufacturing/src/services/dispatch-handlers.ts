@@ -232,19 +232,21 @@ async function handleProductionPosted(
   metadata: DispatchMetadata,
   shouldProduce: boolean,
 ): Promise<void> {
-  if (
-    !payload ||
-    !payload.productionOrderId ||
-    typeof payload.productionOrderId !== 'string'
-  ) {
-    // Mirror the inventory-handler observability + strictness pattern:
-    // producer contract drift goes silent without this warn (the
-    // dispatch bus would just see a quick return and never surface
-    // anything), and a non-string `productionOrderId` (e.g. a numeric
-    // primary key coming from a Postgres source) would otherwise land
-    // as a non-string `sourceId` on every emitted StockMovement —
-    // breaking the audit-trail-by-source-id pattern.
-    warnMalformedPayload('production_order:posted', payload, metadata);
+  // Mirror the inventory-handler observability + strictness pattern:
+  // producer contract drift goes silent without this warn (the
+  // dispatch bus would just see a quick return and never surface
+  // anything), and a non-string `productionOrderId` (e.g. a numeric
+  // primary key coming from a Postgres source) would otherwise land
+  // as a non-string `sourceId` on every emitted StockMovement —
+  // breaking the audit-trail-by-source-id pattern.
+  const postedReason = malformedProductionPayloadReason(payload);
+  if (postedReason || !payload) {
+    warnMalformedPayload(
+      'production_order:posted',
+      payload,
+      metadata,
+      postedReason ?? 'payload is null/undefined',
+    );
     return;
   }
 
@@ -312,12 +314,14 @@ async function handleProductionCompleted(
   payload: ProductionOrderCompletedPayload | null | undefined,
   metadata: DispatchMetadata,
 ): Promise<void> {
-  if (
-    !payload ||
-    !payload.productionOrderId ||
-    typeof payload.productionOrderId !== 'string'
-  ) {
-    warnMalformedPayload('production_order:completed', payload, metadata);
+  const completedReason = malformedProductionPayloadReason(payload);
+  if (completedReason || !payload) {
+    warnMalformedPayload(
+      'production_order:completed',
+      payload,
+      metadata,
+      completedReason ?? 'payload is null/undefined',
+    );
     return;
   }
   await productionService.produceFinishedGoods(
@@ -332,23 +336,47 @@ async function handleProductionCompleted(
 }
 
 /**
+ * Determine whether a production-order payload (either
+ * `:posted` or `:completed`) is structurally unusable and return a
+ * concrete reason naming the specific field that failed validation.
+ * Returns `null` when the top-level shape is acceptable. Mirrors the
+ * inventory package's per-signal helpers so the log message names the
+ * actual failure instead of a hardcoded generic.
+ */
+function malformedProductionPayloadReason(
+  payload: { productionOrderId?: unknown } | null | undefined,
+): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return 'payload is null/undefined or not an object';
+  }
+  if (
+    !payload.productionOrderId ||
+    typeof payload.productionOrderId !== 'string'
+  ) {
+    return 'missing or non-string `productionOrderId` (required for audit-trail source attribution)';
+  }
+  return null;
+}
+
+/**
  * Surface dispatch payloads that don't match the documented shape.
  * Mirrors the inventory package's `warnMalformedPayload` so a
  * misshapen `production_order:*` event leaves a trace (signal name,
- * source attribution, payload-key summary) instead of vanishing into
- * the dispatch bus's silent-success path. Without this, producer
- * drift only surfaces as "stock didn't move" / "audit log empty" bugs
- * a long way from the handler.
+ * source attribution, specific reason, payload-key summary) instead
+ * of vanishing into the dispatch bus's silent-success path. Without
+ * this, producer drift only surfaces as "stock didn't move" /
+ * "audit log empty" bugs a long way from the handler.
  */
 function warnMalformedPayload(
   signal: string,
   payload: unknown,
   metadata: DispatchMetadata,
+  reason: string,
 ): void {
   // eslint-disable-next-line no-console
   console.warn(
     `[@happyvertical/smrt-manufacturing] dispatch handler ignored a ${signal} ` +
-      'event with a malformed payload (missing productionOrderId). ' +
+      `event with a malformed payload (${reason}). ` +
       `Source: ${metadata.source ?? '<unknown>'}; payload keys: ` +
       `${payload && typeof payload === 'object' ? Object.keys(payload).join(',') : typeof payload}`,
   );
