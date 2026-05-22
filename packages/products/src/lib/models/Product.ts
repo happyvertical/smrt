@@ -100,8 +100,16 @@ export class Product extends SmrtObject {
   constructor(options: ProductOptions = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
-    if (options.productType !== undefined)
+    // Treat `null` like `undefined`: existing product rows written
+    // before the `product_type` column existed hydrate with the field
+    // as SQL `NULL`, and without this guard the SmrtObject loader would
+    // overwrite the `ProductType.PRODUCT` initializer with `null`. The
+    // STI discriminator `_meta_type` still identifies the row's
+    // subtype; `productType` is the secondary human-readable label and
+    // should fall back to the base default for legacy rows.
+    if (options.productType !== undefined && options.productType !== null) {
       this.productType = options.productType;
+    }
     this.name = options.name || '';
     this.description = options.description || '';
     this.category = options.category || '';

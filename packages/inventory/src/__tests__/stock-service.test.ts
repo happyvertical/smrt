@@ -466,6 +466,42 @@ describe('StockService', () => {
   });
 
   describe('audit log invariants', () => {
+    it('shares one resolved db across internal collections under :memory: configs', async () => {
+      // Regression: when `StockService.create` was passed
+      // `{ type: 'sqlite', url: ':memory:' }`, each
+      // `SmrtCollection.create({ db: config })` previously materialized
+      // its own fresh in-memory database. `levels`, `movements`, and
+      // `locations` would then point at separate empty DBs — a
+      // `receive()` would write a StockMovement to one, balance reads
+      // would query a different (empty) one, and audit queries on
+      // movements would silently miss the row just written. Resolving
+      // the config to a single DatabaseInterface up front keeps every
+      // internal collection on the same handle.
+      const memoryService = await createStockService({
+        db: { type: 'sqlite', url: ':memory:' },
+      });
+      // Use the SAME in-memory service to create the location, so the
+      // location row is reachable via the same handle the service
+      // uses for its own collections.
+      const memoryWarehouse = await memoryService.locations.create({
+        code: 'WH-MEM',
+        kind: 'warehouse',
+      });
+      await memoryWarehouse.save();
+      const memWh = memoryWarehouse.id!;
+      const memSku = randomUUID();
+      await memoryService.receive(memSku, memWh, 5);
+      // Movement and level must agree because they ride the same db.
+      const movs = await memoryService.movements.findByReason('receipt');
+      expect(movs.length).toBeGreaterThanOrEqual(1);
+      const level = await memoryService.levels.getLevel(
+        memSku,
+        memWh,
+        'available',
+      );
+      expect(Number(level?.qty)).toBe(5);
+    });
+
     it('records the qty across multiple locations and exposes totals', async () => {
       await service.receive(skuA, warehouse, 8);
       await service.receive(skuA, store, 4);

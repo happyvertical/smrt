@@ -105,8 +105,16 @@ export class Customer extends SmrtObject {
     if (options.defaultBillingAddress !== undefined)
       this.defaultBillingAddress = options.defaultBillingAddress;
     if (options.status !== undefined) this.status = options.status;
-    if (options.customerType !== undefined)
+    // Treat `null` the same as `undefined` here. Customers loaded from
+    // rows written before the `customer_type` column existed will
+    // hydrate with the field as SQL `NULL`; without this guard the
+    // SmrtObject loader would overwrite the `CustomerType.DTC`
+    // initializer with `null`, breaking the documented
+    // backwards-compatible default. Explicit string values (including
+    // any future custom flavour) still take precedence.
+    if (options.customerType !== undefined && options.customerType !== null) {
       this.customerType = options.customerType;
+    }
     if (options.notes !== undefined) this.notes = options.notes;
   }
 

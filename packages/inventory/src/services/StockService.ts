@@ -40,7 +40,7 @@
  * @packageDocumentation
  */
 
-import type { DatabaseConfig } from '@happyvertical/smrt-core';
+import { type DatabaseConfig, resolveDatabase } from '@happyvertical/smrt-core';
 import {
   InventoryLocationCollection,
   StockLevelCollection,
@@ -178,13 +178,30 @@ export class StockService {
 
   /** Internal factory — prefer {@link createStockService}. */
   static async create(options: StockServiceOptions): Promise<StockService> {
-    const { db } = options;
+    // Resolve the caller's `DatabaseConfig` to a single
+    // `DatabaseInterface` instance FIRST, then construct every internal
+    // collection on that shared instance. Without this step, passing
+    // `{ type: 'sqlite', url: ':memory:' }` would make
+    // `SmrtCollection.create({ db: config })` materialize a *fresh*
+    // in-memory database per collection — `levels`, `movements`, and
+    // `locations` would each point at their own empty DB. The runtime
+    // ledger then desyncs: `adjust()` writes a movement to
+    // `movements.db` while balance reads go through `levels.db`, and
+    // audit queries on `movements` miss the row that was just written.
+    // Resolving once means every collection (and the public `db` field
+    // exposed for downstream composition) share the same handle.
+    const resolved = await resolveDatabase(options.db);
     const [levels, movements, locations] = await Promise.all([
-      StockLevelCollection.create({ db }),
-      StockMovementCollection.create({ db }),
-      InventoryLocationCollection.create({ db }),
+      StockLevelCollection.create({ db: resolved }),
+      StockMovementCollection.create({ db: resolved }),
+      InventoryLocationCollection.create({ db: resolved }),
     ]);
-    return new StockService(db, levels, movements, locations);
+    return new StockService(
+      resolved as unknown as DatabaseConfig,
+      levels,
+      movements,
+      locations,
+    );
   }
 
   /**
