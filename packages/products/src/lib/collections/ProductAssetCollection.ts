@@ -92,17 +92,23 @@ export class ProductAssetCollection extends SmrtCollection<ProductAsset> {
       );
       return;
     }
-    // Tenant-scoped delete: read links first, filter by tenant, then
-    // delete each matching row by id so we never touch another tenant's row.
-    const rows = await listOwnedAssetLinks(
-      this,
-      'productId',
+    // Tenant-scoped delete: ask the DB to filter on all of (productId,
+    // assetId, [relationship,] tenantId) up front so we don't pull every
+    // link for the product back into Node only to drop most of them. A
+    // product with many assets would otherwise materialise its whole
+    // link set on every detach call. We still delete by surrogate id
+    // afterwards so the path is identical to the unscoped branch above
+    // and never touches another tenant's row even if the where-clause
+    // serialisation surprised us.
+    const where: Record<string, unknown> = {
       productId,
-      relationship,
-    );
-    const toRemove = rows.filter(
-      (row) => row.assetId === assetId && row.tenantId === tenantId,
-    );
+      assetId,
+      tenantId,
+    };
+    if (relationship !== undefined) {
+      where.relationship = relationship;
+    }
+    const toRemove = await this.list({ where });
     for (const row of toRemove) {
       if (row.id) {
         await this.delete(row.id);

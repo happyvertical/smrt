@@ -33,8 +33,11 @@ export enum ProductType {
 /**
  * High-level classification of a {@link ProductType.MATERIAL} item.
  *
- * Plain string so consumers can extend with vertical-specific kinds without an
- * enum change.
+ * Open string so consumers can extend with vertical-specific kinds without
+ * an enum change. The `(string & {})` branch preserves the literal-string
+ * autocomplete suggestions in IDEs — a bare `| string` would collapse the
+ * whole union to `string` and erase the named hints (same pattern as
+ * `StockMovementReason` in `@happyvertical/smrt-inventory`).
  */
 export type MaterialKind =
   | 'fabric'
@@ -43,4 +46,4 @@ export type MaterialKind =
   | 'label'
   | 'packaging'
   | 'component'
-  | string;
+  | (string & {});

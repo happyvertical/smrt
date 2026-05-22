@@ -163,7 +163,7 @@ export { Item } from './Item.js';
 export { Product } from './Product.js';
 ```
 
-3. Run `npm run dev` - API routes are auto-generated! Because `Product` is `@TenantScoped`, listing via `GET /api/product` will only return rows for the request's tenant.
+3. Run `npm run dev` - API routes are auto-generated! Because `Product` is `@TenantScoped`, listing via `GET /api/products` will only return rows for the request's tenant. (The generator pluralizes each class's `collection` field; see the "Generated API Routes" table below for the general `/api/{collection}` form.)
 
 ## CLI Commands
 
