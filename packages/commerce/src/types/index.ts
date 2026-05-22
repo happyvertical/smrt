@@ -98,6 +98,30 @@ export enum PaymentStatus {
 }
 
 // ============================================================================
+// Payout Types
+// ============================================================================
+
+/**
+ * Status machine for {@link Payout}.
+ *
+ * `pending → sent → confirmed → failed`. `failed` is terminal but the
+ * model exposes a dedicated `resetFromFailed()` so an operator can
+ * deliberately requeue a payout after fixing the underlying problem;
+ * the reset moves the row back to `pending` and clears the failure
+ * metadata.
+ *
+ * Skipping intermediate states is rejected — a `pending` payout cannot
+ * jump straight to `confirmed`, and a `sent` payout cannot regress to
+ * `pending` without going through `resetFromFailed()` first.
+ */
+export enum PayoutStatus {
+  PENDING = 'pending',
+  SENT = 'sent',
+  CONFIRMED = 'confirmed',
+  FAILED = 'failed',
+}
+
+// ============================================================================
 // PaymentIntent Types
 // ============================================================================
 

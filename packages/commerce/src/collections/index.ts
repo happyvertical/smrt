@@ -19,4 +19,8 @@ export {
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
 } from './PaymentIntentCollection.js';
+export {
+  type CreatePayoutFromPaymentArgs,
+  PayoutCollection,
+} from './PayoutCollection.js';
 export { VendorCollection } from './VendorCollection.js';

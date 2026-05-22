@@ -68,6 +68,7 @@ import './__smrt-register__.js';
 // Collections
 export {
   ContractCollection,
+  type CreatePayoutFromPaymentArgs,
   CustomerCollection,
   FulfillmentCollection,
   InvoiceCollection,
@@ -78,6 +79,7 @@ export {
   PaymentIntentCollection,
   type PaymentIntentIdempotencyArgs,
   type PaymentIntentSeed,
+  PayoutCollection,
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
@@ -98,6 +100,7 @@ export {
   Payment,
   PaymentAllocation,
   PaymentIntent,
+  Payout,
   ProductionOrder,
   PurchaseOrder,
   Vendor,
@@ -118,6 +121,7 @@ export {
   PaymentMethod,
   type PaymentOption,
   PaymentStatus,
+  PayoutStatus,
   type RecognizeRevenueOptions,
   type RecordPaymentOptions,
   VendorStatus,
