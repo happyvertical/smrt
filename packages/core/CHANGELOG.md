@@ -1,5 +1,55 @@
 # @happyvertical/smrt-core
 
+## 0.25.16
+
+### Patch Changes
+
+- ### Features
+
+  - new package for BOM cost rollup and production (smrt-manufacturing)
+  - new package for multi-location stock tracking (smrt-inventory)
+  - pre-wire session + subdomain tenancy (template-sveltekit)
+  - add navTreeFromManifest helper (smrt-svelte)
+  - add WholesaleOrder, ProductionOrder, Cart STI subtypes (smrt-commerce)
+  - tenancy + generic STI subtypes (smrt-products)
+
+  ### Bug Fixes
+
+  - mark Sku.productId as required (products)
+  - address round-13 codex findings (review)
+  - resolve three more Copilot inline comments (review)
+  - resolve two new Copilot inline comments (review)
+  - address round-12 code review findings (review)
+  - resolve Copilot inline review comments (review)
+  - address round-10 (final) code review findings (review)
+  - address round-9 code review findings (review)
+  - address round-8 code review findings (review)
+  - address round-7 code review findings (review)
+  - address round-6 code review findings (review)
+  - address round-5 code review findings (review)
+  - address round-4 code review findings (review)
+  - make stock + production mutations transactional (inventory,manufacturing)
+  - address round-3 code review findings (review)
+  - address round-2 code review findings (review)
+  - address phase 1 code review findings (review)
+  - route around NULL conflict column UPSERT collision (#1246) (smrt-core)
+
+  ### Other Changes
+
+  - refactor: make dispatch-handler warns name the failure (manufacturing)
+  - docs: correct "all five models" wording after Sku move (inventory)
+  - ci: install commitlint from public npm directly (commitlint)
+  - chore: regenerate pnpm-lock.yaml after catalog and overrides bump
+  - ci: lint commit messages with workspace commitlint v20
+  - chore: align pnpm.overrides at 0.74 for SDK packages
+  - chore: align sdk catalog at 0.74 and register new packages
+  - refactor: move Sku to smrt-products (products,inventory)
+  - refactor: consolidate variant axis declaration as ProductVariant (products,inventory)
+  - chore: bump @happyvertical/sql to ^0.74.0 and remove NULL-conflict workaround (deps)
+  - @happyvertical/smrt-scanner@0.25.16
+  - @happyvertical/smrt-config@0.25.16
+  - @happyvertical/smrt-types@0.25.16
+
 ## 0.25.15
 
 ### Patch Changes
