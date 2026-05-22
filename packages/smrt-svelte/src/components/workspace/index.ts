@@ -6,6 +6,14 @@
  */
 
 export { default as Breadcrumbs } from './Breadcrumbs.svelte';
+export {
+  type NavSection,
+  type NavTreeFromManifestOptions,
+  navTreeFromManifest,
+  pluralizeClassName,
+  type SmrtManifestEntryLike,
+  type SmrtManifestLike,
+} from './manifest-nav.js';
 export { default as NavTree } from './NavTree.svelte';
 export { default as RoleShell } from './RoleShell.svelte';
 export {

@@ -498,6 +498,41 @@ export interface SmartObjectConfig {
   };
 
   /**
+   * Optional UI hints consumed by `@happyvertical/smrt-svelte`'s
+   * `navTreeFromManifest()` helper (and any other manifest → admin-UI
+   * adapters). The framework itself never reads these — they round-trip
+   * through the generated manifest as plain data, letting consumers
+   * declare icon glyphs / labels next to the model rather than in a
+   * separate hand-written nav config.
+   *
+   * Kept deliberately minimal. Adding apparel-specific terminology or
+   * design-system-specific shapes here would couple the framework to a
+   * vertical; consumers that need richer hints should layer their own
+   * adapter on top.
+   *
+   * @example
+   * ```typescript
+   * @smrt({
+   *   ui: { icon: 'newspaper', label: 'News articles' },
+   * })
+   * class Article extends SmrtObject { ... }
+   * ```
+   */
+  ui?: {
+    /**
+     * Icon identifier / glyph / emoji passed straight through to
+     * generated nav entries. Interpretation is consumer-defined — the
+     * framework only persists the string.
+     */
+    icon?: string;
+    /**
+     * Override the auto-pluralized label used for generated nav entries
+     * (e.g. `Article` → "Articles"). Leave undefined to use the default.
+     */
+    label?: string;
+  };
+
+  /**
    * Synchronous manifest for build-time imports (Issue #270 Phase 1)
    * Allows passing manifest directly instead of async loading
    * @internal Advanced usage - typically set by build tools

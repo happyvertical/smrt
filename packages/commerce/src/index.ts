@@ -81,6 +81,7 @@ export {
 // Models
 export {
   Agreement,
+  Cart,
   Contract,
   ContractLineItem,
   Customer,
@@ -93,8 +94,10 @@ export {
   Order,
   Payment,
   PaymentAllocation,
+  ProductionOrder,
   PurchaseOrder,
   Vendor,
+  WholesaleOrder,
 } from './models/index.js';
 
 // Types
@@ -103,6 +106,7 @@ export {
   ContractStatus,
   ContractType,
   CustomerStatus,
+  CustomerType,
   FulfillmentStatus,
   FulfillmentType,
   InvoiceStatus,

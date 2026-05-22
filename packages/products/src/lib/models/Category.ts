@@ -9,11 +9,13 @@ import {
   type SmrtObjectOptions,
   smrt,
 } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
  * Options for Category initialization
  */
 export interface CategoryOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
   name?: string;
   description?: string;
   parentId?: string;
@@ -23,10 +25,21 @@ export interface CategoryOptions extends SmrtObjectOptions {
 }
 
 /**
- * Product knowledge base category for organizing product information
+ * Product knowledge base category for organizing product information.
+ *
+ * Optional tenancy — categories may be shared globally (tenantId=null) or
+ * scoped to a tenant. Hierarchical via parentId.
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
+  // See the matching note on `Product` — overriding `conflictColumns`
+  // to include `tenant_id` causes a SQLite `ON CONFLICT clause does not
+  // match any … UNIQUE constraint` error because the core schema
+  // generator's hardcoded STI unique index is `(slug, context,
+  // _meta_type)` and does not include the tenant column. Until the
+  // upstream framework fix lands, two tenants cannot share a category
+  // slug at the schema level.
   api: {
     include: ['list', 'get', 'create', 'update'], // Standard CRUD except delete
   },
@@ -36,6 +49,13 @@ export interface CategoryOptions extends SmrtObjectOptions {
   cli: true, // Enable CLI commands for admin
 })
 export class Category extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenant isolation.
+   * Nullable to support both tenant-scoped and global categories.
+   */
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   name = '';
   description = '';
   parentId?: string; // For hierarchical categories
@@ -45,6 +65,7 @@ export class Category extends SmrtObject {
 
   constructor(options: CategoryOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     this.name = options.name || '';
     this.description = options.description || '';
     this.parentId = options.parentId;

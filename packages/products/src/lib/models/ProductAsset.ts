@@ -1,21 +1,31 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 export interface ProductAssetOptions extends SmrtObjectOptions {
+  tenantId?: string | null;
   productId?: string;
   assetId?: string;
   relationship?: string;
   sortOrder?: number;
 }
 
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'product_assets',
-  conflictColumns: ['product_id', 'asset_id', 'relationship'],
+  // tenant_id is included so two tenants can independently link the same
+  // shared product/asset under the same relationship without their rows
+  // colliding (or worse, one tenant silently overwriting another's link
+  // via UPSERT).
+  conflictColumns: ['product_id', 'asset_id', 'relationship', 'tenant_id'],
   api: false,
   mcp: false,
   cli: false,
 })
 export class ProductAsset extends SmrtObject {
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   @field({ required: true })
   productId = '';
 
@@ -30,6 +40,7 @@ export class ProductAsset extends SmrtObject {
 
   constructor(options: ProductAssetOptions = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.productId) this.productId = options.productId;
     if (options.assetId) this.assetId = options.assetId;
     if (options.relationship) this.relationship = options.relationship;

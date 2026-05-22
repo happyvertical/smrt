@@ -5,7 +5,7 @@
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { type Address, CustomerStatus } from '../types/index.js';
+import { type Address, CustomerStatus, CustomerType } from '../types/index.js';
 
 /**
  * Customer represents the customer role for a Profile.
@@ -78,6 +78,14 @@ export class Customer extends SmrtObject {
   status: CustomerStatus = CustomerStatus.ACTIVE;
 
   /**
+   * Customer classification — DTC, wholesale, or retail.
+   *
+   * Drives channel access (wholesale portal vs. storefront vs. POS), default
+   * price tier, and credit terms. Defaults to DTC for backwards compatibility.
+   */
+  customerType: CustomerType = CustomerType.DTC;
+
+  /**
    * Internal notes about this customer
    */
   notes: string = '';
@@ -97,7 +105,24 @@ export class Customer extends SmrtObject {
     if (options.defaultBillingAddress !== undefined)
       this.defaultBillingAddress = options.defaultBillingAddress;
     if (options.status !== undefined) this.status = options.status;
+    // Treat `null` the same as `undefined` here. Customers loaded from
+    // rows written before the `customer_type` column existed will
+    // hydrate with the field as SQL `NULL`; without this guard the
+    // SmrtObject loader would overwrite the `CustomerType.DTC`
+    // initializer with `null`, breaking the documented
+    // backwards-compatible default. Explicit string values (including
+    // any future custom flavour) still take precedence.
+    if (options.customerType !== undefined && options.customerType !== null) {
+      this.customerType = options.customerType;
+    }
     if (options.notes !== undefined) this.notes = options.notes;
+  }
+
+  /**
+   * Convenience predicate: is this a wholesale customer?
+   */
+  isWholesale(): boolean {
+    return this.customerType === CustomerType.WHOLESALE;
   }
 
   /**

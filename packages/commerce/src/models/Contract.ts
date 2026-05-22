@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  foreignKey,
+  type Meta,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { ContractStatus, ContractType } from '../types/index.js';
 import { Customer } from './Customer.js';
@@ -126,6 +131,15 @@ export class Contract extends SmrtObject {
   terms: string = '';
 
   /**
+   * Sales channel that owns this contract.
+   *
+   * Plain string so consumers can model their own channels without an enum
+   * change (e.g. `dtc-web`, `wholesale-b2b`, `pos-store-1`, `marketplace-faire`).
+   * Empty string means "unattributed / legacy".
+   */
+  channelId: string = '';
+
+  /**
    * STI discriminator field
    */
   static readonly _stiField = 'contractType';
@@ -149,6 +163,7 @@ export class Contract extends SmrtObject {
     if (options.reference !== undefined) this.reference = options.reference;
     if (options.notes !== undefined) this.notes = options.notes;
     if (options.terms !== undefined) this.terms = options.terms;
+    if (options.channelId !== undefined) this.channelId = options.channelId;
   }
 
   /**
@@ -199,9 +214,19 @@ export class Contract extends SmrtObject {
   }
 }
 
+// Every STI child below MUST repeat the `@TenantScoped` decoration. The
+// tenancy registry keys off the concrete className passed by the
+// collection, not the inheritance chain — `OrderCollection.list()` sends
+// `'Order'` to the interceptor, which then misses the `'Contract'`
+// registration and skips tenant auto-filter/auto-populate. Without an
+// explicit `@TenantScoped` on each subclass, saves end up with
+// `tenantId: null` (the row becomes global / invisible to tenant-scoped
+// queries) and lists return rows across tenants.
+
 /**
  * Estimate - Quote or proposal for a customer
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Estimate extends Contract {
   override contractType = ContractType.ESTIMATE;
@@ -210,6 +235,7 @@ export class Estimate extends Contract {
 /**
  * Order - Customer purchase order
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Order extends Contract {
   override contractType = ContractType.ORDER;
@@ -218,6 +244,7 @@ export class Order extends Contract {
 /**
  * Lease - Rental or lease agreement
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Lease extends Contract {
   override contractType = ContractType.LEASE;
@@ -226,6 +253,7 @@ export class Lease extends Contract {
 /**
  * Agreement - Service or maintenance agreement
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class Agreement extends Contract {
   override contractType = ContractType.AGREEMENT;
@@ -234,9 +262,90 @@ export class Agreement extends Contract {
 /**
  * PurchaseOrder - Order sent to vendor/supplier
  */
+@TenantScoped({ mode: 'optional' })
 @smrt()
 export class PurchaseOrder extends Contract {
   override contractType = ContractType.PURCHASE_ORDER;
+}
+
+/**
+ * WholesaleOrder - B2B order placed by a wholesale customer.
+ *
+ * Behaves like an Order but is conventionally created against a customer with
+ * `customerType: 'wholesale'`, uses NET-30/60 payment terms, and is delivered
+ * via the wholesale-portal channel rather than retail checkout.
+ */
+@TenantScoped({ mode: 'optional' })
+@smrt()
+export class WholesaleOrder extends Contract {
+  override contractType = ContractType.WHOLESALE_ORDER;
+}
+
+/**
+ * ProductionOrder - instruction to commission goods from an internal or
+ * external factory.
+ *
+ * The manufacturing equivalent of a {@link PurchaseOrder} — but instead of
+ * buying finished inventory, you're paying to *make* it. A ProductionOrder
+ * consumes raw materials per a Bill of Materials (see
+ * `@happyvertical/smrt-manufacturing`) and produces finished SKU stock when
+ * posted (see `@happyvertical/smrt-inventory`).
+ *
+ * Carries two STI-meta fields that `ProductionService.consumeMaterials` /
+ * `runProduction` read from the loaded row to resolve which BOM to walk:
+ *
+ *   - `productId` — plain string ref to the upstream `Product` (or any
+ *     STI subtype, e.g. apparel `Style`). Used to look up the *active*
+ *     BOM via `BomService.findActiveForProduct` when no explicit
+ *     revision was pinned at the time the order was placed.
+ *   - `bomId` — optional pin to a specific BOM revision. When set, the
+ *     manufacturing service consumes against that exact revision even
+ *     if a newer BOM has become active in the meantime (keeps a
+ *     posted run from silently switching recipes mid-flight).
+ *
+ * Both fields are `Meta<string>` so the scanner routes them into the
+ * shared `_meta_data` JSON column on the Contract STI table instead of
+ * widening the base schema with manufacturing-specific columns.
+ */
+@TenantScoped({ mode: 'optional' })
+@smrt()
+export class ProductionOrder extends Contract {
+  override contractType = ContractType.PRODUCTION_ORDER;
+
+  /**
+   * Plain string reference to the upstream product the order is asked
+   * to make. Cross-package id; never `@foreignKey()`. Required by
+   * `ProductionService.consumeMaterials` unless `bomId` is supplied.
+   */
+  productId: Meta<string> = '';
+
+  /**
+   * Optional explicit BOM revision the order locked to at posting
+   * time. When set, manufacturing uses this exact row even if the
+   * product's active BOM has since changed. When empty, falls back
+   * to the active BOM for `productId`.
+   */
+  bomId: Meta<string> = '';
+}
+
+/**
+ * Cart - transient order-in-progress for a shopper.
+ *
+ * Persisted as a Contract so it can hold the same line items, totals, and
+ * customer reference as a real Order, then convert in place (the application
+ * promotes the row from `_meta_type: Cart` to `_meta_type: Order` at checkout
+ * rather than copying data between tables).
+ *
+ * A Cart starts in {@link ContractStatus.DRAFT} via the base `Contract.status`
+ * default — the subclass doesn't need its own override. Application code
+ * is responsible for promoting the row to `ContractStatus.PENDING` /
+ * `ACCEPTED` at checkout time; the framework doesn't enforce a state
+ * machine on the cart → order transition.
+ */
+@TenantScoped({ mode: 'optional' })
+@smrt()
+export class Cart extends Contract {
+  override contractType = ContractType.CART;
 }
 
 export default Contract;

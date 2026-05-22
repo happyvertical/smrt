@@ -29,5 +29,12 @@
   },
   "peerDependencies": {
     "@happyvertical/smrt-core": "^0.25.1"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.17"
   }
 }
