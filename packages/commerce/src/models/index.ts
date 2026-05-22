@@ -9,6 +9,8 @@ export {
   Contract,
   Estimate,
   Lease,
+  type LicenseRightsSnapshot,
+  LicenseSale,
   Order,
   ProductionOrder,
   PurchaseOrder,

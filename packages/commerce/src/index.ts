@@ -96,6 +96,8 @@ export {
   Invoice,
   InvoiceLineItem,
   Lease,
+  type LicenseRightsSnapshot,
+  LicenseSale,
   Order,
   Payment,
   PaymentAllocation,

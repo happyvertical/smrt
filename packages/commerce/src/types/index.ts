@@ -45,6 +45,15 @@ export enum ContractType {
   WHOLESALE_ORDER = 'wholesale_order',
   PRODUCTION_ORDER = 'production_order',
   CART = 'cart',
+  /**
+   * Industry-neutral licensing primitive. The `LicenseSale` STI subtype
+   * carries an immutable rights snapshot, a licensee email, optional
+   * legal-entity / jurisdiction fields, and a signed-PDF reference.
+   * Any application that sells rights for a fee (stock media,
+   * music licensing, code-asset marketplace, license keys, etc.)
+   * uses this subtype.
+   */
+  LICENSE_SALE = 'license_sale',
 }
 
 export enum ContractStatus {
