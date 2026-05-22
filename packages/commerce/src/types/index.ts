@@ -98,6 +98,101 @@ export enum PaymentStatus {
 }
 
 // ============================================================================
+// PaymentIntent Types
+// ============================================================================
+
+/**
+ * Status machine for {@link PaymentIntent}.
+ *
+ * `awaiting_payment → paid → (issued | retired)`, with `expired` and
+ * `cancelled` as alternate terminal states reachable from
+ * `awaiting_payment`.
+ *
+ * - `AWAITING_PAYMENT` — open quote, accepting any of the listed
+ *   payment options.
+ * - `PAID` — one option was satisfied by an incoming payment. The
+ *   other options are implicitly retired; later inbound funds to a
+ *   retired option must be flagged for refund by the consumer.
+ * - `ISSUED` — downstream rights / contract / fulfillment have been
+ *   created and linked. Terminal happy-path state.
+ * - `RETIRED` — paid but the satisfaction was reversed (refund,
+ *   chargeback, etc.). Terminal.
+ * - `EXPIRED` — the USD-price-lock window passed without payment.
+ *   Terminal.
+ * - `CANCELLED` — the buyer or the system explicitly cancelled the
+ *   intent before it was paid. Terminal.
+ */
+export enum PaymentIntentStatus {
+  AWAITING_PAYMENT = 'awaiting_payment',
+  PAID = 'paid',
+  ISSUED = 'issued',
+  RETIRED = 'retired',
+  EXPIRED = 'expired',
+  CANCELLED = 'cancelled',
+}
+
+/**
+ * One way for a {@link PaymentIntent} to be satisfied. The intent lists
+ * an array of these; satisfying any one of them transitions the intent
+ * to `PAID` and implicitly retires the rest.
+ *
+ * Industry-neutral: a marketplace that accepts USDC-on-Base and BTC
+ * lists two options; a SaaS billing flow that accepts Stripe and
+ * PayPal lists two; a kiosk that accepts only one rail lists one.
+ */
+export interface PaymentOption {
+  /**
+   * Stable id of the `PaymentBackend` adapter that fulfills this
+   * option — must match a `backendId` the consumer's payment-routing
+   * layer recognises. Examples: `base-usdc`, `solana-usdc`, `btc`,
+   * `stripe`, `paypal`.
+   */
+  backendId: string;
+  /**
+   * Payout-rail-qualified currency code, e.g. `USDC-base`, `BTC`,
+   * `USD-stripe`. The same convention used by
+   * `Vendor.payoutAddresses` and `Payment.nativeCurrency`.
+   */
+  currency: string;
+  /**
+   * Optional chain identifier for blockchain-backed options (`base`,
+   * `ethereum`, `solana`, ...). Pure-fiat options leave this empty.
+   */
+  chain?: string;
+  /**
+   * Destination address / account id the buyer should send funds to
+   * for this option (EVM address, BTC address, Stripe payment-intent
+   * id, etc.).
+   */
+  payTo: string;
+  /**
+   * Amount denominated in `currency`. Stored at decimal precision —
+   * a USDC option might be `199.0`, a BTC option `0.00713`.
+   */
+  nativeAmount: number;
+  /**
+   * Optional on-chain memo / payment reference (Solana memo, BTC OP_RETURN
+   * tag, Stripe metadata key). Some backends use this to disambiguate
+   * which intent an inbound payment satisfies.
+   */
+  memo?: string;
+  /**
+   * Whether this option supports the x402 HTTP-402 payment-required
+   * flow. Consumers that build agent-driven flows use this flag to
+   * filter the offered options.
+   */
+  x402Capable?: boolean;
+  /**
+   * Optional per-option expiry — when a single rail's quote becomes
+   * stale earlier than the intent-wide price-lock window (e.g. a
+   * volatile-currency option that re-quotes more aggressively). ISO
+   * 8601 string. Empty / missing means "inherit the intent's
+   * `priceLockExpiresAt`".
+   */
+  expiresAt?: string;
+}
+
+// ============================================================================
 // Invoice Types
 // ============================================================================
 
