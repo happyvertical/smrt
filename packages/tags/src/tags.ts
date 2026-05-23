@@ -296,20 +296,34 @@ export class TagCollection extends SmrtCollection<Tag> {
     // `foo`'s aliases in EVERY context (forum, etc.), corrupting tag
     // data outside the requested merge scope.
     //
-    // Round-8 codex follow-up: `Tag._context` defaults to `'global'` but
-    // `TagAlias._context` defaults to `''` (and `addAlias()` doesn't
-    // backfill the default), so a strict equality filter would orphan
-    // aliases that were created without an explicit context whenever
-    // the merge happens at the default 'global' scope. Match BOTH the
-    // resolved context AND `''` so unscoped-default-context aliases
-    // migrate too, while still excluding aliases that were
-    // intentionally scoped to a DIFFERENT context.
+    // Round-8 codex follow-up: `Tag._context` defaults to `'global'`
+    // but `TagAlias._context` defaults to `''` (and `addAlias()`
+    // doesn't backfill the default), so a strict equality filter
+    // would orphan aliases that were created without an explicit
+    // context whenever the merge happens at the default 'global'
+    // scope.
+    //
+    // Round-8 fix (initial): widen to `[fromTag.context, '']` —
+    // BUT codex + copilot caught that this overcorrected. For a
+    // non-default merge like `mergeTag('foo','bar','blog')`, the
+    // unscoped (`''`) aliases for slug `foo` belong to a DIFFERENT
+    // tag entirely (the `global/foo` row that the blog merge isn't
+    // touching). Widening unconditionally re-introduced the
+    // cross-context corruption round-7 was guarding against.
+    //
+    // Round-8 fix (final): only include `''` when the merge is at
+    // the default context — that's the case where the
+    // addAlias/Tag default-mismatch would orphan rows. For any
+    // other context, the strict equality from round-7 is correct.
     const { TagAliasCollection } = await import('./tag-aliases');
     const aliasCollection = await (TagAliasCollection as any).create(
       this.options,
     );
 
-    const aliasContexts = Array.from(new Set([fromTag.context, '']));
+    const aliasContexts: string[] = [fromTag.context];
+    if (fromTag.context === 'global') {
+      aliasContexts.push('');
+    }
     const aliases = await aliasCollection.list({
       where: { tagSlug: fromSlug, context: aliasContexts },
     });
