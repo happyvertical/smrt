@@ -295,13 +295,23 @@ export class TagCollection extends SmrtCollection<Tag> {
     // slug. Otherwise `mergeTag('foo', 'bar', 'blog')` rewrites
     // `foo`'s aliases in EVERY context (forum, etc.), corrupting tag
     // data outside the requested merge scope.
+    //
+    // Round-8 codex follow-up: `Tag._context` defaults to `'global'` but
+    // `TagAlias._context` defaults to `''` (and `addAlias()` doesn't
+    // backfill the default), so a strict equality filter would orphan
+    // aliases that were created without an explicit context whenever
+    // the merge happens at the default 'global' scope. Match BOTH the
+    // resolved context AND `''` so unscoped-default-context aliases
+    // migrate too, while still excluding aliases that were
+    // intentionally scoped to a DIFFERENT context.
     const { TagAliasCollection } = await import('./tag-aliases');
     const aliasCollection = await (TagAliasCollection as any).create(
       this.options,
     );
 
+    const aliasContexts = Array.from(new Set([fromTag.context, '']));
     const aliases = await aliasCollection.list({
-      where: { tagSlug: fromSlug, context: fromTag.context },
+      where: { tagSlug: fromSlug, context: aliasContexts },
     });
     for (const alias of aliases) {
       alias.tagSlug = toSlug;
