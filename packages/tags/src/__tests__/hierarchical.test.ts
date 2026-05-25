@@ -271,6 +271,106 @@ describe('Tag hierarchy (R3-B: slug API → UUID storage)', () => {
       const forumBarAliases = forumAliases.filter((a) => a.tagSlug === 'bar');
       expect(forumBarAliases).toHaveLength(0);
     });
+
+    it("doesn't migrate unscoped aliases when merge is scoped to a non-default context", async () => {
+      // Inverse of the default-context unscoped-alias test below.
+      // Codex + copilot + sub-agent all flagged the round-8 fix's
+      // initial form (`aliasContexts = [fromTag.context, '']` for
+      // ALL merges) as re-introducing the cross-context corruption
+      // the round-7 fix was guarding against:
+      //
+      // - `addAlias('foo', 'GlobalAlias')` creates an alias with
+      //   `_context = ''` — semantically belonging to the
+      //   default-context (`global:foo`) tag, NOT to `blog:foo`.
+      // - `mergeTag('foo', 'bar', 'blog')` should ONLY touch
+      //   `blog`-context aliases for slug `foo` — it must leave the
+      //   `''`-context alias alone (it belongs to a different tag).
+      //
+      // The final round-8 fix gates the `''` widening to
+      // default-context merges only, so non-default merges keep
+      // the round-7 strict-equality behavior.
+      const aliases = await TagAliasCollection.create({
+        db: { type: 'sqlite', url: dbUrl },
+      });
+
+      // Same-slug tags in two contexts: global (default) + blog.
+      const globalFoo = await tags.getOrCreate('foo');
+      const blogFoo = await tags.getOrCreate('foo', 'blog');
+      const blogBar = await tags.getOrCreate('bar', 'blog');
+      expect(globalFoo.context).toBe('global');
+      expect(blogFoo.context).toBe('blog');
+      expect(blogBar.id).toBeTruthy();
+
+      // Unscoped alias for `foo` — created via `addAlias` without
+      // an explicit context, so `_context = ''`. Conceptually owned
+      // by the global/foo tag (which is NOT being merged).
+      await aliases.addAlias('foo', 'GlobalAlias', 'en');
+
+      // Confirm the alias was indeed created at `context = ''`.
+      const beforeUnscoped = await aliases.list({
+        where: { tagSlug: 'foo', context: '' },
+      });
+      expect(beforeUnscoped).toHaveLength(1);
+
+      // Merge blog/foo → blog/bar. The blog merge MUST NOT touch
+      // the unscoped alias.
+      await tags.mergeTag('foo', 'bar', 'blog');
+
+      // The unscoped alias must still point at `foo`, NOT `bar`.
+      const afterUnscoped = await aliases.list({
+        where: { tagSlug: 'foo', context: '' },
+      });
+      expect(afterUnscoped).toHaveLength(1);
+      expect(afterUnscoped[0].alias).toBe('GlobalAlias');
+
+      // And `bar` must have NOT received the unscoped alias.
+      const barUnscoped = await aliases.list({
+        where: { tagSlug: 'bar', context: '' },
+      });
+      expect(barUnscoped).toHaveLength(0);
+    });
+
+    it('migrates unscoped aliases (context="") on default-context merge', async () => {
+      // Codex round-8 finding: `Tag._context` defaults to `'global'`,
+      // but `TagAliasCollection.addAlias(slug, alias)` leaves the
+      // alias's `_context` at its `''` default when no context is
+      // passed. A strict `context: fromTag.context` filter would
+      // orphan those `''`-context aliases for default-context
+      // merges, leaving rows that point at a now-deleted tag.
+      const aliases = await TagAliasCollection.create({
+        db: { type: 'sqlite', url: dbUrl },
+      });
+
+      // Default-context (global) tags.
+      const globalFoo = await tags.getOrCreate('foo');
+      const globalBar = await tags.getOrCreate('bar');
+      expect(globalFoo.context).toBe('global');
+      expect(globalBar.context).toBe('global');
+
+      // Alias created via `addAlias` with no context — ends up with
+      // `_context = ''` (NOT 'global').
+      await aliases.addAlias('foo', 'GlobalUnscoped', 'en');
+
+      // Sanity-check the default-mismatch the bug hinges on.
+      const beforeUnscoped = await aliases.list({
+        where: { tagSlug: 'foo', context: '' },
+      });
+      expect(beforeUnscoped).toHaveLength(1);
+
+      await tags.mergeTag('foo', 'bar');
+
+      // After merge, the alias must have been rewritten to `bar`
+      // — not orphaned at `tagSlug: 'foo'` (now deleted).
+      const orphans = await aliases.list({
+        where: { tagSlug: 'foo' },
+      });
+      expect(orphans).toHaveLength(0);
+
+      const migrated = await aliases.list({
+        where: { tagSlug: 'bar', context: '' },
+      });
+      expect(migrated.map((a) => a.alias)).toContain('GlobalUnscoped');
+    });
   });
 
   it('cleanupUnused only deletes leaves with no aliases', async () => {
