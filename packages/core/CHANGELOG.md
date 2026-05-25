@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.25.17
+
+### Patch Changes
+
+- ### Features
+
+  - add LicenseSale Contract STI subtype (commerce)
+  - add Payout model for operator-to-supplier remittance (commerce)
+  - add PaymentIntent model with multi-option semantics (commerce)
+  - extend Payment with backend identity and USD-drift fields (commerce)
+  - add Vendor.payoutAddresses per-currency map (commerce)
+
+  ### Bug Fixes
+
+  - address commerce marketplace review comments
+
+  ### Other Changes
+
+  - docs: document marketplace phase 1 additions (commerce)
+  - @happyvertical/smrt-scanner@0.25.17
+  - @happyvertical/smrt-config@0.25.17
+  - @happyvertical/smrt-types@0.25.17
+
 ## 0.25.16
 
 ### Patch Changes
