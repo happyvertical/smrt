@@ -9,6 +9,8 @@ export {
   Contract,
   Estimate,
   Lease,
+  type LicenseRightsSnapshot,
+  LicenseSale,
   Order,
   ProductionOrder,
   PurchaseOrder,
@@ -22,4 +24,6 @@ export { Invoice } from './Invoice.js';
 export { InvoiceLineItem } from './InvoiceLineItem.js';
 export { Payment } from './Payment.js';
 export { PaymentAllocation } from './PaymentAllocation.js';
+export { PaymentIntent } from './PaymentIntent.js';
+export { Payout } from './Payout.js';
 export { Vendor } from './Vendor.js';
