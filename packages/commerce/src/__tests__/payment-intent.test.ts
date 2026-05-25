@@ -83,6 +83,35 @@ describe('PaymentIntent', () => {
     expect(loaded?.priceLockExpiresAt).toBeInstanceOf(Date);
   });
 
+  it('re-coerces ISO-string dates after collection initialization', async () => {
+    const intent = await intents.create({
+      offeringRef: 'sku-date-strings',
+      licenseeEmail: 'date-buyer@example.test',
+      idempotencyKey: 'idem-date-strings',
+      usdPriceLocked: 100,
+      paymentOptions: [usdcOption],
+      priceLockExpiresAt: '2099-01-01T00:00:00.000Z',
+      paidAt: '2099-01-02T00:00:00.000Z',
+      issuedAt: '2099-01-03T00:00:00.000Z',
+      expiredAt: '2099-01-04T00:00:00.000Z',
+      cancelledAt: '2099-01-05T00:00:00.000Z',
+      retiredAt: '2099-01-06T00:00:00.000Z',
+    } as any);
+
+    expect(intent.priceLockExpiresAt).toBeInstanceOf(Date);
+    expect(intent.paidAt).toBeInstanceOf(Date);
+    expect(intent.issuedAt).toBeInstanceOf(Date);
+    expect(intent.expiredAt).toBeInstanceOf(Date);
+    expect(intent.cancelledAt).toBeInstanceOf(Date);
+    expect(intent.retiredAt).toBeInstanceOf(Date);
+    expect(intent.priceLockExpiresAt?.toISOString()).toBe(
+      '2099-01-01T00:00:00.000Z',
+    );
+
+    const open = await intents.findOpen();
+    expect(open.map((p) => p.id)).toContain(intent.id);
+  });
+
   it('drops malformed payment-option entries on input', async () => {
     // Defensive: a row migrated from another schema, or a programmatic
     // caller that forgot to fill a required field, should not be able

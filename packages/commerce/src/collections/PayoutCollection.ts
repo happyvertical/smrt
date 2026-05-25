@@ -38,9 +38,9 @@ export class PayoutCollection extends SmrtCollection<Payout> {
    * to the payment's `nativeCurrency` (falling back to `currency`),
    * and `supplierNet` is computed as `gross - operatorFee`.
    *
-   * The caller is still responsible for `await payout.save()` —
-   * keeping create / save as separate steps matches the rest of the
-   * package and lets callers stitch the payout into an
+   * The returned instance is initialized but not persisted. The caller
+   * is still responsible for `await payout.save()` — keeping create /
+   * save as separate steps lets callers stitch the payout into an
    * application-level transaction.
    */
   async createFromPayment(args: CreatePayoutFromPaymentArgs): Promise<Payout> {
@@ -48,7 +48,10 @@ export class PayoutCollection extends SmrtCollection<Payout> {
     const grossAmount = payment.nativeAmount || payment.amount || 0;
     const currency = payment.nativeCurrency || payment.currency || '';
     const backendId = args.backendId ?? payment.backendId ?? '';
-    return this.create({
+    const payout = new Payout({
+      ai: this.options.ai,
+      db: this.db,
+      _skipLoad: true,
       paymentId: payment.id ?? '',
       vendorId,
       grossAmount,
@@ -59,6 +62,8 @@ export class PayoutCollection extends SmrtCollection<Payout> {
       status: PayoutStatus.PENDING,
       notes: args.notes ?? '',
     });
+    await payout.initialize();
+    return payout;
   }
 
   async findByPayment(paymentId: string): Promise<Payout[]> {

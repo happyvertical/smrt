@@ -163,6 +163,18 @@ export class Payout extends SmrtObject {
     if (options.notes !== undefined) this.notes = options.notes;
   }
 
+  /**
+   * Re-coerce timestamp fields after the framework reapplies raw option
+   * values during initialization.
+   */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    this.sentAt = Payout.coerceDate(this.sentAt);
+    this.confirmedAt = Payout.coerceDate(this.confirmedAt);
+    this.failedAt = Payout.coerceDate(this.failedAt);
+    return this;
+  }
+
   // -------- Status predicates --------
 
   isPending(): boolean {
@@ -251,6 +263,8 @@ export class Payout extends SmrtObject {
       );
     }
     this.status = PayoutStatus.PENDING;
+    this.sentAt = null;
+    this.confirmedAt = null;
     this.failedAt = null;
     this.failureReason = '';
     // Drop the old tx ref so the next markSent attempt gets a fresh one.

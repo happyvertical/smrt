@@ -201,8 +201,8 @@ export class Vendor extends SmrtObject {
 
   /**
    * Set the payout destination for a single currency. Mutates the live
-   * map and returns `this` for chaining. Pass `undefined` (or call
-   * {@link clearPayoutAddress}) to remove a single entry.
+   * map and returns `this` for chaining. Use {@link clearPayoutAddress}
+   * to remove a single entry.
    */
   setPayoutAddress(currency: string, destination: string): this {
     this.payoutAddresses = {

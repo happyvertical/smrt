@@ -242,7 +242,7 @@ export class PaymentIntent extends SmrtObject {
   /**
    * Re-normalize `paymentOptions` after the framework's
    * `initializePropertiesFromOptions` pass has overwritten the
-   * constructor-set value with the raw cloned input, and stamp a
+   * constructor-set values with the raw cloned input, and stamp a
    * default `priceLockExpiresAt` so newly-created intents have a
    * concrete expiry without callers needing to compute it.
    */
@@ -251,6 +251,12 @@ export class PaymentIntent extends SmrtObject {
     this.paymentOptions = PaymentIntent.normalizePaymentOptions(
       this.paymentOptions as unknown,
     );
+    this.priceLockExpiresAt = PaymentIntent.coerceDate(this.priceLockExpiresAt);
+    this.paidAt = PaymentIntent.coerceDate(this.paidAt);
+    this.issuedAt = PaymentIntent.coerceDate(this.issuedAt);
+    this.expiredAt = PaymentIntent.coerceDate(this.expiredAt);
+    this.cancelledAt = PaymentIntent.coerceDate(this.cancelledAt);
+    this.retiredAt = PaymentIntent.coerceDate(this.retiredAt);
     if (!this.priceLockExpiresAt) {
       // Anchor the price-lock window to "now" if no explicit expiry
       // was supplied. Using the configured window so consumers that

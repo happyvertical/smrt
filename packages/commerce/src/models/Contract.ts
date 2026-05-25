@@ -536,7 +536,7 @@ export class LicenseSale extends Contract {
    */
   override async initialize(): Promise<this> {
     await super.initialize();
-    if (this.status === ContractStatus.ACCEPTED) {
+    if (this.status === ContractStatus.ACCEPTED && (await this.isSaved())) {
       issuedRightsSnapshot.set(this, this.serializeRightsSnapshot());
     }
     return this;

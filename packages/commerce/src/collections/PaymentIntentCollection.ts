@@ -84,9 +84,7 @@ export class PaymentIntentCollection extends SmrtCollection<PaymentIntent> {
     if (existing) {
       return { intent: existing, created: false };
     }
-    const intent = await this.create(seed as any);
-    await intent.save();
-    return { intent, created: true };
+    return { intent: await this.create(seed as any), created: true };
   }
 
   /**

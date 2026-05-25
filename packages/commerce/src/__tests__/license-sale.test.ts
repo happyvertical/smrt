@@ -170,6 +170,30 @@ describe('LicenseSale STI subtype', () => {
     await expect(loaded?.save()).rejects.toThrow(/immutable once issued/);
   });
 
+  it('allows accepted-license rights to change before the first save', async () => {
+    const license = new LicenseSale({
+      db: { type: 'sqlite', url: dbPath },
+      licenseeEmail: 'new-issued@example.test',
+      rightsMedium: 'web',
+      rightsDistributionScope: 'worldwide',
+      rightsExclusivity: 'non-exclusive',
+      rightsDuration: 'perpetual',
+      rightsTerritory: 'US',
+      rightsSublicensing: false,
+      rightsDerivatives: false,
+      status: ContractStatus.ACCEPTED,
+      customerId: 'c-new-issued',
+      totalAmount: 100,
+    });
+    await license.initialize();
+
+    license.rightsTerritory = 'US,CA';
+    await expect(license.save()).resolves.toBeDefined();
+
+    license.rightsTerritory = 'worldwide';
+    await expect(license.save()).rejects.toThrow(/immutable once issued/);
+  });
+
   it('detects mutation of a boolean rights field', async () => {
     const license = new LicenseSale({
       db: { type: 'sqlite', url: dbPath },

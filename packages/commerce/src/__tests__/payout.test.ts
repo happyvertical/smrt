@@ -66,6 +66,7 @@ describe('Payout', () => {
       operatorFee: 19.9,
       notes: 'first remit',
     });
+    expect(payout.id).toBeFalsy();
     await payout.save();
 
     expect(payout.status).toBe(PayoutStatus.PENDING);
@@ -212,11 +213,14 @@ describe('Payout', () => {
     await payout.save();
     payout.markSent('tx-old');
     payout.markFailed('insufficient gas');
+    payout.confirmedAt = new Date('2099-01-01T00:00:00.000Z');
     await payout.save();
 
     payout.resetFromFailed();
     expect(payout.status).toBe(PayoutStatus.PENDING);
     expect(payout.failureReason).toBe('');
+    expect(payout.sentAt).toBeNull();
+    expect(payout.confirmedAt).toBeNull();
     expect(payout.failedAt).toBeNull();
     // The old tx ref is cleared so the next attempt can use a fresh one
     expect(payout.backendTxRef).toBe('');
@@ -277,6 +281,29 @@ describe('Payout', () => {
       backendId: 'base-usdc',
     });
     await expect(payout.save()).resolves.toBeDefined();
+  });
+
+  it('re-coerces ISO-string timestamps after collection initialization', async () => {
+    const payout = await payouts.create({
+      paymentId: 'pmt-date-strings',
+      vendorId: 'vendor-date-strings',
+      grossAmount: 100,
+      operatorFee: 10,
+      supplierNet: 90,
+      currency: 'USDC-base',
+      backendId: 'base-usdc',
+      status: PayoutStatus.FAILED,
+      sentAt: '2099-01-01T00:00:00.000Z',
+      confirmedAt: '2099-01-02T00:00:00.000Z',
+      failedAt: '2099-01-03T00:00:00.000Z',
+    } as any);
+
+    expect(payout.sentAt).toBeInstanceOf(Date);
+    expect(payout.confirmedAt).toBeInstanceOf(Date);
+    expect(payout.failedAt).toBeInstanceOf(Date);
+    expect(payout.sentAt?.toISOString()).toBe('2099-01-01T00:00:00.000Z');
+    expect(payout.confirmedAt?.toISOString()).toBe('2099-01-02T00:00:00.000Z');
+    expect(payout.failedAt?.toISOString()).toBe('2099-01-03T00:00:00.000Z');
   });
 });
 
