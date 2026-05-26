@@ -905,12 +905,15 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     }
 
     .smrt-workspace-shell.has-inspector .smrt-workspace-content,
-    .smrt-workspace-shell.has-inspector .smrt-workspace-topbar,
+    .smrt-workspace-shell.has-inspector .smrt-workspace-topbar {
+      padding-right: var(--smrt-ws-page-pad);
+    }
+
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
       .smrt-workspace-content,
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
       .smrt-workspace-topbar {
-      padding-right: var(--smrt-ws-page-pad);
+      padding-right: calc(var(--smrt-ws-rail-width) + 1rem);
     }
 
     .inspector-backdrop {
