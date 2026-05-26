@@ -199,6 +199,31 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     expect(existsSync(localManifestPath)).toBe(true);
   });
 
+  it('does not generate legacy src/manifest/test-manifest-stub.ts during closeBundle', async () => {
+    mkdirSync(join(tmpDir, 'src', 'manifest'), { recursive: true });
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await (plugin as any).configResolved({
+      root: tmpDir,
+      build: {
+        lib: { entry: 'src/index.ts' },
+        outDir: 'dist',
+      },
+      plugins: [],
+    });
+
+    await (plugin as any).closeBundle();
+
+    expect(existsSync(join(tmpDir, 'dist', 'manifest.json'))).toBe(true);
+    expect(
+      existsSync(join(tmpDir, 'src', 'manifest', 'test-manifest-stub.ts')),
+    ).toBe(false);
+  });
+
   it('should not write dist/manifest.json during closeBundle for non-library builds', async () => {
     const plugin = smrtPlugin({
       include: ['src/**/*.ts'],

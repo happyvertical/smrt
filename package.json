@@ -28,12 +28,12 @@
     "version": "node scripts/check-version-limit.js && changeset version",
     "release": "pnpm run build && node scripts/publish-sequential.js",
     "smrt": "pnpm --filter @smrt/core cli",
-    "docs:site": "npm run --prefix docs start",
-    "docs:site:build": "npm run --prefix docs build",
-    "docs:site:dev": "npm run --prefix docs dev",
+    "docs:site": "pnpm --dir docs start",
+    "docs:site:build": "pnpm --dir docs build",
+    "docs:site:dev": "pnpm --dir docs dev",
     "deps:graph": "(echo '```mermaid' && npx depcruise packages/*/src --config .dependency-cruiser.cjs --output-type mermaid --include-only '^packages' --collapse '^packages/[^/]+' && echo '```') > SKILL_TREE.md",
     "deps:modules": "for pkg in packages/*; do [ -d \"$pkg/src\" ] && (cd \"$pkg\" && (echo '```mermaid' && npx depcruise src --config ../../.dependency-cruiser.cjs --output-type mermaid --include-only '^src' && echo '```') > SKILL_TREE.md); done",
-    "deps:all": "npm run deps:graph && npm run deps:modules"
+    "deps:all": "pnpm run deps:graph && pnpm run deps:modules"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.11",

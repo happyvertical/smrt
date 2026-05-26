@@ -414,6 +414,38 @@ export function getClassNames(): string[] {
 }
 
 /**
+ * Get lookup names for every registered class without collapsing
+ * cross-package simple-name collisions.
+ *
+ * Prefer each registration's qualified name when available, fall back to the
+ * registry key, then to the simple class name for package-less registrations.
+ * De-duplicates aliases that point to the same RegisteredClass object while
+ * preserving distinct packages that intentionally share a simple class name.
+ */
+export function getQualifiedClassNames(): string[] {
+  const names: string[] = [];
+  const seenRegistrations = new Set<RegisteredClass>();
+  const seenNames = new Set<string>();
+
+  for (const [key, entry] of getClasses().entries()) {
+    if (seenRegistrations.has(entry)) {
+      continue;
+    }
+    seenRegistrations.add(entry);
+
+    const lookupName = entry.qualifiedName || key || entry.name;
+    if (seenNames.has(lookupName)) {
+      continue;
+    }
+
+    seenNames.add(lookupName);
+    names.push(lookupName);
+  }
+
+  return names;
+}
+
+/**
  * Check if a class is registered (case-insensitive).
  */
 export function hasClass(name: string): boolean {

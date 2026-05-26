@@ -85,6 +85,7 @@ import {
   getClassInPackage as _getClassInPackage,
   getClassNames as _getClassNames,
   getPublicClasses as _getPublicClasses,
+  getQualifiedClassNames as _getQualifiedClassNames,
   hasClass as _hasClass,
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
   resolveType as _resolveType,
@@ -713,10 +714,22 @@ export class ObjectRegistry {
   }
 
   /**
-   * Get class names
+   * Get class names, deduplicated by simple class name.
+   *
+   * This is useful for display and backwards compatibility. Use
+   * `getQualifiedClassNames()` for schema/bootstrap loops that must preserve
+   * cross-package collisions.
    */
   static getClassNames(): string[] {
     return _getClassNames();
+  }
+
+  /**
+   * Get one lookup name per registered class, preserving cross-package
+   * collisions by preferring qualified class names where available.
+   */
+  static getQualifiedClassNames(): string[] {
+    return _getQualifiedClassNames();
   }
 
   /**
@@ -2776,14 +2789,27 @@ export class ObjectRegistry {
    */
   static getDescendants(className: string): string[] {
     const descendants: string[] = [];
+    const baseClass = ObjectRegistry.findClass(className);
+    const baseSimpleName = baseClass?.name;
+    const returnQualifiedNames = isQualifiedName(className);
+    const seenRegistrations = new Set<RegisteredClass>();
 
     // Find all classes that extend the given class
     // Issue #951: Use simple name for comparison since inheritance chains contain simple names
     for (const [_key, childClass] of ObjectRegistry.classes) {
+      if (seenRegistrations.has(childClass)) {
+        continue;
+      }
+      seenRegistrations.add(childClass);
+
       const simpleName = childClass.name || _key;
-      const chain = ObjectRegistry.getInheritanceChain(simpleName);
-      if (chain.includes(className) && simpleName !== className) {
-        descendants.push(simpleName);
+      const lookupName = childClass.qualifiedName || _key || simpleName;
+      const chain = ObjectRegistry.getInheritanceChain(lookupName);
+      const matchesBase =
+        chain.includes(className) ||
+        (baseSimpleName ? chain.includes(baseSimpleName) : false);
+      if (matchesBase && childClass !== baseClass) {
+        descendants.push(returnQualifiedNames ? lookupName : simpleName);
       }
     }
 

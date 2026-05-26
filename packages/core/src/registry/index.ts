@@ -28,6 +28,7 @@ export {
   getClassInPackage,
   getClassNames,
   getPublicClasses,
+  getQualifiedClassNames,
   hasClass,
   hasClassCaseInsensitive,
   qualifyExtendsName,
