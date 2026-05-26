@@ -27,6 +27,50 @@ type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
 };
 
+function resolveSTIBaseRegistration(className: string, stiBaseName: string) {
+  const registered = ObjectRegistry.getClass(className);
+
+  if (stiBaseName.includes(':')) {
+    return ObjectRegistry.getClass(stiBaseName);
+  }
+
+  if (registered?.packageName) {
+    const samePackageBase = ObjectRegistry.getClassInPackage(
+      registered.packageName,
+      stiBaseName,
+    );
+    if (samePackageBase) {
+      return samePackageBase;
+    }
+  }
+
+  return ObjectRegistry.getClass(stiBaseName);
+}
+
+function resolveSTIBaseLookupName(
+  className: string,
+  stiBaseName: string,
+): string {
+  const stiBase = resolveSTIBaseRegistration(className, stiBaseName);
+  return stiBase?.qualifiedName || stiBase?.name || stiBaseName;
+}
+
+function isSTIChild(className: string): boolean {
+  const stiBaseName = ObjectRegistry.getSTIBase(className);
+  if (!stiBaseName) {
+    return false;
+  }
+
+  const registered = ObjectRegistry.getClass(className);
+  const stiBase = resolveSTIBaseRegistration(className, stiBaseName);
+
+  if (registered && stiBase) {
+    return registered !== stiBase;
+  }
+
+  return stiBaseName !== className;
+}
+
 /**
  * Options for creating a test database
  */
@@ -66,8 +110,13 @@ export interface TestDatabaseOptions {
 
 function resolveRequestedSchemaClassName(className: string): string {
   const registered = ObjectRegistry.getClass(className);
-  if (!registered || registered.extends !== 'SmrtCollection') {
+  if (!registered) {
     return className;
+  }
+
+  if (registered.extends !== 'SmrtCollection') {
+    const stiBase = ObjectRegistry.getSTIBase(className);
+    return stiBase ? resolveSTIBaseLookupName(className, stiBase) : className;
   }
 
   const tableName =
@@ -101,7 +150,9 @@ function resolveRequestedSchemaClassName(className: string): string {
 
     const candidateLookupName = candidate.qualifiedName || candidate.name;
     const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
-    return stiBase || candidateLookupName;
+    return stiBase
+      ? resolveSTIBaseLookupName(candidateLookupName, stiBase)
+      : candidateLookupName;
   }
 
   return className;
@@ -189,7 +240,7 @@ export async function getTestDatabase(
 
   // Get class names to setup
   const classNames = resolveRequestedSchemaClassNames(
-    classes ?? ObjectRegistry.getClassNames(),
+    classes ?? ObjectRegistry.getQualifiedClassNames(),
   );
 
   // Skip if no classes registered
@@ -205,8 +256,7 @@ export async function getTestDatabase(
 
   for (const className of classNames) {
     // Skip STI children - their schema is part of the base class table
-    const stiBase = ObjectRegistry.getSTIBase(className);
-    if (stiBase && stiBase !== className) {
+    if (isSTIChild(className)) {
       continue;
     }
 

@@ -80,6 +80,50 @@ pnpm add @happyvertical/smrt-svelte
 </ThemeProvider>
 ```
 
+### Workspace Navigation
+
+```svelte
+<script lang="ts">
+  import { manifest } from '$lib/smrt-manifest';
+  import {
+    RoleShell,
+    navTreeFromManifest,
+  } from '@happyvertical/smrt-svelte/workspace';
+
+  let { children } = $props();
+
+  const sections = navTreeFromManifest(manifest, {
+    sectionHints: {
+      '@happyvertical/smrt-content': 'Content',
+      '@happyvertical/smrt-profiles': 'Profiles',
+    },
+  });
+
+  const roles = [{ id: 'admin', label: 'Admin', sections }];
+</script>
+
+<RoleShell {roles} currentRole="admin" currentPath="/admin/articles">
+  {@render children?.()}
+</RoleShell>
+```
+
+Filter the same manifest by role permissions when only a subset of resources
+should be visible:
+
+```ts
+import { navTreeFromManifest } from '@happyvertical/smrt-svelte/workspace';
+
+const editorSections = navTreeFromManifest(manifest, {
+  permittedResources: [
+    '@happyvertical/smrt-content:Article',
+    '@happyvertical/smrt-content:Document',
+  ],
+  sectionHints: {
+    '@happyvertical/smrt-content': 'Content',
+  },
+});
+```
+
 ## Exports
 
 ### Entry Points
@@ -94,6 +138,7 @@ pnpm add @happyvertical/smrt-svelte
 | `@happyvertical/smrt-svelte/ui` | UI primitives (Button, Card, Badge, Pagination) |
 | `@happyvertical/smrt-svelte/themes` | ThemeProvider, presets (material/glass/studio), CSS generation |
 | `@happyvertical/smrt-svelte/registry` | ModuleUIRegistry for agent admin panels |
+| `@happyvertical/smrt-svelte/workspace` | WorkspaceShell, RoleShell, NavTree, Breadcrumbs, ToolsDock, and manifest nav helpers |
 | `@happyvertical/smrt-svelte/browser-ai` | Browser AI client (STT/TTS/LLM adapters, capability detection) |
 | `@happyvertical/smrt-svelte/browser-ai/svelte` | Svelte AI components (VoiceInput, CapabilityGate, etc.) |
 | `@happyvertical/smrt-svelte/styles/tokens.css` | Design tokens CSS |
