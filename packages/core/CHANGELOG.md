@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.25.18
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - implement minor smrt fixup batch
+  - @happyvertical/smrt-scanner@0.25.18
+  - @happyvertical/smrt-config@0.25.18
+  - @happyvertical/smrt-types@0.25.18
+
 ## 0.25.17
 
 ### Patch Changes
