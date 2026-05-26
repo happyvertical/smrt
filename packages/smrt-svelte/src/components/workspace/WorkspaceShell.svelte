@@ -466,8 +466,10 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     background: var(--smrt-color-surface, #ffffff);
     border-right: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     min-width: 0;
-    overflow-y: auto;
-    overscroll-behavior: contain;
+    min-height: 0;
+    height: 100vh;
+    height: 100dvh;
+    overflow: hidden;
     z-index: 20;
   }
 
@@ -476,6 +478,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     justify-content: space-between;
     align-items: flex-start;
     gap: 0.75rem;
+    flex: 0 0 auto;
   }
 
   .brand {
@@ -543,13 +546,18 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .nav-region {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
     min-height: 0;
     gap: 0.5rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.25rem;
   }
 
   .sidebar-footer {
     margin-top: auto;
     display: grid;
+    flex: 0 0 auto;
     gap: 0.75rem;
     padding-top: 0.75rem;
     border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);

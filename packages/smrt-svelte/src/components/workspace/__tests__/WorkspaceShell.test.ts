@@ -6,6 +6,7 @@
  * the package doesn't depend on).
  */
 
+import { readFileSync } from 'node:fs';
 import { createRawSnippet, mount, tick, unmount } from 'svelte';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WorkspaceShell from '../WorkspaceShell.svelte';
@@ -121,6 +122,23 @@ describe('WorkspaceShell', () => {
     } finally {
       unmount(component);
     }
+  });
+
+  it('keeps sidebar scrolling scoped to the nav region', () => {
+    const source = readFileSync(
+      'src/components/workspace/WorkspaceShell.svelte',
+      'utf8',
+    );
+    const sidebarRule =
+      source.match(/\.smrt-workspace-sidebar\s*\{[^}]+\}/)?.[0] ?? '';
+    const navRule = source.match(/\.nav-region\s*\{[^}]+\}/)?.[0] ?? '';
+    const footerRule = source.match(/\.sidebar-footer\s*\{[^}]+\}/)?.[0] ?? '';
+
+    expect(sidebarRule).toContain('overflow: hidden;');
+    expect(navRule).toContain('flex: 1 1 auto;');
+    expect(navRule).toContain('overflow-y: auto;');
+    expect(navRule).toContain('overscroll-behavior: contain;');
+    expect(footerRule).toContain('flex: 0 0 auto;');
   });
 
   it('renders topbar actions on the right of the top bar', () => {
