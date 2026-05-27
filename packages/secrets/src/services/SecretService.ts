@@ -288,10 +288,14 @@ export class SecretService {
 
       // Access tracking is operational telemetry. Retrieval should still
       // succeed if the decrypted value is available but this write fails.
+      const previousLastAccessedAt = secret.lastAccessedAt;
+      const previousAccessCount = secret.accessCount;
       try {
         secret.recordAccess();
         await secret.save();
       } catch (trackingError) {
+        secret.lastAccessedAt = previousLastAccessedAt;
+        secret.accessCount = previousAccessCount;
         console.error(
           'Failed to update secret access tracking:',
           trackingError,

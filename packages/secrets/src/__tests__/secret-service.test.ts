@@ -72,6 +72,7 @@ describe('SecretService', () => {
     it('returns decrypted secrets when access tracking cannot be persisted', async () => {
       await withTenant({ tenantId: 'tenant-1' }, async () => {
         await service.store('api-key', 'sk_test_123');
+        const firstAccess = await service.retrieve('api-key');
 
         const originalFindByName = SecretCollection.prototype.findByName;
         const findByName = vi
@@ -93,6 +94,10 @@ describe('SecretService', () => {
           const retrieved = await service.retrieve('api-key');
 
           expect(retrieved.value).toBe('sk_test_123');
+          expect(retrieved.accessCount).toBe(firstAccess.accessCount);
+          expect(retrieved.lastAccessedAt?.getTime()).toBe(
+            firstAccess.lastAccessedAt?.getTime(),
+          );
           expect(consoleError).toHaveBeenCalledWith(
             'Failed to update secret access tracking:',
             expect.any(Error),
