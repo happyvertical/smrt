@@ -42,6 +42,12 @@ import {
 } from '../services/OidcLoginService.js';
 import { withSessionPermissionContext } from '../services/SessionPermissionContext.js';
 import { SessionService } from '../services/SessionService.js';
+import {
+  type ApproveCliAuthRequestInput,
+  TerminalAuthError,
+  TerminalAuthService,
+  type TerminalAuthServiceOptions,
+} from '../services/TerminalAuthService.js';
 
 export { defaultSessionLocals, type SessionLocals } from './types.js';
 
@@ -845,3 +851,301 @@ export function createOidcCallbackHandler(options: OidcSvelteKitOptions) {
     }
   };
 }
+
+// ---------------------------------------------------------------------------
+// Terminal / CLI device-code auth
+// ---------------------------------------------------------------------------
+
+/** Cached TerminalAuthService instances keyed by options identity. */
+const terminalAuthServiceCache = new Map<string, TerminalAuthService>();
+
+function terminalAuthCacheKey(options: TerminalAuthServiceOptions): string {
+  return JSON.stringify({
+    db: options.db,
+    cookie: options.sessionCookieName,
+    prefix: options.userCodePrefix,
+    reqTtl: options.requestTtlSeconds,
+    sessTtl: options.sessionTtlSeconds,
+    poll: options.pollIntervalSeconds,
+    path: options.verificationPath,
+  });
+}
+
+async function getOrCreateTerminalAuthService(
+  options: TerminalAuthServiceOptions,
+): Promise<TerminalAuthService> {
+  const key = terminalAuthCacheKey(options);
+  let service = terminalAuthServiceCache.get(key);
+  if (!service) {
+    service = await TerminalAuthService.create(options);
+    terminalAuthServiceCache.set(key, service);
+  }
+  return service;
+}
+
+/**
+ * Pull `Bearer <token>` out of an `Authorization` header. Returns `null` if
+ * the header is missing or malformed.
+ */
+export function parseBearerToken(authorization: string | null): string | null {
+  const match = authorization?.match(/^Bearer\s+(.+)$/iu);
+  return match?.[1]?.trim() || null;
+}
+
+/** Options for the terminal-auth start handler. */
+export interface CreateTerminalAuthStartHandlerOptions
+  extends TerminalAuthServiceOptions {
+  /**
+   * Override the verification origin returned to the CLI (e.g. when the
+   * public origin differs from the request origin behind a proxy). Defaults
+   * to `event.url.origin`.
+   */
+  verificationOrigin?: string | ((event: SvelteKitRequestEvent) => string);
+}
+
+/**
+ * Create a SvelteKit POST handler that starts a new terminal-auth request.
+ * Mount under `/api/cli/auth/start/+server.ts`:
+ *
+ * ```ts
+ * export const POST = createTerminalAuthStartHandler({
+ *   db: { type: 'postgres', url: process.env.DATABASE_URL! },
+ *   userCodePrefix: 'WG',
+ * });
+ * ```
+ */
+export function createTerminalAuthStartHandler(
+  options: CreateTerminalAuthStartHandlerOptions,
+) {
+  return async (event: SvelteKitRequestEvent): Promise<Response> => {
+    const service = await getOrCreateTerminalAuthService(options);
+    const origin =
+      typeof options.verificationOrigin === 'function'
+        ? options.verificationOrigin(event)
+        : (options.verificationOrigin ?? event.url.origin);
+    const result = await service.createRequest(origin);
+    return jsonResponse(result, 201);
+  };
+}
+
+/**
+ * Create a SvelteKit POST handler that exchanges a polling device code for a
+ * bearer token once the request has been approved. Mount under
+ * `/api/cli/auth/token/+server.ts`.
+ */
+export function createTerminalAuthTokenHandler(
+  options: TerminalAuthServiceOptions,
+) {
+  return async (event: SvelteKitRequestEvent): Promise<Response> => {
+    const body = (await event.request.json().catch(() => null)) as {
+      deviceCode?: unknown;
+    } | null;
+    const deviceCode =
+      typeof body?.deviceCode === 'string' ? body.deviceCode.trim() : '';
+    if (!deviceCode) {
+      return jsonResponse({ error: 'deviceCode is required.' }, 400);
+    }
+
+    const service = await getOrCreateTerminalAuthService(options);
+    const result = await service.exchangeDeviceCode(deviceCode);
+    return jsonResponse(result);
+  };
+}
+
+/**
+ * Create a SvelteKit DELETE handler that revokes the bearer token in the
+ * request's `Authorization` header. Always returns `{ authenticated: false }`
+ * — does not leak whether the token was actually live, by design.
+ */
+export function createBearerSessionDeleteHandler(
+  options: TerminalAuthServiceOptions,
+) {
+  return async (event: SvelteKitRequestEvent): Promise<Response> => {
+    const token = parseBearerToken(event.request.headers.get('authorization'));
+    if (token) {
+      try {
+        const service = await getOrCreateTerminalAuthService(options);
+        await service.destroyBearerSession(token);
+      } catch (error) {
+        console.error('Terminal bearer session revocation error:', error);
+      }
+    }
+    return jsonResponse({ authenticated: false });
+  };
+}
+
+/**
+ * Look up the session associated with a bearer token. Use from
+ * `hooks.server.ts` to resolve `Authorization: Bearer <sid>` headers
+ * alongside cookie-based sessions.
+ */
+export async function loadBearerSessionContext(
+  token: string,
+  options: TerminalAuthServiceOptions,
+) {
+  const service = await getOrCreateTerminalAuthService(options);
+  return service.loadBearerSession(token);
+}
+
+/** Shape passed back to `+page.server.ts` `load`. */
+export interface TerminalLoginPageData {
+  userCode: string;
+  requestStatus: string | null;
+}
+
+/** Shape returned by the approve action on success. */
+export interface TerminalLoginApproveSuccess {
+  approved: true;
+  requestStatus: string;
+  userCode: string;
+}
+
+/** Shape returned by the approve action on failure (HTTP 4xx). */
+export interface TerminalLoginApproveFailure {
+  status: number;
+  error: string;
+  userCode: string;
+}
+
+/**
+ * Page-server helper for the terminal-login approval page. Returns
+ * `{ load, approve }` you can spread into a `+page.server.ts` module.
+ *
+ * `approve` is the action implementation, not a wrapped object — wire it up
+ * as you like, e.g. `export const actions = { approve: handler.approve }`.
+ *
+ * @example
+ * ```ts
+ * // src/routes/terminal-login/+page.server.ts
+ * import { mountTerminalLoginPage } from '@happyvertical/smrt-users/sveltekit';
+ *
+ * const handlers = mountTerminalLoginPage({
+ *   db: { type: 'postgres', url: process.env.DATABASE_URL! },
+ *   userCodePrefix: 'WG',
+ *   requireUser: (event) => Boolean(event.locals.user),
+ *   resolveUser: (event) => event.locals.user,
+ *   resolveTenantId: (event) => event.locals.tenantId,
+ * });
+ *
+ * export const load = handlers.load;
+ * export const actions = { approve: handlers.approve };
+ * ```
+ */
+export interface MountTerminalLoginPageOptions
+  extends TerminalAuthServiceOptions {
+  /** Resolve the authenticated user from `event.locals`. */
+  resolveUser: (
+    event: SvelteKitRequestEvent,
+  ) => { id?: string | null; email?: string | null } | null | undefined;
+  /** Resolve the tenant id from `event.locals`. */
+  resolveTenantId: (event: SvelteKitRequestEvent) => string | null | undefined;
+  /** Query-string parameter holding the user code on the page URL. */
+  codeQueryParam?: string;
+}
+
+export interface MountedTerminalLoginPage {
+  load: (event: SvelteKitRequestEvent) => Promise<TerminalLoginPageData>;
+  approve: (
+    event: SvelteKitRequestEvent,
+  ) => Promise<
+    | TerminalLoginApproveSuccess
+    | { type: 'failure'; status: number; data: TerminalLoginApproveFailure }
+  >;
+}
+
+export function mountTerminalLoginPage(
+  options: MountTerminalLoginPageOptions,
+): MountedTerminalLoginPage {
+  const codeParam = options.codeQueryParam ?? 'code';
+
+  return {
+    load: async (event) => {
+      const userCode =
+        event.url.searchParams.get(codeParam)?.trim().toUpperCase() ?? '';
+      let requestStatus: string | null = null;
+      if (userCode) {
+        const service = await getOrCreateTerminalAuthService(options);
+        const request = await service.getRequestForUserCode(userCode);
+        requestStatus = request?.status ?? null;
+      }
+      return { requestStatus, userCode };
+    },
+
+    approve: async (event) => {
+      const formData = await event.request.formData();
+      const userCode =
+        formData.get('userCode')?.toString().trim().toUpperCase() ?? '';
+
+      if (!userCode) {
+        return {
+          type: 'failure',
+          status: 400,
+          data: {
+            status: 400,
+            error: 'Enter a terminal login code.',
+            userCode,
+          },
+        };
+      }
+
+      const user = options.resolveUser(event);
+      const tenantId = options.resolveTenantId(event);
+      if (!user?.id) {
+        return {
+          type: 'failure',
+          status: 401,
+          data: {
+            status: 401,
+            error: 'Sign in before approving terminal access.',
+            userCode,
+          },
+        };
+      }
+
+      try {
+        const service = await getOrCreateTerminalAuthService(options);
+        const approveInput: ApproveCliAuthRequestInput = {
+          ipAddress: event.getClientAddress?.(),
+          tenantId: tenantId ?? null,
+          user: {
+            email: user.email ?? '',
+            id: user.id,
+          },
+          userAgent: event.request.headers.get('user-agent') ?? undefined,
+          userCode,
+        };
+        const request = await service.approveRequest(approveInput);
+        return {
+          approved: true,
+          requestStatus: request.status,
+          userCode,
+        };
+      } catch (error) {
+        const message =
+          error instanceof TerminalAuthError
+            ? error.message
+            : error instanceof Error
+              ? error.message
+              : 'Unable to approve terminal login.';
+        return {
+          type: 'failure',
+          status: 400,
+          data: { status: 400, error: message, userCode },
+        };
+      }
+    },
+  };
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+export {
+  TerminalAuthError,
+  TerminalAuthService,
+  type TerminalAuthServiceOptions,
+};

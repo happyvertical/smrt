@@ -3,6 +3,11 @@
  * @packageDocumentation
  */
 
+// CLI / terminal auth
+export {
+  CliAuthRequestCollection,
+  UsersCliAuthRequestCollection,
+} from './CliAuthRequestCollection.js';
 // Group collections
 export { GroupCollection } from './GroupCollection.js';
 export { GroupMemberCollection } from './GroupMemberCollection.js';
