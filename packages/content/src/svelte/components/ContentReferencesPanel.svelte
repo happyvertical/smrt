@@ -1,16 +1,27 @@
 <script lang="ts">
+import type { Snippet } from 'svelte';
 import type { ContentEditorReference } from '../content-editor-form';
 
 export interface Props {
   referenceIds?: string[];
   references?: ContentEditorReference[];
   onReferenceIdsChange?: (referenceIds: string[]) => void;
+  /**
+   * Optional snippet rendered inside the panel beneath the references list
+   * and the "add reference by ID" input. Host applications use this to inject
+   * a richer picker (browsing a tenant asset pool, searching an external
+   * archive, etc.) without forking the component. The snippet is responsible
+   * for calling `onReferenceIdsChange` (or otherwise mutating the parent
+   * state) when the user selects an entry.
+   */
+  children?: Snippet;
 }
 
 let {
   referenceIds = [],
   references = [],
   onReferenceIdsChange = undefined,
+  children = undefined,
 }: Props = $props();
 
 let newReferenceId = $state('');
@@ -108,6 +119,12 @@ function removeReference(id: string) {
     />
     <button type="button" onclick={addReference}>Add</button>
   </div>
+
+  {#if children}
+    <div class="reference-extras">
+      {@render children()}
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -170,6 +187,11 @@ function removeReference(id: string) {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.5rem;
+  }
+
+  .reference-extras {
+    display: grid;
+    gap: 0.65rem;
   }
 
   input,
