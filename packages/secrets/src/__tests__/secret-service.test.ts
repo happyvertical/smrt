@@ -16,7 +16,7 @@ import {
   withTenant,
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SecretCollection } from '../collections/SecretCollection.js';
 import { SecretService } from '../services/SecretService.js';
 
@@ -66,6 +66,46 @@ describe('SecretService', () => {
         expect(retrieved.value).toBe('sk_test_123');
         expect(retrieved.name).toBe('api-key');
         expect(retrieved.accessCount).toBe(1);
+      });
+    });
+
+    it('returns decrypted secrets when access tracking cannot be persisted', async () => {
+      await withTenant({ tenantId: 'tenant-1' }, async () => {
+        await service.store('api-key', 'sk_test_123');
+        const firstAccess = await service.retrieve('api-key');
+
+        const originalFindByName = SecretCollection.prototype.findByName;
+        const findByName = vi
+          .spyOn(SecretCollection.prototype, 'findByName')
+          .mockImplementation(async function (name: string) {
+            const secret = await originalFindByName.call(this, name);
+            if (name === 'api-key' && secret) {
+              secret.save = vi.fn(async () => {
+                throw new Error('tracking write failed');
+              });
+            }
+            return secret;
+          });
+        const consoleError = vi
+          .spyOn(console, 'error')
+          .mockImplementation(() => {});
+
+        try {
+          const retrieved = await service.retrieve('api-key');
+
+          expect(retrieved.value).toBe('sk_test_123');
+          expect(retrieved.accessCount).toBe(firstAccess.accessCount);
+          expect(retrieved.lastAccessedAt?.getTime()).toBe(
+            firstAccess.lastAccessedAt?.getTime(),
+          );
+          expect(consoleError).toHaveBeenCalledWith(
+            'Failed to update secret access tracking:',
+            expect.any(Error),
+          );
+        } finally {
+          findByName.mockRestore();
+          consoleError.mockRestore();
+        }
       });
     });
 

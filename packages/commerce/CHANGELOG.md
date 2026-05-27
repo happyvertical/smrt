@@ -1,5 +1,16 @@
 # @happyvertical/smrt-commerce
 
+## 0.25.19
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.25.19
+- @happyvertical/smrt-tenancy@0.25.19
+- @happyvertical/smrt-profiles@0.25.19
+- @happyvertical/smrt-ledgers@0.25.19
+- @happyvertical/smrt-core@0.25.19
+- @happyvertical/smrt-types@0.25.19
+
 ## 0.25.18
 
 ### Patch Changes

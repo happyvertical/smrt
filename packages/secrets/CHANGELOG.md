@@ -1,5 +1,13 @@
 # @happyvertical/smrt-secrets
 
+## 0.25.19
+
+### Patch Changes
+
+- Keep secret retrieval successful when access-count tracking cannot be persisted.
+  - @happyvertical/smrt-tenancy@0.25.19
+  - @happyvertical/smrt-core@0.25.19
+
 ## 0.25.18
 
 ### Patch Changes
