@@ -286,9 +286,17 @@ export class SecretService {
       const envelope: EncryptedEnvelope = JSON.parse(secret.encryptedValue);
       const decrypted = await this.secretStore.decrypt(tenantId, envelope);
 
-      // Update access tracking
-      secret.recordAccess();
-      await secret.save();
+      // Access tracking is operational telemetry. Retrieval should still
+      // succeed if the decrypted value is available but this write fails.
+      try {
+        secret.recordAccess();
+        await secret.save();
+      } catch (trackingError) {
+        console.error(
+          'Failed to update secret access tracking:',
+          trackingError,
+        );
+      }
 
       await this.audit(secret.id ?? null, name, userId, 'read', 'success');
 
