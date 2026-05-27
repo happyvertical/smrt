@@ -1,8 +1,7 @@
 /**
  * `@happyvertical/smrt-app-mcp` — app-runtime MCP server scaffolding for
- * SMRT apps.
- *
- * Three layers:
+ * SMRT apps. Exposes a SMRT app's MCP surface over HTTP, regardless of how
+ * the app is deployed.
  *
  * - **Core** (this module): `createMcpAppServer` wraps
  *   `@happyvertical/smrt-core/generators/mcp` with allow-listing, a public
@@ -11,12 +10,14 @@
  *
  * - **SvelteKit** (`@happyvertical/smrt-app-mcp/sveltekit`): thin route
  *   adapters that turn an `McpAppServer` into the GET/POST handlers a
- *   SvelteKit `+server.ts` expects.
+ *   SvelteKit `+server.ts` expects. Additional transport adapters
+ *   (standalone Node HTTP, serverless, Express/Hono/Fastify) can be added
+ *   as sibling subpaths without changes to the core.
  *
- * - **Stdio bridge** (`@happyvertical/smrt-app-mcp/bin/smrt-mcp-bridge`):
- *   a generic CLI that exposes a remote app's MCP surface as a local stdio
- *   MCP server (so editors and AI clients can connect to it). Configure via
- *   `--env-prefix=APP` and the app's CLI config file.
+ * For piping a deployed app's MCP surface to a local stdio MCP client
+ * (e.g. for editor/AI client integration), see
+ * `@happyvertical/smrt-app-cli` — the client-side counterpart owns the
+ * stdio bridge.
  *
  * @packageDocumentation
  */
