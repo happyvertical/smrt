@@ -59,6 +59,16 @@ export interface SmrtPluginOptions {
     configPath?: string;
     /** Configuration file name (default: 'smrt.ts') */
     configFileName?: string;
+    /**
+     * Kebab-case custom action route URLs (default: false).
+     *
+     * When true, `discoverFromUrl` generates `/discover-from-url` instead
+     * of the legacy `/discoverFromUrl`. Explicit `api.routes[name].path`
+     * overrides always win.
+     *
+     * New apps should set this to true. Issue #1305.
+     */
+    kebabRoutes?: boolean;
   };
 }
 
@@ -254,6 +264,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           objectsDir: svelteKit.objectsDir || 'src/lib/objects',
           configPath: svelteKit.configPath || 'src/lib/server',
           configFileName: svelteKit.configFileName || 'smrt.ts',
+          kebabRoutes: svelteKit.kebabRoutes ?? false,
         });
       }
     },

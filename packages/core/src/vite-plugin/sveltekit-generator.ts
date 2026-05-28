@@ -29,6 +29,19 @@ export interface SvelteKitOptions {
   objectsDir: string;
   configPath?: string; // default: 'src/lib/server'
   configFileName?: string; // default: 'smrt.ts'
+  /**
+   * When true, custom action route paths are kebab-cased from the method
+   * name (e.g. `discoverFromUrl` → `/discover-from-url`). When false
+   * (default), the method name is used verbatim (`/discoverFromUrl`).
+   *
+   * Explicit `api.routes[name].path` overrides always win; this flag only
+   * affects the implicit-default-path case.
+   *
+   * Default: false (preserves existing camelCase URL behavior). New apps
+   * are encouraged to enable this for REST-conventional kebab URLs;
+   * future major may flip the default. See Issue #1305.
+   */
+  kebabRoutes?: boolean;
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -173,13 +186,41 @@ function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
   }
 }
 
-function normalizeCustomRoutePath(actionName: string, path?: string): string[] {
-  const normalizedPath = (path || actionName)
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean);
+/**
+ * Convert a method name in source casing to a kebab-case URL segment.
+ *
+ *   discoverFromUrl → discover-from-url
+ *   XMLExport       → xml-export
+ *   URL             → url
+ *   getById         → get-by-id
+ *   simple          → simple
+ *
+ * Exported for re-use by downstream tools (e.g. `@happyvertical/smrt-app-cli`
+ * uses the same transform for surface command names). Issue #1305.
+ */
+export function methodNameToKebab(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase();
+}
 
-  return normalizedPath.length > 0 ? normalizedPath : [actionName];
+function normalizeCustomRoutePath(
+  actionName: string,
+  path?: string,
+  kebabRoutes = false,
+): string[] {
+  // Explicit path override always wins; no kebab transform applied to
+  // overrides so authors retain full control over the URL shape.
+  if (path) {
+    const normalized = path
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (normalized.length > 0) return normalized;
+  }
+  const segment = kebabRoutes ? methodNameToKebab(actionName) : actionName;
+  return [segment];
 }
 
 function extractRoutePathParamNames(pathSegments: string[]): string[] {
@@ -196,18 +237,23 @@ function resolveApiActionRouteConfig(
   defaultScope: 'item' | 'collection' = actionDef.isStatic
     ? 'collection'
     : 'item',
+  kebabRoutes = false,
 ): ResolvedApiActionRouteConfig {
   const config = getApiConfigObject(apiConfig);
   const routeConfig: ApiCustomRouteConfig | undefined =
     config?.routes?.[actionName];
 
+  const pathSegments = normalizeCustomRoutePath(
+    actionName,
+    routeConfig?.path,
+    kebabRoutes,
+  );
+
   return {
     scope: routeConfig?.scope || defaultScope,
     method: normalizeApiHttpMethod(routeConfig?.method),
-    pathSegments: normalizeCustomRoutePath(actionName, routeConfig?.path),
-    pathParamNames: extractRoutePathParamNames(
-      normalizeCustomRoutePath(actionName, routeConfig?.path),
-    ),
+    pathSegments,
+    pathParamNames: extractRoutePathParamNames(pathSegments),
   };
 }
 
@@ -857,6 +903,8 @@ async function generateRoutesForObject(
       actionName,
       actionDef,
       apiConfig,
+      undefined,
+      options.kebabRoutes,
     );
 
     if (routeConfig.scope === 'collection' && !actionDef.isStatic) {
@@ -936,6 +984,7 @@ async function generateCollectionRoutesForObject(
       actionDef,
       apiConfig,
       'collection',
+      options.kebabRoutes,
     );
 
     if (routeConfig.scope !== 'collection') {

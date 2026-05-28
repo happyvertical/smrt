@@ -25,7 +25,10 @@ vi.mock('node:fs', () => ({
 }));
 
 // Import after mocking
-import { generateSvelteKitRoutes } from './sveltekit-generator';
+import {
+  generateSvelteKitRoutes,
+  methodNameToKebab,
+} from './sveltekit-generator';
 
 function expectGetCollectionCall(content: string, objectName: string): void {
   const escapedObjectName = objectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -33,6 +36,22 @@ function expectGetCollectionCall(content: string, objectName: string): void {
     new RegExp(`getCollection(?:<any>)?\\(\\s*'${escapedObjectName}',?\\s*\\)`),
   );
 }
+
+describe('methodNameToKebab (#1305)', () => {
+  it.each([
+    ['discoverFromUrl', 'discover-from-url'],
+    ['XMLExport', 'xml-export'],
+    ['URL', 'url'],
+    ['getById', 'get-by-id'],
+    ['simple', 'simple'],
+    ['Already', 'already'],
+    ['aA', 'a-a'],
+    ['IOError', 'io-error'],
+    ['parseHTML5Data', 'parse-html5-data'],
+  ])('%s → %s', (input, expected) => {
+    expect(methodNameToKebab(input)).toBe(expected);
+  });
+});
 
 describe('SvelteKit Route Generator', () => {
   const projectRoot = '/test/project';
@@ -513,6 +532,166 @@ describe('SvelteKit Route Generator', () => {
         );
 
       expect(summarizeRoute).toBeDefined();
+    });
+
+    it('should preserve camelCase URL segments by default (#1305 opt-in)', async () => {
+      // Regression: default (kebabRoutes off) keeps the legacy camelCase
+      // URL shape so existing apps don't break.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discoverFromUrl: {
+                name: 'discoverFromUrl',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: true,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['discoverFromUrl'] },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const camelRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('praecos/discoverFromUrl/+server.ts'),
+        );
+      expect(camelRoute).toBeDefined();
+
+      const kebabRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('praecos/discover-from-url/+server.ts'),
+        );
+      expect(kebabRoute).toBeUndefined();
+    });
+
+    it('should kebab-case custom route URLs when kebabRoutes is enabled (#1305)', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discoverFromUrl: {
+                name: 'discoverFromUrl',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: true,
+              },
+              XMLExport: {
+                name: 'XMLExport',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: true,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['discoverFromUrl', 'XMLExport'] },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        kebabRoutes: true,
+      });
+
+      expect(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            call[0].toString().includes('praecos/discover-from-url/+server.ts'),
+          ),
+      ).toBeDefined();
+      expect(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            call[0].toString().includes('praecos/discoverFromUrl/+server.ts'),
+          ),
+      ).toBeUndefined();
+
+      expect(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            call[0].toString().includes('praecos/xml-export/+server.ts'),
+          ),
+      ).toBeDefined();
+    });
+
+    it('should let explicit api.routes path override win even with kebabRoutes enabled (#1305)', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discoverFromUrl: {
+                name: 'discoverFromUrl',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['discoverFromUrl'],
+                routes: {
+                  discoverFromUrl: { path: 'legacyCamel' },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        kebabRoutes: true,
+      });
+
+      // Explicit override wins; no kebab transform applied.
+      expect(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            call[0].toString().includes('praecos/legacyCamel/+server.ts'),
+          ),
+      ).toBeDefined();
+      // The kebab-of-override (`legacy-camel`) must NOT be generated.
+      expect(
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            call[0].toString().includes('praecos/legacy-camel/+server.ts'),
+          ),
+      ).toBeUndefined();
     });
 
     it('should generate collection-scoped custom routes for static methods', async () => {
