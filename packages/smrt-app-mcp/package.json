@@ -1,0 +1,67 @@
+{
+  "name": "@happyvertical/smrt-app-mcp",
+  "version": "0.25.19",
+  "description": "App-runtime MCP server scaffolding for SMRT apps — `createMcpAppServer` plus transport adapters (SvelteKit today) for exposing a SMRT app's MCP surface over HTTP.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./sveltekit": {
+      "types": "./dist/sveltekit.d.ts",
+      "import": "./dist/sveltekit.js"
+    }
+  },
+  "files": [
+    "CLAUDE.md",
+    "LICENSE",
+    "README.md",
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build --mode library",
+    "build:watch": "vite build --mode library --watch",
+    "clean": "rm -rf dist",
+    "dev": "npm run build:watch",
+    "check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepack": "node ../../scripts/prepack-package.js",
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-app-mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/happyvertical/smrt/issues"
+  },
+  "homepage": "https://github.com/happyvertical/smrt/tree/main/packages/smrt-app-mcp#readme",
+  "license": "MIT",
+  "keywords": [
+    "smrt",
+    "mcp",
+    "model-context-protocol",
+    "sveltekit"
+  ],
+  "author": "HappyVertical",
+  "dependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.25.2"
+  },
+  "devDependencies": {
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vitest": "^4.0.17"
+  }
+}
