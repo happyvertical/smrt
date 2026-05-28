@@ -1,5 +1,35 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - pin ContentReference targetVersion for drift detection (content)
+
+  ### Features
+
+  - rate-limit failed terminal-auth approval attempts per user (users)
+  - terminal device-code auth + app-runtime MCP scaffolding (users,smrt-app-mcp)
+
+  ### Bug Fixes
+
+  - address PR review feedback (content)
+  - address PR #1299 automated review findings (users,smrt-app-mcp)
+  - satisfy monorepo standards (vitest plugin + changeset group) (smrt-app-mcp)
+
+  ### Other Changes
+
+  - docs: clarify drift detection scope and panel rendering (content)
+  - refactor: remove /cli subpath — relocates to smrt-app-cli (smrt-app-mcp)
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@1.0.0
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
 ## 0.25.20
 
 ### Patch Changes

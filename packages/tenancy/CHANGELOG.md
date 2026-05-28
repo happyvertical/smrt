@@ -1,5 +1,14 @@
 # @happyvertical/smrt-tenancy
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@1.0.0
+  - @happyvertical/smrt-users@1.0.0
+  - @happyvertical/smrt-types@1.0.0
+
 ## 0.25.20
 
 ### Patch Changes
