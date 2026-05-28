@@ -810,6 +810,148 @@ describe('SvelteKit Route Generator', () => {
       consoleWarnSpy.mockRestore();
     });
 
+    it('should warn when cli.include lists methods not in resolved-api set (#1306)', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      // Mirrors praeco's real-world decorator: cli.include is much wider
+      // than api.include, leaving most CLI commands without HTTP routes.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discoverFromUrl: {
+                name: 'discoverFromUrl',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: true,
+              },
+              discover: {
+                name: 'discover',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              analyze: {
+                name: 'analyze',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['discoverFromUrl'] },
+              cli: {
+                include: ['discoverFromUrl', 'discover', 'analyze'],
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const warnedMethods = warnSpy.mock.calls
+        .map((args) => String(args[0] ?? ''))
+        .filter((msg) => msg.includes('cli.include'));
+
+      // Should warn about `discover` and `analyze` (cli-only).
+      expect(warnedMethods.some((m) => m.includes('Praeco.discover '))).toBe(
+        true,
+      );
+      expect(warnedMethods.some((m) => m.includes('Praeco.analyze'))).toBe(
+        true,
+      );
+      // Should NOT warn about `discoverFromUrl` (in both).
+      expect(
+        warnedMethods.some((m) => m.includes('Praeco.discoverFromUrl')),
+      ).toBe(false);
+
+      warnSpy.mockRestore();
+    });
+
+    it('should not warn when cli.include matches resolved-api set (#1306)', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Clean: {
+            className: 'Clean',
+            collection: 'cleans',
+            fields: {},
+            methods: {
+              analyze: {
+                name: 'analyze',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['list', 'get', 'analyze'] },
+              cli: { include: ['list', 'get', 'analyze'] },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const cliIncludeWarnings = warnSpy.mock.calls
+        .map((args) => String(args[0] ?? ''))
+        .filter((msg) => msg.includes('cli.include'));
+      expect(cliIncludeWarnings).toHaveLength(0);
+
+      warnSpy.mockRestore();
+    });
+
+    it('should skip cli.include validation when cli is undefined or boolean (#1306)', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+      const manifest: SmartObjectManifest = {
+        objects: {
+          A: {
+            className: 'A',
+            collection: 'as',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true }, // cli unset
+          },
+          B: {
+            className: 'B',
+            collection: 'bs',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true, cli: true }, // cli is boolean
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const cliIncludeWarnings = warnSpy.mock.calls
+        .map((args) => String(args[0] ?? ''))
+        .filter((msg) => msg.includes('cli.include'));
+      expect(cliIncludeWarnings).toHaveLength(0);
+
+      warnSpy.mockRestore();
+    });
+
     it('should skip actions not in api config', async () => {
       const manifest: SmartObjectManifest = {
         objects: {

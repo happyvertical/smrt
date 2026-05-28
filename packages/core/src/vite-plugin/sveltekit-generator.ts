@@ -363,6 +363,11 @@ export async function generateSvelteKitRoutes(
   let generatedCount = 0;
   let skippedCollections = 0;
   for (const [className, objectDef] of Object.entries(manifest.objects)) {
+    // Lint cli.include ⊂ resolved-api set (Issue #1306). Warns only; the
+    // route generator still runs so existing apps don't break before
+    // their decorators are migrated.
+    validateCliIncludeAgainstApi(className, objectDef);
+
     if (isCollectionClass(objectDef)) {
       const generatedCollectionRoutes = await generateCollectionRoutesForObject(
         projectRoot,
@@ -971,6 +976,81 @@ async function generateCollectionRoutesForObject(
   }
 
   return generatedAnyRoutes;
+}
+
+/**
+ * Compute the resolved set of action names exposed by the API decorator
+ * config: standard CRUD actions (filtered through include/exclude) plus
+ * any public custom methods that pass `shouldIncludeInApi`.
+ *
+ * Used by validateCliIncludeAgainstApi to detect cli.include entries
+ * that have no corresponding HTTP route (Issue #1306).
+ */
+function resolveApiActionSet(objectDef: SmartObjectDefinition): Set<string> {
+  const apiConfig = objectDef.decoratorConfig?.api;
+  if (apiConfig === false) return new Set();
+
+  const resolved = new Set<string>();
+
+  // Standard CRUD: same logic as generateRoutesForObject.
+  if (apiConfig === true || apiConfig === undefined) {
+    for (const a of STANDARD_API_ACTIONS) resolved.add(a);
+  } else if (typeof apiConfig === 'object') {
+    const apiObj = apiConfig as { include?: string[]; exclude?: string[] };
+    let crud: string[];
+    if (apiObj.include) {
+      crud = apiObj.include.filter((action) =>
+        STANDARD_API_ACTIONS.includes(action),
+      );
+    } else {
+      crud = [...STANDARD_API_ACTIONS];
+    }
+    if (apiObj.exclude && Array.isArray(apiObj.exclude)) {
+      crud = crud.filter((action) => !apiObj.exclude?.includes(action));
+    }
+    for (const a of crud) resolved.add(a);
+  }
+
+  // Custom methods: anything in objectDef.methods that's public and
+  // passes shouldIncludeInApi.
+  for (const [name, method] of Object.entries(objectDef.methods ?? {})) {
+    if (STANDARD_API_ACTIONS.includes(name)) continue;
+    if (!(method as { isPublic?: boolean }).isPublic) continue;
+    if (shouldIncludeInApi(name, apiConfig)) resolved.add(name);
+  }
+
+  return resolved;
+}
+
+/**
+ * Warn when a class's cli.include lists methods that have no
+ * corresponding API route. The CLI invokes methods over HTTP; methods
+ * not in the resolved-api set are unreachable from a CLI client.
+ *
+ * Currently emits warnings only. Will escalate to errors in a follow-up
+ * once existing apps have been migrated. Issue #1306.
+ */
+function validateCliIncludeAgainstApi(
+  className: string,
+  objectDef: SmartObjectDefinition,
+): void {
+  const cliConfig = objectDef.decoratorConfig?.cli;
+  if (!cliConfig || typeof cliConfig !== 'object') return;
+  const include = (cliConfig as { include?: string[] }).include;
+  if (!include || include.length === 0) return;
+
+  const apiSet = resolveApiActionSet(objectDef);
+  const unreachable = include.filter((name) => !apiSet.has(name));
+
+  if (unreachable.length === 0) return;
+
+  for (const name of unreachable) {
+    console.warn(
+      `[smrt] ${className}.${name} is declared in cli.include but is not exposed via the API. ` +
+        `CLI commands invoke methods over HTTP; without a corresponding entry in api.include, this command has no route. ` +
+        `Either add '${name}' to api.include, or remove '${name}' from cli.include. Issue #1306.`,
+    );
+  }
 }
 
 /**
