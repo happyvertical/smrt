@@ -1,13 +1,26 @@
-import { getDatabase } from '@happyvertical/sql';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { BackfillTracker } from './backfill-tracker.js';
 
 describe('BackfillTracker', () => {
+  let db: DatabaseInterface;
   let tracker: BackfillTracker;
 
   beforeEach(async () => {
-    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
     tracker = new BackfillTracker({ db });
+  });
+
+  afterEach(async () => {
+    const maybeClose = (db as { close?: () => Promise<void> } | undefined)
+      ?.close;
+    if (typeof maybeClose === 'function') {
+      try {
+        await maybeClose.call(db);
+      } catch {
+        // Ignore close errors — mirrors the pattern in differ.test.ts.
+      }
+    }
   });
 
   it('returns false for a never-applied backfill', async () => {

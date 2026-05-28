@@ -80,6 +80,16 @@ export class BackfillTracker {
    *
    * This is the common pattern an app's migrate orchestration follows:
    * a list of `(name, runner)` pairs, each guarded by isApplied/run/record.
+   *
+   * **Single-runner only.** This is a check-then-act pattern with no
+   * locking: two processes that call `runIfPending` for the same `name`
+   * concurrently can both observe `isApplied === false`, both execute
+   * `fn`, and only then race to `recordApplied`. The `ON CONFLICT DO
+   * NOTHING` in `recordApplied` keeps the table clean but does NOT prevent
+   * `fn` from running twice. Acceptable when backfills are run from a
+   * single deploy-time migration step (the common case); if you need to
+   * fan out backfills across multiple workers, wrap the call in your own
+   * mutex (e.g. a Postgres advisory lock keyed by backfill name).
    */
   async runIfPending<T>(
     name: string,

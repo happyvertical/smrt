@@ -12,7 +12,8 @@
  */
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
-import type { MigrationResult, SchemaDefinition } from '../schema/types.js';
+import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import type { MigrationResult } from '../schema/types.js';
 import {
   generateSchemaDiff,
   getSQLFromDiff,
@@ -68,7 +69,7 @@ export async function getPendingSchemaStatements(
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
   const diff = await generateSchemaDiff(db, schemas);
-  const statements = collectStatementsFromDiff(diff);
+  const statements = collectStatementsFromDiff(diff, db);
   return {
     diff,
     schemaCount: Object.keys(schemas).length,
@@ -132,29 +133,31 @@ export async function migrateSmrtSchemas(
   };
 }
 
+/**
+ * Materialize the diff into the engine-correct SQL statements.
+ *
+ * For new tables we delegate to the engine's `DDLStrategy` so column types
+ * (`REAL` → `DOUBLE PRECISION` on Postgres, `JSON` → `JSONB`, etc.),
+ * partial-index `WHERE` clauses, and trigger syntax all match what the
+ * SchemaComparer would expect on subsequent runs. Emitting the raw
+ * abstract `SchemaDefinition.ddl` here would cause immediate type-drift
+ * migrations on Postgres/DuckDB.
+ *
+ * Column/index/trigger changes for existing tables continue to come from
+ * `getSQLFromDiff`, which is already engine-aware via the differ's per-
+ * change `sqlStatements`.
+ */
 function collectStatementsFromDiff(
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
+  db: DatabaseInterface,
 ): string[] {
+  const strategy = getDDLStrategy(detectEngine(db.url));
   const statements: string[] = [];
   for (const schema of diff.added_tables) {
-    if (schema.ddl) statements.push(schema.ddl);
-    for (const index of schema.indexes ?? []) {
-      statements.push(createIndexStatement(schema.tableName, index));
-    }
+    statements.push(strategy.generateCreateTable(schema));
+    statements.push(...strategy.generateIndexes(schema));
+    statements.push(...strategy.generateTriggers(schema));
   }
   statements.push(...getSQLFromDiff(diff));
   return statements.filter((statement) => statement.trim().length > 0);
-}
-
-function createIndexStatement(
-  tableName: string,
-  index: NonNullable<SchemaDefinition['indexes']>[number],
-): string {
-  const unique = index.unique ? 'UNIQUE ' : '';
-  const columns = index.columns.map(quoteIdentifier).join(', ');
-  return `CREATE ${unique}INDEX IF NOT EXISTS ${quoteIdentifier(index.name)} ON ${quoteIdentifier(tableName)} (${columns})`;
-}
-
-function quoteIdentifier(value: string): string {
-  return `"${value.replace(/"/g, '""')}"`;
 }
