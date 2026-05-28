@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
+import { detectEngine } from '../schema/ddl/index.js';
 import type {
   DriftReport,
   MigrationDefinition,
@@ -98,9 +99,18 @@ function findConcurrentIndexStatement(
  */
 export class MigrationTracker {
   private db: DatabaseInterface;
-  private options: Required<Omit<MigrationTrackerOptions, 'db'>>;
+  private options: Required<Omit<MigrationTrackerOptions, 'db' | 'engineHint'>>;
+  private engineHint?: string;
   private dbEngine: DatabaseEngine;
-  private initialized = false;
+  /**
+   * Memoized initialization promise. Storing the in-flight promise (rather
+   * than a `boolean` flag set after the DDL completes) makes `initialize()`
+   * safe under concurrency: multiple parallel callers all `await` the same
+   * promise instead of independently re-running the DDL. On error the slot
+   * is cleared so the next caller retries — a transient failure doesn't
+   * permanently poison the instance.
+   */
+  private initializePromise: Promise<void> | null = null;
   private currentBatch: number | null = null;
 
   constructor(options: MigrationTrackerOptions) {
@@ -112,21 +122,23 @@ export class MigrationTracker {
       useConcurrentIndexes:
         options.useConcurrentIndexes ?? DEFAULT_OPTIONS.useConcurrentIndexes,
     };
+    this.engineHint = options.engineHint;
     this.dbEngine = this.detectDbEngine();
   }
 
   /**
-   * Detect the database engine from the connection URL
+   * Detect the database engine. Honors an explicit `engineHint` (passed via
+   * `MigrationTrackerOptions`) before falling back to URL parsing — this is
+   * the same `detectEngine` contract used by `SchemaComparer` and the rest
+   * of the migration stack, so the tracker stays consistent with the DDL
+   * the orchestrator generated.
    */
   private detectDbEngine(): DatabaseEngine {
-    const url = this.db.url || '';
-    if (url.startsWith('postgres://') || url.startsWith('postgresql://')) {
-      return 'postgres';
-    }
-    if (url.endsWith('.duckdb') || url.includes('duckdb')) {
-      return 'duckdb';
-    }
-    return 'sqlite';
+    const dbWithConfig = this.db as DatabaseInterface & {
+      config?: { url?: string };
+    };
+    const url = this.db.url || dbWithConfig.config?.url || '';
+    return detectEngine(url, this.engineHint);
   }
 
   /**
@@ -140,8 +152,16 @@ export class MigrationTracker {
    * Initialize the migrations tracking table
    */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    if (!this.initializePromise) {
+      this.initializePromise = this.runInitializeDdl().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
+    }
+    return this.initializePromise;
+  }
 
+  private async runInitializeDdl(): Promise<void> {
     // Parse and execute each statement in the DDL
     const statements = CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE.split(';')
       .map((s) => s.trim())
@@ -150,8 +170,6 @@ export class MigrationTracker {
     for (const statement of statements) {
       await this.db.query(statement);
     }
-
-    this.initialized = true;
   }
 
   /**
@@ -788,8 +806,9 @@ export class MigrationTracker {
  * reason about what the tracker would execute in PostgreSQL safe mode.
  *
  * Rules:
- * - Statements already containing `CONCURRENTLY` (CREATE or DROP) always
- *   go to the concurrent set — Postgres rejects them inside transactions.
+ * - Statements already containing `CONCURRENTLY` for CREATE/DROP INDEX or
+ *   REINDEX operations always go to the concurrent set — Postgres rejects
+ *   them inside transactions.
  * - When `useConcurrentIndexes` is true, plain `CREATE INDEX` and plain
  *   `DROP INDEX` are rewritten to use `CONCURRENTLY`, then routed to
  *   the concurrent set. This is what the CLI `--postgres-safe` flag and
@@ -800,8 +819,7 @@ export function planPostgresStatements(
   statements: string[],
   useConcurrentIndexes: boolean,
 ): { concurrent: string[]; regular: string[] } {
-  const concurrentRegex =
-    /(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY/i;
+  const concurrentRegex = CONCURRENT_INDEX_STATEMENT_RE;
 
   const concurrent: string[] = [];
   const regular: string[] = [];
