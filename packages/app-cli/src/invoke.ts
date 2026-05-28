@@ -61,7 +61,15 @@ export async function buildUrl(
   id?: string,
 ): Promise<string> {
   const serverUrl = await getServerUrl(context);
-  const segments: string[] = ['api', resource.apiPath];
+  const segments: string[] = ['api'];
+
+  // `apiPath` is typically a single segment (e.g. `praecos`) but defense
+  // in depth: split on `/` so an apiPath like `v1/items` or `/v1/items`
+  // doesn't produce a double slash or smash everything into one segment.
+  // Each piece is URL-encoded individually. (#1311 review A2/C3.)
+  for (const piece of splitPath(resource.apiPath)) {
+    segments.push(encodeURIComponent(piece));
+  }
 
   if (command.scope === 'item') {
     if (!id) {
@@ -72,8 +80,14 @@ export async function buildUrl(
     segments.push(encodeURIComponent(id));
   }
 
+  // `pathSegments` come from the server's resolved-route config, but a
+  // misconfigured `api.routes[x].path` could contain `/`, `..`, or
+  // reserved characters. Encode each segment so the CLI never silently
+  // path-traverses or sends ambiguous URLs. (#1311 review A2.)
   for (const seg of command.pathSegments) {
-    segments.push(seg);
+    for (const piece of splitPath(seg)) {
+      segments.push(encodeURIComponent(piece));
+    }
   }
 
   const base = `${serverUrl}/${segments.join('/')}`;
@@ -89,4 +103,15 @@ export async function buildUrl(
     return `${base}?${params.toString()}`;
   }
   return base;
+}
+
+/**
+ * Split a URL path string into clean segments, stripping leading/trailing
+ * slashes and any empty pieces. Defends against `apiPath` overrides like
+ * `/v1/items/` or `pathSegments` like `users/` that would otherwise
+ * produce double slashes or trailing nothings in the final URL.
+ */
+function splitPath(s: string): string[] {
+  if (typeof s !== 'string') return [];
+  return s.split('/').filter((p) => p.length > 0);
 }

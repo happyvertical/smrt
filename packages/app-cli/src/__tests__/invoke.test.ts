@@ -215,6 +215,52 @@ describe('buildUrl', () => {
     expect(url).toBe('https://example.test/api/praecos/a%20b%2Fc');
   });
 
+  it('strips leading/trailing slashes from apiPath and encodes pieces — #1311 A2/C3', async () => {
+    const url = await buildUrl(
+      context,
+      { ...resource, apiPath: '/v1/items/' },
+      makeCommand({}),
+      noQuery,
+    );
+    expect(url).toBe('https://example.test/api/v1/items');
+  });
+
+  it('URL-encodes special characters in path segments — #1311 A2', async () => {
+    const url = await buildUrl(
+      context,
+      resource,
+      makeCommand({
+        kind: 'custom',
+        methodName: 'special',
+        commandName: 'special',
+        scope: 'collection',
+        httpMethod: 'POST',
+        pathSegments: ['needs space'],
+      }),
+      withBody({}),
+    );
+    expect(url).toBe('https://example.test/api/praecos/needs%20space');
+  });
+
+  it('rejects path traversal in pathSegments by encoding the segment — #1311 A2', async () => {
+    const url = await buildUrl(
+      context,
+      resource,
+      makeCommand({
+        kind: 'custom',
+        methodName: 'evil',
+        commandName: 'evil',
+        scope: 'collection',
+        httpMethod: 'POST',
+        pathSegments: ['..%2Fadmin'],
+      }),
+      withBody({}),
+    );
+    // `..%2Fadmin` is percent-encoded again, so the literal segment is
+    // preserved and cannot escape the path.
+    expect(url).toBe('https://example.test/api/praecos/..%252Fadmin');
+  });
+
   it('errors when item-scope command is called without id', async () => {
     await expect(
       buildUrl(
@@ -307,5 +353,30 @@ describe('invokeCommand', () => {
     const [, init] = fetchMock.mock.calls[0];
     expect(init.method).toBe('DELETE');
     expect(init.body).toBeUndefined();
+  });
+
+  it('omits Authorization header when no token is stored — #1311 reviewer B test gap', async () => {
+    // Fresh context with no auth stored.
+    const freshSlug = `app-cli-noauth-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const freshDir = join(tmpdir(), 'smrt-app-cli-tests', freshSlug);
+    const envKey = 'NOTOK_CLI_CONFIG';
+    process.env[envKey] = join(freshDir, 'config.json');
+    const freshContext = {
+      envPrefix: 'NOTOK',
+      appSlug: 'notok',
+      defaultServerUrl: 'https://example.test',
+    };
+
+    await invokeCommand({
+      context: freshContext,
+      resource: makeResource(),
+      command: makeCommand({}),
+      parsed: noQuery,
+      fetch: fetchMock as any,
+    });
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init.headers as Headers).get('authorization')).toBeNull();
+
+    delete process.env[envKey];
   });
 });

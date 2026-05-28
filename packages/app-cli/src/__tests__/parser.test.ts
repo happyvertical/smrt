@@ -182,6 +182,43 @@ describe('positional fallback parser', () => {
   });
 });
 
+describe('boolean form variants — #1311 copilot C2 + reviewer B test gap', () => {
+  const schema = {
+    type: 'object',
+    properties: { skipFetch: { type: 'boolean' } },
+    additionalProperties: false,
+  };
+  const parse = (argv: string[]) => buildFlagParser(schema).parse(argv, 'POST');
+
+  it('--flag false (spaced form) sets boolean to false', () => {
+    expect(parse(['--skipFetch', 'false']).body.skipFetch).toBe(false);
+  });
+
+  it('--flag true (spaced form) sets boolean to true', () => {
+    expect(parse(['--skipFetch', 'true']).body.skipFetch).toBe(true);
+  });
+
+  it('--flag=false (equals form) sets boolean to false', () => {
+    expect(parse(['--skipFetch=false']).body.skipFetch).toBe(false);
+  });
+
+  it('--flag=true (equals form) sets boolean to true', () => {
+    expect(parse(['--skipFetch=true']).body.skipFetch).toBe(true);
+  });
+
+  it('--flag without value still defaults to true (toggle form)', () => {
+    expect(parse(['--skipFetch']).body.skipFetch).toBe(true);
+  });
+
+  it('non-boolean-literal next token leaves boolean toggled to true', () => {
+    // `--skipFetch xyz` — xyz is not true/false so the boolean is just
+    // toggled and xyz is left to be parsed as the next argv.
+    // additionalProperties is false so xyz becomes a positional (and the
+    // parser tries to JSON-parse it).
+    expect(() => parse(['--skipFetch', 'xyz'])).toThrow();
+  });
+});
+
 describe('additionalProperties: true', () => {
   it('passes through unknown flags as strings', () => {
     const parser = buildFlagParser({

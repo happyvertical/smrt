@@ -475,6 +475,137 @@ describe('createResourceListHandler', () => {
     expect(names).not.toContain('discover');
   });
 
+  it('uses collection verbatim as apiPath (preserves underscores) — #1311 codex P1', async () => {
+    // Regression: previously the handler kebab-cased the collection, so
+    // a class with default collection `weather_forecasts` would publish
+    // apiPath `weather-forecasts` while the generator wrote routes under
+    // `weather_forecasts/` — 404 on every CLI call. Must match generator
+    // behavior, which uses `objectDef.collection` verbatim.
+    mockRegistry({
+      WeatherForecast: makeRegistered(
+        'WeatherForecast',
+        { api: true, cli: true },
+        {},
+        {
+          config: {
+            tableName: 'weather_forecasts',
+            api: true,
+            cli: true,
+          },
+        } as any,
+      ),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    const r = res.body.resources[0] as CliResource;
+    expect(r.slug).toBe('weather_forecasts');
+    expect(r.apiPath).toBe('weather_forecasts');
+  });
+
+  it('skips SmrtCollection subclasses — #1311 codex P2 collection', async () => {
+    // Regression: SmrtCollection subclasses route through a different
+    // generator path that doesn't emit CRUD. Surfacing CRUD commands for
+    // them would 404, and treating their instance methods as item-scoped
+    // would call URLs the generator never wrote.
+    mockRegistry({
+      Praecos: makeRegistered('Praecos', { api: true, cli: true }, {}, {
+        extends: 'SmrtCollection',
+        config: { tableName: 'praecos', api: true, cli: true },
+      } as any),
+      Praeco: makeRegistered('Praeco', { api: true, cli: true }),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    expect(
+      res.body.resources.find((r: CliResource) => r.className === 'Praecos'),
+    ).toBeUndefined();
+    expect(
+      res.body.resources.find((r: CliResource) => r.className === 'Praeco'),
+    ).toBeDefined();
+  });
+
+  it('also skips classes with extendsTypeArg set (generic SmrtCollection<T>) — #1311 codex P2', async () => {
+    mockRegistry({
+      WidgetCollection: makeRegistered(
+        'WidgetCollection',
+        { api: true, cli: true },
+        {},
+        {
+          extendsTypeArg: 'Widget',
+          config: { tableName: 'widgets', api: true, cli: true },
+        } as any,
+      ),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    expect(res.body.resources).toEqual([]);
+  });
+
+  it('returns undefined parameters when tool schema has no real properties — #1311 codex P2 schema', async () => {
+    // Regression: previously the handler synthesised
+    // `{ type: 'object', additionalProperties: true }` from a single
+    // `options: {...}` source-type signal. The CLI parser would classify
+    // that as "supported" and accept arbitrary `--flag value` strings
+    // with no coercion. The fix surfaces `undefined` so the CLI uses the
+    // positional-JSON fallback with a stderr hint instead.
+    mockRegistry({
+      Praeco: makeRegistered(
+        'Praeco',
+        {
+          api: { include: ['analyse'] },
+          cli: { mirror: 'api' },
+        },
+        {
+          analyse: {
+            isStatic: false,
+            parameters: [
+              { name: 'options', type: '{ limit?: number; filters?: any }' },
+            ],
+          },
+        },
+      ),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    const cmd = (res.body.resources[0] as CliResource).commands.find(
+      (c) => c.commandName === 'analyse',
+    );
+    expect(cmd?.parameters).toBeUndefined();
+  });
+
+  it('returns no resources for classes with api: false (regardless of cli config) — #1311 reviewer B4', async () => {
+    mockRegistry({
+      Private: makeRegistered('Private', { api: false, cli: true }),
+      AlsoPrivate: makeRegistered('AlsoPrivate', {
+        api: false,
+        cli: { mirror: 'api' },
+      }),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    expect(res.body.resources).toEqual([]);
+  });
+
   it('cli.exclude subtracts from cli.mirror = "api" set', async () => {
     mockRegistry({
       Praeco: makeRegistered(

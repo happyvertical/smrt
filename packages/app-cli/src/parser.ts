@@ -251,10 +251,21 @@ function makeRichParser(schema: Record<string, unknown>) {
         value = arg.slice(eqIdx + 1);
       } else {
         key = arg.slice(2);
-        // Boolean toggles take no value.
         const prop = props[key];
         const t = prop ? normaliseType(prop) : undefined;
         if (t?.primary === 'boolean') {
+          // Boolean accepts the spaced literal form too: `--flag true`
+          // and `--flag false`. Without this peek, `--flag false` would
+          // toggle the flag to true and then try to parse `false` as the
+          // next positional, which (a) is surprising and (b) errors out
+          // as "not valid JSON". Anything else after `--flag` is left
+          // for the next loop iteration (default = true).
+          const next = argv[i + 1];
+          if (next === 'true' || next === 'false') {
+            out[key] = next === 'true';
+            i += 1;
+            continue;
+          }
           out[key] = true;
           continue;
         }

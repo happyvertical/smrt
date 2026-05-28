@@ -125,6 +125,41 @@ describe('renderResponse', () => {
     expect(result.exitCode).toBe(2);
   });
 
+  it('JSON >10MB without content-length streams full body, not truncated — #1311 copilot C1', async () => {
+    // 11MB of JSON-like text (no real structure needed — buffered branch
+    // never validates JSON, just pretty-prints what fits). The streaming
+    // branch is what we're verifying: full 11MB must reach stdout.
+    const chunkSize = 1024 * 1024;
+    const chunkCount = 11;
+    const totalBytes = chunkSize * chunkCount;
+
+    const body = new ReadableStream({
+      start(controller) {
+        for (let i = 0; i < chunkCount; i++) {
+          controller.enqueue(new Uint8Array(chunkSize).fill(0x61)); // 'a'
+        }
+        controller.close();
+      },
+    });
+    const response = new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+      // intentionally NO content-length set
+    });
+
+    const out = buffer();
+    const err = buffer();
+    const result = await renderResponse(response, {
+      stdout: out.stream,
+      stderr: err.stream,
+    });
+    expect(result.exitCode).toBe(0);
+    // Full body must reach stdout — no silent truncation.
+    expect(out.text().length).toBe(totalBytes);
+    // Warning must mention the overflow.
+    expect(err.text()).toMatch(/exceeded 10MB cap|too large/);
+  });
+
   it('error binary → terse stderr message, no body pipe', async () => {
     const out = buffer();
     const err = buffer();

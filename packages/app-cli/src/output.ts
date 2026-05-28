@@ -61,9 +61,19 @@ export async function renderResponse(
   // Error responses
   if (response.status >= 400) {
     if (isJson) {
-      const text = await readBoundedText(response, JSON_BUFFER_LIMIT);
-      const pretty = safePrettyJson(text) ?? text;
-      stderr.write(`${pretty}\n`);
+      const result = await readUntilLimitOrStream(
+        response,
+        JSON_BUFFER_LIMIT,
+        stderr,
+      );
+      if (result.overflowed) {
+        stderr.write(
+          '\n[smrt-app-cli] error response exceeded 10MB cap; streamed raw\n',
+        );
+      } else if (result.text) {
+        const pretty = safePrettyJson(result.text) ?? result.text;
+        stderr.write(`${pretty}\n`);
+      }
       return { exitCode: response.status >= 500 ? 2 : 1 };
     }
     if (isText) {
@@ -85,17 +95,21 @@ export async function renderResponse(
       await pipeBody(response, stdout);
       return { exitCode: 0 };
     }
-    const text = await readBoundedText(
+    const result = await readUntilLimitOrStream(
       response,
       JSON_BUFFER_LIMIT,
-      async () => {
-        stderr.write(
-          '[smrt-app-cli] response exceeded 10MB cap; streaming raw JSON\n',
-        );
-      },
+      stdout,
     );
-    if (!text) return { exitCode: 0 };
-    const pretty = safePrettyJson(text) ?? text;
+    if (result.overflowed) {
+      // Already wrote the buffered prefix and streamed the rest via the
+      // helper. Just emit the warning.
+      stderr.write(
+        '[smrt-app-cli] response exceeded 10MB cap; streamed raw JSON\n',
+      );
+      return { exitCode: 0 };
+    }
+    if (!result.text) return { exitCode: 0 };
+    const pretty = safePrettyJson(result.text) ?? result.text;
     stdout.write(`${pretty}\n`);
     return { exitCode: 0 };
   }
@@ -119,12 +133,27 @@ export async function renderResponse(
 
 /* ── helpers ──────────────────────────────────────────────────────────── */
 
-async function readBoundedText(
+interface BoundedReadResult {
+  /** Full decoded body when it fits under `limit`; empty when overflowed. */
+  text: string;
+  /** True when the body exceeded `limit` and was streamed out instead. */
+  overflowed: boolean;
+}
+
+/**
+ * Read the response body into memory up to `limit` bytes. On overflow,
+ * flush what's been buffered to `out` (default: stdout) and pipe the
+ * remaining body in chunks, so callers never silently truncate. Returns
+ * `{ text, overflowed }` so callers can branch on the outcome.
+ */
+async function readUntilLimitOrStream(
   response: Response,
   limit: number,
-  onOverflow?: () => Promise<void>,
-): Promise<string> {
-  if (!response.body) return '';
+  out?: NodeJS.WriteStream | Writable,
+): Promise<BoundedReadResult> {
+  if (!response.body) return { text: '', overflowed: false };
+  const writeStream =
+    (out as NodeJS.WriteStream | Writable | undefined) ?? process.stdout;
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
@@ -134,17 +163,37 @@ async function readBoundedText(
     if (!value) continue;
     size += value.byteLength;
     if (size > limit) {
-      if (onOverflow) await onOverflow();
-      reader.releaseLock();
-      // Drain by re-reading via response.text(); but cap returned size.
-      // Simpler: bail with what we have.
-      break;
+      // Flush buffered prefix...
+      for (const c of chunks) await writeChunk(writeStream, c);
+      // ...then the chunk that tripped the limit...
+      await writeChunk(writeStream, value);
+      // ...and finally drain the rest of the body.
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        if (next.value) await writeChunk(writeStream, next.value);
+      }
+      return { text: '', overflowed: true };
     }
     chunks.push(value);
   }
-  return new TextDecoder().decode(
-    Buffer.concat(chunks.map((c) => Buffer.from(c))),
-  );
+  return {
+    text: new TextDecoder().decode(
+      Buffer.concat(chunks.map((c) => Buffer.from(c))),
+    ),
+    overflowed: false,
+  };
+}
+
+async function writeChunk(
+  out: NodeJS.WriteStream | Writable,
+  chunk: Uint8Array,
+): Promise<void> {
+  if (!(out as NodeJS.WriteStream).write(Buffer.from(chunk))) {
+    await new Promise<void>((resolve) =>
+      (out as NodeJS.WriteStream).once('drain', () => resolve()),
+    );
+  }
 }
 
 async function pipeBody(

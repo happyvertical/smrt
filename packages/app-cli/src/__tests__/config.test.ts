@@ -60,6 +60,16 @@ describe('config persistence', () => {
     expect(await loadCliConfig(context)).toEqual({});
   });
 
+  it('config dir is created with 0o700 perms — #1311 A1', async () => {
+    if (process.platform === 'win32') return; // unix-only permission model
+    await saveAuth(context, 'https://x', 'tok_1');
+    const dir = process.env.TESTCFG_CLI_CONFIG
+      ? process.env.TESTCFG_CLI_CONFIG.replace(/\/config\.json$/, '')
+      : '';
+    const s = await stat(dir);
+    expect(s.mode & 0o777).toBe(0o700);
+  });
+
   it('clearStoredToken removes the token but keeps serverUrl', async () => {
     await saveAuth(context, 'https://x', 'tok_1');
     await clearStoredToken(context);

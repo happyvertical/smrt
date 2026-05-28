@@ -81,7 +81,12 @@ export async function saveCliConfig(
   config: CliConfig,
 ): Promise<void> {
   const path = configFilePath(context);
-  await mkdir(dirname(path), { recursive: true });
+  // 0o700 on the parent: `mkdir(... recursive: true)` defaults to
+  // umask-modified 0o777, which on a typical 0o022 umask leaves the dir
+  // world-traversable. The config file itself is 0o600, but a world-
+  // traversable parent lets any local user open `<dir>/config.json`
+  // directly by name. (#1311 review A1.)
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, {
     mode: 0o600,
   });
