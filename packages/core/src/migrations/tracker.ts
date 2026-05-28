@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
+import { detectEngine } from '../schema/ddl/index.js';
 import type {
   DriftReport,
   MigrationDefinition,
@@ -98,7 +99,8 @@ function findConcurrentIndexStatement(
  */
 export class MigrationTracker {
   private db: DatabaseInterface;
-  private options: Required<Omit<MigrationTrackerOptions, 'db'>>;
+  private options: Required<Omit<MigrationTrackerOptions, 'db' | 'engineHint'>>;
+  private engineHint?: string;
   private dbEngine: DatabaseEngine;
   private initialized = false;
   private currentBatch: number | null = null;
@@ -112,21 +114,23 @@ export class MigrationTracker {
       useConcurrentIndexes:
         options.useConcurrentIndexes ?? DEFAULT_OPTIONS.useConcurrentIndexes,
     };
+    this.engineHint = options.engineHint;
     this.dbEngine = this.detectDbEngine();
   }
 
   /**
-   * Detect the database engine from the connection URL
+   * Detect the database engine. Honors an explicit `engineHint` (passed via
+   * `MigrationTrackerOptions`) before falling back to URL parsing — this is
+   * the same `detectEngine` contract used by `SchemaComparer` and the rest
+   * of the migration stack, so the tracker stays consistent with the DDL
+   * the orchestrator generated.
    */
   private detectDbEngine(): DatabaseEngine {
-    const url = this.db.url || '';
-    if (url.startsWith('postgres://') || url.startsWith('postgresql://')) {
-      return 'postgres';
-    }
-    if (url.endsWith('.duckdb') || url.includes('duckdb')) {
-      return 'duckdb';
-    }
-    return 'sqlite';
+    const dbWithConfig = this.db as DatabaseInterface & {
+      config?: { url?: string };
+    };
+    const url = this.db.url || dbWithConfig.config?.url || '';
+    return detectEngine(url, this.engineHint);
   }
 
   /**

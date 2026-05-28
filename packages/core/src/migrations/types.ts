@@ -43,6 +43,14 @@ export interface MigrationTrackerOptions {
   statementTimeout?: number;
   /** Use CREATE INDEX CONCURRENTLY for indexes in PostgreSQL (default: true) */
   useConcurrentIndexes?: boolean;
+  /**
+   * Explicit engine hint used when `db.url` is empty or ambiguous (e.g. JSON
+   * adapter, or adapters that expose the URL on `db.config?.url`). Without
+   * it the tracker falls back to URL-only detection and may skip
+   * Postgres-specific safety paths (CONCURRENTLY rewrites, lock timeouts)
+   * on connections whose caller meant Postgres.
+   */
+  engineHint?: string;
 }
 
 /**

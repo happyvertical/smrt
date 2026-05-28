@@ -42,9 +42,25 @@ export interface MigrateSmrtSchemasOptions {
   /** Forwarded to MigrationTracker — defaults to true for `CREATE INDEX CONCURRENTLY`. */
   useConcurrentIndexes?: boolean;
   /**
-   * Explicit engine hint forwarded to `detectEngine`. Useful when `db.url`
-   * doesn't unambiguously identify the engine (e.g. the JSON adapter, which
-   * uses DuckDB internally and may not be recognizable by URL alone).
+   * Forwarded to MigrationTracker (Postgres lock timeout, milliseconds).
+   * Lets apps that customize tracker timeouts directly preserve their
+   * tuning when going through the orchestrator. Falls back to the
+   * tracker's default (30000ms) when omitted.
+   */
+  lockTimeout?: number;
+  /**
+   * Forwarded to MigrationTracker (Postgres statement timeout, ms). Falls
+   * back to the tracker's default (60000ms) when omitted.
+   */
+  statementTimeout?: number;
+  /**
+   * Explicit engine hint forwarded to `detectEngine`, `SchemaComparer`, and
+   * `MigrationTracker`. Useful when `db.url` doesn't unambiguously identify
+   * the engine (e.g. the JSON adapter, which uses DuckDB internally and may
+   * not be recognizable by URL alone). All three layers honor the same hint
+   * so the generated DDL, drift comparison, and execution path stay
+   * consistent — without it, an empty-URL connection could produce
+   * Postgres-flavored DDL but run through the SQLite tracker path.
    */
   engineHint?: string;
 }
@@ -84,7 +100,14 @@ export async function getPendingSchemaStatements(
   options: { engineHint?: string } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
-  const diff = await generateSchemaDiff(db, schemas);
+  // Forward engineHint into the diff itself so the SchemaComparer's
+  // existing-table SQL (ALTER/index drift) uses the same DDL strategy
+  // we use for newly-added tables — otherwise the two halves of the
+  // statement list can land on different engines (split-brain) when
+  // `db.url` is empty or ambiguous.
+  const diff = await generateSchemaDiff(db, schemas, {
+    engineHint: options.engineHint,
+  });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   return {
     diff,
@@ -105,6 +128,19 @@ export async function getPendingSchemaStatements(
  * — the list is the planned DDL, prior to Postgres-specific tracker rewrites
  * (CONCURRENTLY, transaction reordering). The actual executed SQL is
  * tracked in the returned `results`.
+ *
+ * **Note on `applied` semantics under `reconcile: true` (the default):**
+ * the tracker may re-execute a migration that is already in `completed`
+ * state when the checksum matches — that counts as `applied: true` in the
+ * returned `MigrationResult`. So `result.applied === true` means "the
+ * tracker ran the migration", not specifically "the database changed for
+ * the first time." Pass `reconcile: false` if you need to distinguish a
+ * fresh apply from a reconcile-replay over an existing completed record.
+ *
+ * **Note on repeated failures:** the migration name defaults to a fresh
+ * timestamp on every call, so a sequence of failed runs leaves one
+ * `failed` row in `_smrt_schema_migrations` per attempt. Pass an explicit
+ * `name` if you want to overwrite the same record across retries.
  */
 export async function migrateSmrtSchemas(
   options: MigrateSmrtSchemasOptions,
@@ -123,6 +159,9 @@ export async function migrateSmrtSchemas(
 
   const tracker = new MigrationTracker({
     db: options.db,
+    engineHint: options.engineHint,
+    lockTimeout: options.lockTimeout,
+    statementTimeout: options.statementTimeout,
     useConcurrentIndexes: options.useConcurrentIndexes ?? true,
   });
   const migration = createMigrationDefinition(

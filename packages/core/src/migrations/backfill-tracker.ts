@@ -90,6 +90,14 @@ export class BackfillTracker {
    * single deploy-time migration step (the common case); if you need to
    * fan out backfills across multiple workers, wrap the call in your own
    * mutex (e.g. a Postgres advisory lock keyed by backfill name).
+   *
+   * **`fn` MUST be idempotent.** The order is `fn` → `recordApplied`, with
+   * no surrounding transaction. If `fn` succeeds but `recordApplied`
+   * throws (DB connection drops, transient error), the work has happened
+   * but is not recorded — the next call sees `isApplied === false` and
+   * re-runs `fn`. For non-idempotent work (slug rewrites that consume
+   * source rows, one-shot lookups), wrap the entire call in a transaction
+   * yourself or structure `fn` so a second execution is a no-op.
    */
   async runIfPending<T>(
     name: string,

@@ -61,6 +61,15 @@ export interface DiffOptions {
   includeDroppedIndexes?: boolean;
   /** Ignore type mismatches (just log warnings) */
   ignoreTypeMismatches?: boolean;
+  /**
+   * Explicit engine hint forwarded to `detectEngine` when picking the DDL
+   * strategy used for *existing-table* SQL (ALTER/CREATE INDEX/etc.). Use
+   * this when `db.url` is empty or ambiguous (e.g. JSON adapter, in-memory
+   * wrappers where the URL lives on `db.config?.url`). Without it the
+   * comparer falls back to URL-only detection, which can produce SQLite-
+   * flavored SQL on a connection whose caller meant Postgres or DuckDB.
+   */
+  engineHint?: string;
 }
 
 /**
@@ -95,9 +104,12 @@ export class SchemaComparer {
       ignoreTypeMismatches: false,
       ...options,
     };
-    // Use the shared detectEngine utility for consistent detection
-    // Handles :memory:, .json, and other edge cases
-    this.engine = detectEngine(this.db.url || '');
+    // Use the shared detectEngine utility for consistent detection.
+    // Handles :memory:, .json, and other edge cases. `engineHint` lets
+    // callers override URL-based detection when `db.url` is empty or
+    // points at an adapter whose engine isn't obvious from the URL alone
+    // (JSON, some in-memory wrappers).
+    this.engine = detectEngine(this.db.url || '', this.options.engineHint);
     this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
