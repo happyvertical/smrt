@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.26.2
+
+### Patch Changes
+
+- ### Features
+
+  - tighten @smrt() decorator coherence checks (core)
+
+  ### Bug Fixes
+
+  - honor cli.exclude in lint + match runtime client filter in type decls (core)
+  - @happyvertical/smrt-scanner@0.26.2
+  - @happyvertical/smrt-config@0.26.2
+  - @happyvertical/smrt-types@0.26.2
+
 ## 0.26.1
 
 ### Patch Changes
