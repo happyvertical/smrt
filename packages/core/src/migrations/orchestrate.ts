@@ -30,8 +30,14 @@ export interface MigrateSmrtSchemasOptions {
   db: DatabaseInterface;
   /** Stored on the migration record so the audit log shows which app applied it. */
   packageName: string;
-  /** Stored on the migration record. Typically the app's package.json version. */
-  version: string;
+  /**
+   * Stored on the migration record. Typically the app's package.json
+   * version. Optional because most apps don't have a runtime-readable
+   * version handy and would hardcode a stale string if forced to supply
+   * one — `'unknown'` is honest. Pass an explicit value when you can
+   * (e.g. `version: process.env.APP_VERSION`).
+   */
+  version?: string;
   /** Override the description on the synthetic migration definition. */
   description?: string;
   /** Override the migration name (default: `<timestamp>_smrt_schema_sync`). */
@@ -129,7 +135,7 @@ export interface PendingSchemaStatementsResult {
  */
 export async function getPendingSchemaStatements(
   db: DatabaseInterface,
-  options: { engineHint?: string } = {},
+  options: { engineHint?: DatabaseEngine } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
   // Forward engineHint into the diff itself so the SchemaComparer's
@@ -218,7 +224,7 @@ export async function migrateSmrtSchemas(
     {
       description: options.description ?? 'Synchronize SMRT object schemas',
       packageName: options.packageName,
-      version: options.version,
+      version: options.version ?? 'unknown',
     },
   );
 
@@ -277,7 +283,7 @@ function resolveDatabaseUrl(db: DatabaseInterface): string {
 function collectStatementsFromDiff(
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
   db: DatabaseInterface,
-  engineHint?: string,
+  engineHint?: DatabaseEngine,
 ): string[] {
   const strategy = getDDLStrategy(
     detectEngine(resolveDatabaseUrl(db), engineHint),

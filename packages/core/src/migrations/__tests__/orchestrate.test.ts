@@ -240,14 +240,18 @@ describe('schema orchestration', () => {
     expect(result.applied).toBe(false);
   });
 
-  it('migrateSmrtSchemas forwards lockTimeout and statementTimeout to the tracker', async () => {
+  it('migrateSmrtSchemas accepts lockTimeout and statementTimeout in its options', async () => {
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
       documents: makeDocumentSchema(),
     });
 
-    // Spy on tracker construction by intercepting applyAll — we can't read
-    // the private options directly, so we assert the call sequence happens
-    // without errors and that custom timeouts are accepted by the type.
+    // We can't read the tracker's private `options` field, and the values
+    // only matter on Postgres (where the tracker emits SET LOCAL …).
+    // Against SQLite we can only verify the options are accepted by the
+    // type signature, forwarded by the orchestrator without crashing, and
+    // don't break the apply path. The TypeScript type itself enforces that
+    // a refactor can't silently drop these fields between
+    // `MigrateSmrtSchemasOptions` and `MigrationTrackerOptions`.
     const result = await migrateSmrtSchemas({
       db,
       packageName: '@test/app',
@@ -258,8 +262,6 @@ describe('schema orchestration', () => {
     });
 
     expect(result.applied).toBe(true);
-    // The schema was created — direct verification that custom timeouts
-    // didn't break the apply path.
     const tables = await db.query<{ name: string }>(
       `SELECT name FROM sqlite_master WHERE type='table' AND name='documents'`,
     );
@@ -293,24 +295,20 @@ describe('schema orchestration', () => {
 
     const pending = await getPendingSchemaStatements(db);
 
-    // No executable statements should make it through the filter.
-    for (const stmt of pending.statements) {
-      const lines = stmt
-        .split('\n')
-        .map((l) => l.trim())
-        .filter((l) => l.length > 0);
-      expect(lines.every((l) => l.startsWith('--'))).toBe(false);
-    }
+    // The pre-created table already exists and the only divergence is the
+    // SQLite type-widening (which can't be applied in-place). The filter
+    // should strip the comment-only "requires table recreation" SQL, so
+    // nothing executable survives — tighter than the previous
+    // every-statement loop (which couldn't distinguish "filter dropped
+    // all candidates" from "filter saw nothing").
+    expect(pending.statements).toEqual([]);
 
     // The unresolved drift should surface via unactionableChanges so the
-    // caller can prompt for manual remediation.
-    expect(pending.unactionableChanges.length).toBeGreaterThan(0);
+    // caller can prompt for manual remediation. Exactly one column drifted.
+    expect(pending.unactionableChanges).toHaveLength(1);
     expect(pending.hasManualDrift).toBe(true);
-    expect(
-      pending.unactionableChanges.some(
-        (c) => c.type === 'type_upgrade' && c.name === 'score',
-      ),
-    ).toBe(true);
+    expect(pending.unactionableChanges[0].type).toBe('type_upgrade');
+    expect(pending.unactionableChanges[0].name).toBe('score');
   });
 
   it('surfaces incompatible type_mismatch changes as unactionableChanges', async () => {
@@ -342,15 +340,12 @@ describe('schema orchestration', () => {
     });
 
     // No applicable DDL → applied false, but the caller needs to know
-    // there's still drift.
+    // there's still drift. Exactly one column drifted.
     expect(result.applied).toBe(false);
-    expect(result.unactionableChanges.length).toBeGreaterThan(0);
+    expect(result.unactionableChanges).toHaveLength(1);
     expect(result.hasManualDrift).toBe(true);
-    expect(
-      result.unactionableChanges.some(
-        (c) => c.type === 'type_mismatch' && c.name === 'score',
-      ),
-    ).toBe(true);
+    expect(result.unactionableChanges[0].type).toBe('type_mismatch');
+    expect(result.unactionableChanges[0].name).toBe('score');
   });
 
   it('hasManualDrift is false when the schema is in sync', async () => {

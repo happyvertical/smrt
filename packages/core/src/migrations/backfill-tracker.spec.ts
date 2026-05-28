@@ -68,21 +68,37 @@ describe('BackfillTracker', () => {
     expect(list.map((row) => row.name)).toEqual(['alpha', 'mu', 'zeta']);
   });
 
-  it('runIfPending runs only the first time and returns null on subsequent calls', async () => {
+  it('runIfPending runs only the first time and reports ran:false on subsequent calls', async () => {
     let runCount = 0;
     const result1 = await tracker.runIfPending('first', async () => {
       runCount += 1;
       return 'ok';
     });
-    expect(result1).toBe('ok');
+    expect(result1).toEqual({ ran: true, result: 'ok' });
     expect(runCount).toBe(1);
 
     const result2 = await tracker.runIfPending('first', async () => {
       runCount += 1;
       return 'again';
     });
-    expect(result2).toBeNull();
+    expect(result2).toEqual({ ran: false, result: null });
     expect(runCount).toBe(1);
+  });
+
+  it('runIfPending discriminates "ran and returned null" from "already applied"', async () => {
+    // Documented footgun from the previous `T | null` shape — fn returning
+    // null is now unambiguous via the `ran` discriminator.
+    const first = await tracker.runIfPending('null-returner', async () => null);
+    expect(first).toEqual({ ran: true, result: null });
+
+    const second = await tracker.runIfPending(
+      'null-returner',
+      async () => null,
+    );
+    expect(second).toEqual({ ran: false, result: null });
+    // Different `ran` flag distinguishes the two cases even though both
+    // have `result: null`.
+    expect(first.ran).not.toBe(second.ran);
   });
 
   it('initialize is safe to call repeatedly', async () => {

@@ -7,9 +7,10 @@
  * backfill name the app chooses.
  *
  * Backed by the `_smrt_backfills` system table (see
- * `../system/schema.ts`). Initialize the table once via `initialize()`
- * before any `isApplied`/`recordApplied` calls — apps that already call
- * the system-table bootstrap can skip the explicit initialize.
+ * `../system/schema.ts`). The table is created lazily on first use —
+ * every public method (`isApplied`, `recordApplied`, `runIfPending`,
+ * `listApplied`) awaits `initialize()` itself, so consumers never need
+ * to call `initialize()` explicitly.
  */
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { CREATE_SMRT_BACKFILLS_TABLE } from '../system/schema.js';
@@ -90,8 +91,14 @@ export class BackfillTracker {
 
   /**
    * Convenience wrapper: if `name` hasn't been applied, run `fn` and
-   * record the result. Returns whatever `fn` returned, or `null` if the
-   * backfill was already applied.
+   * record the result. Returns `{ ran, result }`:
+   *   - `{ ran: true,  result: T }`    — backfill was pending and `fn` ran
+   *   - `{ ran: false, result: null }` — backfill was already applied
+   *
+   * The discriminator avoids the `T | null` ambiguity an earlier shape had
+   * (a backfill that legitimately returns `null` was indistinguishable
+   * from "already applied"). Callers check `ran` to decide whether `fn`
+   * executed; `result` carries whatever `fn` returned.
    *
    * This is the common pattern an app's migrate orchestration follows:
    * a list of `(name, runner)` pairs, each guarded by isApplied/run/record.
@@ -118,11 +125,11 @@ export class BackfillTracker {
     name: string,
     fn: () => Promise<T>,
     options: { description?: string; packageName?: string } = {},
-  ): Promise<T | null> {
-    if (await this.isApplied(name)) return null;
+  ): Promise<{ ran: false; result: null } | { ran: true; result: T }> {
+    if (await this.isApplied(name)) return { ran: false, result: null };
     const result = await fn();
     await this.recordApplied(name, options);
-    return result;
+    return { ran: true, result };
   }
 
   /** List every recorded backfill, oldest first. */
