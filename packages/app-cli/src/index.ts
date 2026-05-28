@@ -120,16 +120,39 @@ export interface CreateAppCliOptions {
   /** Baked-in default server URL when neither env nor config sets one. */
   defaultServerUrl?: string;
   /**
-   * App-specific commands. Built-in commands (`auth`, `resources`, `mcp`)
-   * may be overridden by user-supplied entries — the CLI prints a one-line
-   * stderr warning on first invocation in that case.
+   * App-specific commands. Dispatched BEFORE built-ins (`auth`,
+   * `resources`, `mcp`) and before the resource-slug dispatcher, so an
+   * `extraCommands` entry takes precedence over anything with the same
+   * top-level argv.
+   *
+   * - **Built-in shadowing** (`extraCommands: [{ name: 'mcp' }]`): the CLI
+   *   prints a one-line stderr warning on first invocation. The extra
+   *   command still wins, but the warning makes the override visible.
+   *
+   * - **Resource-slug shadowing** (`extraCommands: [{ name: 'praecos' }]`
+   *   when a server-side class also resolves to slug `praecos`): the
+   *   extra command silently wins. There's no warning because checking
+   *   would require a discovery round-trip on every invocation. Authors
+   *   are responsible for namespacing their extra commands (e.g. prefix
+   *   with the app name) to avoid accidental shadowing as the server's
+   *   class registry grows. (#1311 review C-2.)
    */
   extraCommands?: AppCliCommand[];
 }
 
 export interface AppCli {
   run(argv: string[]): Promise<void>;
-  startMcpBridge(serverInfo: { name: string; version: string }): Promise<void>;
+  /**
+   * Wire up the stdio MCP bridge and connect to stdin/stdout. The CLI
+   * advertises itself to local MCP clients as `serverInfo.name` /
+   * `.version`. Both fields default from `options.name` (so a brand-
+   * new app gets `{ name: '<name>-mcp', version: '0.0.0' }`) — pass an
+   * explicit object to override.
+   */
+  startMcpBridge(serverInfo?: {
+    name?: string;
+    version?: string;
+  }): Promise<void>;
 }
 
 export function createAppCli(options: CreateAppCliOptions): AppCli {
@@ -152,7 +175,10 @@ export function createAppCli(options: CreateAppCliOptions): AppCli {
       const { runMcpStdioBridge } = await import('./bridge.js');
       await runMcpStdioBridge({
         ...context,
-        serverInfo,
+        serverInfo: {
+          name: serverInfo?.name ?? `${options.name}-mcp`,
+          version: serverInfo?.version ?? '0.0.0',
+        },
       });
     },
   };
@@ -171,6 +197,27 @@ async function runCli(
   const stdout = process.stdout;
   const stderr = process.stderr;
 
+  // Top-level error catch so users see a clean message for normal usage
+  // errors (`<cli> auth` with no subcommand, unknown resource slug, etc.)
+  // rather than an unhandled-rejection stack trace from Node. (#1311
+  // review C-1.)
+  try {
+    await dispatchCli(context, options, extras, argv, stdout, stderr);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    stderr.write(`${message}\n`);
+    process.exitCode = 1;
+  }
+}
+
+async function dispatchCli(
+  context: CliConfigContext,
+  options: CreateAppCliOptions,
+  extras: Map<string, AppCliCommand>,
+  argv: string[],
+  stdout: NodeJS.WriteStream,
+  stderr: NodeJS.WriteStream,
+): Promise<void> {
   if (argv.length === 0 || argv[0] === 'help' || argv[0] === '--help') {
     printUsage(options, extras, stdout);
     return;
@@ -260,6 +307,19 @@ async function runResourceCommand(
     if (!id) {
       throw new Error(
         `Command \`${slug} ${commandName}\` requires an id positional argument.`,
+      );
+    }
+    // Guard: if the user passes a string that's itself a valid command name
+    // on this resource, they almost certainly meant to call THAT command,
+    // not use the command name as an id. Sending it as an id would silently
+    // 404 on the server. (#1311 review C-3.)
+    if (findCommand(resource, id)) {
+      throw new Error(
+        `\`${id}\` is a command on \`${slug}\`, not an id. ` +
+          `Did you mean: \`${slug} ${id}${
+            findCommand(resource, id)?.scope === 'item' ? ' <id>' : ''
+          }\`? ` +
+          `\`${slug} ${commandName}\` is an item-scope command and needs an id as the next argument.`,
       );
     }
     positional = positional.slice(1);

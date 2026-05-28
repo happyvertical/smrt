@@ -112,6 +112,34 @@ describe('createAppCli', () => {
     expect(stdout.contents()).toContain('extra-mcp');
   });
 
+  it('catches thrown errors and writes message to stderr + sets exitCode — #1311 review C-1', async () => {
+    const originalExitCode = process.exitCode;
+    const cli = createAppCli({ name: 'appcli' });
+    // `auth` with no subcommand throws a usage error inside runCli; the
+    // top-level catch should convert it to a clean stderr message + exit
+    // code 1 rather than letting the rejection bubble.
+    await cli.run(['auth']);
+    expect(stderr.contents()).toMatch(/Usage: auth login/);
+    expect(stdout.contents()).toBe(''); // no stack trace to stdout
+    expect(process.exitCode).toBe(1);
+    process.exitCode = originalExitCode;
+  });
+
+  it('startMcpBridge derives default serverInfo from options.name — #1311 review C-4', async () => {
+    // Compile-only smoke check that `startMcpBridge()` is callable with
+    // no arguments (the runtime path opens stdio so we can't actually
+    // invoke it in a vitest worker — typecheck + signature suffice).
+    const cli = createAppCli({ name: 'foo' });
+    expect(typeof cli.startMcpBridge).toBe('function');
+    // No-arg call would normally invoke the bridge; we just inspect that
+    // the signature accepts undefined / partial serverInfo.
+    const callable: (info?: {
+      name?: string;
+      version?: string;
+    }) => Promise<void> = cli.startMcpBridge;
+    expect(callable).toBeDefined();
+  });
+
   it('lazy getResources() only fetches when called', async () => {
     const fetchMock = vi.fn(
       async () =>

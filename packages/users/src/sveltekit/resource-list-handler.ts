@@ -55,6 +55,13 @@ interface RegisteredClassLike {
   extends?: string;
   /** Generic type argument from `SmrtCollection<X>` — also marks collection. */
   extendsTypeArg?: string;
+  /**
+   * Live class constructor. Used as a runtime fallback to walk the prototype
+   * chain when neither `extends` nor `extendsTypeArg` are set — which
+   * happens for dev-mode classes registered via the decorator path before
+   * the manifest is loaded. (#1311 review D-2.)
+   */
+  constructor?: { name?: string; prototype?: object } | unknown;
 }
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -418,6 +425,8 @@ interface SynthesizedDefinition {
   tools?: ToolLike[];
   extends?: string;
   extendsTypeArg?: string;
+  /** Live constructor for prototype-chain fallback in isCollectionClass. */
+  constructor?: unknown;
 }
 
 interface MethodLike {
@@ -462,6 +471,7 @@ function synthesizeDefinition(
     tools: registered.tools as ToolLike[] | undefined,
     extends: registered.extends,
     extendsTypeArg: registered.extendsTypeArg,
+    constructor: registered.constructor,
   };
 }
 
@@ -470,11 +480,45 @@ function synthesizeDefinition(
  * these through a separate code path that ONLY emits collection-scoped
  * custom routes (no CRUD), so the CLI must do the same — treating them
  * as regular object classes would expose CRUD commands the generator
- * never wrote. Mirrors the same predicate in
- * `packages/core/src/vite-plugin/sveltekit-generator.ts:isCollectionClass`.
+ * never wrote.
+ *
+ * Three signals, in order of confidence:
+ *
+ *   1. `extends === 'SmrtCollection'` — manifest-derived, always reliable
+ *      when classes come from a generated manifest.
+ *   2. `extendsTypeArg` — also manifest-derived; covers the
+ *      `SmrtCollection<X>` generic form.
+ *   3. Prototype-chain walk on `constructor` — runtime fallback for
+ *      classes registered via the decorator path in dev mode (or in any
+ *      no-manifest setup) where signals (1) and (2) may be absent.
+ *      Walks up `Object.getPrototypeOf(ctor)` looking for `name ===
+ *      'SmrtCollection'`. Bounded to a few iterations by a depth guard.
+ *
+ * Mirrors the same predicate in `packages/core/src/vite-plugin/
+ * sveltekit-generator.ts:isCollectionClass` but extends it with the
+ * prototype-walk fallback. (#1311 review D-2.)
  */
 function isCollectionClass(def: SynthesizedDefinition): boolean {
-  return def.extends === 'SmrtCollection' || Boolean(def.extendsTypeArg);
+  if (def.extends === 'SmrtCollection') return true;
+  if (def.extendsTypeArg) return true;
+  return ctorChainContains(def.constructor, 'SmrtCollection');
+}
+
+function ctorChainContains(
+  ctor: unknown,
+  name: string,
+  depthCap = 16,
+): boolean {
+  let current = ctor as { name?: string } | null;
+  for (let i = 0; i < depthCap && current; i += 1) {
+    if (current.name === name) return true;
+    const next = Object.getPrototypeOf(current);
+    // Stop when we've reached the root prototype (`Function.prototype`),
+    // which has no `.name` field of its own.
+    if (!next || next === current) break;
+    current = next as { name?: string } | null;
+  }
+  return false;
 }
 
 function deriveCollectionFromConfig(

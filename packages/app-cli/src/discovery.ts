@@ -1,45 +1,35 @@
 /**
- * Fetches the resource list from `GET /api/_resources` and re-exports
- * the wire types so consumers can build typed extensions on top of the
- * discovery output.
+ * Fetches the resource list from `GET /api/_resources` and re-exports the
+ * wire types so consumers can build typed extensions on top of the discovery
+ * output.
+ *
+ * Types are imported type-only from `@happyvertical/smrt-users/sveltekit`
+ * — the single source of truth for the wire contract. The CLI does not
+ * depend on smrt-users at runtime (the peer dep is `optional` in the
+ * package.json) so importing types is free of bundle cost.
+ *
+ * Importing type-only means a new field added to `CommandDefinition` /
+ * `CliResource` on the handler side automatically propagates to the CLI's
+ * typecheck — no manual mirror-update required. (#1311 review D-1.)
  *
  * @packageDocumentation
  */
 
+import type {
+  CliResource as HandlerCliResource,
+  CommandDefinition as HandlerCommandDefinition,
+  CommandKind as HandlerCommandKind,
+  CommandScope as HandlerCommandScope,
+  ResourceListResponseBody,
+} from '@happyvertical/smrt-users/sveltekit';
 import type { CliConfigContext } from './config.js';
 import { requestJson } from './config.js';
 
-/* ── re-exported wire types (mirror smrt-users/sveltekit) ─────────────── */
-
-export type CommandKind = 'crud' | 'custom';
-export type CommandScope = 'item' | 'collection';
-
-export interface CommandDefinition {
-  methodName: string;
-  commandName: string;
-  kind: CommandKind;
-  scope: CommandScope;
-  httpMethod: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
-  pathSegments: string[];
-  description?: string;
-  parameters?: Record<string, unknown>;
-}
-
-export interface CliResource {
-  slug: string;
-  className: string;
-  qualifiedName?: string;
-  packageName?: string;
-  label: string;
-  apiPath: string;
-  commands: CommandDefinition[];
-}
-
-export interface ResourceListResponse {
-  user: { authenticated: boolean; id?: string };
-  warnings: string[];
-  resources: CliResource[];
-}
+export type CommandKind = HandlerCommandKind;
+export type CommandScope = HandlerCommandScope;
+export type CommandDefinition = HandlerCommandDefinition;
+export type CliResource = HandlerCliResource;
+export type ResourceListResponse = ResourceListResponseBody;
 
 /* ── fetcher ──────────────────────────────────────────────────────────── */
 
