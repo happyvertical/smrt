@@ -27,7 +27,15 @@ export interface BackfillRecord {
 
 export class BackfillTracker {
   private readonly db: DatabaseInterface;
-  private initialized = false;
+  /**
+   * Memoized initialization promise. Storing the promise (rather than a
+   * `boolean` flag set after the DDL completes) makes `initialize()` safe
+   * under concurrency: multiple parallel callers all `await` the same
+   * in-flight promise instead of independently re-running the DDL. On
+   * error the slot is cleared so the next caller retries — a transient
+   * failure doesn't permanently poison the instance.
+   */
+  private initializePromise: Promise<void> | null = null;
 
   constructor(options: BackfillTrackerOptions) {
     this.db = options.db;
@@ -35,12 +43,19 @@ export class BackfillTracker {
 
   /**
    * Create the `_smrt_backfills` table if it doesn't already exist.
-   * Safe to call repeatedly.
+   * Safe to call repeatedly and concurrently.
    */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
-    await this.db.query(CREATE_SMRT_BACKFILLS_TABLE);
-    this.initialized = true;
+    if (!this.initializePromise) {
+      this.initializePromise = this.db
+        .query(CREATE_SMRT_BACKFILLS_TABLE)
+        .then(() => undefined)
+        .catch((error) => {
+          this.initializePromise = null;
+          throw error;
+        });
+    }
+    return this.initializePromise;
   }
 
   /** Has the backfill named `name` already run? */

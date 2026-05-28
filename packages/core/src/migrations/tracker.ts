@@ -102,7 +102,15 @@ export class MigrationTracker {
   private options: Required<Omit<MigrationTrackerOptions, 'db' | 'engineHint'>>;
   private engineHint?: string;
   private dbEngine: DatabaseEngine;
-  private initialized = false;
+  /**
+   * Memoized initialization promise. Storing the in-flight promise (rather
+   * than a `boolean` flag set after the DDL completes) makes `initialize()`
+   * safe under concurrency: multiple parallel callers all `await` the same
+   * promise instead of independently re-running the DDL. On error the slot
+   * is cleared so the next caller retries — a transient failure doesn't
+   * permanently poison the instance.
+   */
+  private initializePromise: Promise<void> | null = null;
   private currentBatch: number | null = null;
 
   constructor(options: MigrationTrackerOptions) {
@@ -144,8 +152,16 @@ export class MigrationTracker {
    * Initialize the migrations tracking table
    */
   async initialize(): Promise<void> {
-    if (this.initialized) return;
+    if (!this.initializePromise) {
+      this.initializePromise = this.runInitializeDdl().catch((error) => {
+        this.initializePromise = null;
+        throw error;
+      });
+    }
+    return this.initializePromise;
+  }
 
+  private async runInitializeDdl(): Promise<void> {
     // Parse and execute each statement in the DDL
     const statements = CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE.split(';')
       .map((s) => s.trim())
@@ -154,8 +170,6 @@ export class MigrationTracker {
     for (const statement of statements) {
       await this.db.query(statement);
     }
-
-    this.initialized = true;
   }
 
   /**

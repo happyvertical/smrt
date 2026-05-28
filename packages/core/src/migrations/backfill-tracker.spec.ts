@@ -91,4 +91,57 @@ describe('BackfillTracker', () => {
     await tracker.recordApplied('still-works');
     expect(await tracker.isApplied('still-works')).toBe(true);
   });
+
+  it('initialize is safe under concurrent calls — DDL runs once', async () => {
+    // Wrap the underlying query so we can count how many times the
+    // CREATE TABLE actually fires. Pre-memoization, two concurrent
+    // initialize() calls both observed `initialized === false` and both
+    // ran the DDL; now they should share the same in-flight promise.
+    let createCalls = 0;
+    const originalQuery = db.query.bind(db);
+    db.query = ((sql: string, ...args: unknown[]) => {
+      if (sql.includes('CREATE TABLE') && sql.includes('_smrt_backfills')) {
+        createCalls += 1;
+      }
+      return originalQuery(sql as unknown as string, ...(args as []));
+    }) as unknown as typeof db.query;
+
+    const freshTracker = new BackfillTracker({ db });
+    await Promise.all([
+      freshTracker.initialize(),
+      freshTracker.initialize(),
+      freshTracker.initialize(),
+      freshTracker.initialize(),
+    ]);
+
+    expect(createCalls).toBe(1);
+
+    // Restore for the afterEach close.
+    db.query = originalQuery as typeof db.query;
+  });
+
+  it('initialize allows retry after a failed CREATE TABLE', async () => {
+    let attempts = 0;
+    const originalQuery = db.query.bind(db);
+    db.query = ((sql: string, ...args: unknown[]) => {
+      if (sql.includes('CREATE TABLE') && sql.includes('_smrt_backfills')) {
+        attempts += 1;
+        if (attempts === 1) {
+          return Promise.reject(new Error('transient failure'));
+        }
+      }
+      return originalQuery(sql as unknown as string, ...(args as []));
+    }) as unknown as typeof db.query;
+
+    const freshTracker = new BackfillTracker({ db });
+    await expect(freshTracker.initialize()).rejects.toThrow(
+      'transient failure',
+    );
+    // The promise slot was cleared on error — a second call must retry,
+    // not return a permanently-rejected memoized promise.
+    await expect(freshTracker.initialize()).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
+
+    db.query = originalQuery as typeof db.query;
+  });
 });
