@@ -41,6 +41,12 @@ export interface MigrateSmrtSchemasOptions {
   reconcile?: boolean;
   /** Forwarded to MigrationTracker — defaults to true for `CREATE INDEX CONCURRENTLY`. */
   useConcurrentIndexes?: boolean;
+  /**
+   * Explicit engine hint forwarded to `detectEngine`. Useful when `db.url`
+   * doesn't unambiguously identify the engine (e.g. the JSON adapter, which
+   * uses DuckDB internally and may not be recognizable by URL alone).
+   */
+  engineHint?: string;
 }
 
 export interface MigrateSmrtSchemasResult {
@@ -63,13 +69,23 @@ export interface PendingSchemaStatementsResult {
  *
  * Useful for status commands ("how far behind is the schema?") and as the
  * inner step of `migrateSmrtSchemas`.
+ *
+ * **Note on the returned `statements`:** these are the engine-correct DDL
+ * statements as the differ + DDL strategy produce them, *prior to* any
+ * Postgres-specific rewrites the `MigrationTracker` applies at execution
+ * time (e.g. rewriting `CREATE INDEX` → `CREATE INDEX CONCURRENTLY` and
+ * moving CONCURRENTLY statements outside the surrounding transaction).
+ * The list is suitable for preview/status/"what would change?" use cases.
+ * For the exact byte-for-byte SQL the tracker ran, inspect the
+ * `MigrationResult`s from `migrateSmrtSchemas` or the tracker's own logs.
  */
 export async function getPendingSchemaStatements(
   db: DatabaseInterface,
+  options: { engineHint?: string } = {},
 ): Promise<PendingSchemaStatementsResult> {
   const schemas = ObjectRegistry.getAllSchemasAsDefinitions();
   const diff = await generateSchemaDiff(db, schemas);
-  const statements = collectStatementsFromDiff(diff, db);
+  const statements = collectStatementsFromDiff(diff, db, options.engineHint);
   return {
     diff,
     schemaCount: Object.keys(schemas).length,
@@ -84,11 +100,18 @@ export async function getPendingSchemaStatements(
  * Returns `applied: false` (with no error) if the database is already in
  * sync. Throws on the first migration failure with the underlying error
  * preserved (callers should let it propagate to the CLI).
+ *
+ * **Note on the returned `statements`:** mirrors `getPendingSchemaStatements`
+ * — the list is the planned DDL, prior to Postgres-specific tracker rewrites
+ * (CONCURRENTLY, transaction reordering). The actual executed SQL is
+ * tracked in the returned `results`.
  */
 export async function migrateSmrtSchemas(
   options: MigrateSmrtSchemasOptions,
 ): Promise<MigrateSmrtSchemasResult> {
-  const pending = await getPendingSchemaStatements(options.db);
+  const pending = await getPendingSchemaStatements(options.db, {
+    engineHint: options.engineHint,
+  });
   if (!pending.hasChanges || pending.statements.length === 0) {
     return {
       applied: false,
@@ -133,6 +156,18 @@ export async function migrateSmrtSchemas(
   };
 }
 
+/** Mirror of the `getDatabaseUrl` helper in class.ts — some adapters
+ * (JSON, certain in-memory wrappers) leave `db.url` undefined and expose
+ * the URL on `db.config?.url` instead. Detecting the engine from a raw
+ * `db.url` would throw or silently fall through to the sqlite default.
+ */
+function resolveDatabaseUrl(db: DatabaseInterface): string {
+  const dbWithConfig = db as DatabaseInterface & {
+    config?: { url?: string };
+  };
+  return db.url || dbWithConfig.config?.url || '';
+}
+
 /**
  * Materialize the diff into the engine-correct SQL statements.
  *
@@ -150,8 +185,11 @@ export async function migrateSmrtSchemas(
 function collectStatementsFromDiff(
   diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
   db: DatabaseInterface,
+  engineHint?: string,
 ): string[] {
-  const strategy = getDDLStrategy(detectEngine(db.url));
+  const strategy = getDDLStrategy(
+    detectEngine(resolveDatabaseUrl(db), engineHint),
+  );
   const statements: string[] = [];
   for (const schema of diff.added_tables) {
     statements.push(strategy.generateCreateTable(schema));
