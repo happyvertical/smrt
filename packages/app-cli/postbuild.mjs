@@ -28,6 +28,14 @@ if (!binSource.startsWith('#!/usr/bin/env node')) {
 }
 chmodSync(binPath, 0o755);
 
+/**
+ * Catch anything that looks like a test artifact slipping into `dist/`.
+ * Broad pattern instead of an enumeration of suffixes — `.test.d.ts.map`,
+ * `.spec.*`, and any future vite-plugin-dts config drift that re-enables
+ * declaration maps for excluded files all get caught here. (#1311 review #7.)
+ */
+const TEST_ARTIFACT_RE = /\.(test|spec)\./;
+
 function walk(dir) {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
@@ -35,7 +43,7 @@ function walk(dir) {
       walk(full);
       continue;
     }
-    if (entry.name.endsWith('.test.js') || entry.name.endsWith('.test.d.ts')) {
+    if (TEST_ARTIFACT_RE.test(entry.name)) {
       console.error(`[postbuild] dist contains test artifact: ${full}`);
       process.exit(1);
     }

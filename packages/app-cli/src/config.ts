@@ -9,7 +9,15 @@
  * @packageDocumentation
  */
 
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
+import {
+  chmod,
+  mkdir,
+  readFile,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -81,16 +89,37 @@ export async function saveCliConfig(
   config: CliConfig,
 ): Promise<void> {
   const path = configFilePath(context);
-  // 0o700 on the parent: `mkdir(... recursive: true)` defaults to
-  // umask-modified 0o777, which on a typical 0o022 umask leaves the dir
-  // world-traversable. The config file itself is 0o600, but a world-
-  // traversable parent lets any local user open `<dir>/config.json`
-  // directly by name. (#1311 review A1.)
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  await chmod(path, 0o600);
+  const dir = dirname(path);
+
+  // 0o700 on the parent. `mkdir(... { recursive: true, mode })` only
+  // applies the mode to dirs it CREATES — a pre-existing dir at 0o755
+  // (e.g. from a legacy install or another tool) keeps its old perms
+  // and remains world-traversable. Explicit chmod after mkdir enforces
+  // the intent regardless of how the dir got there. We swallow chmod
+  // failures so a read-only mount or a dir owned by another user
+  // doesn't break saveCliConfig entirely. (#1311 review A1 + #4.)
+  await mkdir(dir, { recursive: true, mode: 0o700 });
+  await chmod(dir, 0o700).catch(() => undefined);
+
+  // Atomic write: tempfile in the same dir with mode 0o600, then rename
+  // over the target. Without this, a SIGKILL between writeFile and
+  // chmod could leave the bearer token at the umask-modified 0o644 /
+  // 0o664. `writeFile { mode }` honours mode only on file CREATE, but
+  // the underlying open(2) is still subject to umask on Linux until
+  // chmod runs. The rename is atomic on POSIX (same filesystem), so
+  // readers either see the old config or the fully-written new one.
+  // (#1311 review #3.)
+  const tmp = `${path}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await writeFile(tmp, `${JSON.stringify(config, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    await chmod(tmp, 0o600);
+    await rename(tmp, path);
+  } catch (err) {
+    await unlink(tmp).catch(() => undefined);
+    throw err;
+  }
 }
 
 /** Resolve the server URL: env var → config file → `defaultServerUrl`. */
@@ -206,7 +235,12 @@ export async function requestJson<T = unknown>(
       parsed && typeof parsed === 'object' && 'error' in parsed
         ? String((parsed as { error: unknown }).error)
         : `HTTP ${response.status}: ${response.statusText}`;
-    throw new Error(message);
+    // Attach the HTTP status as a property so downstream callers (e.g.
+    // the auth-login polling loop) can distinguish transient 5xx from
+    // terminal 4xx without parsing the message string. Server-supplied
+    // `error` fields stay verbatim in `.message` for the user-facing
+    // CLI output. (#1311 review #2.)
+    throw Object.assign(new Error(message), { status: response.status });
   }
 
   return parsed as T;

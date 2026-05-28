@@ -70,6 +70,36 @@ describe('config persistence', () => {
     expect(s.mode & 0o777).toBe(0o700);
   });
 
+  it('enforces 0o700 on a pre-existing 0o755 config dir — #1311 review #4', async () => {
+    if (process.platform === 'win32') return;
+    const { mkdir, chmod, stat } = await import('node:fs/promises');
+    const dir = (process.env.TESTCFG_CLI_CONFIG as string).replace(
+      /\/config\.json$/,
+      '',
+    );
+    // Pre-create the dir at world-traversable 0o755 (simulating a legacy
+    // install). saveCliConfig should chmod it down to 0o700.
+    await mkdir(dir, { recursive: true });
+    await chmod(dir, 0o755);
+    await saveAuth(context, 'https://x', 'tok');
+    const s = await stat(dir);
+    expect(s.mode & 0o777).toBe(0o700);
+  });
+
+  it('writes config atomically via tempfile + rename — #1311 review #3', async () => {
+    if (process.platform === 'win32') return;
+    const { readdir } = await import('node:fs/promises');
+    await saveAuth(context, 'https://x', 'tok_abc');
+    const dir = (process.env.TESTCFG_CLI_CONFIG as string).replace(
+      /\/config\.json$/,
+      '',
+    );
+    // After a successful save, only `config.json` should exist — no
+    // leftover `config.json.*.tmp` siblings.
+    const entries = await readdir(dir);
+    expect(entries).toEqual(['config.json']);
+  });
+
   it('clearStoredToken removes the token but keeps serverUrl', async () => {
     await saveAuth(context, 'https://x', 'tok_1');
     await clearStoredToken(context);

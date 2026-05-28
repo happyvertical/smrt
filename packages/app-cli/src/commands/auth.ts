@@ -74,6 +74,8 @@ export async function runAuthLogin(
   const expiresAt = new Date(start.expiresAt).getTime();
   let interval = start.interval ?? 2;
 
+  const stderr = options.stderr ?? process.stderr;
+
   while (Date.now() < expiresAt) {
     await sleep(interval * 1000);
     try {
@@ -95,12 +97,53 @@ export async function runAuthLogin(
       if (token.status === 'expired') break;
       interval = token.interval ?? interval;
     } catch (error) {
-      if (error instanceof Error && error.message.includes('HTTP 410')) break;
+      if (error instanceof Error) {
+        const status = (error as Error & { status?: number }).status;
+        // The server signalled the device-code request was terminated.
+        if (status === 410 || error.message.includes('HTTP 410')) break;
+        // Transient errors (network failure, 5xx, fetch failure): warn
+        // and keep polling. A single DNS hiccup mid-way through a 5-min
+        // device-code window should not abort the user's login.
+        // (#1311 review #2.)
+        if (isTransientPollError(error, status)) {
+          stderr.write(
+            `[smrt-app-cli] auth poll: ${error.message} (retrying in ${interval}s)\n`,
+          );
+          continue;
+        }
+      }
       throw error;
     }
   }
 
   throw new Error('Terminal login request expired.');
+}
+
+/**
+ * Decide whether an error from the polling endpoint is transient (worth
+ * retrying until `expiresAt`) or terminal (re-thrown). The server's own
+ * `pending`/`expired` states are JSON responses, not thrown errors — so
+ * anything reaching the catch here is either an HTTP-level non-2xx or
+ * a fetch-level failure.
+ *
+ * Prefers the structured `.status` property attached by `requestJson`
+ * (since 5xx errors with server-supplied `error` fields don't have the
+ * status in the message string), falling back to message-pattern
+ * matching for fetch-level failures (`TypeError: fetch failed`,
+ * `ECONNRESET`, etc.).
+ */
+function isTransientPollError(error: Error, status?: number): boolean {
+  // 5xx → transient. 4xx other than 410 → terminal (malformed request).
+  if (status !== undefined) {
+    if (status >= 500 && status < 600) return true;
+    if (status >= 400 && status < 500) return false;
+  }
+  const msg = error.message;
+  if (/^HTTP 4(?!10)\d\d/.test(msg)) return false;
+  if (/^HTTP 5\d\d/.test(msg)) return true;
+  if (/fetch failed/i.test(msg)) return true;
+  if (/ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN/i.test(msg)) return true;
+  return false;
 }
 
 export async function runAuthStatus(
@@ -192,7 +235,14 @@ function openVerificationUrl(url: string): void {
     process.platform === 'darwin'
       ? [{ args: [url], command: 'open' }]
       : process.platform === 'win32'
-        ? [{ args: [url], command: 'explorer.exe' }]
+        ? // `explorer.exe <url>` interprets `?` as a wildcard and silently
+          // drops everything after it — every device-code URL has query
+          // params (`?userCode=...`), so the browser never opened on
+          // Windows. `cmd.exe /c start "" "<url>"` is the conventional
+          // shell-out: the empty `""` is the window title (required
+          // because `start` would otherwise consume the URL as the
+          // title), and the quoted URL preserves `?`. (#1311 review #5.)
+          [{ args: ['/c', 'start', '', url], command: 'cmd.exe' }]
         : [
             { args: [url], command: 'xdg-open' },
             { args: ['open', url], command: 'gio' },

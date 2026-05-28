@@ -160,6 +160,55 @@ describe('renderResponse', () => {
     expect(err.text()).toMatch(/exceeded 10MB cap|too large/);
   });
 
+  it('returns exit 0 + no throw when downstream closes mid-stream — #1311 review #1 EPIPE', async () => {
+    // Simulate a shell pipeline like `<cli> list praecos | head -1` —
+    // the consumer of stdout closes after reading some bytes, future
+    // writes throw EPIPE. The renderer must NOT propagate that as an
+    // unhandled rejection; it should exit cleanly.
+    const body = new ReadableStream({
+      start(controller) {
+        for (let i = 0; i < 3; i++) {
+          controller.enqueue(new Uint8Array(1024).fill(0x61));
+        }
+        controller.close();
+      },
+    });
+    const response = new Response(body, {
+      status: 200,
+      headers: { 'content-type': 'text/plain' },
+    });
+
+    // Custom stream that throws on the second write (simulating EPIPE
+    // after the first chunk landed).
+    let writeCount = 0;
+    const stdout: any = {
+      write(_chunk: Buffer) {
+        writeCount += 1;
+        if (writeCount === 1) return true;
+        // Synchronously raise an error that the catcher should intercept.
+        const err: NodeJS.ErrnoException = new Error('EPIPE') as any;
+        err.code = 'EPIPE';
+        throw err;
+      },
+      isTTY: false,
+      once() {
+        return stdout;
+      },
+      off() {
+        return stdout;
+      },
+    };
+    const err = buffer();
+
+    const result = await renderResponse(response, {
+      stdout: stdout as any,
+      stderr: err.stream,
+      stdoutIsTty: false,
+    });
+    // Broken pipe is a normal shell-pipeline outcome — exit clean.
+    expect(result.exitCode).toBe(0);
+  });
+
   it('error binary → terse stderr message, no body pipe', async () => {
     const out = buffer();
     const err = buffer();

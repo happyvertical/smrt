@@ -41,6 +41,22 @@ export async function renderResponse(
   response: Response,
   options: OutputOptions = {},
 ): Promise<RenderResult> {
+  try {
+    return await renderResponseUnchecked(response, options);
+  } catch (err) {
+    if (err instanceof BrokenPipeError) {
+      // Downstream consumer closed (typical: `<cli> list | head -1`).
+      // Exit clean — this is not an error to escalate. (#1311 review #1.)
+      return { exitCode: 0 };
+    }
+    throw err;
+  }
+}
+
+async function renderResponseUnchecked(
+  response: Response,
+  options: OutputOptions = {},
+): Promise<RenderResult> {
   const stdout =
     (options.stdout as NodeJS.WriteStream | undefined) ?? process.stdout;
   const stderr =
@@ -185,15 +201,52 @@ async function readUntilLimitOrStream(
   };
 }
 
+/**
+ * Sentinel thrown when a write to the output stream fails because the
+ * downstream consumer closed (EPIPE) or the stream errored. Callers
+ * catch this and exit cleanly — broken pipes are normal under shell
+ * pipelines (`<cli> list | head -1`), not errors to escalate.
+ */
+class BrokenPipeError extends Error {
+  constructor(cause?: unknown) {
+    super('Output stream closed');
+    this.name = 'BrokenPipeError';
+    if (cause !== undefined) (this as { cause?: unknown }).cause = cause;
+  }
+}
+
+/**
+ * Write a chunk to the output stream and wait for `drain` if needed.
+ *
+ * Races the `drain` promise against an `error` event so that broken-pipe
+ * errors (EPIPE, ECONNRESET on a stdout consumer that died) reject the
+ * pending promise rather than leaving the CLI hung forever waiting for a
+ * `drain` that will never come. (#1311 review #1.)
+ */
 async function writeChunk(
   out: NodeJS.WriteStream | Writable,
   chunk: Uint8Array,
 ): Promise<void> {
-  if (!(out as NodeJS.WriteStream).write(Buffer.from(chunk))) {
-    await new Promise<void>((resolve) =>
-      (out as NodeJS.WriteStream).once('drain', () => resolve()),
-    );
+  const stream = out as NodeJS.WriteStream;
+  let ok: boolean;
+  try {
+    ok = stream.write(Buffer.from(chunk));
+  } catch (err) {
+    throw new BrokenPipeError(err);
   }
+  if (ok) return;
+  await new Promise<void>((resolve, reject) => {
+    const onDrain = (): void => {
+      stream.off('error', onError);
+      resolve();
+    };
+    const onError = (err: Error): void => {
+      stream.off('drain', onDrain);
+      reject(new BrokenPipeError(err));
+    };
+    stream.once('drain', onDrain);
+    stream.once('error', onError);
+  });
 }
 
 async function pipeBody(
@@ -202,14 +255,21 @@ async function pipeBody(
 ): Promise<void> {
   if (!response.body) return;
   const reader = response.body.getReader();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
-    if (!(out as NodeJS.WriteStream).write(Buffer.from(value))) {
-      await new Promise<void>((resolve) =>
-        (out as NodeJS.WriteStream).once('drain', () => resolve()),
-      );
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      await writeChunk(out, value);
+    }
+  } finally {
+    // If we exited early (BrokenPipeError thrown), drop the reader's
+    // lock so the response body can be GC'd promptly.
+    try {
+      reader.releaseLock();
+    } catch {
+      // releaseLock throws if the reader is still attached to an active
+      // operation; that's the expected case on normal completion.
     }
   }
 }

@@ -48,8 +48,21 @@ export default defineConfig({
   },
   plugins: [
     dts({
-      rollupTypes: false,
-      bundledPackages: [],
+      // rollupTypes: true inlines the type-only re-exports from
+      // @happyvertical/smrt-users/sveltekit (used by ./discovery.ts) into
+      // the consolidated dist/index.d.ts. Without this, the per-file
+      // discovery.d.ts retains `import type { ... } from
+      // '@happyvertical/smrt-users/sveltekit'` and downstream consumers
+      // who install smrt-app-cli without smrt-users get a TS error on
+      // the re-exported CliResource / CommandDefinition types. The peer
+      // `optional: true` flag only silences npm install warnings; it
+      // doesn't prevent tsc errors. (#1311 review #6.)
+      //
+      // bundledPackages tells the dts roller it's OK to follow into
+      // these packages and inline the referenced type shapes rather
+      // than leaving the external import.
+      rollupTypes: true,
+      bundledPackages: ['@happyvertical/smrt-users'],
       include: ['src/**/*.ts'],
       exclude: ['src/**/*.test.ts', 'src/__tests__/**'],
     }),
