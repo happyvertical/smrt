@@ -106,7 +106,7 @@ export class BackfillTracker {
   async listApplied(): Promise<BackfillRecord[]> {
     await this.initialize();
     const result = await this.db.query(
-      'SELECT name, applied_at, description, package_name FROM _smrt_backfills ORDER BY applied_at ASC',
+      'SELECT name, applied_at, description, package_name FROM _smrt_backfills ORDER BY applied_at ASC, name ASC',
     );
     return result.rows.map((row) => ({
       name: String(row.name ?? ''),

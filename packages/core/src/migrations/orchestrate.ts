@@ -148,8 +148,12 @@ export async function migrateSmrtSchemas(
       : new Error(String(failed.error ?? `Migration ${failed.name} failed`));
   }
 
+  const applied = results.some(
+    (result) => result.applied !== false && result.skipped !== true,
+  );
+
   return {
-    applied: true,
+    applied,
     results,
     statements: pending.statements,
     schemaCount: pending.schemaCount,

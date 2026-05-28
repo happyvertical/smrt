@@ -54,6 +54,20 @@ describe('BackfillTracker', () => {
     expect(list).toHaveLength(1);
   });
 
+  it('listApplied uses a stable secondary sort when timestamps tie', async () => {
+    await tracker.recordApplied('zeta');
+    await tracker.recordApplied('alpha');
+    await tracker.recordApplied('mu');
+
+    // Force a same-timestamp tie so secondary ORDER BY behavior is deterministic.
+    await db.query(
+      `UPDATE _smrt_backfills SET applied_at = '2026-01-01 00:00:00'`,
+    );
+
+    const list = await tracker.listApplied();
+    expect(list.map((row) => row.name)).toEqual(['alpha', 'mu', 'zeta']);
+  });
+
   it('runIfPending runs only the first time and returns null on subsequent calls', async () => {
     let runCount = 0;
     const result1 = await tracker.runIfPending('first', async () => {
