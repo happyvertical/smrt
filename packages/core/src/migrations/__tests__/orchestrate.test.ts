@@ -89,9 +89,25 @@ describe('schema orchestration', () => {
       'CREATE INDEX IF NOT EXISTS "idx_documents_score_active" ON "documents" ("score") WHERE is_active = 1;',
     );
 
-    const postgresPending = await getPendingSchemaStatements(db, {
-      engineHint: 'postgres',
-    });
+    const mockPostgresDb = {
+      url: '',
+      config: { url: 'postgresql://localhost/test' },
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [] };
+        }
+        throw new Error(`Unexpected query: ${sql}`);
+      },
+      getTableSchema: async () => null,
+    };
+
+    const postgresPending = await getPendingSchemaStatements(
+      mockPostgresDb as unknown as DatabaseProvider,
+      {
+        engineHint: 'postgres',
+      },
+    );
+    expect(postgresPending.hasChanges).toBe(true);
     expect(postgresPending.statements.join('\n')).toContain(
       '"score" DOUBLE PRECISION',
     );
@@ -99,6 +115,48 @@ describe('schema orchestration', () => {
     expect(postgresPending.statements).toContain(
       'CREATE INDEX IF NOT EXISTS "idx_documents_score_active" ON "documents" ("score") WHERE is_active = 1;',
     );
+  });
+
+  it('engineHint threads into SchemaComparer for existing-table SQL (no split-brain)', async () => {
+    const mockPostgresDb = {
+      url: '',
+      config: { url: 'postgresql://localhost/test' },
+      query: async (sql: string) => {
+        if (sql.includes('information_schema.tables')) {
+          return { rows: [{ table_name: 'documents' }] };
+        }
+        throw new Error(`Unexpected query: ${sql}`);
+      },
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          score: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: makeDocumentSchema(),
+    });
+
+    const pending = await getPendingSchemaStatements(
+      mockPostgresDb as unknown as DatabaseProvider,
+      {
+        engineHint: 'postgres',
+      },
+    );
+
+    // documents already exists, so the change goes through getSQLFromDiff
+    // (SchemaComparer's per-change SQL), not the new-table path. Joined
+    // statements should reflect the postgres-flavored DDL strategy — no
+    // SQLite-style table recreation patterns mixed in.
+    const joined = pending.statements.join('\n');
+    expect(joined).not.toContain('REAL'); // SQLite uses REAL; postgres uses DOUBLE PRECISION
+    // The comparer's added-column SQL should now use postgres types.
+    if (joined.includes('ADD COLUMN')) {
+      expect(joined).toMatch(/ADD COLUMN.*(?:JSONB|DOUBLE PRECISION|BOOLEAN)/i);
+    }
   });
 
   it('migrateSmrtSchemas returns applied false when no pending changes exist', async () => {
@@ -180,34 +238,6 @@ describe('schema orchestration', () => {
     expect(result.results[0].skipped).toBe(true);
     expect(result.results[0].applied).toBe(false);
     expect(result.applied).toBe(false);
-  });
-
-  it('engineHint threads into SchemaComparer for existing-table SQL (no split-brain)', async () => {
-    // Pre-create a table whose declared schema would diverge under
-    // Postgres typing — `score REAL` in the manifest maps to
-    // `DOUBLE PRECISION` on Postgres. If the engine hint only reached the
-    // new-table DDL path and not the comparer, the comparer would compare
-    // against SQLite types and emit SQLite-flavored ALTER SQL.
-    await db.query('CREATE TABLE documents (id TEXT PRIMARY KEY, score TEXT);');
-
-    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
-      documents: makeDocumentSchema(),
-    });
-
-    const pending = await getPendingSchemaStatements(db, {
-      engineHint: 'postgres',
-    });
-
-    // documents already exists, so the change goes through getSQLFromDiff
-    // (SchemaComparer's per-change SQL), not the new-table path. Joined
-    // statements should reflect the postgres-flavored DDL strategy — no
-    // SQLite-style table recreation patterns mixed in.
-    const joined = pending.statements.join('\n');
-    expect(joined).not.toContain('REAL'); // SQLite uses REAL; postgres uses DOUBLE PRECISION
-    // The comparer's added-column SQL should now use postgres types.
-    if (joined.includes('ADD COLUMN')) {
-      expect(joined).toMatch(/ADD COLUMN.*(?:JSONB|DOUBLE PRECISION|BOOLEAN)/i);
-    }
   });
 
   it('migrateSmrtSchemas forwards lockTimeout and statementTimeout to the tracker', async () => {

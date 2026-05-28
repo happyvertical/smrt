@@ -86,6 +86,13 @@ function isProtectedDbIndexName(name: string): boolean {
   return PROTECTED_INDEX_SUFFIXES.some((suffix) => name.endsWith(suffix));
 }
 
+function resolveDatabaseUrl(db: DatabaseInterface): string {
+  const dbWithConfig = db as DatabaseInterface & {
+    config?: { url?: string };
+  };
+  return db.url || dbWithConfig.config?.url || '';
+}
+
 /**
  * SchemaComparer class for comparing manifest schemas to database
  */
@@ -109,7 +116,10 @@ export class SchemaComparer {
     // callers override URL-based detection when `db.url` is empty or
     // points at an adapter whose engine isn't obvious from the URL alone
     // (JSON, some in-memory wrappers).
-    this.engine = detectEngine(this.db.url || '', this.options.engineHint);
+    this.engine = detectEngine(
+      resolveDatabaseUrl(this.db),
+      this.options.engineHint,
+    );
     this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
@@ -483,11 +493,8 @@ export class SchemaComparer {
    * Get list of existing tables from database
    */
   private async getExistingTables(): Promise<Set<string>> {
-    // Query differs by database type
-    const dbUrl = this.db.url || '';
-
     let query: string;
-    if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
+    if (this.engine === 'postgres') {
       query = `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`;
     } else {
       // SQLite and DuckDB

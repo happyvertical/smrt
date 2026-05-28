@@ -6,7 +6,7 @@
 
 import type { DatabaseProvider } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SchemaDefinition, SchemaDiff } from '../../schema/types.js';
 import {
   getSQLFromDiff,
@@ -326,6 +326,95 @@ describe('SchemaComparer', () => {
 });
 
 describe('SchemaComparer engine-specific SQL generation', () => {
+  it('uses db.config.url when db.url is empty for engine detection', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('information_schema.tables')) {
+        return { rows: [{ table_name: 'documents' }] };
+      }
+      throw new Error(`Unexpected introspection query: ${sql}`);
+    });
+
+    const mockDb = {
+      url: '',
+      config: { url: 'postgresql://localhost/test' },
+      query,
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          metadata: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const comparer = new SchemaComparer(mockDb as any, {
+      ignoreTypeMismatches: false,
+    });
+    const diff = await comparer.compare({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          metadata: { type: 'JSON' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('information_schema.tables'),
+    );
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
+  });
+
+  it('uses engineHint for existing-table introspection query selection', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('information_schema.tables')) {
+        return { rows: [{ table_name: 'users' }] };
+      }
+      throw new Error(`Unexpected introspection query: ${sql}`);
+    });
+
+    const mockDb = {
+      url: ':memory:',
+      query,
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const comparer = new SchemaComparer(mockDb as any, {
+      engineHint: 'postgres',
+    });
+    const diff = await comparer.compare({
+      users: {
+        tableName: 'users',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('information_schema.tables'),
+    );
+    expect(diff.added_tables).toHaveLength(0);
+  });
+
   it('should generate PostgreSQL ALTER COLUMN TYPE with USING clause for TEXT→JSON', async () => {
     // Create a mock database interface that identifies as PostgreSQL
     const mockPostgresDb = {
