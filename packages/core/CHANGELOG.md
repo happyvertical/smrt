@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.25.21
+
+### Patch Changes
+
+- ### Features
+
+  - rate-limit failed terminal-auth approval attempts per user (users)
+  - terminal device-code auth + app-runtime MCP scaffolding (users,smrt-app-mcp)
+
+  ### Bug Fixes
+
+  - address PR #1299 automated review findings (users,smrt-app-mcp)
+  - satisfy monorepo standards (vitest plugin + changeset group) (smrt-app-mcp)
+
+  ### Other Changes
+
+  - refactor: remove /cli subpath — relocates to smrt-app-cli (smrt-app-mcp)
+  - @happyvertical/smrt-scanner@0.25.21
+  - @happyvertical/smrt-config@0.25.21
+  - @happyvertical/smrt-types@0.25.21
+
 ## 0.25.20
 
 ### Patch Changes
