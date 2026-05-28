@@ -50,6 +50,18 @@ import {
   type TerminalAuthServiceOptions,
 } from '../services/TerminalAuthService.js';
 
+export {
+  type CliResource,
+  type CommandDefinition,
+  type CommandKind,
+  type CommandPolicyContext,
+  type CommandScope,
+  type CreateResourceListHandlerOptions,
+  createResourceListHandler,
+  InvalidBearerError,
+  type ResolvedSession,
+  type ResourceListResponseBody,
+} from './resource-list-handler.js';
 export { defaultSessionLocals, type SessionLocals } from './types.js';
 
 /**
