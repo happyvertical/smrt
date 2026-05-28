@@ -1608,8 +1608,7 @@ export class Content
     }
 
     const references = await this.getReferenceCollection();
-    await references.link(this.id, target.id, {
-      tenantId: this.tenantId,
+    await references.link(this.id, target.id, this.tenantId, {
       targetVersion: options.targetVersion,
     });
     this.references = await this.getReferences();

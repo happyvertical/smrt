@@ -5,7 +5,6 @@ import { ContentReference } from './content-reference';
 export interface ContentReferencesOptions extends SmrtCollectionOptions {}
 
 export interface LinkContentReferenceOptions {
-  tenantId?: string | null;
   // ContentVersion.version pinned at citation time. When provided on a
   // re-link of an existing edge, the pin is updated in place.
   targetVersion?: number | null;
@@ -31,6 +30,7 @@ export class ContentReferences extends SmrtCollection<ContentReference> {
   async link(
     sourceId: string,
     targetId: string,
+    tenantId: string | null = null,
     options: LinkContentReferenceOptions = {},
   ): Promise<ContentReference> {
     const existing = (await this.get({
@@ -51,7 +51,7 @@ export class ContentReferences extends SmrtCollection<ContentReference> {
     return (await this.create({
       sourceId,
       targetId,
-      tenantId: options.tenantId ?? null,
+      tenantId,
       targetVersion: options.targetVersion ?? null,
     })) as ContentReference;
   }

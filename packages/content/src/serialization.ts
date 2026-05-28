@@ -213,13 +213,18 @@ export function serializeContentGovernanceState(state: any) {
 }
 
 export async function serializeContent(content: any) {
-  const [references, assets, drift] = await Promise.all([
+  const [references, assets] = await Promise.all([
     typeof content?.getReferences === 'function' ? content.getReferences() : [],
     typeof content?.getAssets === 'function' ? content.getAssets() : [],
-    typeof content?.getReferenceDrift === 'function'
-      ? content.getReferenceDrift()
-      : [],
   ]);
+
+  // Only resolve drift when there are references to drift against — list
+  // endpoints serializing many ref-less items shouldn't pay the version
+  // lookup cost.
+  const drift =
+    references.length > 0 && typeof content?.getReferenceDrift === 'function'
+      ? await content.getReferenceDrift()
+      : [];
 
   const driftByTargetId = new Map<
     string,

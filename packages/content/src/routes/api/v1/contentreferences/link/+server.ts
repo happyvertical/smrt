@@ -21,7 +21,7 @@ export const POST: RequestHandler = async ({ request }) => {
   const result = await typedCollection.link(
     options.sourceId,
     options.targetId,
-    options.options,
+    options.tenantId,
   );
 
   return json({ action: 'link', result });

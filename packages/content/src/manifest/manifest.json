@@ -3598,6 +3598,13 @@
             "required": true
           }
         },
+        "targetVersion": {
+          "type": "integer",
+          "required": false,
+          "_meta": {
+            "nullable": true
+          }
+        },
         "createdAt": {
           "type": "text",
           "required": false
@@ -3628,7 +3635,7 @@
       ],
       "schema": {
         "tableName": "content_references",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"source_id\" TEXT NOT NULL,\n  \"target_id\" TEXT NOT NULL\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"source_id\" TEXT NOT NULL,\n  \"target_id\" TEXT NOT NULL,\n  \"target_version\" INTEGER\n);",
         "columns": {
           "id": {
             "type": "TEXT",
@@ -3668,6 +3675,11 @@
             "type": "TEXT",
             "notNull": true,
             "unique": false
+          },
+          "target_version": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
@@ -3686,7 +3698,7 @@
             "unique": true
           }
         ],
-        "version": "9feb6158"
+        "version": "2446f1c5"
       }
     },
     "@happyvertical/smrt-content:ContentReferences": {
