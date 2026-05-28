@@ -154,7 +154,10 @@ export class TerminalAuthService {
 
   constructor(options: TerminalAuthServiceOptions) {
     this.options = options;
-    this.userCodePrefix = (options.userCodePrefix ?? '').trim();
+    // Lookups uppercase the submitted code before querying, so the stored
+    // form must also be uppercase — normalize once here so consumers can
+    // pass any case.
+    this.userCodePrefix = (options.userCodePrefix ?? '').trim().toUpperCase();
     this.requestTtlSeconds =
       options.requestTtlSeconds ?? DEFAULT_CLI_AUTH_REQUEST_TTL_SECONDS;
     this.sessionTtlSeconds =
@@ -198,6 +201,25 @@ export class TerminalAuthService {
   }
 
   /**
+   * Generate a user code that is not currently in use by another *active*
+   * (pending or approved-but-unclaimed) request. Collisions are vanishingly
+   * rare (1 in 2^32 per attempt) but happen at scale; retrying keeps the
+   * affected CLI from being locked out.
+   */
+  private async makeUniqueUserCode(maxAttempts = 5): Promise<string> {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const candidate = this.makeUserCode();
+      const existing = await this.requestCollection.findByUserCode(candidate);
+      if (!existing || existing.status === 'expired') {
+        return candidate;
+      }
+    }
+    throw new TerminalAuthError(
+      'Unable to generate a unique terminal user code; try again.',
+    );
+  }
+
+  /**
    * Start a new request. Returns the device code the CLI keeps secret, the
    * user code the human types into the browser, and the verification URL to
    * open. The device code is stored only as a hash.
@@ -205,7 +227,7 @@ export class TerminalAuthService {
   async createRequest(origin: string): Promise<CliAuthStartResult> {
     const trimmedOrigin = origin.replace(/\/+$/u, '');
     const deviceCode = base64url(randomBytes(32));
-    const userCode = this.makeUserCode();
+    const userCode = await this.makeUniqueUserCode();
     const expiresAt = new Date(Date.now() + this.requestTtlSeconds * 1000);
 
     const request = await this.requestCollection.create({
@@ -352,6 +374,19 @@ export class TerminalAuthService {
       return { status: 'expired' };
     }
 
+    // Approved requests stay claimable even after the original request TTL —
+    // the session has its own (longer) lifetime, and the CLI may poll just
+    // after approval but after `expiresAt`. Check this before TTL expiry so
+    // freshly minted sessions don't get orphaned.
+    if (request.status === 'approved' && request.sessionId) {
+      return {
+        accessToken: request.sessionId,
+        expiresIn: this.sessionTtlSeconds,
+        status: 'approved',
+        tokenType: 'Bearer',
+      };
+    }
+
     if (isExpired(request)) {
       if (request.status === 'pending') {
         request.status = 'expired';
@@ -365,15 +400,6 @@ export class TerminalAuthService {
         expiresAt: new Date(request.expiresAt).toISOString(),
         interval: this.pollIntervalSeconds,
         status: 'pending',
-      };
-    }
-
-    if (request.status === 'approved' && request.sessionId) {
-      return {
-        accessToken: request.sessionId,
-        expiresIn: this.sessionTtlSeconds,
-        status: 'approved',
-        tokenType: 'Bearer',
       };
     }
 

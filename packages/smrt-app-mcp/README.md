@@ -9,7 +9,7 @@ For piping a deployed app's MCP surface to a local stdio MCP client, see `@happy
 
 ```ts
 // src/lib/server/mcp.ts
-import { createMcpAppServer } from '@happyvertical/smrt-app-mcp';
+import { createMcpAppServer, McpAccessError } from '@happyvertical/smrt-app-mcp';
 import { adminResources } from '$lib/admin/resources';
 import { getDbConfig } from './db';
 

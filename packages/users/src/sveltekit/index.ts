@@ -869,6 +869,9 @@ function terminalAuthCacheKey(options: TerminalAuthServiceOptions): string {
     sessTtl: options.sessionTtlSeconds,
     poll: options.pollIntervalSeconds,
     path: options.verificationPath,
+    autoExtend: options.sessionAutoExtend,
+    maxAttempts: options.maxApproveAttempts,
+    attemptWindow: options.approveAttemptWindowSeconds,
   });
 }
 
