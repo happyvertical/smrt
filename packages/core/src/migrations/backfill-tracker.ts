@@ -140,11 +140,35 @@ export class BackfillTracker {
     );
     return result.rows.map((row) => ({
       name: String(row.name ?? ''),
-      appliedAt: row.applied_at
-        ? new Date(String(row.applied_at)).toISOString()
-        : '',
+      appliedAt: normalizeAppliedAt(row.applied_at),
       description: row.description == null ? null : String(row.description),
       packageName: row.package_name == null ? null : String(row.package_name),
     }));
   }
+}
+
+/**
+ * Convert a raw `applied_at` cell into an ISO 8601 string.
+ *
+ * Different DB drivers return this column in different shapes:
+ *  - Postgres `node-pg` returns a JS `Date` directly.
+ *  - SQLite drivers typically return the `CURRENT_TIMESTAMP` literal
+ *    `'YYYY-MM-DD HH:MM:SS'` (no `T`, no timezone). V8's `Date`
+ *    constructor parses this as local time, but that's
+ *    implementation-defined and other runtimes may return Invalid Date.
+ *  - A corrupted row could return any string.
+ *
+ * If the value parses to a valid Date we return `toISOString()`. If it
+ * doesn't (or the column is null/empty), we fall back to the raw string —
+ * better to surface a non-ISO timestamp than crash `listApplied()` with a
+ * `RangeError` and take down the caller.
+ */
+function normalizeAppliedAt(value: unknown): string {
+  if (value == null || value === '') return '';
+  const raw = String(value);
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return raw;
+  }
+  return parsed.toISOString();
 }

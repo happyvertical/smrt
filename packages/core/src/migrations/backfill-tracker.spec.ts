@@ -101,6 +101,37 @@ describe('BackfillTracker', () => {
     expect(first.ran).not.toBe(second.ran);
   });
 
+  it('listApplied returns the raw timestamp string when applied_at is unparseable', async () => {
+    // Some drivers (or a corrupted row) can return a non-ISO timestamp.
+    // Before normalization, `new Date(garbage).toISOString()` threw
+    // RangeError and crashed the caller; now we fall back to the raw
+    // string so the listing still returns something usable.
+    await tracker.recordApplied('a');
+    await db.query(
+      `UPDATE _smrt_backfills SET applied_at = 'not a timestamp' WHERE name = 'a'`,
+    );
+    const list = await tracker.listApplied();
+    expect(list).toHaveLength(1);
+    expect(list[0].name).toBe('a');
+    expect(list[0].appliedAt).toBe('not a timestamp');
+  });
+
+  it('listApplied normalizes SQLite-style timestamps to ISO 8601', async () => {
+    // SQLite CURRENT_TIMESTAMP returns 'YYYY-MM-DD HH:MM:SS' (no T, no TZ).
+    // V8 parses this as local time; the normalizer should turn it into a
+    // valid ISO string without throwing.
+    await tracker.recordApplied('b');
+    await db.query(
+      `UPDATE _smrt_backfills SET applied_at = '2026-01-01 12:34:56' WHERE name = 'b'`,
+    );
+    const list = await tracker.listApplied();
+    expect(list).toHaveLength(1);
+    // Must parse as a valid ISO string ending in Z (UTC).
+    expect(list[0].appliedAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/,
+    );
+  });
+
   it('initialize is safe to call repeatedly', async () => {
     await tracker.initialize();
     await tracker.initialize();
