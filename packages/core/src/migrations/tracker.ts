@@ -806,8 +806,9 @@ export class MigrationTracker {
  * reason about what the tracker would execute in PostgreSQL safe mode.
  *
  * Rules:
- * - Statements already containing `CONCURRENTLY` (CREATE or DROP) always
- *   go to the concurrent set — Postgres rejects them inside transactions.
+ * - Statements already containing `CONCURRENTLY` for CREATE/DROP INDEX or
+ *   REINDEX operations always go to the concurrent set — Postgres rejects
+ *   them inside transactions.
  * - When `useConcurrentIndexes` is true, plain `CREATE INDEX` and plain
  *   `DROP INDEX` are rewritten to use `CONCURRENTLY`, then routed to
  *   the concurrent set. This is what the CLI `--postgres-safe` flag and
@@ -818,8 +819,7 @@ export function planPostgresStatements(
   statements: string[],
   useConcurrentIndexes: boolean,
 ): { concurrent: string[]; regular: string[] } {
-  const concurrentRegex =
-    /(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY/i;
+  const concurrentRegex = CONCURRENT_INDEX_STATEMENT_RE;
 
   const concurrent: string[] = [];
   const regular: string[] = [];
