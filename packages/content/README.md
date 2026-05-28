@@ -198,7 +198,8 @@ const latest = await citedArticle.listVersions();
 const currentVersion = latest[latest.length - 1]?.version ?? null;
 await article.addReference(citedArticle, { targetVersion: currentVersion });
 
-// Or leave it unpinned (legacy behaviour — tracks live target)
+// Or leave it unpinned — no version is recorded and `isDrifted` will
+// always be false for this edge regardless of how the target evolves.
 await article.addReference(otherArticle);
 
 // Detect drift across all references
@@ -212,8 +213,15 @@ await article.addReference(citedArticle, { targetVersion: 2 });
 ```
 
 `serializeContent` includes per-reference `citedVersion`, `currentVersion`,
-and `isDrifted` fields so SvelteKit `load` functions and the
-`ContentReferencesPanel` can render drift badges without an extra round-trip.
+and `isDrifted` fields so SvelteKit `load` functions can pass them through
+to consumers without an extra round-trip. The fields surface in the
+serialized payload; rendering them (e.g. a drift badge in
+`ContentReferencesPanel`) is left to the consumer.
+
+`getReferenceDrift` compares against the target's latest `ContentVersion`
+of **any kind** (manual or publication), so a manual snapshot of the target
+will trigger `isDrifted: true`. Consumers that only care about published
+drift can filter further using `ContentVersion.kind`.
 
 Typical use: cite an ingested external snapshot (web page, upstream feed,
 asset library entry) as a Content row. Re-sync the source on a schedule, bump

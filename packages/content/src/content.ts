@@ -1671,6 +1671,11 @@ export class Content
    * differ — callers can use this to surface "the source you cited has been
    * updated" affordances in editors or review tools.
    *
+   * `currentVersion` is sourced from `getLatestForContent`, which returns
+   * the most recent `ContentVersion` of **any kind** (manual or publication).
+   * Consumers that only care about published drift should filter the result
+   * by loading the matching `ContentVersion` and inspecting `kind`.
+   *
    * Unpinned references (`citedVersion === null`) are included with
    * `currentVersion` populated when available so callers can choose to
    * surface them as "pinnable" suggestions.
