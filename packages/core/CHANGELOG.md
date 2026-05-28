@@ -1,5 +1,30 @@
 # @happyvertical/smrt-core
 
+## 0.26.1
+
+### Patch Changes
+
+- ### Features
+
+  - add BackfillTracker and migrateSmrtSchemas orchestration (core)
+
+  ### Bug Fixes
+
+  - guard listApplied against unparseable applied_at timestamps (core)
+  - API consistency, optional version, runIfPending discriminator, test tightening (core)
+  - route REINDEX CONCURRENTLY outside tx planner (core)
+  - memoize initialize() promise to remove TOCTOU race (core)
+  - tighten engineHint type + add hasManualDrift convenience + block-comment defense (core)
+  - surface unactionable schema drift + drop comment-only DDL (core)
+  - align SchemaComparer engine introspection (core)
+  - thread engineHint through differ/tracker + forward tracker timeouts (core)
+  - resolve migration orchestration review threads (core)
+  - harden migrateSmrtSchemas engine detection + document preview scope (core)
+  - address PR #1300 automated review findings (core)
+  - @happyvertical/smrt-scanner@0.26.1
+  - @happyvertical/smrt-config@0.26.1
+  - @happyvertical/smrt-types@0.26.1
+
 ## 1.0.0
 
 ### Minor Changes
