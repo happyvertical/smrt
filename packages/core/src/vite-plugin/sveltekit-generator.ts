@@ -1124,8 +1124,19 @@ export function findCliApiCoherenceViolations(
     if (cliConfig.skipApiCheck) continue;
     if (!cliConfig.include || cliConfig.include.length === 0) continue;
 
+    // Match generateCLIModule's effective command set: include − exclude.
+    // A command in both lists is not actually registered, so the lint must
+    // not flag it as unreachable.
+    const cliExclude = Array.isArray(cliConfig.exclude)
+      ? cliConfig.exclude
+      : [];
+    const effectiveCliCommands = cliConfig.include.filter(
+      (cmd: string) => !cliExclude.includes(cmd),
+    );
+    if (effectiveCliCommands.length === 0) continue;
+
     const apiActionSet = resolveApiActionSet(objectDef);
-    const unreachable = cliConfig.include.filter(
+    const unreachable = effectiveCliCommands.filter(
       (action: string) => !apiActionSet.has(action),
     );
 

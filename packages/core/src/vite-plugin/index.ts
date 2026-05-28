@@ -1231,14 +1231,21 @@ ${fields}
       .join('\n\n');
 
     // Generate API client interface for each object
-    // Always use plural collection names (standard REST convention)
+    // Always use plural collection names (standard REST convention).
+    // Filter custom methods through resolveApiActionSet so the declared
+    // type surface matches what generateClientModule actually emits at
+    // runtime — otherwise consumers see methods in autocomplete that are
+    // undefined at runtime.
     const apiClientInterface = uniqueApiClientEntries(
       Object.entries(manifest.objects),
     )
       .map(({ obj, clientKey }) => {
         const { className, methods = {} } = obj;
         const interfaceName = `${className}Data`;
-        const customMethods = Object.entries(methods);
+        const exposedActions = resolveApiActionSet(obj);
+        const customMethods = Object.entries(methods).filter(
+          ([name, method]) => method.isPublic && exposedActions.has(name),
+        );
 
         // Generate custom method signatures
         // Custom methods are instance methods requiring id as first parameter

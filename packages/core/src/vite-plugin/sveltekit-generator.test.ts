@@ -1977,6 +1977,20 @@ describe('SvelteKit Route Generator', () => {
       ]);
     });
 
+    it('honors cli.exclude when checking effective CLI commands', () => {
+      // Match generateCLIModule: a command in both cli.include AND cli.exclude
+      // is not actually registered as a CLI command, so the lint must not
+      // flag it as unreachable even if no API route exists.
+      const manifest = buildManifest({
+        api: { include: ['discover'] }, // no 'audit' in API
+        cli: { include: ['discover', 'audit'], exclude: ['audit'] },
+      });
+      // 'audit' is in cli.include but also in cli.exclude → not a real
+      // CLI command → must not be flagged as unreachable.
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+      expect(() => validateCliIncludeAgainstApi(manifest)).not.toThrow();
+    });
+
     // Regression: resolveApiActionSet must mirror the scope/static skip rules
     // applied by route generation, otherwise the lint reports a false negative
     // (passes a cli.include method that no route is actually emitted for).
