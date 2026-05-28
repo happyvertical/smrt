@@ -47,6 +47,8 @@ export interface ProjectOptions extends SmrtObjectOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync', 'addItem', 'updateItemStatus'] },
+  // sync/addItem/updateItemStatus/listItems are operator commands invoked
+  // in-process via the CLI; they intentionally aren't exposed over HTTP today.
   cli: {
     include: [
       'list',
@@ -56,6 +58,7 @@ export interface ProjectOptions extends SmrtObjectOptions {
       'updateItemStatus',
       'listItems',
     ],
+    skipApiCheck: true,
   },
 })
 export class Project extends SmrtObject {

@@ -256,6 +256,14 @@ export interface SmartObjectConfig {
          * Exclude specific commands (supports both standard CRUD actions and custom methods)
          */
         exclude?: string[];
+
+        /**
+         * Skip the build-time check that every `cli.include` method is also
+         * exposed via the API. Set this for classes whose CLI is invoked
+         * in-process (e.g. admin/security tools intentionally without HTTP
+         * routes) rather than over HTTP.
+         */
+        skipApiCheck?: boolean;
       };
 
   /**

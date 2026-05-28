@@ -25,7 +25,29 @@ vi.mock('node:fs', () => ({
 }));
 
 // Import after mocking
-import { generateSvelteKitRoutes } from './sveltekit-generator';
+import {
+  findCliApiCoherenceViolations,
+  generateSvelteKitRoutes,
+  methodNameToKebab,
+  resolveApiActionSet,
+  validateCliIncludeAgainstApi,
+} from './sveltekit-generator';
+
+describe('methodNameToKebab (#1305)', () => {
+  it.each([
+    ['discoverFromUrl', 'discover-from-url'],
+    ['XMLExport', 'xml-export'],
+    ['URL', 'url'],
+    ['getById', 'get-by-id'],
+    ['simple', 'simple'],
+    ['Already', 'already'],
+    ['aA', 'a-a'],
+    ['IOError', 'io-error'],
+    ['parseHTML5Data', 'parse-html5-data'],
+  ])('%s → %s', (input, expected) => {
+    expect(methodNameToKebab(input)).toBe(expected);
+  });
+});
 
 function expectGetCollectionCall(content: string, objectName: string): void {
   const escapedObjectName = objectName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -1675,6 +1697,369 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'items.map((item) => serializeListItemResponse(item))',
       );
+    });
+  });
+
+  // Regression: api.exclude was silently ignored for custom methods when
+  // api.include was also set. See smrt#1304.
+  describe('Custom-method api.include + api.exclude (smrt#1304)', () => {
+    it('should drop methods listed in both api.include and api.exclude', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Thing: {
+            className: 'Thing',
+            collection: 'things',
+            fields: {},
+            methods: {
+              discover: {
+                name: 'discover',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              execute: {
+                name: 'execute',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['discover', 'execute'],
+                exclude: ['execute'],
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const discoverWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('things/[id]/discover/+server.ts'),
+        );
+      const executeWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('things/[id]/execute/+server.ts'),
+        );
+
+      expect(discoverWrite).toBeDefined();
+      expect(executeWrite).toBeUndefined();
+    });
+  });
+
+  // Regression: custom-method URL paths used method-name casing instead of
+  // kebab-case. See smrt#1305. Default off; opt-in via svelteKit.kebabRoutes.
+  describe('kebabRoutes option (smrt#1305)', () => {
+    function buildManifest(): SmartObjectManifest {
+      return {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discoverFromUrl: {
+                name: 'discoverFromUrl',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              XMLExport: {
+                name: 'XMLExport',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: { include: ['discoverFromUrl', 'XMLExport'] },
+            },
+          },
+        },
+      };
+    }
+
+    it('should preserve source casing when kebabRoutes is off (default)', async () => {
+      await generateSvelteKitRoutes(projectRoot, buildManifest(), {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const kebab = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('praecos/[id]/discover-from-url/'),
+        );
+      const camel = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('praecos/[id]/discoverFromUrl/'),
+        );
+      expect(kebab).toBeUndefined();
+      expect(camel).toBeDefined();
+    });
+
+    it('should kebab-case custom-method segments when kebabRoutes is true', async () => {
+      await generateSvelteKitRoutes(projectRoot, buildManifest(), {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        kebabRoutes: true,
+      });
+
+      const kebab = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0]
+            .toString()
+            .includes('praecos/[id]/discover-from-url/+server.ts'),
+        );
+      const acronymKebab = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('praecos/[id]/xml-export/+server.ts'),
+        );
+      const camel = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('praecos/[id]/discoverFromUrl/'),
+        );
+      expect(kebab).toBeDefined();
+      expect(acronymKebab).toBeDefined();
+      expect(camel).toBeUndefined();
+    });
+
+    it('should honor an explicit api.routes[name].path over kebabRoutes', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discoverFromUrl: {
+                name: 'discoverFromUrl',
+                parameters: [{ name: 'options', type: 'any' }],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['discoverFromUrl'],
+                routes: {
+                  discoverFromUrl: { path: 'discoverFromUrl' },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        kebabRoutes: true,
+      });
+
+      const camel = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0]
+            .toString()
+            .includes('praecos/[id]/discoverFromUrl/+server.ts'),
+        );
+      expect(camel).toBeDefined();
+    });
+  });
+
+  // Feature: build-time lint that catches cli.include methods missing from
+  // the resolved API set. See smrt#1306.
+  describe('cli.include vs api.include coherence lint (smrt#1306)', () => {
+    function buildManifest(decoratorConfig: any): SmartObjectManifest {
+      return {
+        objects: {
+          Praeco: {
+            className: 'Praeco',
+            collection: 'praecos',
+            fields: {},
+            methods: {
+              discover: {
+                name: 'discover',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              audit: {
+                name: 'audit',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig,
+          },
+        },
+      };
+    }
+
+    it('resolveApiActionSet returns CRUD + included custom methods', () => {
+      const manifest = buildManifest({
+        api: { include: ['list', 'get', 'discover'] },
+      });
+      const set = resolveApiActionSet(manifest.objects.Praeco);
+      expect(Array.from(set).sort()).toEqual(['discover', 'get', 'list']);
+    });
+
+    it('flags cli.include methods that are not in the resolved api set', () => {
+      const manifest = buildManifest({
+        api: { include: ['list', 'get', 'discover'] },
+        cli: { include: ['list', 'discover', 'audit'] },
+      });
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        { className: 'Praeco', unreachable: ['audit'] },
+      ]);
+    });
+
+    it('throws with remediation guidance when invoked as a build-time gate', () => {
+      const manifest = buildManifest({
+        api: { include: ['list', 'get'] },
+        cli: { include: ['list', 'discover', 'audit'] },
+      });
+      expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+        /Praeco\.discover is declared in cli\.include but is not exposed via the api/,
+      );
+      expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(/audit/);
+      expect(() => validateCliIncludeAgainstApi(manifest)).toThrow(
+        /cli: \{ skipApiCheck: true \}/,
+      );
+    });
+
+    it('honors per-class cli.skipApiCheck opt-out', () => {
+      const manifest = buildManifest({
+        api: { include: [] },
+        cli: { include: ['list'], skipApiCheck: true },
+      });
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+      expect(() => validateCliIncludeAgainstApi(manifest)).not.toThrow();
+    });
+
+    it('passes when cli.include is empty', () => {
+      const manifest = buildManifest({
+        api: { include: [] },
+        cli: { include: [] },
+      });
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([]);
+    });
+
+    it('passes when api.exclude removes a method from cli.include too', () => {
+      // Combined with smrt#1304: api.include+exclude both apply, so excluded
+      // methods must be flagged in cli.include even when listed in api.include.
+      const manifest = buildManifest({
+        api: { include: ['discover', 'audit'], exclude: ['audit'] },
+        cli: { include: ['discover', 'audit'] },
+      });
+      const violations = findCliApiCoherenceViolations(manifest);
+      expect(violations).toEqual([
+        { className: 'Praeco', unreachable: ['audit'] },
+      ]);
+    });
+
+    // Regression: resolveApiActionSet must mirror the scope/static skip rules
+    // applied by route generation, otherwise the lint reports a false negative
+    // (passes a cli.include method that no route is actually emitted for).
+    it('excludes collection-scoped non-static methods on a non-collection class', () => {
+      // User wrote `routes[name].scope: 'collection'` for an instance method
+      // — the generator skips this with a warning. The lint must agree.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Doc: {
+            className: 'Doc',
+            collection: 'docs',
+            fields: {},
+            methods: {
+              broken: {
+                name: 'broken',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['broken'],
+                routes: { broken: { scope: 'collection' } },
+              },
+              cli: { include: ['broken'] },
+            },
+          },
+        },
+      };
+      expect(Array.from(resolveApiActionSet(manifest.objects.Doc))).toEqual([]);
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([
+        { className: 'Doc', unreachable: ['broken'] },
+      ]);
+    });
+
+    it('excludes scope=item methods on a SmrtCollection class', () => {
+      // Collection classes only emit collection-scoped custom routes; an
+      // explicit `routes[name].scope = 'item'` override on a collection class
+      // method is a misconfig the generator skips. The lint must agree.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          DocCollection: {
+            className: 'DocCollection',
+            collection: 'docs',
+            fields: {},
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Doc',
+            methods: {
+              misconfigured: {
+                name: 'misconfigured',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: false,
+              },
+              listSpecial: {
+                name: 'listSpecial',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+                isStatic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['misconfigured', 'listSpecial'],
+                routes: { misconfigured: { scope: 'item' } },
+              },
+              cli: { include: ['misconfigured', 'listSpecial'] },
+            },
+          },
+        },
+      };
+      // misconfigured has explicit scope: 'item' on a collection class -> skipped.
+      // listSpecial defaults to 'collection' on collection class -> exposed.
+      expect(
+        Array.from(resolveApiActionSet(manifest.objects.DocCollection)).sort(),
+      ).toEqual(['listSpecial']);
+      expect(findCliApiCoherenceViolations(manifest)).toEqual([
+        { className: 'DocCollection', unreachable: ['misconfigured'] },
+      ]);
     });
   });
 });

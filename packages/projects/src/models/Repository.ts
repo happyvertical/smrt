@@ -43,7 +43,9 @@ export interface RepositoryOptions extends SmrtObjectOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync'] },
-  cli: { include: ['list', 'get', 'sync', 'create'] },
+  // sync is an operator command invoked in-process via the CLI;
+  // it intentionally isn't exposed over HTTP today.
+  cli: { include: ['list', 'get', 'sync', 'create'], skipApiCheck: true },
 })
 export class Repository extends SmrtObject {
   /**

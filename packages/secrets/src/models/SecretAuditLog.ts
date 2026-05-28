@@ -73,7 +73,9 @@ export type SecretAuditResult = 'success' | 'failure' | 'denied';
   tenantScoped: true,
   api: { include: [] }, // No API exposure
   mcp: { include: [] }, // No MCP exposure
-  cli: { include: ['list'] },
+  // CLI runs in-process for compliance review; HTTP exposure is intentionally
+  // excluded, so skipApiCheck acknowledges the cli.include / api.include divergence.
+  cli: { include: ['list'], skipApiCheck: true },
 })
 export class SecretAuditLog extends SmrtObject {
   /**
