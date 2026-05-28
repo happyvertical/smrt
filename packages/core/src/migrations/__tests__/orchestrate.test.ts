@@ -305,6 +305,7 @@ describe('schema orchestration', () => {
     // The unresolved drift should surface via unactionableChanges so the
     // caller can prompt for manual remediation.
     expect(pending.unactionableChanges.length).toBeGreaterThan(0);
+    expect(pending.hasManualDrift).toBe(true);
     expect(
       pending.unactionableChanges.some(
         (c) => c.type === 'type_upgrade' && c.name === 'score',
@@ -344,10 +345,43 @@ describe('schema orchestration', () => {
     // there's still drift.
     expect(result.applied).toBe(false);
     expect(result.unactionableChanges.length).toBeGreaterThan(0);
+    expect(result.hasManualDrift).toBe(true);
     expect(
       result.unactionableChanges.some(
         (c) => c.type === 'type_mismatch' && c.name === 'score',
       ),
     ).toBe(true);
+  });
+
+  it('hasManualDrift is false when the schema is in sync', async () => {
+    await db.query('CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT);');
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      users: {
+        tableName: 'users',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          name: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+    expect(pending.hasChanges).toBe(false);
+    expect(pending.hasManualDrift).toBe(false);
+    expect(pending.unactionableChanges).toEqual([]);
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@test/app',
+      version: '1.0.0',
+    });
+    expect(result.applied).toBe(false);
+    expect(result.hasManualDrift).toBe(false);
   });
 });

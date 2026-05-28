@@ -13,6 +13,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
+import type { DatabaseEngine } from '../schema/ddl/types.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
 import {
   generateSchemaDiff,
@@ -61,8 +62,11 @@ export interface MigrateSmrtSchemasOptions {
    * so the generated DDL, drift comparison, and execution path stay
    * consistent — without it, an empty-URL connection could produce
    * Postgres-flavored DDL but run through the SQLite tracker path.
+   *
+   * Typed as `DatabaseEngine` so unsupported values (e.g. `'mysql'`) fail at
+   * compile time rather than silently falling back to `'sqlite'` at runtime.
    */
-  engineHint?: string;
+  engineHint?: DatabaseEngine;
 }
 
 export interface MigrateSmrtSchemasResult {
@@ -77,6 +81,13 @@ export interface MigrateSmrtSchemasResult {
    * this to surface a "manual migration required" warning in CLI output.
    */
   unactionableChanges: SchemaChange[];
+  /**
+   * Convenience: `unactionableChanges.length > 0`. Lets a caller write
+   * `if (result.hasManualDrift) ...` without iterating the array first,
+   * and makes the case visible to anyone scanning the result shape (the
+   * full array is easy to gloss over when `applied: false`).
+   */
+  hasManualDrift: boolean;
 }
 
 export interface PendingSchemaStatementsResult {
@@ -93,6 +104,11 @@ export interface PendingSchemaStatementsResult {
    * orchestrator can't fix on its own."
    */
   unactionableChanges: SchemaChange[];
+  /**
+   * Convenience: `unactionableChanges.length > 0`. Mirrors the
+   * `MigrateSmrtSchemasResult.hasManualDrift` shortcut.
+   */
+  hasManualDrift: boolean;
 }
 
 /**
@@ -132,6 +148,7 @@ export async function getPendingSchemaStatements(
     statements,
     hasChanges: hasActionableChanges(diff),
     unactionableChanges,
+    hasManualDrift: unactionableChanges.length > 0,
   };
 }
 
@@ -183,6 +200,7 @@ export async function migrateSmrtSchemas(
       statements: [],
       schemaCount: pending.schemaCount,
       unactionableChanges: pending.unactionableChanges,
+      hasManualDrift: pending.hasManualDrift,
     };
   }
 
@@ -226,6 +244,7 @@ export async function migrateSmrtSchemas(
     statements: pending.statements,
     schemaCount: pending.schemaCount,
     unactionableChanges: pending.unactionableChanges,
+    hasManualDrift: pending.hasManualDrift,
   };
 }
 
@@ -283,13 +302,23 @@ function collectStatementsFromDiff(
   });
 }
 
-/** True if every non-empty line of `sql` is a `--` comment. */
+/**
+ * True if `sql` contains no executable DDL — only line comments (`--`)
+ * and/or block comments (`/* … *​/`). Used to discard advisory comments
+ * the differ emits when a column upgrade can't be performed in place
+ * (e.g. SQLite type widening). Defensive: strips block comments first so
+ * a future differ that emits `/* type_upgrade: no-op *​/` doesn't slip
+ * through.
+ */
 function isCommentOnlySql(sql: string): boolean {
-  const lines = sql
+  // Strip /* ... */ block comments (non-greedy, spans newlines).
+  const withoutBlockComments = sql.replace(/\/\*[\s\S]*?\*\//g, '');
+  const lines = withoutBlockComments
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  return lines.length > 0 && lines.every((line) => line.startsWith('--'));
+  if (lines.length === 0) return sql.trim().length > 0;
+  return lines.every((line) => line.startsWith('--'));
 }
 
 /**
