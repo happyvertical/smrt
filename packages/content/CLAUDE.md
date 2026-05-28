@@ -9,7 +9,7 @@ STI content management with governance workflows, contribution intake, AI review
 - **ContentReview**: AI review result tied to a governance policy. Fields: `contentId`, `policyKey`, `kind`, `status` (accepted/flagged/rejected), `findings`, `fingerprint`, `metadata`
 - **ContentCorrection**: Post-publication change record. Fields: `contentId`, `type` (correction/retraction/update/clarification), `summary`, `note`, `status`, `metadata`
 - **ContentVersion**: Content snapshot. Fields: `contentId`, `kind` (publication/manual), `versionNumber`, `summary`, `metadata` (includes `transparency` for publication versions)
-- **ContentReference**: Junction model for content-to-content links (`content_references` table)
+- **ContentReference**: Junction model for content-to-content links (`content_references` table). Nullable `targetVersion` pins a citation to a specific `ContentVersion.version` for drift detection.
 - **ContentGovernancePolicy**: Persisted review policy (key, label, kind, instructions)
 - **ContentGovernanceProfile**: Persisted review profile (key, label, requirements array)
 - **ContentGovernanceAssignment**: Governs content type/variant → profile mapping, feature flags
@@ -53,8 +53,9 @@ STI content management with governance workflows, contribution intake, AI review
 | `getFactsState()` / `syncFactsState(options)` | API-level facts get/sync |
 | `addAsset(asset, relationship, sortOrder)` | Add asset association |
 | `setThumbnail(image)` | Convenience: adds asset + updates `thumbnailAssetId` |
-| `addReference(content)` | Link to another content |
+| `addReference(content, options?)` | Link to another content; `options.targetVersion` pins citation-time `ContentVersion.version` |
 | `getReferences()` | Get content references |
+| `getReferenceDrift()` | Per-edge `{ citedVersion, currentVersion, isDrifted }` for drift detection |
 
 ## Governance Workflow
 
@@ -123,8 +124,10 @@ route wiring.
 await content.addAsset(image, 'thumbnail', 0);  // relationship, sortOrder
 await content.getAssets('attachment');
 await content.setThumbnail(image);  // convenience: adds asset + updates thumbnailAssetId
-await content.addReference(otherContent);
+await content.addReference(otherContent);                            // unpinned
+await content.addReference(otherContent, { targetVersion: 2 });      // pinned to v2
 await content.getReferences();
+await content.getReferenceDrift();  // → [{ targetId, citedVersion, currentVersion, isDrifted }, ...]
 ```
 
 ## API Contracts
@@ -171,5 +174,6 @@ import {
 - **Review fingerprints**: reviews track content state at review time; stale reviews are detected by fingerprint mismatch
 - **Publish readiness enforcement**: `save()` throws `ValidationError` if blocking requirements aren't met when setting status to `'published'`
 - **Transparency snapshots**: published transparency is frozen into `ContentVersion.metadata.transparency` — use published for public display, preview for editors
+- **Reference pinning**: `ContentReference` is keyed on `(source_id, target_id)`; `targetVersion` is an attribute of the edge, not part of identity. Re-calling `addReference(target, { targetVersion })` updates the pin in place. Unpinned references (`targetVersion: null`) report `isDrifted: false` regardless of how stale the target is — pin them only when you want drift to be detectable.
 - **Chat tables**: chat endpoint requires `@happyvertical/smrt-chat` tables; dev server handles missing tables gracefully
 - **Dev server bootstraps all classes**: `hooks.server.ts` generates schemas for all 13 local `@smrt()` classes plus cross-package manifests

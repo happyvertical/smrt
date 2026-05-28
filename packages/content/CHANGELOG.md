@@ -1,5 +1,44 @@
 # @happyvertical/smrt-content
 
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@1.0.0
+  - @happyvertical/smrt-assets@1.0.0
+  - @happyvertical/smrt-chat@1.0.0
+  - @happyvertical/smrt-facts@1.0.0
+  - @happyvertical/smrt-images@1.0.0
+  - @happyvertical/smrt-messages@1.0.0
+  - @happyvertical/smrt-profiles@1.0.0
+  - @happyvertical/smrt-prompts@1.0.0
+  - @happyvertical/smrt-tenancy@1.0.0
+  - @happyvertical/smrt-types@1.0.0
+
+## 0.25.20
+
+### Patch Changes
+
+- ff6237e: ContentReferencesPanel: accept an optional `children` snippet so host
+  applications can inject a richer picker (browsing a tenant asset pool,
+  searching an external archive, etc.) inside the panel without forking
+  the component. The snippet renders below the existing references list
+  and add-reference input; the host is responsible for calling
+  `onReferenceIdsChange` (or otherwise mutating parent state) when the
+  user picks an entry. Unblocks `anytown/anytown.ai#462` (Ergot tenant
+  asset pool integration in the article editor).
+  - @happyvertical/smrt-assets@0.25.20
+  - @happyvertical/smrt-chat@0.25.20
+  - @happyvertical/smrt-core@0.25.20
+  - @happyvertical/smrt-facts@0.25.20
+  - @happyvertical/smrt-images@0.25.20
+  - @happyvertical/smrt-messages@0.25.20
+  - @happyvertical/smrt-profiles@0.25.20
+  - @happyvertical/smrt-prompts@0.25.20
+  - @happyvertical/smrt-tenancy@0.25.20
+  - @happyvertical/smrt-types@0.25.20
+
 ## 0.25.19
 
 ### Patch Changes

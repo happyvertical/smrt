@@ -578,6 +578,100 @@ it('should persist content references via the ContentReference model', async () 
   expect(references[0]?.id).toBe(target.id);
 });
 
+it('should pin and update the cited version on a content reference', async () => {
+  const dbUrl = getTestDbUrl('reference-version-pin');
+  const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+  const contents = await Contents.create({ db });
+  await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_ASSIGNMENTS_SCHEMA });
+
+  const source = await contents.create({
+    name: 'pin-source',
+    title: 'Pin source',
+    body: 'Source body',
+    status: 'draft',
+  });
+  const target = await contents.create({
+    name: 'pin-target',
+    title: 'Pin target',
+    body: 'Target v1',
+    status: 'draft',
+  });
+
+  await target.createVersion({ summary: 'v1' });
+
+  await source.addReference(target, { targetVersion: 1 });
+
+  const driftAfterInitial = await source.getReferenceDrift();
+  expect(driftAfterInitial).toHaveLength(1);
+  expect(driftAfterInitial[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: 1,
+    currentVersion: 1,
+    isDrifted: false,
+  });
+
+  // Target gets a new version — citation still pinned to v1.
+  target.body = 'Target v2';
+  await target.save();
+  await target.createVersion({ summary: 'v2' });
+
+  const driftAfterUpdate = await source.getReferenceDrift();
+  expect(driftAfterUpdate[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: 1,
+    currentVersion: 2,
+    isDrifted: true,
+  });
+
+  // Re-pin to v2 (e.g. user acknowledged drift).
+  await source.addReference(target, { targetVersion: 2 });
+  const driftAfterRepin = await source.getReferenceDrift();
+  expect(driftAfterRepin[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: 2,
+    currentVersion: 2,
+    isDrifted: false,
+  });
+});
+
+it('should leave unpinned references untracked but reportable', async () => {
+  const dbUrl = getTestDbUrl('reference-version-unpinned');
+  const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+  const contents = await Contents.create({ db });
+  await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_POLICIES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_PROFILES_SCHEMA });
+  await syncSchema({ db, schema: GOVERNANCE_ASSIGNMENTS_SCHEMA });
+
+  const source = await contents.create({
+    name: 'unpinned-source',
+    title: 'Unpinned source',
+    body: 'Source',
+    status: 'draft',
+  });
+  const target = await contents.create({
+    name: 'unpinned-target',
+    title: 'Unpinned target',
+    body: 'Target',
+    status: 'draft',
+  });
+
+  await target.createVersion({ summary: 'v1' });
+  await source.addReference(target);
+
+  const drift = await source.getReferenceDrift();
+  expect(drift).toHaveLength(1);
+  expect(drift[0]).toMatchObject({
+    targetId: target.id,
+    citedVersion: null,
+    currentVersion: 1,
+    isDrifted: false,
+  });
+});
+
 it('should create URL reference targets with the source tenantId', async () => {
   const contents = await Contents.create({
     db: {

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-tags",
-  "version": "0.25.19",
+  "version": "0.26.0",
   "description": "Reusable tagging system with hierarchies, contexts, and multi-language support for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
