@@ -45,6 +45,7 @@ import { SessionService } from '../services/SessionService.js';
 import {
   type ApproveCliAuthRequestInput,
   TerminalAuthError,
+  TerminalAuthRateLimitError,
   TerminalAuthService,
   type TerminalAuthServiceOptions,
 } from '../services/TerminalAuthService.js';
@@ -1121,6 +1122,13 @@ export function mountTerminalLoginPage(
           userCode,
         };
       } catch (error) {
+        if (error instanceof TerminalAuthRateLimitError) {
+          return {
+            type: 'failure',
+            status: 429,
+            data: { status: 429, error: error.message, userCode },
+          };
+        }
         const message =
           error instanceof TerminalAuthError
             ? error.message
@@ -1146,6 +1154,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 export {
   TerminalAuthError,
+  TerminalAuthRateLimitError,
   TerminalAuthService,
   type TerminalAuthServiceOptions,
 };

@@ -34,6 +34,10 @@ export const DEFAULT_CLI_AUTH_POLL_INTERVAL_SECONDS = 2;
 export const DEFAULT_CLI_AUTH_REQUEST_TTL_SECONDS = 10 * 60;
 /** Default lifetime of the session minted on approval (30 days). */
 export const DEFAULT_CLI_SESSION_TTL_SECONDS = 30 * 24 * 60 * 60;
+/** Default cap on consecutive failed approve attempts per user before lockout. */
+export const DEFAULT_CLI_AUTH_MAX_APPROVE_ATTEMPTS = 5;
+/** Default sliding window for counting failed approve attempts (5 minutes). */
+export const DEFAULT_CLI_AUTH_APPROVE_ATTEMPT_WINDOW_SECONDS = 5 * 60;
 
 /**
  * Options for {@link TerminalAuthService}.
@@ -64,6 +68,21 @@ export interface TerminalAuthServiceOptions extends SmrtClassOptions {
   verificationPath?: string;
   /** Whether the underlying SessionService should auto-extend on access. */
   sessionAutoExtend?: boolean;
+  /**
+   * Maximum consecutive failed approve attempts allowed per user inside the
+   * sliding window before the user is locked out from approving any further
+   * codes. Defaults to {@link DEFAULT_CLI_AUTH_MAX_APPROVE_ATTEMPTS}.
+   *
+   * User codes are only 32 bits of entropy; without this throttle, an
+   * authenticated attacker could brute-force pending codes and hijack
+   * another user's CLI session by approving it themselves.
+   */
+  maxApproveAttempts?: number;
+  /**
+   * Sliding window (seconds) over which {@link maxApproveAttempts} counts.
+   * Defaults to {@link DEFAULT_CLI_AUTH_APPROVE_ATTEMPT_WINDOW_SECONDS}.
+   */
+  approveAttemptWindowSeconds?: number;
 }
 
 /**
@@ -124,6 +143,12 @@ export class TerminalAuthService {
   private readonly sessionTtlSeconds: number;
   private readonly pollIntervalSeconds: number;
   private readonly verificationPath: string;
+  private readonly maxApproveAttempts: number;
+  private readonly approveAttemptWindowMs: number;
+  private readonly failedApprovesByUser = new Map<
+    string,
+    { count: number; firstAttemptAt: number }
+  >();
   private requestCollection!: UsersCliAuthRequestCollection;
   private sessionService!: SessionService;
 
@@ -136,6 +161,11 @@ export class TerminalAuthService {
       options.sessionTtlSeconds ?? DEFAULT_CLI_SESSION_TTL_SECONDS;
     this.pollIntervalSeconds =
       options.pollIntervalSeconds ?? DEFAULT_CLI_AUTH_POLL_INTERVAL_SECONDS;
+    this.maxApproveAttempts =
+      options.maxApproveAttempts ?? DEFAULT_CLI_AUTH_MAX_APPROVE_ATTEMPTS;
+    this.approveAttemptWindowMs =
+      (options.approveAttemptWindowSeconds ??
+        DEFAULT_CLI_AUTH_APPROVE_ATTEMPT_WINDOW_SECONDS) * 1000;
     const verificationPath = options.verificationPath ?? '/terminal-login';
     this.verificationPath = verificationPath.startsWith('/')
       ? verificationPath
@@ -227,16 +257,21 @@ export class TerminalAuthService {
       );
     }
 
+    this.assertApproveRateLimit(input.user.id);
+
     const request = await this.getRequestForUserCode(input.userCode);
     if (!request) {
+      this.recordFailedApprove(input.user.id);
       throw new TerminalAuthError('Terminal login request not found.');
     }
     if (request.status === 'approved') {
+      // Idempotent success — don't penalize a re-approval.
       return request;
     }
     if (request.status !== 'pending' || isExpired(request)) {
       request.status = 'expired';
       await request.save();
+      this.recordFailedApprove(input.user.id);
       throw new TerminalAuthError('Terminal login request has expired.');
     }
 
@@ -260,7 +295,47 @@ export class TerminalAuthService {
     request.tenantId = input.tenantId;
     request.userId = input.user.id;
     await request.save();
+    this.failedApprovesByUser.delete(input.user.id);
     return request;
+  }
+
+  /**
+   * Throw {@link TerminalAuthRateLimitError} if the user has exceeded the
+   * configured failed-approve budget inside the current sliding window.
+   */
+  private assertApproveRateLimit(userId: string): void {
+    const tracking = this.failedApprovesByUser.get(userId);
+    if (!tracking) return;
+
+    const elapsedMs = Date.now() - tracking.firstAttemptAt;
+    if (elapsedMs >= this.approveAttemptWindowMs) {
+      this.failedApprovesByUser.delete(userId);
+      return;
+    }
+
+    if (tracking.count >= this.maxApproveAttempts) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((this.approveAttemptWindowMs - elapsedMs) / 1000),
+      );
+      throw new TerminalAuthRateLimitError(
+        'Too many failed terminal-login attempts. Try again later.',
+        retryAfterSeconds,
+      );
+    }
+  }
+
+  /** Increment the failed-approve counter for `userId`, starting the window if needed. */
+  private recordFailedApprove(userId: string): void {
+    const tracking = this.failedApprovesByUser.get(userId);
+    if (!tracking) {
+      this.failedApprovesByUser.set(userId, {
+        count: 1,
+        firstAttemptAt: Date.now(),
+      });
+      return;
+    }
+    tracking.count += 1;
   }
 
   /**
@@ -343,6 +418,21 @@ export class TerminalAuthError extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'TerminalAuthError';
+  }
+}
+
+/**
+ * Thrown when a user has exceeded the configured failed-approve budget. The
+ * caller (SvelteKit handler, REST adapter, etc.) is expected to surface this
+ * as HTTP 429 with `Retry-After: retryAfterSeconds`.
+ */
+export class TerminalAuthRateLimitError extends TerminalAuthError {
+  readonly retryAfterSeconds: number;
+
+  constructor(message: string, retryAfterSeconds: number) {
+    super(message);
+    this.name = 'TerminalAuthRateLimitError';
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 

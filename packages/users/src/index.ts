@@ -170,6 +170,7 @@ export {
   TenantService,
   type TenantWithOwnershipResult,
   TerminalAuthError,
+  TerminalAuthRateLimitError,
   TerminalAuthService,
   type TerminalAuthServiceOptions,
   type UsersConfig,

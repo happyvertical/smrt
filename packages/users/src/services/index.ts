@@ -77,10 +77,13 @@ export {
   type ApproveCliAuthRequestInput,
   type CliAuthStartResult,
   type CliAuthTokenResult,
+  DEFAULT_CLI_AUTH_APPROVE_ATTEMPT_WINDOW_SECONDS,
+  DEFAULT_CLI_AUTH_MAX_APPROVE_ATTEMPTS,
   DEFAULT_CLI_AUTH_POLL_INTERVAL_SECONDS,
   DEFAULT_CLI_AUTH_REQUEST_TTL_SECONDS,
   DEFAULT_CLI_SESSION_TTL_SECONDS,
   TerminalAuthError,
+  TerminalAuthRateLimitError,
   TerminalAuthService,
   type TerminalAuthServiceOptions,
 } from './TerminalAuthService.js';

@@ -16,6 +16,7 @@ import { UsersCliAuthRequest } from '../models/CliAuthRequest.js';
 import {
   DEFAULT_CLI_AUTH_POLL_INTERVAL_SECONDS,
   TerminalAuthError,
+  TerminalAuthRateLimitError,
   TerminalAuthService,
 } from '../services/TerminalAuthService.js';
 
@@ -205,5 +206,137 @@ describe('TerminalAuthService', () => {
     });
     const started = await unprefixed.createRequest('https://example.com');
     expect(started.userCode).toMatch(/^[0-9A-F]{8}$/u);
+  });
+
+  it('locks an authenticated user out after exceeding the failed-approve budget', async () => {
+    const limited = await TerminalAuthService.create({
+      db: { type: 'sqlite', url: dbPath },
+      requestTtlSeconds: 60,
+      maxApproveAttempts: 3,
+      approveAttemptWindowSeconds: 60,
+    });
+    const user = await users.create({ email: 'attacker@example.com' });
+    await user.save();
+
+    const fail = async () => {
+      await limited.approveRequest({
+        userCode: 'BOGUS-CODE-XXX',
+        user: { id: user.id!, email: user.email },
+        tenantId: 'tenant-1',
+      });
+    };
+
+    for (let i = 0; i < 3; i++) {
+      await expect(fail()).rejects.toBeInstanceOf(TerminalAuthError);
+    }
+
+    // 4th attempt must surface the rate-limit error, even for a *valid* code.
+    const real = await limited.createRequest('https://example.com');
+    await expect(
+      limited.approveRequest({
+        userCode: real.userCode,
+        user: { id: user.id!, email: user.email },
+        tenantId: 'tenant-1',
+      }),
+    ).rejects.toBeInstanceOf(TerminalAuthRateLimitError);
+
+    try {
+      await limited.approveRequest({
+        userCode: real.userCode,
+        user: { id: user.id!, email: user.email },
+        tenantId: 'tenant-1',
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(TerminalAuthRateLimitError);
+      const rateError = error as TerminalAuthRateLimitError;
+      expect(rateError.retryAfterSeconds).toBeGreaterThan(0);
+      expect(rateError.retryAfterSeconds).toBeLessThanOrEqual(60);
+    }
+  });
+
+  it('resets the failed-approve counter after a successful approval', async () => {
+    const limited = await TerminalAuthService.create({
+      db: { type: 'sqlite', url: dbPath },
+      requestTtlSeconds: 60,
+      maxApproveAttempts: 3,
+      approveAttemptWindowSeconds: 60,
+    });
+    const user = await users.create({ email: 'cli@example.com' });
+    await user.save();
+
+    // Burn 2 failed attempts (one short of the cap).
+    for (let i = 0; i < 2; i++) {
+      await expect(
+        limited.approveRequest({
+          userCode: 'BOGUS-CODE',
+          user: { id: user.id!, email: user.email },
+          tenantId: 'tenant-1',
+        }),
+      ).rejects.toBeInstanceOf(TerminalAuthError);
+    }
+
+    // Successful approve resets the counter.
+    const started = await limited.createRequest('https://example.com');
+    await limited.approveRequest({
+      userCode: started.userCode,
+      user: { id: user.id!, email: user.email },
+      tenantId: 'tenant-1',
+    });
+
+    // 3 more failures should now all be plain TerminalAuthError, not
+    // TerminalAuthRateLimitError — the counter was reset.
+    for (let i = 0; i < 3; i++) {
+      try {
+        await limited.approveRequest({
+          userCode: 'BOGUS-CODE',
+          user: { id: user.id!, email: user.email },
+          tenantId: 'tenant-1',
+        });
+        throw new Error('expected approveRequest to throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(TerminalAuthError);
+        expect(error).not.toBeInstanceOf(TerminalAuthRateLimitError);
+      }
+    }
+  });
+
+  it('lets the rate-limit window expire and accepts attempts again', async () => {
+    const limited = await TerminalAuthService.create({
+      db: { type: 'sqlite', url: dbPath },
+      requestTtlSeconds: 60,
+      maxApproveAttempts: 2,
+      approveAttemptWindowSeconds: 1,
+    });
+    const user = await users.create({ email: 'cli@example.com' });
+    await user.save();
+
+    for (let i = 0; i < 2; i++) {
+      await expect(
+        limited.approveRequest({
+          userCode: 'BOGUS-CODE',
+          user: { id: user.id!, email: user.email },
+          tenantId: 'tenant-1',
+        }),
+      ).rejects.toBeInstanceOf(TerminalAuthError);
+    }
+
+    // Locked out immediately after the cap.
+    await expect(
+      limited.approveRequest({
+        userCode: 'BOGUS-CODE',
+        user: { id: user.id!, email: user.email },
+        tenantId: 'tenant-1',
+      }),
+    ).rejects.toBeInstanceOf(TerminalAuthRateLimitError);
+
+    // After the window, the lock lifts.
+    await new Promise((resolve) => setTimeout(resolve, 1100));
+    const started = await limited.createRequest('https://example.com');
+    const approved = await limited.approveRequest({
+      userCode: started.userCode,
+      user: { id: user.id!, email: user.email },
+      tenantId: 'tenant-1',
+    });
+    expect(approved.status).toBe('approved');
   });
 });
