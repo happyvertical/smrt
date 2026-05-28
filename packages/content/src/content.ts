@@ -1581,12 +1581,19 @@ export class Content
   }
 
   /**
-   * Adds a reference to another content object
+   * Adds a reference to another content object.
    *
    * @param content - Content object or URL to reference
+   * @param options.targetVersion - Optional ContentVersion.version to pin the
+   * citation to. Pass the target's current version (typically the latest
+   * publication) to enable drift detection later. Pass `null` or omit to
+   * leave the reference untracked.
    * @returns Promise that resolves when the reference is added
    */
-  public async addReference(content: Content | string) {
+  public async addReference(
+    content: Content | string,
+    options: { targetVersion?: number | null } = {},
+  ) {
     if (!this.id) {
       throw new Error('Cannot add reference to unsaved content');
     }
@@ -1601,7 +1608,9 @@ export class Content
     }
 
     const references = await this.getReferenceCollection();
-    await references.link(this.id, target.id, this.tenantId);
+    await references.link(this.id, target.id, this.tenantId, {
+      targetVersion: options.targetVersion,
+    });
     this.references = await this.getReferences();
   }
 
@@ -1653,6 +1662,70 @@ export class Content
       .map((targetId) => referencesById.get(targetId))
       .filter(Boolean) as Content[];
     return this.references;
+  }
+
+  /**
+   * Returns one entry per reference edge with the pinned `targetVersion` and
+   * the target's latest version. Drift exists when both are present and
+   * differ — callers can use this to surface "the source you cited has been
+   * updated" affordances in editors or review tools.
+   *
+   * `currentVersion` is sourced from `getLatestForContent`, which returns
+   * the most recent `ContentVersion` of **any kind** (manual or publication).
+   * Consumers that only care about published drift should filter the result
+   * by loading the matching `ContentVersion` and inspecting `kind`.
+   *
+   * Unpinned references (`citedVersion === null`) are included with
+   * `currentVersion` populated when available so callers can choose to
+   * surface them as "pinnable" suggestions.
+   */
+  public async getReferenceDrift(): Promise<
+    Array<{
+      targetId: string;
+      citedVersion: number | null;
+      currentVersion: number | null;
+      isDrifted: boolean;
+    }>
+  > {
+    if (!this.id) {
+      return [];
+    }
+
+    const references = await this.getReferenceCollection();
+    const linkedReferences = await references.getForSource(this.id);
+    if (linkedReferences.length === 0) {
+      return [];
+    }
+
+    const versions = await this.getContentVersionCollection();
+    const targetIds = linkedReferences.map((reference) => reference.targetId);
+
+    // Single query for all target versions; pick the max per contentId.
+    // Avoids N+1 when an article cites many sources.
+    const allVersions = await versions.list({
+      where: { contentId: targetIds },
+      orderBy: 'version DESC',
+    });
+    const latestByContentId = new Map<string, number>();
+    for (const version of allVersions) {
+      if (!latestByContentId.has(version.contentId)) {
+        latestByContentId.set(version.contentId, version.version);
+      }
+    }
+
+    return linkedReferences.map((reference) => {
+      const currentVersion = latestByContentId.get(reference.targetId) ?? null;
+      const citedVersion = reference.targetVersion ?? null;
+      return {
+        targetId: reference.targetId,
+        citedVersion,
+        currentVersion,
+        isDrifted:
+          citedVersion !== null &&
+          currentVersion !== null &&
+          citedVersion !== currentVersion,
+      };
+    });
   }
 
   public isGoverned(): boolean {

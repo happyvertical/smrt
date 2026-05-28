@@ -218,14 +218,53 @@ export async function serializeContent(content: any) {
     typeof content?.getAssets === 'function' ? content.getAssets() : [],
   ]);
 
+  // Only resolve drift when there are references to drift against — list
+  // endpoints serializing many ref-less items shouldn't pay the version
+  // lookup cost.
+  const drift =
+    references.length > 0 && typeof content?.getReferenceDrift === 'function'
+      ? await content.getReferenceDrift()
+      : [];
+
+  const driftByTargetId = new Map<
+    string,
+    {
+      citedVersion: number | null;
+      currentVersion: number | null;
+      isDrifted: boolean;
+    }
+  >(
+    Array.isArray(drift)
+      ? drift
+          .filter((entry: any) => entry && typeof entry.targetId === 'string')
+          .map((entry: any) => [
+            entry.targetId,
+            {
+              citedVersion: entry.citedVersion ?? null,
+              currentVersion: entry.currentVersion ?? null,
+              isDrifted: Boolean(entry.isDrifted),
+            },
+          ])
+      : [],
+  );
+
   return {
     ...toJSON<Record<string, any>>(content),
     referenceIds: references
       .map((reference: any) => reference?.id)
       .filter(Boolean),
-    references: references.map((reference: any) =>
-      toJSON<Record<string, any>>(reference),
-    ),
+    references: references.map((reference: any) => {
+      const base = toJSON<Record<string, any>>(reference);
+      const edge = base?.id ? driftByTargetId.get(base.id as string) : null;
+      return edge
+        ? {
+            ...base,
+            citedVersion: edge.citedVersion,
+            currentVersion: edge.currentVersion,
+            isDrifted: edge.isDrifted,
+          }
+        : base;
+    }),
     assetIds: assets.map((asset: any) => asset?.id).filter(Boolean),
     assets: assets.map((asset: any) => toJSON<Record<string, any>>(asset)),
   };
