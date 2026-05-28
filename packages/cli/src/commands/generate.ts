@@ -192,6 +192,12 @@ export const generateCommands: Record<string, CLICommand> = {
         default: false,
         short: 'f',
       },
+      'kebab-routes': {
+        type: 'boolean',
+        description:
+          'Use kebab-case for custom-method URL segments (e.g. /discover-from-url instead of /discoverFromUrl). Default off; will flip in the next major.',
+        default: false,
+      },
     },
     handler: async (_args: string[], options: any) => {
       console.log('\n🔍 Discovering SMRT objects...\n');
@@ -275,6 +281,7 @@ export const generateCommands: Record<string, CLICommand> = {
           objectsDir,
           configPath,
           configFileName: configFile,
+          kebabRoutes: !!options['kebab-routes'],
         });
 
         // Report results

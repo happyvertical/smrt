@@ -40,6 +40,9 @@ export type ScheduleStatus = 'active' | 'paused' | 'disabled' | 'error';
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   cli: {
     include: ['list', 'get', 'create', 'update', 'delete', 'enable', 'disable'],
+    // enable/disable are operator commands invoked in-process via the CLI;
+    // they intentionally aren't exposed over HTTP.
+    skipApiCheck: true,
   },
   mcp: { include: ['list', 'get'] },
 })

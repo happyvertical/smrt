@@ -24,6 +24,9 @@ export interface LanguageOverrideCtorOptions
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   cli: {
     include: ['list', 'get', 'create', 'update', 'delete', 'approve'],
+    // approve is an admin review action invoked in-process via the CLI;
+    // it intentionally isn't exposed over HTTP today.
+    skipApiCheck: true,
   },
   mcp: { include: [] },
 })
