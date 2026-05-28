@@ -213,19 +213,53 @@ export function serializeContentGovernanceState(state: any) {
 }
 
 export async function serializeContent(content: any) {
-  const [references, assets] = await Promise.all([
+  const [references, assets, drift] = await Promise.all([
     typeof content?.getReferences === 'function' ? content.getReferences() : [],
     typeof content?.getAssets === 'function' ? content.getAssets() : [],
+    typeof content?.getReferenceDrift === 'function'
+      ? content.getReferenceDrift()
+      : [],
   ]);
+
+  const driftByTargetId = new Map<
+    string,
+    {
+      citedVersion: number | null;
+      currentVersion: number | null;
+      isDrifted: boolean;
+    }
+  >(
+    Array.isArray(drift)
+      ? drift
+          .filter((entry: any) => entry && typeof entry.targetId === 'string')
+          .map((entry: any) => [
+            entry.targetId,
+            {
+              citedVersion: entry.citedVersion ?? null,
+              currentVersion: entry.currentVersion ?? null,
+              isDrifted: Boolean(entry.isDrifted),
+            },
+          ])
+      : [],
+  );
 
   return {
     ...toJSON<Record<string, any>>(content),
     referenceIds: references
       .map((reference: any) => reference?.id)
       .filter(Boolean),
-    references: references.map((reference: any) =>
-      toJSON<Record<string, any>>(reference),
-    ),
+    references: references.map((reference: any) => {
+      const base = toJSON<Record<string, any>>(reference);
+      const edge = base?.id ? driftByTargetId.get(base.id as string) : null;
+      return edge
+        ? {
+            ...base,
+            citedVersion: edge.citedVersion,
+            currentVersion: edge.currentVersion,
+            isDrifted: edge.isDrifted,
+          }
+        : base;
+    }),
     assetIds: assets.map((asset: any) => asset?.id).filter(Boolean),
     assets: assets.map((asset: any) => toJSON<Record<string, any>>(asset)),
   };

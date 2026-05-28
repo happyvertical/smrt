@@ -28,7 +28,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 ### Content & Media
 | Package | Purpose |
 |---------|---------|
-| content | STI content types (Article/Document/Mirror), thumbnails (3 strategies), content-owned asset joins via `content_assets` |
+| content | STI content types (Article/Document/Mirror), thumbnails (3 strategies), content-owned asset joins via `content_assets`, versioned snapshots with citation-time reference pinning for drift detection |
 | messages | Multi-channel messaging: Email/Twitter/Slack as STI hierarchy, credential encryption |
 | chat | Chat rooms (public/private/DM/agent), threads, agent sessions with tool whitelisting |
 | assets | Provider-agnostic asset management, versioning, generic/provenance `AssetAssociation` links |
