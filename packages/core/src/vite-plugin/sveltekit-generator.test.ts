@@ -864,6 +864,62 @@ describe('SvelteKit Route Generator', () => {
       expect(privateRoute).toBeUndefined();
     });
 
+    it('should honor api.exclude even when api.include is also set (#1304)', async () => {
+      // Regression: previously shouldIncludeInApi short-circuited on
+      // `apiConfig.include` and never consulted `apiConfig.exclude` for
+      // custom methods. CRUD path already honored both; custom path now
+      // matches.
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Document: {
+            className: 'Document',
+            collection: 'documents',
+            fields: {},
+            methods: {
+              keepMe: {
+                name: 'keepMe',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+              removeMe: {
+                name: 'removeMe',
+                parameters: [],
+                returnType: 'Promise<any>',
+                isPublic: true,
+              },
+            },
+            decoratorConfig: {
+              api: {
+                include: ['keepMe', 'removeMe'],
+                exclude: ['removeMe'],
+              },
+            },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+      });
+
+      const keepRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('keepMe/+server.ts'),
+        );
+      expect(keepRoute).toBeDefined();
+
+      const removeRoute = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('removeMe/+server.ts'),
+        );
+      expect(removeRoute).toBeUndefined();
+    });
+
     it('should import from package for external objects', async () => {
       const manifest: SmartObjectManifest = {
         objects: {

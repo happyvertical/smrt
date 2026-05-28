@@ -975,18 +975,25 @@ async function generateCollectionRoutesForObject(
 
 /**
  * Check if a custom action should be included in API
+ *
+ * When `include` is set, only listed actions pass. When `exclude` is set,
+ * listed actions are removed. When both are set, both apply: an action
+ * must be in `include` AND not in `exclude`. This mirrors the CRUD
+ * inclusion path in this same file so behavior is consistent between
+ * standard and custom actions (Issue #1304).
  */
 function shouldIncludeInApi(actionName: string, apiConfig: any): boolean {
   if (apiConfig === false) return false;
   if (apiConfig === true || apiConfig === undefined) return true;
 
   if (typeof apiConfig === 'object') {
-    if (apiConfig.include) {
-      return apiConfig.include.includes(actionName);
-    }
-    if (apiConfig.exclude) {
-      return !apiConfig.exclude.includes(actionName);
-    }
+    const included = apiConfig.include
+      ? apiConfig.include.includes(actionName)
+      : true;
+    const excluded = apiConfig.exclude
+      ? apiConfig.exclude.includes(actionName)
+      : false;
+    return included && !excluded;
   }
 
   return true;
