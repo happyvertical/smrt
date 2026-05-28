@@ -13,7 +13,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
-import type { MigrationResult } from '../schema/types.js';
+import type { MigrationResult, SchemaChange } from '../schema/types.js';
 import {
   generateSchemaDiff,
   getSQLFromDiff,
@@ -70,6 +70,13 @@ export interface MigrateSmrtSchemasResult {
   results: MigrationResult[];
   statements: string[];
   schemaCount: number;
+  /**
+   * Schema changes the orchestrator detected but cannot apply automatically
+   * (incompatible type mismatches, SQLite type upgrades that require table
+   * recreation, etc.). Empty when the schema is fully reconciled. Inspect
+   * this to surface a "manual migration required" warning in CLI output.
+   */
+  unactionableChanges: SchemaChange[];
 }
 
 export interface PendingSchemaStatementsResult {
@@ -77,6 +84,15 @@ export interface PendingSchemaStatementsResult {
   statements: string[];
   schemaCount: number;
   hasChanges: boolean;
+  /**
+   * Schema changes the differ detected but that have no executable SQL
+   * (incompatible `type_mismatch` entries, or `type_upgrade` entries whose
+   * only generated SQL is an advisory comment because the engine cannot
+   * upgrade the column in place — e.g. SQLite type widening). Surfacing
+   * these lets status commands distinguish "no drift" from "drift the
+   * orchestrator can't fix on its own."
+   */
+  unactionableChanges: SchemaChange[];
 }
 
 /**
@@ -109,11 +125,13 @@ export async function getPendingSchemaStatements(
     engineHint: options.engineHint,
   });
   const statements = collectStatementsFromDiff(diff, db, options.engineHint);
+  const unactionableChanges = collectUnactionableChanges(diff);
   return {
     diff,
     schemaCount: Object.keys(schemas).length,
     statements,
     hasChanges: hasActionableChanges(diff),
+    unactionableChanges,
   };
 }
 
@@ -141,6 +159,16 @@ export async function getPendingSchemaStatements(
  * timestamp on every call, so a sequence of failed runs leaves one
  * `failed` row in `_smrt_schema_migrations` per attempt. Pass an explicit
  * `name` if you want to overwrite the same record across retries.
+ *
+ * **Note on `unactionableChanges`:** the differ can detect schema drift
+ * the migration step can't auto-resolve — incompatible type mismatches,
+ * SQLite type widening that needs table recreation, etc. Those changes
+ * appear in `result.unactionableChanges` and are NOT applied (the
+ * statements list is filtered to executable DDL only). When the diff
+ * contains *only* unactionable changes, the function returns
+ * `applied: false` with a populated `unactionableChanges` so callers can
+ * surface a "manual migration required" signal. Without inspecting that
+ * field, the result would look indistinguishable from "already in sync."
  */
 export async function migrateSmrtSchemas(
   options: MigrateSmrtSchemasOptions,
@@ -154,6 +182,7 @@ export async function migrateSmrtSchemas(
       results: [],
       statements: [],
       schemaCount: pending.schemaCount,
+      unactionableChanges: pending.unactionableChanges,
     };
   }
 
@@ -196,6 +225,7 @@ export async function migrateSmrtSchemas(
     results,
     statements: pending.statements,
     schemaCount: pending.schemaCount,
+    unactionableChanges: pending.unactionableChanges,
   };
 }
 
@@ -240,5 +270,52 @@ function collectStatementsFromDiff(
     statements.push(...strategy.generateTriggers(schema));
   }
   statements.push(...getSQLFromDiff(diff));
-  return statements.filter((statement) => statement.trim().length > 0);
+  // Drop empty and comment-only entries. SQLite type-widening upgrades
+  // surface as `-- SQLite: Type upgrade for X requires table recreation`
+  // — passing those through to the tracker records a successful migration
+  // without actually fixing the column, so the same drift re-appears on
+  // every subsequent run. Those changes are surfaced separately via
+  // `unactionableChanges` so callers can prompt for manual remediation.
+  return statements.filter((statement) => {
+    const trimmed = statement.trim();
+    if (trimmed.length === 0) return false;
+    return !isCommentOnlySql(trimmed);
+  });
+}
+
+/** True if every non-empty line of `sql` is a `--` comment. */
+function isCommentOnlySql(sql: string): boolean {
+  const lines = sql
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  return lines.length > 0 && lines.every((line) => line.startsWith('--'));
+}
+
+/**
+ * Surface changes the differ produced but that the migrator cannot apply
+ * automatically — either `type_mismatch` entries (the differ explicitly
+ * gives up on these) or `type_upgrade` entries whose generated SQL is
+ * advisory-comment-only (SQLite table-recreation cases, etc.). Callers
+ * use this to distinguish "schema is in sync" from "schema is drifted but
+ * we can't fix it from here."
+ */
+function collectUnactionableChanges(
+  diff: Awaited<ReturnType<typeof generateSchemaDiff>>,
+): SchemaChange[] {
+  const unactionable: SchemaChange[] = [];
+  for (const change of diff.changes) {
+    if (change.type === 'type_mismatch') {
+      unactionable.push(change);
+      continue;
+    }
+    const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
+    if (
+      statements.length > 0 &&
+      statements.every((stmt) => isCommentOnlySql(stmt.trim()))
+    ) {
+      unactionable.push(change);
+    }
+  }
+  return unactionable;
 }

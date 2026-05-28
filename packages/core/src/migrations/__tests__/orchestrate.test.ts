@@ -265,4 +265,89 @@ describe('schema orchestration', () => {
     );
     expect(tables.rows).toHaveLength(1);
   });
+
+  it('surfaces SQLite type-upgrade comments as unactionableChanges, not as applied DDL', async () => {
+    // Pre-create the column with INTEGER; manifest declares REAL. SQLite
+    // can't widen the type in place — the differ emits an advisory
+    // comment-only "requires table recreation" SQL. Before the fix, that
+    // comment was passed to the tracker and recorded as a successful
+    // migration, so the drift would re-appear every run.
+    await db.query(
+      'CREATE TABLE documents (id TEXT PRIMARY KEY, score INTEGER);',
+    );
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'REAL' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const pending = await getPendingSchemaStatements(db);
+
+    // No executable statements should make it through the filter.
+    for (const stmt of pending.statements) {
+      const lines = stmt
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l.length > 0);
+      expect(lines.every((l) => l.startsWith('--'))).toBe(false);
+    }
+
+    // The unresolved drift should surface via unactionableChanges so the
+    // caller can prompt for manual remediation.
+    expect(pending.unactionableChanges.length).toBeGreaterThan(0);
+    expect(
+      pending.unactionableChanges.some(
+        (c) => c.type === 'type_upgrade' && c.name === 'score',
+      ),
+    ).toBe(true);
+  });
+
+  it('surfaces incompatible type_mismatch changes as unactionableChanges', async () => {
+    // The differ emits `type: 'type_mismatch'` (no SQL) for column type
+    // changes it can't auto-upgrade. Previously these were invisible to
+    // callers — `applied: false` looked identical to "schema in sync".
+    await db.query('CREATE TABLE documents (id TEXT PRIMARY KEY, score BLOB);');
+
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          score: { type: 'INTEGER' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const result = await migrateSmrtSchemas({
+      db,
+      packageName: '@test/app',
+      version: '1.0.0',
+      name: '20260527_030000_type_mismatch',
+    });
+
+    // No applicable DDL → applied false, but the caller needs to know
+    // there's still drift.
+    expect(result.applied).toBe(false);
+    expect(result.unactionableChanges.length).toBeGreaterThan(0);
+    expect(
+      result.unactionableChanges.some(
+        (c) => c.type === 'type_mismatch' && c.name === 'score',
+      ),
+    ).toBe(true);
+  });
 });
