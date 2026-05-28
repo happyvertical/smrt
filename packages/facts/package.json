@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-facts",
-  "version": "0.25.19",
+  "version": "0.25.20",
   "description": "Distributed memory and knowledge management with provenance tracking for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
