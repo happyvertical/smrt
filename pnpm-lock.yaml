@@ -1769,6 +1769,28 @@ importers:
         specifier: ^4.0.17
         version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
 
+  packages/smrt-app-mcp:
+    dependencies:
+      '@happyvertical/smrt-core':
+        specifier: workspace:*
+        version: link:../core
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.25.2
+        version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)
+    devDependencies:
+      '@types/node':
+        specifier: 24.10.9
+        version: 24.10.9
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^7.3.1
+        version: 7.3.1(@types/node@24.10.9)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
+      vitest:
+        specifier: ^4.0.17
+        version: 4.0.17(@opentelemetry/api@1.9.1)(@types/node@24.10.9)(happy-dom@20.9.0)(jiti@2.6.1)(jsdom@27.4.0(@noble/hashes@2.2.0))(tsx@4.21.0)(yaml@2.8.2)
+
   packages/smrt-dev-mcp:
     dependencies:
       '@happyvertical/ai':
@@ -3282,6 +3304,11 @@ packages:
     peerDependencies:
       jimp: '>=1.6.1'
       sharp: '>=0.34.5'
+    peerDependenciesMeta:
+      jimp:
+        optional: true
+      sharp:
+        optional: true
 
   '@happyvertical/jobs@0.74.0':
     resolution: {integrity: sha512-5kYLd0OwRBcyv7P+i2Rm9nTpiTX+Hm9bvf3L7jJa8UWoUw8Ajwm4EgdATocyzSJB9CT+8VSMtZ83NoDocJQpSg==, tarball: https://npm.pkg.github.com/download/@happyvertical/jobs/0.74.0/4a5bd67b4b45dee3f803fd8a60e7d5b40e2863f5}
@@ -3291,6 +3318,15 @@ packages:
       '@google-cloud/tasks': '>=4.1.0'
       bull: '>=4.16.5'
       bullmq: '>=5.76.0'
+    peerDependenciesMeta:
+      '@aws-sdk/client-sqs':
+        optional: true
+      '@google-cloud/tasks':
+        optional: true
+      bull:
+        optional: true
+      bullmq:
+        optional: true
 
   '@happyvertical/json@0.74.0':
     resolution: {integrity: sha512-+wKldAmJtaqcVG7Y7ehj5z62aHDPI7UtQZ72yZshJ2Hc/vc1R6eCqPkUvG6IeXEChHlB+YCUePip3CLLBnVhUg==, tarball: https://npm.pkg.github.com/download/@happyvertical/json/0.74.0/9cbc19b36793b152d9ddb4f5e4a9ff3800d4c52d}
@@ -3300,6 +3336,9 @@ packages:
     hasBin: true
     peerDependencies:
       '@sentry/node': '>=10.49.0'
+    peerDependenciesMeta:
+      '@sentry/node':
+        optional: true
 
   '@happyvertical/messages@0.74.0':
     resolution: {integrity: sha512-NiqFrMkeUQBf8WumHIIMSPv62F1w7D69f6clbExNfumcYVQgxJ1Z6mOhw7eSHzNez+f92dU1lDCKKZN4prt9oA==, tarball: https://npm.pkg.github.com/download/@happyvertical/messages/0.74.0/86f3fd5d570e18473175a08e00ebecff62f64d8a}
@@ -7401,11 +7440,6 @@ packages:
     resolution: {integrity: sha512-avsJQhyd+680gKXyG/sQc0nXaC6rBkPOfyHYcFb9+hdkqQkR9bdnkJ0AMZhke0oesPqIO+mFFJ+IdBc7mst4IA==}
     engines: {node: ^14.17.0 || ^16.13.0 || >=18.0.0}
 
-  nanoid@3.3.11:
-    resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
-    engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
-    hasBin: true
-
   nanoid@3.3.12:
     resolution: {integrity: sha512-ZB9RH/39qpq5Vu6Y+NmUaFhQR6pp+M2Xt76XBnEwDaGcVAqhlvxrl3B2bKS5D3NH3QR76v3aSrKaF/Kiy7lEtQ==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
@@ -11022,16 +11056,18 @@ snapshots:
   '@happyvertical/images@0.74.0(jimp@1.6.1)(sharp@0.34.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
-      jimp: 1.6.1
       satori: 0.26.0
+    optionalDependencies:
+      jimp: 1.6.1
       sharp: 0.34.5
 
   '@happyvertical/jobs@0.74.0(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(bull@4.16.5)(bullmq@5.76.4)':
     dependencies:
-      '@aws-sdk/client-sqs': 3.1038.0
-      '@google-cloud/tasks': 6.2.1
       '@happyvertical/sql': 0.74.0
       '@happyvertical/utils': 0.74.0
+    optionalDependencies:
+      '@aws-sdk/client-sqs': 3.1038.0
+      '@google-cloud/tasks': 6.2.1
       bull: 4.16.5
       bullmq: 5.76.4
     transitivePeerDependencies:
@@ -11045,6 +11081,7 @@ snapshots:
   '@happyvertical/logger@0.74.0(@sentry/node@10.51.0)':
     dependencies:
       '@happyvertical/utils': 0.74.0
+    optionalDependencies:
       '@sentry/node': 10.51.0
 
   '@happyvertical/messages@0.74.0(@sentry/node@10.51.0)':
@@ -15527,8 +15564,6 @@ snapshots:
 
   mute-stream@1.0.0: {}
 
-  nanoid@3.3.11: {}
-
   nanoid@3.3.12: {}
 
   napi-build-utils@2.0.0: {}
@@ -15983,7 +16018,7 @@ snapshots:
 
   postcss@8.5.6:
     dependencies:
-      nanoid: 3.3.11
+      nanoid: 3.3.12
       picocolors: 1.1.1
       source-map-js: 1.2.1
 

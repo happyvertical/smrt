@@ -61,6 +61,7 @@ import './__smrt-register__.js';
 
 // Collections
 export {
+  CliAuthRequestCollection,
   type CreateChildTenantOptions,
   type CreateSessionOptions,
   type GetOrCreateFromOidcOptions,
@@ -81,10 +82,13 @@ export {
   TenantPermissionOverrideCollection,
   type TenantPermissionOverrideResult,
   UserCollection,
+  UsersCliAuthRequestCollection,
   UsersMagicLinkTokenCollection,
 } from './collections/index.js';
 // Models
 export {
+  CliAuthRequest,
+  type CliAuthRequestStatus,
   DEFAULT_SESSION_TTL,
   DEFAULT_TOKEN_EXPIRY_SECONDS,
   Group,
@@ -102,13 +106,20 @@ export {
   Tenant,
   TenantPermissionOverride,
   User,
+  UsersCliAuthRequest,
   UsersMagicLinkToken,
 } from './models/index.js';
 
 // Services
 export {
+  type ApproveCliAuthRequestInput,
   applyPostgresPermissionPolicies,
+  type CliAuthStartResult,
+  type CliAuthTokenResult,
   type CreateAuthorizationUrlOptions,
+  DEFAULT_CLI_AUTH_POLL_INTERVAL_SECONDS,
+  DEFAULT_CLI_AUTH_REQUEST_TTL_SECONDS,
+  DEFAULT_CLI_SESSION_TTL_SECONDS,
   decodeOidcTransaction,
   type EnsureTenantResult,
   encodeOidcTransaction,
@@ -158,6 +169,10 @@ export {
   type TenantPermissionInheritanceResult,
   TenantService,
   type TenantWithOwnershipResult,
+  TerminalAuthError,
+  TerminalAuthRateLimitError,
+  TerminalAuthService,
+  type TerminalAuthServiceOptions,
   type UsersConfig,
   type UsersOidcConfig,
   withSessionPermissionContext,
