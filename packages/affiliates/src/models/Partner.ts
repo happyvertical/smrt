@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { PartnerStatus, PartnerType, PayoutMethod } from '../types/index.js';
 
 /**
@@ -56,12 +56,14 @@ export class Partner extends SmrtObject {
   /**
    * Profile ID (FK to smrt-profiles Profile, cross-package)
    */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId: string = '';
 
   /**
    * Property ID (FK to smrt-properties Property, cross-package)
    * Only set for publisher partners
    */
+  @crossPackageRef('@happyvertical/smrt-properties:Property')
   propertyId: string = '';
 
   /**

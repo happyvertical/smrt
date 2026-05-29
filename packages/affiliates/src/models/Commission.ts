@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { CommissionStatus, CommissionType } from '../types/index.js';
 
 /**
@@ -65,6 +70,7 @@ export class Commission extends SmrtObject {
   /**
    * Ad Event ID (FK to smrt-ads AdEvent, cross-package)
    */
+  @crossPackageRef('@happyvertical/smrt-ads:AdEvent')
   eventId: string = '';
 
   /**

@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { PayoutStatus } from '../types/index.js';
 
 /**
@@ -101,6 +106,7 @@ export class Payout extends SmrtObject {
    * Invoice ID when payout is processed (FK to smrt-commerce Invoice)
    * Partner is treated as a Vendor for payout invoices
    */
+  @crossPackageRef('@happyvertical/smrt-commerce:Invoice')
   invoiceId: string = '';
 
   /**
