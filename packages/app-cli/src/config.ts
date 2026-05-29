@@ -184,7 +184,25 @@ export interface RequestJsonOptions {
   serverUrl?: string;
   /** Override the fetch implementation (tests). */
   fetch?: typeof fetch;
+  /**
+   * Cap on response body size in bytes. The CLI buffers the full body
+   * before JSON-parsing, so without this cap a misbehaving or malicious
+   * server could OOM the CLI process with a multi-GB payload (auth and
+   * discovery both use this code path). Defaults to 10MB — large enough
+   * for any sensible discovery response, small enough that overflow is
+   * a clear signal something's wrong. Pass `Infinity` to disable.
+   * (#1311 review A4.)
+   */
+  maxResponseBytes?: number;
+  /**
+   * Pre-loaded config to avoid re-reading from disk. Set by callers that
+   * already have it (e.g. `buildAppContext`); leave undefined for the
+   * default behavior of loading per-call. (#1311 review P2.)
+   */
+  loadedConfig?: CliConfig;
 }
+
+const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10 MB
 
 /**
  * JSON request helper that injects the stored bearer token. Returns the
@@ -197,7 +215,9 @@ export async function requestJson<T = unknown>(
   init: RequestInit = {},
   options: RequestJsonOptions = {},
 ): Promise<T> {
-  const config = await loadCliConfig(context);
+  // Reuse the caller's pre-loaded config when supplied, otherwise read
+  // from disk. (#1311 review P2.)
+  const config = options.loadedConfig ?? (await loadCliConfig(context));
   const serverUrl = (
     options.serverUrl ?? (await getServerUrl(context, config))
   ).replace(/\/+$/u, '');
@@ -224,7 +244,8 @@ export async function requestJson<T = unknown>(
   });
 
   const contentType = response.headers.get('content-type') ?? '';
-  const text = await response.text();
+  const maxBytes = options.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+  const text = await readBodyWithCap(response, maxBytes);
   const parsed =
     contentType.includes('application/json') && text
       ? (JSON.parse(text) as unknown)
@@ -244,6 +265,60 @@ export async function requestJson<T = unknown>(
   }
 
   return parsed as T;
+}
+
+/**
+ * Read the response body into a UTF-8 string, capping at `maxBytes`. On
+ * overflow, throw with a clear message — better than OOM-ing the CLI
+ * when a server returns a multi-GB body. Streams chunk-by-chunk so the
+ * check fires before the whole body is buffered. (#1311 review A4.)
+ */
+async function readBodyWithCap(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  if (!response.body) return '';
+  // Content-Length fast path — if the server tells us up front the body
+  // is too big, abort the connection without buffering anything.
+  const cl = Number(response.headers.get('content-length') ?? '');
+  if (Number.isFinite(cl) && cl > maxBytes) {
+    try {
+      await response.body.cancel();
+    } catch {
+      // Stream may already be locked/closed.
+    }
+    throw new Error(
+      `Response too large: ${cl} bytes exceeds ${maxBytes}-byte cap`,
+    );
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        throw new Error(
+          `Response too large: exceeded ${maxBytes}-byte cap mid-stream`,
+        );
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // Reader is still active during normal completion — releaseLock
+      // throws in that case. Safe to ignore.
+    }
+  }
+  return new TextDecoder().decode(
+    Buffer.concat(chunks.map((c) => Buffer.from(c))),
+  );
 }
 
 export {

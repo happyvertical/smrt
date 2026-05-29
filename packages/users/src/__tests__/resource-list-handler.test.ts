@@ -475,6 +475,91 @@ describe('createResourceListHandler', () => {
     expect(names).not.toContain('discover');
   });
 
+  describe('malformed decoratorConfig.cli — #1311 round-4 A1+A2', () => {
+    it('returns empty resources when cli is the string "true" instead of boolean', async () => {
+      mockRegistry({
+        Bag: makeRegistered('Bag', { api: true, cli: 'true' as any }),
+      });
+      const res = await call(
+        { ensureRegistry: noopRegistry },
+        { locals: authedLocals },
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.resources).toEqual([]);
+    });
+
+    it('returns empty resources when cli.include is a string instead of array', async () => {
+      mockRegistry({
+        Bag: makeRegistered('Bag', {
+          api: true,
+          cli: { include: 'discoverFromUrl' as any },
+        }),
+      });
+      const res = await call(
+        { ensureRegistry: noopRegistry },
+        { locals: authedLocals },
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.resources).toEqual([]);
+    });
+
+    it('returns empty resources when cli.exclude is a string instead of array', async () => {
+      mockRegistry({
+        Bag: makeRegistered('Bag', {
+          api: true,
+          cli: { include: ['list'], exclude: 'delete' as any },
+        }),
+      });
+      const res = await call(
+        { ensureRegistry: noopRegistry },
+        { locals: authedLocals },
+      );
+      // Loud failure (no commands) is preferred over silently honouring
+      // only the include — the developer needs to see the typo.
+      expect(res.status).toBe(200);
+      expect(res.body.resources).toEqual([]);
+    });
+
+    it('returns empty resources when cli.mirror is not "api"', async () => {
+      mockRegistry({
+        Bag: makeRegistered('Bag', {
+          api: true,
+          cli: { mirror: 'all' as any },
+        }),
+      });
+      const res = await call(
+        { ensureRegistry: noopRegistry },
+        { locals: authedLocals },
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.resources).toEqual([]);
+    });
+
+    it('returns empty resources when cli is an array (top-level array shape)', async () => {
+      mockRegistry({
+        Bag: makeRegistered('Bag', { api: true, cli: [] as any }),
+      });
+      const res = await call(
+        { ensureRegistry: noopRegistry },
+        { locals: authedLocals },
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.resources).toEqual([]);
+    });
+
+    it('returns empty resources when cli is null', async () => {
+      mockRegistry({
+        Bag: makeRegistered('Bag', { api: true, cli: null as any }),
+      });
+      const res = await call(
+        { ensureRegistry: noopRegistry },
+        { locals: authedLocals },
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.resources).toEqual([]);
+    });
+  });
+
   it('uses collection verbatim as apiPath (preserves underscores) — #1311 codex P1', async () => {
     // Regression: previously the handler kebab-cased the collection, so
     // a class with default collection `weather_forecasts` would publish
@@ -604,6 +689,43 @@ describe('createResourceListHandler', () => {
     );
 
     expect(res.body.resources).toEqual([]);
+  });
+
+  it('runs async commandPolicy in parallel, not serially — #1311 round-4 P1', async () => {
+    // 5 classes × 5 CRUD = 25 commands. With sequential awaits at 30ms
+    // each that's 750ms; with Promise.all it's ~30ms. Use 30ms each and
+    // assert total well under the sequential floor.
+    const classes: Record<string, any> = {};
+    for (let i = 0; i < 5; i++) {
+      classes[`Cls${i}`] = makeRegistered(`Cls${i}`, {
+        api: true,
+        cli: true,
+        tableName: `cls${i}s`,
+      });
+    }
+    mockRegistry(classes);
+
+    let policyCalls = 0;
+    const policy = async () => {
+      policyCalls += 1;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      return true;
+    };
+
+    const t0 = Date.now();
+    const res = await call(
+      { ensureRegistry: noopRegistry, commandPolicy: policy },
+      { locals: authedLocals },
+    );
+    const elapsed = Date.now() - t0;
+
+    expect(res.status).toBe(200);
+    expect(res.body.resources).toHaveLength(5);
+    expect(policyCalls).toBeGreaterThanOrEqual(25);
+    // If the loops are sequential, this would be ~750ms. Parallel = ~30ms +
+    // overhead. Give a generous ceiling of 300ms to avoid CI flakes while
+    // still catching a regression to serial.
+    expect(elapsed).toBeLessThan(300);
   });
 
   it('cli.exclude subtracts from cli.mirror = "api" set', async () => {

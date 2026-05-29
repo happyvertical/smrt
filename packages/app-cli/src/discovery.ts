@@ -40,6 +40,11 @@ export interface FetchResourceListOptions {
   fetch?: typeof fetch;
   /** When true, the request fails if no token is available. */
   requireAuth?: boolean;
+  /**
+   * Pre-loaded config to avoid re-reading from disk. Set by
+   * `buildAppContext`, which has already loaded it. (#1311 review P2.)
+   */
+  loadedConfig?: import('./config.js').CliConfig;
 }
 
 /**
@@ -60,6 +65,7 @@ export async function fetchResourceList(
       {
         fetch: options.fetch,
         requireAuth: options.requireAuth,
+        loadedConfig: options.loadedConfig,
       },
     );
   } catch (error) {

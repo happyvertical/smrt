@@ -362,34 +362,41 @@ export function createResourceListHandler(
         candidates.push(result.command);
       }
 
-      // Run the command policy.
-      const allowed: CommandDefinition[] = [];
-      for (const candidate of candidates) {
-        const ok = await commandPolicy({
-          resource: resourceShell,
-          command: candidate,
-          session,
-          classMeta,
-        });
-        if (ok) allowed.push(candidate);
-      }
+      // Run the command policy. Batch with Promise.all so an async
+      // `commandPolicy` (e.g. one that hits a DB) fans out across all
+      // candidates instead of serializing N round-trips per class. For
+      // sync policies the difference is zero. (#1311 review P1.)
+      const policyResults = await Promise.all(
+        candidates.map((candidate) =>
+          commandPolicy({
+            resource: resourceShell,
+            command: candidate,
+            session,
+            classMeta,
+          }),
+        ),
+      );
+      const allowed = candidates.filter((_, i) => policyResults[i]);
       if (allowed.length === 0) continue;
 
       resources.push({ ...resourceShell, commands: allowed });
     }
 
     // Filter warnings through policy: only surface warnings the caller could
-    // have seen the underlying command for.
-    const visibleWarnings: string[] = [];
-    for (const w of skipWarnings) {
-      const ok = await commandPolicy({
-        resource: w.resourceMeta,
-        command: w.candidate,
-        session,
-        classMeta: w.classMeta,
-      });
-      if (ok) visibleWarnings.push(`${w.ref}: ${w.reason}`);
-    }
+    // have seen the underlying command for. Same Promise.all batching.
+    const warnResults = await Promise.all(
+      skipWarnings.map((w) =>
+        commandPolicy({
+          resource: w.resourceMeta,
+          command: w.candidate,
+          session,
+          classMeta: w.classMeta,
+        }),
+      ),
+    );
+    const visibleWarnings = skipWarnings
+      .filter((_, i) => warnResults[i])
+      .map((w) => `${w.ref}: ${w.reason}`);
 
     const body: ResourceListResponseBody = {
       user: session.user
@@ -542,26 +549,53 @@ function resolveCliIncludedMethods(
   }
   if (cliConfig === false) return [];
 
+  // Decorator config comes from registered classes — we cast through
+  // `unknown` at the registry boundary, so anything could be in here at
+  // runtime: malformed manifests, JS-authored decorators with `cli:
+  // 'true'`, typos like `cli: { include: 'methodName' }` (string instead
+  // of array), null, arrays at the top level, etc.
+  //
+  // Two failure modes to guard against:
+  //   1. Crash (e.g. `'discoverFromUrl'.filter(...)` → TypeError 500).
+  //      Always bad — the endpoint stops working for the whole app.
+  //   2. Silently wrong behavior (e.g. malformed `include` falls through
+  //      to a CRUD-only default, so the developer who typed `include:
+  //      'foo'` instead of `include: ['foo']` gets CRUD commands they
+  //      didn't ask for).
+  //
+  // Both are worse than returning [] for that class. So: if ANY
+  // recognised field is the wrong type, treat the class as having no
+  // CLI commands — the developer's misconfiguration is loud (no
+  // commands surface), not silent. (#1311 review A1+A2.)
+  if (typeof cliConfig !== 'object' || cliConfig === null) return [];
+  if (Array.isArray(cliConfig)) return [];
+
   const obj = cliConfig as {
-    include?: string[];
-    exclude?: string[];
-    mirror?: 'api';
+    include?: unknown;
+    exclude?: unknown;
+    mirror?: unknown;
   };
+  if (obj.include !== undefined && !Array.isArray(obj.include)) return [];
+  if (obj.exclude !== undefined && !Array.isArray(obj.exclude)) return [];
+  if (obj.mirror !== undefined && obj.mirror !== 'api') return [];
+
+  const include = obj.include as string[] | undefined;
+  const exclude = obj.exclude as string[] | undefined;
   let candidates: string[];
 
   if (obj.mirror === 'api') {
     candidates = [...apiActionSet];
-  } else if (obj.include?.includes('*')) {
+  } else if (include?.includes('*')) {
     candidates = [...apiActionSet];
-  } else if (obj.include && obj.include.length > 0) {
-    candidates = obj.include.filter((m) => apiActionSet.has(m));
+  } else if (include && include.length > 0) {
+    candidates = include.filter((m) => apiActionSet.has(m));
   } else {
     // No include + no mirror → CRUD only.
     candidates = STANDARD_API_ACTIONS.filter((a) => apiActionSet.has(a));
   }
 
-  if (obj.exclude && obj.exclude.length > 0) {
-    const excludeSet = new Set(obj.exclude);
+  if (exclude && exclude.length > 0) {
+    const excludeSet = new Set(exclude);
     candidates = candidates.filter((m) => !excludeSet.has(m));
   }
   return candidates;

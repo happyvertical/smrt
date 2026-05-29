@@ -364,7 +364,9 @@ async function buildAppContext(
   let resourcesPromise: Promise<ResourceListResponse> | null = null;
   const getResources = () => {
     if (!resourcesPromise) {
-      resourcesPromise = fetchResourceList(context);
+      // Plumb the already-loaded config through so the discovery fetch
+      // doesn't trigger another loadCliConfig disk read. (#1311 review P2.)
+      resourcesPromise = fetchResourceList(context, { loadedConfig: config });
     }
     return resourcesPromise;
   };
@@ -377,7 +379,8 @@ async function buildAppContext(
     serverUrl,
     token,
     getResources,
-    requestJson: (path, init, opts) => requestJson(context, path, init, opts),
+    requestJson: (path, init, opts) =>
+      requestJson(context, path, init, { loadedConfig: config, ...opts }),
     request: async (path, init) => {
       const headers = new Headers(init?.headers);
       if (token) headers.set('authorization', `Bearer ${token}`);
