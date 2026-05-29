@@ -1,5 +1,29 @@
 # @happyvertical/smrt-core
 
+## 0.26.3
+
+### Patch Changes
+
+- ### Features
+
+  - reusable CLI factory (app-cli)
+
+  ### Bug Fixes
+
+  - address bot review threads on #1311 (app-cli)
+  - round-4 review fixes (app-cli)
+  - round-3 review fixes (app-cli)
+  - round-2 review fixes (app-cli)
+  - review-cycle fixes for #1311 (app-cli)
+
+  ### Other Changes
+
+  - chore: satisfy monorepo standards (repository, smrtVitestPlugin, fixed group) (app-cli)
+  - chore: sync sdk packages to v0.74.3 (deps)
+  - @happyvertical/smrt-scanner@0.26.3
+  - @happyvertical/smrt-config@0.26.3
+  - @happyvertical/smrt-types@0.26.3
+
 ## 0.26.2
 
 ### Patch Changes
