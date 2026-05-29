@@ -624,8 +624,20 @@ export interface RegisteredClass {
   packageName?: string;
   /** Source file path where the class was defined (for collision detection) */
   sourceFilePath?: string;
+  /**
+   * Pluralized endpoint/collection name from the manifest (e.g. `sourcecrawls`
+   * for `SourceCrawl`). This is the segment the SvelteKit route generator
+   * uses for `/api/<collection>/...`, and it is NOT the same as `tableName`
+   * (which is snake_case and can be overridden/uncountable). Stored here so
+   * runtime consumers (e.g. `createResourceListHandler`) can build URLs that
+   * match the generated routes instead of re-deriving from `tableName`.
+   * See smrt#1311 consumer-migration finding.
+   */
+  collection?: string;
   /** Parent class name (for inheritance chain tracking) */
   extends?: string;
+  /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
+  extendsTypeArg?: string;
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */
