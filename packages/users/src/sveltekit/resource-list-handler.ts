@@ -51,6 +51,12 @@ interface RegisteredClassLike {
   config: SmartObjectConfig;
   methods: Map<string, unknown>;
   tools?: ToolLike[];
+  /**
+   * Pluralized endpoint name from the manifest (e.g. `sourcecrawls`). Carried
+   * on the registered class since smrt-core 0.26.4 (smrt#1311); used verbatim
+   * as the URL segment so the CLI hits the same path the generator wrote.
+   */
+  collection?: string;
   /** Parent class simple name — `'SmrtCollection'` marks a collection class. */
   extends?: string;
   /** Generic type argument from `SmrtCollection<X>` — also marks collection. */
@@ -464,7 +470,14 @@ function synthesizeDefinition(
   }
 
   const decoratorConfig = (registered.config ?? {}) as SmartObjectConfig;
+  // Prefer the manifest-derived `collection` the registry now carries
+  // (smrt#1311). This is the SAME pluralized endpoint segment the SvelteKit
+  // route generator writes to disk — e.g. `sourcecrawls` for `SourceCrawl`,
+  // NOT the snake_case `tableName` (`source_crawls`). The tableName-based
+  // derivation below is only a fallback for older smrt-core builds that
+  // didn't store `collection` on the registered class.
   const collection =
+    registered.collection ??
     deriveCollectionFromConfig(decoratorConfig) ??
     classnameToTablename(registered.name);
 

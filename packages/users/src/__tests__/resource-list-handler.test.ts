@@ -27,6 +27,10 @@ type RegisteredClassLike = {
   config: any;
   methods: Map<string, any>;
   tools?: any[];
+  collection?: string;
+  extends?: string;
+  extendsTypeArg?: string;
+  constructor?: unknown;
 };
 
 function makeRegistered(
@@ -589,6 +593,42 @@ describe('createResourceListHandler', () => {
     const r = res.body.resources[0] as CliResource;
     expect(r.slug).toBe('weather_forecasts');
     expect(r.apiPath).toBe('weather_forecasts');
+  });
+
+  it('uses registry collection when it diverges from tableName — #1311 consumer-migration finding', async () => {
+    // The real bug willgriffin surfaced: multi-word class names produce a
+    // `collection` (`sourcecrawls`, what the generator routes under) that
+    // differs from the snake_case `tableName` (`source_crawls`). The handler
+    // must use the registry's `collection` field verbatim, NOT derive from
+    // tableName — otherwise the CLI 404s on every multi-word resource.
+    mockRegistry({
+      SourceCrawl: makeRegistered('SourceCrawl', { api: true, cli: true }, {}, {
+        // Divergent: collection (endpoint) vs tableName (storage).
+        collection: 'sourcecrawls',
+        config: { tableName: 'source_crawls', api: true, cli: true },
+      } as any),
+      // Also exercise an uncountable/overridden tableName (Education ->
+      // educations collection, but tableName 'education').
+      Education: makeRegistered('Education', { api: true, cli: true }, {}, {
+        collection: 'educations',
+        config: { tableName: 'education', api: true, cli: true },
+      } as any),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    const sc = res.body.resources.find(
+      (r: CliResource) => r.className === 'SourceCrawl',
+    );
+    expect(sc?.apiPath).toBe('sourcecrawls');
+    expect(sc?.slug).toBe('sourcecrawls');
+    const ed = res.body.resources.find(
+      (r: CliResource) => r.className === 'Education',
+    );
+    expect(ed?.apiPath).toBe('educations');
   });
 
   it('skips SmrtCollection subclasses — #1311 codex P2 collection', async () => {
