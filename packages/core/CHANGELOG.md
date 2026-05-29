@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.26.4
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - carry manifest collection on RegisteredClass for runtime consumers (core)
+  - @happyvertical/smrt-scanner@0.26.4
+  - @happyvertical/smrt-config@0.26.4
+  - @happyvertical/smrt-types@0.26.4
+
 ## 0.26.3
 
 ### Patch Changes
