@@ -1,0 +1,71 @@
+{
+  "name": "@happyvertical/smrt-app-cli",
+  "version": "0.26.2",
+  "description": "Reusable CLI factory for SMRT apps — branded `<name> <resource> <command>` CLI + stdio MCP bridge with decorator-driven resource discovery",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "smrt-mcp-bridge": "./dist/bin/smrt-mcp-bridge.js"
+  },
+  "files": [
+    "dist",
+    "CLAUDE.md",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "vite build && node postbuild.mjs",
+    "build:watch": "vite build --watch",
+    "clean": "rm -rf dist",
+    "dev": "npm run build:watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepack": "node ../../scripts/prepack-package.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2"
+  },
+  "peerDependencies": {
+    "@happyvertical/smrt-users": "workspace:*"
+  },
+  "peerDependenciesMeta": {
+    "@happyvertical/smrt-users": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-users": "workspace:*",
+    "@types/node": "25.0.9",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-dts": "4.5.4",
+    "vitest": "^4.0.17"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/app-cli"
+  },
+  "keywords": [
+    "smrt",
+    "cli",
+    "mcp",
+    "sveltekit"
+  ],
+  "author": "HappyVertical",
+  "license": "MIT"
+}

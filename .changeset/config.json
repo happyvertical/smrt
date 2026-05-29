@@ -8,6 +8,7 @@
       "@happyvertical/smrt-affiliates",
       "@happyvertical/smrt-agents",
       "@happyvertical/smrt-analytics",
+      "@happyvertical/smrt-app-cli",
       "@happyvertical/smrt-app-mcp",
       "@happyvertical/smrt-assets",
       "@happyvertical/smrt-assets-ergot",
