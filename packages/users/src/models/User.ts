@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { UserStatus } from '../types/index.js';
 
 /**
@@ -55,9 +60,9 @@ export function normalizeEmail(email: string): string {
 })
 export class User extends SmrtObject {
   /**
-   * Foreign key to smrt-profiles Profile
-   * Cross-package reference stored as plain string
+   * Foreign key to smrt-profiles Profile (cross-package)
    */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId: string = '';
 
   /**

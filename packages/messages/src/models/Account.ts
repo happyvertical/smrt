@@ -4,7 +4,7 @@
  * Common fields shared across email, Slack, Twitter accounts, etc.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, MessageSenderInterface } from '../types';
 
@@ -21,6 +21,7 @@ export class Account extends SmrtObject {
 
   name = '';
   providerType = '';
+  @crossPackageRef('@happyvertical/smrt-secrets:Secret')
   credentialSecretId: string | null = null;
   isActive = true;
   lastSyncAt: Date | null = null;

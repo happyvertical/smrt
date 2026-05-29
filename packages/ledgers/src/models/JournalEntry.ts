@@ -5,7 +5,7 @@
  * Each entry belongs to a Journal and references an Account.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { JournalEntryOptions } from '../types';
 
@@ -25,11 +25,13 @@ export class JournalEntry extends SmrtObject {
   /**
    * Parent journal ID (required)
    */
+  @foreignKey('Journal', { required: true })
   journalId: string = '';
 
   /**
    * Account ID (required)
    */
+  @foreignKey('Account', { required: true })
   accountId: string = '';
 
   /**

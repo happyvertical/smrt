@@ -5,7 +5,7 @@
  * They can be nested arbitrarily using the parentId self-reference.
  */
 
-import { SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ZoneOptions, ZoneTreeNode } from '../types';
 
@@ -25,6 +25,7 @@ export class Zone extends SmrtHierarchical {
   /**
    * Parent property ID (required)
    */
+  @foreignKey('Property')
   propertyId: string = '';
 
   // parentId inherited from SmrtHierarchical (null = top-level zone)

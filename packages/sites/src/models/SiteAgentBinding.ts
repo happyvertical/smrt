@@ -8,7 +8,7 @@
  * means the agent is not enabled for that site.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { SiteAgentBindingOptions } from '../types';
 
@@ -25,6 +25,7 @@ export class SiteAgentBinding extends SmrtObject {
   tenantId: string = '';
 
   /** FK to sites table */
+  @foreignKey('Site')
   siteId: string = '';
 
   /** Agent class name, e.g. "Praeco" */
