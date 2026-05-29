@@ -7,7 +7,7 @@
  *
  * ```ts
  * #!/usr/bin/env node
- * import { runMcpStdioBridge } from '@happyvertical/smrt-app-mcp/cli';
+ * import { runMcpStdioBridge } from '@happyvertical/smrt-app-cli';
  * await runMcpStdioBridge({
  *   envPrefix: 'WILLGRIFFIN',
  *   serverInfo: { name: 'willgriffin-mcp', version: '0.1.0' },

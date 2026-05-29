@@ -13,8 +13,17 @@ import type { ParsedArgs } from '../parser.js';
 
 function makeContext() {
   const slug = `app-cli-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const dir = join(tmpdir(), 'smrt-app-cli-tests', slug);
-  process.env.TEST_CONFIG_DIR = dir;
+  // The config helper keys the config-file path off `${envPrefix}_CLI_CONFIG`
+  // (here `TEST_CLI_CONFIG`), NOT off a `TEST_CONFIG_DIR` var. Setting the
+  // wrong var meant these tests wrote to the real `~/.config/test-cli/
+  // config.json` and never cleaned up. Point the override at a tmp file
+  // so each context is isolated and disposable. (#1311 PR review.)
+  process.env.TEST_CLI_CONFIG = join(
+    tmpdir(),
+    'smrt-app-cli-tests',
+    slug,
+    'config.json',
+  );
   return {
     envPrefix: 'TEST',
     appSlug: 'test-cli',
