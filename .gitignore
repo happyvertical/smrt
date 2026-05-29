@@ -183,3 +183,5 @@ repomix-output.xml
 bin/
 !packages/*/bin/
 !packages/*/bin/*.js
+!packages/*/src/bin/
+!packages/*/src/bin/*.ts

@@ -1,0 +1,19 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "types": ["node", "vitest/globals"],
+    // Override the root's "bundler" resolution: this package ships as a
+    // published Node ESM library, so we want the stricter Node rules that
+    // require explicit `.js` extensions on relative imports in `.d.ts`.
+    // The "bundler" mode would silently accept extensionless imports and
+    // ship a broken d.ts. (#1311 review #8.)
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]
+}

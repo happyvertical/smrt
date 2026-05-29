@@ -30,7 +30,9 @@ export interface GenerateKeyResult {
   tableName: 'api_keys',
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { include: ['list', 'get', 'create', 'revoke'] },
+  // create/revoke are admin operations invoked in-process via the CLI; only
+  // read-only list/get are exposed over HTTP.
+  cli: { include: ['list', 'get', 'create', 'revoke'], skipApiCheck: true },
 })
 export class ApiKey extends SmrtObject {
   /**

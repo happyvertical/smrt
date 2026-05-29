@@ -52,7 +52,9 @@ export type SecretStatus = 'active' | 'disabled' | 'expired';
   // NO API or MCP exposure for security
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: ['list'] }, // Only list names, not values
+  // CLI runs in-process; secrets must never be reachable over HTTP, so
+  // skipApiCheck acknowledges the cli.include / api.include divergence.
+  cli: { include: ['list'], skipApiCheck: true }, // Only list names, not values
 })
 export class Secret extends SmrtObject {
   /**
