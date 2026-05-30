@@ -5,7 +5,13 @@
  * with relationship classification and metadata.
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FactContentOptions, FactContentRelationship } from './types';
 
@@ -17,10 +23,10 @@ import type { FactContentOptions, FactContentRelationship } from './types';
   cli: true,
 })
 export class FactContent extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('Fact', { required: true })
   factId: string = '';
 
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-content:Content', { required: true })
   contentId: string = '';
 
   @field({ required: true })

@@ -5,7 +5,7 @@
  * contents table with _meta_type discriminator.
  */
 
-import { smrt } from '@happyvertical/smrt-core';
+import { foreignKey, smrt } from '@happyvertical/smrt-core';
 import { Content, type ContentOptions } from './content';
 
 /**
@@ -75,6 +75,7 @@ function parseOptionalDate(
   cli: false,
 })
 export class Mirror extends Content {
+  @foreignKey('ContentFeedSource')
   feedSourceId: string | null = null;
   sourceGuid: string | null = null;
   sourceName: string | null = null;

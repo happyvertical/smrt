@@ -5,7 +5,7 @@
  * hierarchical zones for content/ad placement.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
@@ -52,12 +52,14 @@ export class Property extends SmrtObject {
    * Link to Repository (from smrt-projects)
    * Optional - used when property is backed by a git repository
    */
+  @crossPackageRef('@happyvertical/smrt-projects:Repository')
   repositoryId: string | null = null;
 
   /**
    * Link to Profile (from smrt-profiles)
    * Optional - owner/publisher of the property
    */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   ownerId: string | null = null;
 
   /**

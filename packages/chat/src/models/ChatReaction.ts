@@ -1,4 +1,10 @@
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ChatReactionOptions } from '../types.js';
 
@@ -13,9 +19,9 @@ export class ChatReaction extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ required: true })
+  @foreignKey('ChatMessage', { required: true })
   messageId: string = '';
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
   profileId: string = '';
   @field({ required: true })
   emoji: string = '';

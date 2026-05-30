@@ -10,7 +10,12 @@ import {
   assertValidOwnedAssetSortOrder,
   resolveOwnedAssetsById,
 } from '@happyvertical/smrt-assets';
-import { SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtHierarchical,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventOptions, EventStatus } from '../types';
 
@@ -26,9 +31,12 @@ export class Event extends SmrtHierarchical {
   tenantId: string | null = null;
 
   name: string = '';
+  @foreignKey('EventSeries')
   seriesId = ''; // FK to EventSeries (nullable for standalone events)
   // parentId inherited from SmrtHierarchical (self-reference to parent Event)
+  @foreignKey('EventType')
   typeId = ''; // FK to EventType
+  @crossPackageRef('@happyvertical/smrt-places:Place')
   placeId = ''; // FK to Place (from @happyvertical/smrt-places)
   description = '';
   startDate: Date | null = null;

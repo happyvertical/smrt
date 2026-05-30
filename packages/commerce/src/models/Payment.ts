@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   PaymentMethod,
@@ -95,6 +100,7 @@ export class Payment extends SmrtObject {
   /**
    * Link to smrt-ledgers Journal (created by recordPayment)
    */
+  @crossPackageRef('@happyvertical/smrt-ledgers:Journal')
   journalId: string = '';
 
   /**

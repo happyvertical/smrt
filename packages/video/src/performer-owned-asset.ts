@@ -1,6 +1,13 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { Performer } from './performer.js';
 import type { PerformerAssetRole } from './performer-asset.js';
 
 export interface PerformerOwnedAssetOptions extends SmrtObjectOptions {
@@ -24,10 +31,10 @@ export class PerformerOwnedAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ required: true })
+  @foreignKey(() => Performer, { required: true })
   performerId = '';
 
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
   assetId = '';
 
   @field({ required: true })

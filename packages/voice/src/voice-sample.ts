@@ -6,7 +6,12 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VoiceProfile } from './voice-profile.js';
 
@@ -130,6 +135,7 @@ export class VoiceSample extends SmrtObject {
    * Asset ID of the audio file
    * References an Asset in smrt-assets
    */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   assetId: string | null = null;
 
   /**

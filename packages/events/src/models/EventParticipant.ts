@@ -4,7 +4,12 @@
  * Tracks who participated in an event with role and placement
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventParticipantOptions } from '../types';
 
@@ -23,7 +28,9 @@ export class EventParticipant extends SmrtObject {
 
   // id inherited from SmrtObject
 
+  @foreignKey('Event')
   eventId = ''; // FK to Event
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
   role: string = ''; // Participant role (ParticipantRole or custom)
   placement: number | null = null; // Numeric position/placement

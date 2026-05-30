@@ -1,5 +1,10 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ContentCorrectionStatus,
@@ -32,11 +37,16 @@ export interface ContentCorrectionOptions extends SmrtObjectOptions {
   cli: true,
 })
 export class ContentCorrection extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('Content', { required: true })
   contentId = '';
 
+  @foreignKey('ContentVersion')
   contentVersionId = '';
+
+  @crossPackageRef('@happyvertical/smrt-facts:Fact')
   factId = '';
+
+  @crossPackageRef('@happyvertical/smrt-facts:Fact')
   replacementFactId = '';
   correctionType: ContentCorrectionType = 'fact';
   status: ContentCorrectionStatus = 'draft';

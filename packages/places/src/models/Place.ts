@@ -15,7 +15,12 @@ import {
   assertValidOwnedAssetSortOrder,
   resolveOwnedAssetsById,
 } from '@happyvertical/smrt-assets';
-import { field, SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
+import {
+  field,
+  foreignKey,
+  SmrtHierarchical,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { GeoData, PlaceOptions } from '../types';
 
@@ -34,6 +39,7 @@ export class Place extends SmrtHierarchical {
   tenantId: string | null = null;
 
   // Core fields
+  @foreignKey('PlaceType')
   typeId = ''; // FK to PlaceType
   // parentId inherited from SmrtHierarchical (nullable, self-reference)
   name = ''; // Place name/title

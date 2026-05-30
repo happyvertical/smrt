@@ -5,8 +5,14 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { Scene } from './scene.js';
 
 /**
  * Composite job status
@@ -89,9 +95,11 @@ export class CompositeJob extends SmrtObject {
   tenantId: string | null = null;
 
   /** Character video asset ID (after lip-sync) */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   characterVideoAssetId: string | null = null;
 
   /** Scene ID to composite onto */
+  @foreignKey(() => Scene)
   sceneId: string | null = null;
 
   /** Viewpoint ID (for 360° scenes) */
@@ -113,6 +121,7 @@ export class CompositeJob extends SmrtObject {
   progress: number = 0;
 
   /** Output video asset ID */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   outputAssetId: string | null = null;
 
   /** Error message if failed */

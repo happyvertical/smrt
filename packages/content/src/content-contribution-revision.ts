@@ -1,5 +1,10 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ContentContributionChannel } from './content-contribution-config';
 
@@ -50,7 +55,7 @@ function parseMetadata(raw: unknown): Record<string, any> {
   cli: true,
 })
 export class ContentContributionRevision extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('ContentContribution', { required: true })
   contributionId = '';
 
   revisionNumber = 1;
@@ -58,7 +63,10 @@ export class ContentContributionRevision extends SmrtObject {
   title = '';
   description = '';
   body = '';
+
+  @crossPackageRef('@happyvertical/smrt-messages:Message')
   sourceMessageId = '';
+
   sourceThreadKey = '';
   metadata = '';
 

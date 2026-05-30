@@ -6,7 +6,7 @@
  */
 
 import { Content, type ContentOptions } from '@happyvertical/smrt-content';
-import { foreignKey, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, foreignKey, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped } from '@happyvertical/smrt-tenancy';
 import { VoiceProfile } from './voice-profile.js';
 
@@ -174,6 +174,7 @@ export class VoiceOutput extends Content {
   /**
    * Asset ID of the generated audio file
    */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   audioAssetId: string | null = null;
 
   /**

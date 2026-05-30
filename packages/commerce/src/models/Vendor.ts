@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VendorStatus } from '../types/index.js';
 
@@ -41,6 +41,7 @@ export class Vendor extends SmrtObject {
    * Reference to smrt-profiles Profile
    * Plain string for cross-package reference
    */
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId: string = '';
 
   /**

@@ -4,7 +4,12 @@
  */
 
 import type { SmrtCreateInput } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 
 /**
  * Secret audit action types
@@ -79,6 +84,7 @@ export class SecretAuditLog extends SmrtObject {
   /**
    * ID of the secret (may be null for deleted secrets)
    */
+  @foreignKey('Secret')
   secretId: string | null = null;
 
   /**
@@ -89,6 +95,7 @@ export class SecretAuditLog extends SmrtObject {
   /**
    * ID of the user who performed the action
    */
+  @crossPackageRef('@happyvertical/smrt-users:User')
   userId: string = '';
 
   /**

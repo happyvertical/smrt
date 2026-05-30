@@ -1,6 +1,7 @@
 import { type Asset, AssetCollection } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import {
+  crossPackageRef,
   field,
   SmrtObject,
   smrt,
@@ -639,6 +640,7 @@ export class Content
   /**
    * ID of the thumbnail asset for this content
    */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   public thumbnailAssetId: string | null = null;
 
   /**

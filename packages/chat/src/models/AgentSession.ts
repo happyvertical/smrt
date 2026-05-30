@@ -1,4 +1,10 @@
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AgentSessionOptions, AgentSessionStatus } from '../types.js';
 
@@ -16,10 +22,10 @@ export class AgentSession extends SmrtObject {
   @field({ required: true })
   agentId: string = '';
 
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
   participantProfileId: string = '';
 
-  @field()
+  @foreignKey('ChatRoom')
   chatRoomId: string | null = null;
 
   @field({ required: true })

@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdEventType } from '../types/index.js';
 
@@ -63,6 +68,7 @@ export class AdEvent extends SmrtObject {
   /**
    * Zone ID (FK to smrt-properties Zone, cross-package)
    */
+  @crossPackageRef('@happyvertical/smrt-properties:Zone')
   zoneId: string = '';
 
   /**

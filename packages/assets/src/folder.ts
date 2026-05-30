@@ -23,7 +23,11 @@
  * @see Asset.sourceAssetId for the renamed derivation pointer.
  */
 
-import { SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  SmrtHierarchical,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FolderOptions } from './types';
 
@@ -43,6 +47,7 @@ export class Folder extends SmrtHierarchical {
   name = '';
   // `slug` is inherited as an accessor from SmrtObject.
   description = '';
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   ownerProfileId: string | null = null;
 
   // Timestamps

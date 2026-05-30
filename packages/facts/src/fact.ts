@@ -13,7 +13,7 @@
  * semantic distinction.
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   EvolutionType,
@@ -63,7 +63,7 @@ export class Fact extends SmrtObject {
    * fact, then corrections, refinements, contradictions, or extensions of
    * that fact. See `evolutionType` for the kind of step.
    */
-  @field()
+  @foreignKey('Fact')
   previousFactId: string = '';
 
   @field()

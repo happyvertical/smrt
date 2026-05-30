@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { InvoiceStatus, type RecognizeRevenueOptions } from '../types/index.js';
 
@@ -62,6 +67,7 @@ export class Invoice extends SmrtObject {
   /**
    * Optional link to Contract (cross-package reference)
    */
+  @foreignKey('Contract')
   contractId: string = '';
 
   // ============================================================================
@@ -143,11 +149,13 @@ export class Invoice extends SmrtObject {
   /**
    * Journal ID for AR recognition (cross-package ref to smrt-ledgers)
    */
+  @crossPackageRef('@happyvertical/smrt-ledgers:Journal')
   arJournalId: string = '';
 
   /**
    * Journal ID for revenue recognition (cross-package ref to smrt-ledgers)
    */
+  @crossPackageRef('@happyvertical/smrt-ledgers:Journal')
   revenueJournalId: string = '';
 
   // ============================================================================
