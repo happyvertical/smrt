@@ -262,6 +262,11 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
         return 'JSON';
       case 'TIMESTAMP':
         return 'TIMESTAMP';
+      case 'UUID':
+        // Fallback for engines without a native uuid type (e.g. SQLite):
+        // store as TEXT. PostgreSQL/DuckDB override this with their native
+        // uuid type. (R11)
+        return 'TEXT';
       default:
         return 'TEXT';
     }

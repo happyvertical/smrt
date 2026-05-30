@@ -29,6 +29,8 @@ export class DuckDBStrategy extends BaseDDLStrategy {
         return 'TIMESTAMP'; // DuckDB supports TIMESTAMP natively
       case 'JSON':
         return 'JSON'; // DuckDB has native JSON type
+      case 'UUID':
+        return 'UUID'; // DuckDB has a native UUID type (R11)
       default:
         return super.mapType(type);
     }

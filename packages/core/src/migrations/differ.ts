@@ -29,6 +29,7 @@ const VALID_SQL_DATA_TYPES: Set<SQLDataType> = new Set([
   'BOOLEAN',
   'JSON',
   'TIMESTAMP',
+  'UUID',
 ]);
 
 interface GeneratedTypeUpgradeSQL {
@@ -221,7 +222,21 @@ export class SchemaComparer {
         const normalizedExpected = this.normalizeType(expectedEngineType);
         const normalizedActual = this.normalizeType(dbCol.type);
 
-        if (normalizedExpected !== normalizedActual) {
+        // R11: native `uuid` and `text` are interchangeable for SMRT — Postgres
+        // stores uuid-shaped ids either way, node-postgres maps `uuid` columns
+        // to/from JS strings, and SMRT's queries are param-bound. So the differ
+        // must NOT flag a text<->uuid difference: no `type_upgrade` (ALTER) and
+        // no `type_mismatch`, in either direction. Converting existing text ids
+        // to native uuid stays an explicit per-project migration. This
+        // equivalence is applied HERE (the equality gate) only — deliberately
+        // not inside `normalizeType`, so `isCompatibleTypeUpgrade` still sees
+        // `uuid` as a distinct type and won't classify e.g. `uuid`->`timestamp`
+        // as a compatible upgrade.
+        const isUuidTextEquivalent =
+          (normalizedExpected === 'TEXT' && normalizedActual === 'UUID') ||
+          (normalizedExpected === 'UUID' && normalizedActual === 'TEXT');
+
+        if (normalizedExpected !== normalizedActual && !isUuidTextEquivalent) {
           // Check if this is a safe type upgrade that SMRT can handle
           // Since SMRT owns the data lifecycle, we know the intent from the manifest
           if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
@@ -522,6 +537,16 @@ export class SchemaComparer {
     // Text types
     if (/^(TEXT|CLOB|STRING|VARCHAR|CHAR)/i.test(upper)) {
       return 'TEXT';
+    }
+
+    // UUID normalizes to its own bucket — deliberately NOT folded into TEXT.
+    // The text<->uuid drift tolerance (R11) is applied at the equality gate
+    // in `compare()` only, so that `isCompatibleTypeUpgrade` (which also
+    // calls normalizeType) still treats `uuid` as distinct from text and
+    // won't mis-classify e.g. `uuid`->`timestamp` as a compatible
+    // "TEXT->TIMESTAMP" upgrade.
+    if (/^UUID$/i.test(upper)) {
+      return 'UUID';
     }
 
     // Decimal types
