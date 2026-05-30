@@ -4,7 +4,7 @@
  * Common fields shared across email, tweets, slack messages, etc.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   MessageOptions,
@@ -24,6 +24,7 @@ export class Message extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @foreignKey('Account')
   accountId = '';
   threadId = '';
   subject = '';
@@ -45,6 +46,7 @@ export class Message extends SmrtObject {
   retryCount = 0;
   maxRetries = 3;
   scheduledSendAt: Date | null = null;
+  @foreignKey('Message')
   inReplyToMessageId = '';
 
   // Timestamps

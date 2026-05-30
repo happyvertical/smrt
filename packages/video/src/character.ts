@@ -17,9 +17,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { Profile } from '@happyvertical/smrt-profiles';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { VoiceProfile } from '@happyvertical/smrt-voice';
 import type { CharacterAssetRole } from './character-asset.js';
 import {
   assertValidVideoAssetRole,
@@ -180,7 +178,7 @@ export class Character extends SmrtObject {
   baseMotionAssetId: string | null = null;
 
   /** Voice profile ID for speech synthesis */
-  @foreignKey(() => VoiceProfile)
+  @crossPackageRef('@happyvertical/smrt-voice:VoiceProfile')
   voiceProfileId: string | null = null;
 
   /** Branding configuration for video overlays */
@@ -201,7 +199,7 @@ export class Character extends SmrtObject {
   sceneConfigs: CharacterSceneConfig[] = [];
 
   /** 1-1 profile record for this character */
-  @foreignKey(() => Profile)
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId: string | null = null;
 
   constructor(options: CharacterOptions = {}) {

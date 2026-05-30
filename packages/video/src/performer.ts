@@ -8,15 +8,8 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import {
-  crossPackageRef,
-  foreignKey,
-  SmrtObject,
-  smrt,
-} from '@happyvertical/smrt-core';
-import { Profile } from '@happyvertical/smrt-profiles';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { VoiceProfile } from '@happyvertical/smrt-voice';
 import {
   assertValidVideoAssetRole,
   assertValidVideoAssetSortOrder,
@@ -157,14 +150,14 @@ export class Performer extends SmrtObject {
   seedImageAssetId: string | null = null;
 
   /** Default voice profile for this performer */
-  @foreignKey(() => VoiceProfile)
+  @crossPackageRef('@happyvertical/smrt-voice:VoiceProfile')
   voiceProfileId: string | null = null;
 
   /** Performer status */
   status: PerformerStatus = 'pending';
 
   /** 1-1 profile record for this performer */
-  @foreignKey(() => Profile)
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId: string | null = null;
 
   constructor(options: PerformerOptions = {}) {
