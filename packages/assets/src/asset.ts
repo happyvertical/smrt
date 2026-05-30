@@ -84,6 +84,9 @@ export class Asset extends SmrtObject {
   version = 1; // Version number
 
   // Foreign key references (stored as IDs/slugs)
+  // Self-referential: the version chain points at the first version's
+  // Asset record (createNewVersion() chains via primaryVersionId).
+  @foreignKey('Asset')
   primaryVersionId: string | null = null; // Points to first version's ID
   typeSlug = ''; // FK to AssetType.slug
   statusSlug = ''; // FK to AssetStatus.slug
