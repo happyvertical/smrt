@@ -7,7 +7,7 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
@@ -180,6 +180,7 @@ export class VoiceProfile extends SmrtObject {
    * Asset ID of the audio sample for voice cloning
    * Should be at least 3 seconds of clear speech
    */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   sampleAssetId: string | null = null;
 
   /**

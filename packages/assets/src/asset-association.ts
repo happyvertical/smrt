@@ -5,7 +5,7 @@
  * (e.g., Article, Profile, Event) with role-based categorization.
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import type { AssetAssociationOptions } from './types';
 
 @smrt({
@@ -16,7 +16,7 @@ import type { AssetAssociationOptions } from './types';
 })
 export class AssetAssociation extends SmrtObject {
   /** FK to Asset.id */
-  @field({ required: true })
+  @foreignKey('Asset', { required: true })
   assetId = '';
 
   /** Target class name or qualified name (e.g., 'Article' or '@pkg:Article') */

@@ -13,6 +13,8 @@
  */
 
 import {
+  crossPackageRef,
+  foreignKey,
   ObjectRegistry,
   type SmrtCollection,
   SmrtObject,
@@ -85,6 +87,7 @@ export class Asset extends SmrtObject {
   primaryVersionId: string | null = null; // Points to first version's ID
   typeSlug = ''; // FK to AssetType.slug
   statusSlug = ''; // FK to AssetStatus.slug
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   ownerProfileId: string | null = null; // FK to Profile.id (nullable)
   /**
    * FK to the source Asset this one was derived from (e.g. thumbnail
@@ -95,7 +98,9 @@ export class Asset extends SmrtObject {
    * (SmrtHierarchical) across the framework. The column on the assets
    * table is `source_asset_id`.
    */
+  @foreignKey('Asset')
   sourceAssetId: string | null = null;
+  @foreignKey('Folder')
   folderId: string | null = null; // FK to Folder.id
 
   // Provenance fields

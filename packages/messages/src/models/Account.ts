@@ -4,7 +4,7 @@
  * Common fields shared across email, Slack, Twitter accounts, etc.
  */
 
-import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, MessageSenderInterface } from '../types';
 
@@ -21,7 +21,10 @@ export class Account extends SmrtObject {
 
   name = '';
   providerType = '';
-  @crossPackageRef('@happyvertical/smrt-secrets:Secret')
+  // credentialSecretId stores the Secret's NAME (keyed by name + tenant
+  // context in smrt-secrets), NOT its primary-key id — see setCredentials()/
+  // getCredentials() which call secretService.store/retrieve by name. So it is
+  // deliberately NOT a @crossPackageRef id FK.
   credentialSecretId: string | null = null;
   isActive = true;
   lastSyncAt: Date | null = null;

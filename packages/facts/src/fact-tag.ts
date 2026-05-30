@@ -5,7 +5,7 @@
  * enabling categorization and discovery of facts.
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FactTagOptions } from './types';
 
@@ -17,7 +17,7 @@ import type { FactTagOptions } from './types';
   cli: true,
 })
 export class FactTag extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('Fact', { required: true })
   factId: string = '';
 
   @field({ required: true })

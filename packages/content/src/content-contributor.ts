@@ -1,5 +1,10 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ContentContributorTrustLevel } from './content-contribution-config';
 
@@ -46,6 +51,7 @@ function parseMetadata(raw: unknown): Record<string, any> {
   cli: true,
 })
 export class ContentContributor extends SmrtObject {
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId = '';
 
   @field({ required: true })

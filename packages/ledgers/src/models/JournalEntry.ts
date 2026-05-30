@@ -25,13 +25,13 @@ export class JournalEntry extends SmrtObject {
   /**
    * Parent journal ID (required)
    */
-  @foreignKey('Journal', { required: true })
+  @foreignKey('Journal')
   journalId: string = '';
 
   /**
    * Account ID (required)
    */
-  @foreignKey('Account', { required: true })
+  @foreignKey('Account')
   accountId: string = '';
 
   /**

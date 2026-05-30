@@ -11,7 +11,12 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { Profile } from '@happyvertical/smrt-profiles';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VoiceProfile } from '@happyvertical/smrt-voice';
@@ -167,9 +172,11 @@ export class Character extends SmrtObject {
   description: string | null = null;
 
   /** Asset ID of the seed image for I2V generation */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   imageAssetId: string | null = null;
 
   /** Asset ID of pre-baked base motion video */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   baseMotionAssetId: string | null = null;
 
   /** Voice profile ID for speech synthesis */

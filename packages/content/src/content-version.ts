@@ -1,5 +1,5 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ContentVersionKind } from './content-governance';
 import { normalizeContentTransparency } from './content-transparency';
@@ -34,7 +34,7 @@ export interface ContentVersionOptions extends SmrtObjectOptions {
   cli: true,
 })
 export class ContentVersion extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('Content', { required: true })
   contentId = '';
 
   version = 1;

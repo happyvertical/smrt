@@ -7,7 +7,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   assertValidVideoAssetRole,
@@ -193,6 +193,7 @@ export class Scene extends SmrtObject {
   description: string | null = null;
 
   /** Source media asset ID */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   sourceAssetId: string | null = null;
 
   /** Type of source media */

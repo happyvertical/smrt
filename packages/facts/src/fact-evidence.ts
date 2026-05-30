@@ -5,7 +5,7 @@
  * concrete excerpt/span/artifact that supports a fact.
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FactEvidenceOptions, FactEvidenceStatus } from './types';
 
@@ -34,7 +34,7 @@ function normalizeFactEvidenceStatus(
   cli: true,
 })
 export class FactEvidence extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('Fact', { required: true })
   factId: string = '';
 
   @field({ required: true })

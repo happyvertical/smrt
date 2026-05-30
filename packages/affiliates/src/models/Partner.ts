@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { PartnerStatus, PartnerType, PayoutMethod } from '../types/index.js';
 
 /**
@@ -76,12 +81,14 @@ export class Partner extends SmrtObject {
    * Parent partner ID (self-reference)
    * For site-attached salespeople, this is the publisher they work under
    */
+  @foreignKey('Partner')
   parentPartnerId: string = '';
 
   /**
    * Referred by partner ID (self-reference)
    * Tracks who referred this partner for referral commission attribution
    */
+  @foreignKey('Partner')
   referredById: string = '';
 
   /**
