@@ -29,6 +29,8 @@ export class PostgresStrategy extends BaseDDLStrategy {
         return 'TIMESTAMP'; // Could use TIMESTAMPTZ for timezone-aware
       case 'REAL':
         return 'DOUBLE PRECISION'; // PostgreSQL convention
+      case 'UUID':
+        return 'uuid'; // Native 16-byte uuid (R11) — vs 37-byte text
       default:
         return super.mapType(type);
     }

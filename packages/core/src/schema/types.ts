@@ -10,7 +10,12 @@ export type SQLDataType =
   | 'BLOB'
   | 'BOOLEAN'
   | 'JSON'
-  | 'TIMESTAMP';
+  | 'TIMESTAMP'
+  // UUID is an abstract id type (R11). Per-dialect mapping: native `uuid`
+  // on PostgreSQL, native `UUID` on DuckDB, and `TEXT` on SQLite (which has
+  // no uuid type). The differ treats UUID and TEXT as equivalent (no
+  // auto-conversion either direction) — see `normalizeType` in differ.ts.
+  | 'UUID';
 
 export interface ColumnDefinition {
   type: SQLDataType;
