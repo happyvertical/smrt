@@ -690,15 +690,18 @@ export class RuntimeError extends SmrtError {
  * relationship.
  *
  * Raised by {@link SmrtObject.loadRelated} / {@link SmrtObject.loadRelatedMany}
- * when a tenant-scoped object resolves a relationship to an object belonging to
- * a *different*, non-null tenant — the genuine cross-tenant data leak. The guard
+ * (and {@link SmrtObject.getRelated}, which delegates to them) when a
+ * tenant-scoped object resolves a relationship to an object belonging to a
+ * *different*, non-null tenant — the genuine cross-tenant data leak. The guard
  * is a no-op when either side has a `null` tenant (global / non-tenant-scoped
  * models) and when both sides share the same tenant, so it only fires on real
  * leaks. Pass `{ allowCrossTenant: true }` to the loader to deliberately opt out.
  *
  * The `code` is always `'TENANT_ISOLATION_VIOLATION'` and the category is
- * `'validation'` (never retried). `tenantId` is the owning object's tenant and
- * `attemptedTenantId` is the tenant of the object that was reached.
+ * `'validation'`. It is never retried — `ErrorUtils.withRetry()` rethrows it
+ * immediately and `ErrorUtils.isRetryable()` returns `false` — because a tenant
+ * boundary violation is deterministic. `tenantId` is the owning object's tenant
+ * and `attemptedTenantId` is the tenant of the object that was reached.
  *
  * This shares its stable `code`, `name`, `tenantId`, and `attemptedTenantId`
  * shape with the interceptor-level `TenantIsolationError` in
@@ -759,7 +762,7 @@ export class TenantIsolationError extends SmrtError {
     return new TenantIsolationError(
       `Cross-tenant relationship access blocked on ${details.sourceClass}.${details.fieldName}: ` +
         `owning tenant '${details.sourceTenantId}' does not match ${target}. ` +
-        `Pass { allowCrossTenant: true } to loadRelated()/loadRelatedMany() to override.`,
+        `Pass { allowCrossTenant: true } to loadRelated()/loadRelatedMany()/getRelated() to override.`,
       {
         tenantId: details.sourceTenantId,
         attemptedTenantId: details.targetTenantId,
@@ -796,10 +799,13 @@ export class ErrorUtils {
           throw lastError;
         }
 
-        // Skip retry for certain error types
+        // Skip retry for certain error types. A tenant isolation violation is
+        // deterministic — retrying re-fetches the same cross-tenant target — and
+        // is a security boundary, so it must never be retried.
         if (
           error instanceof ValidationError ||
-          error instanceof ConfigurationError
+          error instanceof ConfigurationError ||
+          error instanceof TenantIsolationError
         ) {
           throw error;
         }

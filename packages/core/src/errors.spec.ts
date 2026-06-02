@@ -8,6 +8,7 @@ import {
   DatabaseError,
   ErrorUtils,
   SmrtError,
+  TenantIsolationError,
   ValidationError,
 } from './errors';
 
@@ -123,6 +124,25 @@ describe('SMRT Error System', () => {
         ValidationError,
       );
       expect(attempts).toBe(1); // Should not retry
+    });
+
+    it('should not retry tenant isolation errors', async () => {
+      let attempts = 0;
+      const operation = async () => {
+        attempts++;
+        throw TenantIsolationError.crossTenantReference({
+          sourceClass: 'Order',
+          fieldName: 'customerId',
+          sourceTenantId: 'tenant-a',
+          targetClass: 'Customer',
+          targetTenantId: 'tenant-b',
+        });
+      };
+
+      await expect(ErrorUtils.withRetry(operation, 3, 10)).rejects.toThrow(
+        TenantIsolationError,
+      );
+      expect(attempts).toBe(1); // Security boundary: deterministic, never retried
     });
 
     it('should identify retryable errors', () => {

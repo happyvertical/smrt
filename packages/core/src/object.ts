@@ -1961,7 +1961,8 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Lazy-loads a `foreignKey` relationship and caches the result.
+   * Lazy-loads a `foreignKey` or `crossPackageRef` relationship and caches the
+   * result.
    *
    * Looks up the relationship metadata in the ObjectRegistry, reads the
    * foreign key value on this object, and fetches the related object from
@@ -1977,11 +1978,13 @@ export class SmrtObject extends SmrtClass {
    * global/null-tenant models and same-tenant loads, so it only catches genuine
    * cross-tenant leaks (Issue #1321).
    *
-   * @param fieldName - Name of the `@foreignKey()` decorated property
+   * @param fieldName - Name of the `@foreignKey()` or `@crossPackageRef()`
+   *   decorated property
    * @param opts - Optional loader options; see {@link LoadRelatedOptions}
    * @returns The related object, or `null` if the foreign key is empty
-   * @throws {RuntimeError} If `fieldName` is not a `foreignKey` relationship,
-   *   or the target class is not found in the ObjectRegistry
+   * @throws {RuntimeError} If `fieldName` is not a `foreignKey` or
+   *   `crossPackageRef` relationship, or the target class is not found in the
+   *   ObjectRegistry
    * @throws {TenantIsolationError} If the target belongs to a different,
    *   non-null tenant and `opts.allowCrossTenant` is not set
    *
