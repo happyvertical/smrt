@@ -272,6 +272,25 @@ describe('SmrtPolymorphicAssociation', () => {
       }
     });
 
+    it('propagates lazy external-load failures (e.g. ambiguous type) instead of returning null', async () => {
+      const link = await links.create({
+        ownerId: 'owner-ambig',
+        metaType: '@unresolved/pkg:Unloaded',
+        metaId: 'x',
+      });
+
+      // tryLoadFromExternalPackage throws ConfigurationError for an ambiguous
+      // unqualified type; hydrate() must let that surface, not swallow it.
+      const spy = vi
+        .spyOn(ObjectRegistry, 'tryLoadFromExternalPackage')
+        .mockRejectedValueOnce(new Error('Ambiguous class name'));
+      try {
+        await expect(link.hydrate()).rejects.toThrow('Ambiguous class name');
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it('returns null when metaType is not registered', async () => {
       const link = await links.create({
         ownerId: 'owner-6',

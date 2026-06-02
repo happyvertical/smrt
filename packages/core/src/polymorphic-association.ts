@@ -121,9 +121,10 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
    * exists. The target shares this association's database connection via
    * `this.options`.
    *
-   * Prefer qualified `metaType` values (`@pkg:Class`): a bare simple name is
-   * resolved best-effort to the first registered match (with a warning) when
-   * two packages share a class name.
+   * Prefer qualified `metaType` values (`@pkg:Class`): a bare simple name
+   * resolves to the first registered match, and an ambiguous unqualified name
+   * that has to be lazily loaded surfaces a `ConfigurationError` rather than
+   * guessing.
    *
    * @typeParam T - Expected target type for the caller's convenience cast.
    */
@@ -137,14 +138,15 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
       ObjectRegistry.getClass(this.metaType);
 
     // Not registered yet — try a lazy external-package load, then re-resolve.
-    // A failed load means the type is genuinely unavailable, so treat it as
-    // "no target" rather than letting the load error escape.
+    // Branch on the boolean: a `false` result means the type genuinely isn't
+    // installed (→ null), while real loader failures (e.g. an ambiguous
+    // unqualified name throwing ConfigurationError) propagate instead of being
+    // masked as "no target".
     if (!registered) {
-      try {
-        await ObjectRegistry.tryLoadFromExternalPackage(this.metaType);
-      } catch {
-        return null;
-      }
+      const loaded = await ObjectRegistry.tryLoadFromExternalPackage(
+        this.metaType,
+      );
+      if (!loaded) return null;
       registered =
         ObjectRegistry.getClassByQualifiedName(this.metaType) ??
         ObjectRegistry.getClass(this.metaType);
