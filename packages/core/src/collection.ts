@@ -1195,7 +1195,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         `oneToMany ${fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
       );
     }
-    const inverseForeignKey = matchedForeignKey ?? inverseCandidates[0];
+    // Prefer an inverse FK that targets this exact class before falling back
+    // to an ancestor's (mirrors loadRelatedMany).
+    const inverseForeignKey =
+      matchedForeignKey ??
+      inverseCandidates.find((r) => r.targetClass === this._itemClass.name) ??
+      inverseCandidates[0];
 
     if (!inverseForeignKey) {
       console.warn(

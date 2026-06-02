@@ -163,6 +163,44 @@ class R10BadFkParent extends SmrtObject {
   }
 }
 
+// --- Target with FKs to multiple hierarchy levels: prefer exact-self --------
+
+@smrt({ tableStrategy: 'sti' })
+class R10MultiBase extends SmrtObject {
+  name: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name) this.name = options.name;
+  }
+}
+
+@smrt()
+class R10MultiLeaf extends R10MultiBase {
+  // oneToMany declared on the leaf; the child declares FKs to BOTH levels.
+  @oneToMany('R10MultiChild')
+  items: any[] = [];
+}
+
+@smrt()
+class R10MultiChild extends SmrtObject {
+  // baseRef is declared first, so a naive first-match would pick it.
+  @foreignKey('R10MultiBase')
+  baseRef: string = '';
+
+  @foreignKey('R10MultiLeaf')
+  leafRef: string = '';
+
+  tag: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.baseRef) this.baseRef = options.baseRef;
+    if (options.leafRef) this.leafRef = options.leafRef;
+    if (options.tag) this.tag = options.tag;
+  }
+}
+
 describe('R10: childAccessorName', () => {
   it('derives getX() from the field name', () => {
     expect(childAccessorName('items')).toBe('getItems');
@@ -310,5 +348,34 @@ describe('R10: generated @oneToMany child accessors', () => {
     await expect(collection.list({ include: ['kids'] })).rejects.toThrow(
       /foreignKey 'doesNotExist'/,
     );
+  });
+
+  it('prefers the exact-self FK over an ancestor FK when both exist', async () => {
+    const leaf = new R10MultiLeaf({ name: 'Leaf', db });
+    await leaf.initialize();
+    await leaf.save();
+
+    // Points at the leaf via the leaf-targeting FK (exact self).
+    const viaLeaf = new R10MultiChild({
+      leafRef: leaf.id,
+      baseRef: 'unrelated',
+      tag: 'viaLeaf',
+      db,
+    });
+    await viaLeaf.initialize();
+    await viaLeaf.save();
+
+    // Points at the leaf via the base-targeting FK (ancestor) — must be ignored.
+    const viaBase = new R10MultiChild({
+      baseRef: leaf.id,
+      leafRef: 'unrelated',
+      tag: 'viaBase',
+      db,
+    });
+    await viaBase.initialize();
+    await viaBase.save();
+
+    const items = (await (leaf as any).getItems()) as R10MultiChild[];
+    expect(items.map((c) => c.tag)).toEqual(['viaLeaf']);
   });
 });

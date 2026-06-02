@@ -2137,7 +2137,15 @@ export class SmrtObject extends SmrtClass {
           },
         );
       }
-      const inverseForeignKey = matchedForeignKey ?? inverseCandidates[0];
+      // Prefer an inverse FK that targets this exact class before falling back
+      // to one inherited from an (STI) ancestor — preserves the pre-fallback
+      // selection when a target declares FKs to multiple levels of the chain.
+      const inverseForeignKey =
+        matchedForeignKey ??
+        inverseCandidates.find(
+          (r) => r.targetClass === this.constructor.name,
+        ) ??
+        inverseCandidates[0];
 
       if (!inverseForeignKey) {
         throw RuntimeError.invalidState(
