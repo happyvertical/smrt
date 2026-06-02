@@ -2,7 +2,10 @@
  * Type definitions for @have/assets package
  */
 
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type {
+  SmrtObjectOptions,
+  SmrtPolymorphicAssociationOptions,
+} from '@happyvertical/smrt-core';
 
 /**
  * Options for creating an AssetType instance
@@ -61,14 +64,14 @@ export interface AssetOptions extends SmrtObjectOptions {
 }
 
 /**
- * Options for creating an AssetAssociation instance
+ * Options for creating an AssetAssociation instance.
+ *
+ * The polymorphic `metaType` / `metaId` / `role` / `sortOrder` options come
+ * from `SmrtPolymorphicAssociationOptions`; this only adds the owner FK.
  */
-export interface AssetAssociationOptions extends SmrtObjectOptions {
+export interface AssetAssociationOptions
+  extends SmrtPolymorphicAssociationOptions {
   assetId?: string;
-  metaType?: string;
-  metaId?: string;
-  role?: string;
-  sortOrder?: number;
 }
 
 /**

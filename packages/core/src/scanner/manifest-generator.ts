@@ -61,6 +61,7 @@ const require = createRequire(import.meta.url);
 const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
   'SmrtJunction',
   'SmrtHierarchical',
+  'SmrtPolymorphicAssociation',
 ]);
 
 /**

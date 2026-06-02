@@ -19,16 +19,18 @@ import type {
  * packages can subclass without needing `@smrt()` must appear here, or
  * the scanner will silently drop undecorated subclasses from the manifest.
  *
- * `SmrtJunction` and `SmrtHierarchical` are stopgap entries pending a
- * manifest-driven base-class detection scheme — core would export its
- * abstract bases in its manifest and dependents would resolve through
- * them via the existing cross-package chain walker (see
+ * `SmrtJunction`, `SmrtHierarchical`, and `SmrtPolymorphicAssociation` are
+ * stopgap entries pending a manifest-driven base-class detection scheme —
+ * core would export its abstract bases in its manifest and dependents would
+ * resolve through them via the existing cross-package chain walker (see
  * `findClassDefinition`). After tracing the wiring at R3 kickoff
  * (2026-05-18), generalization was deferred: new `SmartObjectManifest →
  * ExternalManifest` adapter, new vite-plugin scan-path failure modes,
  * new sync-I/O surface — large cost for ~two saved lines per future
- * abstract base. Extend this list instead; revisit only if a third+
- * abstract base shows up with a concrete motivating case.
+ * abstract base. R4 added the third base and re-confirmed the call: a new
+ * abstract base is still two lines here + two in
+ * `FRAMEWORK_ABSTRACT_BASE_NAMES`, far cheaper than the generalization's
+ * new failure surface. Extend this list instead.
  */
 const FRAMEWORK_BASE_CLASSES = new Set([
   'SmrtObject',
@@ -36,6 +38,7 @@ const FRAMEWORK_BASE_CLASSES = new Set([
   'SmrtCollection',
   'SmrtJunction',
   'SmrtHierarchical',
+  'SmrtPolymorphicAssociation',
 ]);
 
 /**
