@@ -818,11 +818,48 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
   ): string {
-    // Delegate to the DDL strategy's shared column-definition builder, which
-    // maps abstract types per-dialect (UUID→native uuid / TEXT — R11), formats
-    // defaults, and emits NOT NULL / UNIQUE / CHECK. Invalid types fall back to
-    // TEXT via mapType's default branch, matching the compareColumns guard.
-    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`;
+    // Build the ADD COLUMN definition inline (main) rather than delegating to
+    // the DDL strategy's generateColumnDefinition: that builder is for CREATE
+    // TABLE and would emit `PRIMARY KEY` (invalid in ALTER ... ADD COLUMN) and
+    // suppress single-column UNIQUE on engines that require inline unique at
+    // table-create time (DuckDB) — but an ADD COLUMN has no inline-constraint
+    // pass, so the UNIQUE must be emitted here. mapType still maps abstract
+    // types per dialect (UUID→native uuid / TEXT — R11); invalid types fall
+    // back to TEXT, matching the compareColumns guard.
+    const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
+      ? colDef.type
+      : 'TEXT';
+    if (!isValidSQLDataType(colDef.type)) {
+      console.warn(
+        `[SchemaComparer] Invalid manifest type "${colDef.type}" for ${tableName}.${colName}, treating as TEXT`,
+      );
+    }
+
+    const parts: string[] = [
+      this.quoteIdentifier(colName),
+      this.ddlStrategy.mapType(validatedType),
+    ];
+
+    if (colDef.notNull) {
+      parts.push('NOT NULL');
+    }
+    if (colDef.unique) {
+      parts.push('UNIQUE');
+    }
+    if (colDef.defaultValue !== undefined) {
+      const defaultVal = this.ddlStrategy.formatDefaultValue(
+        colDef.defaultValue,
+        validatedType,
+      );
+      parts.push(`DEFAULT ${defaultVal}`);
+    }
+    if (colDef.check) {
+      parts.push(`CHECK (${colDef.check})`);
+    }
+
+    const columnDefinition = parts.join(' ');
+
+    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${columnDefinition}`;
   }
 
   /**

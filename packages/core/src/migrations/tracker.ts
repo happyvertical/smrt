@@ -8,6 +8,12 @@
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { detectEngine } from '../schema/ddl/index.js';
+// DatabaseEngine comes from the DDL layer (the json-inclusive type that
+// `detectEngine` actually returns), matching `SchemaComparer` in differ.ts.
+// The migration stack supports the JSON adapter post-R11, so the tracker's
+// engine type must include 'json' too — the narrower `migrations/types`
+// alias would reject it.
+import type { DatabaseEngine } from '../schema/ddl/types.js';
 import type {
   DriftReport,
   MigrationDefinition,
@@ -19,7 +25,6 @@ import { CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE } from '../system/schema.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
 import type {
   ApplyMigrationsOptions,
-  DatabaseEngine,
   DatabaseInterface,
   MigrationTrackerOptions,
   RollbackOptions,
