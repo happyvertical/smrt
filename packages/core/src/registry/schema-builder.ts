@@ -19,6 +19,63 @@ import { getClasses, getCollectionTableNames } from './shared-state';
 type ForeignKeyAction = NonNullable<
   NonNullable<ColumnDefinition['foreignKey']>['onDelete']
 >;
+type RegisteredSchemaClass = NonNullable<ReturnType<typeof findClass>>;
+
+function isSmrtCollectionExtendsName(extendsName: string | undefined): boolean {
+  return (
+    extendsName === 'SmrtCollection' ||
+    extendsName?.endsWith(':SmrtCollection') === true
+  );
+}
+
+function resolveRelatedRegistration(
+  className: string,
+  origin: RegisteredSchemaClass,
+): RegisteredSchemaClass | undefined {
+  if (className.includes(':')) {
+    return findClass(className);
+  }
+
+  if (origin.packageName) {
+    return (
+      ObjectRegistry.getClassInPackage(origin.packageName, className) ||
+      findClass(className)
+    );
+  }
+
+  return findClass(className);
+}
+
+function getCollectionAncestorRegistrations(
+  className: string,
+  registered: RegisteredSchemaClass,
+): RegisteredSchemaClass[] {
+  const lookupName = registered.qualifiedName || registered.name || className;
+  const chain = ObjectRegistry.getInheritanceChain(lookupName);
+  const registrations: RegisteredSchemaClass[] = [];
+
+  for (const ancestorName of chain) {
+    const ancestor = resolveRelatedRegistration(ancestorName, registered);
+    if (ancestor) {
+      registrations.push(ancestor);
+    }
+  }
+
+  return registrations;
+}
+
+function isCollectionRegistration(
+  className: string,
+  registered: RegisteredSchemaClass,
+): boolean {
+  if (isSmrtCollectionExtendsName(registered.extends)) {
+    return true;
+  }
+
+  return getCollectionAncestorRegistrations(className, registered).some(
+    (ancestor) => isSmrtCollectionExtendsName(ancestor.extends),
+  );
+}
 
 function applyDecoratorSqlTypeOverrides(
   className: string,
@@ -163,7 +220,7 @@ export function getAllSchemas(): Record<
   for (const [_className, registered] of getClasses()) {
     // Skip collection classes - they don't have their own tables
     // Their schemas incorrectly contain collection properties (loaded, options, etc.)
-    if (registered.extends === 'SmrtCollection') {
+    if (isCollectionRegistration(_className, registered)) {
       continue;
     }
 
@@ -361,7 +418,7 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
 
   for (const [_className, registered] of getClasses()) {
     // Skip collection classes - they don't have their own tables
-    if (registered.extends === 'SmrtCollection') {
+    if (isCollectionRegistration(_className, registered)) {
       continue;
     }
 

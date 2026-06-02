@@ -320,6 +320,103 @@ describe('createIsolatedTestDbFromManifest', () => {
         await cleanup();
       }
     });
+
+    it('should keep qualified filters scoped when class names collide', async () => {
+      const manifestPath = join(testDir, 'namespaced-collision-filter.json');
+      const manifest = {
+        objects: {
+          '@test/one:Product': {
+            className: 'Product',
+            schema: {
+              tableName: 'pkg_one_products',
+              ddl: 'CREATE TABLE IF NOT EXISTS "pkg_one_products" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+          '@test/two:Product': {
+            className: 'Product',
+            schema: {
+              tableName: 'pkg_two_products',
+              ddl: 'CREATE TABLE IF NOT EXISTS "pkg_two_products" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['@test/one:Product'],
+      });
+
+      try {
+        await db.list('pkg_one_products', {});
+        await expect(db.list('pkg_two_products', {})).rejects.toThrow();
+      } finally {
+        await cleanup();
+      }
+    });
+
+    it('should map collection subclass filters to their inherited STI item schema', async () => {
+      const manifestPath = join(testDir, 'collection-subclass-filter.json');
+      const manifest = {
+        packageName: '@test/messages',
+        objects: {
+          '@test/messages:MessageCollection': {
+            className: 'MessageCollection',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Message',
+            schema: {
+              tableName: 'message_collections',
+              ddl: 'CREATE TABLE IF NOT EXISTS "message_collections" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+          '@test/messages:EmailCollection': {
+            className: 'EmailCollection',
+            extends: 'MessageCollection',
+            schema: {
+              tableName: 'messages',
+              ddl: 'CREATE TABLE IF NOT EXISTS "messages" ("id" TEXT PRIMARY KEY NOT NULL, "slug" TEXT NOT NULL, "context" TEXT NOT NULL DEFAULT \'\', "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp, "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp);',
+            },
+          },
+          '@test/messages:Message': {
+            className: 'Message',
+            extends: 'SmrtObject',
+            decoratorConfig: {
+              tableStrategy: 'sti',
+            },
+            schema: {
+              tableName: 'messages',
+              ddl: 'CREATE TABLE IF NOT EXISTS "messages" ("id" TEXT PRIMARY KEY NOT NULL, "slug" TEXT NOT NULL, "context" TEXT NOT NULL DEFAULT \'\', "_meta_type" TEXT NOT NULL, "_meta_data" JSON, "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp, "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp, "subject" TEXT, "message_id" TEXT);',
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { baseDb, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['EmailCollection'],
+      });
+
+      try {
+        const columnsResult = await baseDb.query(
+          `PRAGMA table_info('messages')`,
+        );
+        const columns = Array.isArray(columnsResult)
+          ? columnsResult
+          : columnsResult.rows;
+        const columnNames = columns.map((row: { name: string }) => row.name);
+
+        expect(columnNames).toContain('_meta_type');
+        expect(columnNames).toContain('_meta_data');
+        expect(columnNames).toContain('subject');
+        expect(columnNames).toContain('message_id');
+      } finally {
+        await cleanup();
+      }
+    });
   });
 
   describe('STI deduplication', () => {

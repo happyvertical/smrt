@@ -71,6 +71,153 @@ function isSTIChild(className: string): boolean {
   return stiBaseName !== className;
 }
 
+type RegisteredSchemaClass = NonNullable<
+  ReturnType<typeof ObjectRegistry.getClass>
+>;
+
+function isSmrtCollectionExtendsName(extendsName: string | undefined): boolean {
+  return (
+    extendsName === 'SmrtCollection' ||
+    extendsName?.endsWith(':SmrtCollection') === true
+  );
+}
+
+function resolveRelatedRegistration(
+  className: string,
+  origin: RegisteredSchemaClass,
+): RegisteredSchemaClass | undefined {
+  if (className.includes(':')) {
+    return ObjectRegistry.getClass(className);
+  }
+
+  if (origin.packageName) {
+    return (
+      ObjectRegistry.getClassInPackage(origin.packageName, className) ||
+      ObjectRegistry.getClass(className)
+    );
+  }
+
+  return ObjectRegistry.getClass(className);
+}
+
+function getCollectionAncestorRegistrations(
+  className: string,
+  registered: RegisteredSchemaClass,
+): RegisteredSchemaClass[] {
+  const lookupName = registered.qualifiedName || registered.name || className;
+  const chain = ObjectRegistry.getInheritanceChain(lookupName);
+  const registrations: RegisteredSchemaClass[] = [];
+
+  for (const ancestorName of chain) {
+    const ancestor = resolveRelatedRegistration(ancestorName, registered);
+    if (ancestor) {
+      registrations.push(ancestor);
+    }
+  }
+
+  return registrations;
+}
+
+function isCollectionRegistration(
+  className: string,
+  registered: RegisteredSchemaClass,
+): boolean {
+  if (isSmrtCollectionExtendsName(registered.extends)) {
+    return true;
+  }
+
+  return getCollectionAncestorRegistrations(className, registered).some(
+    (ancestor) => isSmrtCollectionExtendsName(ancestor.extends),
+  );
+}
+
+function resolveCollectionItemClassName(
+  className: string,
+  registered: RegisteredSchemaClass,
+): string | undefined {
+  if (registered.extendsTypeArg) {
+    return registered.extendsTypeArg;
+  }
+
+  const ancestors = getCollectionAncestorRegistrations(
+    className,
+    registered,
+  ).reverse();
+
+  for (const ancestor of ancestors) {
+    if (ancestor.extendsTypeArg) {
+      return ancestor.extendsTypeArg;
+    }
+  }
+
+  return undefined;
+}
+
+function resolveCollectionSchemaClassName(
+  className: string,
+  registered: RegisteredSchemaClass,
+): string {
+  const itemClassName = resolveCollectionItemClassName(className, registered);
+  if (itemClassName) {
+    const itemRegistration = resolveRelatedRegistration(
+      itemClassName,
+      registered,
+    );
+    const itemLookupName =
+      itemRegistration?.qualifiedName ||
+      itemRegistration?.name ||
+      itemClassName;
+    const stiBase = ObjectRegistry.getSTIBase(itemLookupName);
+    return stiBase
+      ? resolveSTIBaseLookupName(itemLookupName, stiBase)
+      : itemLookupName;
+  }
+
+  const tableName =
+    registered.schema?.tableName ||
+    registered.config.tableName ||
+    ObjectRegistry.getTableName(className);
+  if (!tableName) {
+    return className;
+  }
+
+  const collectionPackage = registered.packageName;
+
+  for (const candidate of ObjectRegistry.getAllClasses().values()) {
+    if (
+      candidate === registered ||
+      isCollectionRegistration(
+        candidate.qualifiedName || candidate.name,
+        candidate,
+      )
+    ) {
+      continue;
+    }
+
+    const candidateTableName =
+      candidate.schema?.tableName || candidate.config.tableName;
+    if (candidateTableName !== tableName) {
+      continue;
+    }
+
+    if (
+      collectionPackage &&
+      candidate.packageName &&
+      candidate.packageName !== collectionPackage
+    ) {
+      continue;
+    }
+
+    const candidateLookupName = candidate.qualifiedName || candidate.name;
+    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
+    return stiBase
+      ? resolveSTIBaseLookupName(candidateLookupName, stiBase)
+      : candidateLookupName;
+  }
+
+  return className;
+}
+
 /**
  * Options for creating a test database
  */
@@ -114,48 +261,12 @@ function resolveRequestedSchemaClassName(className: string): string {
     return className;
   }
 
-  if (registered.extends !== 'SmrtCollection') {
+  if (!isCollectionRegistration(className, registered)) {
     const stiBase = ObjectRegistry.getSTIBase(className);
     return stiBase ? resolveSTIBaseLookupName(className, stiBase) : className;
   }
 
-  const tableName =
-    registered.schema?.tableName ||
-    registered.config.tableName ||
-    ObjectRegistry.getTableName(className);
-  if (!tableName) {
-    return className;
-  }
-
-  const collectionPackage = registered.packageName;
-
-  for (const candidate of ObjectRegistry.getAllClasses().values()) {
-    if (candidate === registered || candidate.extends === 'SmrtCollection') {
-      continue;
-    }
-
-    const candidateTableName =
-      candidate.schema?.tableName || candidate.config.tableName;
-    if (candidateTableName !== tableName) {
-      continue;
-    }
-
-    if (
-      collectionPackage &&
-      candidate.packageName &&
-      candidate.packageName !== collectionPackage
-    ) {
-      continue;
-    }
-
-    const candidateLookupName = candidate.qualifiedName || candidate.name;
-    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
-    return stiBase
-      ? resolveSTIBaseLookupName(candidateLookupName, stiBase)
-      : candidateLookupName;
-  }
-
-  return className;
+  return resolveCollectionSchemaClassName(className, registered);
 }
 
 function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
