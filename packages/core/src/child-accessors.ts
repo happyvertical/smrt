@@ -27,7 +27,14 @@
  * back to the parent (e.g. `ProfileRelationship.fromProfileId` /
  * `toProfileId`), annotate the `@oneToMany` with `{ foreignKey: 'fromProfileId' }`
  * so `loadRelatedMany` resolves the correct inverse side. Without it the
- * resolver falls back to the first matching foreign key (legacy behavior).
+ * resolver falls back to the first matching foreign key (legacy behavior). An
+ * explicit `foreignKey` that matches no inverse FK is treated as an error.
+ *
+ * STI note: a child class inherits the base's generated accessor through the
+ * prototype chain. `loadRelatedMany` resolves the inverse FK against the
+ * instance's class AND its registered ancestors (see
+ * `ObjectRegistry.getInverseRelationshipsForSelf`), so calling the accessor on
+ * an STI subclass instance resolves a `@oneToMany` declared on its base.
  */
 
 import type { RelationshipMetadata } from './registry/types';

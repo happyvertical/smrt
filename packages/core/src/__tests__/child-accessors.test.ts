@@ -102,6 +102,40 @@ class R10Pair extends SmrtObject {
   }
 }
 
+// --- STI: a child class inherits the base's generated @oneToMany accessor ---
+
+@smrt({ tableStrategy: 'sti' })
+class R10StiBase extends SmrtObject {
+  name: string = '';
+
+  @oneToMany('R10StiChild')
+  kids: any[] = [];
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name) this.name = options.name;
+  }
+}
+
+@smrt()
+class R10StiLeaf extends R10StiBase {
+  extra: string = '';
+}
+
+@smrt()
+class R10StiChild extends SmrtObject {
+  @foreignKey('R10StiBase')
+  baseId: string = '';
+
+  title: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.baseId) this.baseId = options.baseId;
+    if (options.title) this.title = options.title;
+  }
+}
+
 describe('R10: childAccessorName', () => {
   it('derives getX() from the field name', () => {
     expect(childAccessorName('items')).toBe('getItems');
@@ -174,6 +208,22 @@ describe('R10: generated @oneToMany child accessors', () => {
     await parent.initialize();
     const result = await (parent as any).getItems();
     expect(result).toEqual(['hand-rolled-sentinel']);
+  });
+
+  it('inherited accessor resolves children when called on an STI child', async () => {
+    const leaf = new R10StiLeaf({ name: 'Leaf', db });
+    await leaf.initialize();
+    await leaf.save();
+
+    for (const title of ['x', 'y']) {
+      const child = new R10StiChild({ baseId: leaf.id, title, db });
+      await child.initialize();
+      await child.save();
+    }
+
+    // getKids() is generated on R10StiBase.prototype and inherited by the leaf.
+    const kids = (await (leaf as any).getKids()) as R10StiChild[];
+    expect(kids.map((k) => k.title).sort()).toEqual(['x', 'y']);
   });
 
   it('disambiguates multiple FKs via explicit { foreignKey }', async () => {

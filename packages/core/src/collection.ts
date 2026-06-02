@@ -1166,27 +1166,33 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     fieldName: string,
     relationship: import('./registry').RelationshipMetadata,
   ): Promise<void> {
-    // Find the inverse foreignKey field
-    const inverseRelationships = ObjectRegistry.getInverseRelationships(
+    // Find the inverse foreignKey field. An instance can satisfy an inverse FK
+    // that targets its own class or any (STI) ancestor it inherits the
+    // oneToMany from. Mirrors loadRelatedMany so lazy and eager (`include:`)
+    // loading resolve the same inverse side.
+    const inverseRelationships = ObjectRegistry.getInverseRelationshipsForSelf(
       this._itemClass.name,
     );
     const inverseCandidates = inverseRelationships.filter(
       (r) =>
-        r.sourceClass === relationship.targetClass &&
-        r.type === 'foreignKey' &&
-        r.targetClass === this._itemClass.name,
+        r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
     );
     // Honor an explicit `@oneToMany(Target, { foreignKey })` when the target
     // declares multiple foreign keys back to this class; otherwise fall back
-    // to the first match (legacy behavior). Mirrors loadRelatedMany so lazy
-    // and eager (`include:`) loading resolve the same inverse side.
+    // to the first match (legacy behavior).
     const explicitForeignKey = relationship.options?.foreignKey as
       | string
       | undefined;
-    const inverseForeignKey =
-      (explicitForeignKey &&
-        inverseCandidates.find((r) => r.fieldName === explicitForeignKey)) ||
-      inverseCandidates[0];
+    const matchedForeignKey = explicitForeignKey
+      ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
+      : undefined;
+    if (explicitForeignKey && !matchedForeignKey) {
+      console.warn(
+        `oneToMany ${fieldName}: foreignKey '${explicitForeignKey}' not found on ${relationship.targetClass}; skipping eager load`,
+      );
+      return;
+    }
+    const inverseForeignKey = matchedForeignKey ?? inverseCandidates[0];
 
     if (!inverseForeignKey) {
       console.warn(
