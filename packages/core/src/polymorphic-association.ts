@@ -42,7 +42,6 @@
  * ```
  */
 
-import type { SmrtCollection } from './collection';
 import { field } from './decorators/index';
 import { SmrtObject, type SmrtObjectOptions } from './object';
 import { ObjectRegistry } from './registry';
@@ -111,19 +110,21 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
    * the target's collection. Going through the collection means STI targets
    * are rehydrated as their concrete subclass and a missing row yields `null`.
    *
-   * When the type isn't registered yet, the raw `metaType` is handed to
-   * `ObjectRegistry.getCollection`, which lazily loads an installed-but-
-   * unimported target package before resolving — so a qualified `metaType`
-   * still hydrates even if nothing has imported the target class.
+   * When the type isn't registered yet, a lazy external-package load is
+   * attempted so a qualified `metaType` still hydrates even if nothing has
+   * imported the target class. Once resolved, the load goes through the
+   * target's collection by its qualified name — genuine failures (DB/init
+   * errors) surface rather than being masked as "no target".
    *
    * Returns `null` when `metaType`/`metaId` are unset, the type can't be
    * resolved to a registered/loadable class, or the target row no longer
    * exists. The target shares this association's database connection via
    * `this.options`.
    *
-   * Prefer qualified `metaType` values (`@pkg:Class`): a bare simple name is
-   * resolved best-effort and is ambiguous when two packages share a class
-   * name.
+   * Prefer qualified `metaType` values (`@pkg:Class`): a bare simple name
+   * resolves to the first registered match, and an ambiguous unqualified name
+   * that has to be lazily loaded surfaces a `ConfigurationError` rather than
+   * guessing.
    *
    * @typeParam T - Expected target type for the caller's convenience cast.
    */
@@ -131,24 +132,35 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
     if (!this.metaType || !this.metaId) return null;
 
     // Prefer the qualified-name lookup; fall back to a simple-name lookup for
-    // legacy/unqualified values. When neither resolves, hand the raw metaType
-    // to getCollection so its lazy external-package load can still find it.
-    const registered =
+    // legacy/unqualified values.
+    let registered =
       ObjectRegistry.getClassByQualifiedName(this.metaType) ??
       ObjectRegistry.getClass(this.metaType);
-    const lookup =
-      registered?.qualifiedName ?? registered?.name ?? this.metaType;
 
-    let collection: SmrtCollection<SmrtObject>;
-    try {
-      collection = await ObjectRegistry.getCollection<SmrtObject>(
-        lookup,
-        this.options,
+    // Not registered yet — try a lazy external-package load, then re-resolve.
+    // Branch on the boolean: a `false` result means the type genuinely isn't
+    // installed (→ null), while real loader failures (e.g. an ambiguous
+    // unqualified name throwing ConfigurationError) propagate instead of being
+    // masked as "no target".
+    if (!registered) {
+      const loaded = await ObjectRegistry.tryLoadFromExternalPackage(
+        this.metaType,
       );
-    } catch {
-      // metaType doesn't resolve to a registered or loadable class.
-      return null;
+      if (!loaded) return null;
+      registered =
+        ObjectRegistry.getClassByQualifiedName(this.metaType) ??
+        ObjectRegistry.getClass(this.metaType);
     }
+
+    if (!registered) return null;
+
+    // Resolve via the canonical (qualified) name so the lookup is
+    // unambiguous. getCollection is deliberately NOT wrapped in a catch:
+    // real DB/init failures must surface, not be reported as a missing row.
+    const collection = await ObjectRegistry.getCollection<SmrtObject>(
+      registered.qualifiedName ?? registered.name,
+      this.options,
+    );
 
     const target = await collection.get({ id: this.metaId });
     return target as T | null;
