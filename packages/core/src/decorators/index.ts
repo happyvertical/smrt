@@ -343,8 +343,19 @@ export function crossPackageRef(
  * The inverse side (`@foreignKey`) must exist on the `relatedClass` pointing back to this
  * class. The framework discovers it automatically via `ObjectRegistry.getInverseRelationships()`.
  *
+ * **Generated accessor (R10):** registering the class installs a consistent
+ * `get<FieldName>()` instance method (e.g. `items` → `order.getItems()`) that
+ * delegates to `loadRelatedMany('items')`. Generation is additive — a
+ * hand-rolled method of the same name is never overwritten.
+ *
+ * **Disambiguation:** when `relatedClass` declares more than one `@foreignKey`
+ * back to this class, pass `{ foreignKey: '<inverseFieldName>' }` so both
+ * `loadRelatedMany` and the generated accessor resolve the intended inverse
+ * side. Without it the first matching foreign key is used.
+ *
  * @param relatedClass - The class constructor of the child/related objects
- * @param options - Optional relationship options (foreign key override, etc.)
+ * @param options - Optional relationship options. `foreignKey` selects the
+ *   inverse foreign-key field on `relatedClass` when it has more than one.
  * @returns A TypeScript property decorator (sets `transient: true` automatically)
  *
  * @example
@@ -359,6 +370,21 @@ export function crossPackageRef(
  * class OrderItem extends SmrtObject {
  *   @foreignKey(Order)
  *   orderId: string = '';
+ * }
+ *
+ * const order = await orders.get({ id });
+ * const items = await order.getItems(); // generated; === loadRelatedMany('items')
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Multiple inverse foreign keys → disambiguate explicitly.
+ * @smrt()
+ * class Profile extends SmrtObject {
+ *   @oneToMany(ProfileRelationship, { foreignKey: 'fromProfileId' })
+ *   relationshipsFrom: ProfileRelationship[] = [];
+ *   @oneToMany(ProfileRelationship, { foreignKey: 'toProfileId' })
+ *   relationshipsTo: ProfileRelationship[] = [];
  * }
  * ```
  *

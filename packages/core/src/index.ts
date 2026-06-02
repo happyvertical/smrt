@@ -18,6 +18,11 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
+// R10: generated child accessors for @oneToMany relationships
+export {
+  applyOneToManyChildAccessors,
+  childAccessorName,
+} from './child-accessors';
 // Core SMRT framework
 export * from './class';
 export * from './collection';

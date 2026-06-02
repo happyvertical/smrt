@@ -2104,16 +2104,48 @@ export class SmrtObject extends SmrtClass {
     }
 
     if (relationship.type === 'oneToMany') {
-      // Find the inverse foreignKey field on the target class
-      const inverseRelationships = ObjectRegistry.getInverseRelationships(
-        this.constructor.name,
-      );
-      const inverseForeignKey = inverseRelationships.find(
+      // Find the inverse foreignKey field on the target class. An instance can
+      // satisfy an inverse FK that targets its own class OR any (STI) ancestor
+      // it inherits the oneToMany from — the FK is declared against the base
+      // class name, while `this.constructor.name` may be a subclass (e.g. a
+      // Person inheriting Profile.relationshipsFrom).
+      const inverseRelationships =
+        ObjectRegistry.getInverseRelationshipsForSelf(this.constructor.name);
+      const inverseCandidates = inverseRelationships.filter(
         (r) =>
-          r.sourceClass === relationship.targetClass &&
-          r.type === 'foreignKey' &&
-          r.targetClass === this.constructor.name,
+          r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
       );
+      // When the target declares multiple foreign keys back to this class
+      // (e.g. ProfileRelationship.fromProfileId / toProfileId), honor an
+      // explicit `@oneToMany(Target, { foreignKey })` to pick the right side.
+      // Otherwise fall back to the first match (legacy behavior).
+      const explicitForeignKey = relationship.options?.foreignKey as
+        | string
+        | undefined;
+      const matchedForeignKey = explicitForeignKey
+        ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
+        : undefined;
+      if (explicitForeignKey && !matchedForeignKey) {
+        // A misspelled / stale `foreignKey` must fail loudly rather than
+        // silently resolving the wrong inverse side.
+        throw RuntimeError.invalidState(
+          `oneToMany ${fieldName} on ${this.constructor.name} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
+          {
+            fieldName,
+            targetClass: relationship.targetClass,
+            foreignKey: explicitForeignKey,
+          },
+        );
+      }
+      // Prefer an inverse FK that targets this exact class before falling back
+      // to one inherited from an (STI) ancestor — preserves the pre-fallback
+      // selection when a target declares FKs to multiple levels of the chain.
+      const inverseForeignKey =
+        matchedForeignKey ??
+        inverseCandidates.find(
+          (r) => r.targetClass === this.constructor.name,
+        ) ??
+        inverseCandidates[0];
 
       if (!inverseForeignKey) {
         throw RuntimeError.invalidState(

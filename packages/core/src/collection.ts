@@ -1166,16 +1166,41 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     fieldName: string,
     relationship: import('./registry').RelationshipMetadata,
   ): Promise<void> {
-    // Find the inverse foreignKey field
-    const inverseRelationships = ObjectRegistry.getInverseRelationships(
+    // Find the inverse foreignKey field. An instance can satisfy an inverse FK
+    // that targets its own class or any (STI) ancestor it inherits the
+    // oneToMany from. Mirrors loadRelatedMany so lazy and eager (`include:`)
+    // loading resolve the same inverse side.
+    const inverseRelationships = ObjectRegistry.getInverseRelationshipsForSelf(
       this._itemClass.name,
     );
-    const inverseForeignKey = inverseRelationships.find(
+    const inverseCandidates = inverseRelationships.filter(
       (r) =>
-        r.sourceClass === relationship.targetClass &&
-        r.type === 'foreignKey' &&
-        r.targetClass === this._itemClass.name,
+        r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
     );
+    // Honor an explicit `@oneToMany(Target, { foreignKey })` when the target
+    // declares multiple foreign keys back to this class; otherwise fall back
+    // to the first match (legacy behavior).
+    const explicitForeignKey = relationship.options?.foreignKey as
+      | string
+      | undefined;
+    const matchedForeignKey = explicitForeignKey
+      ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
+      : undefined;
+    if (explicitForeignKey && !matchedForeignKey) {
+      // A misspelled / stale `foreignKey` is a configuration error, not a
+      // recoverable data condition — fail loudly here too so eager (`include:`)
+      // loading behaves identically to lazy loadRelatedMany rather than
+      // silently producing empty arrays.
+      throw new Error(
+        `oneToMany ${fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
+      );
+    }
+    // Prefer an inverse FK that targets this exact class before falling back
+    // to an ancestor's (mirrors loadRelatedMany).
+    const inverseForeignKey =
+      matchedForeignKey ??
+      inverseCandidates.find((r) => r.targetClass === this._itemClass.name) ??
+      inverseCandidates[0];
 
     if (!inverseForeignKey) {
       console.warn(

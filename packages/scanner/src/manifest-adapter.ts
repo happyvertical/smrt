@@ -58,6 +58,8 @@ type FieldDecoratorOptions = {
   maxLength?: number;
   minLength?: number;
   related?: string;
+  /** oneToMany explicit inverse foreign-key field on the target class */
+  foreignKey?: string;
   description?: string;
   transient?: boolean;
   unique?: boolean;
@@ -813,13 +815,24 @@ export class ManifestAdapter {
       };
     }
 
-    // @oneToMany(RelatedClass) decorator
+    // @oneToMany(RelatedClass, { foreignKey? }) decorator
     if (decorator.name === 'oneToMany') {
       const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
+      // Preserve an explicit inverse `foreignKey` so manifest-only consumers
+      // disambiguate the inverse side the same way the runtime decorator does
+      // (needed when the target declares multiple FKs back to this class).
+      const parsedOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[1],
+      );
+      const meta: Record<string, unknown> = {};
+      if (parsedOptions?.foreignKey !== undefined) {
+        meta.foreignKey = parsedOptions.foreignKey;
+      }
       return {
         type: 'oneToMany',
         related: relatedClass || undefined,
         required: false,
+        ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
         source: 'decorator',
       };
     }

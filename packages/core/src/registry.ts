@@ -28,6 +28,7 @@
  * ```
  */
 
+import { applyOneToManyChildAccessors } from './child-accessors';
 import { SmrtCollection } from './collection';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
 import type {
@@ -2579,6 +2580,59 @@ export class ObjectRegistry {
   }
 
   /**
+   * Names by which an instance of `className` can be referenced by an inverse
+   * foreign key: its own (simple) class name plus every registered ancestor in
+   * its inheritance chain.
+   *
+   * Used by oneToMany resolution so an STI subclass can resolve a relationship
+   * declared on its base — the inverse `@foreignKey` is declared against the
+   * base class name, while the runtime instance may be a subclass.
+   *
+   * @param className - Simple or qualified class name
+   * @returns Set of names (simple and, where available, qualified) the
+   *   instance is assignable to
+   */
+  static getSelfReferableNames(className: string): Set<string> {
+    const names = new Set<string>([className]);
+    for (const ancestor of ObjectRegistry.getInheritanceChain(className)) {
+      names.add(ancestor);
+      const simple = ObjectRegistry.getClass(ancestor)?.name;
+      if (simple) {
+        names.add(simple);
+      }
+    }
+    return names;
+  }
+
+  /**
+   * Inverse relationships targeting `className` OR any (STI) ancestor it
+   * inherits from.
+   *
+   * `getInverseRelationships` matches the target class name exactly. This
+   * variant also matches inverse foreign keys declared against an ancestor,
+   * so an STI subclass instance can resolve a `@oneToMany` declared on its
+   * base — whose inverse `@foreignKey` points at the base class name.
+   *
+   * @param className - Name of the class to find inverse relationships for
+   * @returns Relationship metadata whose target is the class or one of its
+   *   registered ancestors
+   */
+  static getInverseRelationshipsForSelf(
+    className: string,
+  ): RelationshipMetadata[] {
+    const names = ObjectRegistry.getSelfReferableNames(className);
+    const result: RelationshipMetadata[] = [];
+    for (const [, relationships] of ObjectRegistry.getRelationshipMap()) {
+      for (const rel of relationships) {
+        if (names.has(rel.targetClass)) {
+          result.push(rel);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
    * Get table inheritance strategy for a class
    *
    * Returns the table strategy (CTI or STI) for a class, with automatic
@@ -3276,6 +3330,15 @@ export function smrt(config: SmartObjectConfig = {}) {
       }
 
       ObjectRegistry.register(ctor as any, { ...config, tableName });
+
+      // R10: install a consistent `getX()` child accessor for every
+      // `@oneToMany` field, delegating to `loadRelatedMany`. Runs after
+      // registration so the relationship metadata is populated. Additive —
+      // never overrides a hand-rolled accessor of the same name.
+      applyOneToManyChildAccessors(
+        ctor as any,
+        ObjectRegistry.getRelationships(ctor.name),
+      );
     }
 
     return ctor;
