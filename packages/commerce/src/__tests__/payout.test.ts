@@ -84,6 +84,41 @@ describe('Payout', () => {
     expect(loaded?.grossAmount).toBe(199.0);
   });
 
+  it('carries the source payment tenant onto the payout (no active context)', async () => {
+    // Regression: a background payout job iterating Payment rows runs outside
+    // any tenant context, so the tenancy interceptor can't auto-stamp a tenant.
+    // Without explicitly carrying payment.tenantId, the payout would save as
+    // global/null and drop out of tenant-filtered payout queries.
+    const payment = await payments.create({
+      contractId: 'contract-tenant',
+      customerId: 'customer-tenant',
+      amount: 500,
+      currency: 'USD',
+      backendId: 'base-usdc',
+      nativeAmount: 500,
+      nativeCurrency: 'USDC-base',
+      tenantId: 'tenant-A',
+    });
+    await payment.save();
+    expect(payment.tenantId).toBe('tenant-A');
+
+    const payout = await payouts.createFromPayment({
+      payment,
+      vendorId: 'vendor-tenant',
+      operatorFee: 50,
+    });
+    // The fix: the payout inherits the payment's tenant before save.
+    expect(payout.tenantId).toBe('tenant-A');
+    await payout.save();
+
+    const loaded = await payouts.get({ id: payout.id });
+    expect(loaded?.tenantId).toBe('tenant-A');
+
+    // And it must surface in a tenant-filtered query rather than as a global row.
+    const forTenant = await payouts.findByTenant('tenant-A');
+    expect(forTenant.map((p) => p.id)).toContain(payout.id);
+  });
+
   it('falls back to amount / currency when no backend rail is set', async () => {
     // Defensive: a manually-recorded Payment with no PaymentBackend
     // adapter (e.g. a bank-transfer row entered by a human bookkeeper)

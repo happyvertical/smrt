@@ -52,6 +52,12 @@ export class PayoutCollection extends SmrtCollection<Payout> {
       ai: this.options.ai,
       db: this.db,
       _skipLoad: true,
+      // Inherit the source payment's tenant. Payout is @TenantScoped, so when
+      // this runs outside an active tenant context (e.g. a background payout
+      // job iterating Payment rows), the interceptor's auto-populate can't
+      // stamp a tenant — without carrying it explicitly the remittance would
+      // save as global/null and drop out of tenant-filtered payout queries.
+      tenantId: payment.tenantId,
       paymentId: payment.id ?? '',
       vendorId,
       grossAmount,
