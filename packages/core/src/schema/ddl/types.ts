@@ -13,10 +13,12 @@ import type { SchemaDefinition, SQLDataType } from '../types.js';
 /**
  * Supported database engines
  * - sqlite: SQLite/LibSQL databases
- * - duckdb: DuckDB databases (including JSON adapter which uses DuckDB internally)
+ * - duckdb: DuckDB databases
+ * - json: JSON adapter backed by DuckDB, with UUID stored as TEXT for stable
+ *   JS round-tripping
  * - postgres: PostgreSQL databases
  */
-export type DatabaseEngine = 'sqlite' | 'duckdb' | 'postgres';
+export type DatabaseEngine = 'sqlite' | 'duckdb' | 'json' | 'postgres';
 
 /**
  * Engine-specific DDL output

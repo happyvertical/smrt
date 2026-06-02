@@ -99,6 +99,7 @@ export async function generateSchema(
   const runtimeSchemaConfig = registeredClass?.config
     ? {
         conflictColumns: registeredClass.config.conflictColumns,
+        idType: registeredClass.config.idType,
       }
     : undefined;
 
@@ -131,6 +132,7 @@ export async function generateSchema(
         className,
         tableName,
         cachedFields,
+        runtimeSchemaConfig,
       );
     } else {
       // This is a child class - return null or empty schema
@@ -156,7 +158,10 @@ export async function generateSchema(
     // Store the full SchemaDefinition for SchemaManager to use
     registeredClass.schema = schemaDefinition;
     // Also store generated DDL for backward compatibility
-    registeredClass.schema.ddl = generator.generateSQL(schemaDefinition);
+    registeredClass.schema.ddl = generator.generateSQL(
+      schemaDefinition,
+      'sqlite',
+    );
   }
 
   return generator.generateSQL(schemaDefinition);

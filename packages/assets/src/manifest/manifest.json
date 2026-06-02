@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1779220310906,
+  "timestamp": 1780375807201,
   "packageName": "@happyvertical/smrt-assets",
   "packageVersion": "0.25.8",
   "objects": {
@@ -13,11 +13,9 @@
       "packageName": "@happyvertical/smrt-assets",
       "fields": {
         "assetId": {
-          "type": "text",
-          "required": true,
-          "_meta": {
-            "required": true
-          }
+          "type": "foreignKey",
+          "required": false,
+          "related": "Asset"
         },
         "metaType": {
           "type": "text",
@@ -76,11 +74,6 @@
       "collectionExportName": "AssetAssociationCollection",
       "validationRules": [
         {
-          "field": "assetId",
-          "rule": "required",
-          "fieldType": "text"
-        },
-        {
           "field": "metaType",
           "rule": "required",
           "fieldType": "text"
@@ -98,10 +91,10 @@
       ],
       "schema": {
         "tableName": "asset_associations",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_associations\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"asset_id\" TEXT NOT NULL,\n  \"meta_type\" TEXT NOT NULL,\n  \"meta_id\" TEXT NOT NULL,\n  \"role\" TEXT NOT NULL,\n  \"sort_order\" INTEGER DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_associations\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"asset_id\" uuid,\n  \"meta_type\" TEXT NOT NULL,\n  \"meta_id\" TEXT NOT NULL,\n  \"role\" TEXT NOT NULL,\n  \"sort_order\" INTEGER DEFAULT 0\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -125,8 +118,8 @@
             "default": "current_timestamp"
           },
           "asset_id": {
-            "type": "TEXT",
-            "notNull": true,
+            "type": "UUID",
+            "notNull": false,
             "unique": false
           },
           "meta_type": {
@@ -169,7 +162,7 @@
             "unique": true
           }
         ],
-        "version": "ca8497f5"
+        "version": "4f1d3516"
       }
     },
     "@happyvertical/smrt-assets:AssetAssociationCollection": {
@@ -319,10 +312,10 @@
       "collectionExportName": "AssetAssociationCollectionCollection",
       "schema": {
         "tableName": "asset_association_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_association_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_association_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -362,7 +355,7 @@
             "unique": true
           }
         ],
-        "version": "4cd9ab63"
+        "version": "a1cd367f"
       }
     },
     "@happyvertical/smrt-assets:AssetMetafield": {
@@ -864,10 +857,10 @@
       "collectionExportName": "AssetMetafieldCollection",
       "schema": {
         "tableName": "asset_metafields",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafields\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"validation\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafields\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"validation\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -930,7 +923,7 @@
             ]
           }
         ],
-        "version": "6463e0dd"
+        "version": "721d05b7"
       }
     },
     "@happyvertical/smrt-assets:AssetMetafieldCollection": {
@@ -982,10 +975,10 @@
       "collectionExportName": "AssetMetafieldCollectionCollection",
       "schema": {
         "tableName": "asset_metafield_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafield_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_metafield_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -1025,7 +1018,7 @@
             "unique": true
           }
         ],
-        "version": "edbf819d"
+        "version": "61c5c47e"
       }
     },
     "@happyvertical/smrt-assets:AssetStatus": {
@@ -1505,10 +1498,10 @@
       "collectionExportName": "AssetStatusCollection",
       "schema": {
         "tableName": "asset_statuses",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_statuses\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_statuses\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -1571,7 +1564,7 @@
             ]
           }
         ],
-        "version": "0893c2a1"
+        "version": "0f8b7a09"
       }
     },
     "@happyvertical/smrt-assets:AssetStatusCollection": {
@@ -1623,10 +1616,10 @@
       "collectionExportName": "AssetStatusCollectionCollection",
       "schema": {
         "tableName": "asset_status_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_status_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_status_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -1666,7 +1659,7 @@
             "unique": true
           }
         ],
-        "version": "331f0ad8"
+        "version": "051046ef"
       }
     },
     "@happyvertical/smrt-assets:AssetType": {
@@ -2146,10 +2139,10 @@
       "collectionExportName": "AssetTypeCollection",
       "schema": {
         "tableName": "asset_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_types\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_types\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT,\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -2212,7 +2205,7 @@
             ]
           }
         ],
-        "version": "d46f0f07"
+        "version": "a86988da"
       }
     },
     "@happyvertical/smrt-assets:AssetTypeCollection": {
@@ -2264,10 +2257,10 @@
       "collectionExportName": "AssetTypeCollectionCollection",
       "schema": {
         "tableName": "asset_type_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_type_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_type_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -2307,7 +2300,7 @@
             "unique": true
           }
         ],
-        "version": "57e0ddcd"
+        "version": "f40f1240"
       }
     },
     "@happyvertical/smrt-assets:Asset": {
@@ -2356,8 +2349,9 @@
           "default": 1
         },
         "primaryVersionId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Asset"
         },
         "typeSlug": {
           "type": "text",
@@ -2368,16 +2362,19 @@
           "required": false
         },
         "ownerProfileId": {
-          "type": "text",
-          "required": false
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-profiles:Profile"
         },
         "sourceAssetId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Asset"
         },
         "folderId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Folder"
         },
         "sourceType": {
           "type": "text",
@@ -3024,10 +3021,10 @@
       ],
       "schema": {
         "tableName": "assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"source_uri\" TEXT,\n  \"mime_type\" TEXT,\n  \"description\" TEXT,\n  \"metadata\" TEXT,\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" TEXT,\n  \"type_slug\" TEXT,\n  \"status_slug\" TEXT,\n  \"owner_profile_id\" TEXT,\n  \"source_asset_id\" TEXT,\n  \"folder_id\" TEXT,\n  \"source_type\" TEXT,\n  \"external_id\" TEXT,\n  \"external_refs\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"assets\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"source_uri\" TEXT,\n  \"mime_type\" TEXT,\n  \"description\" TEXT,\n  \"metadata\" TEXT,\n  \"version\" INTEGER DEFAULT 1,\n  \"primary_version_id\" uuid,\n  \"type_slug\" TEXT,\n  \"status_slug\" TEXT,\n  \"owner_profile_id\" uuid,\n  \"source_asset_id\" uuid,\n  \"folder_id\" uuid,\n  \"source_type\" TEXT,\n  \"external_id\" TEXT,\n  \"external_refs\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -3088,7 +3085,7 @@
             "default": 1
           },
           "primary_version_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "type_slug": {
@@ -3100,15 +3097,15 @@
             "notNull": false
           },
           "owner_profile_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "source_asset_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "folder_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "source_type": {
@@ -3147,7 +3144,7 @@
             ]
           }
         ],
-        "version": "302f9402"
+        "version": "90f07f0b"
       }
     },
     "@happyvertical/smrt-assets:AssetCollection": {
@@ -3410,10 +3407,10 @@
       "collectionExportName": "AssetCollectionCollection",
       "schema": {
         "tableName": "asset_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"asset_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -3453,7 +3450,7 @@
             "unique": true
           }
         ],
-        "version": "a0906bc4"
+        "version": "1a181bde"
       }
     },
     "@happyvertical/smrt-assets:Folder": {
@@ -3481,8 +3478,9 @@
           "required": false
         },
         "ownerProfileId": {
-          "type": "text",
-          "required": false
+          "type": "crossPackageRef",
+          "required": false,
+          "related": "@happyvertical/smrt-profiles:Profile"
         },
         "createdAt": {
           "type": "text",
@@ -3498,7 +3496,7 @@
           "name": "getParent",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Folder | null>",
+          "returnType": "Promise<null>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3506,7 +3504,7 @@
           "name": "getChildren",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Folder[]>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -3514,7 +3512,7 @@
           "name": "getAncestors",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Folder[]>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -3522,7 +3520,7 @@
           "name": "getDescendants",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<Folder[]>",
+          "returnType": "Promise",
           "isStatic": false,
           "isPublic": true
         },
@@ -3530,7 +3528,7 @@
           "name": "getHierarchy",
           "async": true,
           "parameters": [],
-          "returnType": "Promise<HierarchyView<Folder>>",
+          "returnType": "Promise<HierarchyView>",
           "isStatic": false,
           "isPublic": true
         },
@@ -3540,7 +3538,7 @@
           "parameters": [
             {
               "name": "newParent",
-              "type": "Folder | string | null",
+              "type": "string | null",
               "optional": false
             }
           ],
@@ -3588,10 +3586,10 @@
       "collectionExportName": "FolderCollection",
       "schema": {
         "tableName": "folders",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"folders\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" TEXT,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"description\" TEXT,\n  \"owner_profile_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"folders\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" TEXT,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"description\" TEXT,\n  \"owner_profile_id\" uuid\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -3635,7 +3633,7 @@
             "unique": false
           },
           "owner_profile_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
             "unique": false
           }
@@ -3656,7 +3654,7 @@
             "unique": true
           }
         ],
-        "version": "a9783c63"
+        "version": "108eee55"
       }
     },
     "@happyvertical/smrt-assets:FolderCollection": {
@@ -3742,10 +3740,10 @@
       "collectionExportName": "FolderCollectionCollection",
       "schema": {
         "tableName": "folder_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"folder_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"folder_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -3785,14 +3783,13 @@
             "unique": true
           }
         ],
-        "version": "9df61270"
+        "version": "e515465c"
       }
     }
   },
   "moduleType": "smrt",
   "smrtDependencies": [
     "@happyvertical/smrt-core",
-    "@happyvertical/smrt-tags",
-    "@happyvertical/smrt-tenancy"
+    "@happyvertical/smrt-tags"
   ]
 }

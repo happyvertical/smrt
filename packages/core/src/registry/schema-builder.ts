@@ -755,7 +755,9 @@ export function mapFieldTypeToSQL(
     case 'json':
       return 'JSON';
     case 'foreignKey':
-      return 'TEXT';
+      return 'UUID';
+    case 'crossPackageRef':
+      return 'UUID';
     default:
       return 'TEXT';
   }

@@ -2,14 +2,16 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { SchemaGenerator } from '../schema/generator.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
+import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import { createQualifiedName } from '../utils/qualified-names.js';
-import { classnameToTablename, toSnakeCase } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
@@ -19,12 +21,17 @@ import type {
   AgentMenuItem,
   AgentPermission,
   AgentUISlotManifest,
+  ManifestSchema,
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
   SmrtVisibility,
   ValidationRule,
 } from './types.js';
+
+type SchemaGeneratorLike = {
+  generateSQL: (schema: any, engine?: any) => string;
+};
 
 // Create require function for synchronous module loading in ESM context
 const require = createRequire(import.meta.url);
@@ -363,15 +370,6 @@ export class ManifestGenerator {
    * @param manifest - The manifest to process in-place
    */
   generateSchemas(manifest: SmartObjectManifest): void {
-    // Import SchemaGenerator synchronously (using createRequire for ESM compatibility)
-    // In Vitest/source runs, prefer the TypeScript source so tests exercise the
-    // current branch instead of stale built artifacts.
-    let SchemaGenerator: any;
-    try {
-      SchemaGenerator = require('../schema/generator.ts').SchemaGenerator;
-    } catch {
-      SchemaGenerator = require('../schema/generator.js').SchemaGenerator;
-    }
     const generator = new SchemaGenerator();
 
     // Create aggregated manifest that includes external package objects
@@ -409,6 +407,7 @@ export class ManifestGenerator {
           tableName,
           obj.fields,
           aggregatedManifest,
+          obj.decoratorConfig,
         );
         this.applySqlTypeOverrides(obj);
       } else if (this.isSTIChildClass(obj, manifest)) {
@@ -437,6 +436,7 @@ export class ManifestGenerator {
             baseTableName,
             obj.fields,
             aggregatedManifest,
+            obj.decoratorConfig,
           );
           this.applySqlTypeOverrides(obj);
         }
@@ -455,6 +455,152 @@ export class ManifestGenerator {
         this.applySqlTypeOverrides(obj);
       }
     }
+
+    this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
+  }
+
+  private resolveSamePackageForeignKeyColumnTypes(
+    manifest: SmartObjectManifest,
+    generator: SchemaGeneratorLike,
+  ): void {
+    const schemaByTable = new Map<string, ManifestSchema>();
+    const changedSchemas = new Set<ManifestSchema>();
+
+    for (const obj of Object.values(manifest.objects)) {
+      if (obj.schema?.tableName) {
+        schemaByTable.set(obj.schema.tableName, obj.schema);
+      }
+    }
+
+    for (const obj of Object.values(manifest.objects)) {
+      const sourceTable = this.getObjectTableName(obj);
+      if (!sourceTable) {
+        continue;
+      }
+
+      const sourceSchema = schemaByTable.get(sourceTable);
+      if (!sourceSchema) {
+        continue;
+      }
+
+      for (const [fieldName, field] of Object.entries(obj.fields || {})) {
+        if (
+          field.type !== 'foreignKey' ||
+          !field.related ||
+          field._meta?.sqlType
+        ) {
+          continue;
+        }
+
+        const columnName = toSnakeCase(fieldName);
+        const sourceColumn = sourceSchema.columns[columnName];
+        if (!sourceColumn) {
+          continue;
+        }
+
+        const targetSchema = this.findForeignKeyTargetSchema(
+          field.related,
+          manifest,
+          schemaByTable,
+        );
+        const targetIdType = targetSchema?.columns.id?.type;
+        if (!targetIdType || sourceColumn.type === targetIdType) {
+          continue;
+        }
+
+        sourceSchema.columns[columnName] = {
+          ...sourceColumn,
+          type: targetIdType,
+        };
+        changedSchemas.add(sourceSchema);
+      }
+    }
+
+    for (const schema of changedSchemas) {
+      this.refreshManifestSchemaDDL(schema, generator);
+    }
+  }
+
+  private findForeignKeyTargetSchema(
+    related: string,
+    manifest: SmartObjectManifest,
+    schemaByTable: Map<string, ManifestSchema>,
+  ): ManifestSchema | undefined {
+    const relatedTarget = related.split('.')[0];
+    if (schemaByTable.has(relatedTarget)) {
+      return schemaByTable.get(relatedTarget);
+    }
+
+    const targetObj = Object.values(manifest.objects).find(
+      (candidate) =>
+        candidate.className === relatedTarget ||
+        candidate.qualifiedName === relatedTarget ||
+        candidate.name === relatedTarget ||
+        candidate.decoratorConfig?.tableName === relatedTarget ||
+        candidate.schema?.tableName === relatedTarget,
+    );
+
+    if (!targetObj && relatedTarget.includes(':')) {
+      return undefined;
+    }
+
+    const targetTable = targetObj
+      ? this.getObjectTableName(targetObj)
+      : this.classNameToTableName(relatedTarget);
+
+    return targetTable ? schemaByTable.get(targetTable) : undefined;
+  }
+
+  private getObjectTableName(obj: SmartObjectDefinition): string | undefined {
+    return (
+      obj.schema?.tableName ||
+      obj.decoratorConfig?.tableName ||
+      this.classNameToTableName(obj.className)
+    );
+  }
+
+  private refreshManifestSchemaDDL(
+    schema: ManifestSchema,
+    generator: SchemaGeneratorLike,
+  ): void {
+    const schemaDefinition = {
+      tableName: schema.tableName,
+      columns: Object.fromEntries(
+        Object.entries(schema.columns).map(([name, column]) => [
+          name,
+          {
+            type: column.type,
+            primaryKey: column.primaryKey,
+            notNull: column.notNull,
+            unique: column.unique,
+            defaultValue: column.default,
+          },
+        ]),
+      ),
+      indexes: (schema.indexes || []).map((index) => ({
+        name: index.name,
+        columns: index.columns,
+        unique: index.unique,
+        where: index.where,
+        jsonPath: index.jsonPath,
+      })),
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: schema.version,
+      packageName: '',
+    };
+
+    schema.ddl = generator.generateSQL(schemaDefinition, 'postgres');
+    schema.version = createHash('sha256')
+      .update(
+        JSON.stringify({
+          tableName: schema.tableName,
+          columns: schema.columns,
+        }),
+      )
+      .digest('hex')
+      .substring(0, 8);
   }
 
   private applySqlTypeOverrides(obj: SmartObjectDefinition): void {

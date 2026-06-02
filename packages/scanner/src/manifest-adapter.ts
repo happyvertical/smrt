@@ -91,6 +91,7 @@ interface MethodDefinition {
 
 interface SmartObjectConfig {
   tableStrategy?: 'sti' | 'cti';
+  idType?: 'uuid' | 'text';
   features?: Record<
     string,
     {

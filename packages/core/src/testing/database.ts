@@ -226,6 +226,7 @@ export async function getTestDatabase(
     const strategy = ObjectRegistry.getTableStrategy(className);
     const runtimeSchemaConfig = {
       conflictColumns: ObjectRegistry.getConflictColumns(className),
+      idType: registered?.config.idType,
     };
 
     // Generate schema using SchemaGenerator (same as migrations)
@@ -235,6 +236,7 @@ export async function getTestDatabase(
             className,
             tableName,
             fields,
+            runtimeSchemaConfig,
           )
         : schemaGenerator.generateSchemaFromRegistry(
             className,
@@ -244,7 +246,7 @@ export async function getTestDatabase(
           );
 
     // Generate DDL using generateSQL() - the single source of truth
-    const ddl = schemaGenerator.generateSQL(schema);
+    const ddl = schemaGenerator.generateSQL(schema, 'sqlite');
 
     try {
       await db.query(ddl);

@@ -12,6 +12,9 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { classnameToTablename } from '../utils/naming.js';
+import { getDDLStrategy } from './ddl/index.js';
+import type { DatabaseEngine } from './ddl/types.js';
 import type {
   ColumnDefinition,
   ForeignKeyDefinition,
@@ -21,13 +24,25 @@ import type {
   TriggerDefinition,
 } from './types.js';
 
+type SchemaGeneratorConfig = {
+  conflictColumns?: string[];
+  idType?: 'uuid' | 'text';
+  registry?: {
+    getDescendants(baseClassName: string): string[];
+    getAllFields(className: string): Promise<Map<string, any>>;
+  };
+};
+
 export class SchemaGenerator {
   /**
    * Generate schema definition from SMRT object definition
    */
   generateSchema(objectDef: SmartObjectDefinition): SchemaDefinition {
     const tableName = this.getTableName(objectDef);
-    const columns = this.generateColumns(objectDef.fields);
+    const columns = this.generateColumns(
+      objectDef.fields,
+      objectDef.decoratorConfig,
+    );
     const indexes = this.generateIndexes(objectDef, columns);
     const triggers = this.generateTriggers(objectDef, tableName);
     const foreignKeys = this.extractForeignKeys(columns);
@@ -65,12 +80,16 @@ export class SchemaGenerator {
       case 'json':
         return 'JSON';
       case 'foreignKey':
-        return 'TEXT'; // Foreign keys are typically TEXT
+        return 'UUID'; // Foreign keys default to UUID, then same-package refs can be reconciled to target idType
       case 'crossPackageRef':
-        return 'TEXT'; // Cross-package refs are plain TEXT (no DDL FK constraint)
+        return 'UUID'; // Cross-package refs are UUID ids with no DDL FK constraint
       default:
         return 'TEXT'; // Default fallback
     }
+  }
+
+  private getIdColumnType(config?: { idType?: 'uuid' | 'text' }): SQLDataType {
+    return config?.idType === 'text' ? 'TEXT' : 'UUID';
   }
 
   /**
@@ -78,12 +97,13 @@ export class SchemaGenerator {
    */
   private generateColumns(
     fields: Record<string, FieldDefinition>,
+    config?: { idType?: 'uuid' | 'text' },
   ): Record<string, ColumnDefinition> {
     const columns: Record<string, ColumnDefinition> = {};
 
     // Always include base SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
       description: 'Primary identifier',
@@ -308,11 +328,7 @@ export class SchemaGenerator {
    * Convert class name to table name (camelCase to snake_case, pluralized)
    */
   private classNameToTableName(className: string): string {
-    return `${className
-      .replace(/([A-Z])/g, '_$1')
-      .toLowerCase()
-      .replace(/^_/, '')
-      .replace(/s$/, '')}s`; // Simple pluralization
+    return classnameToTablename(className);
   }
 
   /**
@@ -338,7 +354,7 @@ export class SchemaGenerator {
     className: string,
     tableName: string,
     fields: Map<string, any>,
-    config?: { conflictColumns?: string[] },
+    config?: SchemaGeneratorConfig,
   ): SchemaDefinition {
     const columns: Record<string, ColumnDefinition> = {};
 
@@ -354,7 +370,7 @@ export class SchemaGenerator {
     // Add default SMRT fields if no custom primary key
     if (!hasCustomPK) {
       columns.id = {
-        type: 'TEXT',
+        type: this.getIdColumnType(config),
         primaryKey: true,
         notNull: true,
         description: 'Primary identifier',
@@ -619,13 +635,15 @@ export class SchemaGenerator {
     baseClassName: string,
     tableName: string,
     _fields: Map<string, any>,
+    config?: SchemaGeneratorConfig,
   ): Promise<SchemaDefinition> {
-    const { ObjectRegistry } = await import('../registry.js');
+    const ObjectRegistry =
+      config?.registry ?? (await import('../registry.js')).ObjectRegistry;
     const columns: Record<string, ColumnDefinition> = {};
 
     // Add default SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
       description: 'Primary identifier',
@@ -901,12 +919,13 @@ export class SchemaGenerator {
     tableName: string,
     _baseFields: Record<string, FieldDefinition>,
     manifest: SmartObjectManifest,
+    config?: SchemaGeneratorConfig,
   ): ManifestSchema {
     const columns: Record<string, ManifestColumnDefinition> = {};
 
     // Add default SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
     };
@@ -1099,7 +1118,7 @@ export class SchemaGenerator {
       packageName: '',
     };
 
-    const ddl = this.generateSQL(schemaDefinition);
+    const ddl = this.generateSQL(schemaDefinition, 'postgres');
 
     // Generate version hash
     const version = createHash('sha256')
@@ -1128,13 +1147,13 @@ export class SchemaGenerator {
     className: string,
     tableName: string,
     fields: Record<string, FieldDefinition>,
-    config?: { conflictColumns?: string[] },
+    config?: SchemaGeneratorConfig,
   ): ManifestSchema {
     const columns: Record<string, ManifestColumnDefinition> = {};
 
     // Add default SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
     };
@@ -1249,7 +1268,7 @@ export class SchemaGenerator {
       packageName: '',
     };
 
-    const ddl = this.generateSQL(schemaDefinition);
+    const ddl = this.generateSQL(schemaDefinition, 'postgres');
 
     // Generate version hash
     const version = createHash('sha256')
@@ -1356,59 +1375,46 @@ export class SchemaGenerator {
    * @param schema - Schema definition object
    * @returns SQL CREATE TABLE statement with indexes
    */
-  generateSQL(schema: SchemaDefinition): string {
-    const { tableName, columns } = schema;
-
-    // Quote table name to handle SQL reserved keywords
-    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
-
-    // Track which columns we've added
-    const addedColumns: string[] = [];
-
-    // Add all columns
-    for (const [columnName, columnDef] of Object.entries(columns)) {
-      const parts: string[] = [];
-
-      // Column name and type - quote column name to handle SQL reserved keywords
-      parts.push(`  "${columnName}" ${columnDef.type}`);
-
-      // Primary key
-      if (columnDef.primaryKey) {
-        parts.push('PRIMARY KEY');
-      }
-
-      // Not null constraint
-      if (columnDef.notNull) {
-        parts.push('NOT NULL');
-      }
-
-      // Unique constraint
-      if (columnDef.unique && !columnDef.primaryKey) {
-        parts.push('UNIQUE');
-      }
-
-      // Default value with CAST for DuckDB compatibility
-      if (columnDef.defaultValue !== undefined) {
-        const defaultSQL = this.formatDefaultValue(
-          columnDef.defaultValue,
-          columnDef.type,
-        );
-        parts.push(`DEFAULT ${defaultSQL}`);
-      }
-
-      sql += `${parts.join(' ')},\n`;
-      addedColumns.push(columnName);
-    }
-
-    // Remove trailing comma and close table
-    sql = `${sql.slice(0, -2)}\n);`;
-
+  generateSQL(schema: SchemaDefinition, engine?: DatabaseEngine): string {
     // NOTE: We no longer append indexes to DDL string here.
     // The SDK expects ddl to contain ONLY the CREATE TABLE statement.
     // Indexes are stored separately in schema.indexes as SQL strings
     // and the SDK handles them via syncSchema() or dedicated index creation.
+    if (engine) {
+      return getDDLStrategy(engine).generateCreateTable(schema);
+    }
 
-    return sql;
+    const { tableName, columns } = schema;
+    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+
+    for (const [columnName, columnDef] of Object.entries(columns)) {
+      const parts = [`  "${columnName}" ${columnDef.type}`];
+
+      if (columnDef.primaryKey) {
+        parts.push('PRIMARY KEY');
+      }
+
+      if (columnDef.notNull) {
+        parts.push('NOT NULL');
+      }
+
+      if (columnDef.unique && !columnDef.primaryKey) {
+        parts.push('UNIQUE');
+      }
+
+      if (columnDef.defaultValue !== undefined) {
+        parts.push(
+          `DEFAULT ${this.formatDefaultValue(
+            columnDef.defaultValue,
+            columnDef.type,
+          )}`,
+        );
+      }
+
+      sql += `${parts.join(' ')},\n`;
+    }
+
+    return `${sql.slice(0, -2)}\n);`;
   }
 
   /**

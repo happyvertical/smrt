@@ -80,7 +80,7 @@ describe('Issue #198: DuckDB DATETIME Compatibility', () => {
 
     // Verify schema structure
     expect(schema).toContain('CREATE TABLE IF NOT EXISTS');
-    expect(schema).toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).toContain('"id" UUID PRIMARY KEY');
     expect(schema).toContain(
       '"created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp',
     );

@@ -23,6 +23,10 @@ describe('R11 UUID type mapping (per-dialect)', () => {
     expect(getDDLStrategy('duckdb').mapType('UUID')).toBe('UUID');
   });
 
+  it('maps UUID to TEXT on the JSON adapter to preserve JS round-tripping', () => {
+    expect(getDDLStrategy('json').mapType('UUID')).toBe('TEXT');
+  });
+
   it('maps UUID to TEXT on SQLite (no native uuid type)', () => {
     expect(getDDLStrategy('sqlite').mapType('UUID')).toBe('TEXT');
   });

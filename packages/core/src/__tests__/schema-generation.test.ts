@@ -130,7 +130,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     // - CREATE INDEX statements
 
     expect(schema).toContain(`CREATE TABLE IF NOT EXISTS "${tableName}"`);
-    expect(schema).toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).toContain('"id" UUID PRIMARY KEY');
     expect(schema).toContain('"slug" TEXT NOT NULL');
     expect(schema).toContain('"context" TEXT NOT NULL');
     expect(schema).toContain('"title" TEXT NOT NULL'); // required: true
@@ -159,7 +159,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     const schema = await generateSchema(SchemaGenArticle);
 
     // Verify all base SmrtObject fields are included (with quoted column names)
-    expect(schema).toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).toContain('"id" UUID PRIMARY KEY');
     expect(schema).toContain('"slug" TEXT NOT NULL');
     expect(schema).toContain('"context" TEXT NOT NULL');
     expect(schema).toContain('"created_at" TIMESTAMP');
@@ -210,7 +210,7 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     const schema = await generateSchema(CustomPrimaryKeyRecord);
 
     expect(schema).toContain('"external_id" TEXT PRIMARY KEY');
-    expect(schema).not.toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).not.toContain('"id" UUID PRIMARY KEY');
     expect(schema).not.toContain('"slug" TEXT NOT NULL');
     expect(schema).not.toContain('"context" TEXT NOT NULL');
     expect(schema).toContain('"created_at" TIMESTAMP');

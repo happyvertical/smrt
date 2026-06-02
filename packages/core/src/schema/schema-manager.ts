@@ -49,9 +49,9 @@ export class SchemaManager {
       this.engine = options.engine;
     } else if ((db as any).exportTable) {
       // JSON adapter detected (has unique exportTable method)
-      // JSON adapter uses DuckDB internally, so use DuckDB DDL strategy
-      // This is critical for UPSERT to work (DuckDB requires inline UNIQUE constraints)
-      this.engine = 'duckdb';
+      // JSON adapter uses DuckDB internally, but native UUID values do not
+      // round-trip through the SDK row objects as canonical UUID strings.
+      this.engine = 'json';
     } else {
       this.engine = detectEngine(db.url);
     }
