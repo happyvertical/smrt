@@ -2108,12 +2108,23 @@ export class SmrtObject extends SmrtClass {
       const inverseRelationships = ObjectRegistry.getInverseRelationships(
         this.constructor.name,
       );
-      const inverseForeignKey = inverseRelationships.find(
+      const inverseCandidates = inverseRelationships.filter(
         (r) =>
           r.sourceClass === relationship.targetClass &&
           r.type === 'foreignKey' &&
           r.targetClass === this.constructor.name,
       );
+      // When the target declares multiple foreign keys back to this class
+      // (e.g. ProfileRelationship.fromProfileId / toProfileId), honor an
+      // explicit `@oneToMany(Target, { foreignKey })` to pick the right side.
+      // Otherwise fall back to the first match (legacy behavior).
+      const explicitForeignKey = relationship.options?.foreignKey as
+        | string
+        | undefined;
+      const inverseForeignKey =
+        (explicitForeignKey &&
+          inverseCandidates.find((r) => r.fieldName === explicitForeignKey)) ||
+        inverseCandidates[0];
 
       if (!inverseForeignKey) {
         throw RuntimeError.invalidState(

@@ -32,6 +32,7 @@ Auth helpers in `src/auth/` build profiles from external identity claims:
 - `Profile.getAssets()` / `addAsset()` / `removeAsset()` and the matching `ProfileCollection` wrappers — canonical owned asset helpers backed by `profile_assets`.
 - `Profile.addMetadata(metafieldSlug, value)` / `Profile.getMetadata()` — validates against metafield schema. `ProfileCollection.batchGetMetadata()` / `batchUpdateMetadata()` for bulk reads/writes.
 - `Profile.getRelationships({ direction: 'from'|'to'|'all' })` — direction matters.
+- `Profile.getRelationshipsFrom()` / `getRelationshipsTo()` — R10-generated `@oneToMany` accessors. ProfileRelationship has two FKs back to Profile, so each `@oneToMany` annotates its inverse explicitly (`{ foreignKey: 'fromProfileId' }` / `'toProfileId'`). Return raw `ProfileRelationship[]`; use `getRelationships()` for slug/direction filtering.
 - AI: `generateBio()` (uses `smrtProfiles.profile.generateBio` prompt via `@happyvertical/smrt-prompts`), `matches(criteria)` (delegates to `is()`).
 
 ## Prompt Registry

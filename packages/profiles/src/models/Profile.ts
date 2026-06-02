@@ -64,10 +64,15 @@ export class Profile extends SmrtObject {
   @oneToMany('ProfileMetadata')
   metadata: any[] = [];
 
-  @oneToMany('ProfileRelationship')
+  // ProfileRelationship declares multiple foreign keys back to Profile
+  // (fromProfileId / toProfileId / contextProfileId), so each oneToMany names
+  // its inverse side explicitly. This both disambiguates `loadRelatedMany`
+  // and gives the R10-generated `getRelationshipsFrom()` / `getRelationshipsTo()`
+  // accessors the correct inverse foreign key.
+  @oneToMany('ProfileRelationship', { foreignKey: 'fromProfileId' })
   relationshipsFrom: any[] = [];
 
-  @oneToMany('ProfileRelationship')
+  @oneToMany('ProfileRelationship', { foreignKey: 'toProfileId' })
   relationshipsTo: any[] = [];
 
   constructor(options: ProfileOptions = {}) {

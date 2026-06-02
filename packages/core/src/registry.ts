@@ -28,6 +28,7 @@
  * ```
  */
 
+import { applyOneToManyChildAccessors } from './child-accessors';
 import { SmrtCollection } from './collection';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
 import type {
@@ -3276,6 +3277,15 @@ export function smrt(config: SmartObjectConfig = {}) {
       }
 
       ObjectRegistry.register(ctor as any, { ...config, tableName });
+
+      // R10: install a consistent `getX()` child accessor for every
+      // `@oneToMany` field, delegating to `loadRelatedMany`. Runs after
+      // registration so the relationship metadata is populated. Additive —
+      // never overrides a hand-rolled accessor of the same name.
+      applyOneToManyChildAccessors(
+        ctor as any,
+        ObjectRegistry.getRelationships(ctor.name),
+      );
     }
 
     return ctor;

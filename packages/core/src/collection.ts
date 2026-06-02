@@ -1170,12 +1170,23 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const inverseRelationships = ObjectRegistry.getInverseRelationships(
       this._itemClass.name,
     );
-    const inverseForeignKey = inverseRelationships.find(
+    const inverseCandidates = inverseRelationships.filter(
       (r) =>
         r.sourceClass === relationship.targetClass &&
         r.type === 'foreignKey' &&
         r.targetClass === this._itemClass.name,
     );
+    // Honor an explicit `@oneToMany(Target, { foreignKey })` when the target
+    // declares multiple foreign keys back to this class; otherwise fall back
+    // to the first match (legacy behavior). Mirrors loadRelatedMany so lazy
+    // and eager (`include:`) loading resolve the same inverse side.
+    const explicitForeignKey = relationship.options?.foreignKey as
+      | string
+      | undefined;
+    const inverseForeignKey =
+      (explicitForeignKey &&
+        inverseCandidates.find((r) => r.fieldName === explicitForeignKey)) ||
+      inverseCandidates[0];
 
     if (!inverseForeignKey) {
       console.warn(
