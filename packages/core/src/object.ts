@@ -11,6 +11,7 @@ import {
   DatabaseError,
   ErrorUtils,
   RuntimeError,
+  TenantIsolationError,
   ValidationError,
 } from './errors';
 import { createInterceptorContext, GlobalInterceptors } from './interceptors';
@@ -166,6 +167,24 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
    * Allow arbitrary field values to be passed
    */
   [key: string]: any;
+}
+
+/**
+ * Options for the relationship loaders {@link SmrtObject.loadRelated},
+ * {@link SmrtObject.loadRelatedMany}, and {@link SmrtObject.getRelated}.
+ */
+export interface LoadRelatedOptions {
+  /**
+   * Bypass the cross-tenant isolation guard.
+   *
+   * By default, resolving a relationship from a tenant-scoped object to an
+   * object in a *different*, non-null tenant throws a `TenantIsolationError`.
+   * Set this to `true` for deliberate cross-tenant flows (admin tooling,
+   * migrations, super-admin bypass paths) where the access is intentional.
+   *
+   * @default false
+   */
+  allowCrossTenant?: boolean;
 }
 
 /**
@@ -1942,7 +1961,8 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Lazy-loads a `foreignKey` relationship and caches the result.
+   * Lazy-loads a `foreignKey` or `crossPackageRef` relationship and caches the
+   * result.
    *
    * Looks up the relationship metadata in the ObjectRegistry, reads the
    * foreign key value on this object, and fetches the related object from
@@ -1952,10 +1972,21 @@ export class SmrtObject extends SmrtClass {
    * For STI relationships, the correct subclass is determined by reading
    * `_meta_type` from the database row before instantiation.
    *
-   * @param fieldName - Name of the `@foreignKey()` decorated property
+   * Enforces tenant isolation: if this object and the loaded target both carry
+   * a non-null `tenantId` that differ, a {@link TenantIsolationError} is thrown
+   * (unless `opts.allowCrossTenant` is set). The check is a no-op for
+   * global/null-tenant models and same-tenant loads, so it only catches genuine
+   * cross-tenant leaks (Issue #1321).
+   *
+   * @param fieldName - Name of the `@foreignKey()` or `@crossPackageRef()`
+   *   decorated property
+   * @param opts - Optional loader options; see {@link LoadRelatedOptions}
    * @returns The related object, or `null` if the foreign key is empty
-   * @throws {RuntimeError} If `fieldName` is not a `foreignKey` relationship,
-   *   or the target class is not found in the ObjectRegistry
+   * @throws {RuntimeError} If `fieldName` is not a `foreignKey` or
+   *   `crossPackageRef` relationship, or the target class is not found in the
+   *   ObjectRegistry
+   * @throws {TenantIsolationError} If the target belongs to a different,
+   *   non-null tenant and `opts.allowCrossTenant` is not set
    *
    * @example
    * ```typescript
@@ -1966,10 +1997,18 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link getRelated} for a convenience wrapper that auto-detects relationship type
    */
-  public async loadRelated(fieldName: string): Promise<any> {
+  public async loadRelated(
+    fieldName: string,
+    opts?: LoadRelatedOptions,
+  ): Promise<any> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
-      return this._loadedRelationships.get(fieldName);
+      const cached = this._loadedRelationships.get(fieldName);
+      // Re-validate cached targets: a cache populated by an eager `include`
+      // load (or a prior allowCrossTenant load) must not leak cross-tenant data
+      // through a later guarded call (Issue #1321).
+      this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
+      return cached;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -2059,9 +2098,73 @@ export class SmrtObject extends SmrtClass {
     relatedInstance.id = foreignKeyValue as string;
     await relatedInstance.loadFromId();
 
+    // Enforce tenant isolation before caching/returning so a blocked
+    // cross-tenant target is never cached (Issue #1321).
+    this.assertRelatedTenant(
+      relatedInstance,
+      fieldName,
+      opts?.allowCrossTenant,
+    );
+
     // Cache the loaded object
     this._loadedRelationships.set(fieldName, relatedInstance);
     return relatedInstance;
+  }
+
+  /**
+   * Guards a loaded relationship target against cross-tenant access.
+   *
+   * Throws {@link TenantIsolationError} when this object and `loaded` both carry
+   * a non-null `tenantId` that differ — the genuine cross-tenant leak. It is a
+   * no-op when `allowCrossTenant === true`, when `loaded` is `null`, when either
+   * side has a `null`/`undefined` tenant (global / non-tenant-scoped models),
+   * and when both sides share the same tenant (Issue #1321).
+   *
+   * `loaded` may be a single related object or an array (oneToMany / manyToMany);
+   * arrays are validated per item. This runs on both fresh loads and cache hits,
+   * so a cache populated by an eager `include` load — or by a prior
+   * `allowCrossTenant` load — cannot leak cross-tenant data through a later
+   * guarded call.
+   *
+   * @param loaded - The loaded related object, or array of objects.
+   * @param fieldName - The relationship field name (for error context).
+   * @param allowCrossTenant - When exactly `true`, bypasses the guard entirely.
+   */
+  private assertRelatedTenant(
+    loaded: unknown,
+    fieldName: string,
+    allowCrossTenant?: boolean,
+  ): void {
+    // Strict `=== true`: only the documented opt-in bypasses the guard, never an
+    // incidental truthy value passed from untyped JS callers.
+    if (allowCrossTenant === true || loaded == null) {
+      return;
+    }
+
+    if (Array.isArray(loaded)) {
+      for (const item of loaded) {
+        this.assertRelatedTenant(item, fieldName, allowCrossTenant);
+      }
+      return;
+    }
+
+    const sourceTenantId = (this as { tenantId?: unknown }).tenantId;
+    const targetTenantId = (loaded as { tenantId?: unknown }).tenantId;
+
+    if (
+      sourceTenantId != null &&
+      targetTenantId != null &&
+      sourceTenantId !== targetTenantId
+    ) {
+      throw TenantIsolationError.crossTenantReference({
+        sourceClass: this.constructor.name,
+        fieldName,
+        sourceTenantId: String(sourceTenantId),
+        targetClass: (loaded as { constructor?: { name?: string } })
+          ?.constructor?.name,
+        targetTenantId: String(targetTenantId),
+      });
+    }
   }
 
   /**
@@ -2070,9 +2173,18 @@ export class SmrtObject extends SmrtClass {
    * Loads all related objects from the database. For oneToMany, queries by
    * the inverse foreign key. For manyToMany, queries through the join table.
    *
+   * Enforces tenant isolation per item: if this object and a loaded target both
+   * carry a non-null `tenantId` that differ, a {@link TenantIsolationError} is
+   * thrown (unless `opts.allowCrossTenant` is set). The check is a no-op for
+   * global/null-tenant models and same-tenant loads, so it only catches genuine
+   * cross-tenant leaks (Issue #1321).
+   *
    * @param fieldName - Name of the oneToMany or manyToMany field
+   * @param opts - Optional loader options; see {@link LoadRelatedOptions}
    * @returns Promise resolving to array of related objects
    * @throws {RuntimeError} If the field is not a relationship or not implemented
+   * @throws {TenantIsolationError} If any loaded item belongs to a different,
+   *   non-null tenant and `opts.allowCrossTenant` is not set
    * @example
    * ```typescript
    * // Given: class Customer with orders = oneToMany(Order)
@@ -2080,10 +2192,18 @@ export class SmrtObject extends SmrtClass {
    * console.log(`${orders.length} orders found`);
    * ```
    */
-  public async loadRelatedMany(fieldName: string): Promise<any[]> {
+  public async loadRelatedMany(
+    fieldName: string,
+    opts?: LoadRelatedOptions,
+  ): Promise<any[]> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
-      return this._loadedRelationships.get(fieldName);
+      const cached = this._loadedRelationships.get(fieldName);
+      // Re-validate cached targets: a cache populated by an eager `include`
+      // load (or a prior allowCrossTenant load) must not leak cross-tenant data
+      // through a later guarded call (Issue #1321).
+      this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
+      return cached;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -2165,6 +2285,13 @@ export class SmrtObject extends SmrtClass {
         where: { [inverseForeignKey.fieldName]: this.id },
       });
 
+      // Enforce tenant isolation per item before caching (Issue #1321).
+      this.assertRelatedTenant(
+        relatedObjects,
+        fieldName,
+        opts?.allowCrossTenant,
+      );
+
       // Cache the loaded objects
       this._loadedRelationships.set(fieldName, relatedObjects);
       return relatedObjects;
@@ -2205,6 +2332,13 @@ export class SmrtObject extends SmrtClass {
       const targetObjects = await targetCollection.list({
         where: { 'id in': targetIds },
       });
+
+      // Enforce tenant isolation per item before caching (Issue #1321).
+      this.assertRelatedTenant(
+        targetObjects,
+        fieldName,
+        opts?.allowCrossTenant,
+      );
 
       this._loadedRelationships.set(fieldName, targetObjects);
       return targetObjects;
@@ -2283,8 +2417,14 @@ export class SmrtObject extends SmrtClass {
    * Convenience method that checks if the relationship is loaded and
    * loads it if necessary. Automatically detects foreignKey vs oneToMany/manyToMany.
    *
+   * Tenant isolation is enforced by the underlying loaders; see
+   * {@link loadRelated} and {@link loadRelatedMany}.
+   *
    * @param fieldName - Name of the relationship field
+   * @param opts - Optional loader options; see {@link LoadRelatedOptions}
    * @returns Promise resolving to the related object(s)
+   * @throws {TenantIsolationError} If a loaded target belongs to a different,
+   *   non-null tenant and `opts.allowCrossTenant` is not set
    * @example
    * ```typescript
    * // Loads customer if not already loaded
@@ -2294,9 +2434,16 @@ export class SmrtObject extends SmrtClass {
    * const orders = await customer.getRelated('orders');
    * ```
    */
-  public async getRelated(fieldName: string): Promise<any> {
+  public async getRelated(
+    fieldName: string,
+    opts?: LoadRelatedOptions,
+  ): Promise<any> {
     if (this._loadedRelationships.has(fieldName)) {
-      return this._loadedRelationships.get(fieldName);
+      const cached = this._loadedRelationships.get(fieldName);
+      // Re-validate cached targets so an eager `include` load cannot leak
+      // cross-tenant data through this convenience accessor (Issue #1321).
+      this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
+      return cached;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -2321,10 +2468,10 @@ export class SmrtObject extends SmrtClass {
       relationship.type === 'foreignKey' ||
       relationship.type === 'crossPackageRef'
     ) {
-      return this.loadRelated(fieldName);
+      return this.loadRelated(fieldName, opts);
     }
 
-    return this.loadRelatedMany(fieldName);
+    return this.loadRelatedMany(fieldName, opts);
   }
 
   /**
