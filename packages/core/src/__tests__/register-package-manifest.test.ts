@@ -290,6 +290,86 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     }
   });
 
+  it('recovers manifest.json relocated up a directory when vite splits the register shim into a chunk (#1331)', () => {
+    // Regression for #1331. The `__smrt-register__` shim resolves the manifest
+    // via `new URL('./manifest.json', import.meta.url)`, assuming the compiled
+    // side-effect sits next to `dist/manifest.json`. Vite chunk-splitting is
+    // non-deterministic and sometimes hoists that side-effect into a
+    // `dist/chunks/<hash>.js` chunk, so the URL resolves to a non-existent
+    // `dist/chunks/manifest.json` and self-registration silently no-opped —
+    // dropping every plain (undecorated) field from the package's models in
+    // consumer runtimes. registerPackageManifest() must walk up to recover the
+    // real manifest.
+    const packageName = '@happyvertical/smrt-self-register-fixture-chunk';
+    // Real manifest lives at <tempRoot>/manifest.json (i.e. dist/manifest.json).
+    writeManifest(tempRoot, packageName, {
+      FixtureChunkWidget: {
+        decoratorConfig: {
+          tableName: 'fixture_chunk_widgets',
+          api: false,
+          cli: false,
+          mcp: false,
+        },
+        fields: {
+          // A plain (undecorated) field — exactly what was being dropped.
+          handle: { type: 'text' },
+        },
+      },
+    });
+
+    // The shim, hoisted into dist/chunks/, would derive this non-existent path.
+    const chunksDir = join(tempRoot, 'chunks');
+    mkdirSync(chunksDir, { recursive: true });
+    const relocatedManifestUrl = pathToFileURL(
+      join(chunksDir, 'manifest.json'),
+    );
+
+    ObjectRegistry.clearDiagnostics();
+    const result = ObjectRegistry.registerPackageManifest(relocatedManifestUrl);
+
+    expect(result.loaded).toBe(true);
+    expect(result.packageName).toBe(packageName);
+    expect(result.objectsRegistered).toBe(1);
+
+    // No PACKAGE_MANIFEST_NOT_FOUND diagnostic — recovery succeeded.
+    const notFound = ObjectRegistry.getDiagnostics().find(
+      (d) => d.code === 'PACKAGE_MANIFEST_NOT_FOUND',
+    );
+    expect(notFound).toBeUndefined();
+
+    // And the plain field is registered, so consumers see a complete schema.
+    @smrt({
+      tableName: 'fixture_chunk_widgets',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureChunkWidget extends SmrtObject {}
+
+    const registered = ObjectRegistry.findClass('FixtureChunkWidget');
+    expect(registered?.fields.has('handle')).toBe(true);
+    void FixtureChunkWidget;
+  });
+
+  it('still no-ops when no manifest.json exists in any parent directory', () => {
+    // The upward search is bounded and must not spuriously recover an
+    // unrelated manifest. With nothing to find, the not-found diagnostic
+    // still fires.
+    const chunksDir = join(tempRoot, 'chunks');
+    mkdirSync(chunksDir, { recursive: true });
+    const missingUrl = pathToFileURL(join(chunksDir, 'manifest.json'));
+
+    ObjectRegistry.clearDiagnostics();
+    const result = ObjectRegistry.registerPackageManifest(missingUrl);
+
+    expect(result.loaded).toBe(false);
+    expect(result.objectsRegistered).toBe(0);
+    const notFound = ObjectRegistry.getDiagnostics().find(
+      (d) => d.code === 'PACKAGE_MANIFEST_NOT_FOUND',
+    );
+    expect(notFound).toBeDefined();
+  });
+
   it('accepts a plain string path as well as a URL', () => {
     const packageName = '@happyvertical/smrt-self-register-fixture-strpath';
     const manifestPath = writeManifest(tempRoot, packageName, {
