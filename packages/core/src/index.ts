@@ -102,6 +102,10 @@ export {
   SchemaComparer,
 } from './migrations/differ';
 export * from './object';
+export {
+  SmrtPolymorphicAssociation,
+  type SmrtPolymorphicAssociationOptions,
+} from './polymorphic-association';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities
