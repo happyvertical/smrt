@@ -223,15 +223,21 @@ export async function getAllFields(
 
     // Merge fields from this ancestor
     for (const [fieldName, field] of ancestor.fields) {
+      const normalizedField = normalizeFrameworkInheritedField(
+        ancestorName,
+        fieldName,
+        field,
+        className,
+      );
       const existingField = allFields.get(fieldName);
       if (!existingField) {
         // New field from parent
-        allFields.set(fieldName, field);
+        allFields.set(fieldName, normalizedField);
       } else {
         // Field exists - merge configs
         allFields.set(
           fieldName,
-          mergeFieldConfigs(existingField, field, fieldName),
+          mergeFieldConfigs(existingField, normalizedField, fieldName),
         );
       }
     }
@@ -240,6 +246,32 @@ export async function getAllFields(
   registered.inheritedFields = new Map(allFields);
 
   return prependSmrtSystemFields(allFields);
+}
+
+function normalizeFrameworkInheritedField(
+  ancestorName: string,
+  fieldName: string,
+  field: any,
+  childClassName: string,
+): any {
+  const simpleAncestorName = ancestorName.includes(':')
+    ? ancestorName.split(':').pop()
+    : ancestorName;
+
+  if (simpleAncestorName === 'SmrtHierarchical' && fieldName === 'parentId') {
+    return {
+      ...field,
+      type: 'foreignKey',
+      related: childClassName,
+      required: false,
+      _meta: {
+        ...(field._meta || {}),
+        nullable: true,
+      },
+    };
+  }
+
+  return field;
 }
 
 export function mergeFieldConfigs(

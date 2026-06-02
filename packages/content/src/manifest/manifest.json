@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780375813147,
+  "timestamp": 1780379256044,
   "packageName": "@happyvertical/smrt-content",
   "packageVersion": "0.25.8",
   "objects": {
@@ -18,8 +18,11 @@
         },
         "contentId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Content"
+          "required": true,
+          "related": "Content",
+          "_meta": {
+            "required": true
+          }
         },
         "assetId": {
           "type": "crossPackageRef",
@@ -56,6 +59,11 @@
       "collectionExportName": "ContentAssetCollection",
       "validationRules": [
         {
+          "field": "contentId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "assetId",
           "rule": "required",
           "fieldType": "crossPackageRef"
@@ -73,7 +81,7 @@
       ],
       "schema": {
         "tableName": "content_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_assets\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"content_id\" uuid,\n  \"asset_id\" uuid NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"content_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -106,7 +114,7 @@
           },
           "content_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "asset_id": {
@@ -143,7 +151,7 @@
             "unique": true
           }
         ],
-        "version": "30176c74"
+        "version": "85d04e7f"
       }
     },
     "@happyvertical/smrt-content:ContentAssetCollection": {
@@ -278,7 +286,7 @@
       "collectionExportName": "ContentAssetCollectionCollection",
       "schema": {
         "tableName": "content_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_assets\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -334,8 +342,11 @@
       "fields": {
         "contributionId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ContentContribution"
+          "required": true,
+          "related": "ContentContribution",
+          "_meta": {
+            "required": true
+          }
         },
         "revisionId": {
           "type": "foreignKey",
@@ -430,6 +441,11 @@
       "collectionExportName": "ContentContributionAttachmentCollection",
       "validationRules": [
         {
+          "field": "contributionId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "size",
           "rule": "required",
           "fieldType": "integer"
@@ -437,7 +453,7 @@
       ],
       "schema": {
         "tableName": "content_contribution_attachments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_attachments\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" uuid,\n  \"revision_id\" uuid,\n  \"filename\" TEXT,\n  \"mime_type\" TEXT,\n  \"size\" INTEGER NOT NULL DEFAULT 0,\n  \"file_key\" TEXT,\n  \"source_uri\" TEXT,\n  \"channel\" TEXT DEFAULT 'web',\n  \"promoted_asset_id\" uuid,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_attachments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" UUID NOT NULL,\n  \"revision_id\" UUID,\n  \"filename\" TEXT,\n  \"mime_type\" TEXT,\n  \"size\" INTEGER NOT NULL DEFAULT 0,\n  \"file_key\" TEXT,\n  \"source_uri\" TEXT,\n  \"channel\" TEXT DEFAULT 'web',\n  \"promoted_asset_id\" UUID,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -465,7 +481,7 @@
           },
           "contribution_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "revision_id": {
@@ -536,7 +552,7 @@
             "unique": true
           }
         ],
-        "version": "26614056"
+        "version": "e7280ad1"
       }
     },
     "@happyvertical/smrt-content:ContentContributionAttachmentCollection": {
@@ -586,7 +602,7 @@
       "collectionExportName": "ContentContributionAttachmentCollectionCollection",
       "schema": {
         "tableName": "content_contribution_attachments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_attachments\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_attachments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -642,8 +658,11 @@
       "fields": {
         "contributionId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ContentContribution"
+          "required": true,
+          "related": "ContentContribution",
+          "_meta": {
+            "required": true
+          }
         },
         "revisionNumber": {
           "type": "integer",
@@ -734,6 +753,11 @@
       "collectionExportName": "ContentContributionRevisionCollection",
       "validationRules": [
         {
+          "field": "contributionId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "revisionNumber",
           "rule": "required",
           "fieldType": "integer"
@@ -741,7 +765,7 @@
       ],
       "schema": {
         "tableName": "content_contribution_revisions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_revisions\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" uuid,\n  \"revision_number\" INTEGER NOT NULL DEFAULT 1,\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"source_message_id\" uuid,\n  \"source_thread_key\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_revisions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" UUID NOT NULL,\n  \"revision_number\" INTEGER NOT NULL DEFAULT 1,\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"source_message_id\" UUID,\n  \"source_thread_key\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -769,7 +793,7 @@
           },
           "contribution_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "revision_number": {
@@ -836,7 +860,7 @@
             "unique": true
           }
         ],
-        "version": "5d72bd52"
+        "version": "6a88bf13"
       }
     },
     "@happyvertical/smrt-content:ContentContributionRevisionCollection": {
@@ -886,7 +910,7 @@
       "collectionExportName": "ContentContributionRevisionCollectionCollection",
       "schema": {
         "tableName": "content_contribution_revisions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_revisions\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_revisions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1163,7 +1187,7 @@
       ],
       "schema": {
         "tableName": "content_contribution_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_types\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allowed_channels\" TEXT,\n  \"allow_text\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allow_files\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"allow_empty_text\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"intake_rules\" TEXT,\n  \"promotion\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allowed_channels\" TEXT,\n  \"allow_text\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allow_files\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"allow_empty_text\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"intake_rules\" TEXT,\n  \"promotion\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1300,7 +1324,7 @@
       "collectionExportName": "ContentContributionTypeCollectionCollection",
       "schema": {
         "tableName": "content_contribution_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_types\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1356,8 +1380,11 @@
       "fields": {
         "contributorId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ContentContributor"
+          "required": true,
+          "related": "ContentContributor",
+          "_meta": {
+            "required": true
+          }
         },
         "contributionTypeKey": {
           "type": "text",
@@ -1670,6 +1697,11 @@
       "collectionExportName": "ContentContributionCollection",
       "validationRules": [
         {
+          "field": "contributorId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "contributionTypeKey",
           "rule": "required",
           "fieldType": "text"
@@ -1682,7 +1714,7 @@
       ],
       "schema": {
         "tableName": "content_contributions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributions\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contributor_id\" uuid,\n  \"contribution_type_key\" TEXT NOT NULL,\n  \"status\" TEXT DEFAULT 'submitted',\n  \"intake_decision\" TEXT DEFAULT 'accepted',\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"contributor_email\" TEXT,\n  \"contributor_name\" TEXT,\n  \"thread_key\" TEXT,\n  \"source_message_id\" uuid,\n  \"editor_notes\" TEXT,\n  \"promoted_content_id\" uuid,\n  \"revision_count\" INTEGER NOT NULL DEFAULT 0,\n  \"approved_at\" TIMESTAMP,\n  \"promoted_at\" TIMESTAMP,\n  \"rejected_at\" TIMESTAMP,\n  \"withdrawn_at\" TIMESTAMP,\n  \"requested_changes_at\" TIMESTAMP,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contributor_id\" UUID NOT NULL,\n  \"contribution_type_key\" TEXT NOT NULL,\n  \"status\" TEXT DEFAULT 'submitted',\n  \"intake_decision\" TEXT DEFAULT 'accepted',\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"contributor_email\" TEXT,\n  \"contributor_name\" TEXT,\n  \"thread_key\" TEXT,\n  \"source_message_id\" UUID,\n  \"editor_notes\" TEXT,\n  \"promoted_content_id\" UUID,\n  \"revision_count\" INTEGER NOT NULL DEFAULT 0,\n  \"approved_at\" TIMESTAMP,\n  \"promoted_at\" TIMESTAMP,\n  \"rejected_at\" TIMESTAMP,\n  \"withdrawn_at\" TIMESTAMP,\n  \"requested_changes_at\" TIMESTAMP,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1710,7 +1742,7 @@
           },
           "contributor_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "contribution_type_key": {
@@ -1838,7 +1870,7 @@
             "unique": true
           }
         ],
-        "version": "f09bdda7"
+        "version": "c87be5bc"
       }
     },
     "@happyvertical/smrt-content:ContentContributions": {
@@ -1962,7 +1994,7 @@
       "collectionExportName": "ContentContributionsCollection",
       "schema": {
         "tableName": "content_contributions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributions\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2115,7 +2147,7 @@
       ],
       "schema": {
         "tableName": "content_contributors",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributors\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" uuid,\n  \"email\" TEXT NOT NULL,\n  \"name\" TEXT,\n  \"trust_level\" TEXT DEFAULT 'standard',\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributors\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID,\n  \"email\" TEXT NOT NULL,\n  \"name\" TEXT,\n  \"trust_level\" TEXT DEFAULT 'standard',\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2252,7 +2284,7 @@
       "collectionExportName": "ContentContributorCollectionCollection",
       "schema": {
         "tableName": "content_contributors",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributors\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributors\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2308,8 +2340,11 @@
       "fields": {
         "contentId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Content"
+          "required": true,
+          "related": "Content",
+          "_meta": {
+            "required": true
+          }
         },
         "contentVersionId": {
           "type": "foreignKey",
@@ -2406,9 +2441,16 @@
       "extends": "SmrtObject",
       "exportName": "ContentCorrection",
       "collectionExportName": "ContentCorrectionCollection",
+      "validationRules": [
+        {
+          "field": "contentId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "content_corrections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_corrections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" uuid,\n  \"content_version_id\" uuid,\n  \"fact_id\" uuid,\n  \"replacement_fact_id\" uuid,\n  \"correction_type\" TEXT DEFAULT 'fact',\n  \"status\" TEXT DEFAULT 'draft',\n  \"summary\" TEXT,\n  \"incorrect_text\" TEXT,\n  \"corrected_text\" TEXT,\n  \"public_note\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT,\n  \"published_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_corrections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"content_version_id\" UUID,\n  \"fact_id\" UUID,\n  \"replacement_fact_id\" UUID,\n  \"correction_type\" TEXT DEFAULT 'fact',\n  \"status\" TEXT DEFAULT 'draft',\n  \"summary\" TEXT,\n  \"incorrect_text\" TEXT,\n  \"corrected_text\" TEXT,\n  \"public_note\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT,\n  \"published_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2436,7 +2478,7 @@
           },
           "content_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "content_version_id": {
@@ -2518,7 +2560,7 @@
             "unique": true
           }
         ],
-        "version": "b7060b2c"
+        "version": "5d060ebf"
       }
     },
     "@happyvertical/smrt-content:ContentCorrectionCollection": {
@@ -2582,7 +2624,7 @@
       "collectionExportName": "ContentCorrectionCollectionCollection",
       "schema": {
         "tableName": "content_corrections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_corrections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_corrections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2847,7 +2889,7 @@
       ],
       "schema": {
         "tableName": "content_feed_sources",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT NOT NULL,\n  \"feed_url\" TEXT NOT NULL,\n  \"homepage_url\" TEXT,\n  \"format\" TEXT,\n  \"status\" TEXT NOT NULL DEFAULT 'active',\n  \"default_category\" TEXT,\n  \"source_group\" TEXT,\n  \"poll_interval_minutes\" INTEGER NOT NULL DEFAULT 15,\n  \"etag\" TEXT,\n  \"last_modified\" TEXT,\n  \"last_fetched_at\" TIMESTAMP,\n  \"last_success_at\" TIMESTAMP,\n  \"last_error\" TEXT,\n  \"metadata\" JSONB DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT NOT NULL,\n  \"feed_url\" TEXT NOT NULL,\n  \"homepage_url\" TEXT,\n  \"format\" TEXT,\n  \"status\" TEXT NOT NULL DEFAULT 'active',\n  \"default_category\" TEXT,\n  \"source_group\" TEXT,\n  \"poll_interval_minutes\" INTEGER NOT NULL DEFAULT 15,\n  \"etag\" TEXT,\n  \"last_modified\" TEXT,\n  \"last_fetched_at\" TIMESTAMP,\n  \"last_success_at\" TIMESTAMP,\n  \"last_error\" TEXT,\n  \"metadata\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3042,7 +3084,7 @@
       "collectionExportName": "ContentFeedSourceCollectionCollection",
       "schema": {
         "tableName": "content_feed_sources",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3248,7 +3290,7 @@
       ],
       "schema": {
         "tableName": "content_governance_assignments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_assignments\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"content_type\" TEXT NOT NULL,\n  \"content_variant\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"fact_linking_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"transparency_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"publication_profile_key\" TEXT,\n  \"correction_profile_key\" TEXT,\n  \"enforce_publish_readiness\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"default_fact_relationship\" TEXT DEFAULT 'supports',\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_assignments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"content_type\" TEXT NOT NULL,\n  \"content_variant\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"fact_linking_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"transparency_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"publication_profile_key\" TEXT,\n  \"correction_profile_key\" TEXT,\n  \"enforce_publish_readiness\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"default_fact_relationship\" TEXT DEFAULT 'supports',\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3410,7 +3452,7 @@
       "collectionExportName": "ContentGovernanceAssignmentCollectionCollection",
       "schema": {
         "tableName": "content_governance_assignments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_assignments\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_assignments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3489,7 +3531,7 @@
       "collectionExportName": "ContentGovernancePolicyCollectionCollection",
       "schema": {
         "tableName": "content_governance_policies",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_policies\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_policies\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3653,7 +3695,7 @@
       ],
       "schema": {
         "tableName": "content_governance_policies",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_policies\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"instructions\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_policies\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"instructions\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3860,7 +3902,7 @@
       ],
       "schema": {
         "tableName": "content_governance_profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_profiles\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"description\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"requirements\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"description\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"requirements\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3974,7 +4016,7 @@
       "collectionExportName": "ContentGovernanceProfileCollectionCollection",
       "schema": {
         "tableName": "content_governance_profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_profiles\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -4034,13 +4076,19 @@
         },
         "sourceId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Content"
+          "required": true,
+          "related": "Content",
+          "_meta": {
+            "required": true
+          }
         },
         "targetId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Content"
+          "required": true,
+          "related": "Content",
+          "_meta": {
+            "required": true
+          }
         },
         "createdAt": {
           "type": "text",
@@ -4058,9 +4106,21 @@
       "extends": "SmrtObject",
       "exportName": "ContentReference",
       "collectionExportName": "ContentReferenceCollection",
+      "validationRules": [
+        {
+          "field": "sourceId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "targetId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "content_references",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"source_id\" uuid,\n  \"target_id\" uuid\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"source_id\" UUID NOT NULL,\n  \"target_id\" UUID NOT NULL\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -4093,12 +4153,12 @@
           },
           "source_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "target_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           }
         },
@@ -4118,7 +4178,7 @@
             "unique": true
           }
         ],
-        "version": "5b5bf4b4"
+        "version": "647d12c5"
       }
     },
     "@happyvertical/smrt-content:ContentReferences": {
@@ -4250,7 +4310,7 @@
       "collectionExportName": "ContentReferencesCollection",
       "schema": {
         "tableName": "content_references",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -4306,8 +4366,11 @@
       "fields": {
         "contentId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Content"
+          "required": true,
+          "related": "Content",
+          "_meta": {
+            "required": true
+          }
         },
         "contentVersionId": {
           "type": "foreignKey",
@@ -4398,9 +4461,16 @@
       "extends": "SmrtObject",
       "exportName": "ContentReview",
       "collectionExportName": "ContentReviewCollection",
+      "validationRules": [
+        {
+          "field": "contentId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "content_reviews",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_reviews\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" uuid,\n  \"content_version_id\" uuid,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"policy_key\" TEXT,\n  \"status\" TEXT DEFAULT 'pending',\n  \"summary\" TEXT,\n  \"findings\" TEXT,\n  \"reviewer\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_reviews\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"content_version_id\" UUID,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"policy_key\" TEXT,\n  \"status\" TEXT DEFAULT 'pending',\n  \"summary\" TEXT,\n  \"findings\" TEXT,\n  \"reviewer\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -4428,7 +4498,7 @@
           },
           "content_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "content_version_id": {
@@ -4495,7 +4565,7 @@
             "unique": true
           }
         ],
-        "version": "78db7ddc"
+        "version": "d425c0ed"
       }
     },
     "@happyvertical/smrt-content:ContentReviewCollection": {
@@ -4607,7 +4677,7 @@
       "collectionExportName": "ContentReviewCollectionCollection",
       "schema": {
         "tableName": "content_reviews",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_reviews\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_reviews\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -6005,7 +6075,7 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSONB DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSONB DEFAULT '{}',\n  \"thumbnail_asset_id\" uuid\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -7507,7 +7577,7 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSONB DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSONB DEFAULT '{}',\n  \"thumbnail_asset_id\" uuid\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -9038,7 +9108,7 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSONB DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSONB DEFAULT '{}',\n  \"thumbnail_asset_id\" uuid,\n  \"feed_source_id\" uuid,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID,\n  \"feed_source_id\" UUID,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -9226,8 +9296,11 @@
       "fields": {
         "contentId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Content"
+          "required": true,
+          "related": "Content",
+          "_meta": {
+            "required": true
+          }
         },
         "version": {
           "type": "integer",
@@ -9348,6 +9421,11 @@
       "collectionExportName": "ContentVersionCollection",
       "validationRules": [
         {
+          "field": "contentId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "version",
           "rule": "required",
           "fieldType": "integer"
@@ -9355,7 +9433,7 @@
       ],
       "schema": {
         "tableName": "content_versions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_versions\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" uuid,\n  \"version\" INTEGER NOT NULL DEFAULT 1,\n  \"kind\" TEXT DEFAULT 'manual',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"status\" TEXT,\n  \"summary\" TEXT,\n  \"snapshot\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_versions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"version\" INTEGER NOT NULL DEFAULT 1,\n  \"kind\" TEXT DEFAULT 'manual',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"status\" TEXT,\n  \"summary\" TEXT,\n  \"snapshot\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -9383,7 +9461,7 @@
           },
           "content_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "version": {
@@ -9455,7 +9533,7 @@
             "unique": true
           }
         ],
-        "version": "af652f1d"
+        "version": "3c488e19"
       }
     },
     "@happyvertical/smrt-content:ContentVersionCollection": {
@@ -9590,7 +9668,7 @@
       "collectionExportName": "ContentVersionCollectionCollection",
       "schema": {
         "tableName": "content_versions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_versions\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_versions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -11100,7 +11178,7 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSONB DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSONB DEFAULT '{}',\n  \"thumbnail_asset_id\" uuid,\n  \"feed_source_id\" uuid,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID,\n  \"feed_source_id\" UUID,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -11502,7 +11580,7 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_dir\" TEXT,\n  \"loaded\" JSONB NOT NULL\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_dir\" TEXT,\n  \"loaded\" JSON NOT NULL\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -11562,8 +11640,13 @@
   "moduleType": "smrt",
   "smrtDependencies": [
     "@happyvertical/smrt-assets",
+    "@happyvertical/smrt-chat",
     "@happyvertical/smrt-core",
+    "@happyvertical/smrt-facts",
+    "@happyvertical/smrt-images",
     "@happyvertical/smrt-messages",
-    "@happyvertical/smrt-profiles"
+    "@happyvertical/smrt-profiles",
+    "@happyvertical/smrt-prompts",
+    "@happyvertical/smrt-tenancy"
   ]
 }

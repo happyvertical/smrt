@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780375817764,
+  "timestamp": 1780379246364,
   "packageName": "@happyvertical/smrt-agents",
   "packageVersion": "0.25.8",
   "objects": {
@@ -589,7 +589,7 @@
       },
       "schema": {
         "tableName": "agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"status\" TEXT DEFAULT 'idle'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"status\" TEXT DEFAULT 'idle'\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -804,7 +804,7 @@
       "collectionExportName": "AgentConfigCollection",
       "schema": {
         "tableName": "agent_configs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSONB,\n  \"schema_version\" INTEGER\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -935,7 +935,7 @@
       "collectionExportName": "AgentConfigCollectionCollection",
       "schema": {
         "tableName": "agent_configs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1225,7 +1225,7 @@
       "collectionExportName": "AgentScheduleCollection",
       "schema": {
         "tableName": "_smrt_agent_schedules",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1486,7 +1486,7 @@
       "collectionExportName": "AgentScheduleCollectionCollection",
       "schema": {
         "tableName": "_smrt_agent_schedules",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1604,7 +1604,7 @@
       "collectionExportName": "TenantAgentCollection",
       "schema": {
         "tableName": "tenant_agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT DEFAULT '',\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSONB,\n  \"config\" JSONB\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT DEFAULT '',\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1819,7 +1819,7 @@
       "collectionExportName": "TenantAgentCollectionCollection",
       "schema": {
         "tableName": "tenant_agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1868,6 +1868,9 @@
   },
   "moduleType": "smrt",
   "smrtDependencies": [
-    "@happyvertical/smrt-core"
+    "@happyvertical/smrt-core",
+    "@happyvertical/smrt-secrets",
+    "@happyvertical/smrt-tenancy",
+    "@happyvertical/smrt-users"
   ]
 }

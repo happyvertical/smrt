@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780375810662,
+  "timestamp": 1780379243051,
   "packageName": "@happyvertical/smrt-events",
   "packageVersion": "0.25.8",
   "objects": {
@@ -209,7 +209,7 @@
       "collectionExportName": "EventAssetCollectionCollection",
       "schema": {
         "tableName": "event_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -533,7 +533,7 @@
       "collectionExportName": "EventCollectionCollection",
       "schema": {
         "tableName": "event_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -836,7 +836,7 @@
       "collectionExportName": "EventParticipantCollectionCollection",
       "schema": {
         "tableName": "event_participant_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participant_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participant_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1004,7 +1004,7 @@
       "collectionExportName": "EventSeriesCollectionCollection",
       "schema": {
         "tableName": "event_series_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1144,7 +1144,7 @@
       "collectionExportName": "EventTypeCollectionCollection",
       "schema": {
         "tableName": "event_type_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_type_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_type_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1207,8 +1207,12 @@
           "required": false
         },
         "parentId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Event",
+          "_meta": {
+            "nullable": true
+          }
         },
         "tenantId": {
           "type": "text",
@@ -1933,7 +1937,7 @@
       "collectionExportName": "EventCollection",
       "schema": {
         "tableName": "events",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" TEXT,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" uuid,\n  \"type_id\" uuid,\n  \"place_id\" uuid,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" INTEGER,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" UUID,\n  \"type_id\" UUID,\n  \"place_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" INTEGER,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1968,7 +1972,7 @@
             "default": "current_timestamp"
           },
           "parent_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "tenant_id": {
@@ -2049,7 +2053,7 @@
             ]
           }
         ],
-        "version": "6ed841fc"
+        "version": "e48a7ab2"
       }
     },
     "@happyvertical/smrt-events:EventAsset": {
@@ -2066,8 +2070,11 @@
         },
         "eventId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Event"
+          "required": true,
+          "related": "Event",
+          "_meta": {
+            "required": true
+          }
         },
         "assetId": {
           "type": "crossPackageRef",
@@ -2104,6 +2111,11 @@
       "collectionExportName": "EventAssetCollection",
       "validationRules": [
         {
+          "field": "eventId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "assetId",
           "rule": "required",
           "fieldType": "crossPackageRef"
@@ -2121,7 +2133,7 @@
       ],
       "schema": {
         "tableName": "event_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"event_id\" uuid,\n  \"asset_id\" uuid NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"event_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2154,7 +2166,7 @@
           },
           "event_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "asset_id": {
@@ -2191,7 +2203,7 @@
             "unique": true
           }
         ],
-        "version": "c62ee267"
+        "version": "02ded4f6"
       }
     },
     "@happyvertical/smrt-events:EventParticipant": {
@@ -2358,7 +2370,7 @@
       "collectionExportName": "EventParticipantCollection",
       "schema": {
         "tableName": "event_participants",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participants\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"event_id\" uuid,\n  \"profile_id\" uuid,\n  \"role\" TEXT DEFAULT '',\n  \"placement\" INTEGER,\n  \"group_id\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participants\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"event_id\" UUID,\n  \"profile_id\" UUID,\n  \"role\" TEXT DEFAULT '',\n  \"placement\" INTEGER,\n  \"group_id\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3052,7 +3064,7 @@
       "collectionExportName": "EventSeriesCollection",
       "schema": {
         "tableName": "event_series",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"type_id\" uuid,\n  \"organizer_id\" uuid,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"recurrence\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"type_id\" UUID,\n  \"organizer_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"recurrence\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3713,7 +3725,7 @@
       ],
       "schema": {
         "tableName": "event_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_types\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"schema\" TEXT DEFAULT '',\n  \"participant_schema\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"schema\" TEXT DEFAULT '',\n  \"participant_schema\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3804,6 +3816,7 @@
     "@happyvertical/smrt-assets",
     "@happyvertical/smrt-core",
     "@happyvertical/smrt-places",
-    "@happyvertical/smrt-profiles"
+    "@happyvertical/smrt-profiles",
+    "@happyvertical/smrt-tenancy"
   ]
 }

@@ -421,8 +421,8 @@ export interface FieldTypeInference {
   /**
    * Decorator-derived metadata that should be merged into the manifest
    * field's `_meta` object. Used by `@crossPackageRef`, `@manyToMany`,
-   * `@meta` to carry options (`validate`, `through`, `indexed`, etc.) that
-   * don't fit on the top-level FieldDefinition.
+   * `@meta` to carry options (`validate`, `through`, `indexed`, `idType`,
+   * etc.) that don't fit on the top-level FieldDefinition.
    */
   _meta?: Record<string, unknown>;
 }

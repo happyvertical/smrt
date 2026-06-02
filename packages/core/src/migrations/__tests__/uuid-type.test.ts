@@ -143,4 +143,43 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent', () => {
     );
     expect(idTypeChange).toBeUndefined();
   });
+
+  it('renders new UUID columns as TEXT for JSON adapter migrations', async () => {
+    const jsonDb = {
+      url: 'test.json',
+      exportTable: () => undefined,
+      query: async () => ({ rows: [{ name: 'things' }] }),
+      getTableSchema: async () => ({
+        tableName: 'things',
+        columns: {
+          id: { name: 'id', type: 'TEXT', primaryKey: true },
+        },
+        indexes: [],
+      }),
+    } as unknown as DatabaseProvider;
+    const jsonComparer = new SchemaComparer(jsonDb);
+
+    const diff = await jsonComparer.compare({
+      things: {
+        tableName: 'things',
+        ddl: '',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          related_id: { type: 'UUID' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const addRelatedId = diff.changes.find(
+      (change) => change.type === 'add_column' && change.name === 'related_id',
+    );
+    expect(addRelatedId?.sql).toContain(
+      'ALTER TABLE "things" ADD COLUMN "related_id" TEXT',
+    );
+  });
 });

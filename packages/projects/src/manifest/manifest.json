@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780375815437,
+  "timestamp": 1780379252178,
   "packageName": "@happyvertical/smrt-projects",
   "packageVersion": "0.25.8",
   "objects": {
@@ -203,7 +203,7 @@
       "collectionExportName": "IssueCollectionCollection",
       "schema": {
         "tableName": "issue_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"issue_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issue_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -405,7 +405,7 @@
       "collectionExportName": "ProjectCollectionCollection",
       "schema": {
         "tableName": "project_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"project_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"project_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -666,7 +666,7 @@
       "collectionExportName": "PullRequestCollectionCollection",
       "schema": {
         "tableName": "issues",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -858,7 +858,7 @@
       "collectionExportName": "RepositoryCollectionCollection",
       "schema": {
         "tableName": "repository_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"repository_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"repository_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1025,7 +1025,7 @@
       "collectionExportName": "CommentCollection",
       "schema": {
         "tableName": "comments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"comments\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"issue_id\" uuid,\n  \"comment_id\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"author\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"comments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"issue_id\" UUID,\n  \"comment_id\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"author\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1127,8 +1127,11 @@
         },
         "repositoryId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Repository"
+          "required": true,
+          "related": "Repository",
+          "_meta": {
+            "required": true
+          }
         },
         "number": {
           "type": "integer",
@@ -1806,9 +1809,16 @@
       "extends": "SmrtObject",
       "exportName": "Issue",
       "collectionExportName": "IssueCollection",
+      "validationRules": [
+        {
+          "field": "repositoryId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "issues",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"repository_id\" uuid,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSONB DEFAULT '[]',\n  \"assignees\" JSONB DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"repository_id\" UUID,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '[]',\n  \"assignees\" JSON DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2107,7 +2117,7 @@
       "collectionExportName": "LabelCollection",
       "schema": {
         "tableName": "labels",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"labels\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"repository_id\" uuid,\n  \"name\" TEXT DEFAULT '',\n  \"color\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"labels\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"repository_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"color\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2494,7 +2504,7 @@
       "collectionExportName": "ProjectCollection",
       "schema": {
         "tableName": "projects",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"projects\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"project_id\" TEXT DEFAULT '',\n  \"project_number\" INTEGER DEFAULT 0,\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"owner\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"statuses\" JSONB DEFAULT '[]',\n  \"fields\" JSONB DEFAULT '[]',\n  \"status_field_id\" TEXT DEFAULT '',\n  \"status_options\" JSONB DEFAULT '{}',\n  \"last_synced_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"projects\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"project_id\" TEXT DEFAULT '',\n  \"project_number\" INTEGER DEFAULT 0,\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"owner\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"statuses\" JSON DEFAULT '[]',\n  \"fields\" JSON DEFAULT '[]',\n  \"status_field_id\" TEXT DEFAULT '',\n  \"status_options\" JSON DEFAULT '{}',\n  \"last_synced_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2644,8 +2654,11 @@
         },
         "repositoryId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Repository"
+          "required": true,
+          "related": "Repository",
+          "_meta": {
+            "required": true
+          }
         },
         "number": {
           "type": "integer",
@@ -3455,9 +3468,16 @@
       "extends": "Issue",
       "exportName": "PullRequest",
       "collectionExportName": "PullRequestCollection",
+      "validationRules": [
+        {
+          "field": "repositoryId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "issues",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"repository_id\" uuid,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSONB DEFAULT '[]',\n  \"assignees\" JSONB DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"repository_id\" UUID,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '[]',\n  \"assignees\" JSON DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3855,7 +3875,7 @@
       "collectionExportName": "RepositoryCollection",
       "schema": {
         "tableName": "repositories",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"repositories\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"owner\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"full_name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"default_branch\" TEXT DEFAULT 'main',\n  \"is_private\" BOOLEAN DEFAULT FALSE,\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"base_url\" TEXT DEFAULT '',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"last_synced_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"repositories\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"owner\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"full_name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"default_branch\" TEXT DEFAULT 'main',\n  \"is_private\" BOOLEAN DEFAULT FALSE,\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"base_url\" TEXT DEFAULT '',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"last_synced_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3968,6 +3988,8 @@
   },
   "moduleType": "smrt",
   "smrtDependencies": [
-    "@happyvertical/smrt-core"
+    "@happyvertical/smrt-core",
+    "@happyvertical/smrt-prompts",
+    "@happyvertical/smrt-tenancy"
   ]
 }

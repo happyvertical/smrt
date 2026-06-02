@@ -144,6 +144,15 @@ describe('Issue #144: Schema Generation Duplicate Columns', () => {
     expect(schema).not.toContain('UNIQUE INDEX');
   });
 
+  it('should render engine-specific DDL when requested', async () => {
+    const schema = await generateSchema(SchemaGenTestEvent, undefined, {
+      engine: 'sqlite',
+    });
+
+    expect(schema).toContain('"id" TEXT PRIMARY KEY');
+    expect(schema).not.toContain('"id" UUID PRIMARY KEY');
+  });
+
   it('should handle classes with explicit timestamp field definitions', async () => {
     const schema = await generateSchema(CustomTimestamps);
 

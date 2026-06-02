@@ -734,12 +734,38 @@ export class ManifestAdapter {
       // Strip surrounding quotes — sliceSource() returns raw source text
       // which includes quotes for string literals (e.g., "'TestProfile'")
       const relatedClass = stripQuotes(decorator.arguments[0]?.trim());
+      const parsedOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[1],
+      );
+      const meta: Record<string, unknown> = {};
+      const META_KEYS = [
+        'required',
+        'nullable',
+        'unique',
+        'description',
+        'default',
+      ] as const;
+      if (parsedOptions) {
+        for (const key of META_KEYS) {
+          if (parsedOptions[key] !== undefined) {
+            meta[key] = parsedOptions[key];
+          }
+        }
+      }
       // Respect TypeScript optional marker (?) - fixes #846
       const hasDefaultValue = field.initializer !== null;
       return {
         type: 'foreignKey',
         related: relatedClass || undefined,
-        required: !field.optional && !hasDefaultValue,
+        required:
+          parsedOptions?.required !== undefined
+            ? Boolean(parsedOptions.required)
+            : !field.optional && !hasDefaultValue,
+        defaultValue:
+          parsedOptions?.default !== undefined
+            ? parsedOptions.default
+            : undefined,
+        ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
         source: 'decorator',
       };
     }
@@ -762,6 +788,7 @@ export class ManifestAdapter {
         'description',
         'default',
         'indexed',
+        'idType',
       ] as const;
       if (parsedOptions) {
         for (const key of META_KEYS) {

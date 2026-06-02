@@ -11,6 +11,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { ObjectRegistry } from '../registry.js';
 import { tableNameFromClass } from '../utils.js';
+import type { DatabaseEngine } from './ddl/types.js';
 import { SchemaManager } from './schema-manager.js';
 
 // Index-rendering helpers live in a separate file to avoid pulling the
@@ -34,6 +35,7 @@ export { isJsonPathIndex, renderIndexTarget } from './index-utils.js';
 export async function generateSchema(
   ClassType: new (...args: any[]) => any,
   providedFields?: Map<string, any>,
+  options: { engine?: DatabaseEngine } = {},
 ) {
   const className = ClassType.name;
   const tableName = tableNameFromClass(ClassType);
@@ -100,6 +102,7 @@ export async function generateSchema(
     ? {
         conflictColumns: registeredClass.config.conflictColumns,
         idType: registeredClass.config.idType,
+        registry: ObjectRegistry,
       }
     : undefined;
 
@@ -164,7 +167,7 @@ export async function generateSchema(
     );
   }
 
-  return generator.generateSQL(schemaDefinition);
+  return generator.generateSQL(schemaDefinition, options.engine);
 }
 
 /**

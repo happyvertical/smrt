@@ -65,10 +65,27 @@ interface IndexDef {
   unique?: boolean;
 }
 
+type DDLPreviewEngine = 'sqlite' | 'duckdb' | 'json' | 'postgres';
+
 export function resolveVitestEntrypoint(fromDir = process.cwd()): string {
   const requireFromDir = createRequire(resolve(fromDir, 'package.json'));
   const vitestPackageJson = requireFromDir.resolve('vitest/package.json');
   return join(dirname(vitestPackageJson), 'vitest.mjs');
+}
+
+function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
+  switch (dbType) {
+    case 'json':
+      return 'json';
+    case 'duckdb':
+      return 'duckdb';
+    case 'postgres':
+    case 'postgresql':
+    case 'pg':
+      return 'postgres';
+    default:
+      return 'sqlite';
+  }
 }
 
 /**
@@ -669,7 +686,11 @@ export default testManifest;
               continue;
             }
 
-            const schema = await generateSchema(registered.constructor);
+            const schema = await generateSchema(
+              registered.constructor,
+              undefined,
+              { engine: resolveDDLPreviewEngine(dbType) },
+            );
             if (schema && schema.trim() !== '') {
               const tableName = ObjectRegistry.getTableName(className);
               const strategy = tableStrategy === 'sti' ? 'STI' : 'CTI';

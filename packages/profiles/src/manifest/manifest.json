@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780375808350,
+  "timestamp": 1780379238701,
   "packageName": "@happyvertical/smrt-profiles",
   "packageVersion": "0.25.8",
   "objects": {
@@ -134,7 +134,7 @@
       "collectionExportName": "ApiKeyCollectionCollection",
       "schema": {
         "tableName": "api_keys",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"api_keys\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"api_keys\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -326,7 +326,7 @@
       "collectionExportName": "AuditLogCollectionCollection",
       "schema": {
         "tableName": "audit_logs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -545,7 +545,7 @@
       "collectionExportName": "MagicLinkTokenCollectionCollection",
       "schema": {
         "tableName": "magic_link_tokens",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"magic_link_tokens\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"magic_link_tokens\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -780,7 +780,7 @@
       "collectionExportName": "NostrIdentityCollectionCollection",
       "schema": {
         "tableName": "nostr_identities",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"nostr_identities\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"nostr_identities\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -935,7 +935,7 @@
       "collectionExportName": "OidcIdentityCollectionCollection",
       "schema": {
         "tableName": "oidc_identities",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1186,7 +1186,7 @@
       "collectionExportName": "ProfileAssetCollectionCollection",
       "schema": {
         "tableName": "profile_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_assets\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1452,7 +1452,7 @@
       "collectionExportName": "ProfileCollectionCollection",
       "schema": {
         "tableName": "profile_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1562,7 +1562,7 @@
       "collectionExportName": "ProfileMetadataCollectionCollection",
       "schema": {
         "tableName": "profile_metadata_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadata_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadata_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1658,7 +1658,7 @@
       "collectionExportName": "ProfileMetafieldCollectionCollection",
       "schema": {
         "tableName": "profile_metafield_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafield_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafield_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1802,7 +1802,7 @@
       "collectionExportName": "ProfileRelationshipCollectionCollection",
       "schema": {
         "tableName": "profile_relationship_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1907,7 +1907,7 @@
       "collectionExportName": "ProfileRelationshipTermCollectionCollection",
       "schema": {
         "tableName": "profile_relationship_term_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_term_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_term_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2019,7 +2019,7 @@
       "collectionExportName": "ProfileRelationshipTypeCollectionCollection",
       "schema": {
         "tableName": "profile_relationship_type_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_type_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_type_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2115,7 +2115,7 @@
       "collectionExportName": "ProfileTypeCollectionCollection",
       "schema": {
         "tableName": "profile_type_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_type_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_type_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2171,8 +2171,11 @@
       "fields": {
         "profileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "keyHash": {
           "type": "text",
@@ -2333,9 +2336,16 @@
       "extends": "SmrtObject",
       "exportName": "ApiKey",
       "collectionExportName": "ApiKeyCollection",
+      "validationRules": [
+        {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "api_keys",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"api_keys\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" uuid,\n  \"key_hash\" TEXT DEFAULT '',\n  \"key_prefix\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"scopes\" JSONB DEFAULT '[]',\n  \"last_used_at\" TIMESTAMP,\n  \"expires_at\" TIMESTAMP,\n  \"revoked_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"api_keys\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID NOT NULL,\n  \"key_hash\" TEXT DEFAULT '',\n  \"key_prefix\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"scopes\" JSON DEFAULT '[]',\n  \"last_used_at\" TIMESTAMP,\n  \"expires_at\" TIMESTAMP,\n  \"revoked_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2363,7 +2373,7 @@
           },
           "profile_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "key_hash": {
@@ -2422,7 +2432,7 @@
             "unique": true
           }
         ],
-        "version": "36f60cc0"
+        "version": "5115d1ab"
       }
     },
     "@happyvertical/smrt-profiles:AuditLog": {
@@ -2439,8 +2449,11 @@
         },
         "profileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "action": {
           "type": "text",
@@ -2470,7 +2483,10 @@
         "onBehalfOfId": {
           "type": "foreignKey",
           "required": false,
-          "related": "Profile"
+          "related": "Profile",
+          "_meta": {
+            "nullable": true
+          }
         }
       },
       "methods": {
@@ -2536,9 +2552,16 @@
       "extends": "SmrtObject",
       "exportName": "AuditLog",
       "collectionExportName": "AuditLogCollection",
+      "validationRules": [
+        {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "audit_logs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" uuid,\n  \"action\" TEXT DEFAULT '',\n  \"resource_type\" TEXT DEFAULT '',\n  \"resource_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT 'web',\n  \"metadata\" JSONB DEFAULT '{}',\n  \"on_behalf_of_id\" uuid\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" UUID NOT NULL,\n  \"action\" TEXT DEFAULT '',\n  \"resource_type\" TEXT DEFAULT '',\n  \"resource_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT 'web',\n  \"metadata\" JSON DEFAULT '{}',\n  \"on_behalf_of_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2571,7 +2594,7 @@
           },
           "profile_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "action": {
@@ -2626,7 +2649,7 @@
             "unique": true
           }
         ],
-        "version": "a6e1fe51"
+        "version": "50825815"
       }
     },
     "@happyvertical/smrt-profiles:MagicLinkToken": {
@@ -2639,8 +2662,11 @@
       "fields": {
         "nostrIdentityId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "NostrIdentity"
+          "required": true,
+          "related": "NostrIdentity",
+          "_meta": {
+            "required": true
+          }
         },
         "tokenHash": {
           "type": "text",
@@ -2798,9 +2824,16 @@
       "extends": "SmrtObject",
       "exportName": "MagicLinkToken",
       "collectionExportName": "MagicLinkTokenCollection",
+      "validationRules": [
+        {
+          "field": "nostrIdentityId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "magic_link_tokens",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"magic_link_tokens\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"nostr_identity_id\" uuid,\n  \"token_hash\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"expires_at\" TIMESTAMP,\n  \"used_at\" TIMESTAMP,\n  \"requested_from_ip\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"magic_link_tokens\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"nostr_identity_id\" UUID NOT NULL,\n  \"token_hash\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"expires_at\" TIMESTAMP,\n  \"used_at\" TIMESTAMP,\n  \"requested_from_ip\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2828,7 +2861,7 @@
           },
           "nostr_identity_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "token_hash": {
@@ -2876,7 +2909,7 @@
             "unique": true
           }
         ],
-        "version": "7c1ffcb6"
+        "version": "6f0efb13"
       }
     },
     "@happyvertical/smrt-profiles:NostrIdentity": {
@@ -2889,8 +2922,11 @@
       "fields": {
         "profileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "pubkey": {
           "type": "text",
@@ -3088,9 +3124,16 @@
       "extends": "SmrtObject",
       "exportName": "NostrIdentity",
       "collectionExportName": "NostrIdentityCollection",
+      "validationRules": [
+        {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "nostr_identities",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"nostr_identities\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" uuid,\n  \"pubkey\" TEXT DEFAULT '',\n  \"encrypted_privkey\" TEXT DEFAULT '',\n  \"encryption_iv\" TEXT DEFAULT '',\n  \"encryption_tag\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"nip05_username\" TEXT DEFAULT '',\n  \"last_used_at\" TIMESTAMP,\n  \"verified_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"nostr_identities\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID NOT NULL,\n  \"pubkey\" TEXT DEFAULT '',\n  \"encrypted_privkey\" TEXT DEFAULT '',\n  \"encryption_iv\" TEXT DEFAULT '',\n  \"encryption_tag\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"nip05_username\" TEXT DEFAULT '',\n  \"last_used_at\" TIMESTAMP,\n  \"verified_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3118,7 +3161,7 @@
           },
           "profile_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "pubkey": {
@@ -3184,7 +3227,7 @@
             "unique": true
           }
         ],
-        "version": "3bfb83db"
+        "version": "19f53fb6"
       }
     },
     "@happyvertical/smrt-profiles:OidcIdentity": {
@@ -3197,8 +3240,11 @@
       "fields": {
         "profileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "provider": {
           "type": "text",
@@ -3314,9 +3360,16 @@
       "extends": "SmrtObject",
       "exportName": "OidcIdentity",
       "collectionExportName": "OidcIdentityCollection",
+      "validationRules": [
+        {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "oidc_identities",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" uuid,\n  \"provider\" TEXT DEFAULT '',\n  \"issuer\" TEXT DEFAULT '',\n  \"subject\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"last_used_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"oidc_identities\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID NOT NULL,\n  \"provider\" TEXT DEFAULT '',\n  \"issuer\" TEXT DEFAULT '',\n  \"subject\" TEXT DEFAULT '',\n  \"email\" TEXT DEFAULT '',\n  \"last_used_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3344,7 +3397,7 @@
           },
           "profile_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "provider": {
@@ -3393,7 +3446,7 @@
             "unique": true
           }
         ],
-        "version": "4bff3825"
+        "version": "e7e61106"
       }
     },
     "@happyvertical/smrt-profiles:Profile": {
@@ -3418,8 +3471,11 @@
         },
         "typeId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ProfileType"
+          "required": true,
+          "related": "ProfileType",
+          "_meta": {
+            "required": true
+          }
         },
         "email": {
           "type": "text",
@@ -4291,6 +4347,11 @@
       "collectionExportName": "ProfileCollection",
       "validationRules": [
         {
+          "field": "typeId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "name",
           "rule": "required",
           "fieldType": "text"
@@ -4298,7 +4359,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" uuid,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -4394,8 +4455,11 @@
         },
         "profileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "assetId": {
           "type": "crossPackageRef",
@@ -4432,6 +4496,11 @@
       "collectionExportName": "ProfileAssetCollection",
       "validationRules": [
         {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "assetId",
           "rule": "required",
           "fieldType": "crossPackageRef"
@@ -4449,7 +4518,7 @@
       ],
       "schema": {
         "tableName": "profile_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_assets\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" uuid,\n  \"asset_id\" uuid NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -4482,7 +4551,7 @@
           },
           "profile_id": {
             "type": "UUID",
-            "notNull": false,
+            "notNull": true,
             "unique": false
           },
           "asset_id": {
@@ -4519,7 +4588,7 @@
             "unique": true
           }
         ],
-        "version": "324da1bf"
+        "version": "e113ab6b"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetadata": {
@@ -4544,13 +4613,19 @@
         },
         "profileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "metafieldId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ProfileMetafield"
+          "required": true,
+          "related": "ProfileMetafield",
+          "_meta": {
+            "required": true
+          }
         },
         "value": {
           "type": "text",
@@ -5014,6 +5089,16 @@
       "collectionExportName": "ProfileMetadataCollection",
       "validationRules": [
         {
+          "field": "profileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "metafieldId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "value",
           "rule": "required",
           "fieldType": "text"
@@ -5021,7 +5106,7 @@
       ],
       "schema": {
         "tableName": "profile_metadata",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadata\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" uuid,\n  \"metafield_id\" uuid,\n  \"value\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadata\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" UUID,\n  \"metafield_id\" UUID,\n  \"value\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -5641,7 +5726,7 @@
       ],
       "schema": {
         "tableName": "profile_metafields",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafields\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"validation\" JSONB DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafields\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"validation\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -5742,18 +5827,27 @@
         },
         "fromProfileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "toProfileId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "Profile"
+          "required": true,
+          "related": "Profile",
+          "_meta": {
+            "required": true
+          }
         },
         "typeId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ProfileRelationshipType"
+          "required": true,
+          "related": "ProfileRelationshipType",
+          "_meta": {
+            "required": true
+          }
         },
         "contextProfileId": {
           "type": "foreignKey",
@@ -6257,9 +6351,26 @@
       "extends": "SmrtObject",
       "exportName": "ProfileRelationship",
       "collectionExportName": "ProfileRelationshipCollection",
+      "validationRules": [
+        {
+          "field": "fromProfileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "toProfileId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
+          "field": "typeId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        }
+      ],
       "schema": {
         "tableName": "profile_relationships",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationships\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"from_profile_id\" uuid,\n  \"to_profile_id\" uuid,\n  \"type_id\" uuid,\n  \"context_profile_id\" uuid\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationships\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"from_profile_id\" UUID,\n  \"to_profile_id\" UUID,\n  \"type_id\" UUID,\n  \"context_profile_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -6358,8 +6469,11 @@
         },
         "relationshipId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ProfileRelationship"
+          "required": true,
+          "related": "ProfileRelationship",
+          "_meta": {
+            "required": true
+          }
         },
         "startedAt": {
           "type": "datetime",
@@ -6840,6 +6954,11 @@
       "collectionExportName": "ProfileRelationshipTermCollection",
       "validationRules": [
         {
+          "field": "relationshipId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "startedAt",
           "rule": "required",
           "fieldType": "datetime"
@@ -6847,7 +6966,7 @@
       ],
       "schema": {
         "tableName": "profile_relationship_terms",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_terms\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"relationship_id\" uuid,\n  \"started_at\" TIMESTAMP,\n  \"ended_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_terms\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"relationship_id\" UUID,\n  \"started_at\" TIMESTAMP,\n  \"ended_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -7454,7 +7573,7 @@
       ],
       "schema": {
         "tableName": "profile_relationship_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_types\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"reciprocal\" BOOLEAN DEFAULT TRUE\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationship_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"reciprocal\" BOOLEAN DEFAULT TRUE\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -8015,7 +8134,7 @@
       ],
       "schema": {
         "tableName": "profile_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_types\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -8111,8 +8230,11 @@
         },
         "typeId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ProfileType"
+          "required": true,
+          "related": "ProfileType",
+          "_meta": {
+            "required": true
+          }
         },
         "email": {
           "type": "text",
@@ -8967,6 +9089,11 @@
       "collectionExportName": "PersonCollection",
       "validationRules": [
         {
+          "field": "typeId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "name",
           "rule": "required",
           "fieldType": "text"
@@ -8974,7 +9101,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" uuid,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -9078,8 +9205,11 @@
         },
         "typeId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ProfileType"
+          "required": true,
+          "related": "ProfileType",
+          "_meta": {
+            "required": true
+          }
         },
         "email": {
           "type": "text",
@@ -9934,6 +10064,11 @@
       "collectionExportName": "OrganizationCollection",
       "validationRules": [
         {
+          "field": "typeId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "name",
           "rule": "required",
           "fieldType": "text"
@@ -9941,7 +10076,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" uuid,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -10045,8 +10180,11 @@
         },
         "typeId": {
           "type": "foreignKey",
-          "required": false,
-          "related": "ProfileType"
+          "required": true,
+          "related": "ProfileType",
+          "_meta": {
+            "required": true
+          }
         },
         "email": {
           "type": "text",
@@ -10901,6 +11039,11 @@
       "collectionExportName": "BotCollection",
       "validationRules": [
         {
+          "field": "typeId",
+          "rule": "required",
+          "fieldType": "foreignKey"
+        },
+        {
           "field": "name",
           "rule": "required",
           "fieldType": "text"
@@ -10908,7 +11051,7 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" uuid,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -10994,6 +11137,8 @@
   "moduleType": "smrt",
   "smrtDependencies": [
     "@happyvertical/smrt-assets",
-    "@happyvertical/smrt-core"
+    "@happyvertical/smrt-core",
+    "@happyvertical/smrt-prompts",
+    "@happyvertical/smrt-tenancy"
   ]
 }

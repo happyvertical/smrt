@@ -28,8 +28,10 @@ type SchemaGeneratorConfig = {
   conflictColumns?: string[];
   idType?: 'uuid' | 'text';
   registry?: {
+    getConfig?(className: string): { idType?: 'uuid' | 'text' };
     getDescendants(baseClassName: string): string[];
     getAllFields(className: string): Promise<Map<string, any>>;
+    getSTIBase?(className: string): string | null;
   };
 };
 
@@ -90,6 +92,81 @@ export class SchemaGenerator {
 
   private getIdColumnType(config?: { idType?: 'uuid' | 'text' }): SQLDataType {
     return config?.idType === 'text' ? 'TEXT' : 'UUID';
+  }
+
+  private getRelationshipColumnType(field: any): SQLDataType {
+    if (field?._meta?.sqlType) {
+      return field._meta.sqlType;
+    }
+
+    if (
+      field?.type === 'crossPackageRef' &&
+      (field._meta?.idType === 'text' || field.idType === 'text')
+    ) {
+      return 'TEXT';
+    }
+
+    return this.mapFieldTypeToSQL(field?.type || 'text');
+  }
+
+  private getRegistryTargetIdColumnType(
+    relatedName: string | undefined,
+    registry: SchemaGeneratorConfig['registry'] | undefined,
+  ): SQLDataType | undefined {
+    if (!relatedName || !registry?.getConfig) {
+      return undefined;
+    }
+
+    const targetName = relatedName.split('.')[0];
+    const targetNames = [targetName];
+    const stiBase = registry.getSTIBase?.(targetName);
+    if (stiBase && !targetNames.includes(stiBase)) {
+      targetNames.push(stiBase);
+    }
+
+    for (const name of targetNames) {
+      const idType = registry.getConfig(name)?.idType;
+      if (idType === 'text') {
+        return 'TEXT';
+      }
+      if (idType === 'uuid') {
+        return 'UUID';
+      }
+    }
+
+    return undefined;
+  }
+
+  private reconcileRegistryForeignKeyColumnTypes(
+    columns: Record<string, ColumnDefinition>,
+    fields: Map<string, any>,
+    registry: SchemaGeneratorConfig['registry'] | undefined,
+  ): void {
+    if (!registry?.getConfig) {
+      return;
+    }
+
+    for (const [fieldName, field] of fields.entries()) {
+      if (field.type !== 'foreignKey' || field._meta?.sqlType) {
+        continue;
+      }
+
+      const targetIdType = this.getRegistryTargetIdColumnType(
+        field.related,
+        registry,
+      );
+      if (!targetIdType) {
+        continue;
+      }
+
+      const columnName = this.toSnakeCase(fieldName);
+      if (columns[columnName]) {
+        columns[columnName] = {
+          ...columns[columnName],
+          type: targetIdType,
+        };
+      }
+    }
   }
 
   /**
@@ -156,7 +233,7 @@ export class SchemaGenerator {
       }
 
       const column: ColumnDefinition = {
-        type: fieldDef._meta?.sqlType || this.mapFieldTypeToSQL(fieldDef.type),
+        type: this.getRelationshipColumnType(fieldDef),
         // If _meta.nullable is true, the field can be null regardless of required
         // This handles field helpers like text({ required: true, nullable: true })
         notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
@@ -455,8 +532,7 @@ export class SchemaGenerator {
         continue;
       }
 
-      const sqlType =
-        field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+      const sqlType = this.getRelationshipColumnType(field);
 
       const columnDef: ColumnDefinition = {
         type: sqlType,
@@ -526,6 +602,12 @@ export class SchemaGenerator {
         description: 'Last update timestamp',
       };
     }
+
+    this.reconcileRegistryForeignKeyColumnTypes(
+      columns,
+      fields,
+      config?.registry,
+    );
 
     // Generate indexes
     const indexes: IndexDefinition[] = [];
@@ -760,8 +842,7 @@ export class SchemaGenerator {
           continue;
         }
 
-        const sqlType =
-          field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+        const sqlType = this.getRelationshipColumnType(field);
 
         const columnDef: ColumnDefinition = {
           type: sqlType,
@@ -822,6 +903,15 @@ export class SchemaGenerator {
         defaultValue: 'current_timestamp',
         description: 'Last update timestamp',
       };
+    }
+
+    for (const className of allClassNames) {
+      const classFields = await ObjectRegistry.getAllFields(className);
+      this.reconcileRegistryForeignKeyColumnTypes(
+        columns,
+        classFields,
+        ObjectRegistry,
+      );
     }
 
     // Generate indexes
@@ -1029,8 +1119,7 @@ export class SchemaGenerator {
           continue;
         }
 
-        const sqlType =
-          field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+        const sqlType = this.getRelationshipColumnType(field);
 
         const columnDef: ManifestColumnDefinition = {
           type: sqlType,
@@ -1118,7 +1207,7 @@ export class SchemaGenerator {
       packageName: '',
     };
 
-    const ddl = this.generateSQL(schemaDefinition, 'postgres');
+    const ddl = this.generateSQL(schemaDefinition);
 
     // Generate version hash
     const version = createHash('sha256')
@@ -1213,8 +1302,7 @@ export class SchemaGenerator {
       }
 
       const columnName = this.toSnakeCase(fieldName);
-      const sqlType =
-        field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+      const sqlType = this.getRelationshipColumnType(field);
 
       const columnDef: ManifestColumnDefinition = {
         type: sqlType,
@@ -1268,7 +1356,7 @@ export class SchemaGenerator {
       packageName: '',
     };
 
-    const ddl = this.generateSQL(schemaDefinition, 'postgres');
+    const ddl = this.generateSQL(schemaDefinition);
 
     // Generate version hash
     const version = createHash('sha256')

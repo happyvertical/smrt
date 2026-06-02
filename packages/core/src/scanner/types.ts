@@ -27,7 +27,7 @@ export interface FieldDefinition {
     | 'datetime'
     | 'json'
     | 'foreignKey'
-    | 'crossPackageRef' // Cross-package reference — UUID id column, no DDL FK
+    | 'crossPackageRef' // Cross-package reference — UUID id column by default, no DDL FK
     | 'oneToMany'
     | 'manyToMany'
     | 'meta'; // STI meta fields (_meta_type, _meta_data)

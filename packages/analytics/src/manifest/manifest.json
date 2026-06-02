@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780375816606,
+  "timestamp": 1780379235055,
   "packageName": "@happyvertical/smrt-analytics",
   "packageVersion": "0.25.8",
   "objects": {
@@ -145,7 +145,7 @@
       "collectionExportName": "AnalyticsDataStreamCollectionCollection",
       "schema": {
         "tableName": "analytics_data_stream_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_stream_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_stream_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -443,7 +443,7 @@
       "collectionExportName": "AnalyticsEventCollectionCollection",
       "schema": {
         "tableName": "analytics_event_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_event_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_event_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -627,7 +627,7 @@
       "collectionExportName": "AnalyticsPropertyCollectionCollection",
       "schema": {
         "tableName": "analytics_property_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_property_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_property_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -813,7 +813,7 @@
       "collectionExportName": "AnalyticsReportCollectionCollection",
       "schema": {
         "tableName": "analytics_report_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_report_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_report_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1405,7 +1405,7 @@
       "collectionExportName": "AnalyticsDataStreamCollection",
       "schema": {
         "tableName": "analytics_data_streams",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_streams\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" uuid,\n  \"display_name\" TEXT DEFAULT '',\n  \"stream_type\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"firebase_app_id\" TEXT DEFAULT '',\n  \"default_uri\" TEXT DEFAULT '',\n  \"bundle_id\" TEXT DEFAULT '',\n  \"package_name\" TEXT DEFAULT '',\n  \"status\" TEXT,\n  \"enhanced_measurement\" BOOLEAN DEFAULT TRUE\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_data_streams\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" UUID,\n  \"display_name\" TEXT DEFAULT '',\n  \"stream_type\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"firebase_app_id\" TEXT DEFAULT '',\n  \"default_uri\" TEXT DEFAULT '',\n  \"bundle_id\" TEXT DEFAULT '',\n  \"package_name\" TEXT DEFAULT '',\n  \"status\" TEXT,\n  \"enhanced_measurement\" BOOLEAN DEFAULT TRUE\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2157,7 +2157,7 @@
       "collectionExportName": "AnalyticsEventCollection",
       "schema": {
         "tableName": "analytics_events",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_events\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" uuid,\n  \"event_name\" TEXT DEFAULT '',\n  \"client_id\" TEXT DEFAULT '',\n  \"user_id\" TEXT DEFAULT '',\n  \"params\" TEXT DEFAULT '{}',\n  \"event_timestamp\" TIMESTAMP,\n  \"status\" TEXT,\n  \"sent_at\" TIMESTAMP,\n  \"error_message\" TEXT DEFAULT '',\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"non_personalized_ads\" BOOLEAN DEFAULT FALSE,\n  \"session_id\" TEXT DEFAULT '',\n  \"page_path\" TEXT DEFAULT '',\n  \"page_title\" TEXT DEFAULT '',\n  \"user_agent\" TEXT DEFAULT '',\n  \"ip_address\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" UUID,\n  \"event_name\" TEXT DEFAULT '',\n  \"client_id\" TEXT DEFAULT '',\n  \"user_id\" TEXT DEFAULT '',\n  \"params\" TEXT DEFAULT '{}',\n  \"event_timestamp\" TIMESTAMP,\n  \"status\" TEXT,\n  \"sent_at\" TIMESTAMP,\n  \"error_message\" TEXT DEFAULT '',\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"non_personalized_ads\" BOOLEAN DEFAULT FALSE,\n  \"session_id\" TEXT DEFAULT '',\n  \"page_path\" TEXT DEFAULT '',\n  \"page_title\" TEXT DEFAULT '',\n  \"user_agent\" TEXT DEFAULT '',\n  \"ip_address\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -2892,7 +2892,7 @@
       "collectionExportName": "AnalyticsPropertyCollection",
       "schema": {
         "tableName": "analytics_properties",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_properties\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"provider\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"api_secret\" TEXT DEFAULT '',\n  \"site_domain\" TEXT DEFAULT '',\n  \"time_zone\" TEXT DEFAULT 'America/Los_Angeles',\n  \"currency_code\" TEXT DEFAULT 'USD',\n  \"industry_category\" TEXT DEFAULT '',\n  \"service_level\" TEXT DEFAULT 'STANDARD',\n  \"status\" TEXT,\n  \"last_sync_at\" TIMESTAMP,\n  \"provider_metadata\" TEXT DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_properties\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"name\" TEXT DEFAULT '',\n  \"display_name\" TEXT DEFAULT '',\n  \"provider\" TEXT,\n  \"external_id\" TEXT DEFAULT '',\n  \"measurement_id\" TEXT DEFAULT '',\n  \"api_secret\" TEXT DEFAULT '',\n  \"site_domain\" TEXT DEFAULT '',\n  \"time_zone\" TEXT DEFAULT 'America/Los_Angeles',\n  \"currency_code\" TEXT DEFAULT 'USD',\n  \"industry_category\" TEXT DEFAULT '',\n  \"service_level\" TEXT DEFAULT 'STANDARD',\n  \"status\" TEXT,\n  \"last_sync_at\" TIMESTAMP,\n  \"provider_metadata\" TEXT DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3702,7 +3702,7 @@
       "collectionExportName": "AnalyticsReportCollection",
       "schema": {
         "tableName": "analytics_reports",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_reports\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" uuid,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"dimensions\" TEXT DEFAULT '[]',\n  \"metrics\" TEXT DEFAULT '[]',\n  \"date_range_start\" TEXT DEFAULT '7daysAgo',\n  \"date_range_end\" TEXT DEFAULT 'today',\n  \"dimension_filter\" TEXT DEFAULT '',\n  \"metric_filter\" TEXT DEFAULT '',\n  \"order_by\" TEXT DEFAULT '[]',\n  \"max_results\" INTEGER DEFAULT 0,\n  \"status\" TEXT,\n  \"frequency\" TEXT,\n  \"last_run_at\" TIMESTAMP,\n  \"next_run_at\" TIMESTAMP,\n  \"result_data\" TEXT DEFAULT '',\n  \"row_count\" INTEGER DEFAULT 0,\n  \"last_error\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"analytics_reports\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"property_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"dimensions\" TEXT DEFAULT '[]',\n  \"metrics\" TEXT DEFAULT '[]',\n  \"date_range_start\" TEXT DEFAULT '7daysAgo',\n  \"date_range_end\" TEXT DEFAULT 'today',\n  \"dimension_filter\" TEXT DEFAULT '',\n  \"metric_filter\" TEXT DEFAULT '',\n  \"order_by\" TEXT DEFAULT '[]',\n  \"max_results\" INTEGER DEFAULT 0,\n  \"status\" TEXT,\n  \"frequency\" TEXT,\n  \"last_run_at\" TIMESTAMP,\n  \"next_run_at\" TIMESTAMP,\n  \"result_data\" TEXT DEFAULT '',\n  \"row_count\" INTEGER DEFAULT 0,\n  \"last_error\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3851,6 +3851,8 @@
   },
   "moduleType": "smrt",
   "smrtDependencies": [
-    "@happyvertical/smrt-core"
+    "@happyvertical/smrt-core",
+    "@happyvertical/smrt-prompts",
+    "@happyvertical/smrt-tenancy"
   ]
 }

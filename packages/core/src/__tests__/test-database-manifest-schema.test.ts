@@ -253,4 +253,50 @@ describe('getTestDatabase manifest schemas', () => {
     expect(columnNames).toContain('_meta_data');
     expect(columnNames).toContain('name');
   });
+
+  it('uses JSON adapter DDL for JSON-like test databases', async () => {
+    const statements: string[] = [];
+    const db = {
+      exportTable: () => undefined,
+      query: async (sql: string) => {
+        statements.push(sql);
+        return { rows: [] };
+      },
+    };
+
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:JsonIndexedThing',
+      {
+        className: 'JsonIndexedThing',
+        fields: {
+          label: { type: 'text', required: true },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'json_indexed_things',
+        },
+      },
+      '@test/pkg',
+    );
+
+    await getTestDatabase({
+      db: db as any,
+      classes: ['JsonIndexedThing'],
+      includeSystemTables: false,
+    });
+
+    const createTable = statements.find((sql) =>
+      sql.startsWith('CREATE TABLE IF NOT EXISTS "json_indexed_things"'),
+    );
+
+    expect(createTable).toContain('"id" TEXT PRIMARY KEY');
+    expect(createTable).toContain('UNIQUE("slug", "context")');
+    expect(
+      statements.some(
+        (sql) =>
+          sql.includes('CREATE UNIQUE INDEX') &&
+          sql.includes('json_indexed_things_slug_context_idx'),
+      ),
+    ).toBe(false);
+  });
 });

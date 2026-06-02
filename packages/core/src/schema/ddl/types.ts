@@ -38,6 +38,7 @@ export interface EngineSpecificDDL {
 export interface MultiEngineDDL {
   sqlite: EngineSpecificDDL;
   duckdb: EngineSpecificDDL;
+  json: EngineSpecificDDL;
   postgres: EngineSpecificDDL;
 }
 

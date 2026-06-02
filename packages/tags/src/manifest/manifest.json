@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780375805913,
+  "timestamp": 1780379230728,
   "packageName": "@happyvertical/smrt-tags",
   "packageVersion": "0.25.8",
   "objects": {
@@ -533,7 +533,7 @@
       ],
       "schema": {
         "tableName": "tag_aliases",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_aliases\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tag_slug\" TEXT DEFAULT '',\n  \"alias\" TEXT DEFAULT '',\n  \"language\" TEXT DEFAULT '',\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_aliases\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tag_slug\" TEXT DEFAULT '',\n  \"alias\" TEXT DEFAULT '',\n  \"language\" TEXT DEFAULT '',\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -799,7 +799,7 @@
       "collectionExportName": "TagAliasCollectionCollection",
       "schema": {
         "tableName": "tag_alias_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_alias_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_alias_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -862,8 +862,12 @@
           "required": false
         },
         "parentId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Tag",
+          "_meta": {
+            "nullable": true
+          }
         },
         "name": {
           "type": "text",
@@ -1471,7 +1475,7 @@
       ],
       "schema": {
         "tableName": "tags",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tags\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSONB,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"level\" INTEGER DEFAULT 0,\n  \"description\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT '',\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tags\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"level\" INTEGER DEFAULT 0,\n  \"description\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT '',\n  \"tenant_id\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1506,7 +1510,7 @@
             "default": "current_timestamp"
           },
           "parent_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "name": {
@@ -1557,7 +1561,7 @@
             ]
           }
         ],
-        "version": "abdc0af6"
+        "version": "9ca078d6"
       }
     },
     "@happyvertical/smrt-tags:TagCollection": {
@@ -1786,7 +1790,7 @@
       "collectionExportName": "TagCollectionCollection",
       "schema": {
         "tableName": "tag_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_collections\" (\n  \"id\" uuid PRIMARY KEY,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -1835,6 +1839,7 @@
   },
   "moduleType": "smrt",
   "smrtDependencies": [
-    "@happyvertical/smrt-core"
+    "@happyvertical/smrt-core",
+    "@happyvertical/smrt-tenancy"
   ]
 }

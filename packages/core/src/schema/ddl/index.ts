@@ -89,6 +89,7 @@ export function generateMultiEngineDDL(
   return {
     sqlite: generateDDLForEngine(schema, 'sqlite'),
     duckdb: generateDDLForEngine(schema, 'duckdb'),
+    json: generateDDLForEngine(schema, 'json'),
     postgres: generateDDLForEngine(schema, 'postgres'),
   };
 }
@@ -109,7 +110,10 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
         return 'sqlite';
       case 'duckdb':
       case 'json':
-        return 'duckdb'; // JSON adapter uses DuckDB internally
+        // Query-level compatibility treats JSON as DuckDB. DDL callers that
+        // need JSON's UUID-as-TEXT behavior should detect the adapter
+        // structurally (exportTable) or request the `json` strategy directly.
+        return 'duckdb';
       case 'postgres':
       case 'postgresql':
       case 'pg':
@@ -142,7 +146,10 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
     urlLower.includes('/json/') ||
     urlLower.includes('-json')
   ) {
-    return 'duckdb'; // JSON adapter uses DuckDB
+    // Query-level compatibility treats JSON as DuckDB. DDL callers that need
+    // JSON's UUID-as-TEXT behavior should detect the adapter structurally
+    // (exportTable) or request the `json` strategy directly.
+    return 'duckdb';
   }
 
   // Default to SQLite for file-based databases

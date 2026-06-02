@@ -464,11 +464,16 @@ export class ManifestGenerator {
     generator: SchemaGeneratorLike,
   ): void {
     const schemaByTable = new Map<string, ManifestSchema>();
+    const ownerBySchema = new Map<
+      ManifestSchema,
+      { name: string; obj: SmartObjectDefinition }
+    >();
     const changedSchemas = new Set<ManifestSchema>();
 
-    for (const obj of Object.values(manifest.objects)) {
+    for (const [name, obj] of Object.entries(manifest.objects)) {
       if (obj.schema?.tableName) {
         schemaByTable.set(obj.schema.tableName, obj.schema);
+        ownerBySchema.set(obj.schema, { name, obj });
       }
     }
 
@@ -517,7 +522,12 @@ export class ManifestGenerator {
     }
 
     for (const schema of changedSchemas) {
-      this.refreshManifestSchemaDDL(schema, generator);
+      this.refreshManifestSchemaDDL(
+        schema,
+        generator,
+        ownerBySchema.get(schema),
+        manifest,
+      );
     }
   }
 
@@ -562,6 +572,8 @@ export class ManifestGenerator {
   private refreshManifestSchemaDDL(
     schema: ManifestSchema,
     generator: SchemaGeneratorLike,
+    owner: { name: string; obj: SmartObjectDefinition } | undefined,
+    manifest: SmartObjectManifest,
   ): void {
     const schemaDefinition = {
       tableName: schema.tableName,
@@ -591,16 +603,82 @@ export class ManifestGenerator {
       packageName: '',
     };
 
-    schema.ddl = generator.generateSQL(schemaDefinition, 'postgres');
-    schema.version = createHash('sha256')
+    schema.ddl = generator.generateSQL(schemaDefinition);
+    schema.version = this.computeManifestSchemaVersion(schema, owner, manifest);
+  }
+
+  private computeManifestSchemaVersion(
+    schema: ManifestSchema,
+    owner: { name: string; obj: SmartObjectDefinition } | undefined,
+    manifest: SmartObjectManifest,
+  ): string {
+    if (schema.columns._meta_type && owner) {
+      const baseClassName =
+        owner.obj.decoratorConfig?.tableStrategy === 'sti'
+          ? owner.name
+          : this.findSTIBaseInfo(owner.obj, manifest)?.className || owner.name;
+
+      return createHash('sha256')
+        .update(
+          JSON.stringify({
+            columns: schema.columns,
+            baseClassName,
+            descendants: this.findDescendantsInManifest(
+              baseClassName,
+              manifest,
+            ),
+          }),
+        )
+        .digest('hex')
+        .substring(0, 8);
+    }
+
+    return createHash('sha256')
       .update(
         JSON.stringify({
-          tableName: schema.tableName,
           columns: schema.columns,
+          className: owner?.name || schema.tableName,
         }),
       )
       .digest('hex')
       .substring(0, 8);
+  }
+
+  private findDescendantsInManifest(
+    baseClassName: string,
+    manifest: SmartObjectManifest,
+    visited: Set<string> = new Set(),
+  ): string[] {
+    const descendants: string[] = [];
+    if (visited.has(baseClassName)) {
+      return descendants;
+    }
+    visited.add(baseClassName);
+
+    const baseClassLower = this.simpleClassName(baseClassName).toLowerCase();
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      const classNameLower = this.simpleClassName(obj.className).toLowerCase();
+      const extendsLower = obj.extends
+        ? this.simpleClassName(obj.extends).toLowerCase()
+        : undefined;
+
+      if (
+        classNameLower === baseClassLower &&
+        extendsLower === baseClassLower
+      ) {
+        continue;
+      }
+
+      if (extendsLower === baseClassLower) {
+        descendants.push(name);
+        descendants.push(
+          ...this.findDescendantsInManifest(name, manifest, visited),
+        );
+      }
+    }
+
+    return descendants;
   }
 
   private applySqlTypeOverrides(obj: SmartObjectDefinition): void {
@@ -855,6 +933,37 @@ export class ManifestGenerator {
     return classnameToTablename(className);
   }
 
+  private normalizeFrameworkInheritedField(
+    ancestorName: string,
+    fieldName: string,
+    fieldDef: any,
+    childClassName: string,
+  ): any {
+    if (
+      this.simpleClassName(ancestorName) === 'SmrtHierarchical' &&
+      fieldName === 'parentId'
+    ) {
+      return {
+        ...fieldDef,
+        type: 'foreignKey',
+        related: childClassName,
+        required: false,
+        _meta: {
+          ...(fieldDef._meta || {}),
+          nullable: true,
+        },
+      };
+    }
+
+    return fieldDef;
+  }
+
+  private simpleClassName(className: string): string {
+    return className.includes(':')
+      ? className.split(':').pop() || className
+      : className;
+  }
+
   /**
    * Merge inherited fields into child classes (build-time inheritance resolution)
    *
@@ -983,7 +1092,12 @@ export class ManifestGenerator {
         // Merge fields (child fields override parent fields with same name)
         for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
           if (!mergedFields[fieldName]) {
-            mergedFields[fieldName] = fieldDef;
+            mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
+              ancestorName,
+              fieldName,
+              fieldDef,
+              obj.className,
+            );
           }
         }
 

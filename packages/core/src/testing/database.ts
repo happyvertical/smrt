@@ -199,6 +199,10 @@ export async function getTestDatabase(
 
   // Use the same schema generation as production
   const schemaGenerator = new SchemaGenerator();
+  const ddlEngine =
+    type === 'json' || typeof (db as any).exportTable === 'function'
+      ? 'json'
+      : 'sqlite';
 
   // Track created tables to avoid duplicates (STI base classes)
   const createdTables = new Set<string>();
@@ -227,6 +231,7 @@ export async function getTestDatabase(
     const runtimeSchemaConfig = {
       conflictColumns: ObjectRegistry.getConflictColumns(className),
       idType: registered?.config.idType,
+      registry: ObjectRegistry,
     };
 
     // Generate schema using SchemaGenerator (same as migrations)
@@ -246,7 +251,7 @@ export async function getTestDatabase(
           );
 
     // Generate DDL using generateSQL() - the single source of truth
-    const ddl = schemaGenerator.generateSQL(schema, 'sqlite');
+    const ddl = schemaGenerator.generateSQL(schema, ddlEngine);
 
     try {
       await db.query(ddl);
@@ -255,12 +260,7 @@ export async function getTestDatabase(
       // Create indexes (use DDL strategy so jsonPath / where / etc. render)
       const ddlStrategy = (
         await import('../schema/ddl/index.js')
-      ).getDDLStrategy(
-        // Map test database type → DDL engine. We default to sqlite since
-        // getTestDatabase is sqlite-first; if extended for postgres, the
-        // outer schema generator already accounts for engine-specific shapes.
-        'sqlite',
-      );
+      ).getDDLStrategy(ddlEngine);
       const indexStatements = ddlStrategy.generateIndexes(schema);
       for (const indexSQL of indexStatements) {
         try {
