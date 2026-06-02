@@ -68,7 +68,10 @@ describe('Contract STI extensions', () => {
       ['ProductionOrder'],
       ['Cart'],
     ])('resolves Contract as STI base for %s', (name) => {
-      expect(ObjectRegistry.getSTIBase(name)).toBe('Contract');
+      // R5-canon: getSTIBase returns qualified names.
+      expect(ObjectRegistry.getSTIBase(name)).toBe(
+        '@happyvertical/smrt-commerce:Contract',
+      );
     });
   });
 

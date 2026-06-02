@@ -60,7 +60,10 @@ describe('LicenseSale STI subtype', () => {
   });
 
   it('resolves Contract as the STI base for LicenseSale', () => {
-    expect(ObjectRegistry.getSTIBase('LicenseSale')).toBe('Contract');
+    // R5-canon: getSTIBase returns qualified names.
+    expect(ObjectRegistry.getSTIBase('LicenseSale')).toBe(
+      '@happyvertical/smrt-commerce:Contract',
+    );
   });
 
   it('persists a license issued against a Sku purchase', async () => {
