@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.26.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - handle collection item overrides (core)
+  - resolve STI collection test schemas (core)
+  - @happyvertical/smrt-scanner@0.26.5
+  - @happyvertical/smrt-config@0.26.5
+  - @happyvertical/smrt-types@0.26.5
+
 ## 0.26.4
 
 ### Patch Changes
