@@ -14,7 +14,7 @@
 import { existsSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { SmrtObject } from '../object';
 import { SmrtPolymorphicAssociation } from '../polymorphic-association';
@@ -190,7 +190,7 @@ describe('SmrtPolymorphicAssociation', () => {
       expect(hydrated?.name).toBe('resolved-target');
     });
 
-    it('rehydrates an STI target as its concrete subclass', async () => {
+    it('rehydrates an STI target stored by its concrete subclass name', async () => {
       const article = new PolyArticle({
         ...dbOptions,
         title: 'STI Title',
@@ -213,6 +213,34 @@ describe('SmrtPolymorphicAssociation', () => {
       expect(hydrated?.byline).toBe('by line');
     });
 
+    it('dispatches to the concrete subclass when metaType is the STI base', async () => {
+      // metaType points at the STI BASE; the collection must dispatch via the
+      // _meta_type discriminator and return the concrete child instance.
+      const article = new PolyArticle({
+        ...dbOptions,
+        title: 'Dispatched',
+        byline: 'via discriminator',
+      });
+      await article.initialize();
+      await article.save();
+
+      const baseMetaType =
+        ObjectRegistry.getClass('PolyDoc')?.qualifiedName ?? 'PolyDoc';
+      const link = await links.create({
+        ownerId: 'owner-sti-base',
+        metaType: baseMetaType,
+        metaId: article.id,
+        role: 'hero',
+      });
+      await link.save();
+
+      const hydrated = await link.hydrate();
+      expect(hydrated).toBeInstanceOf(PolyArticle);
+      expect((hydrated as PolyArticle | null)?.byline).toBe(
+        'via discriminator',
+      );
+    });
+
     it('returns null when the target row no longer exists', async () => {
       const link = await links.create({
         ownerId: 'owner-5',
@@ -220,6 +248,28 @@ describe('SmrtPolymorphicAssociation', () => {
         metaId: 'missing-id',
       });
       expect(await link.hydrate()).toBeNull();
+    });
+
+    it('propagates real getCollection failures instead of masking them as null', async () => {
+      const target = await targets.create({ name: 'err-target' });
+      await target.save();
+      const link = await links.create({
+        ownerId: 'owner-err',
+        metaType: targetMetaType,
+        metaId: target.id,
+      });
+      await link.save();
+
+      // A genuine failure (e.g. DB/init error) during collection resolution
+      // must surface, not be swallowed and reported as a missing target.
+      const spy = vi
+        .spyOn(ObjectRegistry, 'getCollection')
+        .mockRejectedValueOnce(new Error('db connection failed'));
+      try {
+        await expect(link.hydrate()).rejects.toThrow('db connection failed');
+      } finally {
+        spy.mockRestore();
+      }
     });
 
     it('returns null when metaType is not registered', async () => {
