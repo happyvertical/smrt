@@ -310,4 +310,223 @@ describe('getTestDatabase manifest schemas', () => {
     expect(columnNames).toContain('_meta_data');
     expect(columnNames).toContain('name');
   });
+
+  it('maps collection subclasses to their inherited STI item schema before table creation', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:MessageCollection',
+      {
+        className: 'MessageCollection',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Message',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'message_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailCollection',
+      {
+        className: 'EmailCollection',
+        extends: 'MessageCollection',
+        extendsTypeArg: null,
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'messages',
+        },
+        schema: {
+          tableName: 'messages',
+          ddl: `CREATE TABLE IF NOT EXISTS "messages" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp
+)`,
+          columns: {
+            id: { type: 'TEXT', notNull: true, primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT', notNull: true, default: '' },
+            created_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            updated_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+          },
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:Message',
+      {
+        className: 'Message',
+        fields: {
+          subject: { type: 'text', required: false, default: '' },
+          messageId: { type: 'text', required: false, default: '' },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'messages',
+          tableStrategy: 'sti',
+        },
+        schema: {
+          tableName: 'messages',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    const definitions = ObjectRegistry.getAllSchemasAsDefinitions();
+    expect(definitions.message_collections).toBeUndefined();
+    expect(definitions.messages.columns._meta_type).toBeDefined();
+    expect(definitions.messages.columns._meta_data).toBeDefined();
+    expect(definitions.messages.columns.subject).toBeDefined();
+    expect(definitions.messages.columns.message_id).toBeDefined();
+
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    const columnsResult = await db.query(`PRAGMA table_info('messages')`);
+    const columns = Array.isArray(columnsResult)
+      ? columnsResult
+      : columnsResult.rows;
+    const columnNames = columns.map((row: { name: string }) => row.name);
+
+    expect(columnNames).toContain('_meta_type');
+    expect(columnNames).toContain('_meta_data');
+    expect(columnNames).toContain('subject');
+    expect(columnNames).toContain('message_id');
+  });
+
+  it('prefers collection subclass item inference over inherited type args', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:AttachmentCollection',
+      {
+        className: 'AttachmentCollection',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Attachment',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'attachment_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailAttachmentCollection',
+      {
+        className: 'EmailAttachmentCollection',
+        extends: 'AttachmentCollection',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'email_attachment_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:Attachment',
+      {
+        className: 'Attachment',
+        fields: {
+          messageId: { type: 'text', required: false, default: '' },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'attachments',
+        },
+        schema: {
+          tableName: 'attachments',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailAttachment',
+      {
+        className: 'EmailAttachment',
+        extends: 'Attachment',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'email_attachments',
+        },
+        schema: {
+          tableName: 'email_attachments',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['EmailAttachmentCollection'],
+    });
+
+    const emailAttachmentColumnsResult = await db.query(
+      `PRAGMA table_info('email_attachments')`,
+    );
+    const emailAttachmentColumns = Array.isArray(emailAttachmentColumnsResult)
+      ? emailAttachmentColumnsResult
+      : emailAttachmentColumnsResult.rows;
+    const attachmentColumnsResult = await db.query(
+      `PRAGMA table_info('attachments')`,
+    );
+    const attachmentColumns = Array.isArray(attachmentColumnsResult)
+      ? attachmentColumnsResult
+      : attachmentColumnsResult.rows;
+
+    expect(
+      emailAttachmentColumns.map((row: { name: string }) => row.name),
+    ).toContain('id');
+    expect(attachmentColumns).toHaveLength(0);
+  });
 });

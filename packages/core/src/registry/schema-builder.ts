@@ -13,12 +13,24 @@ import type {
   SQLDataType,
 } from '../schema/types.js';
 import { classnameToTablename, toSnakeCase } from '../utils';
+import {
+  type CollectionRegistrationLookup,
+  isCollectionRegistration,
+} from './collection-resolution';
 import { findClass } from './name-resolver';
 import { getClasses, getCollectionTableNames } from './shared-state';
 
 type ForeignKeyAction = NonNullable<
   NonNullable<ColumnDefinition['foreignKey']>['onDelete']
 >;
+
+const collectionRegistrationLookup: CollectionRegistrationLookup = {
+  findClass,
+  findClassInPackage: (packageName, className) =>
+    ObjectRegistry.getClassInPackage(packageName, className),
+  getInheritanceChain: (className) =>
+    ObjectRegistry.getInheritanceChain(className),
+};
 
 function applyDecoratorSqlTypeOverrides(
   className: string,
@@ -163,7 +175,13 @@ export function getAllSchemas(): Record<
   for (const [_className, registered] of getClasses()) {
     // Skip collection classes - they don't have their own tables
     // Their schemas incorrectly contain collection properties (loaded, options, etc.)
-    if (registered.extends === 'SmrtCollection') {
+    if (
+      isCollectionRegistration(
+        _className,
+        registered,
+        collectionRegistrationLookup,
+      )
+    ) {
       continue;
     }
 
@@ -361,7 +379,13 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
 
   for (const [_className, registered] of getClasses()) {
     // Skip collection classes - they don't have their own tables
-    if (registered.extends === 'SmrtCollection') {
+    if (
+      isCollectionRegistration(
+        _className,
+        registered,
+        collectionRegistrationLookup,
+      )
+    ) {
       continue;
     }
 

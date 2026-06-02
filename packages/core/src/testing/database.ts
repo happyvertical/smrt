@@ -18,6 +18,12 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
+import {
+  type CollectionRegistrationLookup,
+  isCollectionRegistration,
+  resolveCollectionItemClassName,
+  resolveRelatedRegistration,
+} from '../registry/collection-resolution.js';
 import { ObjectRegistry } from '../registry.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
@@ -71,6 +77,89 @@ function isSTIChild(className: string): boolean {
   return stiBaseName !== className;
 }
 
+type RegisteredSchemaClass = NonNullable<
+  ReturnType<typeof ObjectRegistry.getClass>
+>;
+
+const collectionRegistrationLookup: CollectionRegistrationLookup = {
+  findClass: (className) => ObjectRegistry.getClass(className),
+  findClassInPackage: (packageName, className) =>
+    ObjectRegistry.getClassInPackage(packageName, className),
+  getInheritanceChain: (className) =>
+    ObjectRegistry.getInheritanceChain(className),
+};
+
+function resolveCollectionSchemaClassName(
+  className: string,
+  registered: RegisteredSchemaClass,
+): string {
+  const itemClassName = resolveCollectionItemClassName(
+    className,
+    registered,
+    collectionRegistrationLookup,
+  );
+  if (itemClassName) {
+    const itemRegistration = resolveRelatedRegistration(
+      itemClassName,
+      registered,
+      collectionRegistrationLookup,
+    );
+    const itemLookupName =
+      itemRegistration?.qualifiedName ||
+      itemRegistration?.name ||
+      itemClassName;
+    const stiBase = ObjectRegistry.getSTIBase(itemLookupName);
+    return stiBase
+      ? resolveSTIBaseLookupName(itemLookupName, stiBase)
+      : itemLookupName;
+  }
+
+  const tableName =
+    registered.schema?.tableName ||
+    registered.config.tableName ||
+    ObjectRegistry.getTableName(className);
+  if (!tableName) {
+    return className;
+  }
+
+  const collectionPackage = registered.packageName;
+
+  for (const candidate of ObjectRegistry.getAllClasses().values()) {
+    if (
+      candidate === registered ||
+      isCollectionRegistration(
+        candidate.qualifiedName || candidate.name,
+        candidate,
+        collectionRegistrationLookup,
+      )
+    ) {
+      continue;
+    }
+
+    const candidateTableName =
+      candidate.schema?.tableName || candidate.config.tableName;
+    if (candidateTableName !== tableName) {
+      continue;
+    }
+
+    if (
+      collectionPackage &&
+      candidate.packageName &&
+      candidate.packageName !== collectionPackage
+    ) {
+      continue;
+    }
+
+    const candidateLookupName = candidate.qualifiedName || candidate.name;
+    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
+    return stiBase
+      ? resolveSTIBaseLookupName(candidateLookupName, stiBase)
+      : candidateLookupName;
+  }
+
+  return className;
+}
+
 /**
  * Options for creating a test database
  */
@@ -114,48 +203,18 @@ function resolveRequestedSchemaClassName(className: string): string {
     return className;
   }
 
-  if (registered.extends !== 'SmrtCollection') {
+  if (
+    !isCollectionRegistration(
+      className,
+      registered,
+      collectionRegistrationLookup,
+    )
+  ) {
     const stiBase = ObjectRegistry.getSTIBase(className);
     return stiBase ? resolveSTIBaseLookupName(className, stiBase) : className;
   }
 
-  const tableName =
-    registered.schema?.tableName ||
-    registered.config.tableName ||
-    ObjectRegistry.getTableName(className);
-  if (!tableName) {
-    return className;
-  }
-
-  const collectionPackage = registered.packageName;
-
-  for (const candidate of ObjectRegistry.getAllClasses().values()) {
-    if (candidate === registered || candidate.extends === 'SmrtCollection') {
-      continue;
-    }
-
-    const candidateTableName =
-      candidate.schema?.tableName || candidate.config.tableName;
-    if (candidateTableName !== tableName) {
-      continue;
-    }
-
-    if (
-      collectionPackage &&
-      candidate.packageName &&
-      candidate.packageName !== collectionPackage
-    ) {
-      continue;
-    }
-
-    const candidateLookupName = candidate.qualifiedName || candidate.name;
-    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
-    return stiBase
-      ? resolveSTIBaseLookupName(candidateLookupName, stiBase)
-      : candidateLookupName;
-  }
-
-  return className;
+  return resolveCollectionSchemaClassName(className, registered);
 }
 
 function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
