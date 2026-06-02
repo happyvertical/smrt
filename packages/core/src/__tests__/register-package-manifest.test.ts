@@ -370,6 +370,44 @@ describe('ObjectRegistry.registerPackageManifest', () => {
     expect(notFound).toBeDefined();
   });
 
+  it('does not escape the package root to load an unrelated manifest.json', () => {
+    // Hardening guard: when THIS package's dist/manifest.json is genuinely
+    // absent (broken build), the upward search must not climb past the package
+    // root and match a DIFFERENT package's manifest — that would silently
+    // register the wrong schema, worse than a clean no-op. Layout:
+    //   <tempRoot>/manifest.json         <- unrelated manifest, ABOVE the package
+    //   <tempRoot>/pkg/package.json      <- the package root (boundary)
+    //   <tempRoot>/pkg/dist/chunks/...   <- relocated shim path (dist manifest missing)
+    const wrongPkg = '@happyvertical/smrt-wrong-package';
+    writeManifest(tempRoot, wrongPkg, {
+      WrongWidget: {
+        decoratorConfig: { tableName: 'wrong_widgets' },
+        fields: { wrongField: { type: 'text' } },
+      },
+    });
+    const pkgRoot = join(tempRoot, 'pkg');
+    const distChunks = join(pkgRoot, 'dist', 'chunks');
+    mkdirSync(distChunks, { recursive: true });
+    writeFileSync(
+      join(pkgRoot, 'package.json'),
+      JSON.stringify({ name: '@happyvertical/smrt-real-package' }),
+    );
+    // <pkg>/dist/manifest.json is intentionally absent (simulating a broken build).
+    const missingUrl = pathToFileURL(join(distChunks, 'manifest.json'));
+
+    ObjectRegistry.clearDiagnostics();
+    const result = ObjectRegistry.registerPackageManifest(missingUrl);
+
+    // Must NOT recover the unrelated manifest above the package root.
+    expect(result.loaded).toBe(false);
+    expect(result.objectsRegistered).toBe(0);
+    expect(result.packageName).not.toBe(wrongPkg);
+    const notFound = ObjectRegistry.getDiagnostics().find(
+      (d) => d.code === 'PACKAGE_MANIFEST_NOT_FOUND',
+    );
+    expect(notFound).toBeDefined();
+  });
+
   it('accepts a plain string path as well as a URL', () => {
     const packageName = '@happyvertical/smrt-self-register-fixture-strpath';
     const manifestPath = writeManifest(tempRoot, packageName, {

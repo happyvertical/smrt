@@ -199,8 +199,9 @@ function resolveManifestByUpwardSearch(
   const fileName = path.basename(missingPath);
   // Bound the walk so a stray, deeply-nested path can never trigger a slow or
   // unbounded filesystem crawl. Chunks are normally one directory deep
-  // (`dist/chunks/`), so a handful of levels is comfortably sufficient.
-  const MAX_LEVELS = 5;
+  // (`dist/chunks/`), so a handful of levels is comfortably sufficient. The
+  // package-root stop below is the authoritative guard; this is just a backstop.
+  const MAX_LEVELS = 4;
   let dir = path.dirname(missingPath);
   for (let level = 0; level < MAX_LEVELS; level++) {
     const parent = path.dirname(dir);
@@ -211,6 +212,16 @@ function resolveManifestByUpwardSearch(
     const candidate = path.join(parent, fileName);
     if (fs.existsSync(candidate)) {
       return candidate;
+    }
+    // Never search above the package root. The real manifest is always at
+    // `<pkg>/dist/manifest.json`; once we have checked the directory that holds
+    // `package.json` (the package root), stop. Otherwise a chunk whose
+    // `dist/manifest.json` is genuinely absent could match an unrelated
+    // `manifest.json` from a parent package, the monorepo root, or a
+    // `node_modules` ancestor — registering the WRONG package's schema, which
+    // is worse than a clean no-op.
+    if (fs.existsSync(path.join(parent, 'package.json'))) {
+      break;
     }
     dir = parent;
   }
