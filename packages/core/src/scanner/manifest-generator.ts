@@ -2,14 +2,16 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { SchemaGenerator } from '../schema/generator.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
+import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import { createQualifiedName } from '../utils/qualified-names.js';
-import { classnameToTablename, toSnakeCase } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
@@ -19,12 +21,17 @@ import type {
   AgentMenuItem,
   AgentPermission,
   AgentUISlotManifest,
+  ManifestSchema,
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
   SmrtVisibility,
   ValidationRule,
 } from './types.js';
+
+type SchemaGeneratorLike = {
+  generateSQL: (schema: any, engine?: any) => string;
+};
 
 // Create require function for synchronous module loading in ESM context
 const require = createRequire(import.meta.url);
@@ -363,15 +370,6 @@ export class ManifestGenerator {
    * @param manifest - The manifest to process in-place
    */
   generateSchemas(manifest: SmartObjectManifest): void {
-    // Import SchemaGenerator synchronously (using createRequire for ESM compatibility)
-    // In Vitest/source runs, prefer the TypeScript source so tests exercise the
-    // current branch instead of stale built artifacts.
-    let SchemaGenerator: any;
-    try {
-      SchemaGenerator = require('../schema/generator.ts').SchemaGenerator;
-    } catch {
-      SchemaGenerator = require('../schema/generator.js').SchemaGenerator;
-    }
     const generator = new SchemaGenerator();
 
     // Create aggregated manifest that includes external package objects
@@ -409,6 +407,7 @@ export class ManifestGenerator {
           tableName,
           obj.fields,
           aggregatedManifest,
+          obj.decoratorConfig,
         );
         this.applySqlTypeOverrides(obj);
       } else if (this.isSTIChildClass(obj, manifest)) {
@@ -437,6 +436,7 @@ export class ManifestGenerator {
             baseTableName,
             obj.fields,
             aggregatedManifest,
+            obj.decoratorConfig,
           );
           this.applySqlTypeOverrides(obj);
         }
@@ -455,6 +455,230 @@ export class ManifestGenerator {
         this.applySqlTypeOverrides(obj);
       }
     }
+
+    this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
+  }
+
+  private resolveSamePackageForeignKeyColumnTypes(
+    manifest: SmartObjectManifest,
+    generator: SchemaGeneratorLike,
+  ): void {
+    const schemaByTable = new Map<string, ManifestSchema>();
+    const ownerBySchema = new Map<
+      ManifestSchema,
+      { name: string; obj: SmartObjectDefinition }
+    >();
+    const changedSchemas = new Set<ManifestSchema>();
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      if (obj.schema?.tableName) {
+        schemaByTable.set(obj.schema.tableName, obj.schema);
+        ownerBySchema.set(obj.schema, { name, obj });
+      }
+    }
+
+    for (const obj of Object.values(manifest.objects)) {
+      const sourceTable = this.getObjectTableName(obj);
+      if (!sourceTable) {
+        continue;
+      }
+
+      const sourceSchema = schemaByTable.get(sourceTable);
+      if (!sourceSchema) {
+        continue;
+      }
+
+      for (const [fieldName, field] of Object.entries(obj.fields || {})) {
+        if (
+          field.type !== 'foreignKey' ||
+          !field.related ||
+          field._meta?.sqlType
+        ) {
+          continue;
+        }
+
+        const columnName = toSnakeCase(fieldName);
+        const sourceColumn = sourceSchema.columns[columnName];
+        if (!sourceColumn) {
+          continue;
+        }
+
+        const targetSchema = this.findForeignKeyTargetSchema(
+          field.related,
+          manifest,
+          schemaByTable,
+        );
+        const targetIdType = targetSchema?.columns.id?.type;
+        if (!targetIdType || sourceColumn.type === targetIdType) {
+          continue;
+        }
+
+        sourceSchema.columns[columnName] = {
+          ...sourceColumn,
+          type: targetIdType,
+        };
+        changedSchemas.add(sourceSchema);
+      }
+    }
+
+    for (const schema of changedSchemas) {
+      this.refreshManifestSchemaDDL(
+        schema,
+        generator,
+        ownerBySchema.get(schema),
+        manifest,
+      );
+    }
+  }
+
+  private findForeignKeyTargetSchema(
+    related: string,
+    manifest: SmartObjectManifest,
+    schemaByTable: Map<string, ManifestSchema>,
+  ): ManifestSchema | undefined {
+    const relatedTarget = related.split('.')[0];
+    if (schemaByTable.has(relatedTarget)) {
+      return schemaByTable.get(relatedTarget);
+    }
+
+    const targetObj = Object.values(manifest.objects).find(
+      (candidate) =>
+        candidate.className === relatedTarget ||
+        candidate.qualifiedName === relatedTarget ||
+        candidate.name === relatedTarget ||
+        candidate.decoratorConfig?.tableName === relatedTarget ||
+        candidate.schema?.tableName === relatedTarget,
+    );
+
+    if (!targetObj && relatedTarget.includes(':')) {
+      return undefined;
+    }
+
+    const targetTable = targetObj
+      ? this.getObjectTableName(targetObj)
+      : this.classNameToTableName(relatedTarget);
+
+    return targetTable ? schemaByTable.get(targetTable) : undefined;
+  }
+
+  private getObjectTableName(obj: SmartObjectDefinition): string | undefined {
+    return (
+      obj.schema?.tableName ||
+      obj.decoratorConfig?.tableName ||
+      this.classNameToTableName(obj.className)
+    );
+  }
+
+  private refreshManifestSchemaDDL(
+    schema: ManifestSchema,
+    generator: SchemaGeneratorLike,
+    owner: { name: string; obj: SmartObjectDefinition } | undefined,
+    manifest: SmartObjectManifest,
+  ): void {
+    const schemaDefinition = {
+      tableName: schema.tableName,
+      columns: Object.fromEntries(
+        Object.entries(schema.columns).map(([name, column]) => [
+          name,
+          {
+            type: column.type,
+            primaryKey: column.primaryKey,
+            notNull: column.notNull,
+            unique: column.unique,
+            defaultValue: column.default,
+          },
+        ]),
+      ),
+      indexes: (schema.indexes || []).map((index) => ({
+        name: index.name,
+        columns: index.columns,
+        unique: index.unique,
+        where: index.where,
+        jsonPath: index.jsonPath,
+      })),
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: schema.version,
+      packageName: '',
+    };
+
+    schema.ddl = generator.generateSQL(schemaDefinition);
+    schema.version = this.computeManifestSchemaVersion(schema, owner, manifest);
+  }
+
+  private computeManifestSchemaVersion(
+    schema: ManifestSchema,
+    owner: { name: string; obj: SmartObjectDefinition } | undefined,
+    manifest: SmartObjectManifest,
+  ): string {
+    if (schema.columns._meta_type && owner) {
+      const baseClassName =
+        owner.obj.decoratorConfig?.tableStrategy === 'sti'
+          ? owner.name
+          : this.findSTIBaseInfo(owner.obj, manifest)?.className || owner.name;
+
+      return createHash('sha256')
+        .update(
+          JSON.stringify({
+            columns: schema.columns,
+            baseClassName,
+            descendants: this.findDescendantsInManifest(
+              baseClassName,
+              manifest,
+            ),
+          }),
+        )
+        .digest('hex')
+        .substring(0, 8);
+    }
+
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          columns: schema.columns,
+          className: owner?.name || schema.tableName,
+        }),
+      )
+      .digest('hex')
+      .substring(0, 8);
+  }
+
+  private findDescendantsInManifest(
+    baseClassName: string,
+    manifest: SmartObjectManifest,
+    visited: Set<string> = new Set(),
+  ): string[] {
+    const descendants: string[] = [];
+    if (visited.has(baseClassName)) {
+      return descendants;
+    }
+    visited.add(baseClassName);
+
+    const baseClassLower = this.simpleClassName(baseClassName).toLowerCase();
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      const classNameLower = this.simpleClassName(obj.className).toLowerCase();
+      const extendsLower = obj.extends
+        ? this.simpleClassName(obj.extends).toLowerCase()
+        : undefined;
+
+      if (
+        classNameLower === baseClassLower &&
+        extendsLower === baseClassLower
+      ) {
+        continue;
+      }
+
+      if (extendsLower === baseClassLower) {
+        descendants.push(name);
+        descendants.push(
+          ...this.findDescendantsInManifest(name, manifest, visited),
+        );
+      }
+    }
+
+    return descendants;
   }
 
   private applySqlTypeOverrides(obj: SmartObjectDefinition): void {
@@ -709,6 +933,37 @@ export class ManifestGenerator {
     return classnameToTablename(className);
   }
 
+  private normalizeFrameworkInheritedField(
+    ancestorName: string,
+    fieldName: string,
+    fieldDef: any,
+    childClassName: string,
+  ): any {
+    if (
+      this.simpleClassName(ancestorName) === 'SmrtHierarchical' &&
+      fieldName === 'parentId'
+    ) {
+      return {
+        ...fieldDef,
+        type: 'foreignKey',
+        related: childClassName,
+        required: false,
+        _meta: {
+          ...(fieldDef._meta || {}),
+          nullable: true,
+        },
+      };
+    }
+
+    return fieldDef;
+  }
+
+  private simpleClassName(className: string): string {
+    return className.includes(':')
+      ? className.split(':').pop() || className
+      : className;
+  }
+
   /**
    * Merge inherited fields into child classes (build-time inheritance resolution)
    *
@@ -837,7 +1092,12 @@ export class ManifestGenerator {
         // Merge fields (child fields override parent fields with same name)
         for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
           if (!mergedFields[fieldName]) {
-            mergedFields[fieldName] = fieldDef;
+            mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
+              ancestorName,
+              fieldName,
+              fieldDef,
+              obj.className,
+            );
           }
         }
 

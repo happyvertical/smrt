@@ -696,7 +696,12 @@ export function fieldsToColumns(
     }
 
     // Map field type to SQL type
-    const sqlType = fieldDef._meta?.sqlType || mapFieldTypeToSQL(fieldDef.type);
+    const sqlType =
+      fieldDef._meta?.sqlType ||
+      (fieldDef.type === 'crossPackageRef' &&
+      (fieldDef._meta?.idType === 'text' || (fieldDef as any).idType === 'text')
+        ? 'TEXT'
+        : mapFieldTypeToSQL(fieldDef.type));
 
     const column: ColumnDefinition = {
       type: sqlType,
@@ -755,7 +760,9 @@ export function mapFieldTypeToSQL(
     case 'json':
       return 'JSON';
     case 'foreignKey':
-      return 'TEXT';
+      return 'UUID';
+    case 'crossPackageRef':
+      return 'UUID';
     default:
       return 'TEXT';
   }

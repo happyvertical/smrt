@@ -99,7 +99,10 @@ export class SchemaComparer {
     };
     // Use the shared detectEngine utility for consistent detection
     // Handles :memory:, .json, and other edge cases
-    this.engine = detectEngine(this.db.url || '');
+    this.engine =
+      typeof (this.db as any).exportTable === 'function'
+        ? 'json'
+        : detectEngine(this.db.url || '');
     this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
@@ -798,23 +801,7 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
   ): string {
-    const parts: string[] = [this.quoteIdentifier(colName), colDef.type];
-
-    if (colDef.notNull) {
-      parts.push('NOT NULL');
-    }
-    if (colDef.unique) {
-      parts.push('UNIQUE');
-    }
-    if (colDef.defaultValue !== undefined) {
-      const defaultVal =
-        typeof colDef.defaultValue === 'string'
-          ? `'${colDef.defaultValue.replace(/'/g, "''")}'`
-          : String(colDef.defaultValue);
-      parts.push(`DEFAULT ${defaultVal}`);
-    }
-
-    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${parts.join(' ')}`;
+    return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`;
   }
 
   /**

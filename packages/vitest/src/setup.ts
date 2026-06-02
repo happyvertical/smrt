@@ -132,7 +132,7 @@ function buildSchemaSqlBatches(
     detectEngine(url: string, type?: string): string;
     generateDDLForEngine(
       schema: any,
-      engine: 'sqlite' | 'duckdb' | 'postgres',
+      engine: 'sqlite' | 'duckdb' | 'json' | 'postgres',
     ): {
       createTable: string;
       indexes: string[];
@@ -148,11 +148,11 @@ function buildSchemaSqlBatches(
       : {};
   const engine =
     typeof db.exportTable === 'function'
-      ? 'duckdb'
+      ? 'json'
       : (smrtCore.detectEngine(
           dbConfig.url || db.url || ':memory:',
           dbConfig.type,
-        ) as 'sqlite' | 'duckdb' | 'postgres');
+        ) as 'sqlite' | 'duckdb' | 'json' | 'postgres');
 
   return Object.values(
     smrtCore.ObjectRegistry.getAllSchemasAsDefinitions(),
@@ -161,7 +161,7 @@ function buildSchemaSqlBatches(
     return [
       ddl.createTable,
       ...ddl.indexes,
-      ...(engine === 'duckdb' ? [] : ddl.triggers),
+      ...(engine === 'duckdb' || engine === 'json' ? [] : ddl.triggers),
     ]
       .filter(Boolean)
       .map(normalizeSchemaStatement)

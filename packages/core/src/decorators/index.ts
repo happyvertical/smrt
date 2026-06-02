@@ -135,6 +135,14 @@ export interface RelationshipFieldOptions extends FieldOptions {
 export interface CrossPackageRefOptions
   extends Omit<RelationshipFieldOptions, 'related' | 'type'> {
   /**
+   * Storage type for the referenced target id. Defaults to 'uuid'.
+   *
+   * Use 'text' only when the external target model declares
+   * `@smrt({ idType: 'text' })`.
+   */
+  idType?: 'uuid' | 'text';
+
+  /**
    * When `true`, the framework verifies the referenced object exists at save time.
    * Validation uses the target package's manifest (loaded on demand via
    * `ObjectRegistry.ensureManifestLoaded()`), so this requires the target manifest

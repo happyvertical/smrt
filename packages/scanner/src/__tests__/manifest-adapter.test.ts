@@ -138,6 +138,31 @@ describe('ManifestAdapter', () => {
         expect(result.type).toBe('foreignKey');
         expect(result.required).toBe(false); // Should be optional due to default value
       });
+
+      it('should let @foreignKey options override initializer-based requiredness', () => {
+        const field: RawFieldDefinition = {
+          name: 'assetId',
+          accessibility: 'public',
+          typeAnnotation: 'string',
+          initializer: "''",
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name: 'foreignKey',
+              arguments: ['Asset', '{ required: true }'],
+            },
+          ],
+        };
+
+        const result = adapter.inferFieldType(field);
+
+        expect(result.type).toBe('foreignKey');
+        expect(result.related).toBe('Asset');
+        expect(result.required).toBe(true);
+        expect(result._meta?.required).toBe(true);
+      });
     });
 
     describe('string literal union types', () => {

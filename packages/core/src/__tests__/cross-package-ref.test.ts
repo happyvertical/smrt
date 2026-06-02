@@ -1,10 +1,10 @@
 /**
  * Cross-package reference (`@crossPackageRef`) tests (R1).
  *
- * Cross-package refs are plain TEXT columns at the database level — no FK
- * constraint — but carry registry metadata so that `loadRelated()`, eager
- * loading via `include`, and optional save-time existence validation can work
- * across package boundaries without requiring a hard import of the target class.
+ * Cross-package refs are id columns with no FK constraint, but carry registry
+ * metadata so that `loadRelated()`, eager loading via `include`, and optional
+ * save-time existence validation can work across package boundaries without
+ * requiring a hard import of the target class.
  */
 
 import { randomUUID } from 'node:crypto';
@@ -85,7 +85,7 @@ describe('@crossPackageRef (R1)', () => {
       expect(contactRel?.type).toBe('crossPackageRef');
     });
 
-    it('emits a plain TEXT column with no FK constraint', async () => {
+    it('emits a SQLite TEXT column with no FK constraint', async () => {
       // Initialize collection so the schema is materialized
       await ObjectRegistry.getCollection<typeof XPRefSourceCustomer.prototype>(
         'XPRefSourceCustomer',
