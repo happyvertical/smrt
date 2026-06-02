@@ -5,6 +5,7 @@ export interface Props {
   contributions?: ContentContributionData[];
   selectedId?: string | null;
   emptyMessage?: string;
+  workflowFormAction?: string;
   onSelect?: (contribution: ContentContributionData) => void;
   onApprove?: (
     contribution: ContentContributionData,
@@ -24,6 +25,7 @@ let {
   contributions = [],
   selectedId = null,
   emptyMessage = 'No contributions need review right now.',
+  workflowFormAction = undefined,
   onSelect = undefined,
   onApprove = undefined,
   onRequestChanges = undefined,
@@ -32,12 +34,78 @@ let {
 
 let note = $state('');
 let targetStatus = $state<'draft' | 'review'>('draft');
+const workflowIntents = ['approve', 'request-changes', 'reject'] as const;
+type WorkflowIntent = (typeof workflowIntents)[number];
 
 const selectedContribution = $derived(
   contributions.find((item) => item.id === selectedId) ||
     contributions[0] ||
     null,
 );
+const canSubmitWorkflow = $derived(
+  !workflowFormAction || Boolean(selectedContribution?.id),
+);
+
+function workflowStatus(
+  contribution: ContentContributionData | null | undefined,
+) {
+  return contribution?.status || 'submitted';
+}
+
+function approveActionLabel(contribution: ContentContributionData) {
+  return workflowStatus(contribution) === 'approved'
+    ? 'Promote'
+    : 'Approve and promote';
+}
+
+function isWorkflowIntent(
+  intent: string | undefined,
+): intent is WorkflowIntent {
+  return workflowIntents.includes(intent as WorkflowIntent);
+}
+
+function handleWorkflowSubmit(event: SubmitEvent) {
+  const submitter = event.submitter as HTMLButtonElement | null;
+  const intent = submitter?.value;
+  const hasNativeWorkflowTarget =
+    Boolean(workflowFormAction) &&
+    Boolean(selectedContribution?.id) &&
+    isWorkflowIntent(intent);
+  const shouldHandleWithCallback =
+    Boolean(selectedContribution) &&
+    ((intent === 'approve' && Boolean(onApprove)) ||
+      (intent === 'request-changes' && Boolean(onRequestChanges)) ||
+      (intent === 'reject' && Boolean(onReject)));
+
+  if (!hasNativeWorkflowTarget || shouldHandleWithCallback) {
+    event.preventDefault();
+  }
+
+  if (intent === 'approve' && onApprove && selectedContribution) {
+    onApprove(selectedContribution, {
+      targetStatus,
+      note,
+    });
+    return;
+  }
+
+  if (
+    intent === 'request-changes' &&
+    onRequestChanges &&
+    selectedContribution
+  ) {
+    onRequestChanges(selectedContribution, {
+      note,
+    });
+    return;
+  }
+
+  if (intent === 'reject' && onReject && selectedContribution) {
+    onReject(selectedContribution, {
+      note,
+    });
+  }
+}
 
 $effect(() => {
   note = selectedContribution?.editorNotes || '';
@@ -67,7 +135,7 @@ $effect(() => {
           >
             <strong>{contribution.title || contribution.contributionTypeKey || 'Untitled submission'}</strong>
             <span>{contribution.contributorName || contribution.contributorEmail || 'Unknown contributor'}</span>
-            <span class="pill">{contribution.status || 'submitted'}</span>
+            <span class="pill">{workflowStatus(contribution)}</span>
           </button>
         {/each}
       </div>
@@ -79,7 +147,7 @@ $effect(() => {
               <h4>{selectedContribution.title || 'Untitled submission'}</h4>
               <p>{selectedContribution.contributorName || selectedContribution.contributorEmail || 'Unknown contributor'}</p>
             </div>
-            <span class="pill">{selectedContribution.intakeDecision || selectedContribution.status || 'submitted'}</span>
+            <span class="pill">{workflowStatus(selectedContribution)}</span>
           </header>
 
           {#if selectedContribution.body}
@@ -101,60 +169,72 @@ $effect(() => {
               <dt>Promoted content</dt>
               <dd>{selectedContribution.promotedContentId || 'Not promoted yet'}</dd>
             </div>
+            {#if selectedContribution.intakeDecision}
+              <div>
+                <dt>Intake decision</dt>
+                <dd>{selectedContribution.intakeDecision}</dd>
+              </div>
+            {/if}
           </dl>
 
-          <label>
-            Editorial note
-            <textarea bind:value={note} rows="4"></textarea>
-          </label>
-
-          <div class="actions">
-            {#if onApprove}
-              <label class="inline">
-                Promote to
-                <select bind:value={targetStatus}>
-                  <option value="draft">draft</option>
-                  <option value="review">review</option>
-                </select>
-              </label>
-              <button
-                type="button"
-                onclick={() =>
-                  onApprove?.(selectedContribution, {
-                    targetStatus,
-                    note,
-                  })}
-              >
-                Approve
-              </button>
+          <form
+            method="post"
+            action={workflowFormAction}
+            onsubmit={handleWorkflowSubmit}
+          >
+            {#if selectedContribution.id}
+              <input type="hidden" name="contributionId" value={selectedContribution.id} />
             {/if}
 
-            {#if onRequestChanges}
-              <button
-                type="button"
-                class="secondary"
-                onclick={() =>
-                  onRequestChanges?.(selectedContribution, {
-                    note,
-                  })}
-              >
-                Request changes
-              </button>
-            {/if}
+            <label>
+              Editorial note
+              <textarea name="editorNote" bind:value={note} rows="4"></textarea>
+            </label>
 
-            {#if onReject}
-              <button
-                type="button"
-                class="danger"
-                onclick={() =>
-                  onReject?.(selectedContribution, {
-                    note,
-                  })}
-              >
-                Reject
-              </button>
-            {/if}
-          </div>
+            <div class="actions">
+              {#if onApprove || workflowFormAction}
+                <label class="inline">
+                  Promote to
+                  <select name="targetStatus" bind:value={targetStatus}>
+                    <option value="draft">draft</option>
+                    <option value="review">review</option>
+                  </select>
+                </label>
+                <button
+                  type="submit"
+                  name="intent"
+                  value="approve"
+                  disabled={!canSubmitWorkflow}
+                >
+                  {approveActionLabel(selectedContribution)}
+                </button>
+              {/if}
+
+              {#if onRequestChanges || workflowFormAction}
+                <button
+                  type="submit"
+                  name="intent"
+                  value="request-changes"
+                  class="secondary"
+                  disabled={!canSubmitWorkflow}
+                >
+                  Request changes
+                </button>
+              {/if}
+
+              {#if onReject || workflowFormAction}
+                <button
+                  type="submit"
+                  name="intent"
+                  value="reject"
+                  class="danger"
+                  disabled={!canSubmitWorkflow}
+                >
+                  Reject
+                </button>
+              {/if}
+            </div>
+          </form>
         </article>
       {/if}
     </div>
@@ -165,7 +245,8 @@ $effect(() => {
   .inbox,
   .inbox__header,
   .inbox__layout,
-  .inbox__detail {
+  .inbox__detail,
+  .inbox__detail form {
     display: grid;
     gap: 1rem;
   }

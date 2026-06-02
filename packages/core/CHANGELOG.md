@@ -1,5 +1,308 @@
 # @happyvertical/smrt-core
 
+## 0.26.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - handle collection item overrides (core)
+  - resolve STI collection test schemas (core)
+  - @happyvertical/smrt-scanner@0.26.5
+  - @happyvertical/smrt-config@0.26.5
+  - @happyvertical/smrt-types@0.26.5
+
+## 0.26.4
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - carry manifest collection on RegisteredClass for runtime consumers (core)
+  - @happyvertical/smrt-scanner@0.26.4
+  - @happyvertical/smrt-config@0.26.4
+  - @happyvertical/smrt-types@0.26.4
+
+## 0.26.3
+
+### Patch Changes
+
+- ### Features
+
+  - reusable CLI factory (app-cli)
+
+  ### Bug Fixes
+
+  - address bot review threads on #1311 (app-cli)
+  - round-4 review fixes (app-cli)
+  - round-3 review fixes (app-cli)
+  - round-2 review fixes (app-cli)
+  - review-cycle fixes for #1311 (app-cli)
+
+  ### Other Changes
+
+  - chore: satisfy monorepo standards (repository, smrtVitestPlugin, fixed group) (app-cli)
+  - chore: sync sdk packages to v0.74.3 (deps)
+  - @happyvertical/smrt-scanner@0.26.3
+  - @happyvertical/smrt-config@0.26.3
+  - @happyvertical/smrt-types@0.26.3
+
+## 0.26.2
+
+### Patch Changes
+
+- ### Features
+
+  - tighten @smrt() decorator coherence checks (core)
+
+  ### Bug Fixes
+
+  - honor cli.exclude in lint + match runtime client filter in type decls (core)
+  - @happyvertical/smrt-scanner@0.26.2
+  - @happyvertical/smrt-config@0.26.2
+  - @happyvertical/smrt-types@0.26.2
+
+## 0.26.1
+
+### Patch Changes
+
+- ### Features
+
+  - add BackfillTracker and migrateSmrtSchemas orchestration (core)
+
+  ### Bug Fixes
+
+  - guard listApplied against unparseable applied_at timestamps (core)
+  - API consistency, optional version, runIfPending discriminator, test tightening (core)
+  - route REINDEX CONCURRENTLY outside tx planner (core)
+  - memoize initialize() promise to remove TOCTOU race (core)
+  - tighten engineHint type + add hasManualDrift convenience + block-comment defense (core)
+  - surface unactionable schema drift + drop comment-only DDL (core)
+  - align SchemaComparer engine introspection (core)
+  - thread engineHint through differ/tracker + forward tracker timeouts (core)
+  - resolve migration orchestration review threads (core)
+  - harden migrateSmrtSchemas engine detection + document preview scope (core)
+  - address PR #1300 automated review findings (core)
+  - @happyvertical/smrt-scanner@0.26.1
+  - @happyvertical/smrt-config@0.26.1
+  - @happyvertical/smrt-types@0.26.1
+
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - pin ContentReference targetVersion for drift detection (content)
+
+  ### Features
+
+  - rate-limit failed terminal-auth approval attempts per user (users)
+  - terminal device-code auth + app-runtime MCP scaffolding (users,smrt-app-mcp)
+
+  ### Bug Fixes
+
+  - address PR review feedback (content)
+  - address PR #1299 automated review findings (users,smrt-app-mcp)
+  - satisfy monorepo standards (vitest plugin + changeset group) (smrt-app-mcp)
+
+  ### Other Changes
+
+  - docs: clarify drift detection scope and panel rendering (content)
+  - refactor: remove /cli subpath — relocates to smrt-app-cli (smrt-app-mcp)
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@1.0.0
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
+## 0.25.20
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.25.20
+- @happyvertical/smrt-types@0.25.20
+- @happyvertical/smrt-scanner@0.25.20
+
+## 0.25.19
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.25.19
+- @happyvertical/smrt-types@0.25.19
+- @happyvertical/smrt-scanner@0.25.19
+
+## 0.25.18
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - implement minor smrt fixup batch
+  - @happyvertical/smrt-scanner@0.25.18
+  - @happyvertical/smrt-config@0.25.18
+  - @happyvertical/smrt-types@0.25.18
+
+## 0.25.17
+
+### Patch Changes
+
+- ### Features
+
+  - add LicenseSale Contract STI subtype (commerce)
+  - add Payout model for operator-to-supplier remittance (commerce)
+  - add PaymentIntent model with multi-option semantics (commerce)
+  - extend Payment with backend identity and USD-drift fields (commerce)
+  - add Vendor.payoutAddresses per-currency map (commerce)
+
+  ### Bug Fixes
+
+  - address commerce marketplace review comments
+
+  ### Other Changes
+
+  - docs: document marketplace phase 1 additions (commerce)
+  - @happyvertical/smrt-scanner@0.25.17
+  - @happyvertical/smrt-config@0.25.17
+  - @happyvertical/smrt-types@0.25.17
+
+## 0.25.16
+
+### Patch Changes
+
+- ### Features
+
+  - new package for BOM cost rollup and production (smrt-manufacturing)
+  - new package for multi-location stock tracking (smrt-inventory)
+  - pre-wire session + subdomain tenancy (template-sveltekit)
+  - add navTreeFromManifest helper (smrt-svelte)
+  - add WholesaleOrder, ProductionOrder, Cart STI subtypes (smrt-commerce)
+  - tenancy + generic STI subtypes (smrt-products)
+
+  ### Bug Fixes
+
+  - mark Sku.productId as required (products)
+  - address round-13 codex findings (review)
+  - resolve three more Copilot inline comments (review)
+  - resolve two new Copilot inline comments (review)
+  - address round-12 code review findings (review)
+  - resolve Copilot inline review comments (review)
+  - address round-10 (final) code review findings (review)
+  - address round-9 code review findings (review)
+  - address round-8 code review findings (review)
+  - address round-7 code review findings (review)
+  - address round-6 code review findings (review)
+  - address round-5 code review findings (review)
+  - address round-4 code review findings (review)
+  - make stock + production mutations transactional (inventory,manufacturing)
+  - address round-3 code review findings (review)
+  - address round-2 code review findings (review)
+  - address phase 1 code review findings (review)
+  - route around NULL conflict column UPSERT collision (#1246) (smrt-core)
+
+  ### Other Changes
+
+  - refactor: make dispatch-handler warns name the failure (manufacturing)
+  - docs: correct "all five models" wording after Sku move (inventory)
+  - ci: install commitlint from public npm directly (commitlint)
+  - chore: regenerate pnpm-lock.yaml after catalog and overrides bump
+  - ci: lint commit messages with workspace commitlint v20
+  - chore: align pnpm.overrides at 0.74 for SDK packages
+  - chore: align sdk catalog at 0.74 and register new packages
+  - refactor: move Sku to smrt-products (products,inventory)
+  - refactor: consolidate variant axis declaration as ProductVariant (products,inventory)
+  - chore: bump @happyvertical/sql to ^0.74.0 and remove NULL-conflict workaround (deps)
+  - @happyvertical/smrt-scanner@0.25.16
+  - @happyvertical/smrt-config@0.25.16
+  - @happyvertical/smrt-types@0.25.16
+
+## 0.25.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - materialize tenant-scoped manifest columns
+
+  ### Other Changes
+
+  - test: allow atomic migration tests more time in ci
+  - @happyvertical/smrt-scanner@0.25.15
+  - @happyvertical/smrt-config@0.25.15
+  - @happyvertical/smrt-types@0.25.15
+
+## 0.25.14
+
+### Patch Changes
+
+- 3930b05: Fix PostgreSQL ADD COLUMN migrations for JSON defaults so array defaults render valid JSONB SQL.
+  - @happyvertical/smrt-scanner@0.25.14
+  - @happyvertical/smrt-config@0.25.14
+  - @happyvertical/smrt-types@0.25.14
+
+## 0.25.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve atomic review followups (migrations)
+  - address atomic review feedback (migrations)
+  - apply schema batches atomically (migrations)
+  - @happyvertical/smrt-scanner@0.25.13
+  - @happyvertical/smrt-config@0.25.13
+  - @happyvertical/smrt-types@0.25.13
+
+## 0.25.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - address contribution form review (content)
+  - add native contribution form contracts (content)
+  - @happyvertical/smrt-scanner@0.25.12
+  - @happyvertical/smrt-config@0.25.12
+  - @happyvertical/smrt-types@0.25.12
+
+## 0.25.11
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - harden smrt migrations (cli)
+  - @happyvertical/smrt-scanner@0.25.11
+  - @happyvertical/smrt-config@0.25.11
+  - @happyvertical/smrt-types@0.25.11
+
+## 0.25.10
+
+### Patch Changes
+
+- ### Features
+
+  - add OIDC login flow (users)
+
+  ### Bug Fixes
+
+  - encode OIDC basic auth credentials (users)
+  - @happyvertical/smrt-scanner@0.25.10
+  - @happyvertical/smrt-config@0.25.10
+  - @happyvertical/smrt-types@0.25.10
+
+## 0.25.9
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - keep contribution workflow status separate from intake decision (content)
+  - @happyvertical/smrt-scanner@0.25.9
+  - @happyvertical/smrt-config@0.25.9
+  - @happyvertical/smrt-types@0.25.9
+
 ## 0.25.8
 
 ### Patch Changes

@@ -265,6 +265,14 @@ export interface SmartObjectConfig {
          * Exclude specific commands (supports both standard CRUD actions and custom methods)
          */
         exclude?: string[];
+
+        /**
+         * Skip the build-time check that every `cli.include` method is also
+         * exposed via the API. Set this for classes whose CLI is invoked
+         * in-process (e.g. admin/security tools intentionally without HTTP
+         * routes) rather than over HTTP.
+         */
+        skipApiCheck?: boolean;
       };
 
   /**
@@ -507,6 +515,41 @@ export interface SmartObjectConfig {
   };
 
   /**
+   * Optional UI hints consumed by `@happyvertical/smrt-svelte`'s
+   * `navTreeFromManifest()` helper (and any other manifest → admin-UI
+   * adapters). The framework itself never reads these — they round-trip
+   * through the generated manifest as plain data, letting consumers
+   * declare icon glyphs / labels next to the model rather than in a
+   * separate hand-written nav config.
+   *
+   * Kept deliberately minimal. Adding apparel-specific terminology or
+   * design-system-specific shapes here would couple the framework to a
+   * vertical; consumers that need richer hints should layer their own
+   * adapter on top.
+   *
+   * @example
+   * ```typescript
+   * @smrt({
+   *   ui: { icon: 'newspaper', label: 'News articles' },
+   * })
+   * class Article extends SmrtObject { ... }
+   * ```
+   */
+  ui?: {
+    /**
+     * Icon identifier / glyph / emoji passed straight through to
+     * generated nav entries. Interpretation is consumer-defined — the
+     * framework only persists the string.
+     */
+    icon?: string;
+    /**
+     * Override the auto-pluralized label used for generated nav entries
+     * (e.g. `Article` → "Articles"). Leave undefined to use the default.
+     */
+    label?: string;
+  };
+
+  /**
    * Synchronous manifest for build-time imports (Issue #270 Phase 1)
    * Allows passing manifest directly instead of async loading
    * @internal Advanced usage - typically set by build tools
@@ -594,8 +637,20 @@ export interface RegisteredClass {
   packageName?: string;
   /** Source file path where the class was defined (for collision detection) */
   sourceFilePath?: string;
+  /**
+   * Pluralized endpoint/collection name from the manifest (e.g. `sourcecrawls`
+   * for `SourceCrawl`). This is the segment the SvelteKit route generator
+   * uses for `/api/<collection>/...`, and it is NOT the same as `tableName`
+   * (which is snake_case and can be overridden/uncountable). Stored here so
+   * runtime consumers (e.g. `createResourceListHandler`) can build URLs that
+   * match the generated routes instead of re-deriving from `tableName`.
+   * See smrt#1311 consumer-migration finding.
+   */
+  collection?: string;
   /** Parent class name (for inheritance chain tracking) */
   extends?: string;
+  /** Generic type arg from `SmrtCollection<X>` — marks collection classes. */
+  extendsTypeArg?: string;
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */

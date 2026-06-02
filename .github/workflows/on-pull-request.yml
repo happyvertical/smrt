@@ -28,10 +28,41 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validate commit messages
-        uses: wagoid/commitlint-github-action@v6
+      # We deliberately don't use wagoid/commitlint-github-action here.
+      # The action's latest release (v6.2.1) ships commitlint 19.x,
+      # which has stricter `footer-leading-blank` parsing — it treats
+      # trailing `#NNN` references at the end of a wrapped line as
+      # implicit footers, even when the writer intended a single body
+      # paragraph. That trips a lot of "PR #1263." style sentences.
+      # commitlint 20.x (which we already depend on in package.json
+      # devDependencies and which the local pre-commit hook uses)
+      # fixed the parsing. Running commitlint directly here pins the
+      # same version locally and in CI, so developers see the same
+      # answer in both places.
+      #
+      # We pull commitlint straight from public npm via `npx` rather
+      # than doing a full workspace `pnpm install` — the workspace
+      # depends on @happyvertical/* packages hosted on GitHub Packages,
+      # which would need NPMRC auth that this lint job doesn't need.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          configFile: .commitlintrc.json
+          node-version: '24'
+
+      - name: Validate commit messages
+        env:
+          # GITHUB_BASE_REF is set by GitHub for pull_request events
+          # and always carries a branch name (GitHub-validated).
+          # Reading it into an env var keeps the shell substitution
+          # out of the ${{ ... }} layer to satisfy the workflow-
+          # injection hardening guidelines.
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE_REF" --depth=200
+          FROM_SHA=$(git merge-base "origin/$BASE_REF" HEAD)
+          echo "Linting commits from $FROM_SHA to HEAD"
+          npx --yes --package @commitlint/cli@^20 --package @commitlint/config-conventional@^20 -- \
+            commitlint --from="$FROM_SHA" --to=HEAD --verbose
 
   validate-workflows:
     name: Validate Workflow Files

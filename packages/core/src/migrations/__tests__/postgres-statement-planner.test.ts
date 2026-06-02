@@ -24,6 +24,7 @@ describe('planPostgresStatements', () => {
           'CREATE INDEX CONCURRENTLY foo ON t (a)',
           'CREATE UNIQUE INDEX CONCURRENTLY bar ON t (a, b)',
           'DROP INDEX CONCURRENTLY baz',
+          'REINDEX INDEX CONCURRENTLY idx_users_email',
           'CREATE INDEX qux ON t (c)',
           'DROP INDEX quux',
           'ALTER TABLE t ADD COLUMN x TEXT',
@@ -35,6 +36,7 @@ describe('planPostgresStatements', () => {
         'CREATE INDEX CONCURRENTLY foo ON t (a)',
         'CREATE UNIQUE INDEX CONCURRENTLY bar ON t (a, b)',
         'DROP INDEX CONCURRENTLY baz',
+        'REINDEX INDEX CONCURRENTLY idx_users_email',
       ]);
       expect(regular).toEqual([
         'CREATE INDEX qux ON t (c)',

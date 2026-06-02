@@ -18,6 +18,12 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
+import {
+  type CollectionRegistrationLookup,
+  isCollectionRegistration,
+  resolveCollectionItemClassName,
+  resolveRelatedRegistration,
+} from '../registry/collection-resolution.js';
 import { ObjectRegistry } from '../registry.js';
 import { SchemaGenerator } from '../schema/generator.js';
 import { ensureLegacySystemTableCompatibility } from '../system/compatibility.js';
@@ -26,6 +32,133 @@ import { ALL_SYSTEM_TABLES } from '../system/schema.js';
 type TestDatabaseConnectionOptions = Parameters<typeof getDatabase>[0] & {
   __smrtSkipVitestSchemaPreparation?: boolean;
 };
+
+function resolveSTIBaseRegistration(className: string, stiBaseName: string) {
+  const registered = ObjectRegistry.getClass(className);
+
+  if (stiBaseName.includes(':')) {
+    return ObjectRegistry.getClass(stiBaseName);
+  }
+
+  if (registered?.packageName) {
+    const samePackageBase = ObjectRegistry.getClassInPackage(
+      registered.packageName,
+      stiBaseName,
+    );
+    if (samePackageBase) {
+      return samePackageBase;
+    }
+  }
+
+  return ObjectRegistry.getClass(stiBaseName);
+}
+
+function resolveSTIBaseLookupName(
+  className: string,
+  stiBaseName: string,
+): string {
+  const stiBase = resolveSTIBaseRegistration(className, stiBaseName);
+  return stiBase?.qualifiedName || stiBase?.name || stiBaseName;
+}
+
+function isSTIChild(className: string): boolean {
+  const stiBaseName = ObjectRegistry.getSTIBase(className);
+  if (!stiBaseName) {
+    return false;
+  }
+
+  const registered = ObjectRegistry.getClass(className);
+  const stiBase = resolveSTIBaseRegistration(className, stiBaseName);
+
+  if (registered && stiBase) {
+    return registered !== stiBase;
+  }
+
+  return stiBaseName !== className;
+}
+
+type RegisteredSchemaClass = NonNullable<
+  ReturnType<typeof ObjectRegistry.getClass>
+>;
+
+const collectionRegistrationLookup: CollectionRegistrationLookup = {
+  findClass: (className) => ObjectRegistry.getClass(className),
+  findClassInPackage: (packageName, className) =>
+    ObjectRegistry.getClassInPackage(packageName, className),
+  getInheritanceChain: (className) =>
+    ObjectRegistry.getInheritanceChain(className),
+};
+
+function resolveCollectionSchemaClassName(
+  className: string,
+  registered: RegisteredSchemaClass,
+): string {
+  const itemClassName = resolveCollectionItemClassName(
+    className,
+    registered,
+    collectionRegistrationLookup,
+  );
+  if (itemClassName) {
+    const itemRegistration = resolveRelatedRegistration(
+      itemClassName,
+      registered,
+      collectionRegistrationLookup,
+    );
+    const itemLookupName =
+      itemRegistration?.qualifiedName ||
+      itemRegistration?.name ||
+      itemClassName;
+    const stiBase = ObjectRegistry.getSTIBase(itemLookupName);
+    return stiBase
+      ? resolveSTIBaseLookupName(itemLookupName, stiBase)
+      : itemLookupName;
+  }
+
+  const tableName =
+    registered.schema?.tableName ||
+    registered.config.tableName ||
+    ObjectRegistry.getTableName(className);
+  if (!tableName) {
+    return className;
+  }
+
+  const collectionPackage = registered.packageName;
+
+  for (const candidate of ObjectRegistry.getAllClasses().values()) {
+    if (
+      candidate === registered ||
+      isCollectionRegistration(
+        candidate.qualifiedName || candidate.name,
+        candidate,
+        collectionRegistrationLookup,
+      )
+    ) {
+      continue;
+    }
+
+    const candidateTableName =
+      candidate.schema?.tableName || candidate.config.tableName;
+    if (candidateTableName !== tableName) {
+      continue;
+    }
+
+    if (
+      collectionPackage &&
+      candidate.packageName &&
+      candidate.packageName !== collectionPackage
+    ) {
+      continue;
+    }
+
+    const candidateLookupName = candidate.qualifiedName || candidate.name;
+    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
+    return stiBase
+      ? resolveSTIBaseLookupName(candidateLookupName, stiBase)
+      : candidateLookupName;
+  }
+
+  return className;
+}
 
 /**
  * Options for creating a test database
@@ -66,45 +199,22 @@ export interface TestDatabaseOptions {
 
 function resolveRequestedSchemaClassName(className: string): string {
   const registered = ObjectRegistry.getClass(className);
-  if (!registered || registered.extends !== 'SmrtCollection') {
+  if (!registered) {
     return className;
   }
 
-  const tableName =
-    registered.schema?.tableName ||
-    registered.config.tableName ||
-    ObjectRegistry.getTableName(className);
-  if (!tableName) {
-    return className;
+  if (
+    !isCollectionRegistration(
+      className,
+      registered,
+      collectionRegistrationLookup,
+    )
+  ) {
+    const stiBase = ObjectRegistry.getSTIBase(className);
+    return stiBase ? resolveSTIBaseLookupName(className, stiBase) : className;
   }
 
-  const collectionPackage = registered.packageName;
-
-  for (const candidate of ObjectRegistry.getAllClasses().values()) {
-    if (candidate === registered || candidate.extends === 'SmrtCollection') {
-      continue;
-    }
-
-    const candidateTableName =
-      candidate.schema?.tableName || candidate.config.tableName;
-    if (candidateTableName !== tableName) {
-      continue;
-    }
-
-    if (
-      collectionPackage &&
-      candidate.packageName &&
-      candidate.packageName !== collectionPackage
-    ) {
-      continue;
-    }
-
-    const candidateLookupName = candidate.qualifiedName || candidate.name;
-    const stiBase = ObjectRegistry.getSTIBase(candidateLookupName);
-    return stiBase || candidateLookupName;
-  }
-
-  return className;
+  return resolveCollectionSchemaClassName(className, registered);
 }
 
 function resolveRequestedSchemaClassNames(classNames: string[]): string[] {
@@ -189,7 +299,7 @@ export async function getTestDatabase(
 
   // Get class names to setup
   const classNames = resolveRequestedSchemaClassNames(
-    classes ?? ObjectRegistry.getClassNames(),
+    classes ?? ObjectRegistry.getQualifiedClassNames(),
   );
 
   // Skip if no classes registered
@@ -208,16 +318,14 @@ export async function getTestDatabase(
   const createdTables = new Set<string>();
 
   for (const className of classNames) {
-    // Skip STI children - their schema is part of the base class table.
-    // R5-canon: `getSTIBase` now returns the qualified name. Compare
-    // against the qualified form of the iteration key so STI base
-    // classes still produce their own table instead of being mis-flagged
-    // as children.
-    const stiBase = ObjectRegistry.getSTIBase(className);
+    // R11: the registration carries idType (native uuid vs text); read it
+    // below when building runtimeSchemaConfig.
     const registered = ObjectRegistry.getClass(className);
-    const qualifiedClassName =
-      registered?.qualifiedName ?? registered?.name ?? className;
-    if (stiBase && stiBase !== qualifiedClassName) {
+    // Skip STI children - their schema is part of the base class table.
+    // main (#1324): isSTIChild() compares RegisteredClass *identity* rather
+    // than raw strings, so it stays correct under R5-canon (getSTIBase returns
+    // qualified names) while also handling collection/override registrations.
+    if (isSTIChild(className)) {
       continue;
     }
 

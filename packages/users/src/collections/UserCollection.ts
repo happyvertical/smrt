@@ -18,6 +18,8 @@ export interface OidcClaims {
   iss: string;
   /** User's email address */
   email?: string;
+  /** Whether the IdP verified the email address */
+  email_verified?: boolean;
   /** User's display name */
   name?: string;
   /** Preferred username */
@@ -190,16 +192,23 @@ export class UserCollection extends SmrtCollection<User> {
       dbOptions,
     );
 
-    // Get or create user for this profile
-    const user = await this.getOrCreateForProfile(
-      profile.id as string,
-      claims.email,
-      { status: UserStatus.ACTIVE },
-    );
+    const shouldRecordLogin = options?.recordLogin !== false;
 
-    // Record login unless disabled
-    if (options?.recordLogin !== false) {
-      await user.recordLogin();
+    // Get or create user for this profile. SmrtCollection.create() persists, so
+    // pass lastLoginAt during creation to avoid an extra first-login write.
+    const existingUser = await this.findByProfile(profile.id as string);
+    const user =
+      existingUser ??
+      (await this.create({
+        email: claims.email,
+        ...(shouldRecordLogin ? { lastLoginAt: new Date() } : {}),
+        profileId: profile.id as string,
+        status: UserStatus.ACTIVE,
+      }));
+
+    if (existingUser && shouldRecordLogin) {
+      existingUser.recordLogin();
+      await existingUser.save();
     }
 
     return {

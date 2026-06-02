@@ -132,6 +132,79 @@ export class Payment extends SmrtObject {
    */
   syncedAt: Date | null = null;
 
+  // ============================================================================
+  // Payment Backend Identity
+  // ============================================================================
+  //
+  // When a `PaymentBackend` adapter (Stripe, x402, BTC RPC, etc.) brokers the
+  // payment rather than a human recording it manually, we capture the
+  // backend identity, its native-currency amount, and the USD valuation at
+  // both quote and confirmation time. The classic `amount` / `currency`
+  // pair stays as the canonical settlement number; the backend fields
+  // describe *how* the funds arrived and let downstream accounting close
+  // the loop on volatile-currency drift.
+  //
+  // All fields default to empty / zero so existing Payment consumers that
+  // pre-date the marketplace adapter machinery are unaffected.
+
+  /**
+   * Stable identifier of the `PaymentBackend` adapter that served this
+   * payment — e.g. `base-usdc`, `solana-usdc`, `btc`, `stripe`, `paypal`.
+   *
+   * Distinct from {@link externalProvider}: `backendId` names the SMRT
+   * payment-rail adapter, while `externalProvider` names a downstream
+   * accounting destination (QuickBooks, Stripe-the-accounting-source).
+   * The same Stripe payment will have `backendId: 'stripe'` AND
+   * `externalProvider: 'stripe'`; a crypto payment synced to QBO will
+   * have `backendId: 'base-usdc'` and `externalProvider: 'quickbooks'`.
+   */
+  backendId: string = '';
+
+  /**
+   * Chain transaction hash or backend aggregator's reference id. For
+   * on-chain payments this is the tx hash (`0x...` on EVM, base58 sig on
+   * Solana, txid on Bitcoin); for fiat-rail backends it's the gateway's
+   * own reference. Kept distinct from {@link transactionId} so consumers
+   * that already populate `transactionId` with a provider-internal id
+   * don't have to overload it.
+   */
+  backendTxRef: string = '';
+
+  /**
+   * The amount the backend actually moved, in its own native currency.
+   * For stablecoin rails this typically equals `amount`; for volatile-
+   * currency rails (BTC, ETH) it's the satoshi/wei figure that the chain
+   * recorded, independent of any USD valuation.
+   */
+  nativeAmount: number = 0.0;
+
+  /**
+   * Code identifying the native currency `nativeAmount` is denominated
+   * in. Mirrors the `backendId` namespacing convention — `USDC-base`,
+   * `BTC`, `ETH`, `USD-stripe`. Empty string means "use {@link currency}"
+   * (i.e. the payment was already quoted and settled in the same
+   * currency).
+   */
+  nativeCurrency: string = '';
+
+  /**
+   * USD valuation of the payment at the moment the price was quoted to
+   * the buyer (typically the moment a `PaymentIntent` was issued).
+   * Stored at decimal precision; empty default `0.0` means no USD-quote
+   * snapshot was taken (the payment was already USD-denominated or the
+   * backend doesn't require drift accounting).
+   */
+  usdAtQuote: number = 0.0;
+
+  /**
+   * USD valuation of the payment at the moment it was confirmed on the
+   * backend (chain confirmation, gateway settlement, etc.). The delta
+   * between {@link usdAtQuote} and `usdAtConfirmation` is the USD drift
+   * the operator absorbs (positive or negative) when accepting payment
+   * in a volatile native currency.
+   */
+  usdAtConfirmation: number = 0.0;
+
   constructor(options: any = {}) {
     super(options);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
@@ -151,6 +224,28 @@ export class Payment extends SmrtObject {
     if (options.externalProvider !== undefined)
       this.externalProvider = options.externalProvider;
     if (options.syncedAt !== undefined) this.syncedAt = options.syncedAt;
+    if (options.backendId !== undefined) this.backendId = options.backendId;
+    if (options.backendTxRef !== undefined)
+      this.backendTxRef = options.backendTxRef;
+    if (options.nativeAmount !== undefined)
+      this.nativeAmount = options.nativeAmount;
+    if (options.nativeCurrency !== undefined)
+      this.nativeCurrency = options.nativeCurrency;
+    if (options.usdAtQuote !== undefined) this.usdAtQuote = options.usdAtQuote;
+    if (options.usdAtConfirmation !== undefined)
+      this.usdAtConfirmation = options.usdAtConfirmation;
+  }
+
+  /**
+   * USD drift between quote time and confirmation time — what the
+   * operator gained (positive) or lost (negative) by accepting a
+   * volatile-currency payment. Returns `0` when either side of the
+   * comparison is missing or zero, so callers don't have to special-case
+   * fiat-rail / stablecoin payments.
+   */
+  usdDrift(): number {
+    if (!this.usdAtQuote || !this.usdAtConfirmation) return 0;
+    return this.usdAtConfirmation - this.usdAtQuote;
   }
 
   /**

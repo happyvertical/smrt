@@ -113,6 +113,63 @@ describe('getTestDatabase manifest schemas', () => {
     restoreRegistry();
   });
 
+  it('normalizes manifest column defaults into runtime schema definitions', () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/pkg:ManifestDefaultedFeedSource',
+      {
+        className: 'ManifestDefaultedFeedSource',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'manifest_defaulted_feed_sources',
+        },
+        schema: {
+          tableName: 'manifest_defaulted_feed_sources',
+          ddl: `CREATE TABLE IF NOT EXISTS "manifest_defaulted_feed_sources" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "poll_interval_minutes" INTEGER NOT NULL DEFAULT 15
+)`,
+          columns: {
+            id: { type: 'TEXT', notNull: true, primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT', notNull: true, default: '' },
+            created_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            updated_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            poll_interval_minutes: {
+              type: 'INTEGER',
+              notNull: true,
+              default: 15,
+            },
+          },
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/pkg',
+    );
+
+    const schema =
+      ObjectRegistry.getAllSchemasAsDefinitions()
+        .manifest_defaulted_feed_sources;
+
+    expect(schema.columns.context.defaultValue).toBe('');
+    expect(schema.columns.created_at.defaultValue).toBe('current_timestamp');
+    expect(schema.columns.updated_at.defaultValue).toBe('current_timestamp');
+    expect(schema.columns.poll_interval_minutes.defaultValue).toBe(15);
+  });
+
   it('preserves manifest-defined unique conflict indexes for test databases', async () => {
     ObjectRegistry.registerFromManifest(
       '@test/pkg:ManifestIndexedJoin',
@@ -298,5 +355,224 @@ describe('getTestDatabase manifest schemas', () => {
           sql.includes('json_indexed_things_slug_context_idx'),
       ),
     ).toBe(false);
+  });
+
+  it('maps collection subclasses to their inherited STI item schema before table creation', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:MessageCollection',
+      {
+        className: 'MessageCollection',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Message',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'message_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailCollection',
+      {
+        className: 'EmailCollection',
+        extends: 'MessageCollection',
+        extendsTypeArg: null,
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'messages',
+        },
+        schema: {
+          tableName: 'messages',
+          ddl: `CREATE TABLE IF NOT EXISTS "messages" (
+  "id" TEXT PRIMARY KEY NOT NULL,
+  "slug" TEXT NOT NULL,
+  "context" TEXT NOT NULL DEFAULT '',
+  "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
+  "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp
+)`,
+          columns: {
+            id: { type: 'TEXT', notNull: true, primaryKey: true },
+            slug: { type: 'TEXT', notNull: true },
+            context: { type: 'TEXT', notNull: true, default: '' },
+            created_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+            updated_at: {
+              type: 'TIMESTAMP',
+              notNull: true,
+              default: 'current_timestamp',
+            },
+          },
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:Message',
+      {
+        className: 'Message',
+        fields: {
+          subject: { type: 'text', required: false, default: '' },
+          messageId: { type: 'text', required: false, default: '' },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'messages',
+          tableStrategy: 'sti',
+        },
+        schema: {
+          tableName: 'messages',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    const definitions = ObjectRegistry.getAllSchemasAsDefinitions();
+    expect(definitions.message_collections).toBeUndefined();
+    expect(definitions.messages.columns._meta_type).toBeDefined();
+    expect(definitions.messages.columns._meta_data).toBeDefined();
+    expect(definitions.messages.columns.subject).toBeDefined();
+    expect(definitions.messages.columns.message_id).toBeDefined();
+
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    });
+
+    const columnsResult = await db.query(`PRAGMA table_info('messages')`);
+    const columns = Array.isArray(columnsResult)
+      ? columnsResult
+      : columnsResult.rows;
+    const columnNames = columns.map((row: { name: string }) => row.name);
+
+    expect(columnNames).toContain('_meta_type');
+    expect(columnNames).toContain('_meta_data');
+    expect(columnNames).toContain('subject');
+    expect(columnNames).toContain('message_id');
+  });
+
+  it('prefers collection subclass item inference over inherited type args', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:AttachmentCollection',
+      {
+        className: 'AttachmentCollection',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Attachment',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'attachment_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailAttachmentCollection',
+      {
+        className: 'EmailAttachmentCollection',
+        extends: 'AttachmentCollection',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'email_attachment_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:Attachment',
+      {
+        className: 'Attachment',
+        fields: {
+          messageId: { type: 'text', required: false, default: '' },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'attachments',
+        },
+        schema: {
+          tableName: 'attachments',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailAttachment',
+      {
+        className: 'EmailAttachment',
+        extends: 'Attachment',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'email_attachments',
+        },
+        schema: {
+          tableName: 'email_attachments',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['EmailAttachmentCollection'],
+    });
+
+    const emailAttachmentColumnsResult = await db.query(
+      `PRAGMA table_info('email_attachments')`,
+    );
+    const emailAttachmentColumns = Array.isArray(emailAttachmentColumnsResult)
+      ? emailAttachmentColumnsResult
+      : emailAttachmentColumnsResult.rows;
+    const attachmentColumnsResult = await db.query(
+      `PRAGMA table_info('attachments')`,
+    );
+    const attachmentColumns = Array.isArray(attachmentColumnsResult)
+      ? attachmentColumnsResult
+      : attachmentColumnsResult.rows;
+
+    expect(
+      emailAttachmentColumns.map((row: { name: string }) => row.name),
+    ).toContain('id');
+    expect(attachmentColumns).toHaveLength(0);
   });
 });

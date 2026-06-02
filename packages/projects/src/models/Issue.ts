@@ -50,7 +50,12 @@ export interface IssueOptions extends SmrtObjectOptions {
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync', 'incorporateFeedback'] },
-  cli: { include: ['list', 'get', 'sync', 'incorporateFeedback', 'rollback'] },
+  // sync/incorporateFeedback/rollback are operator commands invoked in-process
+  // via the CLI; they intentionally aren't exposed over HTTP today.
+  cli: {
+    include: ['list', 'get', 'sync', 'incorporateFeedback', 'rollback'],
+    skipApiCheck: true,
+  },
 })
 export class Issue extends SmrtObject {
   /**

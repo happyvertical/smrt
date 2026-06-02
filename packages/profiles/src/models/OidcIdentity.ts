@@ -6,6 +6,7 @@
  */
 
 import {
+  field,
   foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
@@ -19,6 +20,7 @@ export interface OidcIdentityOptions extends SmrtObjectOptions {
   issuer?: string;
   subject?: string;
   email?: string;
+  lastUsedAt?: Date | null;
 }
 
 @smrt({
@@ -37,26 +39,31 @@ export class OidcIdentity extends SmrtObject {
   /**
    * Provider name (e.g., 'keycloak', 'google', 'github')
    */
+  @field({ type: 'text' })
   provider: string = '';
 
   /**
    * OIDC issuer URL (e.g., https://keycloak.example.com/realms/bmp)
    */
+  @field({ type: 'text' })
   issuer: string = '';
 
   /**
    * OIDC subject claim - unique identifier from the provider
    */
+  @field({ type: 'text' })
   subject: string = '';
 
   /**
    * Cached email from the IdP (for display/lookup)
    */
+  @field({ type: 'text' })
   email: string = '';
 
   /**
    * Last time this identity was used for authentication
    */
+  @field({ type: 'datetime', nullable: true })
   lastUsedAt: Date | null = null;
 
   constructor(options: OidcIdentityOptions = {}) {
@@ -66,6 +73,7 @@ export class OidcIdentity extends SmrtObject {
     if (options.issuer) this.issuer = options.issuer;
     if (options.subject) this.subject = options.subject;
     if (options.email) this.email = options.email;
+    if (options.lastUsedAt !== undefined) this.lastUsedAt = options.lastUsedAt;
   }
 
   /**

@@ -218,8 +218,6 @@ export class SecretService {
         context: tenantId, // Per-tenant uniqueness
         tenantId,
       });
-      (secret as Secret & { tenantId?: string | null }).tenantId = tenantId;
-      await secret.save();
 
       await this.audit(secret.id ?? null, name, userId, 'create', 'success');
       return secret;
@@ -288,9 +286,21 @@ export class SecretService {
       const envelope: EncryptedEnvelope = JSON.parse(secret.encryptedValue);
       const decrypted = await this.secretStore.decrypt(tenantId, envelope);
 
-      // Update access tracking
-      secret.recordAccess();
-      await secret.save();
+      // Access tracking is operational telemetry. Retrieval should still
+      // succeed if the decrypted value is available but this write fails.
+      const previousLastAccessedAt = secret.lastAccessedAt;
+      const previousAccessCount = secret.accessCount;
+      try {
+        secret.recordAccess();
+        await secret.save();
+      } catch (trackingError) {
+        secret.lastAccessedAt = previousLastAccessedAt;
+        secret.accessCount = previousAccessCount;
+        console.error(
+          'Failed to update secret access tracking:',
+          trackingError,
+        );
+      }
 
       await this.audit(secret.id ?? null, name, userId, 'read', 'success');
 

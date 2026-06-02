@@ -43,6 +43,20 @@ export class ContentReferences extends SmrtJunction<ContentReference> {
   protected sortField: string | null = 'createdAt';
   protected positionField: string | null = null;
 
+  async getForSource(sourceId: string): Promise<ContentReference[]> {
+    return (await this.list({
+      where: { sourceId },
+      orderBy: 'created_at ASC',
+    })) as ContentReference[];
+  }
+
+  async getForTarget(targetId: string): Promise<ContentReference[]> {
+    return (await this.list({
+      where: { targetId },
+      orderBy: 'created_at ASC',
+    })) as ContentReference[];
+  }
+
   /**
    * Find-or-create idempotency: if a reference already exists for
    * (sourceId, targetId), return the existing row unchanged instead of
@@ -52,19 +66,40 @@ export class ContentReferences extends SmrtJunction<ContentReference> {
    *
    * The base `SmrtJunction.attach` flow (this.create → db.upsert) would
    * overwrite both columns on every duplicate call.
+   *
+   * Reference pinning (main): `opts.targetVersion` pins the citation to a
+   * specific `ContentVersion.version` for drift detection. Re-attaching an
+   * existing edge with a different `targetVersion` updates the pin in place;
+   * `undefined` leaves an existing pin untouched, while a brand-new row
+   * defaults the pin to `null` (unpinned).
    */
   async attach(
     sourceId: string,
     targetId: string,
     opts: JunctionAttachOptions = {},
   ): Promise<ContentReference> {
+    const targetVersion = opts.targetVersion as number | null | undefined;
     const existing = (await this.get({
       sourceId,
       targetId,
     })) as ContentReference | null;
     if (existing) {
+      if (
+        targetVersion !== undefined &&
+        existing.targetVersion !== targetVersion
+      ) {
+        existing.targetVersion = targetVersion;
+        await existing.save();
+      }
       return existing;
     }
-    return super.attach(sourceId, targetId, opts);
+    return super.attach(sourceId, targetId, {
+      ...opts,
+      targetVersion: targetVersion ?? null,
+    });
+  }
+
+  async unlink(sourceId: string, targetId: string): Promise<void> {
+    await this.detach(sourceId, targetId);
   }
 }

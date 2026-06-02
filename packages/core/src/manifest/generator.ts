@@ -275,9 +275,11 @@ export class ManifestBuilder {
 
     // Run manifest generation passes (same as Vite plugin path)
     const manifestGen = new ManifestGenerator();
+    manifestGen.injectTenantScopedFields(manifest);
     manifestGen.mergeInheritedFields(manifest);
     manifestGen.generateValidationRules(manifest);
     manifestGen.generateSchemas(manifest);
+    manifestGen.assertTenantScopedSchemaContract(manifest);
     manifestGen.generateAgentManifests(manifest, packageName, packageJson);
 
     return manifest;

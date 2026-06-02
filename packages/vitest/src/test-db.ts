@@ -63,6 +63,9 @@ interface ManifestSchema {
  */
 interface ManifestObjectDef {
   className: string;
+  extends?: string;
+  extendsTypeArg?: string | null;
+  packageName?: string;
   schema?: ManifestSchema;
 }
 
@@ -70,6 +73,7 @@ interface ManifestObjectDef {
  * Manifest file structure (minimal subset)
  */
 interface ManifestFile {
+  packageName?: string;
   objects: Record<string, ManifestObjectDef>;
 }
 
@@ -745,6 +749,271 @@ function mergeIndexes(
   return merged;
 }
 
+function isSmrtCollectionExtendsName(extendsName: string | undefined): boolean {
+  return (
+    extendsName === 'SmrtCollection' ||
+    extendsName?.endsWith(':SmrtCollection') === true
+  );
+}
+
+function getPackageNameFromKey(key: string): string | undefined {
+  const separatorIndex = key.lastIndexOf(':');
+  if (separatorIndex <= 0) {
+    return undefined;
+  }
+
+  return key.slice(0, separatorIndex);
+}
+
+function getObjectPackageName(
+  manifest: ManifestFile,
+  key: string,
+  objectDef: ManifestObjectDef,
+): string | undefined {
+  return (
+    objectDef.packageName || getPackageNameFromKey(key) || manifest.packageName
+  );
+}
+
+function addManifestObjectIdentifiers(
+  target: Set<string>,
+  manifest: ManifestFile,
+  key: string,
+  objectDef: ManifestObjectDef,
+  options: { includeSimpleName: boolean },
+): void {
+  target.add(key);
+  if (options.includeSimpleName && objectDef.className) {
+    target.add(objectDef.className);
+  }
+
+  const packageName = getObjectPackageName(manifest, key, objectDef);
+  if (packageName && objectDef.className) {
+    target.add(`${packageName}:${objectDef.className}`);
+  }
+}
+
+function findManifestObject(
+  manifest: ManifestFile,
+  lookupName: string,
+  packageName?: string,
+): { key: string; objectDef: ManifestObjectDef } | undefined {
+  const direct = manifest.objects[lookupName];
+  if (direct) {
+    return { key: lookupName, objectDef: direct };
+  }
+
+  const separatorIndex = lookupName.lastIndexOf(':');
+  const lookupPackage =
+    separatorIndex > 0 ? lookupName.slice(0, separatorIndex) : packageName;
+  const simpleName =
+    separatorIndex > 0 ? lookupName.slice(separatorIndex + 1) : lookupName;
+  const lowerSimpleName = simpleName.toLowerCase();
+
+  for (const [key, objectDef] of Object.entries(manifest.objects)) {
+    const objectPackageName = getObjectPackageName(manifest, key, objectDef);
+    if (
+      lookupPackage &&
+      objectPackageName &&
+      objectPackageName !== lookupPackage
+    ) {
+      continue;
+    }
+
+    if (
+      key === lookupName ||
+      objectDef.className === simpleName ||
+      objectDef.className?.toLowerCase() === lowerSimpleName
+    ) {
+      return { key, objectDef };
+    }
+  }
+
+  return undefined;
+}
+
+function getManifestCollectionAncestors(
+  manifest: ManifestFile,
+  key: string,
+  objectDef: ManifestObjectDef,
+): Array<{ key: string; objectDef: ManifestObjectDef }> {
+  const ancestors: Array<{ key: string; objectDef: ManifestObjectDef }> = [];
+  const visited = new Set<string>();
+  let currentKey = key;
+  let currentDef: ManifestObjectDef | undefined = objectDef;
+
+  while (currentDef?.extends) {
+    if (isSmrtCollectionExtendsName(currentDef.extends)) {
+      break;
+    }
+
+    const currentPackage = getObjectPackageName(
+      manifest,
+      currentKey,
+      currentDef,
+    );
+    const parent = findManifestObject(
+      manifest,
+      currentDef.extends,
+      currentPackage,
+    );
+    if (!parent || visited.has(parent.key)) {
+      break;
+    }
+
+    visited.add(parent.key);
+    ancestors.push(parent);
+    currentKey = parent.key;
+    currentDef = parent.objectDef;
+  }
+
+  return ancestors;
+}
+
+function isManifestCollectionObject(
+  manifest: ManifestFile,
+  key: string,
+  objectDef: ManifestObjectDef,
+): boolean {
+  if (isSmrtCollectionExtendsName(objectDef.extends)) {
+    return true;
+  }
+
+  return getManifestCollectionAncestors(manifest, key, objectDef).some(
+    (ancestor) => isSmrtCollectionExtendsName(ancestor.objectDef.extends),
+  );
+}
+
+function resolveManifestCollectionItemClassName(
+  manifest: ManifestFile,
+  key: string,
+  objectDef: ManifestObjectDef,
+): string | undefined {
+  if (objectDef.extendsTypeArg) {
+    return objectDef.extendsTypeArg;
+  }
+
+  const inferredItemClassName = inferManifestCollectionItemClassName(
+    manifest,
+    key,
+    objectDef,
+  );
+  if (inferredItemClassName) {
+    return inferredItemClassName;
+  }
+
+  for (const ancestor of getManifestCollectionAncestors(
+    manifest,
+    key,
+    objectDef,
+  )) {
+    if (ancestor.objectDef.extendsTypeArg) {
+      return ancestor.objectDef.extendsTypeArg;
+    }
+  }
+
+  return undefined;
+}
+
+function getCollectionItemNameCandidates(className: string): string[] {
+  const candidates: string[] = [];
+
+  const addCandidate = (candidate: string): void => {
+    if (
+      candidate &&
+      candidate !== className &&
+      !candidates.includes(candidate)
+    ) {
+      candidates.push(candidate);
+    }
+  };
+
+  if (className.endsWith('Collection')) {
+    addCandidate(className.slice(0, -'Collection'.length));
+  }
+
+  if (className.endsWith('ies')) {
+    addCandidate(`${className.slice(0, -3)}y`);
+  } else if (className.endsWith('s')) {
+    addCandidate(className.slice(0, -1));
+  }
+
+  return candidates;
+}
+
+function inferManifestCollectionItemClassName(
+  manifest: ManifestFile,
+  key: string,
+  objectDef: ManifestObjectDef,
+): string | undefined {
+  const objectPackageName = getObjectPackageName(manifest, key, objectDef);
+
+  for (const candidate of getCollectionItemNameCandidates(
+    objectDef.className,
+  )) {
+    const candidateEntry = findManifestObject(
+      manifest,
+      candidate,
+      objectPackageName,
+    );
+    if (candidateEntry) {
+      return candidate;
+    }
+  }
+
+  return undefined;
+}
+
+function buildEffectiveIncludeObjects(
+  manifest: ManifestFile,
+  includeObjects?: string[],
+): Set<string> | undefined {
+  if (!includeObjects) {
+    return undefined;
+  }
+
+  const effectiveIncludes = new Set<string>();
+
+  for (const includeObject of includeObjects) {
+    const includeSimpleName = !includeObject.includes(':');
+    const entry = findManifestObject(manifest, includeObject);
+    if (!entry) {
+      effectiveIncludes.add(includeObject);
+      continue;
+    }
+
+    const objectPackageName = getObjectPackageName(
+      manifest,
+      entry.key,
+      entry.objectDef,
+    );
+    const itemClassName = isManifestCollectionObject(
+      manifest,
+      entry.key,
+      entry.objectDef,
+    )
+      ? resolveManifestCollectionItemClassName(
+          manifest,
+          entry.key,
+          entry.objectDef,
+        )
+      : undefined;
+    const itemEntry = itemClassName
+      ? findManifestObject(manifest, itemClassName, objectPackageName)
+      : undefined;
+
+    addManifestObjectIdentifiers(
+      effectiveIncludes,
+      manifest,
+      itemEntry?.key || entry.key,
+      itemEntry?.objectDef || entry.objectDef,
+      { includeSimpleName },
+    );
+  }
+
+  return effectiveIncludes;
+}
+
 /**
  * Extract DDL from manifest objects with STI deduplication
  *
@@ -757,15 +1026,19 @@ function extractDDLFromManifest(
   includeObjects?: string[],
 ): TableInfo[] {
   const tableMap = new Map<string, TableInfo>();
+  const effectiveIncludes = buildEffectiveIncludeObjects(
+    manifest,
+    includeObjects,
+  );
 
   for (const [key, objectDef] of Object.entries(manifest.objects)) {
     // Skip if filter is specified and class not included
     // Compare against both the key (e.g., '@dumm/models:Product') and className (e.g., 'Product')
     // to support both namespaced and simple class names (Issue #860)
-    if (includeObjects) {
+    if (effectiveIncludes) {
       const className = objectDef.className || key;
-      const matchesKey = includeObjects.includes(key);
-      const matchesClassName = includeObjects.includes(className);
+      const matchesKey = effectiveIncludes.has(key);
+      const matchesClassName = effectiveIncludes.has(className);
       if (!matchesKey && !matchesClassName) {
         continue;
       }

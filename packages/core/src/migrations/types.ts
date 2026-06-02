@@ -11,6 +11,7 @@ import type {
   IndexDefinition as SqlIndexDefinition,
   TableSchemaInfo as SqlTableSchemaInfo,
 } from '@happyvertical/sql';
+import type { MigrationResult } from '../schema/types.js';
 
 export type {
   SqlColumnDefinitionWithName,
@@ -42,6 +43,14 @@ export interface MigrationTrackerOptions {
   statementTimeout?: number;
   /** Use CREATE INDEX CONCURRENTLY for indexes in PostgreSQL (default: true) */
   useConcurrentIndexes?: boolean;
+  /**
+   * Explicit engine hint used when `db.url` is empty or ambiguous (e.g. JSON
+   * adapter, or adapters that expose the URL on `db.config?.url`). Without
+   * it the tracker falls back to URL-only detection and may skip
+   * Postgres-specific safety paths (CONCURRENTLY rewrites, lock timeouts)
+   * on connections whose caller meant Postgres.
+   */
+  engineHint?: string;
 }
 
 /**
@@ -116,6 +125,8 @@ export type DatabaseEngine = 'sqlite' | 'postgres' | 'duckdb';
  * Options for batch migration application
  */
 export interface ApplyMigrationsOptions {
+  /** Apply the full batch in one transaction and roll back all applied changes on first failure */
+  atomic?: boolean;
   /** Continue applying migrations even if one fails */
   continueOnError?: boolean;
   /** Dry run - don't actually apply migrations */
@@ -136,6 +147,8 @@ export interface ApplyMigrationsOptions {
   reconcile?: boolean;
   /** Use PostgreSQL-safe operations (CONCURRENTLY, lock timeout) */
   postgresSafe?: boolean;
+  /** Called after each migration attempt completes, before the batch continues */
+  onProgress?: (result: MigrationResult) => void;
 }
 
 /**
@@ -179,7 +192,7 @@ export interface ParsedMigrationFile {
 /**
  * Migration mode configuration
  */
-export type MigrationMode = 'dynamic' | 'file' | 'hybrid';
+export type MigrationMode = 'dynamic';
 
 /**
  * Data migration for updating existing data (e.g., STI discriminator upgrades)

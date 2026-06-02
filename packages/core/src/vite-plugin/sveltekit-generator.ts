@@ -29,6 +29,12 @@ export interface SvelteKitOptions {
   objectsDir: string;
   configPath?: string; // default: 'src/lib/server'
   configFileName?: string; // default: 'smrt.ts'
+  /**
+   * Apply kebab-case to custom-method URL segments (e.g. `discoverFromUrl`
+   * becomes `/discover-from-url`). Opt-in for one minor; default flips in the
+   * next major. An explicit `api.routes[name].path` always wins over this.
+   */
+  kebabRoutes?: boolean;
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -173,13 +179,46 @@ function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
   }
 }
 
-function normalizeCustomRoutePath(actionName: string, path?: string): string[] {
-  const normalizedPath = (path || actionName)
-    .split('/')
-    .map((segment) => segment.trim())
-    .filter(Boolean);
+/**
+ * Convert a camelCase / PascalCase method name to a kebab-case URL segment.
+ * Examples:
+ *   discoverFromUrl -> discover-from-url
+ *   XMLExport       -> xml-export
+ *   URL             -> url
+ *   a1B2c3          -> a1-b2c3
+ *
+ * Known limitation: consecutive uppercase acronyms aren't split apart, e.g.
+ * `HTMLAPIExport` becomes `htmlapi-export` rather than `html-api-export`.
+ * Override with an explicit `api.routes[name].path` if you need a specific
+ * segmentation.
+ */
+export function methodNameToKebab(name: string): string {
+  return name
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .toLowerCase();
+}
 
-  return normalizedPath.length > 0 ? normalizedPath : [actionName];
+function normalizeCustomRoutePath(
+  actionName: string,
+  path?: string,
+  options: { kebabRoutes?: boolean } = {},
+): string[] {
+  // Explicit path override always wins, and is used verbatim (split on /).
+  if (path) {
+    const segments = path
+      .split('/')
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+    if (segments.length > 0) {
+      return segments;
+    }
+  }
+
+  const segment = options.kebabRoutes
+    ? methodNameToKebab(actionName)
+    : actionName;
+  return [segment];
 }
 
 function extractRoutePathParamNames(pathSegments: string[]): string[] {
@@ -193,6 +232,7 @@ function resolveApiActionRouteConfig(
   actionName: string,
   actionDef: { isStatic?: boolean },
   apiConfig: unknown,
+  routeOptions: { kebabRoutes?: boolean } = {},
   defaultScope: 'item' | 'collection' = actionDef.isStatic
     ? 'collection'
     : 'item',
@@ -201,13 +241,17 @@ function resolveApiActionRouteConfig(
   const routeConfig: ApiCustomRouteConfig | undefined =
     config?.routes?.[actionName];
 
+  const pathSegments = normalizeCustomRoutePath(
+    actionName,
+    routeConfig?.path,
+    routeOptions,
+  );
+
   return {
     scope: routeConfig?.scope || defaultScope,
     method: normalizeApiHttpMethod(routeConfig?.method),
-    pathSegments: normalizeCustomRoutePath(actionName, routeConfig?.path),
-    pathParamNames: extractRoutePathParamNames(
-      normalizeCustomRoutePath(actionName, routeConfig?.path),
-    ),
+    pathSegments,
+    pathParamNames: extractRoutePathParamNames(pathSegments),
   };
 }
 
@@ -789,27 +833,8 @@ async function generateRoutesForObject(
     return;
   }
 
-  // Determine which actions to include
-  let includedActions: string[] = [];
-
-  if (apiConfig === true || apiConfig === undefined) {
-    // Include all standard actions by default
-    includedActions = [...STANDARD_API_ACTIONS];
-  } else if (typeof apiConfig === 'object') {
-    if (apiConfig.include) {
-      includedActions = apiConfig.include.filter((action) =>
-        STANDARD_API_ACTIONS.includes(action),
-      );
-    } else {
-      includedActions = [...STANDARD_API_ACTIONS];
-    }
-
-    if (apiConfig.exclude && Array.isArray(apiConfig.exclude)) {
-      includedActions = includedActions.filter(
-        (action) => !apiConfig.exclude?.includes(action),
-      );
-    }
-  }
+  // Determine which CRUD actions to include via the shared resolver.
+  const includedActions = resolveStandardCrudActions(apiConfig);
 
   // Generate collection route (list, create)
   if (includedActions.includes('list') || includedActions.includes('create')) {
@@ -857,6 +882,7 @@ async function generateRoutesForObject(
       actionName,
       actionDef,
       apiConfig,
+      { kebabRoutes: options.kebabRoutes },
     );
 
     if (routeConfig.scope === 'collection' && !actionDef.isStatic) {
@@ -935,6 +961,7 @@ async function generateCollectionRoutesForObject(
       actionName,
       actionDef,
       apiConfig,
+      { kebabRoutes: options.kebabRoutes },
       'collection',
     );
 
@@ -974,22 +1001,179 @@ async function generateCollectionRoutesForObject(
 }
 
 /**
- * Check if a custom action should be included in API
+ * Resolve the list of standard CRUD actions exposed by the API for a given
+ * apiConfig. Single source of truth for both the route generator and the
+ * cli↔api coherence lint.
+ */
+function resolveStandardCrudActions(apiConfig: unknown): string[] {
+  if (apiConfig === false) return [];
+  if (apiConfig === true || apiConfig === undefined) {
+    return [...STANDARD_API_ACTIONS];
+  }
+  if (typeof apiConfig !== 'object') return [...STANDARD_API_ACTIONS];
+
+  const config = apiConfig as { include?: string[]; exclude?: string[] };
+  let crud: string[] = config.include
+    ? config.include.filter((a) => STANDARD_API_ACTIONS.includes(a))
+    : [...STANDARD_API_ACTIONS];
+  if (Array.isArray(config.exclude)) {
+    const exclude = config.exclude;
+    crud = crud.filter((a) => !exclude.includes(a));
+  }
+  return crud;
+}
+
+/**
+ * Check if a custom action should be included in API.
+ *
+ * Mirrors the CRUD inclusion path: intersect with `include` (when set), then
+ * subtract `exclude`. Both filters apply together, matching principle of least
+ * surprise for users supplying both lists.
  */
 function shouldIncludeInApi(actionName: string, apiConfig: any): boolean {
   if (apiConfig === false) return false;
   if (apiConfig === true || apiConfig === undefined) return true;
 
   if (typeof apiConfig === 'object') {
-    if (apiConfig.include) {
-      return apiConfig.include.includes(actionName);
-    }
-    if (apiConfig.exclude) {
-      return !apiConfig.exclude.includes(actionName);
-    }
+    const included = apiConfig.include
+      ? apiConfig.include.includes(actionName)
+      : true;
+    const excluded = apiConfig.exclude
+      ? apiConfig.exclude.includes(actionName)
+      : false;
+    return included && !excluded;
   }
 
   return true;
+}
+
+/**
+ * Compute the set of action names (standard CRUD + custom methods) that the
+ * API exposes for a given object definition. This is the same resolution used
+ * to drive route generation, exposed so coherence checks (e.g. CLI vs API)
+ * can ask "what does the API expose?" without re-implementing the logic.
+ */
+export function resolveApiActionSet(
+  objectDef: SmartObjectDefinition,
+): Set<string> {
+  const apiConfig = objectDef.decoratorConfig?.api;
+  if (apiConfig === false) return new Set();
+
+  const actions = new Set<string>(resolveStandardCrudActions(apiConfig));
+  const objectIsCollectionClass = isCollectionClass(objectDef);
+  const config = getApiConfigObject(apiConfig);
+
+  // Custom (non-CRUD, public) methods. We mirror BOTH the include/exclude
+  // filter AND the scope/static skip rules that the route generators apply
+  // (sveltekit-generator.ts generateRoutesForObject and
+  // generateCollectionRoutesForObject). Otherwise the cli↔api coherence lint
+  // would claim "reachable via API" for methods that produce no HTTP route.
+  for (const [name, method] of Object.entries(objectDef.methods || {})) {
+    if (STANDARD_API_ACTIONS.includes(name)) continue;
+    if (!method.isPublic) continue;
+    if (!shouldIncludeInApi(name, apiConfig)) continue;
+
+    const routeConfig: ApiCustomRouteConfig | undefined =
+      config?.routes?.[name];
+    const defaultScope: 'item' | 'collection' = objectIsCollectionClass
+      ? 'collection'
+      : method.isStatic
+        ? 'collection'
+        : 'item';
+    const scope = routeConfig?.scope || defaultScope;
+
+    if (objectIsCollectionClass) {
+      // Collection classes only emit collection-scoped custom routes.
+      if (scope !== 'collection') continue;
+    } else {
+      // Non-collection classes skip collection-scoped non-static methods
+      // (the generator emits a console warning in this case).
+      if (scope === 'collection' && !method.isStatic) continue;
+    }
+
+    actions.add(name);
+  }
+
+  return actions;
+}
+
+/**
+ * Detail for a single cli-vs-api coherence violation.
+ */
+export interface CliApiCoherenceViolation {
+  className: string;
+  unreachable: string[];
+}
+
+/**
+ * Inspect a manifest and return classes whose `cli.include` references
+ * methods not exposed via the API. Classes that opt out via
+ * `cli: { skipApiCheck: true }` are skipped.
+ *
+ * Throws nothing; returns the violation list so callers can choose to throw
+ * or warn.
+ */
+export function findCliApiCoherenceViolations(
+  manifest: SmartObjectManifest,
+): CliApiCoherenceViolation[] {
+  const violations: CliApiCoherenceViolation[] = [];
+
+  for (const [className, objectDef] of Object.entries(manifest.objects)) {
+    const cliConfig = objectDef.decoratorConfig?.cli;
+    if (!cliConfig || typeof cliConfig !== 'object') continue;
+    if (cliConfig.skipApiCheck) continue;
+    if (!cliConfig.include || cliConfig.include.length === 0) continue;
+
+    // Match generateCLIModule's effective command set: include − exclude.
+    // A command in both lists is not actually registered, so the lint must
+    // not flag it as unreachable.
+    const cliExclude = Array.isArray(cliConfig.exclude)
+      ? cliConfig.exclude
+      : [];
+    const effectiveCliCommands = cliConfig.include.filter(
+      (cmd: string) => !cliExclude.includes(cmd),
+    );
+    if (effectiveCliCommands.length === 0) continue;
+
+    const apiActionSet = resolveApiActionSet(objectDef);
+    const unreachable = effectiveCliCommands.filter(
+      (action: string) => !apiActionSet.has(action),
+    );
+
+    if (unreachable.length > 0) {
+      violations.push({ className, unreachable });
+    }
+  }
+
+  return violations;
+}
+
+/**
+ * Throw if any class in the manifest has `cli.include` methods that aren't
+ * reachable via the API. Default build-time gate; opt-out per-class via
+ * `cli: { skipApiCheck: true }` (or globally via the vite plugin option
+ * `validateCliApiCoherence: false`).
+ */
+export function validateCliIncludeAgainstApi(
+  manifest: SmartObjectManifest,
+): void {
+  const violations = findCliApiCoherenceViolations(manifest);
+  if (violations.length === 0) return;
+
+  const messages = violations.flatMap(({ className, unreachable }) =>
+    unreachable.map(
+      (action) =>
+        `[smrt] ${className}.${action} is declared in cli.include but is not exposed via the api.\n` +
+        `  Either:\n` +
+        `    - Add '${action}' to api.include, or\n` +
+        `    - Remove '${action}' from cli.include.\n` +
+        `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
+        `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
+        `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
+    ),
+  );
+
+  throw new Error(messages.join('\n\n'));
 }
 
 /**

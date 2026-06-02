@@ -3,6 +3,12 @@
  * @packageDocumentation
  */
 
+// CLI / terminal auth (device code grant)
+export {
+  CliAuthRequest,
+  type CliAuthRequestStatus,
+  UsersCliAuthRequest,
+} from './CliAuthRequest.js';
 // Groups
 export { Group } from './Group.js';
 export { GroupMember } from './GroupMember.js';

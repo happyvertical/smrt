@@ -7,14 +7,49 @@
  */
 
 import { createRawSnippet, mount, tick, unmount } from 'svelte';
+import { compile } from 'svelte/compiler';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import WorkspaceShell from '../WorkspaceShell.svelte';
+import workspaceShellSource from '../WorkspaceShell.svelte?raw';
 import BindHarness from './workspace-shell-bind-harness.svelte';
 
 function textSnippet(text: string) {
   return createRawSnippet(() => ({
     render: () => `<span>${text}</span>`,
   }));
+}
+
+function longNavSnippet(itemCount = 48) {
+  const links = Array.from(
+    { length: itemCount },
+    (_, index) => `<a href="/item-${index}">Navigation item ${index}</a>`,
+  ).join('');
+
+  return createRawSnippet(() => ({
+    render: () => `<div class="long-nav">${links}</div>`,
+  }));
+}
+
+function getWorkspaceShellStyle(selector: string) {
+  const { css } = compile(workspaceShellSource, {
+    filename: 'WorkspaceShell.svelte',
+    generate: 'client',
+  });
+  const style = document.createElement('style');
+  style.textContent = css?.code ?? '';
+  document.head.appendChild(style);
+
+  try {
+    const rules = Array.from(style.sheet?.cssRules ?? []);
+    const rule = rules.find(
+      (candidate): candidate is CSSStyleRule =>
+        'selectorText' in candidate &&
+        candidate.selectorText.includes(selector),
+    );
+    return rule?.style ?? null;
+  } finally {
+    style.remove();
+  }
 }
 
 let container: HTMLDivElement;
@@ -118,6 +153,39 @@ describe('WorkspaceShell', () => {
     try {
       const footer = container.querySelector('.sidebar-footer');
       expect(footer?.textContent).toContain('account-menu');
+    } finally {
+      unmount(component);
+    }
+  });
+
+  it('keeps long sidebar navigation scrolling above a fixed footer', () => {
+    const component = mount(WorkspaceShell, {
+      target: container,
+      props: {
+        children: textSnippet('content'),
+        nav: longNavSnippet(),
+        sidebarFooter: textSnippet('account-menu'),
+      },
+    });
+
+    try {
+      const sidebar = container.querySelector('.smrt-workspace-sidebar');
+      const navRegion = container.querySelector('.nav-region');
+      const footer = container.querySelector('.sidebar-footer');
+
+      expect(sidebar).not.toBeNull();
+      expect(navRegion).not.toBeNull();
+      expect(footer).not.toBeNull();
+
+      const sidebarStyle = getWorkspaceShellStyle('.smrt-workspace-sidebar');
+      const navStyle = getWorkspaceShellStyle('.nav-region');
+      const footerStyle = getWorkspaceShellStyle('.sidebar-footer');
+
+      expect(sidebarStyle?.position).toBe('sticky');
+      expect(sidebarStyle?.overflow).toBe('hidden');
+      expect(navStyle?.flex).toBe('1 1 auto');
+      expect(navStyle?.overflowY).toBe('auto');
+      expect(footerStyle?.flex).toBe('0 0 auto');
     } finally {
       unmount(component);
     }

@@ -1,0 +1,415 @@
+/**
+ * Opt-in DispatchBus subscribers that bridge upstream production-order
+ * signals to {@link ProductionService}.
+ *
+ * **Off by default.** The package never auto-subscribes — consumer apps
+ * call {@link installManufacturingDispatchHandlers} from their `smrt.ts`
+ * wiring once they have decided they want a `production_order:posted`
+ * emit to consume materials and produce finished goods automatically.
+ *
+ * Two paired toggles let consumers wire only the legs they want:
+ *
+ * - `installProductionPosted` (default `true`) — on `production_order:posted`,
+ *   call {@link ProductionService.consumeMaterials} once.
+ * - `installProductionCompleted` (default `false`) — on `production_order:completed`,
+ *   call {@link ProductionService.produceFinishedGoods} once. Off by default
+ *   because not every shop emits a separate "completed" event; lots of
+ *   workflows expect consume + produce to happen atomically when the
+ *   order is posted. Set both flags to `true` to get the split lifecycle.
+ *
+ * @packageDocumentation
+ */
+
+import type {
+  DatabaseConfig,
+  DispatchBus,
+  DispatchHandler,
+  DispatchMetadata,
+} from '@happyvertical/smrt-core';
+import type { StockService } from '@happyvertical/smrt-inventory';
+import {
+  createProductionService,
+  type ProductionService,
+} from './ProductionService.js';
+
+/**
+ * Shape of a `production_order:posted` payload this handler expects.
+ *
+ * The producer (typically the application's smrt.ts wiring once a
+ * `ProductionOrder` row transitions to the posted state) packs one
+ * payload per posted order. The handler consumes materials for every
+ * unit declared by `qty`, attributed to `('ProductionOrder', productionOrderId)`
+ * on each emitted {@link StockMovement}.
+ */
+export interface ProductionOrderPostedPayload {
+  /** Production order row id. Used for `sourceId` on every movement. */
+  productionOrderId: string;
+  /**
+   * Plain string reference to the upstream product the order is asked to
+   * produce. Used to resolve the active BOM at consume time.
+   */
+  productId: string;
+  /**
+   * Inventory location id (factory / warehouse) where materials are
+   * pulled from.
+   */
+  locationId: string;
+  /**
+   * Run quantity. Each BOM line's effective qty is multiplied by this
+   * before being deducted from `available`.
+   */
+  qty: number;
+  /**
+   * Optional explicit BOM id, e.g. when the order locked itself to a
+   * specific BOM revision when it was created. Falls back to the active
+   * BOM for `productId` if omitted.
+   */
+  bomId?: string;
+  /**
+   * Optional finished SKU id. When provided AND the
+   * `installProductionPosted` handler is wired to also produce in one
+   * shot (which only happens when `installProductionCompleted` is false
+   * and `producedOnPosted` is true), this is the SKU to receive into
+   * `available`.
+   */
+  finishedSkuId?: string;
+}
+
+/**
+ * Shape of a `production_order:completed` payload this handler expects.
+ *
+ * Typically emitted when the factory signs off the run and finished
+ * goods are physically available to ship. Only used when callers opt in
+ * via `installProductionCompleted`.
+ */
+export interface ProductionOrderCompletedPayload {
+  /** Production order row id. Used for `sourceId` on the receipt movement. */
+  productionOrderId: string;
+  /**
+   * SKU id of the finished product to receive into `available`. Required.
+   */
+  finishedSkuId: string;
+  /** Inventory location id where the finished goods land. */
+  locationId: string;
+  /** Quantity received. */
+  qty: number;
+}
+
+/**
+ * Options accepted by {@link installManufacturingDispatchHandlers}.
+ *
+ * Provide either a pre-built {@link ProductionService} (when sharing
+ * across subsystems) or a `db` / `stockService` for the helper to
+ * construct one on first use.
+ */
+export type InstallManufacturingDispatchHandlersOptions = {
+  /** Bus to subscribe on. Typically the app-wide DispatchBus. */
+  dispatchBus: DispatchBus;
+  /**
+   * When `true` (default), install the `production_order:posted` handler.
+   */
+  installProductionPosted?: boolean;
+  /**
+   * When `true` (default `false`), install the
+   * `production_order:completed` handler. Off by default because many
+   * workflows want consume+produce to happen on `posted`; opt in to the
+   * split lifecycle when your shop emits a separate completion event.
+   */
+  installProductionCompleted?: boolean;
+  /**
+   * When `true` (default `false`) AND `installProductionCompleted` is
+   * false, the `production_order:posted` handler also calls
+   * {@link ProductionService.produceFinishedGoods} after consume —
+   * handy for "make-to-stock instantly" workflows where the factory
+   * step is invisible.
+   *
+   * Ignored when `installProductionCompleted` is `true` (in that case
+   * production is the completed-handler's job).
+   */
+  producedOnPosted?: boolean;
+} & (
+  | {
+      productionService: ProductionService;
+      db?: DatabaseConfig;
+      stockService?: StockService;
+    }
+  | {
+      stockService: StockService;
+      db?: DatabaseConfig;
+      productionService?: undefined;
+    }
+  | {
+      db: DatabaseConfig;
+      stockService?: undefined;
+      productionService?: undefined;
+    }
+);
+
+/**
+ * Result handle returned by {@link installManufacturingDispatchHandlers}.
+ * Call `dispose()` to detach the subscribers (mainly useful in tests and
+ * on graceful shutdown).
+ */
+export interface InstalledManufacturingDispatchHandlers {
+  /** Resolved ProductionService — useful for follow-up writes in the same scope. */
+  productionService: ProductionService;
+  /** Detach every installed subscriber. Idempotent. */
+  dispose(): void;
+}
+
+/**
+ * Subscribe production-order handlers to the given DispatchBus.
+ *
+ * @example
+ * ```typescript
+ * import { createDispatchBus } from '@happyvertical/smrt-core';
+ * import { installManufacturingDispatchHandlers } from '@happyvertical/smrt-manufacturing';
+ *
+ * const bus = await createDispatchBus({ db });
+ * const handlers = await installManufacturingDispatchHandlers({
+ *   dispatchBus: bus,
+ *   db,
+ *   producedOnPosted: true, // consume + produce in one shot
+ * });
+ * ```
+ */
+export async function installManufacturingDispatchHandlers(
+  options: InstallManufacturingDispatchHandlersOptions,
+): Promise<InstalledManufacturingDispatchHandlers> {
+  const {
+    dispatchBus,
+    installProductionPosted = true,
+    installProductionCompleted = false,
+    producedOnPosted = false,
+  } = options;
+
+  const productionService =
+    options.productionService ?? (await buildProductionService(options));
+
+  const installed: Array<{ pattern: string; handler: DispatchHandler }> = [];
+
+  if (installProductionPosted) {
+    const shouldProduceOnPosted =
+      producedOnPosted && !installProductionCompleted;
+    const handler: DispatchHandler = async (payload, metadata) => {
+      await handleProductionPosted(
+        productionService,
+        payload as ProductionOrderPostedPayload,
+        metadata,
+        shouldProduceOnPosted,
+      );
+    };
+    dispatchBus.on('production_order:posted', handler);
+    installed.push({ pattern: 'production_order:posted', handler });
+  }
+
+  if (installProductionCompleted) {
+    const handler: DispatchHandler = async (payload, metadata) => {
+      await handleProductionCompleted(
+        productionService,
+        payload as ProductionOrderCompletedPayload,
+        metadata,
+      );
+    };
+    dispatchBus.on('production_order:completed', handler);
+    installed.push({ pattern: 'production_order:completed', handler });
+  }
+
+  return {
+    productionService,
+    dispose() {
+      for (const entry of installed) {
+        dispatchBus.off(entry.pattern, entry.handler);
+      }
+      installed.length = 0;
+    },
+  };
+}
+
+async function handleProductionPosted(
+  productionService: ProductionService,
+  payload: ProductionOrderPostedPayload | null | undefined,
+  metadata: DispatchMetadata,
+  shouldProduce: boolean,
+): Promise<void> {
+  // Mirror the inventory-handler observability + strictness pattern:
+  // producer contract drift goes silent without this warn (the
+  // dispatch bus would just see a quick return and never surface
+  // anything), and a non-string `productionOrderId` (e.g. a numeric
+  // primary key coming from a Postgres source) would otherwise land
+  // as a non-string `sourceId` on every emitted StockMovement —
+  // breaking the audit-trail-by-source-id pattern.
+  const postedReason = malformedProductionPayloadReason(payload);
+  if (postedReason || !payload) {
+    warnMalformedPayload(
+      'production_order:posted',
+      payload,
+      metadata,
+      postedReason ?? 'payload is null/undefined',
+    );
+    return;
+  }
+
+  // If `producedOnPosted` is enabled, the produce leg is required — not
+  // optional. Validate `finishedSkuId` before consuming materials so we
+  // don't leave inventory depleted with no corresponding receipt. (Without
+  // this guard the consume leg would land, the produce leg would silently
+  // skip due to the falsy `finishedSkuId`, and the audit log would carry
+  // production_consume movements but no matching production_produce.)
+  if (shouldProduce && !payload.finishedSkuId) {
+    throw new Error(
+      `production_order:posted handler: producedOnPosted is enabled but ` +
+        `payload.finishedSkuId is missing (productionOrderId=${payload.productionOrderId}). ` +
+        `Either supply finishedSkuId on the event, or disable producedOnPosted ` +
+        `and emit production_order:completed separately.`,
+    );
+  }
+
+  const order = {
+    id: payload.productionOrderId,
+    productId: payload.productId,
+    bomId: payload.bomId,
+  };
+  const consumeNote = metadata.source
+    ? `auto-consume via ${metadata.source}`
+    : undefined;
+
+  // When producedOnPosted is on, route through runProduction so consume
+  // and produce share a single transaction. The two calls below would
+  // otherwise open separate transactions, and a process crash or adapter
+  // error between them would leave materials deducted with no
+  // finished-goods receipt to balance the audit ledger.
+  if (shouldProduce && payload.finishedSkuId) {
+    const produceNote = metadata.source
+      ? `auto-produce via ${metadata.source}`
+      : undefined;
+    await productionService.runProduction(order, {
+      consume: {
+        locationId: payload.locationId,
+        qty: payload.qty,
+        note: consumeNote,
+      },
+      produce: {
+        locationId: payload.locationId,
+        qty: payload.qty,
+        finishedSkuId: payload.finishedSkuId,
+        note: produceNote,
+      },
+    });
+    return;
+  }
+
+  // Consume-only path — the produce leg lives on the separate
+  // `production_order:completed` event (or is not modeled at all in
+  // this workflow). consumeMaterials is itself atomic across BOM lines.
+  await productionService.consumeMaterials(order, {
+    locationId: payload.locationId,
+    qty: payload.qty,
+    note: consumeNote,
+  });
+}
+
+async function handleProductionCompleted(
+  productionService: ProductionService,
+  payload: ProductionOrderCompletedPayload | null | undefined,
+  metadata: DispatchMetadata,
+): Promise<void> {
+  const completedReason = malformedProductionPayloadReason(payload);
+  if (completedReason || !payload) {
+    warnMalformedPayload(
+      'production_order:completed',
+      payload,
+      metadata,
+      completedReason ?? 'payload is null/undefined',
+    );
+    return;
+  }
+  await productionService.produceFinishedGoods(
+    { id: payload.productionOrderId },
+    {
+      locationId: payload.locationId,
+      qty: payload.qty,
+      finishedSkuId: payload.finishedSkuId,
+      note: metadata.source ? `auto-produce via ${metadata.source}` : undefined,
+    },
+  );
+}
+
+/**
+ * Determine whether a production-order payload (either
+ * `:posted` or `:completed`) is structurally unusable and return a
+ * concrete reason naming the specific field that failed validation.
+ * Returns `null` when the top-level shape is acceptable. Mirrors the
+ * inventory package's per-signal helpers so the log message names the
+ * actual failure instead of a hardcoded generic.
+ */
+function malformedProductionPayloadReason(
+  payload: { productionOrderId?: unknown } | null | undefined,
+): string | null {
+  if (!payload || typeof payload !== 'object') {
+    return 'payload is null/undefined or not an object';
+  }
+  if (
+    !payload.productionOrderId ||
+    typeof payload.productionOrderId !== 'string'
+  ) {
+    return 'missing or non-string `productionOrderId` (required for audit-trail source attribution)';
+  }
+  return null;
+}
+
+/**
+ * Surface dispatch payloads that don't match the documented shape.
+ * Mirrors the inventory package's `warnMalformedPayload` so a
+ * misshapen `production_order:*` event leaves a trace (signal name,
+ * source attribution, specific reason, payload-key summary) instead
+ * of vanishing into the dispatch bus's silent-success path. Without
+ * this, producer drift only surfaces as "stock didn't move" /
+ * "audit log empty" bugs a long way from the handler.
+ */
+function warnMalformedPayload(
+  signal: string,
+  payload: unknown,
+  metadata: DispatchMetadata,
+  reason: string,
+): void {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[@happyvertical/smrt-manufacturing] dispatch handler ignored a ${signal} ` +
+      `event with a malformed payload (${reason}). ` +
+      `Source: ${metadata.source ?? '<unknown>'}; payload keys: ` +
+      `${payload && typeof payload === 'object' ? Object.keys(payload).join(',') : typeof payload}`,
+  );
+}
+
+/**
+ * Build a `ProductionService` for the dispatch installer when no
+ * pre-built service was supplied. The discriminated option union
+ * guarantees one of `stockService` / `db` is set in that branch, but
+ * TypeScript can't narrow from a `??` value check on a sibling property,
+ * so we validate at runtime with a clear error message.
+ */
+async function buildProductionService(
+  options: InstallManufacturingDispatchHandlersOptions,
+): Promise<ProductionService> {
+  if (options.stockService) {
+    // Pass `db` through when supplied alongside `stockService` so the
+    // resulting ProductionService points its BOM collections at the
+    // caller-supplied manufacturing database. Dropping `db` here would
+    // make the BOM collections fall back to `stockService.db`, which
+    // is the *inventory* connection in deployments where the two
+    // packages target different databases. ProductionService.create
+    // already accepts both fields together; the discriminated option
+    // union just doesn't make the combined shape obvious.
+    return createProductionService({
+      stockService: options.stockService,
+      ...(options.db ? { db: options.db } : {}),
+    });
+  }
+  if (!options.db) {
+    throw new Error(
+      'installManufacturingDispatchHandlers: one of `productionService`, `stockService`, or `db` is required',
+    );
+  }
+  return createProductionService({ db: options.db });
+}

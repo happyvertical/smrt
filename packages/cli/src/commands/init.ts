@@ -141,7 +141,9 @@ const EXAMPLE_OBJECT_TEMPLATE = `/**
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: {
+    include: ['list', 'get', 'create', 'update', 'delete', 'summarize'],
+  },
   cli: { include: ['list', 'get', 'summarize'] },
 })
 export class Example extends SmrtObject {

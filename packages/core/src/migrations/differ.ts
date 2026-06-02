@@ -63,6 +63,15 @@ export interface DiffOptions {
   includeDroppedIndexes?: boolean;
   /** Ignore type mismatches (just log warnings) */
   ignoreTypeMismatches?: boolean;
+  /**
+   * Explicit engine hint forwarded to `detectEngine` when picking the DDL
+   * strategy used for *existing-table* SQL (ALTER/CREATE INDEX/etc.). Use
+   * this when `db.url` is empty or ambiguous (e.g. JSON adapter, in-memory
+   * wrappers where the URL lives on `db.config?.url`). Without it the
+   * comparer falls back to URL-only detection, which can produce SQLite-
+   * flavored SQL on a connection whose caller meant Postgres or DuckDB.
+   */
+  engineHint?: string;
 }
 
 /**
@@ -77,6 +86,13 @@ const PROTECTED_INDEX_SUFFIXES = ['_pkey', '_key'];
 
 function isProtectedDbIndexName(name: string): boolean {
   return PROTECTED_INDEX_SUFFIXES.some((suffix) => name.endsWith(suffix));
+}
+
+function resolveDatabaseUrl(db: DatabaseInterface): string {
+  const dbWithConfig = db as DatabaseInterface & {
+    config?: { url?: string };
+  };
+  return db.url || dbWithConfig.config?.url || '';
 }
 
 /**
@@ -97,12 +113,16 @@ export class SchemaComparer {
       ignoreTypeMismatches: false,
       ...options,
     };
-    // Use the shared detectEngine utility for consistent detection
-    // Handles :memory:, .json, and other edge cases
+    // Use the shared detectEngine utility for consistent detection.
+    // Handles :memory:, .json, and other edge cases. The JSON adapter is
+    // detected structurally (it exposes `exportTable`) because its url can be
+    // empty; otherwise fall back to URL-based detection, where `engineHint`
+    // lets callers override when `db.url` is empty or points at an adapter
+    // whose engine isn't obvious from the URL alone (some in-memory wrappers).
     this.engine =
       typeof (this.db as any).exportTable === 'function'
         ? 'json'
-        : detectEngine(this.db.url || '');
+        : detectEngine(resolveDatabaseUrl(this.db), this.options.engineHint);
     this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
@@ -508,11 +528,8 @@ export class SchemaComparer {
    * Get list of existing tables from database
    */
   private async getExistingTables(): Promise<Set<string>> {
-    // Query differs by database type
-    const dbUrl = this.db.url || '';
-
     let query: string;
-    if (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://')) {
+    if (this.engine === 'postgres') {
       query = `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`;
     } else {
       // SQLite and DuckDB
@@ -801,6 +818,10 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
   ): string {
+    // Delegate to the DDL strategy's shared column-definition builder, which
+    // maps abstract types per-dialect (UUID→native uuid / TEXT — R11), formats
+    // defaults, and emits NOT NULL / UNIQUE / CHECK. Invalid types fall back to
+    // TEXT via mapType's default branch, matching the compareColumns guard.
     return `ALTER TABLE ${this.quoteIdentifier(tableName)} ADD COLUMN ${this.ddlStrategy.generateColumnDefinition(colName, colDef)}`;
   }
 
@@ -823,16 +844,13 @@ export class SchemaComparer {
   /**
    * Generate SQL for dropping an index.
    *
-   * This SQL is consumed by *both* execution paths:
+   * This SQL is consumed by the manifest-driven execution path:
    *
-   * - `db:diff --generate` writes a migration file using the SQL produced
-   *   by `MigrationGenerator.generateDropIndex` (which adds CONCURRENTLY
-   *   for PostgreSQL).
    * - `db:migrate` runs the SQL we put in `change.sql` directly, with the
    *   tracker's `executePostgresStatements` adding CONCURRENTLY when
    *   `--postgres-safe` is on.
    *
-   * Either way, PostgreSQL ends up with `CONCURRENTLY` when it should.
+   * PostgreSQL ends up with `CONCURRENTLY` when it should.
    * Keeping this method engine-agnostic also means the diff preview text
    * stays readable (no engine-specific noise) for engines like SQLite
    * where CONCURRENTLY isn't a thing.

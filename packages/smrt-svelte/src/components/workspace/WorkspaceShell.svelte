@@ -459,14 +459,20 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   /* ─── Sidebar ─────────────────────────────────────────── */
 
   .smrt-workspace-sidebar {
+    position: sticky;
+    top: 0;
+    align-self: start;
     display: flex;
     flex-direction: column;
     gap: 1.25rem;
     padding: 1.25rem 1rem;
+    height: 100vh;
+    height: 100dvh;
+    box-sizing: border-box;
     background: var(--smrt-color-surface, #ffffff);
     border-right: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     min-width: 0;
-    overflow-y: auto;
+    overflow: hidden;
     overscroll-behavior: contain;
     z-index: 20;
   }
@@ -543,16 +549,23 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .nav-region {
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
     min-height: 0;
     gap: 0.5rem;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
   }
 
   .sidebar-footer {
     margin-top: auto;
+    flex: 0 0 auto;
     display: grid;
     gap: 0.75rem;
     padding-top: 0.75rem;
+    background: var(--smrt-color-surface, #ffffff);
     border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
+    z-index: 1;
   }
 
   /* ─── Main column ─────────────────────────────────────── */
@@ -905,12 +918,15 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     }
 
     .smrt-workspace-shell.has-inspector .smrt-workspace-content,
-    .smrt-workspace-shell.has-inspector .smrt-workspace-topbar,
+    .smrt-workspace-shell.has-inspector .smrt-workspace-topbar {
+      padding-right: var(--smrt-ws-page-pad);
+    }
+
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
       .smrt-workspace-content,
     .smrt-workspace-shell.has-inspector-rail:not(.has-inspector)
       .smrt-workspace-topbar {
-      padding-right: var(--smrt-ws-page-pad);
+      padding-right: calc(var(--smrt-ws-rail-width) + var(--smrt-ws-page-pad));
     }
 
     .inspector-backdrop {

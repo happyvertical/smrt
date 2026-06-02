@@ -52,9 +52,16 @@ export type SecretStatus = 'active' | 'disabled' | 'expired';
   // NO API or MCP exposure for security
   api: { include: [] },
   mcp: { include: [] },
-  cli: { include: ['list'] }, // Only list names, not values
+  // CLI runs in-process; secrets must never be reachable over HTTP, so
+  // skipApiCheck acknowledges the cli.include / api.include divergence.
+  cli: { include: ['list'], skipApiCheck: true }, // Only list names, not values
 })
 export class Secret extends SmrtObject {
+  /**
+   * Tenant that owns this secret. Also stored in context for per-tenant name uniqueness.
+   */
+  tenantId: string = '';
+
   /**
    * Unique name for the secret within the tenant
    */
@@ -107,6 +114,7 @@ export class Secret extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;
     if (options.description !== undefined)
       this.description = options.description;
