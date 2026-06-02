@@ -58,6 +58,29 @@ import type {
 import { compileValidators } from './validator';
 
 /**
+ * Compute the pluralized endpoint/collection name from a class name, using
+ * the SAME simple inflection rules as the scanner's manifest adapter
+ * (`packages/scanner/src/manifest-adapter.ts`). Used only as a fallback when
+ * a registered class has no manifest-provided `collection` (e.g. inline test
+ * classes registered purely via the decorator path). Keep in sync with the
+ * scanner; the manifest value is always preferred when present. (smrt#1311.)
+ *
+ *   Currency      -> currencies   (y -> ies)
+ *   CompanyResearch -> companyresearches  (ch -> ches)
+ *   SourceCrawl   -> sourcecrawls  (+ s)
+ *   EmploymentPerson -> employmentpersons (naive + s, NOT "people")
+ */
+function pluralizeCollection(className: string): string {
+  const lower = className.toLowerCase();
+  if (lower.endsWith('y')) return `${lower.slice(0, -1)}ies`;
+  if (lower.endsWith('s') || lower.endsWith('x') || lower.endsWith('z')) {
+    return `${lower}es`;
+  }
+  if (lower.endsWith('ch') || lower.endsWith('sh')) return `${lower}es`;
+  return `${lower}s`;
+}
+
+/**
  * Shared bundled-context detector. Source files in these output
  * directories come from a bundler (Vite library mode, webpack, Next.js,
  * Nuxt, svelte-kit) that can duplicate module code across chunks.
@@ -996,9 +1019,16 @@ export function register(
     schema,
     validators,
     validationRules, // Pre-computed rules from manifest (Issue #782)
+    tools: manifestEntry?.tools, // AI-callable tool schemas (CLI param schemas)
+    // Pluralized endpoint name. Prefer the manifest's computed value (handles
+    // STI inheritance + any future inflection changes); fall back to the same
+    // simple pluralization the scanner uses for inline/test classes that have
+    // no manifest entry. (smrt#1311.)
+    collection: manifestEntry?.collection ?? pluralizeCollection(name),
     packageName, // Store package name from manifest for getPackageName() lookup
     sourceFilePath, // Store source file for collision detection (Issue #555)
     extends: extendsClass, // Capture parent class name from manifest OR prototype chain
+    extendsTypeArg: manifestEntry?.extendsTypeArg, // SmrtCollection<T> generic arg
     tenantScopedConfig, // Multi-tenancy config (Issue #688)
     visibility, // Visibility control for manifest filtering
     // NOTE: Don't pre-compute inheritanceChain here - let getInheritanceChain() compute
@@ -1591,9 +1621,14 @@ export function registerFromManifest(
     schema,
     validators,
     validationRules, // Pre-computed rules from manifest (Issue #782)
+    tools: objectDef.tools, // AI-callable tool schemas (used for CLI param schemas)
+    // Pluralized endpoint name; fall back to simple pluralization if a
+    // (legacy) manifest lacks it. (smrt#1311.)
+    collection: objectDef.collection ?? pluralizeCollection(simpleClassName),
     packageName,
     sourceFilePath: objectDef.filePath, // Store source file for collision detection (Issue #555)
     extends: qualifiedExtends, // Issue #1004: Pre-computed qualified parent
+    extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
     visibility, // New: Visibility control for manifest filtering
   });
   // Tag the synthetic stub constructor with the qualified name so the

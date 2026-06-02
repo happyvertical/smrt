@@ -78,9 +78,16 @@ export type SecretAuditResult = 'success' | 'failure' | 'denied';
   tenantScoped: true,
   api: { include: [] }, // No API exposure
   mcp: { include: [] }, // No MCP exposure
-  cli: { include: ['list'] },
+  // CLI runs in-process for compliance review; HTTP exposure is intentionally
+  // excluded, so skipApiCheck acknowledges the cli.include / api.include divergence.
+  cli: { include: ['list'], skipApiCheck: true },
 })
 export class SecretAuditLog extends SmrtObject {
+  /**
+   * Tenant associated with the audited secret operation.
+   */
+  tenantId: string | null = null;
+
   /**
    * ID of the secret (may be null for deleted secrets)
    */
@@ -126,8 +133,7 @@ export class SecretAuditLog extends SmrtObject {
   constructor(options: any = {}) {
     super(options);
     if (options.tenantId !== undefined) {
-      (this as SecretAuditLog & { tenantId?: string | null }).tenantId =
-        options.tenantId;
+      this.tenantId = options.tenantId;
     }
     if (options.secretId !== undefined) this.secretId = options.secretId;
     if (options.secretName !== undefined) this.secretName = options.secretName;

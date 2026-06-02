@@ -269,12 +269,30 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_usage_provider_model
 `;
 
 /**
+ * Data backfill tracking
+ *
+ * Distinct from `_smrt_schema_migrations` — backfills are app-specific
+ * data corrections (slug rewrites, model splits, lookup-table seeds) that
+ * don't have schema diffs or rollback semantics. Apps register backfills
+ * by name and the tracker handles idempotency.
+ */
+export const CREATE_SMRT_BACKFILLS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_backfills (
+  name TEXT PRIMARY KEY,
+  applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  description TEXT,
+  package_name TEXT
+);
+`;
+
+/**
  * All system table creation statements
  */
 export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_CONTEXTS_TABLE,
   CREATE_SMRT_MIGRATIONS_TABLE,
   CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
+  CREATE_SMRT_BACKFILLS_TABLE,
   CREATE_SMRT_REGISTRY_TABLE,
   CREATE_SMRT_SIGNALS_TABLE,
   CREATE_SMRT_EMBEDDINGS_TABLE,
@@ -286,4 +304,4 @@ export const ALL_SYSTEM_TABLES = [
 /**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.4.0';
+export const SMRT_SCHEMA_VERSION = '1.5.0';

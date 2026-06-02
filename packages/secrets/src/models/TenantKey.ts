@@ -52,7 +52,9 @@ export type TenantKeyStatus = 'active' | 'rotating' | 'retired' | 'compromised';
   // NOT tenant-scoped - this model tracks keys FOR tenants
   api: { include: [] }, // No API exposure
   mcp: { include: [] }, // No MCP exposure
-  cli: { include: ['list', 'get'] },
+  // CLI runs in-process for key-rotation tooling and audit; HTTP exposure is
+  // intentionally excluded, so skipApiCheck acknowledges the divergence.
+  cli: { include: ['list', 'get'], skipApiCheck: true },
 })
 export class TenantKey extends SmrtObject {
   /**

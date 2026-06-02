@@ -21,6 +21,11 @@ import {
   summarizeFailedMigrations,
 } from './db-migrate-actions.js';
 import { assessFailedMigrations } from './migration-failure-analysis.js';
+import {
+  evaluateSchemaContract,
+  formatSchemaContractFailures,
+  type SchemaContractReport,
+} from './schema-contract.js';
 
 type StatusDrift = {
   name: string;
@@ -193,6 +198,11 @@ export const dbStatusCommand: CLICommand = {
 
       // 6. Auto-discover manifests to get current definitions
       const { discovered, totalObjects } = await autoDiscoverAndLoad();
+      const schemaContract = await evaluateSchemaContract({
+        discovered,
+        schemaContract: config.schemaContract,
+        db,
+      });
 
       // 7. Build status report
       const status = {
@@ -204,6 +214,14 @@ export const dbStatusCommand: CLICommand = {
         manifests: {
           count: discovered.length,
           objects: totalObjects,
+          details: discovered.map((manifest) => ({
+            path: manifest.path,
+            source: manifest.source,
+            packageName: manifest.packageName,
+            packageVersion: manifest.packageVersion,
+            objectCount: manifest.objectCount,
+            objectNames: manifest.objectNames ?? [],
+          })),
         },
         migrations: {
           applied: applied.length,
@@ -226,6 +244,7 @@ export const dbStatusCommand: CLICommand = {
         },
         drift: [] as StatusDrift[],
         failedMigrations: summarizeFailedMigrations(failed, null),
+        schemaContract: schemaContract as SchemaContractReport,
       };
       let diff: SchemaDiff = {
         added_tables: [],
@@ -269,6 +288,9 @@ export const dbStatusCommand: CLICommand = {
       // 9. Output results
       if (options.json) {
         console.log(JSON.stringify(status, null, 2));
+        if (!schemaContract.ok) {
+          process.exitCode = 1;
+        }
         return;
       }
 
@@ -342,6 +364,16 @@ export const dbStatusCommand: CLICommand = {
         console.log();
       }
 
+      if (!schemaContract.ok) {
+        console.log('❌ Schema Contract Failed:');
+        console.log(formatSchemaContractFailures(schemaContract));
+        console.log();
+        process.exitCode = 1;
+      } else {
+        console.log('✅ Schema contract passed');
+        console.log();
+      }
+
       printFailedMigrationGroup(
         '⚠️  Failed migrations still map to unresolved live drift:',
         status.failedMigrations.unresolved,
@@ -377,7 +409,7 @@ export const dbStatusCommand: CLICommand = {
       console.log('💡 Commands:');
       console.log('   smrt db:migrate   - Apply pending changes');
       console.log('   smrt db:history   - View migration history');
-      console.log('   smrt db:diff      - Generate migration from changes');
+      console.log('   smrt db:diff      - Show schema differences');
       console.log();
     } catch (error) {
       if (options.json) {

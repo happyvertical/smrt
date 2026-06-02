@@ -261,6 +261,57 @@ class TestClass extends SmrtObject {
   });
 
   describe('Manifest Creation', () => {
+    it('materializes tenantScoped tenantId fields before schema generation', async () => {
+      writeFileSync(
+        resolve(testFixturesDir, 'src', 'secret.ts'),
+        `
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+@smrt({ tenantScoped: true })
+class SecretLike extends SmrtObject {
+  name: string = '';
+}
+      `,
+      );
+
+      const builder = new ManifestBuilder();
+      const originalCwd = process.cwd();
+
+      try {
+        process.chdir(testFixturesDir);
+
+        const manifest = await builder.generate({
+          include: ['src/**/*.ts'],
+          outputDir: testOutputDir,
+          generateTypeStub: false,
+        });
+
+        const secretLike = Object.values(manifest.objects).find(
+          (objectDef) => objectDef.className === 'SecretLike',
+        );
+
+        expect(secretLike?.fields.tenantId).toEqual(
+          expect.objectContaining({
+            type: 'text',
+            _meta: expect.objectContaining({
+              sqlType: 'TEXT',
+              __tenancy: expect.objectContaining({
+                isTenantIdField: true,
+                mode: 'required',
+                field: 'tenantId',
+              }),
+            }),
+          }),
+        );
+        expect(secretLike?.schema?.columns.tenant_id).toEqual(
+          expect.objectContaining({ type: 'TEXT' }),
+        );
+        expect(secretLike?.schema?.ddl).toContain('"tenant_id" TEXT');
+      } finally {
+        process.chdir(originalCwd);
+      }
+    });
+
     it('should inject package info when requested', async () => {
       // Create package.json
       writeFileSync(

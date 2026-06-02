@@ -4,11 +4,25 @@
  * Provides the SvelteKit project template for SMRT framework.
  */
 
-import { fileURLToPath } from 'node:url';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
-import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Paths inside `template/` that are not part of the scaffold output. These
+ * exist only to support test-time tooling at the monorepo level (e.g. the
+ * vendored `.svelte-kit/tsconfig.json` stub that lets the template's own
+ * tests typecheck without first running `svelte-kit sync`).
+ */
+const COPY_SKIP = new Set(['.svelte-kit']);
 
 /**
  * Get the path to the template directory
@@ -37,10 +51,16 @@ export function copyTemplate(destination, options = {}) {
     mkdirSync(destination, { recursive: true });
   }
 
-  // Copy all template files
+  // Copy all template files, skipping internal-only directories
   cpSync(templatePath, destination, {
     recursive: true,
     force: options.overwrite || false,
+    filter: (src) => {
+      const relative = src.slice(templatePath.length + 1);
+      if (!relative) return true;
+      const topLevel = relative.split(/[\\/]/)[0];
+      return !COPY_SKIP.has(topLevel);
+    },
   });
 
   // Update package.json with project name if provided
@@ -68,6 +88,7 @@ export const templateInfo = {
     'SMRT CLI integration',
     'TypeScript support',
     'SQLite database (configurable)',
+    'Multi-tenant ready (session + subdomain tenant resolution wired)',
   ],
 };
 

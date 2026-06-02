@@ -86,6 +86,7 @@ import {
   getClassInPackage as _getClassInPackage,
   getClassNames as _getClassNames,
   getPublicClasses as _getPublicClasses,
+  getQualifiedClassNames as _getQualifiedClassNames,
   hasClass as _hasClass,
   hasClassCaseInsensitive as _hasClassCaseInsensitive,
   resolveType as _resolveType,
@@ -714,10 +715,22 @@ export class ObjectRegistry {
   }
 
   /**
-   * Get class names
+   * Get class names, deduplicated by simple class name.
+   *
+   * This is useful for display and backwards compatibility. Use
+   * `getQualifiedClassNames()` for schema/bootstrap loops that must preserve
+   * cross-package collisions.
    */
   static getClassNames(): string[] {
     return _getClassNames();
+  }
+
+  /**
+   * Get one lookup name per registered class, preserving cross-package
+   * collisions by preferring qualified class names where available.
+   */
+  static getQualifiedClassNames(): string[] {
+    return _getQualifiedClassNames();
   }
 
   /**
@@ -2874,6 +2887,9 @@ export class ObjectRegistry {
    */
   static getDescendants(className: string): string[] {
     const descendants: string[] = [];
+    // main: dedup by RegisteredClass identity so a class registered under
+    // multiple map keys (simple + qualified) is only emitted once.
+    const seenRegistrations = new Set<RegisteredClass>();
 
     // R5-canon: inheritance chains are emitted with qualified names when
     // available, so the comparison against `className` must accept either
@@ -2884,6 +2900,17 @@ export class ObjectRegistry {
 
     // Find all classes that extend the given class
     for (const [_key, childClass] of ObjectRegistry.classes) {
+      // main: skip classes already visited under another map key so the same
+      // descendant isn't pushed twice (simple + qualified registrations point
+      // at the same RegisteredClass object).
+      if (seenRegistrations.has(childClass)) {
+        continue;
+      }
+      seenRegistrations.add(childClass);
+
+      // R5-canon: compare and emit qualified-when-available names so the
+      // chain membership test (the chain holds qualified names) and the
+      // returned descendants stay unambiguous across packages.
       const childKey = childClass.qualifiedName ?? childClass.name ?? _key;
       if (childKey === targetKey) continue;
 

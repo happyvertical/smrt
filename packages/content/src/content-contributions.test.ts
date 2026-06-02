@@ -99,7 +99,8 @@ CREATE TABLE IF NOT EXISTS content_references (
   updated_at DATETIME NOT NULL,
   tenant_id TEXT,
   source_id TEXT,
-  target_id TEXT
+  target_id TEXT,
+  target_version INTEGER
 );
 CREATE UNIQUE INDEX IF NOT EXISTS content_references_source_id_target_id_idx ON content_references (source_id, target_id);
 `;

@@ -27,7 +27,12 @@ export interface PullRequestOptions extends IssueOptions {
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
   mcp: { include: ['list', 'get', 'sync', 'summarize', 'merge'] },
-  cli: { include: ['list', 'get', 'sync', 'summarize', 'merge', 'markReady'] },
+  // sync/summarize/merge/markReady are operator commands invoked in-process
+  // via the CLI; they intentionally aren't exposed over HTTP today.
+  cli: {
+    include: ['list', 'get', 'sync', 'summarize', 'merge', 'markReady'],
+    skipApiCheck: true,
+  },
 })
 export class PullRequest extends Issue {
   /**

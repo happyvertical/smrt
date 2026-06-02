@@ -68,6 +68,7 @@ import './__smrt-register__.js';
 // Collections
 export {
   ContractCollection,
+  type CreatePayoutFromPaymentArgs,
   CustomerCollection,
   FulfillmentCollection,
   InvoiceCollection,
@@ -75,12 +76,17 @@ export {
   type InvoiceNumberOptions,
   PaymentAllocationCollection,
   PaymentCollection,
+  PaymentIntentCollection,
+  type PaymentIntentIdempotencyArgs,
+  type PaymentIntentSeed,
+  PayoutCollection,
   UNPAID_STATUSES,
   VendorCollection,
 } from './collections/index.js';
 // Models
 export {
   Agreement,
+  Cart,
   Contract,
   ContractLineItem,
   Customer,
@@ -90,11 +96,17 @@ export {
   Invoice,
   InvoiceLineItem,
   Lease,
+  type LicenseRightsSnapshot,
+  LicenseSale,
   Order,
   Payment,
   PaymentAllocation,
+  PaymentIntent,
+  Payout,
+  ProductionOrder,
   PurchaseOrder,
   Vendor,
+  WholesaleOrder,
 } from './models/index.js';
 
 // Types
@@ -103,11 +115,15 @@ export {
   ContractStatus,
   ContractType,
   CustomerStatus,
+  CustomerType,
   FulfillmentStatus,
   FulfillmentType,
   InvoiceStatus,
+  PaymentIntentStatus,
   PaymentMethod,
+  type PaymentOption,
   PaymentStatus,
+  PayoutStatus,
   type RecognizeRevenueOptions,
   type RecordPaymentOptions,
   VendorStatus,

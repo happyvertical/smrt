@@ -77,6 +77,21 @@ function createLocalSmrtObject(projectRoot: string): void {
   );
 }
 
+function createTenantScopedLocalSmrtObject(projectRoot: string): void {
+  writeFileSync(
+    join(projectRoot, 'src', 'TenantScopedThing.ts'),
+    [
+      "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+      '',
+      '@smrt({ tenantScoped: true })',
+      'export class TenantScopedThing extends SmrtObject {',
+      "  name: string = '';",
+      '}',
+      '',
+    ].join('\n'),
+  );
+}
+
 describe('smrtPlugin local manifest writing (Issue #963)', () => {
   let tmpDir: string;
 
@@ -184,6 +199,31 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     expect(existsSync(localManifestPath)).toBe(true);
   });
 
+  it('does not generate legacy src/manifest/test-manifest-stub.ts during closeBundle', async () => {
+    mkdirSync(join(tmpDir, 'src', 'manifest'), { recursive: true });
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await (plugin as any).configResolved({
+      root: tmpDir,
+      build: {
+        lib: { entry: 'src/index.ts' },
+        outDir: 'dist',
+      },
+      plugins: [],
+    });
+
+    await (plugin as any).closeBundle();
+
+    expect(existsSync(join(tmpDir, 'dist', 'manifest.json'))).toBe(true);
+    expect(
+      existsSync(join(tmpDir, 'src', 'manifest', 'test-manifest-stub.ts')),
+    ).toBe(false);
+  });
+
   it('should not write dist/manifest.json during closeBundle for non-library builds', async () => {
     const plugin = smrtPlugin({
       include: ['src/**/*.ts'],
@@ -206,6 +246,43 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     // But .smrt/manifest.json should exist (written during configResolved)
     const localManifestPath = join(tmpDir, '.smrt', 'manifest.json');
     expect(existsSync(localManifestPath)).toBe(true);
+  });
+
+  it('materializes tenantScoped fields in the Vite plugin manifest path', async () => {
+    createTenantScopedLocalSmrtObject(tmpDir);
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await (plugin as any).configResolved({
+      root: tmpDir,
+      build: {},
+      plugins: [],
+    });
+
+    const manifestPath = join(tmpDir, '.smrt', 'manifest.json');
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const tenantScopedThing = Object.values<any>(manifest.objects).find(
+      (objectDef) => objectDef.className === 'TenantScopedThing',
+    );
+
+    expect(tenantScopedThing?.fields.tenantId).toEqual(
+      expect.objectContaining({
+        type: 'text',
+        _meta: expect.objectContaining({
+          sqlType: 'TEXT',
+          __tenancy: expect.objectContaining({
+            isTenantIdField: true,
+            field: 'tenantId',
+          }),
+        }),
+      }),
+    );
+    expect(tenantScopedThing?.schema?.columns.tenant_id).toEqual(
+      expect.objectContaining({ type: 'TEXT' }),
+    );
   });
 
   it('fails fast when a consumer app has external SMRT dependencies but no smrtConsumer plugin', async () => {

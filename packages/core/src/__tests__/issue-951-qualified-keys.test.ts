@@ -29,6 +29,7 @@ import { ConfigurationError } from '../errors.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+import { getTestDatabase } from '../testing/index.js';
 
 describe('Issue #951: Qualified Names as Primary Keys', () => {
   let restoreRegistry: () => void;
@@ -222,6 +223,144 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     expect(qualifiedNames.some((n) => n.includes('QualifiedTestD'))).toBe(
       false,
     );
+  });
+
+  it('should preserve same-simple-name collisions in getQualifiedClassNames()', () => {
+    ObjectRegistry.clear();
+
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-a:QualifiedCollision',
+      {
+        className: 'QualifiedCollision',
+        collection: 'qualified_collision_a',
+        decoratorConfig: { tableName: 'qualified_collision_a' },
+        fields: { label: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-a',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-b:QualifiedCollision',
+      {
+        className: 'QualifiedCollision',
+        collection: 'qualified_collision_b',
+        decoratorConfig: { tableName: 'qualified_collision_b' },
+        fields: { label: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-b',
+    );
+
+    expect(ObjectRegistry.getClassNames()).toEqual(['QualifiedCollision']);
+    expect(ObjectRegistry.getQualifiedClassNames()).toEqual([
+      '@fixture/pkg-a:QualifiedCollision',
+      '@fixture/pkg-b:QualifiedCollision',
+    ]);
+  });
+
+  it('prepares schemas for colliding simple names in getTestDatabase', async () => {
+    ObjectRegistry.clear();
+
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-a:QualifiedDatabaseCollision',
+      {
+        className: 'QualifiedDatabaseCollision',
+        collection: 'qualified_database_collision_a',
+        decoratorConfig: { tableName: 'qualified_database_collision_a' },
+        fields: { label: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-a',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-b:QualifiedDatabaseCollision',
+      {
+        className: 'QualifiedDatabaseCollision',
+        collection: 'qualified_database_collision_b',
+        decoratorConfig: { tableName: 'qualified_database_collision_b' },
+        fields: { label: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-b',
+    );
+
+    const db = await getTestDatabase({ includeSystemTables: false });
+    const tables = await db.query(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'table'
+        AND name IN (
+          'qualified_database_collision_a',
+          'qualified_database_collision_b'
+        )
+    `);
+    const tableNames = tables.rows
+      .map((row: { name: string }) => row.name)
+      .sort();
+
+    expect(tableNames).toEqual([
+      'qualified_database_collision_a',
+      'qualified_database_collision_b',
+    ]);
+  });
+
+  it('prepares qualified STI base schemas in getTestDatabase', async () => {
+    ObjectRegistry.clear();
+
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-a:QualifiedStiBase',
+      {
+        className: 'QualifiedStiBase',
+        collection: 'qualified_sti_bases',
+        decoratorConfig: {
+          tableName: 'qualified_sti_bases',
+          tableStrategy: 'sti',
+        },
+        fields: { label: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-a',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-a:QualifiedStiChild',
+      {
+        className: 'QualifiedStiChild',
+        extends: 'QualifiedStiBase',
+        collection: 'qualified_sti_bases',
+        decoratorConfig: {
+          tableName: 'qualified_sti_bases',
+        },
+        fields: { childLabel: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-a',
+    );
+
+    const db = await getTestDatabase({ includeSystemTables: false });
+    const tables = await db.query(`
+      SELECT name FROM sqlite_master
+      WHERE type = 'table'
+        AND name = 'qualified_sti_bases'
+    `);
+
+    expect(tables.rows.map((row: { name: string }) => row.name)).toEqual([
+      'qualified_sti_bases',
+    ]);
+
+    const columns = await db.query(`PRAGMA table_info('qualified_sti_bases')`);
+    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    expect(columnNames).toContain('child_label');
+
+    const childOnlyDb = await getTestDatabase({
+      includeSystemTables: false,
+      classes: ['@fixture/pkg-a:QualifiedStiChild'],
+    });
+    const childOnlyColumns = await childOnlyDb.query(
+      `PRAGMA table_info('qualified_sti_bases')`,
+    );
+    const childOnlyColumnNames = childOnlyColumns.rows.map(
+      (row: { name: string }) => row.name,
+    );
+    expect(childOnlyColumnNames).toContain('child_label');
   });
 
   it('should resolve manifest stub by simple name when registered under qualified key', () => {
@@ -436,6 +575,71 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
 
     // Every returned descendant should be a qualified key.
     expect(descendants.every((d) => d.includes(':'))).toBe(true);
+  });
+
+  it('should return qualified names from getDescendants() for qualified base names', () => {
+    ObjectRegistry.clear();
+
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-a:QualifiedDescendantStiBase',
+      {
+        className: 'QualifiedDescendantStiBase',
+        collection: 'qualified_descendant_sti_bases',
+        decoratorConfig: {
+          tableName: 'qualified_descendant_sti_bases',
+          tableStrategy: 'sti',
+        },
+        fields: { title: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-a',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-a:QualifiedDescendantStiChild',
+      {
+        className: 'QualifiedDescendantStiChild',
+        extends: 'QualifiedDescendantStiBase',
+        collection: 'qualified_descendant_sti_bases',
+        decoratorConfig: { tableName: 'qualified_descendant_sti_bases' },
+        fields: { childLabel: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-a',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-b:QualifiedDescendantCtiBase',
+      {
+        className: 'QualifiedDescendantCtiBase',
+        collection: 'qualified_descendant_cti_bases',
+        decoratorConfig: { tableName: 'qualified_descendant_cti_bases' },
+        fields: { title: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-b',
+    );
+    ObjectRegistry.registerFromManifest(
+      '@fixture/pkg-b:QualifiedDescendantCtiChild',
+      {
+        className: 'QualifiedDescendantCtiChild',
+        extends: 'QualifiedDescendantCtiBase',
+        collection: 'qualified_descendant_cti_children',
+        decoratorConfig: { tableName: 'qualified_descendant_cti_children' },
+        fields: { childLabel: { type: 'text', _meta: {} } },
+        methods: {},
+      },
+      '@fixture/pkg-b',
+    );
+
+    expect(
+      ObjectRegistry.getDescendants(
+        '@fixture/pkg-a:QualifiedDescendantStiBase',
+      ),
+    ).toEqual(['@fixture/pkg-a:QualifiedDescendantStiChild']);
+    expect(
+      ObjectRegistry.getDescendants(
+        '@fixture/pkg-b:QualifiedDescendantCtiBase',
+      ),
+    ).toEqual(['@fixture/pkg-b:QualifiedDescendantCtiChild']);
   });
 
   it('should use simple names in getDependencyGraph()', () => {

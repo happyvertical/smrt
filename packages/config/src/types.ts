@@ -171,6 +171,24 @@ export interface MigrationsPostgresConfig {
 }
 
 /**
+ * Semantic schema contract enforced by SMRT schema commands.
+ *
+ * Object and field requirements are checked against the loaded SMRT registry.
+ * Required fields are also translated to physical table/column checks after
+ * migration/status introspection. `requiredDatabaseShape` is reserved for
+ * database objects that SMRT cannot infer from manifests.
+ */
+export interface SchemaContractConfig {
+  requiredObjects?: string[];
+  requiredFields?: string[];
+  requiredDatabaseShape?: {
+    tables?: string[];
+    columns?: string[];
+    indexes?: string[];
+  };
+}
+
+/**
  * Database migrations configuration.
  *
  * Controls how migrations are generated, stored, and applied. Placed under
@@ -195,10 +213,7 @@ export interface MigrationsConfig {
   table?: string;
 
   /**
-   * Default format for generated migration files
-   *
-   * - 'sql': Plain SQL files with UP/DOWN sections
-   * - 'typescript': TypeScript files with Migration interface
+   * Legacy file format setting. File-backed migration generation is not supported.
    *
    * @default 'sql'
    */
@@ -215,26 +230,25 @@ export interface MigrationsConfig {
   naming?: 'sequence' | 'timestamp';
 
   /**
-   * Migration mode
+   * Migration mode.
    *
-   * - 'dynamic': Apply schema changes directly from manifest (dev-friendly)
-   * - 'file': Require migration files for all changes (production-safe)
-   * - 'hybrid': Dynamic in dev, file-based in production
+   * SMRT schema migrations are manifest-driven. File-backed modes are not
+   * supported unless a future file migration executor is implemented.
    *
    * @default 'dynamic'
    */
-  mode?: 'dynamic' | 'file' | 'hybrid';
+  mode?: 'dynamic';
 
   /**
-   * Configure mode per environment
+   * Configure mode per environment.
    *
    * Overrides the `mode` setting based on NODE_ENV
    */
   modeByEnvironment?: {
-    development?: 'dynamic' | 'file' | 'hybrid';
-    test?: 'dynamic' | 'file' | 'hybrid';
-    staging?: 'dynamic' | 'file' | 'hybrid';
-    production?: 'dynamic' | 'file' | 'hybrid';
+    development?: 'dynamic';
+    test?: 'dynamic';
+    staging?: 'dynamic';
+    production?: 'dynamic';
   };
 
   /**
@@ -288,7 +302,7 @@ export interface DatabaseConfig {
  * export default defineConfig({
  *   cli: {
  *     database: { type: 'sqlite', url: 'file:./local.db' },
- *     migrations: { mode: 'file', directory: './migrations' },
+ *     migrations: { mode: 'dynamic', directory: './migrations' },
  *   },
  * });
  * ```
@@ -306,6 +320,11 @@ export interface CliConfig {
    * Migration settings
    */
   migrations?: MigrationsConfig;
+
+  /**
+   * Required manifest/object/field/database-shape contract for schema commands.
+   */
+  schemaContract?: SchemaContractConfig;
 }
 
 // ============================================================================

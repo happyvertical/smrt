@@ -10,6 +10,7 @@ SvelteKit project template with SMRT framework integration. Scaffolds a full-sta
 - Server-side SMRT initialization (`src/lib/server/smrt.ts`)
 - `smrt.config.ts` with SQLite database and optional AI provider
 - `.env.example` with starter environment variables
+- **Multi-tenancy pre-wired**: `src/hooks.server.ts` registers the tenancy interceptor, loads sessions via `createSessionHandler({ enterTenantContext: true })`, and resolves the tenant from a leading subdomain (`acme.demo.local` → `tenantId='acme'`). Strategy is swappable in `src/lib/server/tenancy.ts` — see the template's own README for path-prefix / header-based variants.
 
 ## Prerequisites
 
@@ -72,14 +73,16 @@ template/
 ├── tsconfig.json
 ├── vite.config.ts          # Vite + smrtPlugin() for API route generation
 └── src/
-    ├── app.d.ts            # SvelteKit type declarations
+    ├── app.d.ts            # SvelteKit type declarations (extends SessionLocals)
     ├── app.html            # HTML shell
+    ├── hooks.server.ts     # Pre-wired auth + tenancy
     ├── lib/
     │   ├── objects/
     │   │   ├── index.ts    # Barrel export
     │   │   └── Item.ts     # Example @smrt() object
     │   └── server/
-    │       └── smrt.ts     # Server-side SMRT initialization
+    │       ├── smrt.ts     # Server-side SMRT initialization
+    │       └── tenancy.ts  # Pluggable tenant resolver
     └── routes/
         └── +page.svelte    # Home page
 ```

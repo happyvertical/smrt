@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "timestamp": 1780379256044,
+  "timestamp": 1780425244791,
   "packageName": "@happyvertical/smrt-content",
-  "packageVersion": "0.25.8",
+  "packageVersion": "0.26.5",
   "objects": {
     "@happyvertical/smrt-content:ContentAsset": {
       "name": "contentasset",
@@ -4090,6 +4090,13 @@
             "required": true
           }
         },
+        "targetVersion": {
+          "type": "integer",
+          "required": false,
+          "_meta": {
+            "nullable": true
+          }
+        },
         "createdAt": {
           "type": "text",
           "required": false
@@ -4120,7 +4127,7 @@
       ],
       "schema": {
         "tableName": "content_references",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"source_id\" UUID NOT NULL,\n  \"target_id\" UUID NOT NULL\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"source_id\" UUID NOT NULL,\n  \"target_id\" UUID NOT NULL,\n  \"target_version\" INTEGER\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -4160,6 +4167,11 @@
             "type": "UUID",
             "notNull": true,
             "unique": false
+          },
+          "target_version": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
           }
         },
         "indexes": [
@@ -4178,7 +4190,7 @@
             "unique": true
           }
         ],
-        "version": "647d12c5"
+        "version": "f8bfb756"
       }
     },
     "@happyvertical/smrt-content:ContentReferences": {
@@ -4294,6 +4306,53 @@
               "name": "opts",
               "type": "JunctionAttachOptions",
               "optional": true
+            }
+          ],
+          "returnType": "Promise<void>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getForSource": {
+          "name": "getForSource",
+          "async": true,
+          "parameters": [
+            {
+              "name": "sourceId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ContentReference[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getForTarget": {
+          "name": "getForTarget",
+          "async": true,
+          "parameters": [
+            {
+              "name": "targetId",
+              "type": "string",
+              "optional": false
+            }
+          ],
+          "returnType": "Promise<ContentReference[]>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "unlink": {
+          "name": "unlink",
+          "async": true,
+          "parameters": [
+            {
+              "name": "sourceId",
+              "type": "string",
+              "optional": false
+            },
+            {
+              "name": "targetId",
+              "type": "string",
+              "optional": false
             }
           ],
           "returnType": "Promise<void>",
@@ -5070,6 +5129,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -5084,6 +5148,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -5098,6 +5167,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -5269,6 +5343,11 @@
               "name": "content",
               "type": "Content | string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
             }
           ],
           "returnType": "any",
@@ -5294,6 +5373,14 @@
           "async": true,
           "parameters": [],
           "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferenceDrift": {
+          "name": "getReferenceDrift",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Array<object>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -6572,6 +6659,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6586,6 +6678,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -6600,6 +6697,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -6771,6 +6873,11 @@
               "name": "content",
               "type": "Content | string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
             }
           ],
           "returnType": "any",
@@ -6796,6 +6903,14 @@
           "async": true,
           "parameters": [],
           "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferenceDrift": {
+          "name": "getReferenceDrift",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Array<object>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -8103,6 +8218,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -8117,6 +8237,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -8131,6 +8256,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -8302,6 +8432,11 @@
               "name": "content",
               "type": "Content | string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
             }
           ],
           "returnType": "any",
@@ -8327,6 +8462,14 @@
           "async": true,
           "parameters": [],
           "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferenceDrift": {
+          "name": "getReferenceDrift",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Array<object>>",
           "isStatic": false,
           "isPublic": true
         },
@@ -10061,6 +10204,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -10075,6 +10223,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any[]>",
@@ -10089,6 +10242,11 @@
               "name": "fieldName",
               "type": "string",
               "optional": false
+            },
+            {
+              "name": "opts",
+              "type": "LoadRelatedOptions",
+              "optional": true
             }
           ],
           "returnType": "Promise<any>",
@@ -10260,6 +10418,11 @@
               "name": "content",
               "type": "Content | string",
               "optional": false
+            },
+            {
+              "name": "options",
+              "type": "object",
+              "optional": true
             }
           ],
           "returnType": "any",
@@ -10285,6 +10448,14 @@
           "async": true,
           "parameters": [],
           "returnType": "any",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "getReferenceDrift": {
+          "name": "getReferenceDrift",
+          "async": true,
+          "parameters": [],
+          "returnType": "Promise<Array<object>>",
           "isStatic": false,
           "isPublic": true
         },

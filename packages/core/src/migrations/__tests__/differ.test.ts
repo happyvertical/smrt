@@ -6,7 +6,7 @@
 
 import type { DatabaseProvider } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SchemaDefinition, SchemaDiff } from '../../schema/types.js';
 import {
   getSQLFromDiff,
@@ -326,6 +326,95 @@ describe('SchemaComparer', () => {
 });
 
 describe('SchemaComparer engine-specific SQL generation', () => {
+  it('uses db.config.url when db.url is empty for engine detection', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('information_schema.tables')) {
+        return { rows: [{ table_name: 'documents' }] };
+      }
+      throw new Error(`Unexpected introspection query: ${sql}`);
+    });
+
+    const mockDb = {
+      url: '',
+      config: { url: 'postgresql://localhost/test' },
+      query,
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+          metadata: { type: 'TEXT', notnull: false },
+        },
+        indexes: [],
+      }),
+    };
+
+    const comparer = new SchemaComparer(mockDb as any, {
+      ignoreTypeMismatches: false,
+    });
+    const diff = await comparer.compare({
+      documents: {
+        tableName: 'documents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          metadata: { type: 'JSON' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('information_schema.tables'),
+    );
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
+  });
+
+  it('uses engineHint for existing-table introspection query selection', async () => {
+    const query = vi.fn(async (sql: string) => {
+      if (sql.includes('information_schema.tables')) {
+        return { rows: [{ table_name: 'users' }] };
+      }
+      throw new Error(`Unexpected introspection query: ${sql}`);
+    });
+
+    const mockDb = {
+      url: ':memory:',
+      query,
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const comparer = new SchemaComparer(mockDb as any, {
+      engineHint: 'postgres',
+    });
+    const diff = await comparer.compare({
+      users: {
+        tableName: 'users',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    expect(query).toHaveBeenCalledWith(
+      expect.stringContaining('information_schema.tables'),
+    );
+    expect(diff.added_tables).toHaveLength(0);
+  });
+
   it('should generate PostgreSQL ALTER COLUMN TYPE with USING clause for TEXT→JSON', async () => {
     // Create a mock database interface that identifies as PostgreSQL
     const mockPostgresDb = {
@@ -412,6 +501,126 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
     expect(typeUpgrades[0].sql).toContain('USING "metadata"::jsonb');
     expect(typeUpgrades[0].sql).toContain("SET DEFAULT '{}'::jsonb");
+  });
+
+  it('should generate PostgreSQL ADD COLUMN SQL for JSON array defaults', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'contents' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      contents: {
+        tableName: 'contents',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          word_timings: { type: 'JSON', defaultValue: [] },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'add_column',
+        table: 'contents',
+        name: 'word_timings',
+        sql: `ALTER TABLE "contents" ADD COLUMN "word_timings" JSONB DEFAULT '[]'`,
+      }),
+    ]);
+  });
+
+  it('should preserve DuckDB UNIQUE constraints in ADD COLUMN SQL', async () => {
+    const mockDuckDb = {
+      url: '/path/to/test.duckdb',
+      query: async () => ({ rows: [{ name: 'users' }] }),
+      getTableSchema: async () => ({
+        columns: {
+          id: { type: 'TEXT', notnull: true },
+        },
+        indexes: [],
+      }),
+    };
+
+    const duckComparer = new SchemaComparer(mockDuckDb as any);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      users: {
+        tableName: 'users',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          email: { type: 'TEXT', unique: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await duckComparer.compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'add_column',
+        table: 'users',
+        name: 'email',
+        sql: `ALTER TABLE "users" ADD COLUMN "email" TEXT UNIQUE`,
+      }),
+    ]);
+  });
+
+  it('should not emit PRIMARY KEY constraints in ADD COLUMN SQL', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [{ table_name: 'users' }] }),
+      getTableSchema: async () => ({
+        columns: {},
+        indexes: [],
+      }),
+    };
+
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
+
+    const manifest: Record<string, SchemaDefinition> = {
+      users: {
+        tableName: 'users',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    };
+
+    const diff = await pgComparer.compare(manifest);
+
+    expect(diff.changes).toEqual([
+      expect.objectContaining({
+        type: 'add_column',
+        table: 'users',
+        name: 'id',
+        sql: `ALTER TABLE "users" ADD COLUMN "id" TEXT`,
+      }),
+    ]);
   });
 
   it('should generate PostgreSQL USING clause for legacy JSON→TIMESTAMP drift', async () => {

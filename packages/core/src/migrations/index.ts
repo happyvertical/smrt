@@ -9,6 +9,12 @@
  * - Rollback support
  */
 
+// Backfill tracking (data corrections, not schema migrations)
+export {
+  type BackfillRecord,
+  BackfillTracker,
+  type BackfillTrackerOptions,
+} from './backfill-tracker.js';
 // Checksum utilities
 export {
   computeChecksum,
@@ -35,6 +41,14 @@ export {
   generateMigrationTimestamp,
   MigrationGenerator,
 } from './generator.js';
+// High-level schema orchestration over ObjectRegistry
+export {
+  getPendingSchemaStatements,
+  type MigrateSmrtSchemasOptions,
+  type MigrateSmrtSchemasResult,
+  migrateSmrtSchemas,
+  type PendingSchemaStatementsResult,
+} from './orchestrate.js';
 // Core classes
 export { MigrationTracker, planPostgresStatements } from './tracker.js';
 

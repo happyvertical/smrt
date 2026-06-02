@@ -1,0 +1,43 @@
+# @happyvertical/smrt-app-mcp
+
+## 0.26.5
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.26.5
+
+## 0.26.4
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.26.4
+
+## 0.26.3
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.26.3
+
+## 0.26.2
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.26.2
+
+## 0.26.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.26.1
+
+## 1.0.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@1.0.0

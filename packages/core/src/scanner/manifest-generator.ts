@@ -172,32 +172,6 @@ export class ManifestGenerator {
         objectDef.collectionExportName =
           objectDef.collectionExportName || `${objectDef.className}Collection`;
 
-        // Inject tenantId field if tenantScoped is configured (Issue #812)
-        if (objectDef.decoratorConfig.tenantScoped) {
-          const tenantConfig =
-            typeof objectDef.decoratorConfig.tenantScoped === 'boolean'
-              ? {}
-              : objectDef.decoratorConfig.tenantScoped;
-
-          const fieldName = tenantConfig.field || 'tenantId';
-          const isRequired = tenantConfig.mode === 'required';
-
-          // Inject tenantId field definition into manifest
-          objectDef.fields[fieldName] = {
-            type: 'text',
-            required: isRequired,
-            _meta: {
-              generated: true,
-              source: 'tenantScoped_decorator',
-              ...tenantConfig,
-            },
-          };
-
-          console.log(
-            `[manifest-generator] Injected ${fieldName} field for ${objectDef.className} (tenantScoped: ${JSON.stringify(tenantConfig)})`,
-          );
-        }
-
         // Generate AI tools from methods if AI config exists
         if (objectDef.decoratorConfig.ai) {
           const methods = Object.values(objectDef.methods);
@@ -231,20 +205,24 @@ export class ManifestGenerator {
       }
     }
 
-    // Second pass: Merge inherited fields for STI classes
+    // Second pass: materialize implicit tenant fields before inheritance and schema generation.
+    this.injectTenantScopedFields(manifest);
+
+    // Third pass: Merge inherited fields for STI classes
     // This ensures STI subclasses have all parent fields inline in the manifest
     this.mergeInheritedFields(manifest);
 
-    // Third pass: Generate validation rules for all objects
+    // Fourth pass: Generate validation rules for all objects
     // This pre-computes validation rules from field definitions, eliminating
     // the need to compile validator closures at runtime (Issue #782)
     this.generateValidationRules(manifest);
 
-    // Fourth pass: Generate schemas for each object (build-time schema generation)
+    // Fifth pass: Generate schemas for each object (build-time schema generation)
     // This pre-computes DDL, indexes, and columns for efficient external package consumption
     this.generateSchemas(manifest);
+    this.assertTenantScopedSchemaContract(manifest);
 
-    // Fifth pass: Generate agent manifests for Agent subclasses
+    // Sixth pass: Generate agent manifests for Agent subclasses
     // Derives permissions, features, menuItems, and components from code
     this.generateAgentManifests(
       manifest,
@@ -253,6 +231,201 @@ export class ManifestGenerator {
     );
 
     return manifest;
+  }
+
+  /**
+   * Materialize tenantScoped schema fields.
+   *
+   * Runtime registration already injects tenant fields for
+   * `@smrt({ tenantScoped: true })`, but published manifests must contain the
+   * same field before schema generation so migrations create `tenant_id`.
+   */
+  injectTenantScopedFields(manifest: SmartObjectManifest): void {
+    for (const objectDef of Object.values(manifest.objects)) {
+      this.injectTenantScopedField(objectDef);
+    }
+  }
+
+  private injectTenantScopedField(objectDef: SmartObjectDefinition): void {
+    const tenantScoped = objectDef.decoratorConfig?.tenantScoped;
+    if (!tenantScoped) {
+      return;
+    }
+
+    const { tenantConfig, tenantOptions } =
+      this.normalizeTenantScopedConfig(tenantScoped);
+    const fieldName = tenantConfig.field;
+    const existingField = objectDef.fields[fieldName];
+    const tenancyMeta = {
+      isTenantIdField: true,
+      ...tenantConfig,
+    };
+
+    if (existingField) {
+      const fieldTypeFailure = this.getTenantScopedFieldTypeFailure(
+        objectDef,
+        fieldName,
+      );
+      if (fieldTypeFailure) {
+        throw new Error(
+          `Tenant-scoped field configuration invalid: ${fieldTypeFailure}`,
+        );
+      }
+
+      existingField._meta = {
+        ...existingField._meta,
+        sqlType: existingField._meta?.sqlType
+          ? String(existingField._meta.sqlType).toUpperCase()
+          : 'TEXT',
+        __tenancy: {
+          ...existingField._meta?.__tenancy,
+          ...tenancyMeta,
+        },
+      };
+      return;
+    }
+
+    objectDef.fields[fieldName] = {
+      type: 'text',
+      // Preserve legacy migration behavior: boolean `tenantScoped: true`
+      // enables required-mode runtime scoping, but does not add a NOT NULL
+      // column to existing tables unless mode is explicitly set.
+      required: tenantOptions.mode === 'required',
+      _meta: {
+        generated: true,
+        source: 'tenantScoped_decorator',
+        sqlType: 'TEXT',
+        __tenancy: tenancyMeta,
+      },
+    };
+
+    console.log(
+      `[manifest-generator] Injected ${fieldName} field for ${objectDef.className} (tenantScoped: ${JSON.stringify(tenantConfig)})`,
+    );
+  }
+
+  assertTenantScopedSchemaContract(manifest: SmartObjectManifest): void {
+    const failures: string[] = [];
+
+    for (const objectDef of Object.values(manifest.objects)) {
+      const tenantScoped = objectDef.decoratorConfig?.tenantScoped;
+      if (!tenantScoped) {
+        continue;
+      }
+
+      const { tenantConfig } = this.normalizeTenantScopedConfig(tenantScoped);
+      const fieldName = tenantConfig.field;
+      const columnName = toSnakeCase(fieldName);
+
+      if (!objectDef.fields[fieldName]) {
+        failures.push(
+          `${objectDef.className}: missing tenant-scoped field "${fieldName}"`,
+        );
+        continue;
+      }
+
+      const fieldTypeFailure = this.getTenantScopedFieldTypeFailure(
+        objectDef,
+        fieldName,
+      );
+      if (fieldTypeFailure) {
+        failures.push(fieldTypeFailure);
+        continue;
+      }
+
+      const schemaOwner = this.getTenantScopedSchemaOwner(objectDef, manifest);
+      const schemaOwnerContext =
+        schemaOwner === objectDef
+          ? ''
+          : ` on STI base "${schemaOwner.className}"`;
+
+      if (!schemaOwner.schema?.columns) {
+        failures.push(
+          `${objectDef.className}: schema has not been generated for tenant-scoped column "${columnName}"${schemaOwnerContext}`,
+        );
+        continue;
+      }
+
+      if (!schemaOwner.schema.columns[columnName]) {
+        failures.push(
+          `${objectDef.className}: schema is missing tenant-scoped column "${columnName}"${schemaOwnerContext}`,
+        );
+      }
+    }
+
+    if (failures.length > 0) {
+      throw new Error(
+        `Tenant-scoped schema contract failed:\n${failures
+          .map((failure) => `  - ${failure}`)
+          .join('\n')}`,
+      );
+    }
+  }
+
+  private getTenantScopedSchemaOwner(
+    objectDef: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+  ): SmartObjectDefinition {
+    if (!this.isSTIChildClass(objectDef, manifest)) {
+      return objectDef;
+    }
+
+    const stiBase = this.findSTIBaseInfo(objectDef, manifest);
+    if (!stiBase) {
+      return objectDef;
+    }
+
+    const localBase = Object.values(manifest.objects).find(
+      (candidate) => candidate.className === stiBase.className,
+    );
+
+    return localBase ?? objectDef;
+  }
+
+  private getTenantScopedFieldTypeFailure(
+    objectDef: SmartObjectDefinition,
+    fieldName: string,
+  ): string | undefined {
+    const field = objectDef.fields[fieldName];
+    if (!field) {
+      return undefined;
+    }
+
+    if (field.type !== 'text' && field.type !== 'foreignKey') {
+      return `${objectDef.className}: tenant-scoped field "${fieldName}" must use type "text" or "foreignKey"; received "${field.type}"`;
+    }
+
+    const sqlType = field._meta?.sqlType;
+    if (sqlType && String(sqlType).toUpperCase() !== 'TEXT') {
+      return `${objectDef.className}: tenant-scoped field "${fieldName}" must use SQL type "TEXT"; received "${sqlType}"`;
+    }
+
+    return undefined;
+  }
+
+  private normalizeTenantScopedConfig(tenantScoped: unknown): {
+    tenantOptions: Record<string, any>;
+    tenantConfig: {
+      mode: string;
+      field: string;
+      autoFilter: boolean;
+      autoPopulate: boolean;
+      allowSuperAdminBypass: boolean;
+    };
+  } {
+    const tenantOptions: Record<string, any> =
+      typeof tenantScoped === 'boolean' ? {} : (tenantScoped as any);
+
+    return {
+      tenantOptions,
+      tenantConfig: {
+        mode: tenantOptions.mode ?? 'required',
+        field: tenantOptions.field ?? 'tenantId',
+        autoFilter: tenantOptions.autoFilter ?? true,
+        autoPopulate: tenantOptions.autoPopulate ?? true,
+        allowSuperAdminBypass: tenantOptions.allowSuperAdminBypass ?? false,
+      },
+    };
   }
 
   /**

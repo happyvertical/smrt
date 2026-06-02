@@ -36,7 +36,9 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
 @smrt({
   tableName: '_smrt_jobs',
   api: { include: ['list', 'get'] },
-  cli: { include: ['list', 'get', 'retry', 'cancel'] },
+  // retry/cancel are operator commands invoked in-process via the CLI;
+  // they intentionally aren't exposed over HTTP.
+  cli: { include: ['list', 'get', 'retry', 'cancel'], skipApiCheck: true },
   mcp: { include: ['list', 'get'] },
 })
 export class SmrtJob extends SmrtObject {

@@ -12,11 +12,26 @@ import type { SmartObjectManifest } from '../scanner/types';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
 import type { ScannerModule } from '../utils/scanner-module.js';
 import { importBuildAwareModule } from './import-build-aware.js';
-import { generateSvelteKitRoutes } from './sveltekit-generator.js';
+import {
+  findCliApiCoherenceViolations,
+  generateSvelteKitRoutes,
+  methodNameToKebab,
+  resolveApiActionSet,
+  validateCliIncludeAgainstApi,
+} from './sveltekit-generator.js';
 
-export type { SvelteKitOptions } from './sveltekit-generator.js';
+export type {
+  CliApiCoherenceViolation,
+  SvelteKitOptions,
+} from './sveltekit-generator.js';
 // Re-export SvelteKit route generator for CLI usage
-export { generateSvelteKitRoutes } from './sveltekit-generator.js';
+export {
+  findCliApiCoherenceViolations,
+  generateSvelteKitRoutes,
+  methodNameToKebab,
+  resolveApiActionSet,
+  validateCliIncludeAgainstApi,
+} from './sveltekit-generator.js';
 
 export interface SmrtPluginOptions {
   /** Glob patterns for SMRT source files */
@@ -59,7 +74,19 @@ export interface SmrtPluginOptions {
     configPath?: string;
     /** Configuration file name (default: 'smrt.ts') */
     configFileName?: string;
+    /**
+     * Apply kebab-case to custom-method URL segments (e.g. `discoverFromUrl`
+     * becomes `/discover-from-url`). Opt-in for one minor; default flips in
+     * the next major. An explicit `api.routes[name].path` always wins.
+     */
+    kebabRoutes?: boolean;
   };
+  /**
+   * Validate that every method in `cli.include` is exposed via the API
+   * (so HTTP-based CLI consumers can actually reach them). Default: true.
+   * Per-class opt-out via `cli: { skipApiCheck: true }`.
+   */
+  validateCliApiCoherence?: boolean;
 }
 
 const VIRTUAL_MODULES = {
@@ -101,7 +128,34 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       configPath: 'src/lib/server',
       configFileName: 'smrt.ts',
     },
+    validateCliApiCoherence = true,
   } = options;
+
+  /**
+   * Dev-watcher variant of the cli↔api coherence lint: warn instead of throw,
+   * so an in-flight decorator edit doesn't kill the dev server. Uses the same
+   * remediation text as the strict build-time gate (`validateCliIncludeAgainstApi`)
+   * so the dev-server message is as actionable as the build failure.
+   */
+  function warnCliApiCoherenceViolations(m: SmartObjectManifest): void {
+    if (!validateCliApiCoherence) return;
+    const violations = findCliApiCoherenceViolations(m);
+    if (violations.length === 0) return;
+    for (const { className, unreachable } of violations) {
+      for (const action of unreachable) {
+        console.warn(
+          `[smrt] ${className}.${action} is declared in cli.include but is not ` +
+            `exposed via the api. Build will fail until this is resolved.\n` +
+            `  Either:\n` +
+            `    - Add '${action}' to api.include, or\n` +
+            `    - Remove '${action}' from cli.include.\n` +
+            `  The CLI invokes methods over HTTP; methods without API routes are unreachable.\n` +
+            `  If this CLI is intentionally invoked in-process (no HTTP), set\n` +
+            `  \`cli: { skipApiCheck: true }\` on the @smrt() decorator to acknowledge.`,
+        );
+      }
+    }
+  }
 
   let server: ViteDevServer | undefined;
   let manifest: SmartObjectManifest | null = null;
@@ -244,6 +298,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         await writeLocalManifest(manifest, projectRoot);
         validateLibraryMinifySetup(manifest, 'configResolved');
         validateConsumerPluginSetup(manifest, 'configResolved');
+        if (validateCliApiCoherence) {
+          validateCliIncludeAgainstApi(manifest);
+        }
       }
 
       // Generate SvelteKit routes if enabled
@@ -254,6 +311,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           objectsDir: svelteKit.objectsDir || 'src/lib/objects',
           configPath: svelteKit.configPath || 'src/lib/server',
           configFileName: svelteKit.configFileName || 'smrt.ts',
+          kebabRoutes: svelteKit.kebabRoutes ?? false,
         });
       }
     },
@@ -267,6 +325,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         await writeLocalManifest(manifest, projectRoot);
         validateLibraryMinifySetup(manifest, 'buildStart');
         validateConsumerPluginSetup(manifest, 'buildStart');
+        if (validateCliApiCoherence) {
+          validateCliIncludeAgainstApi(manifest);
+        }
       }
     },
 
@@ -325,6 +386,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
             // Write local manifest for CLI discovery (Issue #963)
             if (manifest) {
               await writeLocalManifest(manifest, projectRoot);
+              warnCliApiCoherenceViolations(manifest);
             }
 
             // Generate SvelteKit routes if enabled
@@ -335,6 +397,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                 objectsDir: svelteKit.objectsDir || 'src/lib/objects',
                 configPath: svelteKit.configPath || 'src/lib/server',
                 configFileName: svelteKit.configFileName || 'smrt.ts',
+                kebabRoutes: svelteKit.kebabRoutes ?? false,
               });
             }
 
@@ -356,6 +419,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
             // Write local manifest for CLI discovery (Issue #963)
             if (manifest) {
               await writeLocalManifest(manifest, projectRoot);
+              warnCliApiCoherenceViolations(manifest);
             }
 
             // Generate SvelteKit routes if enabled
@@ -366,6 +430,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                 objectsDir: svelteKit.objectsDir || 'src/lib/objects',
                 configPath: svelteKit.configPath || 'src/lib/server',
                 configFileName: svelteKit.configFileName || 'smrt.ts',
+                kebabRoutes: svelteKit.kebabRoutes ?? false,
               });
             }
           }
@@ -379,6 +444,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
             // Write local manifest for CLI discovery (Issue #963)
             if (manifest) {
               await writeLocalManifest(manifest, projectRoot);
+              warnCliApiCoherenceViolations(manifest);
             }
 
             // Generate SvelteKit routes if enabled
@@ -389,6 +455,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                 objectsDir: svelteKit.objectsDir || 'src/lib/objects',
                 configPath: svelteKit.configPath || 'src/lib/server',
                 configFileName: svelteKit.configFileName || 'smrt.ts',
+                kebabRoutes: svelteKit.kebabRoutes ?? false,
               });
             }
           }
@@ -425,7 +492,9 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
         case 'smrt:client':
           // Client module available in both modes
-          return generateClientModule(manifest);
+          return generateClientModule(manifest, {
+            kebabRoutes: svelteKit.kebabRoutes ?? false,
+          });
 
         case 'smrt:mcp':
           // MCP module available in all modes
@@ -495,8 +564,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
 
       try {
-        const { existsSync, writeFileSync, mkdirSync, readFileSync } =
-          await import('node:fs');
+        const { writeFileSync, mkdirSync } = await import('node:fs');
         const { resolve, dirname } = await import('node:path');
 
         // Determine output directory
@@ -516,39 +584,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         console.log(
           `[smrt] Wrote manifest with ${objectCount} objects to ${manifestPath}`,
         );
-
-        // Generate test-manifest-stub.ts if src/manifest/ directory exists
-        const manifestDir = resolve(projectRoot, 'src/manifest');
-        if (existsSync(manifestDir)) {
-          const pkgJsonPath = resolve(projectRoot, 'package.json');
-          let isCore = false;
-          try {
-            const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
-            isCore = pkgJson.name === '@happyvertical/smrt-core';
-          } catch {
-            // ignore
-          }
-
-          const importPath = isCore
-            ? '../scanner/types'
-            : '@happyvertical/smrt-core/scanner';
-
-          const stub = `/**
- * Auto-generated test manifest stub
- * DO NOT EDIT - Generated by smrtPlugin closeBundle hook
- */
-
-import type { SmartObjectManifest } from '${importPath}';
-
-export const testManifest: SmartObjectManifest = ${JSON.stringify(manifest, null, 2)} as const;
-
-export default testManifest;
-`;
-
-          const stubPath = resolve(manifestDir, 'test-manifest-stub.ts');
-          writeFileSync(stubPath, stub);
-          console.log(`[smrt] Generated test-manifest-stub.ts`);
-        }
       } catch (error) {
         console.error('[smrt] Error writing manifest file:', error);
       }
@@ -703,12 +738,14 @@ export default testManifest;
         dist: '../scanner.js',
       });
       const manifestGen = new ManifestGenerator();
-      // IMPORTANT: Must merge inherited fields BEFORE generating schemas
-      // This ensures STI subclasses inherit tableName from their base class
+      // IMPORTANT: Materialize tenantScoped fields and merge inherited fields
+      // BEFORE generating schemas so migration manifests contain every column.
+      manifestGen.injectTenantScopedFields(newManifest);
       manifestGen.mergeInheritedFields(newManifest);
       manifestGen.generateValidationRules(newManifest);
       manifestGen.generateSchemas(newManifest);
-      // Fifth pass: Generate agent manifests for Agent subclasses
+      manifestGen.assertTenantScopedSchemaContract(newManifest);
+      // Final pass: Generate agent manifests for Agent subclasses
       // Derives permissions, features, menuItems, and components from code
       manifestGen.generateAgentManifests(newManifest, packageName, packageJson);
 
@@ -848,19 +885,54 @@ function uniqueApiClientEntries(
   });
 }
 
-function generateClientModule(manifest: SmartObjectManifest): string {
+function generateClientModule(
+  manifest: SmartObjectManifest,
+  options: { kebabRoutes?: boolean } = {},
+): string {
   const objects = uniqueApiClientEntries(Object.entries(manifest.objects));
 
   const clientMethods = objects
     .map(({ obj, clientKey }) => {
       const { collection, methods = {} } = obj;
-      const customMethods = Object.entries(methods);
 
-      // Generate custom method implementations
-      // Custom methods are instance methods: POST /{collection}/{id}/{methodName}
+      // Honor api include/exclude + scope/static skip rules for custom methods,
+      // so the client only emits proxies for methods that actually have routes
+      // emitted by the server. (Custom only — CRUD is left unconditional to
+      // preserve the existing client-type contract.)
+      const exposedActions = resolveApiActionSet(obj);
+      const apiConfig = obj.decoratorConfig?.api;
+      const apiRoutes: Record<string, { path?: string }> =
+        apiConfig && typeof apiConfig === 'object'
+          ? ((apiConfig as { routes?: Record<string, { path?: string }> })
+              .routes ?? {})
+          : {};
+
+      const customMethods = Object.entries(methods).filter(
+        ([name, method]) => method.isPublic && exposedActions.has(name),
+      );
+
+      // Resolve the URL segment for each custom method using the same priority
+      // the server does in normalizeCustomRoutePath: explicit api.routes[name].path
+      // override wins; else kebab-case when kebabRoutes is enabled; else source casing.
+      const segmentFor = (methodName: string): string => {
+        const overridePath = apiRoutes[methodName]?.path;
+        if (overridePath) {
+          const trimmed = overridePath
+            .split('/')
+            .map((s) => s.trim())
+            .filter(Boolean)
+            .join('/');
+          if (trimmed.length > 0) return trimmed;
+        }
+        return options.kebabRoutes ? methodNameToKebab(methodName) : methodName;
+      };
+
+      // Generate custom method implementations.
+      // Custom methods are instance methods: POST /{collection}/{id}/{urlSegment}.
       const customMethodImpls = customMethods
         .map(([methodName, _method]) => {
-          return `    ${methodName}: (id, options) => fetch(basePath + '/${collection}/' + id + '/${methodName}', {
+          const urlSegment = segmentFor(methodName);
+          return `    ${methodName}: (id, options) => fetch(basePath + '/${collection}/' + id + '/${urlSegment}', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
@@ -1159,14 +1231,21 @@ ${fields}
       .join('\n\n');
 
     // Generate API client interface for each object
-    // Always use plural collection names (standard REST convention)
+    // Always use plural collection names (standard REST convention).
+    // Filter custom methods through resolveApiActionSet so the declared
+    // type surface matches what generateClientModule actually emits at
+    // runtime — otherwise consumers see methods in autocomplete that are
+    // undefined at runtime.
     const apiClientInterface = uniqueApiClientEntries(
       Object.entries(manifest.objects),
     )
       .map(({ obj, clientKey }) => {
         const { className, methods = {} } = obj;
         const interfaceName = `${className}Data`;
-        const customMethods = Object.entries(methods);
+        const exposedActions = resolveApiActionSet(obj);
+        const customMethods = Object.entries(methods).filter(
+          ([name, method]) => method.isPublic && exposedActions.has(name),
+        );
 
         // Generate custom method signatures
         // Custom methods are instance methods requiring id as first parameter

@@ -18,6 +18,7 @@ export interface DiscoveredManifest {
   packageName?: string;
   packageVersion?: string;
   objectCount: number;
+  objectNames?: string[];
 }
 
 /**
@@ -102,12 +103,12 @@ async function findProjectManifests(
   const discovered: DiscoveredManifest[] = [];
   const candidates = [
     'dist/manifest.json',
+    '.smrt/manifest.json',
+    'src/manifest/manifest.json',
     'dist/static-manifest.js',
     'static-manifest.js',
     'manifest.json',
     'src/manifest/static-manifest.js',
-    'src/manifest/manifest.json',
-    '.smrt/manifest.json',
   ];
 
   for (const candidate of candidates) {
@@ -115,10 +116,14 @@ async function findProjectManifests(
     try {
       const manifest = await loadManifestFile(manifestPath);
       if (manifest?.objects) {
+        const objectNames = Object.keys(manifest.objects);
         discovered.push({
           path: manifestPath,
           source: 'project',
-          objectCount: Object.keys(manifest.objects).length,
+          packageName: manifest.packageName,
+          packageVersion: manifest.version,
+          objectCount: objectNames.length,
+          objectNames,
         });
         break; // Use first found manifest
       }
@@ -208,6 +213,7 @@ async function findPackageManifests(
             try {
               const manifest = await loadManifestFile(manifestPath);
               if (manifest?.objects) {
+                const objectNames = Object.keys(manifest.objects);
                 // Mark this package as seen AFTER we successfully load a manifest
                 seenPackages.add(packageKey);
                 discovered.push({
@@ -215,7 +221,8 @@ async function findPackageManifests(
                   source: 'package',
                   packageName: pkg.name,
                   packageVersion: pkg.version,
-                  objectCount: Object.keys(manifest.objects).length,
+                  objectCount: objectNames.length,
+                  objectNames,
                 });
                 break; // Use first found manifest for this package
               }

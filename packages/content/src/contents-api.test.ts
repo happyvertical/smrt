@@ -24,10 +24,34 @@ CREATE TABLE IF NOT EXISTS content_references (
   updated_at DATETIME NOT NULL,
   tenant_id TEXT,
   source_id TEXT,
-  target_id TEXT
+  target_id TEXT,
+  target_version INTEGER
 );
 CREATE INDEX IF NOT EXISTS content_references_id_idx ON content_references (id);
 CREATE UNIQUE INDEX IF NOT EXISTS content_references_source_id_target_id_idx ON content_references (source_id, target_id);
+`;
+
+const CONTENT_VERSIONS_SCHEMA = `
+CREATE TABLE IF NOT EXISTS content_versions (
+  id TEXT PRIMARY KEY NOT NULL,
+  slug TEXT NOT NULL,
+  context TEXT NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL,
+  content_id TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  kind TEXT DEFAULT 'manual',
+  title TEXT,
+  description TEXT,
+  body TEXT,
+  status TEXT,
+  summary TEXT,
+  snapshot TEXT,
+  metadata TEXT,
+  tenant_id TEXT
+);
+CREATE INDEX IF NOT EXISTS content_versions_id_idx ON content_versions (id);
+CREATE UNIQUE INDEX IF NOT EXISTS content_versions_content_id_version_idx ON content_versions (content_id, version);
 `;
 
 vi.mock('$lib/server/smrt', () => {
@@ -81,6 +105,7 @@ describe('Content API Endpoints', () => {
       db,
     });
     await syncSchema({ db, schema: CONTENT_REFERENCES_SCHEMA });
+    await syncSchema({ db, schema: CONTENT_VERSIONS_SCHEMA });
 
     mockLocals = {
       tenantId: 'test-tenant',

@@ -185,6 +185,49 @@ const versions = await article.listVersions();
 await versions.restoreIntoContent(versionId);
 ```
 
+### References & Drift Detection
+
+References are `(source_id, target_id)` edges between Content rows. They can
+optionally pin a `targetVersion` captured at citation time. When the target
+is later re-synced (a new `ContentVersion` is created), callers can detect
+drift between what was cited and what the target now says.
+
+```typescript
+// Pin to the target's current version when citing
+const latest = await citedArticle.listVersions();
+const currentVersion = latest[latest.length - 1]?.version ?? null;
+await article.addReference(citedArticle, { targetVersion: currentVersion });
+
+// Or leave it unpinned — no version is recorded and `isDrifted` will
+// always be false for this edge regardless of how the target evolves.
+await article.addReference(otherArticle);
+
+// Detect drift across all references
+const drift = await article.getReferenceDrift();
+// → [{ targetId, citedVersion, currentVersion, isDrifted }, ...]
+// `isDrifted` is true only when both versions are present and differ.
+
+// Re-link with a new pin to acknowledge drift (idempotent on source+target,
+// mutable on the version column).
+await article.addReference(citedArticle, { targetVersion: 2 });
+```
+
+`serializeContent` includes per-reference `citedVersion`, `currentVersion`,
+and `isDrifted` fields so SvelteKit `load` functions can pass them through
+to consumers without an extra round-trip. The fields surface in the
+serialized payload; rendering them (e.g. a drift badge in
+`ContentReferencesPanel`) is left to the consumer.
+
+`getReferenceDrift` compares against the target's latest `ContentVersion`
+of **any kind** (manual or publication), so a manual snapshot of the target
+will trigger `isDrifted: true`. Consumers that only care about published
+drift can filter further using `ContentVersion.kind`.
+
+Typical use: cite an ingested external snapshot (web page, upstream feed,
+asset library entry) as a Content row. Re-sync the source on a schedule, bump
+the version, and any article that cites the prior version surfaces a drift
+signal in the editor.
+
 ### Published Transparency
 
 ```typescript
@@ -457,7 +500,7 @@ thumbnail selection, and save payload behavior as the package editors.
 | `ContentDocument` | STI subclass for structured documents |
 | `Mirror` | STI subclass for mirrored/cached external content |
 | `Contents` | Collection with `mirror()`, `syncContentDir()`, `generateMissingThumbnails()`, `findWithGlobals()`, `getOrUpsert()`, `browseFacts()`, `getGovernanceDefinitionsAction()`, `resolveGovernanceAction()` |
-| `ContentReference` | Junction model for content-to-content links |
+| `ContentReference` | Junction model for content-to-content links; nullable `targetVersion` pins citation-time `ContentVersion.version` for drift detection |
 | `ContentReview` | AI review result tied to a governance policy |
 | `ContentCorrection` | Post-publication correction record |
 | `ContentVersion` | Content snapshot with kind (`'publication'`, `'manual'`) and transparency metadata |
@@ -497,8 +540,9 @@ thumbnail selection, and save payload behavior as the package editors.
 | `removeAsset(assetId, relationship?)` | Remove asset association |
 | `setThumbnail(image)` | Set thumbnail (adds asset + updates `thumbnailAssetId`) |
 | `generateThumbnail(options)` | Generate a thumbnail |
-| `addReference(content)` | Link to another content |
+| `addReference(content, options?)` | Link to another content; pass `{ targetVersion }` to pin the citation to a specific `ContentVersion.version` |
 | `getReferences()` | Get content references |
+| `getReferenceDrift()` | Per-edge `{ citedVersion, currentVersion, isDrifted }` — surfaces references whose pinned version differs from the target's latest |
 
 ### Types
 

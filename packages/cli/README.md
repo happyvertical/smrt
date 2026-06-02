@@ -26,9 +26,13 @@ pnpm add -D @happyvertical/smrt-cli
 |---------|------------|
 | `smrt db:status` | Show pending schema changes and classify failed migration history |
 | `smrt db:migrate` | Apply pending migrations |
-| `smrt db:diff --generate` | Generate migration from schema changes |
+| `smrt db:diff` | Show schema differences without generating migration files |
 | `smrt db:rollback` | Rollback last migration |
 | `smrt db:history` | Show migration history with active-vs-superseded failure classification |
+
+File-backed SQL/TypeScript migration generation is not supported. SMRT schema
+migrations are manifest-driven; model schema with SMRT objects and apply changes
+with `smrt db:migrate`.
 
 ### Code Generation
 

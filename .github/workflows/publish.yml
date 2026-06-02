@@ -422,10 +422,10 @@ jobs:
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install docs dependencies
-        run: npm ci --prefix docs
+        run: pnpm --dir docs install --frozen-lockfile --ignore-workspace
 
       - name: Build documentation site
-        run: npm run --prefix docs build
+        run: pnpm --dir docs build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4

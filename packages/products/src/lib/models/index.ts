@@ -13,7 +13,17 @@
 // subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
 import '../../__smrt-register__.js';
 
+export type { CategoryOptions } from './Category';
 export { Category } from './Category';
+export type { MaterialOptions } from './Material';
+export { Material } from './Material';
+export type { ProductOptions } from './Product';
 export { Product } from './Product';
 export type { ProductAssetOptions } from './ProductAsset';
 export { ProductAsset } from './ProductAsset';
+export type { ProductVariantOptions } from './ProductVariant';
+export { ProductVariant } from './ProductVariant';
+export type { SkuOptions } from './Sku';
+export { Sku } from './Sku';
+export type { MaterialKind } from './types';
+export { ProductType } from './types';
