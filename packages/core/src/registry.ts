@@ -175,6 +175,60 @@ async function discoverInstalledSmrtPackages(): Promise<string[]> {
 }
 
 /**
+ * Recover a package's `manifest.json` when the path derived from the
+ * `__smrt-register__` shim's `import.meta.url` does not exist.
+ *
+ * The shim resolves the manifest with `new URL('./manifest.json',
+ * import.meta.url)`, which assumes the compiled side-effect sits directly
+ * next to `dist/manifest.json`. Vite chunk-splitting is non-deterministic and
+ * occasionally hoists that side-effect into a `dist/chunks/<hash>.js` chunk,
+ * so the URL resolves to a non-existent `dist/chunks/manifest.json`. This
+ * walks up a bounded number of parent directories looking for a sibling
+ * `manifest.json`, keeping self-registration working regardless of where the
+ * bundler placed the shim (#1331).
+ *
+ * @param builtins - Node fs/path/url modules from `getNodeBuiltins()`.
+ * @param missingPath - The non-existent manifest path the shim derived.
+ * @returns The recovered manifest path, or `null` if none was found.
+ */
+function resolveManifestByUpwardSearch(
+  builtins: NonNullable<ReturnType<typeof getNodeBuiltins>>,
+  missingPath: string,
+): string | null {
+  const { fs, path } = builtins;
+  const fileName = path.basename(missingPath);
+  // Bound the walk so a stray, deeply-nested path can never trigger a slow or
+  // unbounded filesystem crawl. Chunks are normally one directory deep
+  // (`dist/chunks/`), so a handful of levels is comfortably sufficient. The
+  // package-root stop below is the authoritative guard; this is just a backstop.
+  const MAX_LEVELS = 4;
+  let dir = path.dirname(missingPath);
+  for (let level = 0; level < MAX_LEVELS; level++) {
+    const parent = path.dirname(dir);
+    // Reached the filesystem root — `dirname` is now idempotent.
+    if (parent === dir) {
+      break;
+    }
+    const candidate = path.join(parent, fileName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+    // Never search above the package root. The real manifest is always at
+    // `<pkg>/dist/manifest.json`; once we have checked the directory that holds
+    // `package.json` (the package root), stop. Otherwise a chunk whose
+    // `dist/manifest.json` is genuinely absent could match an unrelated
+    // `manifest.json` from a parent package, the monorepo root, or a
+    // `node_modules` ancestor — registering the WRONG package's schema, which
+    // is worse than a clean no-op.
+    if (fs.existsSync(path.join(parent, 'package.json'))) {
+      break;
+    }
+    dir = parent;
+  }
+  return null;
+}
+
+/**
  * Central registry for all SMRT objects
  *
  * Uses globalThis for cross-module state sharing, ensuring all module instances
@@ -1072,14 +1126,30 @@ export class ObjectRegistry {
         filePath = urlString;
       }
 
+      // The `__smrt-register__` shim resolves the manifest via
+      // `new URL('./manifest.json', import.meta.url)`, which assumes the
+      // compiled side-effect sits directly next to `dist/manifest.json`.
+      // Vite chunk-splitting is non-deterministic and sometimes hoists that
+      // side-effect into a `dist/chunks/<hash>.js` chunk (observed for
+      // smrt-users / smrt-profiles), so the shim's URL resolves to a
+      // non-existent `dist/chunks/manifest.json` and self-registration
+      // silently no-ops — dropping every plain (undecorated) field from the
+      // package's models in consumer runtimes (#1331). When the direct path
+      // is missing, walk up a bounded number of parent directories to locate
+      // the real `manifest.json`. This keeps resolution deterministic
+      // regardless of where the bundler places the shim.
       if (!builtins.fs.existsSync(filePath)) {
-        recordRegistryDiagnostic(
-          'warn',
-          'PACKAGE_MANIFEST_NOT_FOUND',
-          `Package manifest not found at ${filePath}. Self-registration is a no-op; the vitest plugin may still populate this manifest via its own path.`,
-          { manifestUrl: String(manifestUrl), filePath },
-        );
-        return { loaded: false, objectsRegistered: 0 };
+        const recovered = resolveManifestByUpwardSearch(builtins, filePath);
+        if (!recovered) {
+          recordRegistryDiagnostic(
+            'warn',
+            'PACKAGE_MANIFEST_NOT_FOUND',
+            `Package manifest not found at ${filePath}. Self-registration is a no-op; the vitest plugin may still populate this manifest via its own path.`,
+            { manifestUrl: String(manifestUrl), filePath },
+          );
+          return { loaded: false, objectsRegistered: 0 };
+        }
+        filePath = recovered;
       }
 
       const parsed = JSON.parse(
