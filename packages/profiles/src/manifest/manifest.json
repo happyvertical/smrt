@@ -3504,12 +3504,18 @@
         "relationshipsFrom": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "fromProfileId"
+          }
         },
         "relationshipsTo": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "toProfileId"
+          }
         }
       },
       "methods": {
@@ -8263,12 +8269,18 @@
         "relationshipsFrom": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "fromProfileId"
+          }
         },
         "relationshipsTo": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "toProfileId"
+          }
         }
       },
       "methods": {
@@ -9238,12 +9250,18 @@
         "relationshipsFrom": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "fromProfileId"
+          }
         },
         "relationshipsTo": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "toProfileId"
+          }
         }
       },
       "methods": {
@@ -10213,12 +10231,18 @@
         "relationshipsFrom": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "fromProfileId"
+          }
         },
         "relationshipsTo": {
           "type": "oneToMany",
           "required": false,
-          "related": "ProfileRelationship"
+          "related": "ProfileRelationship",
+          "_meta": {
+            "foreignKey": "toProfileId"
+          }
         }
       },
       "methods": {
