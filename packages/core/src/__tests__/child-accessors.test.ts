@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   childAccessorName,
   foreignKey,
+  ObjectRegistry,
   oneToMany,
   SmrtObject,
   smrt,
@@ -133,6 +134,32 @@ class R10StiChild extends SmrtObject {
     super(options);
     if (options.baseId) this.baseId = options.baseId;
     if (options.title) this.title = options.title;
+  }
+}
+
+// --- Invalid explicit { foreignKey } must fail in both loaders -------------
+
+@smrt()
+class R10BadFkChild extends SmrtObject {
+  @foreignKey('R10BadFkParent')
+  parentId: string = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.parentId) this.parentId = options.parentId;
+  }
+}
+
+@smrt()
+class R10BadFkParent extends SmrtObject {
+  name: string = '';
+
+  @oneToMany('R10BadFkChild', { foreignKey: 'doesNotExist' })
+  kids: any[] = [];
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name) this.name = options.name;
   }
 }
 
@@ -260,5 +287,28 @@ describe('R10: generated @oneToMany child accessors', () => {
 
     expect(asLeft.map((e) => e.label)).toEqual(['L']);
     expect(asRight.map((e) => e.label)).toEqual(['R']);
+  });
+
+  it('fails the same way in both loaders for an invalid explicit foreignKey', async () => {
+    const parent = new R10BadFkParent({ name: 'Bad', db });
+    await parent.initialize();
+    await parent.save();
+    // A child row so the table exists and eager loading has something to scan.
+    const child = new R10BadFkChild({ parentId: parent.id, db });
+    await child.initialize();
+    await child.save();
+
+    // Lazy path (generated accessor → loadRelatedMany).
+    await expect((parent as any).getKids()).rejects.toThrow(
+      /foreignKey 'doesNotExist'/,
+    );
+
+    // Eager path (include: ['kids'] → batchLoadOneToMany) must fail the same way.
+    const collection = await ObjectRegistry.getCollection('R10BadFkParent', {
+      db,
+    });
+    await expect(collection.list({ include: ['kids'] })).rejects.toThrow(
+      /foreignKey 'doesNotExist'/,
+    );
   });
 });

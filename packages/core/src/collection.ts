@@ -1187,10 +1187,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
       : undefined;
     if (explicitForeignKey && !matchedForeignKey) {
-      console.warn(
-        `oneToMany ${fieldName}: foreignKey '${explicitForeignKey}' not found on ${relationship.targetClass}; skipping eager load`,
+      // A misspelled / stale `foreignKey` is a configuration error, not a
+      // recoverable data condition — fail loudly here too so eager (`include:`)
+      // loading behaves identically to lazy loadRelatedMany rather than
+      // silently producing empty arrays.
+      throw new Error(
+        `oneToMany ${fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
       );
-      return;
     }
     const inverseForeignKey = matchedForeignKey ?? inverseCandidates[0];
 
