@@ -42,6 +42,7 @@
  * ```
  */
 
+import type { SmrtCollection } from './collection';
 import { field } from './decorators/index';
 import { SmrtObject, type SmrtObjectOptions } from './object';
 import { ObjectRegistry } from './registry';
@@ -110,24 +111,44 @@ export class SmrtPolymorphicAssociation extends SmrtObject {
    * the target's collection. Going through the collection means STI targets
    * are rehydrated as their concrete subclass and a missing row yields `null`.
    *
-   * Returns `null` when `metaType`/`metaId` are unset, the type isn't
-   * registered, or the target row no longer exists. The target shares this
-   * association's database connection via `this.options`.
+   * When the type isn't registered yet, the raw `metaType` is handed to
+   * `ObjectRegistry.getCollection`, which lazily loads an installed-but-
+   * unimported target package before resolving — so a qualified `metaType`
+   * still hydrates even if nothing has imported the target class.
+   *
+   * Returns `null` when `metaType`/`metaId` are unset, the type can't be
+   * resolved to a registered/loadable class, or the target row no longer
+   * exists. The target shares this association's database connection via
+   * `this.options`.
+   *
+   * Prefer qualified `metaType` values (`@pkg:Class`): a bare simple name is
+   * resolved best-effort and is ambiguous when two packages share a class
+   * name.
    *
    * @typeParam T - Expected target type for the caller's convenience cast.
    */
   async hydrate<T extends SmrtObject = SmrtObject>(): Promise<T | null> {
     if (!this.metaType || !this.metaId) return null;
 
+    // Prefer the qualified-name lookup; fall back to a simple-name lookup for
+    // legacy/unqualified values. When neither resolves, hand the raw metaType
+    // to getCollection so its lazy external-package load can still find it.
     const registered =
       ObjectRegistry.getClassByQualifiedName(this.metaType) ??
       ObjectRegistry.getClass(this.metaType);
-    if (!registered) return null;
+    const lookup =
+      registered?.qualifiedName ?? registered?.name ?? this.metaType;
 
-    const collection = await ObjectRegistry.getCollection<SmrtObject>(
-      registered.qualifiedName ?? registered.name,
-      this.options,
-    );
+    let collection: SmrtCollection<SmrtObject>;
+    try {
+      collection = await ObjectRegistry.getCollection<SmrtObject>(
+        lookup,
+        this.options,
+      );
+    } catch {
+      // metaType doesn't resolve to a registered or loadable class.
+      return null;
+    }
 
     const target = await collection.get({ id: this.metaId });
     return target as T | null;

@@ -53,6 +53,32 @@ class PolyLinkCollection extends SmrtCollection<PolyLink> {
   static readonly _itemClass = PolyLink;
 }
 
+// STI hierarchy used to verify hydrate() rehydrates the concrete subclass.
+@smrt({ tableName: 'poly_assoc_test_docs', tableStrategy: 'sti' })
+class PolyDoc extends SmrtObject {
+  title = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.title !== undefined) this.title = options.title;
+  }
+}
+
+@smrt()
+class PolyArticle extends PolyDoc {
+  byline = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.byline !== undefined) this.byline = options.byline;
+  }
+}
+
+@smrt()
+class PolyDocCollection extends SmrtCollection<PolyDoc> {
+  static readonly _itemClass = PolyDoc;
+}
+
 function tmpDbUrl(name: string): string {
   return `file:${join(
     tmpdir(),
@@ -67,17 +93,22 @@ describe('SmrtPolymorphicAssociation', () => {
   let dbUrl: string;
   let targets: PolyTargetCollection;
   let links: PolyLinkCollection;
+  let dbOptions: { db: { type: 'sqlite'; url: string } };
   /** Canonical metaType for PolyTarget (qualified name when available). */
   let targetMetaType: string;
+  /** Canonical metaType for the STI child PolyArticle. */
+  let articleMetaType: string;
 
   beforeEach(async () => {
     dbUrl = tmpDbUrl('basic');
     dbPath = dbUrl.replace('file:', '');
-    const dbOptions = { db: { type: 'sqlite' as const, url: dbUrl } };
+    dbOptions = { db: { type: 'sqlite' as const, url: dbUrl } };
     targets = await PolyTargetCollection.create(dbOptions);
     links = await PolyLinkCollection.create(dbOptions);
     targetMetaType =
       ObjectRegistry.getClass('PolyTarget')?.qualifiedName ?? 'PolyTarget';
+    articleMetaType =
+      ObjectRegistry.getClass('PolyArticle')?.qualifiedName ?? 'PolyArticle';
   });
 
   afterEach(() => {
@@ -157,6 +188,29 @@ describe('SmrtPolymorphicAssociation', () => {
       expect(hydrated).toBeInstanceOf(PolyTarget);
       expect(hydrated?.id).toBe(target.id);
       expect(hydrated?.name).toBe('resolved-target');
+    });
+
+    it('rehydrates an STI target as its concrete subclass', async () => {
+      const article = new PolyArticle({
+        ...dbOptions,
+        title: 'STI Title',
+        byline: 'by line',
+      });
+      await article.initialize();
+      await article.save();
+
+      const link = await links.create({
+        ownerId: 'owner-sti',
+        metaType: articleMetaType,
+        metaId: article.id,
+        role: 'hero',
+      });
+      await link.save();
+
+      const hydrated = await link.hydrate<PolyArticle>();
+      expect(hydrated).toBeInstanceOf(PolyArticle);
+      expect(hydrated?.title).toBe('STI Title');
+      expect(hydrated?.byline).toBe('by line');
     });
 
     it('returns null when the target row no longer exists', async () => {
