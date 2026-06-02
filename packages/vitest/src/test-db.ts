@@ -771,7 +771,7 @@ function getObjectPackageName(
   objectDef: ManifestObjectDef,
 ): string | undefined {
   return (
-    objectDef.packageName || manifest.packageName || getPackageNameFromKey(key)
+    objectDef.packageName || getPackageNameFromKey(key) || manifest.packageName
   );
 }
 
@@ -893,6 +893,15 @@ function resolveManifestCollectionItemClassName(
     return objectDef.extendsTypeArg;
   }
 
+  const inferredItemClassName = inferManifestCollectionItemClassName(
+    manifest,
+    key,
+    objectDef,
+  );
+  if (inferredItemClassName) {
+    return inferredItemClassName;
+  }
+
   for (const ancestor of getManifestCollectionAncestors(
     manifest,
     key,
@@ -900,6 +909,55 @@ function resolveManifestCollectionItemClassName(
   )) {
     if (ancestor.objectDef.extendsTypeArg) {
       return ancestor.objectDef.extendsTypeArg;
+    }
+  }
+
+  return undefined;
+}
+
+function getCollectionItemNameCandidates(className: string): string[] {
+  const candidates: string[] = [];
+
+  const addCandidate = (candidate: string): void => {
+    if (
+      candidate &&
+      candidate !== className &&
+      !candidates.includes(candidate)
+    ) {
+      candidates.push(candidate);
+    }
+  };
+
+  if (className.endsWith('Collection')) {
+    addCandidate(className.slice(0, -'Collection'.length));
+  }
+
+  if (className.endsWith('ies')) {
+    addCandidate(`${className.slice(0, -3)}y`);
+  } else if (className.endsWith('s')) {
+    addCandidate(className.slice(0, -1));
+  }
+
+  return candidates;
+}
+
+function inferManifestCollectionItemClassName(
+  manifest: ManifestFile,
+  key: string,
+  objectDef: ManifestObjectDef,
+): string | undefined {
+  const objectPackageName = getObjectPackageName(manifest, key, objectDef);
+
+  for (const candidate of getCollectionItemNameCandidates(
+    objectDef.className,
+  )) {
+    const candidateEntry = findManifestObject(
+      manifest,
+      candidate,
+      objectPackageName,
+    );
+    if (candidateEntry) {
+      return candidate;
     }
   }
 

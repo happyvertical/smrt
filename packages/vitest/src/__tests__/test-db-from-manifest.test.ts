@@ -417,6 +417,64 @@ describe('createIsolatedTestDbFromManifest', () => {
         await cleanup();
       }
     });
+
+    it('should prefer collection subclass item inference over inherited type args', async () => {
+      const manifestPath = join(
+        testDir,
+        'collection-subclass-item-filter.json',
+      );
+      const manifest = {
+        packageName: '@test/messages',
+        objects: {
+          '@test/messages:AttachmentCollection': {
+            className: 'AttachmentCollection',
+            extends: 'SmrtCollection',
+            extendsTypeArg: 'Attachment',
+            schema: {
+              tableName: 'attachment_collections',
+              ddl: 'CREATE TABLE IF NOT EXISTS "attachment_collections" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+          '@test/messages:EmailAttachmentCollection': {
+            className: 'EmailAttachmentCollection',
+            extends: 'AttachmentCollection',
+            schema: {
+              tableName: 'email_attachment_collections',
+              ddl: 'CREATE TABLE IF NOT EXISTS "email_attachment_collections" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+          '@test/messages:Attachment': {
+            className: 'Attachment',
+            schema: {
+              tableName: 'attachments',
+              ddl: 'CREATE TABLE IF NOT EXISTS "attachments" ("id" TEXT PRIMARY KEY NOT NULL, "message_id" TEXT);',
+            },
+          },
+          '@test/messages:EmailAttachment': {
+            className: 'EmailAttachment',
+            extends: 'Attachment',
+            schema: {
+              tableName: 'email_attachments',
+              ddl: 'CREATE TABLE IF NOT EXISTS "email_attachments" ("id" TEXT PRIMARY KEY NOT NULL);',
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { db, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['EmailAttachmentCollection'],
+      });
+
+      try {
+        await db.list('email_attachments', {});
+        await expect(db.list('attachments', {})).rejects.toThrow();
+      } finally {
+        await cleanup();
+      }
+    });
   });
 
   describe('STI deduplication', () => {

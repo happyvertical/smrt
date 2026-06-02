@@ -421,4 +421,112 @@ describe('getTestDatabase manifest schemas', () => {
     expect(columnNames).toContain('subject');
     expect(columnNames).toContain('message_id');
   });
+
+  it('prefers collection subclass item inference over inherited type args', async () => {
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:AttachmentCollection',
+      {
+        className: 'AttachmentCollection',
+        extends: 'SmrtCollection',
+        extendsTypeArg: 'Attachment',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'attachment_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailAttachmentCollection',
+      {
+        className: 'EmailAttachmentCollection',
+        extends: 'AttachmentCollection',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
+        schema: {
+          tableName: 'email_attachment_collections',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:Attachment',
+      {
+        className: 'Attachment',
+        fields: {
+          messageId: { type: 'text', required: false, default: '' },
+        },
+        methods: {},
+        decoratorConfig: {
+          tableName: 'attachments',
+        },
+        schema: {
+          tableName: 'attachments',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    ObjectRegistry.registerFromManifest(
+      '@test/messages:EmailAttachment',
+      {
+        className: 'EmailAttachment',
+        extends: 'Attachment',
+        fields: {},
+        methods: {},
+        decoratorConfig: {
+          tableName: 'email_attachments',
+        },
+        schema: {
+          tableName: 'email_attachments',
+          ddl: '',
+          columns: {},
+          indexes: [],
+          version: 'test-version',
+        },
+      },
+      '@test/messages',
+    );
+
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['EmailAttachmentCollection'],
+    });
+
+    const emailAttachmentColumnsResult = await db.query(
+      `PRAGMA table_info('email_attachments')`,
+    );
+    const emailAttachmentColumns = Array.isArray(emailAttachmentColumnsResult)
+      ? emailAttachmentColumnsResult
+      : emailAttachmentColumnsResult.rows;
+    const attachmentColumnsResult = await db.query(
+      `PRAGMA table_info('attachments')`,
+    );
+    const attachmentColumns = Array.isArray(attachmentColumnsResult)
+      ? attachmentColumnsResult
+      : attachmentColumnsResult.rows;
+
+    expect(
+      emailAttachmentColumns.map((row: { name: string }) => row.name),
+    ).toContain('id');
+    expect(attachmentColumns).toHaveLength(0);
+  });
 });
