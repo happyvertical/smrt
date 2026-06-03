@@ -3,7 +3,7 @@
  * Provides virtual modules for REST, MCP, and other services
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
@@ -224,7 +224,15 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       manifestPath,
       config: resolvedKnowledge,
     });
-    writeFileSync(outputPath, JSON.stringify(artifact, null, 2), 'utf-8');
+    writeFileSync(
+      outputPath,
+      JSON.stringify(
+        preserveKnowledgeGeneratedAt(outputPath, artifact),
+        null,
+        2,
+      ),
+      'utf-8',
+    );
   }
 
   async function resolveKnowledgeConfig(
@@ -235,8 +243,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     const packageName = m.packageName ?? readPackageName(rootDir);
     const defaults: DomainKnowledgeConfig = {
       enabled: true,
-      cli: true,
-      mcp: true,
       api: {
         enabled: false,
         basePath: '/__smrt/knowledge',
@@ -258,7 +264,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         const config = await loadConfig({ cache: false });
         fileKnowledge = (config.knowledge ?? {}) as DomainKnowledgeConfig;
         packageKnowledge = (
-          packageName ? config.packages?.[packageName]?.knowledge : {}
+          packageName ? (config.packages?.[packageName]?.knowledge ?? {}) : {}
         ) as DomainKnowledgeConfig;
       } finally {
         process.chdir(previousCwd);
@@ -277,18 +283,59 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
   }
 
   function mergeKnowledgeConfig(
-    ...configs: DomainKnowledgeConfig[]
+    ...configs: Array<DomainKnowledgeConfig | undefined | null | false>
   ): DomainKnowledgeConfig {
     const merged: DomainKnowledgeConfig = {};
     for (const next of configs) {
-      const api =
-        merged.api || next.api
-          ? { ...(merged.api ?? {}), ...(next.api ?? {}) }
-          : undefined;
+      if (!next) continue;
+      const hasApi = Boolean(merged.api || next.api);
+      const api = hasApi
+        ? { ...(merged.api ?? {}), ...(next.api ?? {}) }
+        : undefined;
       Object.assign(merged, next);
       if (api) merged.api = api;
     }
     return merged;
+  }
+
+  function preserveKnowledgeGeneratedAt(
+    outputPath: string,
+    nextKnowledge: Record<string, any>,
+  ): Record<string, any> {
+    if (!existsSync(outputPath)) return nextKnowledge;
+
+    try {
+      const current = JSON.parse(readFileSync(outputPath, 'utf8'));
+      if (
+        semanticKnowledgeJson(current) === semanticKnowledgeJson(nextKnowledge)
+      ) {
+        return {
+          ...nextKnowledge,
+          generatedAt: current.generatedAt,
+        };
+      }
+    } catch {
+      // Replace malformed artifacts.
+    }
+
+    return nextKnowledge;
+  }
+
+  function semanticKnowledgeJson(artifact: Record<string, any>): string {
+    const { generatedAt: _generatedAt, ...rest } = artifact ?? {};
+    return JSON.stringify(sortJson(rest));
+  }
+
+  function sortJson(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(sortJson);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(
+        Object.entries(value as Record<string, unknown>)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, entry]) => [key, sortJson(entry)]),
+      );
+    }
+    return value;
   }
 
   function readPackageName(rootDir: string): string | undefined {

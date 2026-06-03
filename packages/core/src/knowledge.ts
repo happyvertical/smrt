@@ -69,11 +69,12 @@ export function buildDomainKnowledgeManifest(
     ...record(packageJson.devDependencies),
     ...record(packageJson.peerDependencies),
   };
-  const objects = Object.values(options.manifest.objects)
-    .filter((object) => object.decoratorConfig?.knowledge !== false)
-    .map((object) => buildKnowledgeObject(object));
+  const manifestObjects = Object.values(options.manifest.objects).filter(
+    (object) => object.decoratorConfig?.knowledge !== false,
+  );
+  const objects = manifestObjects.map((object) => buildKnowledgeObject(object));
   const surfaces = objects.flatMap((object) => object.surfaces);
-  const manifestJson = JSON.stringify(options.manifest, null, 2);
+  const manifestJson = stableJson(normalizeManifestForHash(options.manifest));
 
   return {
     schemaVersion: 1,
@@ -104,7 +105,7 @@ export function buildDomainKnowledgeManifest(
     surfaces,
     prompts:
       options.config?.includePrompts === false ? [] : readPrompts(rootDir),
-    relationshipsV2: summarizeRelationships(objects),
+    relationshipsV2: summarizeRelationships(objects, manifestObjects),
     agentDoc,
   };
 }
@@ -128,6 +129,7 @@ function buildKnowledgeObject(
     .map((field) => ({
       name: field.name,
       type: field.type,
+      required: field.required,
       related: field.related,
       columnType: field.columnType,
     }));
@@ -188,10 +190,9 @@ function configuredOperations(config: unknown): string[] {
     return [];
   }
   const recordConfig = config as { include?: string[]; exclude?: string[] };
-  const base =
-    Array.isArray(recordConfig.include) && recordConfig.include.length > 0
-      ? recordConfig.include
-      : STANDARD_OPERATIONS;
+  const base = Array.isArray(recordConfig.include)
+    ? recordConfig.include
+    : STANDARD_OPERATIONS;
   const excluded = new Set(recordConfig.exclude ?? []);
   return [...new Set(base.filter((operation) => !excluded.has(operation)))];
 }
@@ -264,7 +265,10 @@ function relationshipFeatures(object: SmartObjectDefinition): string[] {
   return [...features].sort();
 }
 
-function summarizeRelationships(objects: DomainKnowledgeObject[]) {
+function summarizeRelationships(
+  objects: DomainKnowledgeObject[],
+  manifestObjects: SmartObjectDefinition[],
+) {
   const fields = objects.flatMap((object) => object.fields);
   return {
     foreignKeyFields: fields.filter((field) => field.type === 'foreignKey')
@@ -281,7 +285,14 @@ function summarizeRelationships(objects: DomainKnowledgeObject[]) {
     polymorphicAssociations: objects.filter((object) =>
       object.relationshipFeatures.includes('SmrtPolymorphicAssociation'),
     ).length,
-    uuidColumns: fields.filter((field) => field.columnType === 'UUID').length,
+    uuidColumns: manifestObjects.reduce(
+      (count, object) =>
+        count +
+        Object.values(object.schema?.columns ?? {}).filter(
+          (column) => column.type === 'UUID',
+        ).length,
+      0,
+    ),
   };
 }
 
@@ -379,5 +390,33 @@ function exportKeys(exportsField: unknown): string[] {
 }
 
 function camelToSnake(value: string): string {
-  return value.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
+}
+
+function normalizeManifestForHash(manifest: SmartObjectManifest): unknown {
+  const normalized = JSON.parse(JSON.stringify(manifest)) as Record<
+    string,
+    unknown
+  >;
+  delete normalized.timestamp;
+  return normalized;
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJson(value), null, 2);
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, sortJson(entry)]),
+    );
+  }
+  return value;
 }

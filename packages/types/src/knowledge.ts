@@ -13,14 +13,21 @@ export interface DomainKnowledgeSurface {
 export interface DomainKnowledgeConfig {
   enabled?: boolean;
   api?: {
+    /**
+     * Generate HTTP knowledge routes. Disabled by default; prefer CLI/MCP for
+     * agent workflows unless this is a guarded dev/admin endpoint.
+     */
     enabled?: boolean;
     basePath?: string;
     includeDocs?: boolean;
     includePrompts?: boolean;
+    /**
+     * Require dev mode or admin locals for HTTP knowledge access. Setting this
+     * to false makes the route public and should only be used when sanitized
+     * anonymous schema/surface metadata is acceptable.
+     */
     requireAdmin?: boolean;
   };
-  cli?: boolean;
-  mcp?: boolean;
   includeDocs?: boolean;
   includePrompts?: boolean;
   tags?: string[];

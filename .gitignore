@@ -20,6 +20,7 @@ dist/
 packages/*/dist/
 smrt/*/dist/
 docs/manual/
+**/smrt-knowledge.json
 
 # Docusaurus
 docs/build/

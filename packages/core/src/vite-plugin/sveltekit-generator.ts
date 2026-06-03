@@ -517,8 +517,30 @@ function generateKnowledgeRoute(
   options: SvelteKitOptions,
 ): void {
   const routeDir = knowledgeRouteDir(projectRoot, options);
-  const route = generateKnowledgeRouteTemplate(options.knowledge ?? {});
+  const route = generateKnowledgeRouteTemplate(
+    options.knowledge ?? {},
+    readKnowledgeRouteArtifact(projectRoot),
+  );
   writeRoute(routeDir, '+server.ts', route);
+}
+
+function readKnowledgeRouteArtifact(
+  projectRoot: string,
+): Record<string, any> | null {
+  for (const relativePath of [
+    '.smrt/smrt-knowledge.json',
+    'dist/smrt-knowledge.json',
+  ]) {
+    const fullPath = join(projectRoot, relativePath);
+    if (!existsSync(fullPath)) continue;
+    try {
+      return JSON.parse(readFileSync(fullPath, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -1698,60 +1720,66 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
 
 function generateKnowledgeRouteTemplate(
   knowledge: DomainKnowledgeConfig,
+  artifact: Record<string, any> | null,
 ): string {
   const api = knowledge.api ?? {};
   const includeDocs = api.includeDocs === true;
   const includePrompts = api.includePrompts === true;
   const requireAdmin = api.requireAdmin !== false;
+  const artifactLiteral = artifact ? JSON.stringify(artifact) : 'null';
 
   return `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { dev } from '$app/environment';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 
-const ARTIFACT_PATHS = [
-  '.smrt/smrt-knowledge.json',
-  'dist/smrt-knowledge.json',
-];
 const INCLUDE_DOCS_BY_DEFAULT = ${JSON.stringify(includeDocs)};
 const INCLUDE_PROMPTS_BY_DEFAULT = ${JSON.stringify(includePrompts)};
 const REQUIRE_ADMIN = ${JSON.stringify(requireAdmin)};
+const KNOWLEDGE_ARTIFACT: Record<string, any> | null = ${artifactLiteral};
 
-export const GET: RequestHandler = async ({ locals, url }) => {
+if (!dev && !REQUIRE_ADMIN) {
+  console.warn('[smrt] PUBLIC knowledge API route enabled; unauthenticated responses are sanitized.');
+}
+
+export const GET: RequestHandler = async ({ locals, url, setHeaders }) => {
+  setHeaders({ 'cache-control': 'private, no-store' });
+
   if (!dev && REQUIRE_ADMIN && !isKnowledgeAdmin(locals as Record<string, any>)) {
     throw error(403, 'SMRT knowledge requires dev mode or admin access');
   }
 
   const artifact = readKnowledgeArtifact();
-  const includeDocs =
-    INCLUDE_DOCS_BY_DEFAULT && url.searchParams.get('includeDocs') === 'true';
-  const includePrompts =
-    INCLUDE_PROMPTS_BY_DEFAULT &&
-    url.searchParams.get('includePrompts') === 'true';
+  const includeDocs = queryBoolean(url, 'includeDocs', INCLUDE_DOCS_BY_DEFAULT);
+  const includePrompts = queryBoolean(
+    url,
+    'includePrompts',
+    INCLUDE_PROMPTS_BY_DEFAULT,
+  );
 
   return json(sanitizeKnowledgeArtifact(artifact, {
     includeDocs,
     includePrompts,
+    publicAccess: !REQUIRE_ADMIN,
   }));
 };
 
 function readKnowledgeArtifact(): Record<string, any> {
-  for (const relativePath of ARTIFACT_PATHS) {
-    const fullPath = resolve(process.cwd(), relativePath);
-    if (!existsSync(fullPath)) continue;
-    return JSON.parse(readFileSync(fullPath, 'utf-8'));
-  }
+  if (!KNOWLEDGE_ARTIFACT) throw error(404, 'SMRT knowledge artifact not found');
+  return KNOWLEDGE_ARTIFACT;
+}
 
-  throw error(404, 'SMRT knowledge artifact not found');
+function queryBoolean(url: URL, name: string, defaultValue: boolean): boolean {
+  const value = url.searchParams.get(name);
+  if (value === null) return defaultValue;
+  return value === 'true';
 }
 
 function sanitizeKnowledgeArtifact(
   artifact: Record<string, any>,
-  options: { includeDocs: boolean; includePrompts: boolean },
+  options: { includeDocs: boolean; includePrompts: boolean; publicAccess: boolean },
 ): Record<string, any> {
   const sanitized = { ...artifact };
 
@@ -1761,6 +1789,13 @@ function sanitizeKnowledgeArtifact(
 
   if (!options.includePrompts) {
     sanitized.prompts = [];
+  }
+
+  if (options.publicAccess) {
+    delete sanitized.dependencies;
+    delete sanitized.sourceHashes;
+    delete sanitized.sourceManifestPath;
+    delete sanitized.agentDocPath;
   }
 
   return sanitized;

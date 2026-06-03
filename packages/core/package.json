@@ -35,6 +35,11 @@
       "import": "./dist/schema/utils.js",
       "default": "./dist/schema/utils.js"
     },
+    "./table-cache": {
+      "types": "./dist/table-cache.d.ts",
+      "import": "./dist/table-cache.js",
+      "default": "./dist/table-cache.js"
+    },
     "./generators": {
       "types": "./dist/generators.d.ts",
       "import": "./dist/generators.js",

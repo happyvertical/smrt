@@ -119,6 +119,38 @@ async function loadSmrtCoreModule(): Promise<any> {
   }
 }
 
+async function loadSmrtTableCacheModule(): Promise<{
+  resetVerifiedTables?: () => void;
+}> {
+  try {
+    const tableCacheSpecifier = '@happyvertical/smrt-core/table-cache';
+    const module = (await import(
+      /* @vite-ignore */ tableCacheSpecifier
+    )) as Record<string, any>;
+    if (typeof module.resetVerifiedTables === 'function') {
+      return module;
+    }
+  } catch {
+    // Fall through to the monorepo source fallback below.
+  }
+
+  try {
+    const fallbackHref = new URL(
+      '../../core/src/table-cache.ts',
+      import.meta.url,
+    ).href;
+    return await importWorkspaceSourceModule(fallbackHref);
+  } catch {
+    // Fall through to the legacy full-core import for older smrt-core versions.
+  }
+
+  try {
+    return await loadSmrtCoreModule();
+  } catch {
+    return {};
+  }
+}
+
 function normalizeSchemaStatement(statement: string): string {
   const trimmed = statement.trim();
   return trimmed.endsWith(';') ? trimmed : `${trimmed};`;
@@ -254,8 +286,8 @@ afterAll(async () => {
   // Reset table existence cache to prevent cross-file contamination (issue #970)
   // Dynamic import to avoid hard dependency on smrt-core from vitest package
   try {
-    const { resetVerifiedTables } = await loadSmrtCoreModule();
-    resetVerifiedTables();
+    const { resetVerifiedTables } = await loadSmrtTableCacheModule();
+    resetVerifiedTables?.();
   } catch {
     // smrt-core may not be available in all test environments
   }

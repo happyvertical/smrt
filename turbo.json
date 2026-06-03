@@ -22,6 +22,7 @@
       "outputs": [
         "src/manifest/static-manifest.ts",
         "src/manifest/static-manifest.json",
+        "src/manifest/smrt-knowledge.json",
         "src/lib/types/smrt-generated/**"
       ],
       "cache": true

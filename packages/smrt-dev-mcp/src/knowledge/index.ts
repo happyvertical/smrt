@@ -1842,7 +1842,7 @@ function hashFile(path: string): string {
 function hashJsonFile(path: string): string {
   const content = readJson(path);
   const hashContent = content
-    ? JSON.stringify(content, null, 2)
+    ? stableJson(normalizeJsonForHash(content))
     : readFileSync(path, 'utf8');
   return createHash('sha256').update(hashContent).digest('hex');
 }
@@ -1854,9 +1854,38 @@ function objectRecord(value: unknown): Record<string, any> {
 }
 
 function camelToSnake(value: string): string {
-  return value.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
 }
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function normalizeJsonForHash(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  const normalized = { ...(value as Record<string, unknown>) };
+  delete normalized.timestamp;
+  return normalized;
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJson(value), null, 2);
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, sortJson(entry)]),
+    );
+  }
+  return value;
 }

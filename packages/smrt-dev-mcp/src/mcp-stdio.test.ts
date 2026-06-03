@@ -174,6 +174,11 @@ describe('smrt-dev-mcp stdio server', () => {
         'domain-architecture',
       ]),
     );
+    expect(
+      promptsResult.prompts
+        .find((prompt) => prompt.name === 'domain-code-review')
+        ?.arguments?.map((argument) => argument.name),
+    ).toContain('changedFiles');
     const promptResult = await client.getPrompt({ name: 'smrt-code-review' });
     expect(promptResult.messages[0]?.content.type).toBe('text');
     expect(
@@ -182,8 +187,41 @@ describe('smrt-dev-mcp stdio server', () => {
         : '',
     ).toContain('name: smrt-code-review');
 
+    const domainPromptResult = await client.getPrompt({
+      name: 'domain-code-review',
+      arguments: {
+        rootDir: repoRoot,
+        changedFiles: 'packages/content/src/models/Article.ts',
+        scope: 'package',
+        package: 'content',
+      },
+    });
+    expect(
+      domainPromptResult.messages[0]?.content.type === 'text'
+        ? domainPromptResult.messages[0].content.text
+        : '',
+    ).toContain('SMRT code review');
+
+    const architecturePromptResult = await client.getPrompt({
+      name: 'domain-architecture',
+      arguments: {
+        rootDir: repoRoot,
+        idea: 'Publishing workflow with profiles and scheduled social posts',
+        scope: 'package',
+        package: 'profiles',
+      },
+    });
+    expect(
+      architecturePromptResult.messages[0]?.content.type === 'text'
+        ? architecturePromptResult.messages[0].content.text
+        : '',
+    ).toContain('SMRT architecture planning');
+
     const resourcesResult = await client.listResources();
-    expect(resourcesResult.resources.map((resource) => resource.uri)).toEqual(
+    const resourceUris = resourcesResult.resources.map(
+      (resource) => resource.uri,
+    );
+    expect(resourceUris).toEqual(
       expect.arrayContaining([
         'smrt-dev-mcp://agent-skills/smrt-code-review',
         'smrt://knowledge/project',
@@ -196,5 +234,40 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(
       resourceContent && 'text' in resourceContent ? resourceContent.text : '',
     ).toContain('name: smrt-code-review');
+
+    const projectKnowledgeResult = await client.readResource({
+      uri: 'smrt://knowledge/project',
+    });
+    const projectKnowledgeContent = projectKnowledgeResult.contents[0];
+    const projectKnowledge = JSON.parse(
+      projectKnowledgeContent && 'text' in projectKnowledgeContent
+        ? projectKnowledgeContent.text
+        : '{}',
+    );
+    expect(projectKnowledge.rootDir).toBe('.');
+    expect(projectKnowledge.packages[0]).not.toHaveProperty('directory');
+
+    const packageUri = resourceUris.find((uri) =>
+      uri.startsWith('smrt://knowledge/package/'),
+    );
+    if (!packageUri) {
+      throw new Error('Expected package knowledge resource URI');
+    }
+    const packageKnowledgeResult = await client.readResource({
+      uri: packageUri,
+    });
+    const packageKnowledgeContent = packageKnowledgeResult.contents[0];
+    const packageKnowledge = JSON.parse(
+      packageKnowledgeContent && 'text' in packageKnowledgeContent
+        ? packageKnowledgeContent.text
+        : '{}',
+    );
+    expect(packageKnowledge).not.toHaveProperty('directory');
+
+    await expect(
+      client.readResource({
+        uri: 'smrt://knowledge/package/not-a-package',
+      }),
+    ).rejects.toThrow(/Unknown knowledge package/);
   });
 });

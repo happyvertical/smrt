@@ -154,16 +154,6 @@ function checkPackage(name) {
         'exports map "./smrt-knowledge.json" must target "./dist/smrt-knowledge.json"',
       );
     }
-    const hasKnowledgeArtifact = [
-      join(PKGS, name, 'dist', 'smrt-knowledge.json'),
-      join(PKGS, name, 'src', 'manifest', 'smrt-knowledge.json'),
-      join(PKGS, name, '.smrt', 'smrt-knowledge.json'),
-    ].some((path) => existsSync(path));
-    if (!hasKnowledgeArtifact) {
-      violations.push(
-        'exports map "./smrt-knowledge.json" is present but no smrt-knowledge.json artifact was found',
-      );
-    }
   }
 
   // 2. type=module

@@ -374,9 +374,10 @@ runtime-focused.
 - package export, when published: `"./smrt-knowledge.json": "./dist/smrt-knowledge.json"`
 
 Knowledge artifact generation is on by default in the SMRT Vite plugin. CLI and
-MCP exposure are on by default; HTTP exposure is off by default and must be
-enabled explicitly with `knowledge.api.enabled: true`. Generated HTTP routes are
-GET-only and must require dev mode or configured admin auth.
+MCP consume these artifacts through deterministic dev tooling; HTTP exposure is
+off by default and must be enabled explicitly with `knowledge.api.enabled: true`.
+Generated HTTP routes are GET-only and must require dev mode or configured admin
+auth.
 
 Use object-level `@smrt({ knowledge: false })` only to exclude an object from
 authored agent context while preserving runtime manifest behavior. Use

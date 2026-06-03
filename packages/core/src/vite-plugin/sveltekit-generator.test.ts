@@ -1816,6 +1816,11 @@ describe('SvelteKit Route Generator', () => {
       expect(enabledWrite).toBeDefined();
       expect(enabledWrite?.[1]).toContain('SMRT knowledge requires dev mode');
       expect(enabledWrite?.[1]).toContain('sanitizeKnowledgeArtifact');
+      expect(enabledWrite?.[1]).toContain(
+        "'cache-control': 'private, no-store'",
+      );
+      expect(enabledWrite?.[1]).toContain('queryBoolean');
+      expect(enabledWrite?.[1]).not.toContain('process.cwd()');
     });
   });
 

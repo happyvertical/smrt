@@ -67,11 +67,15 @@ async function generateManifest() {
       const { buildDomainKnowledgeManifest } = await import(
         pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
       );
-      const manifestPath = resolve(
+      const sourceManifestPath = resolve(
         process.cwd(),
         'src/manifest/static-manifest.json',
       );
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const distManifestPath = resolve(process.cwd(), 'dist/manifest.json');
+      const manifestPath = existsSync(distManifestPath)
+        ? distManifestPath
+        : sourceManifestPath;
+      const manifest = JSON.parse(readFileSync(sourceManifestPath, 'utf8'));
       const packageJson = JSON.parse(
         readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
       );
@@ -114,10 +118,7 @@ function preserveGeneratedAtIfUnchanged(path, nextKnowledge) {
 
   try {
     const current = JSON.parse(readFileSync(path, 'utf8'));
-    if (
-      JSON.stringify(current.sourceHashes ?? {}) ===
-      JSON.stringify(nextKnowledge.sourceHashes ?? {})
-    ) {
+    if (semanticArtifactJson(current) === semanticArtifactJson(nextKnowledge)) {
       return {
         ...nextKnowledge,
         generatedAt: current.generatedAt,
@@ -128,6 +129,27 @@ function preserveGeneratedAtIfUnchanged(path, nextKnowledge) {
   }
 
   return nextKnowledge;
+}
+
+function semanticArtifactJson(artifact) {
+  const { generatedAt: _generatedAt, ...rest } = artifact ?? {};
+  return stableJson(rest);
+}
+
+function stableJson(value) {
+  return JSON.stringify(sortJson(value));
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, sortJson(entry)]),
+    );
+  }
+  return value;
 }
 
 export { generateManifest };

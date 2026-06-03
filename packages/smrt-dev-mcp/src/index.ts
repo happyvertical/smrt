@@ -10,10 +10,12 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
+  ErrorCode,
   GetPromptRequestSchema,
   ListPromptsRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  McpError,
   ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
@@ -38,6 +40,10 @@ const DOMAIN_CODE_REVIEW_PROMPT = 'domain-code-review';
 const DOMAIN_ARCHITECTURE_PROMPT = 'domain-architecture';
 const KNOWLEDGE_PROJECT_URI = 'smrt://knowledge/project';
 const KNOWLEDGE_PACKAGE_PREFIX = 'smrt://knowledge/package/';
+
+type KnowledgeIndexResult = Awaited<ReturnType<typeof buildKnowledgeIndex>>;
+type KnowledgePackageResult = KnowledgeIndexResult['packages'][number];
+type PromptArguments = Record<string, string> | undefined;
 
 // Tool definitions
 export const TOOLS = [
@@ -352,12 +358,77 @@ async function main() {
           title: 'Domain Code Review',
           description:
             'Model-ready domain-scoped SMRT code review prompt bundle.',
+          arguments: [
+            {
+              name: 'rootDir',
+              description: 'Project root directory. Defaults to server cwd.',
+              required: false,
+            },
+            {
+              name: 'changedFiles',
+              description:
+                'Changed file paths as newline-separated, comma-separated, or JSON array text.',
+              required: false,
+            },
+            {
+              name: 'focus',
+              description: 'Review focus text.',
+              required: false,
+            },
+            {
+              name: 'documentation',
+              description: 'Additional documentation or notes.',
+              required: false,
+            },
+            {
+              name: 'scope',
+              description: 'Knowledge scope: project, local, package, or sdk.',
+              required: false,
+            },
+            {
+              name: 'package',
+              description: 'Package name or short package selector.',
+              required: false,
+            },
+          ],
         },
         {
           name: DOMAIN_ARCHITECTURE_PROMPT,
           title: 'Domain Architecture',
           description:
             'Model-ready domain-scoped SMRT architecture planning prompt bundle.',
+          arguments: [
+            {
+              name: 'rootDir',
+              description: 'Project root directory. Defaults to server cwd.',
+              required: false,
+            },
+            {
+              name: 'idea',
+              description: 'Architecture idea or product concept.',
+              required: false,
+            },
+            {
+              name: 'documentation',
+              description: 'Additional documentation or notes.',
+              required: false,
+            },
+            {
+              name: 'focus',
+              description: 'Planning focus text.',
+              required: false,
+            },
+            {
+              name: 'scope',
+              description: 'Knowledge scope: project, local, package, or sdk.',
+              required: false,
+            },
+            {
+              name: 'package',
+              description: 'Package name or short package selector.',
+              required: false,
+            },
+          ],
         },
       ],
     };
@@ -382,7 +453,9 @@ async function main() {
     }
 
     if (name === DOMAIN_CODE_REVIEW_PROMPT) {
-      const context = await buildReviewContext(request.params.arguments as any);
+      const context = await buildReviewContext(
+        reviewPromptArguments(request.params.arguments),
+      );
       return {
         description: 'Review downstream SMRT code with domain knowledge.',
         messages: [
@@ -399,7 +472,7 @@ async function main() {
 
     if (name === DOMAIN_ARCHITECTURE_PROMPT) {
       const context = await buildArchitectureContext(
-        request.params.arguments as any,
+        architecturePromptArguments(request.params.arguments),
       );
       return {
         description: 'Plan a downstream SMRT project with domain knowledge.',
@@ -415,7 +488,7 @@ async function main() {
       };
     }
 
-    throw new Error(`Unknown prompt: ${name}`);
+    throw new McpError(ErrorCode.InvalidParams, `Unknown prompt: ${name}`);
   });
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
@@ -471,7 +544,7 @@ async function main() {
           {
             uri,
             mimeType: 'application/json',
-            text: JSON.stringify(index, null, 2),
+            text: JSON.stringify(sanitizeKnowledgeIndex(index), null, 2),
           },
         ],
       };
@@ -483,19 +556,24 @@ async function main() {
       );
       const index = await buildKnowledgeIndex();
       const pkg = index.packages.find((item) => item.name === packageName);
-      if (!pkg) throw new Error(`Unknown knowledge package: ${packageName}`);
+      if (!pkg) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          `Unknown knowledge package: ${packageName}`,
+        );
+      }
       return {
         contents: [
           {
             uri,
             mimeType: 'application/json',
-            text: JSON.stringify(pkg, null, 2),
+            text: JSON.stringify(sanitizeKnowledgePackage(pkg), null, 2),
           },
         ],
       };
     }
 
-    throw new Error(`Unknown resource: ${uri}`);
+    throw new McpError(ErrorCode.InvalidParams, `Unknown resource: ${uri}`);
   });
 
   // Call tool handler
@@ -709,6 +787,86 @@ function renderAgentSkillMarkdown(name: string): string {
     (file) => `## Reference: ${file.path}\n\n${file.content.trim()}`,
   );
   return [skill.skillMarkdown.trim(), ...references].join('\n\n');
+}
+
+function reviewPromptArguments(args: PromptArguments): Record<string, unknown> {
+  return compactRecord({
+    rootDir: args?.rootDir,
+    changedFiles: parseStringList(args?.changedFiles),
+    focus: args?.focus,
+    documentation: args?.documentation,
+    scope: args?.scope,
+    package: args?.package,
+  });
+}
+
+function architecturePromptArguments(
+  args: PromptArguments,
+): Record<string, unknown> {
+  return compactRecord({
+    rootDir: args?.rootDir,
+    idea: args?.idea,
+    documentation: args?.documentation,
+    focus: args?.focus,
+    scope: args?.scope,
+    package: args?.package,
+  });
+}
+
+function parseStringList(value: string | undefined): string[] | undefined {
+  if (!value?.trim()) return undefined;
+
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((item): item is string => typeof item === 'string');
+    }
+  } catch {
+    // Fall through to delimiter parsing.
+  }
+
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function compactRecord(
+  value: Record<string, unknown>,
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, entry]) => entry !== undefined),
+  );
+}
+
+function sanitizeKnowledgeIndex(index: KnowledgeIndexResult) {
+  const packages = index.packages.map((pkg) => sanitizeKnowledgePackage(pkg));
+  return {
+    ...index,
+    rootDir: '.',
+    packages,
+    smrtPackages: packages.filter((pkg) => pkg.kind === 'smrt'),
+    sdkPackages: packages.filter((pkg) => pkg.kind === 'sdk'),
+  };
+}
+
+function sanitizeKnowledgePackage(pkg: KnowledgePackageResult) {
+  const { directory: _directory, objects, ...rest } = pkg;
+  return {
+    ...rest,
+    objects: objects.map((object) => ({
+      ...object,
+      filePath: sanitizePath(object.filePath),
+    })),
+  };
+}
+
+function sanitizePath(path: string | undefined): string | undefined {
+  if (!path) return path;
+  if (path.startsWith('/') || /^[A-Za-z]:[\\/]/.test(path)) {
+    return '<absolute-path>';
+  }
+  return path;
 }
 
 if (isEntrypoint()) {
