@@ -31,7 +31,7 @@ just build, run `smrt db:migrate`, and regenerate your downstream docs.
 | **R3 renames** | `Tag.parentSlug → parentId`; `Fact.parentId → previousFactId`; `Asset.parentId → sourceAssetId`; Folder split out of the `assets` table into its own `folders` table. | **Data migration** — backfill renamed columns (§3.1). |
 | **R4** | `AssetAssociation` (and any generic/provenance link) now extends the new `SmrtPolymorphicAssociation` base — a `(metaType, metaId)` + `role` polymorphic link. | None unless you subclassed the old shape; rebuild. |
 | **R5-canon** | STI discriminator `_meta_type` is now the **qualified** name (`@happyvertical/smrt-content:Article`), and registry/STI lookups return qualified names. | **Data migration** — upgrade legacy bare `_meta_type` values (handled by `smrt db:migrate --repair-data`). |
-| **R8** | `loadRelated()` / `loadRelatedMany()` enforce **tenant isolation** — resolving from a tenant-scoped object into a different non-null tenant throws `TenantIsolationError`. Pass `{ bypassTenantGuard: true }` for deliberate cross-tenant flows. | Audit deliberate cross-tenant relationship loads. |
+| **R8** | `loadRelated()` / `loadRelatedMany()` enforce **tenant isolation** — resolving from a tenant-scoped object into a different non-null tenant throws `TenantIsolationError`. Pass `{ allowCrossTenant: true }` for deliberate cross-tenant flows. | Audit deliberate cross-tenant relationship loads. |
 | **R10** | `@oneToMany` relationships generate **child accessor** methods. | None; additive. |
 | **R11** | `id` and declared-FK (`@foreignKey` / `@crossPackageRef`) columns are **native `uuid`** on PostgreSQL / DuckDB (`TEXT` on SQLite). | **Data migration** — convert TEXT id/FK columns to `uuid` (§3.2). |
 | **SmrtJunction** | The base junction API is `byLeft()` / `byRight()` (was `getForX()`), and `attach()` / `detach()` take **positional** `(leftId, rightId, opts)` with an **options object** for extra fields (was positional extras). | Update call-sites (§2). |
@@ -75,7 +75,7 @@ WHERE filter. See `packages/core/src/junction.ts`.
 const related = await obj.loadRelated('ownerId');
 
 // Opt out for admin / cross-tenant tooling:
-const related = await obj.loadRelated('ownerId', { bypassTenantGuard: true });
+const related = await obj.loadRelated('ownerId', { allowCrossTenant: true });
 ```
 
 ---
@@ -197,7 +197,7 @@ This rewrites `.claude/smrt-framework.md` from the installed package
 
 - [ ] `pnpm install && npm run build`
 - [ ] Update SmrtJunction call-sites (`getForX` → `byLeft`/`byRight`; options-object `attach`/`detach`).
-- [ ] Audit deliberate cross-tenant `loadRelated()` calls; add `{ bypassTenantGuard: true }` where intended.
+- [ ] Audit deliberate cross-tenant `loadRelated()` calls; add `{ allowCrossTenant: true }` where intended.
 - [ ] Back up the database.
 - [ ] `smrt db:migrate` (structural) then `smrt db:migrate --repair-data` (`_meta_type`).
 - [ ] `smrt db:migrate-uuid --dry-run` (review), then apply the R3 rename backfills (§3.1).
