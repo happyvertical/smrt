@@ -1,6 +1,8 @@
 # @happyvertical/smrt-dev-mcp
 
-Development MCP server for the SMRT framework providing code generation and project introspection tools.
+Development MCP server for the SMRT framework providing code generation,
+project introspection, deterministic ecosystem knowledge, and portable review
+or architecture prompt bundles.
 
 ## Installation
 
@@ -10,7 +12,7 @@ pnpm install @happyvertical/smrt-dev-mcp
 
 ## Usage
 
-Add to your `.mcp.json` or Claude Desktop config:
+Add to your `.mcp.json`, Codex MCP config, or Claude Desktop config:
 
 ```json
 {
@@ -26,9 +28,25 @@ Add to your `.mcp.json` or Claude Desktop config:
 
 Set `DEBUG=true` in the environment to enable diagnostic logging.
 
+## Knowledge Boundary
+
+`smrt-dev-mcp` is model-agnostic. Its review and architecture tools do not call
+Codex, Claude, or any other model provider directly. They return deterministic
+findings plus a reusable prompt bundle that can be sent to the local model plan
+or provider of your choice.
+
+After using a model to update package docs or expertise, always run the
+deterministic checker again:
+
+```bash
+pnpm knowledge:check --strict --format markdown
+```
+
+Use `--format json` when another script needs machine-readable output.
+
 ## Available Tools
 
-The server exposes two MCP tools:
+The server exposes these MCP tools:
 
 ### `generate-smrt-class`
 
@@ -54,6 +72,74 @@ Scan a project directory for SMRT objects and return a class/field/relationship 
 | `directory` | `string` | No | Project directory (default: cwd) |
 | `includeFields` | `boolean` | No | Include field details |
 | `includeRelationships` | `boolean` | No | Analyze relationships |
+
+### `reflect-knowledge`
+
+Return package coverage, SDK package coverage, relationship-v2 counts, and
+freshness status from the deterministic SMRT + HappyVertical SDK knowledge
+index.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+
+### `check-knowledge-freshness`
+
+Run the same deterministic freshness checks exposed by `pnpm knowledge:check`.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `changed` | `boolean` | No | Limit stale-pattern checks to changed files |
+| `strict` | `boolean` | No | Treat stale-pattern findings as errors |
+
+### `build-review-context`
+
+Select relevant SMRT and HappyVertical SDK package expertise for changed files,
+then return a model-ready prompt bundle.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `changedFiles` | `string[]` | No | Files to route to package experts |
+| `focus` | `string` | No | Review focus or concern |
+| `documentation` | `string` | No | Additional docs or notes to include |
+
+### `smrt-review`
+
+Return deterministic review findings, a prompt bundle, or both.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `changedFiles` | `string[]` | No | Files to route to package experts |
+| `focus` | `string` | No | Review focus or concern |
+| `documentation` | `string` | No | Additional docs or notes to include |
+| `mode` | `string` | No | `findings`, `prompt-bundle`, or `both` |
+
+### `build-architecture-context`
+
+Select relevant SMRT and SDK package expertise for an idea or documentation,
+then return a model-ready architecture prompt bundle.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `idea` | `string` | No | Product or implementation idea |
+| `documentation` | `string` | No | Existing docs or requirements |
+| `focus` | `string` | No | Architecture concern to prioritize |
+
+### `smrt-architecture`
+
+Return package recommendations, SDK recommendations, an object-model sketch,
+risks, questions, and the reusable architecture prompt bundle.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `idea` | `string` | No | Product or implementation idea |
+| `documentation` | `string` | No | Existing docs or requirements |
+| `focus` | `string` | No | Architecture concern to prioritize |
 
 ## MCP Tier Context
 

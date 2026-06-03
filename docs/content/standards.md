@@ -363,6 +363,22 @@ Knowledge hooks are deterministic and local. They must not call Codex, Claude,
 or any other model provider; model-assisted audits stay manual and must be
 followed by the deterministic checker.
 
+### Model-assisted knowledge workflow
+
+Use models as optional local reviewers, not as freshness gates:
+
+1. Ask `smrt-dev-mcp` for deterministic context with `build-review-context`,
+   `smrt-review`, `build-architecture-context`, or `smrt-architecture`.
+2. Send the returned prompt bundle to Codex, Claude, or another model under the
+   user's local plan.
+3. Apply only reviewed changes to source docs or package expertise.
+4. Re-run `pnpm knowledge:check --strict --format markdown` before committing.
+
+When an automation needs to consume checker output, use
+`pnpm knowledge:check --strict --format json`. Hooks and CI must stay
+token-free; prompt bundles are the boundary between deterministic SMRT tooling
+and optional model assistance.
+
 | Pattern | Source | Action |
 |---|---|---|
 | `vite.config.ts.timestamp-*.mjs` | Vite config write-cache | Add to root `.gitignore`; remove existing from agents, content (×2), tags |
