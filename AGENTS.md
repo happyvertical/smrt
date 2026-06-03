@@ -111,7 +111,8 @@ From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical
 - `AGENTS.md` is canonical for root and package expert docs.
 - `CLAUDE.md` files are one-line Claude Code shims containing only `@AGENTS.md`.
 - `smrt dev:knowledge-index` prints the deterministic SMRT + HappyVertical SDK knowledge graph.
-- `smrt dev:knowledge-check` validates agent-doc freshness, stale references, package docs, package `files` entries, and relationship-aware manifest facts.
+- `smrt dev:knowledge-check` validates agent-doc freshness, stale references, package docs, package `files` entries, and relationship-aware manifest facts. Use `--format markdown` for human hook output and `--format json` for scripts.
+- Lefthook runs deterministic knowledge freshness locally: changed-file strict checks on pre-commit and full strict checks on pre-push. Model-assisted audits are never required in hooks or CI.
 - `smrt-dev-mcp` exposes the same knowledge through `reflect-knowledge`, `check-knowledge-freshness`, `build-review-context`, `smrt-review`, `build-architecture-context`, and `smrt-architecture`.
 
 ## Gotchas

@@ -352,6 +352,17 @@ Templates ship a `template/` directory that is copied wholesale by the scaffold 
 
 These never belong in `packages/*` and should be `.gitignore`'d at the repo root:
 
+Local Lefthook checks enforce the highest-signal subset of this list on staged
+files. The same hook suite also runs deterministic SMRT knowledge freshness
+checks:
+
+- pre-commit: `pnpm knowledge:check --changed --strict --format markdown`
+- pre-push: `pnpm knowledge:check --strict --format markdown`
+
+Knowledge hooks are deterministic and local. They must not call Codex, Claude,
+or any other model provider; model-assisted audits stay manual and must be
+followed by the deterministic checker.
+
 | Pattern | Source | Action |
 |---|---|---|
 | `vite.config.ts.timestamp-*.mjs` | Vite config write-cache | Add to root `.gitignore`; remove existing from agents, content (×2), tags |

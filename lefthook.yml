@@ -48,9 +48,9 @@ pre-commit:
       # generic .DS_Store catch-all (currently handled passively via .gitignore).
       # Expand the case list below as new patterns appear.
       run: |
-        files="{staged_files}"
         violations=""
-        for f in $files; do
+        while IFS= read -r f; do
+          [ -n "$f" ] || continue
           case "$f" in
             *vite.config.ts.timestamp-*.mjs|*vite.config.*.timestamp-*.mjs|*.timestamp-*.mjs)
               violations="$violations\n  $f (vite write-cache leftover)"
@@ -68,7 +68,9 @@ pre-commit:
               violations="$violations\n  $f (changesets must live at repo root only)"
               ;;
           esac
-        done
+        done <<EOF
+        $(git diff --cached --name-only --diff-filter=ACMRT)
+        EOF
         if [ -n "$violations" ]; then
           printf "❌ Staged files violate docs/standards.md §11:%b\n" "$violations"
           exit 1
@@ -83,9 +85,25 @@ pre-commit:
           - temp-test-manifest-gen-*.ts       Manifest-builder driver script
           - packages/*/.changeset/            Changesets must be at repo root
 
+    knowledge-check:
+      run: pnpm knowledge:check --changed --strict --format markdown
+      fail_text: |
+        ❌ SMRT knowledge freshness check failed!
+
+        Fix the issues above, or run:
+          pnpm knowledge:check --changed --strict --format markdown
+
 # Check formatting before push
 pre-push:
   commands:
+    knowledge-check:
+      run: pnpm knowledge:check --strict --format markdown
+      fail_text: |
+        ❌ SMRT knowledge freshness check failed!
+
+        Fix the issues above, or run:
+          pnpm knowledge:check --strict --format markdown
+
     format-check:
       run: npx biome ci --diagnostic-level=error .
       fail_text: |

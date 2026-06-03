@@ -170,7 +170,11 @@ Requires: `git clone git@github.com:happyvertical/sdk.git ../sdk` (or set `SDK_P
 
 ### Git Hooks
 
-Uses [Lefthook](https://lefthook.dev/) for commit message validation. Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format:
+Uses [Lefthook](https://lefthook.dev/) for local deterministic checks:
+
+- pre-commit formats staged JS/TS/Svelte files, rejects known forbidden artifacts, validates staged workflow YAML, and runs `pnpm knowledge:check --changed --strict --format markdown`.
+- pre-push runs full knowledge freshness, full Biome CI formatting, and workflow validation.
+- commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/) format:
 
 ```
 <type>(<scope>): <subject>

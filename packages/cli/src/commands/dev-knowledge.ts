@@ -56,9 +56,15 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         description: 'Treat stale-pattern findings as errors',
         default: false,
       },
+      format: {
+        type: 'string',
+        description: 'Output format: markdown or json',
+        default: 'markdown',
+        short: 'f',
+      },
       json: {
         type: 'boolean',
-        description: 'Print JSON output',
+        description: 'Deprecated alias for --format json',
         default: false,
       },
     },
@@ -67,7 +73,8 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         changed: Boolean(options.changed),
         strict: Boolean(options.strict),
       });
-      if (options.json) {
+      const format = options.json ? 'json' : options.format;
+      if (format === 'json') {
         console.log(JSON.stringify(result, null, 2));
       } else {
         console.log(renderFreshnessResult(result));
@@ -88,15 +95,22 @@ export const devKnowledgeCommands: Record<string, CLICommand> = {
         default: 'HEAD',
         short: 'b',
       },
+      format: {
+        type: 'string',
+        description: 'Output format: markdown or json',
+        default: 'markdown',
+        short: 'f',
+      },
       json: {
         type: 'boolean',
-        description: 'Print JSON output',
+        description: 'Deprecated alias for --format json',
         default: false,
       },
     },
     handler: async (_args: string[], options: any) => {
       const result = await diffKnowledgeIndex({ base: options.base ?? 'HEAD' });
-      if (options.json) {
+      const format = options.json ? 'json' : options.format;
+      if (format === 'json') {
         console.log(JSON.stringify(result, null, 2));
         return;
       }

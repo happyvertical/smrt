@@ -338,13 +338,14 @@ export async function checkKnowledgeFreshness(
 
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
 
-  const effectiveIssues = options.strict
-    ? issues
-    : issues.map((issue) =>
-        issue.code.startsWith('stale-')
-          ? { ...issue, severity: 'warning' as const }
-          : issue,
-      );
+  const effectiveIssues = issues.map((issue) =>
+    issue.code.startsWith('stale-')
+      ? {
+          ...issue,
+          severity: options.strict ? ('error' as const) : ('warning' as const),
+        }
+      : issue,
+  );
   const errorCount = effectiveIssues.filter(
     (i) => i.severity === 'error',
   ).length;
@@ -1322,7 +1323,7 @@ function getChangedFiles(rootDir: string, base = 'HEAD'): string[] {
     const output = execFileSync(
       'git',
       ['diff', '--name-only', `${base}...HEAD`],
-      { cwd: rootDir, encoding: 'utf8' },
+      { cwd: rootDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
     );
     const files = output
       .split('\n')
@@ -1337,11 +1338,25 @@ function getChangedFiles(rootDir: string, base = 'HEAD'): string[] {
     const output = execFileSync('git', ['diff', '--name-only'], {
       cwd: rootDir,
       encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
     });
-    return output
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
+    const cachedOutput = execFileSync(
+      'git',
+      ['diff', '--cached', '--name-only'],
+      {
+        cwd: rootDir,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    return uniqueStrings(
+      [output, cachedOutput].flatMap((value) =>
+        value
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean),
+      ),
+    );
   } catch {
     return [];
   }
@@ -1374,4 +1389,8 @@ function objectRecord(value: unknown): Record<string, any> {
 
 function camelToSnake(value: string): string {
   return value.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)].sort();
 }

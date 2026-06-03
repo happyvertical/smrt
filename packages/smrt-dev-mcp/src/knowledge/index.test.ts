@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -174,6 +175,26 @@ describe('SMRT knowledge index', () => {
     expect(result.ok).toBe(false);
     expect(result.issues.map((issue) => issue.code)).toContain(
       'claude-not-shim',
+    );
+  });
+
+  it('checks staged files when changed mode is enabled', async () => {
+    execFileSync('git', ['init'], { cwd: rootDir });
+    await writeFile(
+      join(rootDir, 'README.md'),
+      `Legacy import: @${'have'}/sql\n`,
+    );
+    execFileSync('git', ['add', 'README.md'], { cwd: rootDir });
+
+    const result = await checkKnowledgeFreshness({
+      rootDir,
+      changed: true,
+      strict: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      'stale-have-namespace',
     );
   });
 
