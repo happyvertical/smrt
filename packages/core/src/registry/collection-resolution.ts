@@ -9,12 +9,51 @@ export interface CollectionRegistrationLookup {
   getInheritanceChain: (className: string) => string[];
 }
 
+/**
+ * Framework base classes that ARE collections (extend `SmrtCollection`).
+ *
+ * `SmrtJunction` is an abstract collection base — junction collections declare
+ * `extends SmrtJunction<Item>`, and the manifest records that *direct* parent.
+ * `SmrtJunction` is itself never registered in a consumer's registry, so the
+ * inheritance-chain walk in `isCollectionRegistration()` cannot reach
+ * `SmrtCollection` through it. Recognizing the junction base by name here is
+ * what keeps a junction Collection classified as a collection (and therefore
+ * redirected to its item class for schema generation) regardless of
+ * registration order. Without it, a junction Collection that is iterated
+ * before its item class is mistaken for a regular table-bearing class and
+ * creates a base-columns-only table, dropping the junction's FK columns
+ * (#1342 — `place_assets` vs `profile_assets` asymmetry).
+ *
+ * Keep in sync with the collection bases that extend `SmrtCollection` in
+ * `packages/core/src/junction.ts`. (`SmrtHierarchical` and
+ * `SmrtPolymorphicAssociation` extend `SmrtObject`, not `SmrtCollection`, so
+ * they deliberately do NOT belong here.)
+ *
+ * A new framework collection base must also be added to the other parallel
+ * framework-base lists so it is recognized everywhere it matters:
+ * - `FRAMEWORK_BASE_CLASSES` in
+ *   `packages/scanner/src/inheritance-resolver.ts` (scanner chain termination).
+ * - `FRAMEWORK_ABSTRACT_BASE_NAMES` in
+ *   `packages/core/src/scanner/manifest-generator.ts` (field-merge skipping).
+ *
+ * Downstream tooling that needs this detector (e.g. @happyvertical/smrt-vitest)
+ * should IMPORT it from `@happyvertical/smrt-core` rather than keep a copy — a
+ * duplicate detector is exactly how the #1342 junction schema-drop bug
+ * half-survived the original core fix.
+ */
+export const SMRT_COLLECTION_BASE_NAMES = [
+  'SmrtCollection',
+  'SmrtJunction',
+] as const;
+
 export function isSmrtCollectionExtendsName(
   extendsName: string | undefined,
 ): boolean {
-  return (
-    extendsName === 'SmrtCollection' ||
-    extendsName?.endsWith(':SmrtCollection') === true
+  if (!extendsName) {
+    return false;
+  }
+  return SMRT_COLLECTION_BASE_NAMES.some(
+    (base) => extendsName === base || extendsName.endsWith(`:${base}`),
   );
 }
 
