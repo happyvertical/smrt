@@ -6,6 +6,8 @@ import {
   buildKnowledgeIndex,
   buildReviewContext,
   checkKnowledgeFreshness,
+  smrtArchitecture,
+  smrtReview,
 } from './index.js';
 
 describe('SMRT knowledge index', () => {
@@ -97,6 +99,7 @@ describe('SMRT knowledge index', () => {
               className: 'DemoLinks',
               qualifiedName: '@happyvertical/smrt-demo:DemoLinks',
               extends: 'SmrtJunction',
+              collection: 'demo_links',
               fields: {},
               methods: {
                 byLeft: { name: 'byLeft' },
@@ -106,6 +109,7 @@ describe('SMRT knowledge index', () => {
               className: 'DemoTree',
               qualifiedName: '@happyvertical/smrt-demo:DemoTree',
               extends: 'SmrtHierarchical',
+              collection: 'demo_trees',
               fields: {
                 parentId: { type: 'foreignKey', related: 'DemoTree' },
               },
@@ -120,6 +124,7 @@ describe('SMRT knowledge index', () => {
               className: 'DemoAssociation',
               qualifiedName: '@happyvertical/smrt-demo:DemoAssociation',
               extends: 'SmrtObject',
+              collection: 'demo_associations',
               fields: {
                 metaType: { type: 'text', required: true },
                 metaId: { type: 'text', required: true },
@@ -184,6 +189,41 @@ describe('SMRT knowledge index', () => {
     ]);
     expect(result.promptBundle.contextMarkdown).toContain(
       '@happyvertical/smrt-demo',
+    );
+  });
+
+  it('returns deterministic review findings for relationship and MCP surfaces', async () => {
+    const result = await smrtReview({
+      rootDir,
+      changedFiles: ['packages/demo/src/Demo.ts'],
+      mode: 'both',
+    });
+
+    expect(result.deterministicFindings.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        'relationship-sensitive-review',
+        'mcp-surface-review',
+      ]),
+    );
+  });
+
+  it('returns architecture recommendations with model sketch, risks, and questions', async () => {
+    const result = await smrtArchitecture({
+      rootDir,
+      idea: 'A tenant-aware demo tree with owned assets and generated MCP tools',
+    });
+
+    expect(result.recommendations.smrtPackages).toContain(
+      '@happyvertical/smrt-demo',
+    );
+    expect(result.recommendations.objectModelSketch.join('\n')).toContain(
+      'Demo',
+    );
+    expect(result.recommendations.risks.join('\n')).toContain(
+      'Hierarchical models',
+    );
+    expect(result.recommendations.questions.join('\n')).toContain(
+      'tenant-scoped',
     );
   });
 });

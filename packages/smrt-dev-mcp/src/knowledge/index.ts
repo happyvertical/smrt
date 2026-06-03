@@ -135,6 +135,9 @@ export interface SmrtArchitectureResult extends ArchitectureContextResult {
   recommendations: {
     smrtPackages: string[];
     sdkPackages: string[];
+    objectModelSketch: string[];
+    risks: string[];
+    questions: string[];
     notes: string[];
   };
 }
@@ -393,7 +396,7 @@ export async function buildReviewContext(
   const deterministicFindings = findStalePatternIssues(
     index.rootDir,
     changedFiles.length > 0 ? changedFiles : undefined,
-  );
+  ).concat(buildReviewFindings(index, changedFiles, selectedPackages));
 
   return {
     selectedPackages,
@@ -454,17 +457,12 @@ export async function smrtArchitecture(
   options: ContextSelectorOptions = {},
 ): Promise<SmrtArchitectureResult> {
   const context = await buildArchitectureContext(options);
+  const ideaText = [options.idea, options.documentation, options.focus]
+    .filter(Boolean)
+    .join('\n');
   return {
     ...context,
-    recommendations: {
-      smrtPackages: context.selectedPackages.map((pkg) => pkg.name),
-      sdkPackages: context.selectedSdkPackages.map((pkg) => pkg.name),
-      notes: [
-        'Use SMRT packages for domain/runtime models and generated surfaces.',
-        'Use HappyVertical SDK packages for AI, SQL, files, logging, secrets, and external capability adapters.',
-        'Run smrt dev:knowledge-check after applying model-assisted architecture or review updates.',
-      ],
-    },
+    recommendations: buildArchitectureRecommendations(context, ideaText),
   };
 }
 
@@ -936,6 +934,215 @@ function findStalePatternIssues(
     }
   }
   return issues;
+}
+
+function buildReviewFindings(
+  index: SmrtKnowledgeIndex,
+  changedFiles: string[],
+  selectedPackages: KnowledgePackage[],
+): KnowledgeIssue[] {
+  const issues: KnowledgeIssue[] = [];
+
+  for (const pkg of selectedPackages) {
+    const changedPackageFiles = changedFiles.filter(
+      (file) =>
+        file === pkg.relativeDirectory ||
+        file.startsWith(`${pkg.relativeDirectory}/`),
+    );
+
+    if (!pkg.agentDoc && pkg.kind === 'smrt') {
+      issues.push({
+        severity: 'warning',
+        code: 'missing-package-expertise',
+        message: 'Selected SMRT package has no authored AGENTS.md expertise',
+        file: pkg.relativeDirectory,
+        packageName: pkg.name,
+      });
+    }
+
+    if (
+      changedPackageFiles.some((file) => file.endsWith('.ts')) &&
+      pkg.relationshipFeatures.length > 0
+    ) {
+      issues.push({
+        severity: 'warning',
+        code: 'relationship-sensitive-review',
+        message: `Package uses relationships-v2 features: ${pkg.relationshipFeatures.join(', ')}`,
+        file: changedPackageFiles.find((file) => file.endsWith('.ts')),
+        packageName: pkg.name,
+      });
+    }
+
+    if (
+      changedPackageFiles.some((file) => file.endsWith('.ts')) &&
+      pkg.mcpTools.length > 0
+    ) {
+      issues.push({
+        severity: 'warning',
+        code: 'mcp-surface-review',
+        message: `Package exposes ${pkg.mcpTools.length} generated MCP tool(s); check public tool compatibility`,
+        file: changedPackageFiles.find((file) => file.endsWith('.ts')),
+        packageName: pkg.name,
+      });
+    }
+  }
+
+  for (const file of changedFiles) {
+    if (!file.startsWith('packages/')) continue;
+    if (selectPackagesForFiles(index, [file]).length > 0) continue;
+    issues.push({
+      severity: 'warning',
+      code: 'changed-file-without-package-expert',
+      message:
+        'Changed file is under packages/ but did not map to a SMRT package',
+      file,
+    });
+  }
+
+  return issues;
+}
+
+function buildArchitectureRecommendations(
+  context: ArchitectureContextResult,
+  ideaText: string,
+): SmrtArchitectureResult['recommendations'] {
+  const smrtPackages = context.selectedPackages.map((pkg) => pkg.name);
+  const sdkPackages = context.selectedSdkPackages.map((pkg) => pkg.name);
+  const objectModelSketch = buildObjectModelSketch(context.selectedPackages);
+  const risks = buildArchitectureRisks(context.selectedPackages, ideaText);
+  const questions = buildArchitectureQuestions(
+    context.selectedPackages,
+    ideaText,
+  );
+
+  return {
+    smrtPackages,
+    sdkPackages,
+    objectModelSketch,
+    risks,
+    questions,
+    notes: [
+      'Use SMRT packages for domain/runtime models and generated REST, CLI, MCP, and AI-operation surfaces.',
+      'Use HappyVertical SDK packages for AI, SQL, files, logging, secrets, and external capability adapters.',
+      'Run smrt dev:knowledge-check after applying model-assisted architecture or review updates.',
+    ],
+  };
+}
+
+function buildObjectModelSketch(packages: KnowledgePackage[]): string[] {
+  const lines = packages.flatMap((pkg) => {
+    const objects = pkg.objects
+      .filter((object) => object.extends !== 'SmrtCollection')
+      .slice(0, 6)
+      .map((object) => object.className);
+    if (objects.length === 0) {
+      return [
+        `${pkg.name}: use package services or templates; no manifest objects indexed.`,
+      ];
+    }
+    return [`${pkg.name}: start from ${objects.join(', ')}.`];
+  });
+
+  return lines.length > 0
+    ? lines
+    : [
+        'Define the core domain as SmrtObject classes with explicit relationships and generated surfaces.',
+      ];
+}
+
+function buildArchitectureRisks(
+  packages: KnowledgePackage[],
+  ideaText: string,
+): string[] {
+  const risks = new Set<string>();
+  const names = new Set(packages.map((pkg) => pkg.name));
+  const relationshipFeatures = new Set(
+    packages.flatMap((pkg) => pkg.relationshipFeatures),
+  );
+  const lowerText = ideaText.toLowerCase();
+
+  if (relationshipFeatures.has('crossPackageRef')) {
+    risks.add(
+      'Cross-package references should stay as plain string ids and validate target package ownership at workflow boundaries.',
+    );
+  }
+  if (relationshipFeatures.has('SmrtJunction')) {
+    risks.add(
+      'Junction models need explicit conflictColumns so generated upserts stay deterministic.',
+    );
+  }
+  if (relationshipFeatures.has('SmrtHierarchical')) {
+    risks.add(
+      'Hierarchical models need cycle prevention and tenant-aware child loading paths.',
+    );
+  }
+  if (
+    names.has('@happyvertical/smrt-tenancy') ||
+    lowerText.includes('tenant')
+  ) {
+    risks.add(
+      'Tenant-scoped models need nullable tenantId semantics and tenant-guarded loadRelated usage.',
+    );
+  }
+  if (names.has('@happyvertical/smrt-assets')) {
+    risks.add(
+      'Asset ownership should use package-owned join tables; reserve asset_associations for generic/provenance links.',
+    );
+  }
+  if (names.has('@happyvertical/smrt-secrets')) {
+    risks.add(
+      'Secrets must use envelope encryption and avoid exposing decrypted values through generated tools.',
+    );
+  }
+  if (names.has('@happyvertical/smrt-jobs') || lowerText.includes('schedule')) {
+    risks.add(
+      'Background work should use jobs/schedules rather than request-time side effects.',
+    );
+  }
+
+  risks.add(
+    'Generated architecture should be rechecked with smrt dev:knowledge-check after docs or expertise edits.',
+  );
+  return [...risks];
+}
+
+function buildArchitectureQuestions(
+  packages: KnowledgePackage[],
+  ideaText: string,
+): string[] {
+  const questions = new Set<string>();
+  const names = new Set(packages.map((pkg) => pkg.name));
+  const lowerText = ideaText.toLowerCase();
+
+  questions.add(
+    'Which generated surfaces are required first: REST, CLI, MCP, AI operations, or Svelte UI?',
+  );
+  if (
+    names.has('@happyvertical/smrt-tenancy') ||
+    lowerText.includes('tenant')
+  ) {
+    questions.add(
+      'Which objects are global catalogs and which are tenant-scoped records?',
+    );
+  }
+  if (names.has('@happyvertical/smrt-assets')) {
+    questions.add('Which package owns each asset relationship join table?');
+  }
+  if (names.has('@happyvertical/smrt-profiles')) {
+    questions.add('Which identities own or administer the primary records?');
+  }
+  if (names.has('@happyvertical/smrt-content')) {
+    questions.add(
+      'Which content snapshots need citation-time reference pinning?',
+    );
+  }
+  if (names.has('@happyvertical/smrt-social')) {
+    questions.add(
+      'Which social providers need OAuth, scheduling, and post-state reconciliation?',
+    );
+  }
+
+  return [...questions];
 }
 
 function selectPackagesForFiles(
