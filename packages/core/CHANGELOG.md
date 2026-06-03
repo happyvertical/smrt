@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.27.3
+
+### Patch Changes
+
+- ### Features
+
+  - add downstream domain knowledge artifacts
+
+  ### Bug Fixes
+
+  - address domain knowledge review feedback
+  - @happyvertical/smrt-scanner@0.27.3
+  - @happyvertical/smrt-config@0.27.3
+  - @happyvertical/smrt-types@0.27.3
+
 ## 0.27.2
 
 ### Patch Changes
