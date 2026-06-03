@@ -234,8 +234,12 @@ describe('SchemaComparer', () => {
       expect(diff.has_changes).toBe(false);
     });
 
-    it('should detect JSON→TEXT as type_upgrade', async () => {
-      // Create table with JSON column (some engines support this natively)
+    it('should treat manifest TEXT vs DB JSON as equivalent (no churn) (#1335)', async () => {
+      // A native-`json` DB column with a text-convention manifest field. SMRT
+      // stores JSON as serialized TEXT, so a native-json column already holds
+      // exactly the data the manifest expects — no migration is needed and the
+      // differ must NOT emit a type_upgrade (which would needlessly rewrite the
+      // whole column and risk losing the native-json typing).
       await db.query(
         'CREATE TABLE documents (id TEXT PRIMARY KEY, metadata JSON);',
       );
@@ -262,14 +266,58 @@ describe('SchemaComparer', () => {
 
       const diff = await strictComparer.compare(manifest);
 
-      // JSON → TEXT is a safe type upgrade
-      const typeUpgrades = diff.changes.filter(
-        (c) => c.type === 'type_upgrade',
+      // No type_upgrade, no type_mismatch — json and text are interchangeable.
+      expect(
+        diff.changes.filter((c) => c.type === 'type_upgrade'),
+      ).toHaveLength(0);
+      expect(
+        diff.changes.filter((c) => c.type === 'type_mismatch'),
+      ).toHaveLength(0);
+      expect(diff.has_changes).toBe(false);
+    });
+
+    it('should treat manifest JSON vs DB TEXT as equivalent (no phantom upgrade) (#1335)', async () => {
+      // The canary case (#1335): an enum/plain field on an STI child was
+      // mis-inferred as JSON by a downstream scanner, while the real column is
+      // `text` holding bare values like 'active'. The differ must NOT generate
+      // `ALTER COLUMN ... TYPE jsonb USING col::jsonb` — that raises
+      // "invalid input syntax for type json" and aborts the atomic migration.
+      await db.query(
+        'CREATE TABLE tenants (id TEXT PRIMARY KEY, status TEXT);',
       );
-      expect(typeUpgrades).toHaveLength(1);
-      expect(typeUpgrades[0].name).toBe('metadata');
-      expect(typeUpgrades[0].mismatch?.expected).toBe('TEXT');
-      expect(typeUpgrades[0].mismatch?.actual).toBe('JSON');
+      await db.query(
+        "INSERT INTO tenants (id, status) VALUES ('t1', 'active')",
+      );
+
+      const manifest: Record<string, SchemaDefinition> = {
+        tenants: {
+          tableName: 'tenants',
+          ddl: 'CREATE TABLE tenants (id TEXT PRIMARY KEY, status JSON);',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            status: { type: 'JSON' }, // Manifest mis-says JSON, DB is TEXT
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1.0.0',
+        },
+      };
+
+      const strictComparer = new SchemaComparer(db, {
+        ignoreTypeMismatches: false,
+      });
+
+      const diff = await strictComparer.compare(manifest);
+
+      expect(
+        diff.changes.filter((c) => c.type === 'type_upgrade'),
+      ).toHaveLength(0);
+      expect(
+        diff.changes.filter((c) => c.type === 'type_mismatch'),
+      ).toHaveLength(0);
+      expect(diff.has_changes).toBe(false);
     });
 
     it('should handle empty manifest', async () => {
@@ -338,10 +386,12 @@ describe('SchemaComparer engine-specific SQL generation', () => {
       url: '',
       config: { url: 'postgresql://localhost/test' },
       query,
+      // DB is missing `metadata`; the differ must add it. The generated
+      // ADD COLUMN SQL maps JSON→JSONB only on the Postgres DDL strategy, so
+      // a JSONB type proves the engine was detected from `config.url`.
       getTableSchema: async () => ({
         columns: {
-          id: { type: 'TEXT', notnull: true },
-          metadata: { type: 'TEXT', notnull: false },
+          id: { type: 'text', notnull: true },
         },
         indexes: [],
       }),
@@ -368,9 +418,10 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(query).toHaveBeenCalledWith(
       expect.stringContaining('information_schema.tables'),
     );
-    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
-    expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
+    const addColumns = diff.changes.filter((c) => c.type === 'add_column');
+    expect(addColumns).toHaveLength(1);
+    expect(addColumns[0].name).toBe('metadata');
+    expect(addColumns[0].sql).toContain('JSONB');
   });
 
   it('uses engineHint for existing-table introspection query selection', async () => {
@@ -415,16 +466,19 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     expect(diff.added_tables).toHaveLength(0);
   });
 
-  it('should generate PostgreSQL ALTER COLUMN TYPE with USING clause for TEXT→JSON', async () => {
-    // Create a mock database interface that identifies as PostgreSQL
+  it('treats PostgreSQL TEXT(db) vs JSON(manifest) as equivalent — no churn (#1335)', async () => {
+    // SMRT stores JSON as serialized TEXT, so a `text` DB column already holds
+    // exactly what a JSON manifest field expects. Rewriting it (`col::jsonb`)
+    // is pure churn AND data-destroying when the text isn't valid JSON
+    // (e.g. a legacy enum column holding 'active' → "invalid input syntax for
+    // type json"). The differ must emit NO type_upgrade here.
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
-      // Return table name from query so getExistingTables() knows it exists
       query: async () => ({ rows: [{ table_name: 'documents' }] }),
       getTableSchema: async () => ({
         columns: {
-          id: { type: 'TEXT', notnull: true },
-          tags: { type: 'TEXT', notnull: false },
+          id: { type: 'text', notnull: true },
+          tags: { type: 'text', notnull: false },
         },
         indexes: [],
       }),
@@ -452,55 +506,74 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 
     const diff = await pgComparer.compare(manifest);
 
-    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
-    expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
-    expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
-    expect(typeUpgrades[0].sql).toContain('USING');
-    expect(typeUpgrades[0].sql).toContain('::jsonb');
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toHaveLength(
+      0,
+    );
+    expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toHaveLength(
+      0,
+    );
+    expect(diff.has_changes).toBe(false);
   });
 
-  it('should preserve PostgreSQL JSON defaults during TEXT→JSON upgrades', async () => {
+  it('generates a value-safe to_jsonb cast when a TEXT→JSON upgrade is requested directly (#1335)', async () => {
+    // The compare() path no longer reaches a TEXT→JSON upgrade (json/text are
+    // equivalent), but the generator must still produce a value-safe cast for
+    // any caller that constructs one explicitly — `to_jsonb(col)` wraps ANY
+    // text as a JSON string and never raises on non-JSON legacy data, unlike
+    // the old `col::jsonb`.
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
-      query: async () => ({ rows: [{ table_name: 'documents' }] }),
-      getTableSchema: async () => ({
-        columns: {
-          id: { type: 'TEXT', notnull: true },
-          metadata: { type: 'TEXT', notnull: false },
-        },
-        indexes: [],
-      }),
+      query: async () => ({ rows: [] }),
+      getTableSchema: async () => null,
     };
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
 
-    const pgComparer = new SchemaComparer(mockPostgresDb as any, {
-      ignoreTypeMismatches: false,
-    });
+    const generated = (
+      pgComparer as unknown as {
+        generateTypeUpgradeSQL: (
+          t: string,
+          c: string,
+          d: { type: string; defaultValue?: unknown },
+          dbType: string,
+        ) => { sql: string };
+      }
+    ).generateTypeUpgradeSQL('documents', 'tags', { type: 'JSON' }, 'text');
 
-    const manifest: Record<string, SchemaDefinition> = {
-      documents: {
-        tableName: 'documents',
-        ddl: "CREATE TABLE documents (id TEXT PRIMARY KEY, metadata JSON DEFAULT '{}');",
-        columns: {
-          id: { type: 'TEXT', primaryKey: true },
-          metadata: { type: 'JSON', defaultValue: '{}' },
-        },
-        indexes: [],
-        triggers: [],
-        foreignKeys: [],
-        dependencies: [],
-        version: '1.0.0',
-      },
+    expect(generated.sql).toContain('ALTER TABLE');
+    expect(generated.sql).toContain('TYPE JSONB');
+    expect(generated.sql).toContain('USING to_jsonb("tags")');
+    expect(generated.sql).not.toContain('"tags"::jsonb');
+    expect(generated.sql).not.toContain('"tags"::json ');
+  });
+
+  it('preserves PostgreSQL JSON defaults with a value-safe cast on a direct TEXT→JSON upgrade (#1335)', async () => {
+    const mockPostgresDb = {
+      url: 'postgresql://localhost/test',
+      query: async () => ({ rows: [] }),
+      getTableSchema: async () => null,
     };
+    const pgComparer = new SchemaComparer(mockPostgresDb as any);
 
-    const diff = await pgComparer.compare(manifest);
+    const generated = (
+      pgComparer as unknown as {
+        generateTypeUpgradeSQL: (
+          t: string,
+          c: string,
+          d: { type: string; defaultValue?: unknown },
+          dbType: string,
+        ) => { sql: string };
+      }
+    ).generateTypeUpgradeSQL(
+      'documents',
+      'metadata',
+      { type: 'JSON', defaultValue: '{}' },
+      'text',
+    );
 
-    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
-    expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('DROP DEFAULT');
-    expect(typeUpgrades[0].sql).toContain('TYPE JSONB');
-    expect(typeUpgrades[0].sql).toContain('USING "metadata"::jsonb');
-    expect(typeUpgrades[0].sql).toContain("SET DEFAULT '{}'::jsonb");
+    expect(generated.sql).toContain('DROP DEFAULT');
+    expect(generated.sql).toContain('TYPE JSONB');
+    expect(generated.sql).toContain('USING to_jsonb("metadata")');
+    expect(generated.sql).toContain("SET DEFAULT '{}'::jsonb");
   });
 
   it('should generate PostgreSQL ADD COLUMN SQL for JSON array defaults', async () => {
@@ -772,11 +845,9 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     );
   });
 
-  it('should generate DuckDB ALTER COLUMN TYPE for TEXT→JSON', async () => {
-    // Create a mock database interface that identifies as DuckDB
+  it('treats DuckDB TEXT(db) vs JSON(manifest) as equivalent — no churn (#1335)', async () => {
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
-      // Return table name from query so getExistingTables() knows it exists
       query: async () => ({ rows: [{ name: 'records' }] }),
       getTableSchema: async () => ({
         columns: {
@@ -809,12 +880,27 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 
     const diff = await duckComparer.compare(manifest);
 
-    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
-    expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
-    expect(typeUpgrades[0].sql).toContain('TYPE JSON');
-    // DuckDB doesn't need USING clause
-    expect(typeUpgrades[0].sql).not.toContain('USING');
+    // json<->text are interchangeable for SMRT — no migration needed.
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toHaveLength(
+      0,
+    );
+    expect(diff.has_changes).toBe(false);
+
+    // The DuckDB generator still emits a native ALTER COLUMN TYPE (no USING)
+    // when a TEXT→JSON upgrade is requested directly.
+    const generated = (
+      duckComparer as unknown as {
+        generateTypeUpgradeSQL: (
+          t: string,
+          c: string,
+          d: { type: string },
+          dbType: string,
+        ) => { sql: string };
+      }
+    ).generateTypeUpgradeSQL('records', 'metadata', { type: 'JSON' }, 'text');
+    expect(generated.sql).toContain('ALTER TABLE');
+    expect(generated.sql).toContain('TYPE JSON');
+    expect(generated.sql).not.toContain('USING');
   });
 
   it('should generate SQLite no-op comment for TEXT→JSON', async () => {
