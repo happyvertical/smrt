@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -163,6 +163,131 @@ describe('SMRT knowledge index', () => {
     expect(index.relationshipsV2.hierarchicalObjects).toBe(1);
     expect(index.relationshipsV2.polymorphicAssociations).toBe(1);
     expect(index.relationshipsV2.uuidColumns).toBe(3);
+  });
+
+  it('filters the index by package scope and package name', async () => {
+    const index = await buildKnowledgeIndex({
+      rootDir,
+      scope: 'package',
+      package: 'demo',
+    });
+
+    expect(index.packages.map((pkg) => pkg.name)).toEqual([
+      '@happyvertical/smrt-demo',
+    ]);
+    expect(index.sdkPackages).toHaveLength(0);
+  });
+
+  it('loads domain knowledge artifacts before raw manifest fallback', async () => {
+    await mkdir(join(rootDir, 'packages', 'demo', '.smrt'), {
+      recursive: true,
+    });
+    await writeFile(
+      join(rootDir, 'packages', 'demo', '.smrt', 'smrt-knowledge.json'),
+      JSON.stringify(
+        {
+          schemaVersion: 1,
+          generatedAt: new Date().toISOString(),
+          packageName: '@happyvertical/smrt-demo',
+          packageVersion: '1.0.0',
+          sourceHashes: {},
+          exports: ['.', './smrt-knowledge.json'],
+          dependencies: {
+            '@happyvertical/smrt-core': 'workspace:*',
+            '@happyvertical/sql': 'catalog:',
+          },
+          smrtDependencies: ['@happyvertical/smrt-core'],
+          sdkDependencies: ['@happyvertical/sql'],
+          tags: ['fixture'],
+          risks: [],
+          objects: [
+            {
+              name: 'ArtifactDemo',
+              qualifiedName: '@happyvertical/smrt-demo:ArtifactDemo',
+              collection: 'artifact_demos',
+              fields: [
+                {
+                  name: 'profileId',
+                  type: 'crossPackageRef',
+                  related: '@happyvertical/smrt-profiles:Profile',
+                  columnType: 'UUID',
+                },
+              ],
+              relationships: [
+                {
+                  name: 'profileId',
+                  type: 'crossPackageRef',
+                  related: '@happyvertical/smrt-profiles:Profile',
+                  columnType: 'UUID',
+                },
+              ],
+              methods: ['sync'],
+              surfaces: [
+                {
+                  kind: 'mcp',
+                  name: 'artifactdemo_sync',
+                  operation: 'sync',
+                  objectName: '@happyvertical/smrt-demo:ArtifactDemo',
+                },
+              ],
+              relationshipFeatures: ['crossPackageRef', 'uuidColumns'],
+              tags: ['artifact'],
+              risks: [],
+            },
+          ],
+          surfaces: [
+            {
+              kind: 'mcp',
+              name: 'artifactdemo_sync',
+              operation: 'sync',
+              objectName: '@happyvertical/smrt-demo:ArtifactDemo',
+            },
+          ],
+          prompts: [{ filePath: 'src/prompts/review.ts', key: 'demo.review' }],
+          relationshipsV2: {
+            foreignKeyFields: 0,
+            crossPackageRefFields: 1,
+            junctionCollections: 0,
+            hierarchicalObjects: 0,
+            polymorphicAssociations: 0,
+            uuidColumns: 1,
+          },
+          agentDoc: '# Artifact guidance',
+        },
+        null,
+        2,
+      ),
+    );
+
+    const index = await buildKnowledgeIndex({ rootDir });
+    const demo = index.packages.find(
+      (pkg) => pkg.name === '@happyvertical/smrt-demo',
+    );
+
+    expect(demo?.hasDomainKnowledge).toBe(true);
+    expect(demo?.domainKnowledgePath).toBe(
+      'packages/demo/.smrt/smrt-knowledge.json',
+    );
+    expect(demo?.objects.map((object) => object.className)).toEqual([
+      'ArtifactDemo',
+    ]);
+    expect(demo?.mcpTools.map((tool) => tool.name)).toEqual([
+      'artifactdemo_sync',
+    ]);
+    expect(demo?.agentDoc).toContain('Artifact guidance');
+  });
+
+  it('fails freshness when exported domain knowledge is missing', async () => {
+    const pkgPath = join(rootDir, 'packages', 'demo', 'package.json');
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+    pkg.exports['./smrt-knowledge.json'] = './dist/smrt-knowledge.json';
+    await writeFile(pkgPath, JSON.stringify(pkg, null, 2));
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+    expect(result.ok).toBe(false);
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      'missing-domain-knowledge',
+    );
   });
 
   it('fails freshness when package docs are missing or shim drifted', async () => {

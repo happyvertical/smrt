@@ -34,6 +34,10 @@ const SERVER_VERSION = '0.1.0';
 const DEBUG = process.env.DEBUG === 'true';
 const REVIEW_SKILL_NAME = 'smrt-code-review';
 const REVIEW_SKILL_URI = `smrt-dev-mcp://agent-skills/${REVIEW_SKILL_NAME}`;
+const DOMAIN_CODE_REVIEW_PROMPT = 'domain-code-review';
+const DOMAIN_ARCHITECTURE_PROMPT = 'domain-architecture';
+const KNOWLEDGE_PROJECT_URI = 'smrt://knowledge/project';
+const KNOWLEDGE_PACKAGE_PREFIX = 'smrt://knowledge/package/';
 
 // Tool definitions
 export const TOOLS = [
@@ -121,6 +125,23 @@ export const TOOLS = [
     },
   },
   {
+    name: 'reflect-domain-knowledge',
+    description:
+      'Report domain-scoped SMRT knowledge artifacts, SDK packages, and freshness',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootDir: { type: 'string' },
+        scope: {
+          type: 'string',
+          enum: ['project', 'local', 'package', 'sdk'],
+          default: 'project',
+        },
+        package: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'check-knowledge-freshness',
     description: 'Run deterministic freshness checks for SMRT agent knowledge',
     inputSchema: {
@@ -139,6 +160,25 @@ export const TOOLS = [
     },
   },
   {
+    name: 'check-domain-knowledge',
+    description:
+      'Run deterministic freshness checks for domain knowledge artifacts',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootDir: { type: 'string' },
+        changed: { type: 'boolean' },
+        strict: { type: 'boolean' },
+        scope: {
+          type: 'string',
+          enum: ['project', 'local', 'package', 'sdk'],
+          default: 'project',
+        },
+        package: { type: 'string' },
+      },
+    },
+  },
+  {
     name: 'build-review-context',
     description:
       'Build model-ready SMRT review context from changed files and optional focus text',
@@ -149,6 +189,26 @@ export const TOOLS = [
         changedFiles: { type: 'array', items: { type: 'string' } },
         focus: { type: 'string' },
         documentation: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'build-domain-review-context',
+    description:
+      'Build domain-scoped model-ready SMRT review context and prompt bundle',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootDir: { type: 'string' },
+        changedFiles: { type: 'array', items: { type: 'string' } },
+        focus: { type: 'string' },
+        documentation: { type: 'string' },
+        scope: {
+          type: 'string',
+          enum: ['project', 'local', 'package', 'sdk'],
+          default: 'project',
+        },
+        package: { type: 'string' },
       },
     },
   },
@@ -182,6 +242,26 @@ export const TOOLS = [
         idea: { type: 'string' },
         documentation: { type: 'string' },
         focus: { type: 'string' },
+      },
+    },
+  },
+  {
+    name: 'build-domain-architecture-context',
+    description:
+      'Build domain-scoped model-ready SMRT architecture context and prompt bundle',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        rootDir: { type: 'string' },
+        idea: { type: 'string' },
+        documentation: { type: 'string' },
+        focus: { type: 'string' },
+        scope: {
+          type: 'string',
+          enum: ['project', 'local', 'package', 'sdk'],
+          default: 'project',
+        },
+        package: { type: 'string' },
       },
     },
   },
@@ -267,32 +347,79 @@ async function main() {
           description:
             'Harness-agnostic downstream SMRT review procedure that uses smrt-dev-mcp deterministic context and prompt bundles.',
         },
+        {
+          name: DOMAIN_CODE_REVIEW_PROMPT,
+          title: 'Domain Code Review',
+          description:
+            'Model-ready domain-scoped SMRT code review prompt bundle.',
+        },
+        {
+          name: DOMAIN_ARCHITECTURE_PROMPT,
+          title: 'Domain Architecture',
+          description:
+            'Model-ready domain-scoped SMRT architecture planning prompt bundle.',
+        },
       ],
     };
   });
 
   server.setRequestHandler(GetPromptRequestSchema, async (request) => {
     const { name } = request.params;
-    if (name !== REVIEW_SKILL_NAME) {
-      throw new Error(`Unknown prompt: ${name}`);
+    if (name === REVIEW_SKILL_NAME) {
+      return {
+        description:
+          'Use this procedure when reviewing downstream SMRT projects.',
+        messages: [
+          {
+            role: 'user' as const,
+            content: {
+              type: 'text' as const,
+              text: renderAgentSkillMarkdown(REVIEW_SKILL_NAME),
+            },
+          },
+        ],
+      };
     }
 
-    return {
-      description:
-        'Use this procedure when reviewing downstream SMRT projects.',
-      messages: [
-        {
-          role: 'user' as const,
-          content: {
-            type: 'text' as const,
-            text: renderAgentSkillMarkdown(REVIEW_SKILL_NAME),
+    if (name === DOMAIN_CODE_REVIEW_PROMPT) {
+      const context = await buildReviewContext(request.params.arguments as any);
+      return {
+        description: 'Review downstream SMRT code with domain knowledge.',
+        messages: [
+          {
+            role: 'user' as const,
+            content: {
+              type: 'text' as const,
+              text: context.promptBundle.contextMarkdown,
+            },
           },
-        },
-      ],
-    };
+        ],
+      };
+    }
+
+    if (name === DOMAIN_ARCHITECTURE_PROMPT) {
+      const context = await buildArchitectureContext(
+        request.params.arguments as any,
+      );
+      return {
+        description: 'Plan a downstream SMRT project with domain knowledge.',
+        messages: [
+          {
+            role: 'user' as const,
+            content: {
+              type: 'text' as const,
+              text: context.promptBundle.contextMarkdown,
+            },
+          },
+        ],
+      };
+    }
+
+    throw new Error(`Unknown prompt: ${name}`);
   });
 
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    const index = await buildKnowledgeIndex();
     return {
       resources: [
         {
@@ -303,25 +430,72 @@ async function main() {
             'Bundled Markdown skill for downstream SMRT code reviews.',
           mimeType: 'text/markdown',
         },
+        {
+          uri: KNOWLEDGE_PROJECT_URI,
+          name: 'smrt-domain-knowledge-project',
+          title: 'SMRT Domain Knowledge Project Index',
+          description:
+            'Composed SMRT, downstream domain, and HappyVertical SDK knowledge index.',
+          mimeType: 'application/json',
+        },
+        ...index.packages.map((pkg) => ({
+          uri: `${KNOWLEDGE_PACKAGE_PREFIX}${encodeURIComponent(pkg.name)}`,
+          name: `smrt-domain-knowledge-${pkg.name}`,
+          title: `SMRT Domain Knowledge: ${pkg.name}`,
+          description:
+            'Package-scoped SMRT domain knowledge, generated surfaces, and authored context.',
+          mimeType: 'application/json',
+        })),
       ],
     };
   });
 
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
-    if (uri !== REVIEW_SKILL_URI) {
-      throw new Error(`Unknown resource: ${uri}`);
+    if (uri === REVIEW_SKILL_URI) {
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'text/markdown',
+            text: renderAgentSkillMarkdown(REVIEW_SKILL_NAME),
+          },
+        ],
+      };
     }
 
-    return {
-      contents: [
-        {
-          uri,
-          mimeType: 'text/markdown',
-          text: renderAgentSkillMarkdown(REVIEW_SKILL_NAME),
-        },
-      ],
-    };
+    if (uri === KNOWLEDGE_PROJECT_URI) {
+      const index = await buildKnowledgeIndex();
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(index, null, 2),
+          },
+        ],
+      };
+    }
+
+    if (uri.startsWith(KNOWLEDGE_PACKAGE_PREFIX)) {
+      const packageName = decodeURIComponent(
+        uri.slice(KNOWLEDGE_PACKAGE_PREFIX.length),
+      );
+      const index = await buildKnowledgeIndex();
+      const pkg = index.packages.find((item) => item.name === packageName);
+      if (!pkg) throw new Error(`Unknown knowledge package: ${packageName}`);
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(pkg, null, 2),
+          },
+        ],
+      };
+    }
+
+    throw new Error(`Unknown resource: ${uri}`);
   });
 
   // Call tool handler
@@ -369,7 +543,46 @@ async function main() {
           break;
         }
 
+        case 'reflect-domain-knowledge': {
+          const index = await buildKnowledgeIndex(args as any);
+          const freshness = await checkKnowledgeFreshnessFromIndex(
+            index,
+            args as any,
+          );
+          result = JSON.stringify(
+            {
+              rootDir: index.rootDir,
+              packageCount: index.packages.length,
+              smrtPackageCount: index.smrtPackages.length,
+              sdkPackageCount: index.sdkPackages.length,
+              domainKnowledgePackageCount: index.packages.filter(
+                (pkg) => pkg.hasDomainKnowledge,
+              ).length,
+              missingDomainKnowledgePackages: index.packages
+                .filter(
+                  (pkg) =>
+                    pkg.exportKeys.includes('./smrt-knowledge.json') &&
+                    !pkg.hasDomainKnowledge,
+                )
+                .map((pkg) => pkg.name),
+              relationshipsV2: index.relationshipsV2,
+              freshness,
+            },
+            null,
+            2,
+          );
+          break;
+        }
+
         case 'check-knowledge-freshness':
+          result = JSON.stringify(
+            await checkKnowledgeFreshness(args as any),
+            null,
+            2,
+          );
+          break;
+
+        case 'check-domain-knowledge':
           result = JSON.stringify(
             await checkKnowledgeFreshness(args as any),
             null,
@@ -385,11 +598,27 @@ async function main() {
           );
           break;
 
+        case 'build-domain-review-context':
+          result = JSON.stringify(
+            await buildReviewContext(args as any),
+            null,
+            2,
+          );
+          break;
+
         case 'smrt-review':
           result = JSON.stringify(await smrtReview(args as any), null, 2);
           break;
 
         case 'build-architecture-context':
+          result = JSON.stringify(
+            await buildArchitectureContext(args as any),
+            null,
+            2,
+          );
+          break;
+
+        case 'build-domain-architecture-context':
           result = JSON.stringify(
             await buildArchitectureContext(args as any),
             null,

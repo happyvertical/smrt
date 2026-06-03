@@ -6,7 +6,9 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import type { Plugin, ViteDevServer } from 'vite';
+import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import type { SmartObjectManifest } from '../scanner/types';
 import { importWorkspaceModule } from '../utils/import-workspace-module.js';
@@ -81,6 +83,8 @@ export interface SmrtPluginOptions {
      */
     kebabRoutes?: boolean;
   };
+  /** Domain-scoped agent/developer knowledge artifact generation. */
+  knowledge?: DomainKnowledgeConfig | false;
   /**
    * Validate that every method in `cli.include` is exposed via the API
    * (so HTTP-based CLI consumers can actually reach them). Default: true.
@@ -128,6 +132,7 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       configPath: 'src/lib/server',
       configFileName: 'smrt.ts',
     },
+    knowledge,
     validateCliApiCoherence = true,
   } = options;
 
@@ -183,6 +188,12 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
       const manifestPath = resolve(smrtDir, 'manifest.json');
       writeFileSync(manifestPath, JSON.stringify(m, null, 2), 'utf-8');
+      await writeDomainKnowledgeArtifact(
+        m,
+        rootDir,
+        resolve(smrtDir, 'smrt-knowledge.json'),
+        manifestPath,
+      );
 
       const objectCount = Object.keys(m.objects).length;
       console.log(
@@ -190,6 +201,104 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       );
     } catch (error) {
       console.error('[smrt] Error writing local manifest:', error);
+    }
+  }
+
+  async function writeDomainKnowledgeArtifact(
+    m: SmartObjectManifest,
+    rootDir: string,
+    outputPath: string,
+    manifestPath: string,
+  ): Promise<void> {
+    const resolvedKnowledge = await resolveKnowledgeConfig(rootDir, m);
+    if (resolvedKnowledge.enabled === false) {
+      return;
+    }
+
+    const { mkdirSync, writeFileSync } = await import('node:fs');
+    const { dirname } = await import('node:path');
+    mkdirSync(dirname(outputPath), { recursive: true });
+    const artifact = buildDomainKnowledgeManifest({
+      manifest: m,
+      rootDir,
+      manifestPath,
+      config: resolvedKnowledge,
+    });
+    writeFileSync(outputPath, JSON.stringify(artifact, null, 2), 'utf-8');
+  }
+
+  async function resolveKnowledgeConfig(
+    rootDir: string,
+    m: SmartObjectManifest,
+  ): Promise<DomainKnowledgeConfig> {
+    if (knowledge === false) return { enabled: false };
+    const packageName = m.packageName ?? readPackageName(rootDir);
+    const defaults: DomainKnowledgeConfig = {
+      enabled: true,
+      cli: true,
+      mcp: true,
+      api: {
+        enabled: false,
+        basePath: '/__smrt/knowledge',
+        requireAdmin: true,
+        includeDocs: false,
+        includePrompts: false,
+      },
+      includeDocs: true,
+      includePrompts: true,
+    };
+
+    let fileKnowledge: DomainKnowledgeConfig = {};
+    let packageKnowledge: DomainKnowledgeConfig = {};
+    try {
+      const previousCwd = process.cwd();
+      process.chdir(rootDir);
+      try {
+        const { loadConfig } = await import('@happyvertical/smrt-config');
+        const config = await loadConfig({ cache: false });
+        fileKnowledge = (config.knowledge ?? {}) as DomainKnowledgeConfig;
+        packageKnowledge = (
+          packageName ? config.packages?.[packageName]?.knowledge : {}
+        ) as DomainKnowledgeConfig;
+      } finally {
+        process.chdir(previousCwd);
+      }
+    } catch {
+      fileKnowledge = {};
+      packageKnowledge = {};
+    }
+
+    return mergeKnowledgeConfig(
+      defaults,
+      fileKnowledge,
+      packageKnowledge,
+      knowledge || {},
+    );
+  }
+
+  function mergeKnowledgeConfig(
+    ...configs: DomainKnowledgeConfig[]
+  ): DomainKnowledgeConfig {
+    const merged: DomainKnowledgeConfig = {};
+    for (const next of configs) {
+      const api =
+        merged.api || next.api
+          ? { ...(merged.api ?? {}), ...(next.api ?? {}) }
+          : undefined;
+      Object.assign(merged, next);
+      if (api) merged.api = api;
+    }
+    return merged;
+  }
+
+  function readPackageName(rootDir: string): string | undefined {
+    try {
+      const pkg = JSON.parse(
+        readFileSync(join(rootDir, 'package.json'), 'utf8'),
+      );
+      return typeof pkg.name === 'string' ? pkg.name : undefined;
+    } catch {
+      return undefined;
     }
   }
 
@@ -312,6 +421,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           configPath: svelteKit.configPath || 'src/lib/server',
           configFileName: svelteKit.configFileName || 'smrt.ts',
           kebabRoutes: svelteKit.kebabRoutes ?? false,
+          knowledge: await resolveKnowledgeConfig(
+            resolvedConfig.root,
+            manifest,
+          ),
         });
       }
     },
@@ -398,6 +511,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                 configPath: svelteKit.configPath || 'src/lib/server',
                 configFileName: svelteKit.configFileName || 'smrt.ts',
                 kebabRoutes: svelteKit.kebabRoutes ?? false,
+                knowledge: await resolveKnowledgeConfig(
+                  server.config.root,
+                  manifest,
+                ),
               });
             }
 
@@ -431,6 +548,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                 configPath: svelteKit.configPath || 'src/lib/server',
                 configFileName: svelteKit.configFileName || 'smrt.ts',
                 kebabRoutes: svelteKit.kebabRoutes ?? false,
+                knowledge: await resolveKnowledgeConfig(
+                  server.config.root,
+                  manifest,
+                ),
               });
             }
           }
@@ -456,6 +577,10 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
                 configPath: svelteKit.configPath || 'src/lib/server',
                 configFileName: svelteKit.configFileName || 'smrt.ts',
                 kebabRoutes: svelteKit.kebabRoutes ?? false,
+                knowledge: await resolveKnowledgeConfig(
+                  server.config.root,
+                  manifest,
+                ),
               });
             }
           }
@@ -573,12 +698,23 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
           config.build?.outDir ||
           'dist';
         const manifestPath = resolve(projectRoot, outDir, 'manifest.json');
+        const knowledgePath = resolve(
+          projectRoot,
+          outDir,
+          'smrt-knowledge.json',
+        );
 
         // Ensure directory exists
         mkdirSync(dirname(manifestPath), { recursive: true });
 
         // Write manifest file
         writeFileSync(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+        await writeDomainKnowledgeArtifact(
+          manifest,
+          projectRoot,
+          knowledgePath,
+          manifestPath,
+        );
 
         const objectCount = Object.keys(manifest.objects).length;
         console.log(

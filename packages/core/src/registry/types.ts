@@ -7,6 +7,7 @@
  * @see https://github.com/happyvertical/smrt/issues/1006
  */
 
+import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import type { SmrtCollection } from '../collection';
 import type { SmrtObject } from '../object';
 import type {
@@ -227,6 +228,15 @@ export interface SmartObjectConfig {
    * ```
    */
   visibility?: SmrtVisibility;
+
+  /**
+   * Agent/developer knowledge metadata.
+   *
+   * Set to false to exclude this object from generated smrt-knowledge.json
+   * without changing runtime manifest registration. Object-level metadata
+   * augments package-level knowledge defaults from smrt.config.
+   */
+  knowledge?: false | Pick<DomainKnowledgeConfig, 'tags' | 'summary' | 'risks'>;
 
   /**
    * API configuration

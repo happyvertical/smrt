@@ -52,6 +52,20 @@ export default {
     },
   },
 
+  // Agent/developer knowledge defaults
+  knowledge: {
+    enabled: true,
+    cli: true,
+    mcp: true,
+    api: {
+      enabled: false,
+      basePath: '/__smrt/knowledge',
+      requireAdmin: true,
+      includeDocs: false,
+      includePrompts: false,
+    },
+  },
+
   // Global package settings
   packages: {
     cli: {

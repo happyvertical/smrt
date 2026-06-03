@@ -35,6 +35,13 @@ Codex, Claude, or any other model provider directly. They return deterministic
 findings plus a reusable prompt bundle that can be sent to the local model plan
 or provider of your choice.
 
+Downstream SMRT packages/apps can publish their own scoped
+`smrt-knowledge.json` artifact. Discovery prefers local
+`.smrt/smrt-knowledge.json`, then `dist/smrt-knowledge.json`, then source
+manifest artifacts before falling back to raw manifest/doc scanning. The runtime
+`manifest.json` stays focused on object registration; `smrt-knowledge.json` is
+the agent/developer contract.
+
 After using a model to update package docs or expertise, always run the
 deterministic checker again:
 
@@ -43,6 +50,23 @@ pnpm knowledge:check --strict --format markdown
 ```
 
 Use `--format json` when another script needs machine-readable output.
+
+## Downstream Review Flow
+
+1. Run the downstream app build or dev server so `.smrt/smrt-knowledge.json`
+   exists.
+2. Call `reflect-domain-knowledge` to confirm package and SDK coverage.
+3. Call `build-domain-review-context` or `smrt-review` with changed files,
+   `scope`, and optional `package`.
+4. Send the returned prompt bundle to Codex, Claude, or another model.
+5. Re-run `check-domain-knowledge` after edits.
+
+Equivalent CLI commands are:
+
+```bash
+smrt knowledge:review-context --scope package --package content --format markdown
+smrt knowledge:architecture-context "tenant-aware publishing workflow" --format json
+```
 
 ## Agent Skills
 
@@ -106,6 +130,17 @@ index.
 |-----------|------|----------|-------------|
 | `rootDir` | `string` | No | Project root directory (default: cwd) |
 
+### `reflect-domain-knowledge`
+
+Return domain artifact coverage, missing exported artifacts, SDK package
+coverage, relationship-v2 counts, and freshness status.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `scope` | `string` | No | `project`, `local`, `package`, or `sdk` |
+| `package` | `string` | No | Package name or short name to focus |
+
 ### `check-knowledge-freshness`
 
 Run the same deterministic freshness checks exposed by `pnpm knowledge:check`.
@@ -115,6 +150,19 @@ Run the same deterministic freshness checks exposed by `pnpm knowledge:check`.
 | `rootDir` | `string` | No | Project root directory (default: cwd) |
 | `changed` | `boolean` | No | Limit stale-pattern checks to changed files |
 | `strict` | `boolean` | No | Treat stale-pattern findings as errors |
+
+### `check-domain-knowledge`
+
+Alias over the deterministic checker that emphasizes downstream
+`smrt-knowledge.json` artifact freshness.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `rootDir` | `string` | No | Project root directory (default: cwd) |
+| `changed` | `boolean` | No | Limit stale-pattern checks to changed files |
+| `strict` | `boolean` | No | Treat stale-pattern findings as errors |
+| `scope` | `string` | No | `project`, `local`, `package`, or `sdk` |
+| `package` | `string` | No | Package name or short name to focus |
 
 ### `build-review-context`
 
@@ -127,6 +175,11 @@ then return a model-ready prompt bundle.
 | `changedFiles` | `string[]` | No | Files to route to package experts |
 | `focus` | `string` | No | Review focus or concern |
 | `documentation` | `string` | No | Additional docs or notes to include |
+
+### `build-domain-review-context`
+
+Domain-scoped alias for `build-review-context`. Accepts the same fields plus
+`scope` and `package`.
 
 ### `smrt-review`
 
@@ -151,6 +204,11 @@ then return a model-ready architecture prompt bundle.
 | `idea` | `string` | No | Product or implementation idea |
 | `documentation` | `string` | No | Existing docs or requirements |
 | `focus` | `string` | No | Architecture concern to prioritize |
+
+### `build-domain-architecture-context`
+
+Domain-scoped alias for `build-architecture-context`. Accepts the same fields
+plus `scope` and `package`.
 
 ### `smrt-architecture`
 
@@ -178,6 +236,20 @@ Return a bundled agent skill as Markdown, with optional referenced files.
 | `name` | `string` | Yes | Skill name. Currently `smrt-code-review` |
 | `includeReferences` | `boolean` | No | Include referenced files (default: true) |
 
+## MCP Resources And Prompts
+
+Resources:
+
+- `smrt://knowledge/project` — composed project knowledge index as JSON.
+- `smrt://knowledge/package/{name}` — package-scoped knowledge as JSON.
+- `smrt-dev-mcp://agent-skills/smrt-code-review` — portable review skill.
+
+Prompts:
+
+- `domain-code-review` — returns the review prompt bundle.
+- `domain-architecture` — returns the architecture prompt bundle.
+- `smrt-code-review` — returns the harness-agnostic review procedure.
+
 ## MCP Tier Context
 
 - **Tier 1** (Runtime): auto-generated from `@smrt()` objects -- live data operations
@@ -188,6 +260,7 @@ Return a bundled agent skill as Markdown, with optional referenced files.
 
 - `@modelcontextprotocol/sdk` -- MCP server protocol
 - `@happyvertical/smrt-core` -- manifest and object registry
+- `@happyvertical/smrt-types` -- shared domain knowledge contract
 
 ## License
 

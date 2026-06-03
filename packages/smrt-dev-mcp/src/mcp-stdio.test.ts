@@ -59,9 +59,13 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(toolNames).toEqual(
       expect.arrayContaining([
         'reflect-knowledge',
+        'reflect-domain-knowledge',
         'check-knowledge-freshness',
+        'check-domain-knowledge',
         'build-review-context',
+        'build-domain-review-context',
         'build-architecture-context',
+        'build-domain-architecture-context',
         'smrt-review',
         'smrt-architecture',
         'list-agent-skills',
@@ -77,6 +81,13 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(reflect.smrtPackageCount).toBeGreaterThan(0);
     expect(reflect.freshness.ok).toBe(true);
 
+    const domainReflectResult = await client.callTool({
+      name: 'reflect-domain-knowledge',
+      arguments: { rootDir: repoRoot },
+    });
+    const domainReflect = JSON.parse(textContent(domainReflectResult));
+    expect(domainReflect.domainKnowledgePackageCount).toBeGreaterThanOrEqual(0);
+
     const reviewResult = await client.callTool({
       name: 'build-review-context',
       arguments: {
@@ -89,6 +100,20 @@ describe('smrt-dev-mcp stdio server', () => {
       review.selectedPackages.map((pkg: { name: string }) => pkg.name),
     ).toContain('@happyvertical/smrt-content');
     expect(review.promptBundle.contextMarkdown).toContain('SMRT code review');
+
+    const domainReviewResult = await client.callTool({
+      name: 'build-domain-review-context',
+      arguments: {
+        rootDir: repoRoot,
+        changedFiles: ['packages/content/src/models/Article.ts'],
+        scope: 'package',
+        package: 'content',
+      },
+    });
+    const domainReview = JSON.parse(textContent(domainReviewResult));
+    expect(
+      domainReview.selectedPackages.map((pkg: { name: string }) => pkg.name),
+    ).toContain('@happyvertical/smrt-content');
 
     const architectureResult = await client.callTool({
       name: 'build-architecture-context',
@@ -104,6 +129,24 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(architecture.promptBundle.contextMarkdown).toContain(
       'SMRT architecture planning',
     );
+
+    const domainArchitectureResult = await client.callTool({
+      name: 'build-domain-architecture-context',
+      arguments: {
+        rootDir: repoRoot,
+        idea: 'Publishing workflow with profiles and scheduled social posts',
+        scope: 'package',
+        package: 'profiles',
+      },
+    });
+    const domainArchitecture = JSON.parse(
+      textContent(domainArchitectureResult),
+    );
+    expect(
+      domainArchitecture.selectedPackages.map(
+        (pkg: { name: string }) => pkg.name,
+      ),
+    ).toContain('@happyvertical/smrt-profiles');
 
     const skillsResult = await client.callTool({
       name: 'list-agent-skills',
@@ -124,8 +167,12 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(skill.referenceFiles[0].content).toContain('SMRT Review Output');
 
     const promptsResult = await client.listPrompts();
-    expect(promptsResult.prompts.map((prompt) => prompt.name)).toContain(
-      'smrt-code-review',
+    expect(promptsResult.prompts.map((prompt) => prompt.name)).toEqual(
+      expect.arrayContaining([
+        'smrt-code-review',
+        'domain-code-review',
+        'domain-architecture',
+      ]),
     );
     const promptResult = await client.getPrompt({ name: 'smrt-code-review' });
     expect(promptResult.messages[0]?.content.type).toBe('text');
@@ -136,8 +183,11 @@ describe('smrt-dev-mcp stdio server', () => {
     ).toContain('name: smrt-code-review');
 
     const resourcesResult = await client.listResources();
-    expect(resourcesResult.resources.map((resource) => resource.uri)).toContain(
-      'smrt-dev-mcp://agent-skills/smrt-code-review',
+    expect(resourcesResult.resources.map((resource) => resource.uri)).toEqual(
+      expect.arrayContaining([
+        'smrt-dev-mcp://agent-skills/smrt-code-review',
+        'smrt://knowledge/project',
+      ]),
     );
     const resourceResult = await client.readResource({
       uri: 'smrt-dev-mcp://agent-skills/smrt-code-review',

@@ -1756,6 +1756,69 @@ describe('SvelteKit Route Generator', () => {
     });
   });
 
+  describe('Knowledge Route Generation', () => {
+    it('generates the guarded knowledge route only when explicitly enabled', async () => {
+      const manifest: SmartObjectManifest = {
+        objects: {
+          Thing: {
+            className: 'Thing',
+            collection: 'things',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+          },
+        },
+      };
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        knowledge: {
+          api: {
+            enabled: false,
+          },
+        },
+      });
+
+      const disabledWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('__smrt/knowledge/+server.ts'),
+        );
+      expect(disabledWrite).toBeUndefined();
+
+      vi.clearAllMocks();
+      vi.mocked(existsSync).mockReturnValue(false);
+      vi.mocked(readFileSync).mockReturnValue('');
+      vi.mocked(readdirSync).mockReturnValue([]);
+
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        knowledge: {
+          api: {
+            enabled: true,
+            basePath: '/__smrt/knowledge',
+            requireAdmin: true,
+            includeDocs: false,
+            includePrompts: false,
+          },
+        },
+      });
+
+      const enabledWrite = vi
+        .mocked(writeFileSync)
+        .mock.calls.find((call) =>
+          call[0].toString().includes('__smrt/knowledge/+server.ts'),
+        );
+      expect(enabledWrite).toBeDefined();
+      expect(enabledWrite?.[1]).toContain('SMRT knowledge requires dev mode');
+      expect(enabledWrite?.[1]).toContain('sanitizeKnowledgeArtifact');
+    });
+  });
+
   // Regression: custom-method URL paths used method-name casing instead of
   // kebab-case. See smrt#1305. Default off; opt-in via svelteKit.kebabRoutes.
   describe('kebabRoutes option (smrt#1305)', () => {

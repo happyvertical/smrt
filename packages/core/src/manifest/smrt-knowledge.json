@@ -1,0 +1,330 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-06-03T18:30:44.276Z",
+  "packageName": "@happyvertical/smrt-core",
+  "packageVersion": "0.27.0",
+  "sourceManifestPath": "src/manifest/static-manifest.json",
+  "agentDocPath": "AGENTS.md",
+  "sourceHashes": {
+    "manifest": "916e2ac1b6a977ed05f5740f9b8c8f24d3d4acb458657cc62b047024d86ccf61",
+    "packageJson": "8f9bbd304323dcbe44089f69bfd6c3a72db6b56deb6d15a519d652a14e738b62",
+    "agents": "1183fde67e7c2817e0249c8dd432cc94bec7def91bd48af96df486291b425186"
+  },
+  "exports": [
+    ".",
+    "./consumer-plugin",
+    "./generators",
+    "./generators/mcp",
+    "./generators/rest",
+    "./generators/swagger",
+    "./knowledge",
+    "./manifest",
+    "./manifest.json",
+    "./manifest/discover-base-classes",
+    "./manifest/discover-smrt-packages",
+    "./migrations",
+    "./prebuild",
+    "./prebuild/cli",
+    "./runtime",
+    "./scanner",
+    "./scanner/types",
+    "./schema/utils",
+    "./smrt-knowledge.json",
+    "./testing",
+    "./utils",
+    "./utils/import-workspace-module",
+    "./vite-plugin"
+  ],
+  "dependencies": {
+    "@happyvertical/ai": "catalog:",
+    "@happyvertical/files": "catalog:",
+    "@happyvertical/json": "catalog:",
+    "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-config": "workspace:*",
+    "@happyvertical/smrt-scanner": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/sql": "catalog:",
+    "@happyvertical/utils": "catalog:",
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "cheerio": "^1.1.2",
+    "fast-glob": "3.3.3",
+    "minimatch": "10.1.1",
+    "pluralize": "^8.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "yaml": "^2.8.2",
+    "@faker-js/faker": "^10.2.0",
+    "@huggingface/transformers": ">=3.0.0 <4.0.0",
+    "@types/node": "25.0.9",
+    "@types/pluralize": "^0.0.33",
+    "@xenova/transformers": "^2.17.0",
+    "vite": "7.3.1",
+    "vite-plugin-dts": "4.5.4",
+    "vitest": "^4.0.17"
+  },
+  "smrtDependencies": [
+    "@happyvertical/smrt-config",
+    "@happyvertical/smrt-scanner",
+    "@happyvertical/smrt-types"
+  ],
+  "sdkDependencies": [
+    "@happyvertical/ai",
+    "@happyvertical/files",
+    "@happyvertical/json",
+    "@happyvertical/logger",
+    "@happyvertical/sql",
+    "@happyvertical/utils"
+  ],
+  "tags": [],
+  "risks": [],
+  "objects": [
+    {
+      "name": "SmrtClass",
+      "qualifiedName": "@happyvertical/smrt-core:SmrtClass",
+      "collection": "smrtclasses",
+      "tableName": "smrt_classes",
+      "packageName": "@happyvertical/smrt-core",
+      "fields": [],
+      "relationships": [],
+      "methods": [
+        "destroy",
+        "getAiUsageSnapshot",
+        "listAiUsage",
+        "resetAiUsage",
+        "summarizeAiUsage"
+      ],
+      "surfaces": [],
+      "relationshipFeatures": [
+        "uuidColumns"
+      ],
+      "tags": [],
+      "risks": []
+    },
+    {
+      "name": "SmrtCollection",
+      "qualifiedName": "@happyvertical/smrt-core:SmrtCollection",
+      "collection": "smrtcollections",
+      "tableName": "smrt_collections",
+      "packageName": "@happyvertical/smrt-core",
+      "extends": "SmrtClass",
+      "fields": [],
+      "relationships": [],
+      "methods": [
+        "count",
+        "create",
+        "delete",
+        "ensureStorageReady",
+        "findAll",
+        "findById",
+        "findOne",
+        "findSimilar",
+        "findSimilarToEmbedding",
+        "forget",
+        "forgetScope",
+        "generateMissingEmbeddings",
+        "generateSchema",
+        "generateTableName",
+        "get",
+        "getDiff",
+        "getFields",
+        "getFieldsSync",
+        "getOrUpsert",
+        "initialize",
+        "list",
+        "listByIds",
+        "query",
+        "recall",
+        "recallAll",
+        "remember",
+        "semanticSearch",
+        "validate"
+      ],
+      "surfaces": [],
+      "relationshipFeatures": [
+        "uuidColumns"
+      ],
+      "tags": [],
+      "risks": []
+    },
+    {
+      "name": "SmrtHierarchical",
+      "qualifiedName": "@happyvertical/smrt-core:SmrtHierarchical",
+      "collection": "smrthierarchicals",
+      "tableName": "smrt_hierarchicals",
+      "packageName": "@happyvertical/smrt-core",
+      "extends": "SmrtObject",
+      "fields": [
+        {
+          "name": "parentId",
+          "type": "text",
+          "required": false,
+          "columnType": "TEXT"
+        }
+      ],
+      "relationships": [],
+      "methods": [
+        "getAncestors",
+        "getChildren",
+        "getDescendants",
+        "getHierarchy",
+        "getParent",
+        "moveTo"
+      ],
+      "surfaces": [],
+      "relationshipFeatures": [
+        "uuidColumns"
+      ],
+      "tags": [],
+      "risks": []
+    },
+    {
+      "name": "SmrtJunction",
+      "qualifiedName": "@happyvertical/smrt-core:SmrtJunction",
+      "collection": "smrtjunctions",
+      "tableName": "smrt_junctions",
+      "packageName": "@happyvertical/smrt-core",
+      "extends": "SmrtCollection",
+      "fields": [],
+      "relationships": [],
+      "methods": [
+        "attach",
+        "byLeft",
+        "byRight",
+        "detach",
+        "setLinks"
+      ],
+      "surfaces": [],
+      "relationshipFeatures": [
+        "uuidColumns"
+      ],
+      "tags": [],
+      "risks": []
+    },
+    {
+      "name": "SmrtObject",
+      "qualifiedName": "@happyvertical/smrt-core:SmrtObject",
+      "collection": "smrtobjects",
+      "tableName": "smrt_objects",
+      "packageName": "@happyvertical/smrt-core",
+      "extends": "SmrtClass",
+      "fields": [
+        {
+          "name": "created_at",
+          "type": "datetime",
+          "required": false,
+          "columnType": "TIMESTAMP"
+        },
+        {
+          "name": "updated_at",
+          "type": "datetime",
+          "required": false,
+          "columnType": "TIMESTAMP"
+        }
+      ],
+      "relationships": [],
+      "methods": [
+        "clearEmbeddings",
+        "delete",
+        "describe",
+        "do",
+        "executeToolCall",
+        "forget",
+        "forgetScope",
+        "generateEmbeddings",
+        "getAvailableTools",
+        "getEmbedding",
+        "getFields",
+        "getId",
+        "getRelated",
+        "getSavedId",
+        "getSlug",
+        "hasStaleEmbeddings",
+        "initialize",
+        "is",
+        "isRelatedLoaded",
+        "isSaved",
+        "loadDataFromDb",
+        "loadFromId",
+        "loadFromSlug",
+        "loadRelated",
+        "loadRelatedMany",
+        "recall",
+        "recallAll",
+        "remember",
+        "save",
+        "toJSON",
+        "toPlainObject"
+      ],
+      "surfaces": [],
+      "relationshipFeatures": [
+        "uuidColumns"
+      ],
+      "tags": [],
+      "risks": []
+    },
+    {
+      "name": "SmrtPolymorphicAssociation",
+      "qualifiedName": "@happyvertical/smrt-core:SmrtPolymorphicAssociation",
+      "collection": "smrtpolymorphicassociations",
+      "tableName": "smrt_polymorphic_associations",
+      "packageName": "@happyvertical/smrt-core",
+      "extends": "SmrtObject",
+      "fields": [
+        {
+          "name": "metaType",
+          "type": "text",
+          "required": true,
+          "columnType": "TEXT"
+        },
+        {
+          "name": "metaId",
+          "type": "text",
+          "required": true,
+          "columnType": "TEXT"
+        },
+        {
+          "name": "role",
+          "type": "text",
+          "required": true,
+          "columnType": "TEXT"
+        },
+        {
+          "name": "sortOrder",
+          "type": "integer",
+          "required": false,
+          "columnType": "INTEGER"
+        }
+      ],
+      "relationships": [],
+      "methods": [
+        "hydrate"
+      ],
+      "surfaces": [],
+      "relationshipFeatures": [
+        "SmrtPolymorphicAssociation",
+        "uuidColumns"
+      ],
+      "tags": [],
+      "risks": []
+    }
+  ],
+  "surfaces": [],
+  "prompts": [
+    {
+      "filePath": "src/knowledge.test.ts",
+      "key": "orders.review"
+    },
+    {
+      "filePath": "src/knowledge.ts"
+    }
+  ],
+  "relationshipsV2": {
+    "foreignKeyFields": 0,
+    "crossPackageRefFields": 0,
+    "junctionCollections": 0,
+    "hierarchicalObjects": 0,
+    "polymorphicAssociations": 1,
+    "uuidColumns": 0
+  },
+  "agentDoc": "# @happyvertical/smrt-core\n\nORM, code generation, AI integration, and the DispatchBus. Everything else builds on this.\n\n## Key Classes\n\n| Class | File | Purpose |\n|-------|------|---------|\n| SmrtObject | `src/object.ts` | Base persistent object — save, delete, is(), do(), loadFromId/Slug |\n| SmrtCollection | `src/collection.ts` | CRUD collection — list, get, create, delete, getOrUpsert |\n| ObjectRegistry | `src/registry.ts` | Global singleton (globalThis) — class metadata, fields, STI chains, manifests |\n| DispatchBus | `src/dispatch/bus.ts` | Inter-agent messaging — emit, subscribe (persistent), process |\n| GlobalInterceptors | `src/interceptors.ts` | Plugin system — beforeList/Get/Save/Delete hooks (used by tenancy) |\n\n## SmrtObject Lifecycle\n\n`constructor(options)` → `initialize()` → ready for `save()`/`delete()`/`loadFromId()`\n\n- `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided\n- `save()`: upsert with STI validation, interceptor execution, auto-embeddings\n- `is(criteria)` / `do(instructions)`: AI operations via function calling\n- `getSlug()`: auto-generates from name → title → label → id\n- `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)\n\n## SmrtCollection Query\n\n```typescript\nawait collection.list({\n  where: { status: 'active', price: { op: '>', value: 10 } },\n  limit: 50, offset: 0, orderBy: 'created_at DESC'\n});\n```\n\n**WHERE operators**: `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, `like`, `is null`, `is not null`. Arrays auto-detect `IN`. Dot notation for JSON paths: `metadata.userId`.\n\nSTI child collections auto-filter by `_meta_type`.\n\n## @smrt() Decorator Options\n\nKey options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `api`/`mcp`/`cli` (generation config), `ai` (callable methods), `hooks` (beforeSave/afterSave/beforeDelete/afterDelete), `embeddings` (auto-generate), `tenantScoped`, `agent`.\n\nRegistration sets `SMRT_TABLE_NAME` static property (survives minification).\n\n## Domain Knowledge Artifacts\n\n`smrtPlugin()` writes runtime manifests and agent/developer knowledge artifacts:\n\n- local dev/build: `.smrt/manifest.json` and `.smrt/smrt-knowledge.json`\n- package build: `dist/manifest.json` and `dist/smrt-knowledge.json`\n\nKeep `manifest.json` runtime-focused. `smrt-knowledge.json` is the deterministic\nagent contract for downstream review and architecture tools.\n\nConfig precedence for knowledge is defaults → top-level `knowledge` in\n`smrt.config.ts` → `packages[packageName].knowledge` → plugin option →\nobject-level `@smrt({ knowledge })`.\n\nObject-level `knowledge: false` excludes an object from authored context only;\nit must not change runtime manifest registration. Use\n`knowledge: { tags, summary, risks }` for review-sensitive domain objects.\n\nHTTP knowledge routes are disabled by default. If `knowledge.api.enabled` is\ntrue, generated SvelteKit routes must stay GET-only and guarded by dev mode or\nadmin auth.\n\n## DispatchBus\n\n- `emit(signalType, payload, metadata)` → creates persistent Dispatch record\n- `on(pattern, handler)` → in-memory handler (immediate)\n- `subscribe({ signalType, subscriber })` → persistent subscription (survives restarts)\n- `process(subscriberName, handler)` → process pending dispatches\n- Wildcards: `campaign.*` matches `campaign.completed` (single segment only)\n- Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`\n- Status: `pending → processing → completed` (or `failed`)\n\n## Single Table Inheritance (STI)\n\n- Base: `@smrt({ tableStrategy: 'sti' })` — children inherit, share one table\n- Discriminator: `_meta_type` column with qualified names (`@happyvertical/smrt-content:Article`)\n- Child fields: `@meta()` decorator → stored in `_meta_data` JSONB (not as columns)\n- Polymorphic queries: collection loads `_meta_type`, creates correct subclass dynamically\n- Validation: fail-fast on save if `_meta_type` missing or mismatched\n\n## Code Generators\n\n| Generator | Location | Output |\n|-----------|----------|--------|\n| REST API | `src/generators/rest.ts` | OpenAPI-compliant CRUD endpoints |\n| CLI | `src/generators/cli.ts` | Commander commands with auto-help |\n| MCP Server | `src/generators/mcp.ts` | Model Context Protocol tools |\n\n## Child Accessors (R10)\n\n`src/child-accessors.ts` installs a consistent `get<FieldName>()` instance method for every `@oneToMany` field at `@smrt()` registration time (e.g. `@oneToMany('OrderItem') items` → `order.getItems()`), delegating to `loadRelatedMany`. Two invariants:\n\n- **Additive** — never overwrites a hand-rolled method of the same name (checks the whole prototype chain). `Profile.getMetadata()` (key-value) and `ProfileRelationship.getTerms()` are preserved.\n- **Runtime-only** — attached to the prototype, invisible to the build-time manifest, so it never leaks into the REST/CLI/MCP surface.\n\nWhen the target declares multiple FKs back to the parent, annotate `@oneToMany(Target, { foreignKey: '<inverseField>' })`; `loadRelatedMany` and the eager `include:` loader both honor it (else first-match).\n\n## Vite Plugin\n\n```typescript\n// vite.config.ts — required for @smrt() decorators\nexport default defineConfig({\n  esbuild: {\n    tsconfigRaw: {\n      compilerOptions: { experimentalDecorators: true, emitDecoratorMetadata: true }\n    }\n  }\n});\n```\n\n## Gotchas\n\n- **Never override toJSON()** — handles STI discriminator + meta field extraction. Use `transformJSON()`\n- **Property init order**: TypeScript initializers run first, then `initialize()` applies option values (options win)\n- **No runtime schema creation**: application tables must be prepared explicitly via migrations/tooling; runtime only verifies and fails clearly\n- **Retry logic**: `db.get()` (3 retries, 250ms) and `db.upsert()` (3 retries, 500ms) have built-in retry\n- **Field caching**: `_cachedFields` populated during `Collection.create()` — eliminates async `getFields()` per query\n- **Smart cloning**: arrays/objects shallow-cloned in property init to prevent aliasing (Issue #22)\n- **Table verification cache**: `isTableVerified(dbUrl, tableName)` avoids redundant `tableExists()` calls\n- **Manifest required**: build-time AST scanning creates manifest. Without vitest plugin → \"No field metadata\"\n- **Vite plugin loads scanner from `dist/` first**: `src/vite-plugin/import-build-aware.ts` prefers `dist/` when it exists on disk; it only falls back to `src/` on fresh clones. So if you edit `src/scanner/*.ts` or `src/schema/generator.ts` and want those edits reflected in consumer manifest generation, you must rebuild (`pnpm build` or have `pnpm dev` / `pnpm build:watch` running in core). This is intentional — sniffing `.ts` vs `.js` via `import.meta.url` was non-deterministic under tsx and broke 12–13 publishes (#1139).\n"
+}

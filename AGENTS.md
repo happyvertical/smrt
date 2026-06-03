@@ -114,8 +114,15 @@ From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical
   `AGENTS.md` directly.
 - `smrt dev:knowledge-index` prints the deterministic SMRT + HappyVertical SDK knowledge graph.
 - `smrt dev:knowledge-check` validates agent-doc freshness, stale references, package docs, package `files` entries, and relationship-aware manifest facts. Use `--format markdown` for human hook output and `--format json` for scripts.
+- Downstream apps/packages generate `.smrt/smrt-knowledge.json` for local
+  development and `dist/smrt-knowledge.json` for published package artifacts.
+  `manifest.json` remains runtime-focused; `smrt-knowledge.json` is the
+  agent/developer contract.
+- `smrt knowledge:review-context` and `smrt knowledge:architecture-context`
+  build domain-scoped prompt bundles. Use `--scope project|local|package|sdk`
+  and `--package <name>` to narrow context.
 - Lefthook runs deterministic knowledge freshness locally: changed-file strict checks on pre-commit and full strict checks on pre-push. Model-assisted audits are never required in hooks or CI.
-- `smrt-dev-mcp` exposes the same knowledge through `reflect-knowledge`, `check-knowledge-freshness`, `build-review-context`, `smrt-review`, `build-architecture-context`, and `smrt-architecture`.
+- `smrt-dev-mcp` exposes the same knowledge through `reflect-knowledge`, `reflect-domain-knowledge`, `check-knowledge-freshness`, `check-domain-knowledge`, `build-review-context`, `build-domain-review-context`, `smrt-review`, `build-architecture-context`, `build-domain-architecture-context`, and `smrt-architecture`.
 - `smrt-dev-mcp` also ships harness-agnostic skills. Downstream agents can call `get-agent-skill` with `name: "smrt-code-review"` to fetch the portable review procedure before using `smrt-review` on a project diff.
 
 ## Gotchas

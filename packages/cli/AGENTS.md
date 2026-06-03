@@ -13,6 +13,8 @@ smrt db:rollback             # Rollback migrations
 smrt docs:agents             # Generate .agents/smrt-framework.md
 smrt docs:claude             # Deprecated alias writing .claude/smrt-framework.md
 smrt dev:knowledge-*         # Deterministic agent knowledge index/check/diff
+smrt knowledge:review-context --scope package --package <name>
+smrt knowledge:architecture-context --scope project|local|package|sdk
 smrt dev:knowledge-check --format markdown|json
 smrt generate:mcp            # Generate MCP server
 smrt config:export           # Export agent config for SSG

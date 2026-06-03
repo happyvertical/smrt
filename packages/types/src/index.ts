@@ -18,6 +18,14 @@ export type {
   SmrtAiUsageRecord,
 } from './ai-usage.js';
 export type {
+  DomainKnowledgeConfig,
+  DomainKnowledgeFreshnessResult,
+  DomainKnowledgeManifest,
+  DomainKnowledgeObject,
+  DomainKnowledgeSurface,
+  DomainKnowledgeSurfaceKind,
+} from './knowledge.js';
+export type {
   ModuleComponentType,
   ModuleUIBaseProps,
   ModuleUIRegistryInterface,

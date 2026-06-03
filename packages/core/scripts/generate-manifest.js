@@ -7,7 +7,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -63,6 +63,36 @@ async function generateManifest() {
         injectPackageInfo: true,
         moduleType: 'smrt',
       });
+
+      const { buildDomainKnowledgeManifest } = await import(
+        pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
+      );
+      const manifestPath = resolve(
+        process.cwd(),
+        'src/manifest/static-manifest.json',
+      );
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const packageJson = JSON.parse(
+        readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
+      );
+      const knowledgePath = resolve(
+        process.cwd(),
+        'src/manifest/smrt-knowledge.json',
+      );
+      const knowledge = preserveGeneratedAtIfUnchanged(
+        knowledgePath,
+        buildDomainKnowledgeManifest({
+          manifest,
+          rootDir: process.cwd(),
+          packageJson,
+          manifestPath,
+          config: {
+            includeDocs: true,
+            includePrompts: true,
+          },
+        }),
+      );
+      writeFileSync(knowledgePath, JSON.stringify(knowledge, null, 2), 'utf8');
     } finally {
       await unregister();
     }
@@ -75,6 +105,29 @@ async function generateManifest() {
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   generateManifest();
+}
+
+function preserveGeneratedAtIfUnchanged(path, nextKnowledge) {
+  if (!existsSync(path)) {
+    return nextKnowledge;
+  }
+
+  try {
+    const current = JSON.parse(readFileSync(path, 'utf8'));
+    if (
+      JSON.stringify(current.sourceHashes ?? {}) ===
+      JSON.stringify(nextKnowledge.sourceHashes ?? {})
+    ) {
+      return {
+        ...nextKnowledge,
+        generatedAt: current.generatedAt,
+      };
+    }
+  } catch {
+    // Replace malformed artifacts.
+  }
+
+  return nextKnowledge;
 }
 
 export { generateManifest };

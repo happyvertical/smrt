@@ -17,6 +17,7 @@ dist
 *.swp
 
 # SMRT auto-generated
+.smrt/
 src/routes/api/**/+server.ts
 src/lib/server/smrt-register.ts
 src/lib/types/smrt-generated/

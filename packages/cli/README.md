@@ -50,6 +50,8 @@ with `smrt db:migrate`.
 | `smrt dev:knowledge-index --format markdown\|json` | Print the deterministic SMRT + SDK knowledge index |
 | `smrt dev:knowledge-check --format markdown\|json` | Check agent knowledge freshness |
 | `smrt dev:knowledge-diff --format markdown\|json` | Show changed files and affected package experts |
+| `smrt knowledge:review-context --scope project\|local\|package\|sdk --package <name> --format markdown\|json` | Build a model-ready domain review prompt bundle |
+| `smrt knowledge:architecture-context --scope project\|local\|package\|sdk --package <name> --format markdown\|json` | Build a model-ready domain architecture prompt bundle |
 
 ### Configuration
 
@@ -135,6 +137,10 @@ smrt docs:claude
 # Check deterministic agent knowledge freshness
 smrt dev:knowledge-check --changed --strict --format markdown
 smrt dev:knowledge-check --strict --format json
+
+# Build downstream domain context for local/manual model review
+smrt knowledge:review-context --scope package --package content --format markdown
+smrt knowledge:architecture-context "tenant-aware publishing workflow" --format json
 
 # Inspect discovered package playground modules
 smrt playground list

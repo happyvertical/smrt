@@ -41,6 +41,28 @@ Key options: `tableName`, `tableStrategy` ('cti'|'sti'), `conflictColumns`, `api
 
 Registration sets `SMRT_TABLE_NAME` static property (survives minification).
 
+## Domain Knowledge Artifacts
+
+`smrtPlugin()` writes runtime manifests and agent/developer knowledge artifacts:
+
+- local dev/build: `.smrt/manifest.json` and `.smrt/smrt-knowledge.json`
+- package build: `dist/manifest.json` and `dist/smrt-knowledge.json`
+
+Keep `manifest.json` runtime-focused. `smrt-knowledge.json` is the deterministic
+agent contract for downstream review and architecture tools.
+
+Config precedence for knowledge is defaults → top-level `knowledge` in
+`smrt.config.ts` → `packages[packageName].knowledge` → plugin option →
+object-level `@smrt({ knowledge })`.
+
+Object-level `knowledge: false` excludes an object from authored context only;
+it must not change runtime manifest registration. Use
+`knowledge: { tags, summary, risks }` for review-sensitive domain objects.
+
+HTTP knowledge routes are disabled by default. If `knowledge.api.enabled` is
+true, generated SvelteKit routes must stay GET-only and guarded by dev mode or
+admin auth.
+
 ## DispatchBus
 
 - `emit(signalType, payload, metadata)` → creates persistent Dispatch record
