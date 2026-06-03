@@ -28,8 +28,23 @@ export interface CollectionRegistrationLookup {
  * `packages/core/src/junction.ts`. (`SmrtHierarchical` and
  * `SmrtPolymorphicAssociation` extend `SmrtObject`, not `SmrtCollection`, so
  * they deliberately do NOT belong here.)
+ *
+ * A new framework collection base must also be added to the other parallel
+ * framework-base lists so it is recognized everywhere it matters:
+ * - `FRAMEWORK_BASE_CLASSES` in
+ *   `packages/scanner/src/inheritance-resolver.ts` (scanner chain termination).
+ * - `FRAMEWORK_ABSTRACT_BASE_NAMES` in
+ *   `packages/core/src/scanner/manifest-generator.ts` (field-merge skipping).
+ *
+ * Downstream tooling that needs this detector (e.g. @happyvertical/smrt-vitest)
+ * should IMPORT it from `@happyvertical/smrt-core` rather than keep a copy — a
+ * duplicate detector is exactly how the #1342 junction schema-drop bug
+ * half-survived the original core fix.
  */
-const SMRT_COLLECTION_BASE_NAMES = ['SmrtCollection', 'SmrtJunction'] as const;
+export const SMRT_COLLECTION_BASE_NAMES = [
+  'SmrtCollection',
+  'SmrtJunction',
+] as const;
 
 export function isSmrtCollectionExtendsName(
   extendsName: string | undefined,
