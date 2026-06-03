@@ -16,9 +16,13 @@
  * This suite drives the REAL differ (`generateSchemaDiff` + `getSQLFromDiff`)
  * and asserts the two invariants that would have caught all three bugs:
  *
- *   1. db:diff and db:migrate compute the SAME change set (a change migrate
- *      applies must be one diff shows) — they share a schema source and a
- *      comparer, so feeding both the same manifest must produce the same diff.
+ *   1. db:diff and db:migrate derive their schema set from the SAME source
+ *      (`ObjectRegistry.getAllSchemasAsDefinitions()`), so a change migrate
+ *      applies is exactly one diff previews. The parity test registers a real
+ *      fixture into a real ObjectRegistry and proves the source CHOICE is
+ *      load-bearing — the structured source and the legacy DDL-reparse source
+ *      compute DIFFERENT change sets — so it fails if db:diff is reverted to a
+ *      different schema source (the #1335 31-vs-32 bug).
  *   2. No phantom / unsafe type-upgrades: a column that is text in the DB and
  *      json (or vice-versa) in the manifest is left alone; any genuine
  *      text→json upgrade uses a value-safe `to_jsonb` cast, never `::json`.
@@ -34,12 +38,14 @@
 
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ObjectRegistry } from '../../registry.js';
 import type {
   ColumnDefinition,
   SchemaChange,
   SchemaDefinition,
   SchemaDiff,
 } from '../../schema/types.js';
+import { snapshotObjectRegistryState } from '../../test-utils.js';
 import {
   generateSchemaDiff,
   getSQLFromDiff,
@@ -336,51 +342,271 @@ describe('diverse-schema migration fixture (#1335)', () => {
       expect(generated.sql).not.toContain('"c"::jsonb');
     });
 
-    it('db:diff and db:migrate compute the SAME change set from one schema source', async () => {
-      // Parity invariant: both commands route through SchemaComparer against
-      // the same manifest source. Feeding identical schemas to two comparers
-      // (as the two commands do) must yield identical change sets. A
-      // divergence here is exactly the #1335 31-vs-32 bug.
-      const manifest = diverseManifest();
-      const dbTables: FakeTable[] = [
-        {
-          name: 'nodes',
-          columns: [
-            { name: 'id', type: 'text' },
-            { name: 'slug', type: 'text', notNull: true },
-            { name: 'context', type: 'text' },
-            { name: 'created_at', type: 'timestamp without time zone' },
-            { name: 'updated_at', type: 'timestamp without time zone' },
-            { name: 'owner_slug', type: 'text' },
-            { name: 'external_ref', type: 'uuid' },
-            { name: 'status', type: 'text' },
-            // label missing → one add_column
-            { name: 'metadata', type: 'json' },
-            { name: 'head_edge_id', type: 'text' },
-          ],
-        },
-        // edges table entirely missing → one added_table
-      ];
+    // -----------------------------------------------------------------------
+    // Source-parity guard (the #1335 31-vs-32 regression test).
+    //
+    // The bug: db:diff derived its schema set from `getAllSchemas()` and
+    // regex-reparsed columns out of the rendered DDL string
+    // (`parseColumnsFromDDL`), while db:migrate used the STRUCTURED
+    // `getAllSchemasAsDefinitions()`. The two sources diverged (defaults,
+    // notNull, and other per-column metadata that the DDL reparse drops), so
+    // db:diff previewed a different change set than db:migrate applied — 31 vs
+    // 32 changes against a real consumer schema.
+    //
+    // The fix routed BOTH commands through `getAllSchemasAsDefinitions()`.
+    //
+    // A test that hand-feeds two comparers the SAME manifest is tautological:
+    // it passes no matter which source the commands actually use, so it cannot
+    // catch a revert. This test instead registers a real fixture into a real
+    // ObjectRegistry and proves the source CHOICE is load-bearing — the
+    // structured source and the legacy DDL-reparse source compute DIFFERENT
+    // change sets — then pins the shared (structured) source as the canonical
+    // one. If anyone reverts db:diff to the DDL-reparse path, db:diff's change
+    // set will again diverge from db:migrate's and this test fails.
+    // -----------------------------------------------------------------------
 
-      const diffSpec = (cmp: SchemaChange[]) =>
-        cmp
-          .map((c) => `${c.type}:${c.table}.${c.name ?? ''}`)
-          .sort()
-          .join('|');
-
-      const diffCmd = await new SchemaComparer(
-        makePostgresFake(dbTables),
-      ).compare(manifest);
-      const migrateCmd = await new SchemaComparer(
-        makePostgresFake(dbTables),
-      ).compare(manifest);
-
-      expect(diffSpec(diffCmd.changes)).toEqual(diffSpec(migrateCmd.changes));
-      expect(diffCmd.added_tables.map((t) => t.tableName).sort()).toEqual(
-        migrateCmd.added_tables.map((t) => t.tableName).sort(),
+    // Faithful copy of the OLD db:diff schema source: regex-reparse columns out
+    // of the rendered CREATE TABLE DDL (db-diff.ts's pre-#1335
+    // `parseColumnsFromDDL`). Kept here verbatim so the test detects a revert to
+    // this path. It structurally cannot recover per-column metadata that lives
+    // only in the structured definitions (e.g. DEFAULT, foreignKey), which is
+    // precisely how the two sources diverged.
+    function parseColumnsFromDDL(
+      ddl: string,
+    ): Record<string, ColumnDefinition> {
+      const columns: Record<string, ColumnDefinition> = {};
+      const createTableMatch = ddl.match(
+        /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?\s*\(([\s\S]+?)\)(?:\s*;)?$/im,
       );
-      // The applied SQL set (what migrate runs) must match what diff previews.
-      expect(getSQLFromDiff(diffCmd)).toEqual(getSQLFromDiff(migrateCmd));
+      if (!createTableMatch) return columns;
+
+      const parts: string[] = [];
+      let depth = 0;
+      let current = '';
+      for (const char of createTableMatch[2]) {
+        if (char === '(') depth++;
+        else if (char === ')') depth--;
+        if (char === ',' && depth === 0) {
+          parts.push(current.trim());
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      if (current.trim()) parts.push(current.trim());
+
+      for (const part of parts) {
+        if (
+          /^\s*(FOREIGN\s+KEY|PRIMARY\s+KEY|UNIQUE|CHECK|CONSTRAINT)/i.test(
+            part,
+          )
+        ) {
+          continue;
+        }
+        const colMatch = part.match(
+          /^["']?(\w+)["']?\s+(\w+(?:\s*\([^)]+\))?)\s*(.*)?$/i,
+        );
+        if (colMatch) {
+          const constraints = colMatch[3] || '';
+          columns[colMatch[1]] = {
+            type: colMatch[2].toUpperCase() as ColumnDefinition['type'],
+            notNull:
+              /NOT\s+NULL/i.test(constraints) ||
+              /PRIMARY\s+KEY/i.test(constraints),
+            primaryKey: /PRIMARY\s+KEY/i.test(constraints),
+          };
+        }
+      }
+      return columns;
+    }
+
+    describe('schema-source parity (#1335)', () => {
+      let restoreRegistry: () => void;
+
+      beforeEach(() => {
+        restoreRegistry = snapshotObjectRegistryState();
+      });
+      afterEach(() => {
+        restoreRegistry();
+      });
+
+      // Register a small but gnarly fixture into a REAL ObjectRegistry so the
+      // schema sources are the actual functions both commands call. The fixture
+      // carries the shapes that broke #1332/#1334/#1335: an FK cycle, a json
+      // field, an enum-ish field, a uuid-typed column, and — crucially — a
+      // column with a DEFAULT (metadata the DDL reparse cannot recover).
+      function registerCyclicFixture(): void {
+        ObjectRegistry.registerFromManifest(
+          '@test/diverse:Node',
+          {
+            className: 'Node',
+            fields: {},
+            methods: {},
+            decoratorConfig: { tableName: 'nodes' },
+            schema: {
+              tableName: 'nodes',
+              ddl: '',
+              columns: {
+                id: { type: 'TEXT', primaryKey: true },
+                // enum-ish field a downstream scanner mis-infers as JSON.
+                status: { type: 'JSON' },
+                // uuid-shaped id stored in a text-convention column.
+                external_ref: { type: 'UUID' },
+                // text-convention json field.
+                metadata: { type: 'JSON' },
+                // FK back-edge that closes the nodes <-> edges cycle.
+                head_edge_id: {
+                  type: 'TEXT',
+                  foreignKey: { table: 'edges', column: 'id' },
+                },
+              },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              dependencies: [],
+              version: 'test',
+            },
+          } as any,
+          '@test/diverse',
+        );
+        ObjectRegistry.registerFromManifest(
+          '@test/diverse:Edge',
+          {
+            className: 'Edge',
+            fields: {},
+            methods: {},
+            decoratorConfig: { tableName: 'edges' },
+            schema: {
+              tableName: 'edges',
+              ddl: '',
+              columns: {
+                id: { type: 'TEXT', primaryKey: true },
+                // FK forward-edge: the other half of the cycle.
+                node_id: {
+                  type: 'TEXT',
+                  foreignKey: { table: 'nodes', column: 'id' },
+                },
+                // A DEFAULT-bearing column — its default survives in the
+                // structured source but is LOST by the DDL reparse, which is
+                // exactly how the two sources diverge.
+                weight: { type: 'REAL', notNull: true, default: 0 },
+              },
+              indexes: [],
+              triggers: [],
+              foreignKeys: [],
+              dependencies: [],
+              version: 'test',
+            },
+          } as any,
+          '@test/diverse',
+        );
+      }
+
+      // The DB the comparison runs against: both tables already exist but each
+      // is missing one manifest column, so both sources must emit an add_column
+      // — letting us observe how each renders that column's SQL.
+      function existingDbTables(): FakeTable[] {
+        return [
+          {
+            name: 'nodes',
+            columns: [
+              { name: 'id', type: 'text' },
+              { name: 'slug', type: 'text', notNull: true },
+              { name: 'context', type: 'text' },
+              { name: 'created_at', type: 'timestamp without time zone' },
+              { name: 'updated_at', type: 'timestamp without time zone' },
+              { name: 'status', type: 'text' },
+              { name: 'external_ref', type: 'uuid' },
+              { name: 'metadata', type: 'json' },
+              // head_edge_id missing → one add_column on nodes
+            ],
+          },
+          {
+            name: 'edges',
+            columns: [
+              { name: 'id', type: 'text' },
+              { name: 'slug', type: 'text', notNull: true },
+              { name: 'context', type: 'text' },
+              { name: 'created_at', type: 'timestamp without time zone' },
+              { name: 'updated_at', type: 'timestamp without time zone' },
+              { name: 'node_id', type: 'text' },
+              // weight missing → one add_column on edges (DEFAULT-bearing)
+            ],
+          },
+        ];
+      }
+
+      it('db:diff and db:migrate derive their schema set from the SAME source (getAllSchemasAsDefinitions)', async () => {
+        registerCyclicFixture();
+
+        // db:migrate's source (utilities.ts) and the FIXED db:diff source
+        // (db-diff.ts) — the single function both commands now call.
+        const sharedSource = ObjectRegistry.getAllSchemasAsDefinitions();
+
+        // db:diff's OLD source: getAllSchemas() + DDL reparse.
+        const legacyDiffSource: Record<string, SchemaDefinition> = {};
+        for (const [tableName, schema] of Object.entries(
+          ObjectRegistry.getAllSchemas(),
+        )) {
+          legacyDiffSource[tableName] = {
+            tableName,
+            ddl: schema.ddl,
+            columns: parseColumnsFromDDL(schema.ddl),
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            version: '1.0.0',
+            dependencies: [],
+          };
+        }
+
+        // db:migrate uses the shared source; db:diff (today) must too.
+        const migratePathDiff = await new SchemaComparer(
+          makePostgresFake(existingDbTables()),
+        ).compare(sharedSource);
+        const diffPathDiff = await new SchemaComparer(
+          makePostgresFake(existingDbTables()),
+        ).compare(sharedSource);
+
+        // What db:diff WOULD produce if reverted to the DDL-reparse source.
+        const legacyPathDiff = await new SchemaComparer(
+          makePostgresFake(existingDbTables()),
+        ).compare(legacyDiffSource);
+
+        // The applied SQL set: what migrate actually runs.
+        const sqlOf = (changes: SchemaChange[]) =>
+          changes
+            .filter((c) => c.type === 'add_column')
+            .map((c) => c.sql)
+            .sort();
+
+        const migrateSql = sqlOf(migratePathDiff.changes);
+        const diffSql = sqlOf(diffPathDiff.changes);
+        const legacySql = sqlOf(legacyPathDiff.changes);
+
+        // 1. Both commands route through the shared source → identical change
+        //    set and identical applied SQL. (db:diff is an exact preview.)
+        expect(diffSql).toEqual(migrateSql);
+        expect(getSQLFromDiff(diffPathDiff)).toEqual(
+          getSQLFromDiff(migratePathDiff),
+        );
+
+        // 2. The DEFAULT survives through the shared source: the weight
+        //    add-column carries `DEFAULT 0`. This is the concrete metadata the
+        //    DDL reparse loses.
+        const weightSql = migrateSql.find((s) => s.includes('"weight"'));
+        expect(weightSql).toBeDefined();
+        expect(weightSql).toMatch(/DEFAULT 0\b/);
+
+        // 3. Source choice is LOAD-BEARING: the legacy DDL-reparse source
+        //    computes a DIFFERENT change set (it drops the weight DEFAULT). If
+        //    someone reverts db:diff to that source, db:diff diverges from
+        //    db:migrate again — and this assertion fails, catching the revert.
+        expect(legacySql).not.toEqual(migrateSql);
+        const legacyWeightSql = legacySql.find((s) => s.includes('"weight"'));
+        expect(legacyWeightSql).toBeDefined();
+        expect(legacyWeightSql).not.toMatch(/DEFAULT 0\b/);
+      });
     });
   });
 

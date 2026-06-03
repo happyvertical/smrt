@@ -753,6 +753,12 @@ export class SchemaComparer {
           // callers that construct a type_upgrade directly.)
           typeClause += ` USING to_jsonb(${quotedCol})`;
         } else if (manifestNormalized === 'TEXT' && dbNormalized === 'JSON') {
+          // #1335: a native-json column cast back to text is value-preserving
+          // (`::text` renders the stored JSON as its text form), so this arm is
+          // safe. (Note: like the TEXT->JSON arm above, the json<->text equality
+          // tolerance means the normal compare path no longer reaches here; this
+          // keeps the SQL safe for callers that construct a type_upgrade
+          // directly.)
           typeClause += ` USING ${quotedCol}::text`;
         } else if (
           manifestNormalized === 'INTEGER' &&
