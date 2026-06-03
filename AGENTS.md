@@ -62,7 +62,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | Package | Purpose |
 |---------|---------|
 | smrt-svelte | Svelte 5: Provider, browser AI (STT/TTS/LLM) with warm cache, theme system |
-| smrt-dev-mcp | Tier 2 dev MCP: code generation, project introspection, deterministic knowledge reflection, review/architecture context bundles |
+| smrt-dev-mcp | Tier 2 dev MCP: code generation, project introspection, deterministic knowledge reflection, review/architecture context bundles, bundled agent skills |
 | gnode | Federation library — stubs only, not implemented |
 | template-sveltekit | Base SvelteKit scaffold with SMRT integration |
 | template-site-static-json | Community news site scaffold with Praeco/Caelus |
@@ -114,6 +114,7 @@ From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical
 - `smrt dev:knowledge-check` validates agent-doc freshness, stale references, package docs, package `files` entries, and relationship-aware manifest facts. Use `--format markdown` for human hook output and `--format json` for scripts.
 - Lefthook runs deterministic knowledge freshness locally: changed-file strict checks on pre-commit and full strict checks on pre-push. Model-assisted audits are never required in hooks or CI.
 - `smrt-dev-mcp` exposes the same knowledge through `reflect-knowledge`, `check-knowledge-freshness`, `build-review-context`, `smrt-review`, `build-architecture-context`, and `smrt-architecture`.
+- `smrt-dev-mcp` also ships harness-agnostic skills. Downstream agents can call `get-agent-skill` with `name: "smrt-review"` to fetch the portable review procedure before using `smrt-review` on a project diff.
 
 ## Gotchas
 

@@ -369,15 +369,18 @@ Use models as optional local reviewers, not as freshness gates:
 
 1. Ask `smrt-dev-mcp` for deterministic context with `build-review-context`,
    `smrt-review`, `build-architecture-context`, or `smrt-architecture`.
-2. Send the returned prompt bundle to Codex, Claude, or another model under the
+2. For formal downstream reviews, fetch the portable `smrt-review` procedure
+   with MCP tool `get-agent-skill` and follow it before writing findings.
+3. Send the returned prompt bundle to Codex, Claude, or another model under the
    user's local plan.
-3. Apply only reviewed changes to source docs or package expertise.
-4. Re-run `pnpm knowledge:check --strict --format markdown` before committing.
+4. Apply only reviewed changes to source docs or package expertise.
+5. Re-run `pnpm knowledge:check --strict --format markdown` before committing.
 
 When an automation needs to consume checker output, use
 `pnpm knowledge:check --strict --format json`. Hooks and CI must stay
 token-free; prompt bundles are the boundary between deterministic SMRT tooling
-and optional model assistance.
+and optional model assistance. Bundled agent skills are procedural wrappers
+around that boundary; they must not require a specific model provider or harness.
 
 | Pattern | Source | Action |
 |---|---|---|

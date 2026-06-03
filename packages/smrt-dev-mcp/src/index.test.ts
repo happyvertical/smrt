@@ -11,5 +11,7 @@ describe('smrt-dev-mcp tools', () => {
     expect(names).toContain('smrt-review');
     expect(names).toContain('build-architecture-context');
     expect(names).toContain('smrt-architecture');
+    expect(names).toContain('list-agent-skills');
+    expect(names).toContain('get-agent-skill');
   });
 });

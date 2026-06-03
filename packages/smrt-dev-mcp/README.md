@@ -44,6 +44,27 @@ pnpm knowledge:check --strict --format markdown
 
 Use `--format json` when another script needs machine-readable output.
 
+## Agent Skills
+
+The package ships harness-agnostic agent skills under `agent-skills/`.
+
+Downstream agents should fetch the review procedure before starting a formal
+SMRT review:
+
+```json
+{
+  "name": "get-agent-skill",
+  "arguments": {
+    "name": "smrt-review"
+  }
+}
+```
+
+The returned `skillMarkdown` is plain Markdown with Codex-compatible
+frontmatter. Any MCP-capable harness can read it, call `smrt-review` for
+deterministic context, inspect the actual diff, and produce a findings-first
+review.
+
 ## Available Tools
 
 The server exposes these MCP tools:
@@ -140,6 +161,20 @@ risks, questions, and the reusable architecture prompt bundle.
 | `idea` | `string` | No | Product or implementation idea |
 | `documentation` | `string` | No | Existing docs or requirements |
 | `focus` | `string` | No | Architecture concern to prioritize |
+
+### `list-agent-skills`
+
+List bundled harness-agnostic agent skills.
+No parameters.
+
+### `get-agent-skill`
+
+Return a bundled agent skill as Markdown, with optional referenced files.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `name` | `string` | Yes | Skill name. Currently `smrt-review` |
+| `includeReferences` | `boolean` | No | Include referenced files (default: true) |
 
 ## MCP Tier Context
 

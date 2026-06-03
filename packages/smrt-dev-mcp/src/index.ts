@@ -2,7 +2,8 @@
 
 /**
  * SMRT Development MCP Server
- * Provides code generation and project introspection tools
+ * Provides code generation, project introspection, knowledge context,
+ * review/architecture prompt bundles, and portable agent skills.
  */
 
 import { pathToFileURL } from 'node:url';
@@ -13,6 +14,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { getAgentSkill, listAgentSkills } from './agent-skills.js';
 import {
   buildArchitectureContext,
   buildKnowledgeIndex,
@@ -191,6 +193,36 @@ export const TOOLS = [
       },
     },
   },
+  {
+    name: 'list-agent-skills',
+    description:
+      'List bundled harness-agnostic agent skills shipped with smrt-dev-mcp',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'get-agent-skill',
+    description:
+      'Return a bundled harness-agnostic agent skill as Markdown plus optional references',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          enum: ['smrt-review'],
+          description: 'Bundled agent skill name',
+        },
+        includeReferences: {
+          type: 'boolean',
+          default: true,
+          description: 'Include referenced files with the skill bundle',
+        },
+      },
+      required: ['name'],
+    },
+  },
 ];
 
 async function main() {
@@ -290,6 +322,14 @@ async function main() {
 
         case 'smrt-architecture':
           result = JSON.stringify(await smrtArchitecture(args as any), null, 2);
+          break;
+
+        case 'list-agent-skills':
+          result = JSON.stringify({ skills: listAgentSkills() }, null, 2);
+          break;
+
+        case 'get-agent-skill':
+          result = JSON.stringify(await getAgentSkill(args as any), null, 2);
           break;
 
         default:

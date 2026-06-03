@@ -133,7 +133,7 @@ All packages are published under `@happyvertical/smrt-*`. 38 packages total.
 | Package | Description |
 |---------|-------------|
 | `smrt-svelte` | Svelte 5: components, browser AI (STT/TTS/LLM) with warm cache, theme system |
-| `smrt-dev-mcp` | Dev MCP server: `generate-smrt-class`, `introspect-project` |
+| `smrt-dev-mcp` | Dev MCP server: code generation, project introspection, knowledge reflection, review/architecture context, and bundled agent skills |
 | `smrt-gnode` | Federation library (stubs only, not implemented) |
 | `smrt-template-sveltekit` | Base SvelteKit scaffold with SMRT integration |
 | `smrt-template-site-static-json` | Community news site scaffold with Praeco/Caelus |
@@ -174,7 +174,7 @@ Uses [Lefthook](https://lefthook.dev/) for local deterministic checks:
 
 - pre-commit formats staged JS/TS/Svelte files, rejects known forbidden artifacts, validates staged workflow YAML, and runs `pnpm knowledge:check --changed --strict --format markdown`.
 - pre-push runs full knowledge freshness, full Biome CI formatting, and workflow validation.
-- model-assisted knowledge audits are local/manual: use `smrt-dev-mcp` prompt bundles with Codex, Claude, or another model, then re-run `pnpm knowledge:check --strict --format markdown`.
+- model-assisted knowledge audits are local/manual: use `smrt-dev-mcp` prompt bundles or bundled skills with Codex, Claude, or another model, then re-run `pnpm knowledge:check --strict --format markdown`.
 - commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/) format:
 
 ```

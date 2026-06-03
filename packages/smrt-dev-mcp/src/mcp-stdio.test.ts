@@ -64,6 +64,8 @@ describe('smrt-dev-mcp stdio server', () => {
         'build-architecture-context',
         'smrt-review',
         'smrt-architecture',
+        'list-agent-skills',
+        'get-agent-skill',
       ]),
     );
 
@@ -102,5 +104,23 @@ describe('smrt-dev-mcp stdio server', () => {
     expect(architecture.promptBundle.contextMarkdown).toContain(
       'SMRT architecture planning',
     );
+
+    const skillsResult = await client.callTool({
+      name: 'list-agent-skills',
+      arguments: {},
+    });
+    const skills = JSON.parse(textContent(skillsResult));
+    expect(
+      skills.skills.map((skill: { name: string }) => skill.name),
+    ).toContain('smrt-review');
+
+    const skillResult = await client.callTool({
+      name: 'get-agent-skill',
+      arguments: { name: 'smrt-review' },
+    });
+    const skill = JSON.parse(textContent(skillResult));
+    expect(skill.skillMarkdown).toContain('name: smrt-review');
+    expect(skill.skillMarkdown).toContain('Call MCP tool `smrt-review`');
+    expect(skill.referenceFiles[0].content).toContain('SMRT Review Output');
   });
 });
