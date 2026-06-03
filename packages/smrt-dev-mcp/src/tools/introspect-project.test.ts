@@ -226,6 +226,34 @@ export class Model extends SmrtObject {
       const parsed = JSON.parse(result);
       expect(parsed.objects[0]).not.toHaveProperty('fields');
     });
+
+    it('should handle TypeScript property modifiers without treating modifiers as fields', async () => {
+      await writeFile(
+        join(tmpDir, 'model.ts'),
+        `
+@smrt()
+export class Model extends SmrtObject {
+  static uiSlots = [];
+  private secret: string = '';
+  protected internalCount: number = 0;
+  public name: string = '';
+  readonly active: boolean = false;
+}
+        `.trim(),
+      );
+
+      const result = await introspectProject({
+        directory: tmpDir,
+        includeFields: true,
+      });
+
+      const parsed = JSON.parse(result);
+      expect(parsed.objects[0].fields).toContain('name: text');
+      expect(parsed.objects[0].fields).toContain('active: boolean');
+      expect(parsed.objects[0].fields).not.toContain('static: json');
+      expect(parsed.objects[0].fields).not.toContain('secret: text');
+      expect(parsed.objects[0].fields).not.toContain('internalCount: integer');
+    });
   });
 
   describe('Method Extraction', () => {

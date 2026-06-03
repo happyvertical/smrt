@@ -127,8 +127,12 @@ export interface ArchitectureContextResult {
   promptBundle: KnowledgePromptBundle;
 }
 
-export interface SmrtReviewResult extends ReviewContextResult {
+export interface SmrtReviewResult {
   mode: 'findings' | 'prompt-bundle' | 'both';
+  selectedPackages: KnowledgePackage[];
+  selectedSdkPackages: KnowledgePackage[];
+  deterministicFindings?: KnowledgeIssue[];
+  promptBundle?: KnowledgePromptBundle;
 }
 
 export interface SmrtArchitectureResult extends ArchitectureContextResult {
@@ -221,7 +225,10 @@ const STALE_PATTERNS: Array<{
   },
   {
     code: 'stale-docs-codex-command',
-    pattern: new RegExp(`docs:${'Codex'}|docs-${'Codex'}|\\.${'Codex'}`),
+    pattern: new RegExp(
+      `docs:${'codex'}|docs-${'codex'}|\\.${'codex'}|${'codex'}-command`,
+      'i',
+    ),
     message: 'Stale Codex-specific downstream-doc reference found',
   },
 ];
@@ -259,11 +266,20 @@ export async function checkKnowledgeFreshness(
   options: CheckKnowledgeFreshnessOptions = {},
 ): Promise<KnowledgeFreshnessResult> {
   const index = await buildKnowledgeIndex(options);
+  return checkKnowledgeFreshnessFromIndex(index, options);
+}
+
+export async function checkKnowledgeFreshnessFromIndex(
+  index: SmrtKnowledgeIndex,
+  options: CheckKnowledgeFreshnessOptions = {},
+): Promise<KnowledgeFreshnessResult> {
   const issues: KnowledgeIssue[] = [];
   const changedFiles = options.changed
     ? getChangedFiles(index.rootDir)
     : undefined;
 
+  // Keep these structured MCP/CLI checks in sync with
+  // scripts/check-standards.mjs, which enforces the same package docs rules.
   for (const pkg of index.packages.filter((item) => item.kind !== 'sdk')) {
     const packageJsonPath = join(pkg.directory, 'package.json');
 
@@ -320,7 +336,7 @@ export async function checkKnowledgeFreshness(
         severity: 'error',
         code: 'package-files-missing-agents',
         message: 'package.json files allowlist must include AGENTS.md',
-        file: packageJsonPath,
+        file: relative(index.rootDir, packageJsonPath),
         packageName: pkg.name,
       });
     }
@@ -330,7 +346,7 @@ export async function checkKnowledgeFreshness(
         severity: 'error',
         code: 'package-files-missing-claude-shim',
         message: 'package.json files allowlist must include CLAUDE.md shim',
-        file: packageJsonPath,
+        file: relative(index.rootDir, packageJsonPath),
         packageName: pkg.name,
       });
     }
@@ -421,9 +437,15 @@ export async function smrtReview(
   } = {},
 ): Promise<SmrtReviewResult> {
   const context = await buildReviewContext(options);
+  const mode = options.mode ?? 'both';
   return {
-    ...context,
-    mode: options.mode ?? 'both',
+    mode,
+    selectedPackages: context.selectedPackages,
+    selectedSdkPackages: context.selectedSdkPackages,
+    ...(mode !== 'prompt-bundle'
+      ? { deterministicFindings: context.deterministicFindings }
+      : {}),
+    ...(mode !== 'findings' ? { promptBundle: context.promptBundle } : {}),
   };
 }
 
@@ -897,33 +919,13 @@ function findStalePatternIssues(
   const candidates =
     changedFiles && changedFiles.length > 0
       ? changedFiles.map((file) => join(rootDir, file))
-      : walkFiles(rootDir).filter((file) => {
-          const rel = relative(rootDir, file);
-          if (rel.includes('node_modules/') || rel.includes('/dist/')) {
-            return false;
-          }
-          if (rel.includes('/CHANGELOG.md') || rel === 'CHANGELOG.md') {
-            return false;
-          }
-          if (rel === 'AGENTS.md' || rel === 'README.md') return true;
-          if (rel.endsWith('/AGENTS.md') || rel.endsWith('/README.md')) {
-            return true;
-          }
-          if (!rel.startsWith('docs/content/') || !rel.endsWith('.md')) {
-            return false;
-          }
-          return !(
-            rel.startsWith('docs/content/api/') ||
-            rel.startsWith('docs/content/rfcs/') ||
-            rel.startsWith('docs/content/architecture/')
-          );
-        });
+      : walkFiles(rootDir);
   const issues: KnowledgeIssue[] = [];
-  for (const file of candidates) {
+  for (const file of candidates.filter((candidate) =>
+    shouldScanStalePatternFile(rootDir, candidate),
+  )) {
     if (!existsSync(file) || lstatSync(file).isDirectory()) continue;
     const rel = relative(rootDir, file);
-    if (rel === 'pnpm-lock.yaml') continue;
-    if (rel.includes('/CHANGELOG.md') || rel === 'CHANGELOG.md') continue;
     const content = readFileSync(file, 'utf8');
     for (const stale of STALE_PATTERNS) {
       if (!stale.pattern.test(content)) continue;
@@ -936,6 +938,24 @@ function findStalePatternIssues(
     }
   }
   return issues;
+}
+
+function shouldScanStalePatternFile(
+  rootDir: string,
+  filePath: string,
+): boolean {
+  const rel = relative(rootDir, filePath).replaceAll('\\', '/');
+  if (!rel || rel.startsWith('..')) return false;
+  const parts = rel.split('/');
+  if (parts.includes('node_modules') || parts.includes('dist')) return false;
+  if (rel === 'AGENTS.md' || rel === 'README.md') return true;
+  if (rel.endsWith('/AGENTS.md') || rel.endsWith('/README.md')) return true;
+  if (!rel.startsWith('docs/content/') || !rel.endsWith('.md')) return false;
+  return !(
+    rel.startsWith('docs/content/api/') ||
+    rel.startsWith('docs/content/rfcs/') ||
+    rel.startsWith('docs/content/architecture/')
+  );
 }
 
 function buildReviewFindings(
@@ -1244,10 +1264,10 @@ function selectPackages(
     for (const pkg of index.smrtPackages) {
       const packageKey = pkg.name.replace('@happyvertical/smrt-', '');
       if (
-        text.includes(packageKey) ||
+        includesToken(text, packageKey) ||
         text.includes(pkg.name.toLowerCase()) ||
         pkg.objects.some((object) =>
-          text.includes(object.className.toLowerCase()),
+          includesToken(text, object.className.toLowerCase()),
         )
       ) {
         selected.add(pkg);
@@ -1287,7 +1307,7 @@ function selectSdkPackages(
     if (
       sdkNames.has(sdk.name) ||
       text.includes(sdk.name.toLowerCase()) ||
-      text.includes(shortName)
+      includesToken(text, shortName)
     ) {
       selected.add(sdk);
     }
@@ -1384,20 +1404,26 @@ function renderPackageContext(pkg: KnowledgePackage): string {
   return lines.join('\n');
 }
 
-function getChangedFiles(rootDir: string, base = 'HEAD'): string[] {
-  try {
-    const output = execFileSync(
-      'git',
-      ['diff', '--name-only', `${base}...HEAD`],
-      { cwd: rootDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    );
-    const files = output
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean);
-    if (files.length > 0) return files;
-  } catch {
-    // Fall back to working-tree changes below.
+function getChangedFiles(rootDir: string, base?: string): string[] {
+  if (base) {
+    try {
+      const output = execFileSync(
+        'git',
+        ['diff', '--name-only', `${base}...HEAD`],
+        {
+          cwd: rootDir,
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        },
+      );
+      const files = output
+        .split('\n')
+        .map((line) => line.trim())
+        .filter(Boolean);
+      if (files.length > 0) return files;
+    } catch {
+      // Fall back to working-tree changes below.
+    }
   }
 
   try {
@@ -1431,11 +1457,17 @@ function getChangedFiles(rootDir: string, base = 'HEAD'): string[] {
 function dedupePackages(packages: KnowledgePackage[]): KnowledgePackage[] {
   const byName = new Map<string, KnowledgePackage>();
   for (const pkg of packages) {
-    if (!byName.has(pkg.name) || pkg.kind !== 'sdk') {
+    const current = byName.get(pkg.name);
+    if (!current || current.kind === 'sdk') {
       byName.set(pkg.name, pkg);
     }
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function includesToken(text: string, token: string): boolean {
+  const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
 }
 
 function readJson(path: string): any | null {

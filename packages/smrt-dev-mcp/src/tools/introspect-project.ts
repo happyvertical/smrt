@@ -114,14 +114,20 @@ export async function introspectProject(
         // Pattern 1: TypeScript property declarations (new decorator pattern)
         // Example: name: string = ''; or price: number = 0.0;
         const tsFieldMatches = content.matchAll(
-          /^\s*(?:@\w+\([^)]*\)\s*)*(\w+)(?::\s*([\w| ]+)(?:<[^>]+>)?)?\s*=\s*([^;\n]+)/gm,
+          /^\s*(?:@\w+\([^)]*\)\s*)*((?:(?:public|private|protected|readonly|static|declare|abstract|override|accessor)\s+)*)(\w+)(?::\s*([\w| ]+)(?:<[^>]+>)?)?\s*=\s*([^;\n]+)/gm,
         );
         for (const match of tsFieldMatches) {
-          const fieldName = match[1];
-          const tsType = match[2]?.trim() ?? inferTypeFromDefault(match[3]);
+          const modifiers = match[1] ?? '';
+          const fieldName = match[2];
+          const tsType = match[3]?.trim() ?? inferTypeFromDefault(match[4]);
 
-          // Skip constructor, methods, etc.
+          // Skip constructor, methods, and non-persisted class members.
           if (fieldName === 'constructor') continue;
+          if (
+            /\b(static|private|protected|declare|abstract)\b/.test(modifiers)
+          ) {
+            continue;
+          }
 
           // Map TypeScript types to field types
           let fieldType = tsType;

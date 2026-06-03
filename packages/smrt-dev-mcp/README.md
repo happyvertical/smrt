@@ -55,15 +55,17 @@ SMRT review:
 {
   "name": "get-agent-skill",
   "arguments": {
-    "name": "smrt-review"
+    "name": "smrt-code-review"
   }
 }
 ```
 
-The returned `skillMarkdown` is plain Markdown with Codex-compatible
-frontmatter. Any MCP-capable harness can read it, call `smrt-review` for
-deterministic context, inspect the actual diff, and produce a findings-first
-review.
+The returned `skillMarkdown` is plain Markdown with YAML frontmatter (`name`
+and `description`) and a harness-neutral body. Skill-aware harnesses can parse
+the frontmatter; other MCP-capable harnesses can ignore it, call `smrt-review`
+for deterministic context, inspect the actual diff, and produce a findings-first
+review. Native MCP prompt/resource clients can also load the `smrt-code-review`
+prompt or `smrt-dev-mcp://agent-skills/smrt-code-review` resource.
 
 ## Available Tools
 
@@ -173,7 +175,7 @@ Return a bundled agent skill as Markdown, with optional referenced files.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `name` | `string` | Yes | Skill name. Currently `smrt-review` |
+| `name` | `string` | Yes | Skill name. Currently `smrt-code-review` |
 | `includeReferences` | `boolean` | No | Include referenced files (default: true) |
 
 ## MCP Tier Context

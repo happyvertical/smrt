@@ -1,17 +1,20 @@
-#!/usr/bin/env node
-
 /**
  * SMRT Development MCP Server
  * Provides code generation, project introspection, knowledge context,
  * review/architecture prompt bundles, and portable agent skills.
  */
 
-import { pathToFileURL } from 'node:url';
+import { realpathSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
   CallToolRequestSchema,
+  GetPromptRequestSchema,
+  ListPromptsRequestSchema,
+  ListResourcesRequestSchema,
   ListToolsRequestSchema,
+  ReadResourceRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 
 import { getAgentSkill, listAgentSkills } from './agent-skills.js';
@@ -20,6 +23,7 @@ import {
   buildKnowledgeIndex,
   buildReviewContext,
   checkKnowledgeFreshness,
+  checkKnowledgeFreshnessFromIndex,
   smrtArchitecture,
   smrtReview,
 } from './knowledge/index.js';
@@ -28,6 +32,8 @@ import { generateSmrtClass, introspectProject } from './tools/index.js';
 const SERVER_NAME = 'smrt-dev-mcp';
 const SERVER_VERSION = '0.1.0';
 const DEBUG = process.env.DEBUG === 'true';
+const REVIEW_SKILL_NAME = 'smrt-code-review';
+const REVIEW_SKILL_URI = `smrt-dev-mcp://agent-skills/${REVIEW_SKILL_NAME}`;
 
 // Tool definitions
 export const TOOLS = [
@@ -149,7 +155,7 @@ export const TOOLS = [
   {
     name: 'smrt-review',
     description:
-      'Return deterministic review findings and/or a reusable model prompt bundle',
+      'Return deterministic review findings and/or a reusable model prompt bundle. For a formal downstream review, first call get-agent-skill with { "name": "smrt-code-review" } or load the smrt-code-review MCP prompt/resource.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -211,7 +217,7 @@ export const TOOLS = [
       properties: {
         name: {
           type: 'string',
-          enum: ['smrt-review'],
+          enum: [REVIEW_SKILL_NAME],
           description: 'Bundled agent skill name',
         },
         includeReferences: {
@@ -237,6 +243,8 @@ async function main() {
     },
     {
       capabilities: {
+        prompts: {},
+        resources: {},
         tools: {},
       },
     },
@@ -248,6 +256,72 @@ async function main() {
       console.error(`[${SERVER_NAME}] ListTools request`);
     }
     return { tools: TOOLS };
+  });
+
+  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return {
+      prompts: [
+        {
+          name: REVIEW_SKILL_NAME,
+          title: 'SMRT Code Review',
+          description:
+            'Harness-agnostic downstream SMRT review procedure that uses smrt-dev-mcp deterministic context and prompt bundles.',
+        },
+      ],
+    };
+  });
+
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const { name } = request.params;
+    if (name !== REVIEW_SKILL_NAME) {
+      throw new Error(`Unknown prompt: ${name}`);
+    }
+
+    return {
+      description:
+        'Use this procedure when reviewing downstream SMRT projects.',
+      messages: [
+        {
+          role: 'user' as const,
+          content: {
+            type: 'text' as const,
+            text: renderAgentSkillMarkdown(REVIEW_SKILL_NAME),
+          },
+        },
+      ],
+    };
+  });
+
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return {
+      resources: [
+        {
+          uri: REVIEW_SKILL_URI,
+          name: REVIEW_SKILL_NAME,
+          title: 'SMRT Code Review Skill',
+          description:
+            'Bundled Markdown skill for downstream SMRT code reviews.',
+          mimeType: 'text/markdown',
+        },
+      ],
+    };
+  });
+
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    if (uri !== REVIEW_SKILL_URI) {
+      throw new Error(`Unknown resource: ${uri}`);
+    }
+
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: 'text/markdown',
+          text: renderAgentSkillMarkdown(REVIEW_SKILL_NAME),
+        },
+      ],
+    };
   });
 
   // Call tool handler
@@ -276,7 +350,10 @@ async function main() {
 
         case 'reflect-knowledge': {
           const index = await buildKnowledgeIndex(args as any);
-          const freshness = await checkKnowledgeFreshness(args as any);
+          const freshness = await checkKnowledgeFreshnessFromIndex(
+            index,
+            args as any,
+          );
           result = JSON.stringify(
             {
               rootDir: index.rootDir,
@@ -389,7 +466,20 @@ async function main() {
 
 function isEntrypoint(): boolean {
   const entry = process.argv[1];
-  return Boolean(entry && import.meta.url === pathToFileURL(entry).href);
+  if (!entry) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
+  } catch {
+    return import.meta.url === pathToFileURL(entry).href;
+  }
+}
+
+function renderAgentSkillMarkdown(name: string): string {
+  const skill = getAgentSkill({ name, includeReferences: true });
+  const references = skill.referenceFiles.map(
+    (file) => `## Reference: ${file.path}\n\n${file.content.trim()}`,
+  );
+  return [skill.skillMarkdown.trim(), ...references].join('\n\n');
 }
 
 if (isEntrypoint()) {

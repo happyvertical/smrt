@@ -178,6 +178,32 @@ describe('SMRT knowledge index', () => {
     );
   });
 
+  it('reports package files allowlist issues with relative paths', async () => {
+    await writeFile(
+      join(rootDir, 'packages', 'demo', 'package.json'),
+      JSON.stringify(
+        {
+          name: '@happyvertical/smrt-demo',
+          version: '1.0.0',
+          type: 'module',
+          files: ['dist'],
+        },
+        null,
+        2,
+      ),
+    );
+
+    const result = await checkKnowledgeFreshness({ rootDir });
+    const packageFileIssues = result.issues.filter((issue) =>
+      issue.code.startsWith('package-files-missing-'),
+    );
+
+    expect(packageFileIssues.map((issue) => issue.file)).toEqual([
+      'packages/demo/package.json',
+      'packages/demo/package.json',
+    ]);
+  });
+
   it('checks staged files when changed mode is enabled', async () => {
     execFileSync('git', ['init'], { cwd: rootDir });
     await writeFile(
@@ -205,6 +231,46 @@ describe('SMRT knowledge index', () => {
       `Historical note: @happyvertical/smrt-core/${'fields'}\n`,
     );
     execFileSync('git', ['add', 'packages/demo/CHANGELOG.md'], {
+      cwd: rootDir,
+    });
+
+    const result = await checkKnowledgeFreshness({
+      rootDir,
+      changed: true,
+      strict: true,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it('detects lowercase stale docs codex commands in changed markdown', async () => {
+    execFileSync('git', ['init'], { cwd: rootDir });
+    await writeFile(
+      join(rootDir, 'README.md'),
+      `Run smrt docs:${'codex'} before review.\n`,
+    );
+    execFileSync('git', ['add', 'README.md'], { cwd: rootDir });
+
+    const result = await checkKnowledgeFreshness({
+      rootDir,
+      changed: true,
+      strict: true,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.issues.map((issue) => issue.code)).toContain(
+      'stale-docs-codex-command',
+    );
+  });
+
+  it('does not scan changed source files for stale doc patterns', async () => {
+    execFileSync('git', ['init'], { cwd: rootDir });
+    await mkdir(join(rootDir, 'packages', 'demo', 'src'), { recursive: true });
+    await writeFile(
+      join(rootDir, 'packages', 'demo', 'src', 'example.ts'),
+      `export const command = "docs:${'codex'}";\n`,
+    );
+    execFileSync('git', ['add', 'packages/demo/src/example.ts'], {
       cwd: rootDir,
     });
 
@@ -245,6 +311,24 @@ describe('SMRT knowledge index', () => {
         'mcp-surface-review',
       ]),
     );
+  });
+
+  it('honors smrt-review mode selection', async () => {
+    const findingsOnly = await smrtReview({
+      rootDir,
+      changedFiles: ['packages/demo/src/Demo.ts'],
+      mode: 'findings',
+    });
+    const promptOnly = await smrtReview({
+      rootDir,
+      changedFiles: ['packages/demo/src/Demo.ts'],
+      mode: 'prompt-bundle',
+    });
+
+    expect(findingsOnly).toHaveProperty('deterministicFindings');
+    expect(findingsOnly).not.toHaveProperty('promptBundle');
+    expect(promptOnly).not.toHaveProperty('deterministicFindings');
+    expect(promptOnly).toHaveProperty('promptBundle');
   });
 
   it('flags manifest, public entrypoint, and expert doc changes for deterministic review', async () => {

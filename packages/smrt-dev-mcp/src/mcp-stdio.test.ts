@@ -112,15 +112,39 @@ describe('smrt-dev-mcp stdio server', () => {
     const skills = JSON.parse(textContent(skillsResult));
     expect(
       skills.skills.map((skill: { name: string }) => skill.name),
-    ).toContain('smrt-review');
+    ).toContain('smrt-code-review');
 
     const skillResult = await client.callTool({
       name: 'get-agent-skill',
-      arguments: { name: 'smrt-review' },
+      arguments: { name: 'smrt-code-review' },
     });
     const skill = JSON.parse(textContent(skillResult));
-    expect(skill.skillMarkdown).toContain('name: smrt-review');
+    expect(skill.skillMarkdown).toContain('name: smrt-code-review');
     expect(skill.skillMarkdown).toContain('Call MCP tool `smrt-review`');
     expect(skill.referenceFiles[0].content).toContain('SMRT Review Output');
+
+    const promptsResult = await client.listPrompts();
+    expect(promptsResult.prompts.map((prompt) => prompt.name)).toContain(
+      'smrt-code-review',
+    );
+    const promptResult = await client.getPrompt({ name: 'smrt-code-review' });
+    expect(promptResult.messages[0]?.content.type).toBe('text');
+    expect(
+      promptResult.messages[0]?.content.type === 'text'
+        ? promptResult.messages[0].content.text
+        : '',
+    ).toContain('name: smrt-code-review');
+
+    const resourcesResult = await client.listResources();
+    expect(resourcesResult.resources.map((resource) => resource.uri)).toContain(
+      'smrt-dev-mcp://agent-skills/smrt-code-review',
+    );
+    const resourceResult = await client.readResource({
+      uri: 'smrt-dev-mcp://agent-skills/smrt-code-review',
+    });
+    const resourceContent = resourceResult.contents[0];
+    expect(
+      resourceContent && 'text' in resourceContent ? resourceContent.text : '',
+    ).toContain('name: smrt-code-review');
   });
 });

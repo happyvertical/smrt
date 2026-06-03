@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -23,12 +23,12 @@ interface AgentSkillDefinition extends AgentSkillSummary {
 
 const AGENT_SKILLS: AgentSkillDefinition[] = [
   {
-    name: 'smrt-review',
+    name: 'smrt-code-review',
     description:
       'Harness-agnostic downstream SMRT code review workflow using smrt-dev-mcp deterministic context and prompt bundles.',
-    path: 'agent-skills/smrt-review/SKILL.md',
-    skillFile: 'agent-skills/smrt-review/SKILL.md',
-    references: ['agent-skills/smrt-review/references/review-output.md'],
+    path: 'agent-skills/smrt-code-review/SKILL.md',
+    skillFile: 'agent-skills/smrt-code-review/SKILL.md',
+    references: ['agent-skills/smrt-code-review/references/review-output.md'],
   },
 ];
 
@@ -62,6 +62,18 @@ export function getAgentSkill(options: {
 }
 
 function readPackageFile(relativePath: string): string {
-  const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  const packageRoot = resolvePackageRoot();
   return readFileSync(join(packageRoot, relativePath), 'utf8');
+}
+
+function resolvePackageRoot(): string {
+  // Works in both source tests (`src/agent-skills.ts`) and built packages
+  // (`dist/agent-skills.js`); guard it so packaging layout drift fails clearly.
+  const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
+  if (!existsSync(join(packageRoot, 'package.json'))) {
+    throw new Error(
+      `Unable to resolve smrt-dev-mcp package root from ${import.meta.url}`,
+    );
+  }
+  return packageRoot;
 }

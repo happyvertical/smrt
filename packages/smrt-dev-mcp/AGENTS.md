@@ -21,9 +21,10 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 ## Agent Skills
 
 Bundled skills live under `agent-skills/`. They are plain Markdown procedures
-with Codex-compatible frontmatter, but should stay harness agnostic.
+with YAML frontmatter (`name` and `description`) and harness-neutral body text.
+Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 
-- `agent-skills/smrt-review/SKILL.md` — downstream SMRT code review workflow.
+- `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT code review workflow.
   Agents should fetch it with `get-agent-skill`, then call `smrt-review` for
   deterministic context, inspect the actual diff, and produce a findings-first
   review.
@@ -45,7 +46,7 @@ with Codex-compatible frontmatter, but should stay harness agnostic.
 
 - `src/index.ts` — MCP server setup, tool registration
 - `src/agent-skills.ts` — bundled skill registry and file loader
-- `agent-skills/smrt-review/SKILL.md` — downstream SMRT review procedure
+- `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
 - `src/tools/generate-smrt-class.ts` — class generation logic
 - `src/tools/introspect-project.ts` — project scanning (uses scanner package)
 

@@ -1,5 +1,5 @@
 ---
-name: smrt-review
+name: smrt-code-review
 description: Use when reviewing a downstream SMRT project. Fetch deterministic SMRT and HappyVertical SDK context from smrt-dev-mcp, inspect the actual code diff, and produce a findings-first code review.
 ---
 

@@ -369,7 +369,7 @@ Use models as optional local reviewers, not as freshness gates:
 
 1. Ask `smrt-dev-mcp` for deterministic context with `build-review-context`,
    `smrt-review`, `build-architecture-context`, or `smrt-architecture`.
-2. For formal downstream reviews, fetch the portable `smrt-review` procedure
+2. For formal downstream reviews, fetch the portable `smrt-code-review` procedure
    with MCP tool `get-agent-skill` and follow it before writing findings.
 3. Send the returned prompt bundle to Codex, Claude, or another model under the
    user's local plan.

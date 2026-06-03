@@ -1824,24 +1824,9 @@ importers:
 
   packages/smrt-dev-mcp:
     dependencies:
-      '@happyvertical/ai':
-        specifier: ^0.74.3
-        version: 0.74.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
-      '@happyvertical/files':
-        specifier: ^0.74.3
-        version: 0.74.3
-      '@happyvertical/logger':
-        specifier: ^0.74.3
-        version: 0.74.3(@sentry/node@10.51.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/sql':
-        specifier: ^0.74.3
-        version: 0.74.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
-      '@happyvertical/utils':
-        specifier: ^0.74.3
-        version: 0.74.3
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)

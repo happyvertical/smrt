@@ -57,7 +57,7 @@ See the [town template](../create-gnode/templates/town/) for complete implementa
 
 - [@happyvertical/smrt-core](../smrt) - Core SMRT framework
 - [@happyvertical/sql](../sql) - Database abstraction layer
-- [@happyvertical/smrt-gnode](../create-gnode) - CLI generator for creating gnodes
+- [create-gnode](https://github.com/happyvertical/create-gnode) - CLI generator for creating gnodes
 
 ## License
 

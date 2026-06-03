@@ -47,15 +47,10 @@
     "clean": "rm -rf dist",
     "dev": "npm run build:watch & npm run test:watch",
     "prepack": "node ../../scripts/prepack-package.js",
-    "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
+    "verify:pack": "node ../../scripts/verify-package-types-exports.js . && node scripts/verify-build-artifacts.mjs"
   },
   "dependencies": {
-    "@happyvertical/ai": "catalog:",
-    "@happyvertical/files": "catalog:",
-    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/sql": "catalog:",
-    "@happyvertical/utils": "catalog:",
     "@modelcontextprotocol/sdk": "^1.25.2"
   },
   "devDependencies": {
