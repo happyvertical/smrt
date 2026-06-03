@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.27.2
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - recognize SmrtJunction in manifest test-db detector (#1342) (vitest)
+  - treat SmrtJunction collections as collections in schema gen (core)
+  - @happyvertical/smrt-scanner@0.27.2
+  - @happyvertical/smrt-config@0.27.2
+  - @happyvertical/smrt-types@0.27.2
+
 ## 0.27.1
 
 ### Patch Changes
