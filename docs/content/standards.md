@@ -363,6 +363,31 @@ Knowledge hooks are deterministic and local. They must not call Codex, Claude,
 or any other model provider; model-assisted audits stay manual and must be
 followed by the deterministic checker.
 
+### Domain knowledge artifacts
+
+Downstream packages and apps use `smrt-knowledge.json` as the deterministic
+agent/developer contract. It is separate from `manifest.json`, which remains
+runtime-focused.
+
+- local dev/build artifact: `.smrt/smrt-knowledge.json`
+- package build artifact: `dist/smrt-knowledge.json`
+- package export, when published: `"./smrt-knowledge.json": "./dist/smrt-knowledge.json"`
+
+Knowledge artifact generation is on by default in the SMRT Vite plugin. CLI and
+MCP consume these artifacts through deterministic dev tooling; HTTP exposure is
+off by default and must be enabled explicitly with `knowledge.api.enabled: true`.
+Generated HTTP routes are GET-only and must require dev mode or configured admin
+auth.
+
+Use object-level `@smrt({ knowledge: false })` only to exclude an object from
+authored agent context while preserving runtime manifest behavior. Use
+`@smrt({ knowledge: { tags, summary, risks } })` for package-specific review or
+architecture constraints.
+
+If a package exports `./smrt-knowledge.json`, the package `files` allowlist must
+publish `dist` or `dist/smrt-knowledge.json`, and the deterministic checker must
+be able to find a current artifact.
+
 ### Model-assisted knowledge workflow
 
 Use models as optional local reviewers, not as freshness gates:

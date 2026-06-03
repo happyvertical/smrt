@@ -25,6 +25,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@happyvertical/smrt-types": "workspace:*",
     "cosmiconfig": "^9.0.0"
   },
   "devDependencies": {

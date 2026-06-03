@@ -645,6 +645,9 @@ importers:
 
   packages/config:
     dependencies:
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
       cosmiconfig:
         specifier: ^9.0.0
         version: 9.0.0(typescript@5.9.3)
@@ -1827,6 +1830,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-types':
+        specifier: workspace:*
+        version: link:../types
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)

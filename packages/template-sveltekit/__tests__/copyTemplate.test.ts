@@ -34,6 +34,10 @@ describe('copyTemplate', () => {
       true,
     );
     expect(existsSync(join(tempDir, 'src', 'app.d.ts'))).toBe(true);
+    expect(existsSync(join(tempDir, 'AGENTS.md'))).toBe(true);
+    expect(readFileSync(join(tempDir, 'CLAUDE.md'), 'utf-8').trim()).toBe(
+      '@AGENTS.md',
+    );
   });
 
   it('does NOT copy the `.svelte-kit/` directory if it exists in the template', () => {

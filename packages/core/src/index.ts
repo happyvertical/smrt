@@ -79,6 +79,7 @@ export {
   type JunctionFilterOptions,
   SmrtJunction,
 } from './junction';
+export * from './knowledge';
 // Lazy / execute-time config resolvers (for agent_config and similar
 // snapshot-prone payloads — see issue #1161)
 export type {

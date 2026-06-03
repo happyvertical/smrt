@@ -10,10 +10,14 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 | `generate-smrt-class` | Generates `@smrt()` class with fields, decorator config, imports |
 | `introspect-project` | Scans project directory for SMRT objects, returns class/field/relationship report |
 | `reflect-knowledge` | Reports deterministic SMRT + HappyVertical SDK knowledge coverage and freshness |
+| `reflect-domain-knowledge` | Reports downstream/domain artifact coverage and freshness |
 | `check-knowledge-freshness` | Runs deterministic agent-doc and stale-reference checks |
+| `check-domain-knowledge` | Alias for deterministic domain artifact freshness checks |
 | `build-review-context` | Builds model-ready SMRT review context and package expert routing |
+| `build-domain-review-context` | Domain-scoped review context builder with `scope`/`package` filters |
 | `smrt-review` | Returns deterministic review findings and a reusable review prompt bundle |
 | `build-architecture-context` | Builds architecture planning context from an idea or docs |
+| `build-domain-architecture-context` | Domain-scoped architecture context builder with `scope`/`package` filters |
 | `smrt-architecture` | Recommends SMRT/SDK packages, object-model sketch, risks, and questions |
 | `list-agent-skills` | Lists bundled harness-agnostic agent skills |
 | `get-agent-skill` | Returns a bundled agent skill as Markdown plus optional references |
@@ -45,6 +49,7 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 ## Key Files
 
 - `src/index.ts` — MCP server setup, tool registration
+- `src/knowledge/index.ts` — deterministic SMRT, SDK, and downstream domain knowledge discovery
 - `src/agent-skills.ts` — bundled skill registry and file loader
 - `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
 - `src/tools/generate-smrt-class.ts` — class generation logic
@@ -55,6 +60,9 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 - **Read-only**: never writes files or executes generated code
 - **Model-agnostic**: review and architecture tools return deterministic
   findings/context and prompt bundles; they do not call model providers
+- **Domain artifacts first**: discovery must prefer `.smrt/smrt-knowledge.json`,
+  then `dist/smrt-knowledge.json`, then source artifacts before raw manifest
+  fallback
 - **Skill loading**: bundled skills must be included in `package.json` `files`
   because runtime reads them from the installed package directory
 - **Field type mapping**: `text`, `integer`, `decimal`, `boolean`, `datetime`, `json` — maps to SMRT field helpers (but prefer TypeScript defaults per framework convention)

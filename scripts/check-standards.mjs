@@ -144,6 +144,18 @@ function checkPackage(name) {
     }
   }
 
+  const hasKnowledgeExport =
+    json.exports &&
+    typeof json.exports === 'object' &&
+    json.exports['./smrt-knowledge.json'] !== undefined;
+  if (hasKnowledgeExport) {
+    if (json.exports['./smrt-knowledge.json'] !== './dist/smrt-knowledge.json') {
+      violations.push(
+        'exports map "./smrt-knowledge.json" must target "./dist/smrt-knowledge.json"',
+      );
+    }
+  }
+
   // 2. type=module
   if (json.type !== 'module') {
     violations.push('package.json must set "type": "module"');
@@ -190,6 +202,15 @@ function checkPackage(name) {
       }
       if (!json.files.includes('AGENTS.md')) {
         violations.push('files allowlist missing "AGENTS.md"');
+      }
+      if (
+        hasKnowledgeExport &&
+        !json.files.includes('dist') &&
+        !json.files.includes('dist/smrt-knowledge.json')
+      ) {
+        violations.push(
+          'files allowlist must publish dist/smrt-knowledge.json when exported',
+        );
       }
       for (const entry of json.files) {
         if (entry === 'dist' || entry.startsWith('dist/') || entry.includes('*')) {

@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { join, relative } from 'node:path';
+import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import type {
   ApiConfig,
   ApiCustomRouteConfig,
@@ -35,6 +36,8 @@ export interface SvelteKitOptions {
    * next major. An explicit `api.routes[name].path` always wins over this.
    */
   kebabRoutes?: boolean;
+  /** Domain knowledge API route generation. Disabled unless explicitly enabled. */
+  knowledge?: DomainKnowledgeConfig;
 }
 
 // Keep this aligned with biome.json formatter.lineWidth.
@@ -400,6 +403,7 @@ export async function generateSvelteKitRoutes(
   console.log('[smrt] Generating SvelteKit routes...');
 
   clearGeneratedRouteFiles(join(projectRoot, options.routesDir));
+  clearGeneratedKnowledgeRoute(projectRoot, options);
 
   // Generate centralized configuration file first (if it doesn't exist)
   await generateSmrtConfigFile(projectRoot, manifest, options);
@@ -427,6 +431,10 @@ export async function generateSvelteKitRoutes(
     }
     await generateRoutesForObject(projectRoot, className, objectDef, options);
     generatedCount++;
+  }
+
+  if (options.knowledge?.api?.enabled) {
+    generateKnowledgeRoute(projectRoot, options);
   }
 
   // Update .gitignore to exclude generated routes
@@ -463,6 +471,76 @@ function clearGeneratedRouteFiles(routesRoot: string): void {
       unlinkSync(entryPath);
     }
   }
+}
+
+function knowledgeRouteDir(projectRoot: string, options: SvelteKitOptions) {
+  const basePath = options.knowledge?.api?.basePath || '/__smrt/knowledge';
+  const routeRoot = svelteKitRouteRoot(options.routesDir);
+  const segments = basePath
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter(Boolean);
+
+  return join(projectRoot, routeRoot, ...segments);
+}
+
+function svelteKitRouteRoot(routesDir: string): string {
+  const normalized = routesDir.replaceAll('\\', '/').replace(/\/+$/, '');
+  const marker = '/routes';
+  const markerIndex = normalized.indexOf(marker);
+
+  if (normalized === 'src/routes' || normalized.endsWith('/routes')) {
+    return normalized;
+  }
+  if (markerIndex !== -1) {
+    return normalized.slice(0, markerIndex + marker.length);
+  }
+  return 'src/routes';
+}
+
+function clearGeneratedKnowledgeRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): void {
+  const routeDir = knowledgeRouteDir(projectRoot, options);
+  const routePath = join(routeDir, '+server.ts');
+  if (!existsSync(routePath)) return;
+
+  const content = readFileSync(routePath, 'utf-8');
+  if (content.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
+    unlinkSync(routePath);
+  }
+}
+
+function generateKnowledgeRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): void {
+  const routeDir = knowledgeRouteDir(projectRoot, options);
+  const route = generateKnowledgeRouteTemplate(
+    options.knowledge ?? {},
+    readKnowledgeRouteArtifact(projectRoot),
+  );
+  writeRoute(routeDir, '+server.ts', route);
+}
+
+function readKnowledgeRouteArtifact(
+  projectRoot: string,
+): Record<string, any> | null {
+  for (const relativePath of [
+    '.smrt/smrt-knowledge.json',
+    'dist/smrt-knowledge.json',
+  ]) {
+    const fullPath = join(projectRoot, relativePath);
+    if (!existsSync(fullPath)) continue;
+    try {
+      return JSON.parse(readFileSync(fullPath, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -1640,6 +1718,111 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
 `;
 }
 
+function generateKnowledgeRouteTemplate(
+  knowledge: DomainKnowledgeConfig,
+  artifact: Record<string, any> | null,
+): string {
+  const api = knowledge.api ?? {};
+  const includeDocs = api.includeDocs === true;
+  const includePrompts = api.includePrompts === true;
+  const requireAdmin = api.requireAdmin !== false;
+  const artifactLiteral = artifact ? JSON.stringify(artifact) : 'null';
+
+  return `${AUTO_GENERATED_ROUTE_HEADER}
+// DO NOT EDIT - changes will be overwritten
+
+import { dev } from '$app/environment';
+import { error, json } from '@sveltejs/kit';
+import type { RequestHandler } from './$types';
+
+const INCLUDE_DOCS_BY_DEFAULT = ${JSON.stringify(includeDocs)};
+const INCLUDE_PROMPTS_BY_DEFAULT = ${JSON.stringify(includePrompts)};
+const REQUIRE_ADMIN = ${JSON.stringify(requireAdmin)};
+const KNOWLEDGE_ARTIFACT: Record<string, any> | null = ${artifactLiteral};
+
+if (!dev && !REQUIRE_ADMIN) {
+  console.warn('[smrt] PUBLIC knowledge API route enabled; unauthenticated responses are sanitized.');
+}
+
+export const GET: RequestHandler = async ({ locals, url, setHeaders }) => {
+  setHeaders({ 'cache-control': 'private, no-store' });
+
+  if (!dev && REQUIRE_ADMIN && !isKnowledgeAdmin(locals as Record<string, any>)) {
+    throw error(403, 'SMRT knowledge requires dev mode or admin access');
+  }
+
+  const artifact = readKnowledgeArtifact();
+  const includeDocs = queryBoolean(url, 'includeDocs', INCLUDE_DOCS_BY_DEFAULT);
+  const includePrompts = queryBoolean(
+    url,
+    'includePrompts',
+    INCLUDE_PROMPTS_BY_DEFAULT,
+  );
+
+  return json(sanitizeKnowledgeArtifact(artifact, {
+    includeDocs,
+    includePrompts,
+    publicAccess: !REQUIRE_ADMIN,
+  }));
+};
+
+function readKnowledgeArtifact(): Record<string, any> {
+  if (!KNOWLEDGE_ARTIFACT) throw error(404, 'SMRT knowledge artifact not found');
+  return KNOWLEDGE_ARTIFACT;
+}
+
+function queryBoolean(url: URL, name: string, defaultValue: boolean): boolean {
+  const value = url.searchParams.get(name);
+  if (value === null) return defaultValue;
+  return value === 'true';
+}
+
+function sanitizeKnowledgeArtifact(
+  artifact: Record<string, any>,
+  options: { includeDocs: boolean; includePrompts: boolean; publicAccess: boolean },
+): Record<string, any> {
+  const sanitized = { ...artifact };
+
+  if (!options.includeDocs) {
+    delete sanitized.agentDoc;
+  }
+
+  if (!options.includePrompts) {
+    sanitized.prompts = [];
+  }
+
+  if (options.publicAccess) {
+    delete sanitized.dependencies;
+    delete sanitized.sourceHashes;
+    delete sanitized.sourceManifestPath;
+    delete sanitized.agentDocPath;
+  }
+
+  return sanitized;
+}
+
+function isKnowledgeAdmin(locals: Record<string, any>): boolean {
+  if (locals.smrtKnowledgeAdmin === true || locals.smrtAdmin === true) {
+    return true;
+  }
+
+  const userRoles = rolesFrom(locals.user);
+  const sessionRoles = rolesFrom(locals.session?.user);
+  return [...userRoles, ...sessionRoles].some((role) =>
+    ['admin', 'owner', 'superadmin'].includes(role),
+  );
+}
+
+function rolesFrom(value: any): string[] {
+  if (!value || typeof value !== 'object') return [];
+  const roles = Array.isArray(value.roles) ? value.roles : [value.role];
+  return roles
+    .filter((role): role is string => typeof role === 'string')
+    .map((role) => role.toLowerCase());
+}
+`;
+}
+
 /**
  * Updates .gitignore to exclude auto-generated routes
  */
@@ -1651,6 +1834,13 @@ function updateGitignore(projectRoot: string, options: SvelteKitOptions): void {
     '# SMRT auto-generated routes (from Vite plugin)',
     `${options.routesDir}/**/+server.ts`,
   ];
+  if (options.knowledge?.api?.enabled) {
+    const knowledgeRoute = relative(
+      projectRoot,
+      join(knowledgeRouteDir(projectRoot, options), '+server.ts'),
+    ).replaceAll('\\', '/');
+    patternsToAdd.push(knowledgeRoute);
+  }
 
   // Read existing .gitignore or create empty string
   let gitignoreContent = '';

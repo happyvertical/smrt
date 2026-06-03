@@ -1,3 +1,5 @@
+import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
+
 /**
  * Global SMRT framework options that apply to all modules unless overridden.
  *
@@ -664,6 +666,9 @@ export interface SmrtConfig {
 
   /** Export configuration for static site generation. */
   export?: ExportConfig;
+
+  /** Domain-scoped agent/developer knowledge generation and exposure. */
+  knowledge?: DomainKnowledgeConfig;
 
   /**
    * Module-scoped configurations keyed by module name.

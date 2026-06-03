@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   lstatSync,
@@ -7,9 +8,11 @@ import {
   realpathSync,
 } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import type { DomainKnowledgeManifest } from '@happyvertical/smrt-types';
 
 export type KnowledgePackageKind = 'smrt' | 'sdk' | 'workspace';
 export type KnowledgeIssueSeverity = 'error' | 'warning';
+export type KnowledgeScope = 'project' | 'local' | 'package' | 'sdk';
 
 export interface KnowledgeField {
   name: string;
@@ -62,6 +65,9 @@ export interface KnowledgePackage {
   hasClaudeShim: boolean;
   docSource: 'AGENTS.md' | 'CLAUDE.md' | null;
   agentDoc?: string;
+  hasDomainKnowledge: boolean;
+  domainKnowledgePath?: string;
+  domainKnowledge?: DomainKnowledgeManifest;
   manifestPath?: string;
   manifestVersion?: string;
   objects: KnowledgeObject[];
@@ -149,6 +155,9 @@ export interface SmrtArchitectureResult extends ArchitectureContextResult {
 interface BuildKnowledgeIndexOptions {
   rootDir?: string;
   includeDocs?: boolean;
+  scope?: KnowledgeScope;
+  package?: string;
+  packageName?: string;
 }
 
 interface CheckKnowledgeFreshnessOptions extends BuildKnowledgeIndexOptions {
@@ -162,6 +171,9 @@ interface ContextSelectorOptions {
   idea?: string;
   documentation?: string;
   focus?: string;
+  scope?: KnowledgeScope;
+  package?: string;
+  packageName?: string;
 }
 
 const SDK_PACKAGE_NAMES = new Set([
@@ -238,7 +250,7 @@ export async function buildKnowledgeIndex(
 ): Promise<SmrtKnowledgeIndex> {
   const rootDir = findProjectRoot(options.rootDir ?? process.cwd());
   const includeDocs = options.includeDocs ?? true;
-  const packageDirs = discoverWorkspacePackageDirs(rootDir);
+  const packageDirs = discoverProjectPackageDirs(rootDir);
   const packages = packageDirs.map((dir) =>
     readKnowledgePackage(rootDir, dir, includeDocs),
   );
@@ -248,17 +260,18 @@ export async function buildKnowledgeIndex(
   );
 
   const uniquePackages = dedupePackages(packages);
-  const smrtPackages = uniquePackages.filter((pkg) => pkg.kind === 'smrt');
-  const sdkPackages = uniquePackages.filter((pkg) => pkg.kind === 'sdk');
+  const scopedPackages = filterKnowledgePackages(uniquePackages, options);
+  const smrtPackages = scopedPackages.filter((pkg) => pkg.kind === 'smrt');
+  const sdkPackages = scopedPackages.filter((pkg) => pkg.kind === 'sdk');
 
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     rootDir,
-    packages: uniquePackages,
+    packages: scopedPackages,
     smrtPackages,
     sdkPackages,
-    relationshipsV2: summarizeRelationshipsV2(uniquePackages),
+    relationshipsV2: summarizeRelationshipsV2(scopedPackages),
   };
 }
 
@@ -352,6 +365,10 @@ export async function checkKnowledgeFreshnessFromIndex(
     }
   }
 
+  for (const pkg of index.packages) {
+    issues.push(...checkDomainKnowledgeArtifact(index.rootDir, pkg));
+  }
+
   issues.push(...findStalePatternIssues(index.rootDir, changedFiles));
 
   const effectiveIssues = issues.map((issue) =>
@@ -380,8 +397,111 @@ export async function checkKnowledgeFreshnessFromIndex(
   };
 }
 
+function checkDomainKnowledgeArtifact(
+  rootDir: string,
+  pkg: KnowledgePackage,
+): KnowledgeIssue[] {
+  const issues: KnowledgeIssue[] = [];
+  if (
+    pkg.exportKeys.includes('./smrt-knowledge.json') &&
+    !pkg.hasDomainKnowledge
+  ) {
+    issues.push({
+      severity: 'error',
+      code: 'missing-domain-knowledge',
+      message:
+        'package exports ./smrt-knowledge.json but no domain knowledge artifact was found',
+      file: relative(rootDir, join(pkg.directory, 'package.json')),
+      packageName: pkg.name,
+    });
+  }
+
+  if (!pkg.domainKnowledge || !pkg.domainKnowledgePath) {
+    return issues;
+  }
+
+  const hashes = pkg.domainKnowledge.sourceHashes ?? {};
+  const checks: Array<{
+    key: string;
+    filePath: string | undefined;
+    kind: 'raw' | 'json';
+    label: string;
+  }> = [
+    {
+      key: 'packageJson',
+      filePath: join(pkg.directory, 'package.json'),
+      kind: 'raw',
+      label: 'package.json',
+    },
+    {
+      key: 'agents',
+      filePath: existsSync(join(pkg.directory, 'AGENTS.md'))
+        ? join(pkg.directory, 'AGENTS.md')
+        : undefined,
+      kind: 'raw',
+      label: 'AGENTS.md',
+    },
+    {
+      key: 'manifest',
+      filePath: domainSourceManifestPath(rootDir, pkg),
+      kind: 'json',
+      label: 'manifest',
+    },
+  ];
+
+  for (const check of checks) {
+    const expected = hashes[check.key];
+    if (!expected) continue;
+    if (!check.filePath || !existsSync(check.filePath)) {
+      issues.push({
+        severity: 'error',
+        code: 'domain-knowledge-source-missing',
+        message: `${check.label} source for smrt-knowledge.json is missing`,
+        file: pkg.domainKnowledgePath,
+        packageName: pkg.name,
+      });
+      continue;
+    }
+
+    const actual =
+      check.kind === 'json'
+        ? hashJsonFile(check.filePath)
+        : hashFile(check.filePath);
+    if (actual !== expected) {
+      issues.push({
+        severity: 'error',
+        code: 'stale-domain-knowledge',
+        message: `${check.label} changed since smrt-knowledge.json was generated`,
+        file: pkg.domainKnowledgePath,
+        packageName: pkg.name,
+      });
+    }
+  }
+
+  return issues;
+}
+
+function domainSourceManifestPath(
+  rootDir: string,
+  pkg: KnowledgePackage,
+): string | undefined {
+  if (pkg.domainKnowledge?.sourceManifestPath) {
+    return join(pkg.directory, pkg.domainKnowledge.sourceManifestPath);
+  }
+  if (pkg.manifestPath) {
+    return join(rootDir, pkg.manifestPath);
+  }
+  return undefined;
+}
+
 export async function diffKnowledgeIndex(
-  options: { rootDir?: string; base?: string } = {},
+  options: {
+    rootDir?: string;
+    base?: string;
+    scope?: KnowledgeScope;
+    package?: string;
+    packageName?: string;
+  } = {},
 ): Promise<{
   base: string;
   changedFiles: string[];
@@ -391,9 +511,13 @@ export async function diffKnowledgeIndex(
   const index = await buildKnowledgeIndex({ rootDir: options.rootDir });
   const base = options.base ?? 'HEAD';
   const changedFiles = getChangedFiles(index.rootDir, base);
-  const changedPackages = selectPackagesForFiles(index, changedFiles).map(
-    (pkg) => pkg.name,
-  );
+  const packageQuery = options.packageName ?? options.package;
+  const selected = selectPackagesForFiles(index, changedFiles)
+    .filter((pkg) => scopeAllowsPackage(pkg, options.scope))
+    .filter((pkg) =>
+      packageQuery ? packageMatches(pkg, packageQuery.toLowerCase()) : true,
+    );
+  const changedPackages = selected.map((pkg) => pkg.name);
   return { base, changedFiles, changedPackages, index };
 }
 
@@ -405,11 +529,22 @@ export async function buildReviewContext(
   const selectedPackages = selectPackages(index, {
     changedFiles,
     text: [options.focus, options.documentation].filter(Boolean).join('\n'),
+    scope: options.scope,
+    packageName: options.packageName ?? options.package,
   });
-  const selectedSdkPackages = selectSdkPackages(index, selectedPackages, [
-    options.focus,
-    options.documentation,
-  ]);
+  const selectedSdkPackages = selectSdkPackages(
+    index,
+    selectedPackages,
+    [
+      options.focus,
+      options.documentation,
+      options.packageName ?? options.package,
+    ],
+    {
+      scope: options.scope,
+      packageName: options.packageName ?? options.package,
+    },
+  );
   const deterministicFindings = findStalePatternIssues(
     index.rootDir,
     changedFiles.length > 0 ? changedFiles : undefined,
@@ -456,10 +591,20 @@ export async function buildArchitectureContext(
   const text = [options.idea, options.documentation, options.focus]
     .filter(Boolean)
     .join('\n');
-  const selectedPackages = selectPackages(index, { text });
-  const selectedSdkPackages = selectSdkPackages(index, selectedPackages, [
+  const selectedPackages = selectPackages(index, {
     text,
-  ]);
+    scope: options.scope,
+    packageName: options.packageName ?? options.package,
+  });
+  const selectedSdkPackages = selectSdkPackages(
+    index,
+    selectedPackages,
+    [text, options.packageName ?? options.package],
+    {
+      scope: options.scope,
+      packageName: options.packageName ?? options.package,
+    },
+  );
 
   return {
     selectedPackages,
@@ -524,6 +669,9 @@ export function renderKnowledgeIndexMarkdown(
     lines.push(`- exports: ${pkg.exportKeys.join(', ') || '(none)'}`);
     lines.push(`- MCP tools: ${pkg.mcpTools.length}`);
     lines.push(
+      `- domain knowledge: ${pkg.domainKnowledgePath ?? '(manifest fallback)'}`,
+    );
+    lines.push(
       `- docs: ${pkg.docSource ?? '(none)'}${pkg.hasClaudeShim ? ' + CLAUDE.md shim' : ''}`,
     );
     if (pkg.relationshipFeatures.length > 0) {
@@ -582,6 +730,28 @@ function discoverWorkspacePackageDirs(rootDir: string): string[] {
     .sort();
 }
 
+function discoverProjectPackageDirs(rootDir: string): string[] {
+  const workspaceDirs = discoverWorkspacePackageDirs(rootDir);
+  if (
+    existsSync(join(rootDir, 'package.json')) &&
+    hasLocalDomainArtifact(rootDir)
+  ) {
+    return [rootDir, ...workspaceDirs.filter((dir) => dir !== rootDir)];
+  }
+  return workspaceDirs;
+}
+
+function hasLocalDomainArtifact(rootDir: string): boolean {
+  return [
+    join(rootDir, '.smrt', 'smrt-knowledge.json'),
+    join(rootDir, '.smrt', 'manifest.json'),
+    join(rootDir, 'dist', 'smrt-knowledge.json'),
+    join(rootDir, 'dist', 'manifest.json'),
+    join(rootDir, 'src', 'manifest', 'smrt-knowledge.json'),
+    join(rootDir, 'src', 'manifest', 'manifest.json'),
+  ].some((path) => existsSync(path));
+}
+
 function discoverInstalledSdkPackages(
   rootDir: string,
   packageDirs: string[],
@@ -622,6 +792,34 @@ function discoverInstalledSdkPackages(
     .map((dir) => readKnowledgePackage(rootDir, dir, includeDocs));
 }
 
+function filterKnowledgePackages(
+  packages: KnowledgePackage[],
+  options: BuildKnowledgeIndexOptions,
+): KnowledgePackage[] {
+  const packageQuery = options.packageName ?? options.package;
+  return packages.filter((pkg) => {
+    if (packageQuery && !packageMatches(pkg, packageQuery.toLowerCase())) {
+      return false;
+    }
+
+    switch (options.scope) {
+      case 'local':
+        return (
+          pkg.kind !== 'sdk' && !pkg.relativeDirectory.includes('node_modules')
+        );
+      case 'package':
+        return pkg.kind !== 'sdk';
+      case 'sdk':
+        return pkg.kind === 'sdk';
+      case 'project':
+      case undefined:
+        return true;
+      default:
+        return true;
+    }
+  });
+}
+
 function readKnowledgePackage(
   rootDir: string,
   directory: string,
@@ -641,14 +839,21 @@ function readKnowledgePackage(
   const agentsContent = hasAgentsMd ? readFileSync(agentsPath, 'utf8') : '';
   const fallbackClaudeDoc =
     hasClaudeMd && claudeContent.trim() !== '@AGENTS.md' ? claudeContent : '';
+  const domainKnowledge = readDomainKnowledge(directory);
   const docSource = hasAgentsMd
     ? 'AGENTS.md'
     : fallbackClaudeDoc
       ? 'CLAUDE.md'
       : null;
   const manifest = readManifest(directory);
-  const objects = manifest ? readManifestObjects(manifest.content) : [];
-  const prompts = readPrompts(directory, rootDir);
+  const objects = domainKnowledge
+    ? readDomainKnowledgeObjects(domainKnowledge.content)
+    : manifest
+      ? readManifestObjects(manifest.content)
+      : [];
+  const prompts = domainKnowledge
+    ? readDomainKnowledgePrompts(domainKnowledge.content, directory, rootDir)
+    : readPrompts(directory, rootDir);
   const smrtDependencies = Object.keys(allDeps)
     .filter((dep) => dep.startsWith('@happyvertical/smrt-'))
     .sort();
@@ -674,10 +879,14 @@ function readKnowledgePackage(
     hasClaudeShim: claudeContent.trim() === '@AGENTS.md',
     docSource,
     agentDoc: includeDocs
-      ? hasAgentsMd
-        ? agentsContent
-        : fallbackClaudeDoc || undefined
+      ? domainKnowledge?.content.agentDoc ||
+        (hasAgentsMd ? agentsContent : fallbackClaudeDoc || undefined)
       : undefined,
+    hasDomainKnowledge: Boolean(domainKnowledge),
+    domainKnowledgePath: domainKnowledge?.path
+      ? relative(rootDir, domainKnowledge.path)
+      : undefined,
+    domainKnowledge: domainKnowledge?.content,
     manifestPath: manifest?.path ? relative(rootDir, manifest.path) : undefined,
     manifestVersion:
       typeof manifest?.content.version === 'string'
@@ -685,9 +894,37 @@ function readKnowledgePackage(
         : undefined,
     objects,
     prompts,
-    mcpTools: mcpTools(objects),
+    mcpTools: domainKnowledge
+      ? domainMcpTools(domainKnowledge.content)
+      : mcpTools(objects),
     relationshipFeatures: relationshipFeatures(objects),
   };
+}
+
+function readDomainKnowledge(
+  directory: string,
+): { path: string; content: DomainKnowledgeManifest } | null {
+  for (const path of [
+    join(directory, '.smrt', 'smrt-knowledge.json'),
+    join(directory, 'dist', 'smrt-knowledge.json'),
+    join(directory, 'src', 'manifest', 'smrt-knowledge.json'),
+  ]) {
+    const content = readJson(path);
+    if (isDomainKnowledgeManifest(content)) {
+      return { path, content };
+    }
+  }
+  return null;
+}
+
+function isDomainKnowledgeManifest(
+  value: unknown,
+): value is DomainKnowledgeManifest {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return record.schemaVersion === 1 && Array.isArray(record.objects);
 }
 
 function readManifest(
@@ -761,6 +998,50 @@ function readManifestObjects(
       methods: Object.keys(objectRecord(item.methods)).sort(),
     };
   });
+}
+
+function readDomainKnowledgeObjects(
+  manifest: DomainKnowledgeManifest,
+): KnowledgeObject[] {
+  return manifest.objects.map((object) => ({
+    className: object.name,
+    qualifiedName: object.qualifiedName,
+    extends: object.extends,
+    collection: object.collection,
+    mcpOperations: object.surfaces
+      .filter((surface) => surface.kind === 'mcp')
+      .map((surface) => surface.operation)
+      .sort(),
+    tableName: object.tableName,
+    idColumnType: object.fields.find((field) => field.name === 'id')
+      ?.columnType,
+    fields: object.fields.map((field) => ({
+      name: field.name,
+      type: field.type,
+      required: field.required,
+      related: field.related,
+      columnType: field.columnType,
+    })),
+    relationships: object.relationships.map((field) => ({
+      name: field.name,
+      type: field.type,
+      required: field.required,
+      related: field.related,
+      columnType: field.columnType,
+    })),
+    methods: object.methods,
+  }));
+}
+
+function readDomainKnowledgePrompts(
+  manifest: DomainKnowledgeManifest,
+  directory: string,
+  rootDir: string,
+): KnowledgePrompt[] {
+  return manifest.prompts.map((prompt) => ({
+    filePath: relative(rootDir, join(directory, prompt.filePath)),
+    key: prompt.key,
+  }));
 }
 
 function readPrompts(directory: string, rootDir: string): KnowledgePrompt[] {
@@ -844,6 +1125,17 @@ function mcpTools(objects: KnowledgeObject[]): KnowledgeMcpTool[] {
         operation,
       }));
     })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function domainMcpTools(manifest: DomainKnowledgeManifest): KnowledgeMcpTool[] {
+  return manifest.surfaces
+    .filter((surface) => surface.kind === 'mcp')
+    .map((surface) => ({
+      name: surface.name,
+      sourceObject: surface.objectName ?? '',
+      operation: surface.operation,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -1238,7 +1530,7 @@ function selectPackagesForFiles(
 ): KnowledgePackage[] {
   const selected = new Set<KnowledgePackage>();
   for (const file of changedFiles) {
-    for (const pkg of index.smrtPackages) {
+    for (const pkg of domainPackages(index)) {
       if (
         file === pkg.relativeDirectory ||
         file.startsWith(`${pkg.relativeDirectory}/`)
@@ -1252,16 +1544,31 @@ function selectPackagesForFiles(
 
 function selectPackages(
   index: SmrtKnowledgeIndex,
-  options: { changedFiles?: string[]; text?: string },
+  options: {
+    changedFiles?: string[];
+    text?: string;
+    scope?: KnowledgeScope;
+    packageName?: string;
+  },
 ): KnowledgePackage[] {
   const selected = new Set<KnowledgePackage>();
+  const packageName = options.packageName?.toLowerCase();
+  if (packageName) {
+    for (const pkg of domainPackages(index)) {
+      if (packageMatches(pkg, packageName)) {
+        selected.add(pkg);
+      }
+    }
+  }
+
   for (const pkg of selectPackagesForFiles(index, options.changedFiles ?? [])) {
-    selected.add(pkg);
+    if (scopeAllowsPackage(pkg, options.scope)) selected.add(pkg);
   }
 
   const text = (options.text ?? '').toLowerCase();
   if (text) {
-    for (const pkg of index.smrtPackages) {
+    for (const pkg of domainPackages(index)) {
+      if (!scopeAllowsPackage(pkg, options.scope)) continue;
       const packageKey = pkg.name.replace('@happyvertical/smrt-', '');
       if (
         includesToken(text, packageKey) ||
@@ -1275,7 +1582,15 @@ function selectPackages(
     }
   }
 
-  if (selected.size === 0) {
+  if (selected.size === 0 && options.scope === 'local') {
+    for (const pkg of domainPackages(index).filter((item) =>
+      scopeAllowsPackage(item, 'local'),
+    )) {
+      selected.add(pkg);
+    }
+  }
+
+  if (selected.size === 0 && options.scope !== 'sdk') {
     for (const name of [
       '@happyvertical/smrt-core',
       '@happyvertical/smrt-config',
@@ -1295,17 +1610,24 @@ function selectSdkPackages(
   index: SmrtKnowledgeIndex,
   selectedPackages: KnowledgePackage[],
   texts: Array<string | undefined>,
+  options: {
+    scope?: KnowledgeScope;
+    packageName?: string;
+  } = {},
 ): KnowledgePackage[] {
   const selected = new Set<KnowledgePackage>();
   const sdkNames = new Set(
     selectedPackages.flatMap((pkg) => pkg.sdkDependencies),
   );
   const text = texts.filter(Boolean).join('\n').toLowerCase();
+  const packageName = options.packageName?.toLowerCase();
 
   for (const sdk of index.sdkPackages) {
     const shortName = sdk.name.replace('@happyvertical/', '');
     if (
+      options.scope === 'sdk' ||
       sdkNames.has(sdk.name) ||
+      (packageName && packageMatches(sdk, packageName)) ||
       text.includes(sdk.name.toLowerCase()) ||
       includesToken(text, shortName)
     ) {
@@ -1326,6 +1648,39 @@ function selectSdkPackages(
   }
 
   return [...selected].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function domainPackages(index: SmrtKnowledgeIndex): KnowledgePackage[] {
+  return index.packages.filter((pkg) => pkg.kind !== 'sdk');
+}
+
+function scopeAllowsPackage(
+  pkg: KnowledgePackage,
+  scope: KnowledgeScope | undefined,
+): boolean {
+  switch (scope) {
+    case 'sdk':
+      return false;
+    case 'local':
+      return !pkg.relativeDirectory.includes('node_modules');
+    case 'package':
+    case 'project':
+    case undefined:
+      return true;
+  }
+}
+
+function packageMatches(pkg: KnowledgePackage, query: string): boolean {
+  const normalized = query.toLowerCase();
+  const shortName = pkg.name
+    .replace('@happyvertical/smrt-', '')
+    .replace('@happyvertical/', '');
+  return (
+    pkg.name.toLowerCase() === normalized ||
+    pkg.name.toLowerCase().includes(normalized) ||
+    shortName.toLowerCase() === normalized ||
+    pkg.relativeDirectory.toLowerCase().endsWith(`/${normalized}`)
+  );
 }
 
 function buildPromptBundle(options: {
@@ -1379,6 +1734,7 @@ function renderPackageContext(pkg: KnowledgePackage): string {
     `- version: ${pkg.version}`,
     `- kind: ${pkg.kind}`,
     `- directory: ${pkg.relativeDirectory}`,
+    `- domain knowledge: ${pkg.domainKnowledgePath ?? '(manifest fallback)'}`,
     `- docs: ${pkg.docSource ?? '(none)'}`,
     `- relationship features: ${pkg.relationshipFeatures.join(', ') || '(none)'}`,
     `- SDK deps: ${pkg.sdkDependencies.join(', ') || '(none)'}`,
@@ -1479,6 +1835,18 @@ function readJson(path: string): any | null {
   }
 }
 
+function hashFile(path: string): string {
+  return createHash('sha256').update(readFileSync(path, 'utf8')).digest('hex');
+}
+
+function hashJsonFile(path: string): string {
+  const content = readJson(path);
+  const hashContent = content
+    ? stableJson(normalizeJsonForHash(content))
+    : readFileSync(path, 'utf8');
+  return createHash('sha256').update(hashContent).digest('hex');
+}
+
 function objectRecord(value: unknown): Record<string, any> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Record<string, any>)
@@ -1486,9 +1854,38 @@ function objectRecord(value: unknown): Record<string, any> {
 }
 
 function camelToSnake(value: string): string {
-  return value.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`);
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase();
 }
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function normalizeJsonForHash(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  const normalized = { ...(value as Record<string, unknown>) };
+  delete normalized.timestamp;
+  return normalized;
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJson(value), null, 2);
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, sortJson(entry)]),
+    );
+  }
+  return value;
 }

@@ -7,7 +7,7 @@
  * Now uses ManifestBuilder service for consolidated, testable logic
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { register } from 'tsx/esm/api';
@@ -63,6 +63,40 @@ async function generateManifest() {
         injectPackageInfo: true,
         moduleType: 'smrt',
       });
+
+      const { buildDomainKnowledgeManifest } = await import(
+        pathToFileURL(resolve(process.cwd(), 'src/knowledge.ts')).href
+      );
+      const sourceManifestPath = resolve(
+        process.cwd(),
+        'src/manifest/static-manifest.json',
+      );
+      const distManifestPath = resolve(process.cwd(), 'dist/manifest.json');
+      const manifestPath = existsSync(distManifestPath)
+        ? distManifestPath
+        : sourceManifestPath;
+      const manifest = JSON.parse(readFileSync(sourceManifestPath, 'utf8'));
+      const packageJson = JSON.parse(
+        readFileSync(resolve(process.cwd(), 'package.json'), 'utf8'),
+      );
+      const knowledgePath = resolve(
+        process.cwd(),
+        'src/manifest/smrt-knowledge.json',
+      );
+      const knowledge = preserveGeneratedAtIfUnchanged(
+        knowledgePath,
+        buildDomainKnowledgeManifest({
+          manifest,
+          rootDir: process.cwd(),
+          packageJson,
+          manifestPath,
+          config: {
+            includeDocs: true,
+            includePrompts: true,
+          },
+        }),
+      );
+      writeFileSync(knowledgePath, JSON.stringify(knowledge, null, 2), 'utf8');
     } finally {
       await unregister();
     }
@@ -75,6 +109,47 @@ async function generateManifest() {
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   generateManifest();
+}
+
+function preserveGeneratedAtIfUnchanged(path, nextKnowledge) {
+  if (!existsSync(path)) {
+    return nextKnowledge;
+  }
+
+  try {
+    const current = JSON.parse(readFileSync(path, 'utf8'));
+    if (semanticArtifactJson(current) === semanticArtifactJson(nextKnowledge)) {
+      return {
+        ...nextKnowledge,
+        generatedAt: current.generatedAt,
+      };
+    }
+  } catch {
+    // Replace malformed artifacts.
+  }
+
+  return nextKnowledge;
+}
+
+function semanticArtifactJson(artifact) {
+  const { generatedAt: _generatedAt, ...rest } = artifact ?? {};
+  return stableJson(rest);
+}
+
+function stableJson(value) {
+  return JSON.stringify(sortJson(value));
+}
+
+function sortJson(value) {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([key, entry]) => [key, sortJson(entry)]),
+    );
+  }
+  return value;
 }
 
 export { generateManifest };

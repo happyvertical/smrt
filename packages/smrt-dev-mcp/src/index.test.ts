@@ -6,10 +6,14 @@ describe('smrt-dev-mcp tools', () => {
     const names = TOOLS.map((tool) => tool.name);
 
     expect(names).toContain('reflect-knowledge');
+    expect(names).toContain('reflect-domain-knowledge');
     expect(names).toContain('check-knowledge-freshness');
+    expect(names).toContain('check-domain-knowledge');
     expect(names).toContain('build-review-context');
+    expect(names).toContain('build-domain-review-context');
     expect(names).toContain('smrt-review');
     expect(names).toContain('build-architecture-context');
+    expect(names).toContain('build-domain-architecture-context');
     expect(names).toContain('smrt-architecture');
     expect(names).toContain('list-agent-skills');
     expect(names).toContain('get-agent-skill');

@@ -146,6 +146,37 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
     expect(manifest).toHaveProperty('objects');
   });
 
+  it('writes domain knowledge when config omits this package override', async () => {
+    writeFileSync(
+      join(tmpDir, 'smrt.config.json'),
+      JSON.stringify({
+        knowledge: { tags: ['project-default'] },
+        packages: {
+          '@fixture/other': {
+            knowledge: { tags: ['other-package'] },
+          },
+        },
+      }),
+    );
+
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+
+    await (plugin as any).configResolved({
+      root: tmpDir,
+      build: {},
+      plugins: [],
+    });
+
+    const knowledgePath = join(tmpDir, '.smrt', 'smrt-knowledge.json');
+    expect(existsSync(knowledgePath)).toBe(true);
+
+    const knowledge = JSON.parse(readFileSync(knowledgePath, 'utf-8'));
+    expect(knowledge.tags).toEqual(['project-default']);
+  });
+
   it('should write .smrt/manifest.json during buildStart', async () => {
     const plugin = smrtPlugin({
       include: ['src/**/*.ts'],
