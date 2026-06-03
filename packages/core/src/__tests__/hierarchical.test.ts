@@ -194,7 +194,7 @@ describe('SmrtHierarchical', () => {
       const db = (nodes as unknown as { db: { query: Function } }).db;
       const now = new Date().toISOString();
       // Batch raw inserts so we don't blow the bind limit during setup either.
-      const COLS_PER_ROW = 6; // id, slug, context, parent_id, name, (created/updated default)
+      const COLS_PER_ROW = 7; // id, slug, context, parent_id, name, created_at, updated_at
       const ROWS_PER_INSERT = Math.floor(900 / COLS_PER_ROW);
       let inserted = 0;
       while (inserted < WIDE) {
