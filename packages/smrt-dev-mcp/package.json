@@ -12,13 +12,17 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./knowledge": {
+      "types": "./dist/knowledge.d.ts",
+      "import": "./dist/knowledge.js"
     }
   },
   "files": [
     "CLAUDE.md",
-    "LICENSE",
     "README.md",
-    "dist"
+    "dist",
+    "AGENTS.md"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",

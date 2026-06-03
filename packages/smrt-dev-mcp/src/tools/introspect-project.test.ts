@@ -33,8 +33,7 @@ describe('introspectProject', () => {
       await writeFile(
         join(tmpDir, 'product.ts'),
         `
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { field } from '@happyvertical/smrt-core/decorators';
+import { SmrtObject, smrt, field, foreignKey, oneToMany, manyToMany } from '@happyvertical/smrt-core';
 
 @smrt()
 export class Product extends SmrtObject {
@@ -67,7 +66,7 @@ export class Product extends SmrtObject {
       await writeFile(
         join(tmpDir, 'models', 'products', 'product.ts'),
         `
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SmrtObject, smrt, field, foreignKey, oneToMany, manyToMany } from '@happyvertical/smrt-core';
 
 @smrt()
 export class Product extends SmrtObject {
@@ -186,7 +185,7 @@ export class Types extends SmrtObject {
       await writeFile(
         join(tmpDir, 'model.ts'),
         `
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SmrtObject, smrt, field, foreignKey, oneToMany, manyToMany } from '@happyvertical/smrt-core';
 
 @smrt()
 export class Model extends SmrtObject {
@@ -290,13 +289,13 @@ export class Model extends SmrtObject {
       await writeFile(
         join(tmpDir, 'order.ts'),
         `
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { foreignKey } from '@happyvertical/smrt-core/fields';
+import { SmrtObject, smrt, field, foreignKey, oneToMany, manyToMany } from '@happyvertical/smrt-core';
 import { Customer } from './customer';
 
 @smrt()
 export class Order extends SmrtObject {
-  customerId = foreignKey(Customer);
+  @foreignKey(Customer)
+  customerId: string = '';
 }
         `.trim(),
       );
@@ -318,7 +317,8 @@ export class Order extends SmrtObject {
         `
 @smrt()
 export class Author extends SmrtObject {
-  articles = oneToMany(Article);
+  @oneToMany(Article)
+  articles: Article[] = [];
 }
         `.trim(),
       );
@@ -340,7 +340,8 @@ export class Author extends SmrtObject {
         `
 @smrt()
 export class Student extends SmrtObject {
-  courses = manyToMany(Course);
+  @manyToMany(Course)
+  courses: Course[] = [];
 }
         `.trim(),
       );
@@ -362,7 +363,8 @@ export class Student extends SmrtObject {
         `
 @smrt()
 export class Order extends SmrtObject {
-  customerId = foreignKey(Customer);
+  @foreignKey(Customer)
+  customerId: string = '';
 }
         `.trim(),
       );

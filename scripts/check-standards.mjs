@@ -6,7 +6,7 @@
  * Currently checks:
  *   - exports map condition order: `types` always before `import`
  *   - package.json shape: type=module, author=HappyVertical, repository.directory present
- *   - `files` allowlist: must include "CLAUDE.md" (unless package opts out)
+ *   - `files` allowlist: must include "AGENTS.md" and "CLAUDE.md" shim
  *   - vitest.config.ts presence + smrtVitestPlugin usage
  *   - no `--passWithNoTests` in test scripts (allowlist for templates)
  *
@@ -172,10 +172,9 @@ function checkPackage(name) {
     );
   }
 
-  // 5. files allowlist must be an array, must include "dist" and "CLAUDE.md".
-  //    Per docs/content/standards.md §2: files: ["dist", "CLAUDE.md"] (plus
-  //    optional "bin" for CLI packages). See EXEMPTIONS.noDistInFiles for
-  //    documented bare-"dist" exceptions.
+  // 5. files allowlist must be an array, must include "dist", "AGENTS.md",
+  //    and the "CLAUDE.md" compatibility shim. See EXEMPTIONS.noDistInFiles
+  //    for documented bare-"dist" exceptions.
   if (json.files !== undefined) {
     if (!Array.isArray(json.files)) {
       violations.push('files must be an array');
@@ -189,9 +188,37 @@ function checkPackage(name) {
       if (!json.files.includes('CLAUDE.md')) {
         violations.push('files allowlist missing "CLAUDE.md"');
       }
+      if (!json.files.includes('AGENTS.md')) {
+        violations.push('files allowlist missing "AGENTS.md"');
+      }
+      for (const entry of json.files) {
+        if (entry === 'dist' || entry.startsWith('dist/') || entry.includes('*')) {
+          continue;
+        }
+        if (!existsSync(join(PKGS, name, entry))) {
+          violations.push(`files allowlist entry "${entry}" does not exist`);
+        }
+      }
     }
   } else {
-    violations.push('files allowlist is missing — add ["dist", "CLAUDE.md"]');
+    violations.push(
+      'files allowlist is missing — add ["dist", "AGENTS.md", "CLAUDE.md"]',
+    );
+  }
+
+  const agentsPath = join(PKGS, name, 'AGENTS.md');
+  if (!existsSync(agentsPath)) {
+    violations.push('missing AGENTS.md');
+  }
+
+  const claudePath = join(PKGS, name, 'CLAUDE.md');
+  if (!existsSync(claudePath)) {
+    violations.push('missing CLAUDE.md shim');
+  } else {
+    const claude = readFileSync(claudePath, 'utf8').trim();
+    if (claude !== '@AGENTS.md') {
+      violations.push('CLAUDE.md must contain only "@AGENTS.md"');
+    }
   }
 
   // 6. vitest.config.ts presence + smrtVitestPlugin usage
@@ -259,6 +286,6 @@ for (const { name, violations } of report) {
 console.error(
   'See docs/content/standards.md for the full standard. To exempt a check,\n' +
     'add the package to the EXEMPTIONS table in scripts/check-standards.mjs\n' +
-    'and document the exemption in CLAUDE.md.',
+    'and document the exemption in AGENTS.md.',
 );
 process.exit(1);

@@ -78,7 +78,7 @@ export async function introspectProject(
 
       // Extract class name (basic regex for now)
       const classMatch = content.match(
-        /export\s+class\s+(\w+)\s+extends\s+(SmrtObject|SmrtCollection)/,
+        /export\s+class\s+(\w+)\s+extends\s+(\w+)/,
       );
       if (!classMatch) {
         return;
@@ -114,11 +114,11 @@ export async function introspectProject(
         // Pattern 1: TypeScript property declarations (new decorator pattern)
         // Example: name: string = ''; or price: number = 0.0;
         const tsFieldMatches = content.matchAll(
-          /^\s*(?:@field\([^)]*\)\s*)?(\w+):\s*(\w+)(?:<[^>]+>)?\s*=/gm,
+          /^\s*(?:@\w+\([^)]*\)\s*)*(\w+)(?::\s*([\w| ]+)(?:<[^>]+>)?)?\s*=\s*([^;\n]+)/gm,
         );
         for (const match of tsFieldMatches) {
           const fieldName = match[1];
-          const tsType = match[2];
+          const tsType = match[2]?.trim() ?? inferTypeFromDefault(match[3]);
 
           // Skip constructor, methods, etc.
           if (fieldName === 'constructor') continue;
@@ -161,11 +161,22 @@ export async function introspectProject(
 
       // Extract relationships if requested
       if (includeRelationships) {
-        const relationshipMatches = content.matchAll(
+        objInfo.relationships = [];
+        const decoratorMatches = content.matchAll(
+          /@(foreignKey|crossPackageRef|oneToMany|manyToMany)\(([^)]*)\)\s*(\w+)\s*[:=]/g,
+        );
+        for (const match of decoratorMatches) {
+          objInfo.relationships.push({
+            field: match[3],
+            type: match[1],
+            relatedClass: cleanRelatedClass(match[2]),
+          });
+        }
+
+        const assignmentMatches = content.matchAll(
           /(\w+)\s*=\s*(foreignKey|oneToMany|manyToMany)\((\w+)/g,
         );
-        objInfo.relationships = [];
-        for (const match of relationshipMatches) {
+        for (const match of assignmentMatches) {
           objInfo.relationships.push({
             field: match[1],
             type: match[2],
@@ -211,4 +222,18 @@ export async function introspectProject(
   };
 
   return JSON.stringify(output, null, 2);
+}
+
+function inferTypeFromDefault(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.startsWith("'") || trimmed.startsWith('"')) return 'string';
+  if (trimmed === 'true' || trimmed === 'false') return 'boolean';
+  if (/^\d+\.\d+/.test(trimmed) || /^\d+$/.test(trimmed)) return 'number';
+  if (trimmed.startsWith('new Date')) return 'Date';
+  return 'any';
+}
+
+function cleanRelatedClass(value: string): string {
+  const firstArg = value.split(',')[0]?.trim() ?? '';
+  return firstArg.replace(/^['"`]/, '').replace(/['"`]$/, '');
 }

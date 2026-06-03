@@ -29,7 +29,8 @@
   },
   "files": [
     "dist",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "AGENTS.md"
   ],
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",

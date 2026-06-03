@@ -19,10 +19,7 @@ describe('generateSmrtClass', () => {
 
       expect(result).toContain('export class Product extends SmrtObject');
       expect(result).toContain(
-        "import { SmrtObject, smrt } from '@happyvertical/smrt-core'",
-      );
-      expect(result).toContain(
-        "import { field } from '@happyvertical/smrt-core/decorators'",
+        "import { SmrtObject, smrt, field } from '@happyvertical/smrt-core'",
       );
       expect(result).toContain('name: string = ');
       expect(result).toContain('price: number = 0.0');
@@ -207,7 +204,7 @@ describe('generateSmrtClass', () => {
       });
 
       expect(result).toContain(
-        "import { field } from '@happyvertical/smrt-core/decorators'",
+        "import { SmrtObject, smrt, field } from '@happyvertical/smrt-core'",
       );
     });
   });

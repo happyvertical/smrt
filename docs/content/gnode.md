@@ -1,4 +1,4 @@
-# @have/gnode
+# @happyvertical/smrt-gnode
 
 SMRT federation library for building federated local knowledge bases (gnodes).
 
@@ -9,13 +9,13 @@ Gnodes are **federated local knowledge bases** that transform government documen
 ## Installation
 
 ```bash
-pnpm add @have/gnode
+pnpm add @happyvertical/smrt-gnode
 ```
 
 ## Usage
 
 ```typescript
-import { Federation, WebFingerProtocol } from '@have/gnode';
+import { Federation, WebFingerProtocol } from '@happyvertical/smrt-gnode';
 
 // Configure federation
 const federation = new Federation({
@@ -38,7 +38,7 @@ const gnodeInfo = await WebFingerProtocol.discover('example.com');
 - **P2P Discovery**: Automatic peer discovery via WebFinger and DNS
 - **Peer Exchange**: Share peer lists between gnodes
 - **Federation Protocols**: ActivityPub-inspired protocols for cross-gnode queries
-- **SMRT Integration**: Built on @have/smrt for seamless object federation
+- **SMRT Integration**: Built on @happyvertical/smrt-core for seamless object federation
 
 ## Documentation
 
@@ -55,9 +55,9 @@ See the [town template](../create-gnode/templates/town/) for complete implementa
 
 ## Related Packages
 
-- [@have/smrt](../smrt) - Core SMRT framework
-- [@have/sql](../sql) - Database abstraction layer
-- [@have/create-gnode](../create-gnode) - CLI generator for creating gnodes
+- [@happyvertical/smrt-core](../smrt) - Core SMRT framework
+- [@happyvertical/sql](../sql) - Database abstraction layer
+- [@happyvertical/smrt-gnode](../create-gnode) - CLI generator for creating gnodes
 
 ## License
 

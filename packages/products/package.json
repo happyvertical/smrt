@@ -11,7 +11,7 @@
     "dist/app",
     "dist/federation",
     "dist/lib",
-    "docs"
+    "AGENTS.md"
   ],
   "exports": {
     ".": {

@@ -22,7 +22,7 @@ Agents are designed for long-running processes, scheduled tasks, and autonomous 
 - **Lifecycle Management**: Initialize, validate, run, and shutdown hooks with automatic orchestration
 - **Status Tracking**: Built-in status management (idle, initializing, running, error, shutdown)
 - **Database Persistence**: All agent state automatically persisted via SmrtObject inheritance
-- **Structured Logging**: Integrated logger with contextual information via `@have/logger`
+- **Structured Logging**: Integrated logger with contextual information via `@happyvertical/logger`
 - **Graceful Shutdown**: Automatic signal handling (SIGTERM, SIGINT) for clean termination
 - **Configuration Management**: Abstract config property for agent-specific settings
 - **Type-Safe**: Full TypeScript support with comprehensive type definitions

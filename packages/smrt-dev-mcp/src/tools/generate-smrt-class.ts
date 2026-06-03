@@ -45,19 +45,18 @@ export async function generateSmrtClass(
   } = args;
 
   // Generate imports
-  const imports = [
-    `import { ${baseClass}, smrt } from '@happyvertical/smrt-core';`,
-  ];
+  const coreImports = [baseClass, 'smrt'];
 
-  // Check if we need @field decorator import (for constraints)
   const needsFieldDecorator = properties.some(
     (p) => p.required || p.description,
   );
   if (needsFieldDecorator) {
-    imports.push(
-      `import { field } from '@happyvertical/smrt-core/decorators';`,
-    );
+    coreImports.push('field');
   }
+
+  const imports = [
+    `import { ${coreImports.join(', ')} } from '@happyvertical/smrt-core';`,
+  ];
 
   // Generate decorator configuration
   const decoratorConfig: any = {};

@@ -18,7 +18,8 @@
   "files": [
     "dist",
     "README.md",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "AGENTS.md"
   ],
   "scripts": {
     "build": "tsc",

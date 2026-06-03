@@ -9,6 +9,7 @@
     { "path": "../agents" },
     { "path": "../config" },
     { "path": "../core" },
+    { "path": "../smrt-dev-mcp" },
     { "path": "../smrt-playground" },
     { "path": "../types" }
   ]

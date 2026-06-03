@@ -42,8 +42,7 @@ bun add @happyvertical/smrt-core
 ### Define SMRT Objects with TypeScript Types
 
 ```typescript
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { foreignKey } from '@happyvertical/smrt-core/fields'; // Only for relationships
+import { SmrtObject, field, foreignKey, smrt } from '@happyvertical/smrt-core';
 
 // Define objects using TypeScript types (primary pattern)
 @smrt({
@@ -63,10 +62,12 @@ class Document extends SmrtObject {
 
   // Use field decorators only when needed for:
   // 1. Relationships
-  categoryId = foreignKey(Category);
+  @foreignKey(Category)
+  categoryId: string = '';
 
   // 2. Constraints
-  slug = text({ required: true, unique: true });
+  @field({ required: true, unique: true })
+  slug: string = '';
 
   constructor(options: any = {}) {
     super(options);
@@ -515,8 +516,7 @@ After restarting Claude Code, you can use the advisor tools directly in your dev
 "Generate a Book class with title, author, isbn, and price fields"
 
 // Claude Code uses generate-smrt-class tool to create:
-import { SmrtObject, type SmrtObjectOptions, smrt } from '@happyvertical/smrt-core';
-import { text, decimal } from '@happyvertical/smrt-core/fields';
+import { SmrtObject, type SmrtObjectOptions, field, smrt } from '@happyvertical/smrt-core';
 
 export interface BookOptions extends SmrtObjectOptions {
   title?: string;
@@ -531,10 +531,17 @@ export interface BookOptions extends SmrtObjectOptions {
   cli: true
 })
 export class Book extends SmrtObject {
-  title = text({ required: true, description: "The title of the book" });
-  author = text({ required: true, description: "The author's name" });
-  isbn = text({ description: "International Standard Book Number" });
-  price = decimal({ description: "Price of the book" });
+  @field({ required: true, description: "The title of the book" })
+  title: string = '';
+
+  @field({ required: true, description: "The author's name" })
+  author: string = '';
+
+  @field({ description: "International Standard Book Number" })
+  isbn: string = '';
+
+  @field({ description: "Price of the book" })
+  price: number = 0.0;
 
   constructor(options: BookOptions = {}) {
     super(options);
@@ -580,19 +587,29 @@ The field system provides type-safe database schema generation:
 
 ```typescript
 import {
-  text, integer, decimal, boolean, datetime, json,
-  foreignKey, oneToMany, manyToMany
-} from '@happyvertical/smrt-core/fields';
+  SmrtObject,
+  field,
+  foreignKey,
+  oneToMany,
+  manyToMany,
+} from '@happyvertical/smrt-core';
 
 class Product extends SmrtObject {
-  name = text({ required: true, maxLength: 100 });
-  price = decimal({ min: 0, required: true });
-  inStock = boolean({ default: true });
-  tags = json({ default: [] });
-  createdAt = datetime({ required: true });
+  @field({ required: true, maxLength: 100 })
+  name: string = '';
+
+  @field({ min: 0, required: true })
+  price: number = 0.0;
+
+  inStock: boolean = true;
+  tags: string[] = [];
+
+  @field({ required: true })
+  createdAt: Date = new Date();
 
   // Relationships
-  categoryId = foreignKey(Category, { onDelete: 'restrict' });
+  @foreignKey(Category)
+  categoryId: string = '';
   reviews = oneToMany(Review);
   relatedProducts = manyToMany(Product);
 }
@@ -662,11 +679,11 @@ for (const order of orders) {
 - Only works with `foreignKey` relationships
 - Access pre-loaded data with `object.getRelated(fieldName)`
 
-For more details, see the [full CLAUDE.md documentation](./CLAUDE.md#eager-loading-and-n1-query-prevention-phase-5).
+For more details, see the package `AGENTS.md` documentation.
 
 ### Direct SQL Access
 
-All SMRT objects have public `db` property for direct database access via @have/sql. This enables custom queries, transactions, and advanced database operations:
+All SMRT objects have public `db` property for direct database access via @happyvertical/sql. This enables custom queries, transactions, and advanced database operations:
 
 ```typescript
 import { SmrtObject, SmrtCollection } from '@happyvertical/smrt-core';
@@ -709,7 +726,7 @@ const results = await products.db.query`
 **Key Benefits**:
 - **Direct database access**: Use any SQL query, not limited to ORM methods
 - **Template literal safety**: Automatic SQL injection protection via tagged templates
-- **Full @have/sql power**: Access all DatabaseInterface methods (many, single, pluck, execute)
+- **Full @happyvertical/sql power**: Access all DatabaseInterface methods (many, single, pluck, execute)
 - **Transaction support**: Use `db.transaction()` for atomic operations
 - **Performance**: Direct queries can be more efficient for complex operations
 
@@ -729,7 +746,7 @@ const collection = await ProductCollection.create({
 });
 
 // DatabaseInterface instance (pre-configured)
-import { getDatabase } from '@have/sql';
+import { getDatabase } from '@happyvertical/sql';
 const db = await getDatabase({ type: 'postgres', url: 'postgres://...' });
 const collection = await ProductCollection.create({ db });
 ```
@@ -1080,11 +1097,11 @@ When an AI agent discovers that a specific CSS selector works for extracting con
 Store and retrieve context specific to an individual object instance:
 
 ```typescript
-import { SmrtObject } from '@happyvertical/smrt-core';
-import { text } from '@happyvertical/smrt-core/fields';
+import { SmrtObject, field } from '@happyvertical/smrt-core';
 
 class WebScraper extends SmrtObject {
-  url = text({ required: true });
+  @field({ required: true })
+  url: string = '';
 
   async discoverContentSelector() {
     const url = this.url;
@@ -1415,8 +1432,8 @@ The system table is automatically created when you initialize any SMRT object wi
 SMRT integrates seamlessly with other HAVE SDK packages:
 
 ```typescript
-// With @have/spider for web content
-import { SpiderAdapter } from '@have/spider';
+// With @happyvertical/spider for web content
+import { SpiderAdapter } from '@happyvertical/spider';
 
 class WebDocument extends SmrtObject {
   url = text({ required: true });
@@ -1429,8 +1446,8 @@ class WebDocument extends SmrtObject {
   }
 }
 
-// With @have/pdf for document processing
-import { PDFProcessor } from '@have/pdf';
+// With @happyvertical/pdf for document processing
+import { PDFProcessor } from '@happyvertical/pdf';
 
 class PDFDocument extends SmrtObject {
   filePath = text({ required: true });
@@ -1443,7 +1460,7 @@ class PDFDocument extends SmrtObject {
   }
 }
 
-// With @have/files for file management
+// With @happyvertical/files for file management
 class FileDocument extends SmrtObject {
   async saveToFile(filename: string) {
     await this.fs.writeText(filename, this.content);
@@ -1543,7 +1560,7 @@ class Document extends SmrtObject {
 }
 ```
 
-**Learn more**: See the [Performance Considerations](./CLAUDE.md#performance-considerations) section in CLAUDE.md for detailed optimization strategies.
+**Learn more**: See the performance considerations in package `AGENTS.md` for detailed optimization strategies.
 
 ## Troubleshooting
 

@@ -163,13 +163,13 @@ describe('SMRT Dev MCP Tools - Integration', () => {
       // Replace the TypeScript property with a foreign key relationship
       const orderCodeWithFK = orderCode.replace(
         'total: number = 0.0;',
-        'total: number = 0.0;\n\n  customerId = foreignKey(Customer);',
+        "total: number = 0.0;\n\n  @foreignKey(Customer)\n  customerId: string = '';",
       );
 
       // Add import for foreignKey
       const finalOrderCode = orderCodeWithFK.replace(
-        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
-        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';\nimport { foreignKey } from '@happyvertical/smrt-core/fields';",
+        "import { SmrtObject, smrt, field } from '@happyvertical/smrt-core';",
+        "import { SmrtObject, smrt, field, foreignKey } from '@happyvertical/smrt-core';",
       );
 
       await writeFile(join(tmpDir, 'order.ts'), finalOrderCode);

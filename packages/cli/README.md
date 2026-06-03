@@ -122,7 +122,10 @@ smrt playground list
 # Run a custom method on an object
 smrt agent:research abc123 --query "AI safety"
 
-# Generate CLAUDE.md for downstream projects
+# Generate agent context for downstream projects
+smrt docs:agents
+
+# Deprecated compatibility alias for Claude Code output
 smrt docs:claude
 
 # Inspect discovered package playground modules

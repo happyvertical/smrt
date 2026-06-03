@@ -27,7 +27,7 @@
     "changeset:publish": "changeset publish",
     "version": "node scripts/check-version-limit.js && changeset version",
     "release": "pnpm run build && node scripts/publish-sequential.js",
-    "smrt": "pnpm --filter @smrt/core cli",
+    "smrt": "pnpm --filter @happyvertical/smrt-core cli",
     "docs:site": "pnpm --dir docs start",
     "docs:site:build": "pnpm --dir docs build",
     "docs:site:dev": "pnpm --dir docs dev",

@@ -258,6 +258,6 @@ The `smrt test` command still works but shows a deprecation warning.
 
 ## Related Documentation
 
-- [packages/vitest/CLAUDE.md](../packages/vitest/CLAUDE.md) - Vitest plugin details
-- [packages/core/CLAUDE.md](../packages/core/CLAUDE.md) - Core framework reference
+- [packages/vitest/AGENTS.md](../packages/vitest/AGENTS.md) - Vitest plugin details
+- [packages/core/AGENTS.md](../packages/core/AGENTS.md) - Core framework reference
 - [TESTING_STANDARD.md](../TESTING_STANDARD.md) - Testing requirements

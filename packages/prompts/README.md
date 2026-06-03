@@ -44,6 +44,6 @@ Stored overrides support partial fields, so applications can override only the t
 
 ## Documentation
 
-- See [`CLAUDE.md`](./CLAUDE.md) for package-internal patterns
+- See [`AGENTS.md`](./AGENTS.md) for package-internal patterns
 - See [`docs/standards.md`](../../docs/standards.md) for monorepo conventions
 - See related: [`@happyvertical/smrt-languages`](../languages) (mirrors this package for language strings), [`@happyvertical/smrt-features`](../features) (feature flags)

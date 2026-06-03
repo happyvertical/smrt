@@ -10,9 +10,12 @@ export default defineConfig({
   ],
   build: {
     lib: {
-      entry: 'src/index.ts',
+      entry: {
+        index: 'src/index.ts',
+        knowledge: 'src/knowledge/index.ts',
+      },
       formats: ['es'],
-      fileName: () => 'index.js',
+      fileName: (_format, entryName) => `${entryName}.js`,
     },
     rollupOptions: {
       external: [

@@ -17,9 +17,9 @@
   },
   "files": [
     "CLAUDE.md",
-    "LICENSE",
     "README.md",
-    "dist"
+    "dist",
+    "AGENTS.md"
   ],
   "scripts": {
     "build": "vite build --mode library",

@@ -187,8 +187,8 @@ Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`
 ## Documentation
 
 - [UI Surfaces](./docs/ui-surfaces.md) -- when to use `./svelte`, `./playground`, and optional `./routes`
-- [Architecture Guide](./CLAUDE.md) -- Development guide and patterns
-- [Core Framework Docs](./packages/core/CLAUDE.md) -- Detailed framework documentation
+- [Architecture Guide](./AGENTS.md) -- Development guide and patterns
+- [Core Framework Docs](./packages/core/AGENTS.md) -- Detailed framework documentation
 - [API Reference](./packages/core/README.md) -- Complete API reference
 
 ## UI Surface Conventions

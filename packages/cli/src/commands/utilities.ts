@@ -40,6 +40,7 @@ import {
 import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
+import { devKnowledgeCommands } from './dev-knowledge.js';
 import { exportCommand } from './export.js';
 import {
   runRuntimeCheckSafely,
@@ -2432,6 +2433,8 @@ export default testManifest;
   },
 
   'runtime:check': runtimeCheckCommand,
+
+  ...devKnowledgeCommands,
 
   // Migration status and history commands (from separate modules)
   'db:status': dbStatusCommand,

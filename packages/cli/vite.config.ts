@@ -53,6 +53,8 @@ export default defineConfig({
         '@happyvertical/smrt-config',
         '@happyvertical/smrt-core',
         /^@happyvertical\/smrt-core\//,
+        '@happyvertical/smrt-dev-mcp',
+        /^@happyvertical\/smrt-dev-mcp\//,
         '@happyvertical/smrt-scanner',
         '@happyvertical/smrt-types',
         '@happyvertical/sql',

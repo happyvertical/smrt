@@ -15,7 +15,8 @@
   "files": [
     "bin",
     "dist",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "AGENTS.md"
   ],
   "exports": {
     ".": {
