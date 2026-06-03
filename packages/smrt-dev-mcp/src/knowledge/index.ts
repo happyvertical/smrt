@@ -986,6 +986,48 @@ function buildReviewFindings(
         packageName: pkg.name,
       });
     }
+
+    const manifestFile = changedPackageFiles.find((file) =>
+      isPackageManifestFile(pkg, file),
+    );
+    if (manifestFile) {
+      issues.push({
+        severity: 'warning',
+        code: 'package-manifest-review',
+        message:
+          'package.json changed; verify exports, files, dependencies, AGENTS.md, and CLAUDE.md shim packaging',
+        file: manifestFile,
+        packageName: pkg.name,
+      });
+    }
+
+    const publicEntrypointFile = changedPackageFiles.find((file) =>
+      isPublicEntrypointFile(pkg, file),
+    );
+    if (publicEntrypointFile) {
+      issues.push({
+        severity: 'warning',
+        code: 'public-entrypoint-review',
+        message:
+          'Public package entrypoint changed; check exports, generated surfaces, and downstream docs',
+        file: publicEntrypointFile,
+        packageName: pkg.name,
+      });
+    }
+
+    const agentDocFile = changedPackageFiles.find((file) =>
+      isPackageAgentDocFile(pkg, file),
+    );
+    if (agentDocFile) {
+      issues.push({
+        severity: 'warning',
+        code: 'agent-expertise-review',
+        message:
+          'AGENTS.md changed; validate authored expertise against generated objects, relationships, exports, and SDK dependencies',
+        file: agentDocFile,
+        packageName: pkg.name,
+      });
+    }
   }
 
   for (const file of changedFiles) {
@@ -1001,6 +1043,29 @@ function buildReviewFindings(
   }
 
   return issues;
+}
+
+function isPackageManifestFile(pkg: KnowledgePackage, file: string): boolean {
+  return file === `${pkg.relativeDirectory}/package.json`;
+}
+
+function isPackageAgentDocFile(pkg: KnowledgePackage, file: string): boolean {
+  return file === `${pkg.relativeDirectory}/AGENTS.md`;
+}
+
+function isPublicEntrypointFile(pkg: KnowledgePackage, file: string): boolean {
+  const sourcePrefix = `${pkg.relativeDirectory}/src/`;
+  if (!file.startsWith(sourcePrefix)) return false;
+  const sourcePath = file.slice(sourcePrefix.length);
+  return (
+    sourcePath === 'index.ts' ||
+    sourcePath === 'index.tsx' ||
+    sourcePath === 'index.js' ||
+    sourcePath.startsWith('api/') ||
+    sourcePath.startsWith('cli/') ||
+    sourcePath.startsWith('mcp/') ||
+    sourcePath.startsWith('tools/')
+  );
 }
 
 function buildArchitectureRecommendations(

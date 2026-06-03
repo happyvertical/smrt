@@ -228,6 +228,26 @@ describe('SMRT knowledge index', () => {
     );
   });
 
+  it('flags manifest, public entrypoint, and expert doc changes for deterministic review', async () => {
+    const result = await smrtReview({
+      rootDir,
+      changedFiles: [
+        'packages/demo/package.json',
+        'packages/demo/src/index.ts',
+        'packages/demo/AGENTS.md',
+      ],
+      mode: 'both',
+    });
+
+    expect(result.deterministicFindings.map((issue) => issue.code)).toEqual(
+      expect.arrayContaining([
+        'package-manifest-review',
+        'public-entrypoint-review',
+        'agent-expertise-review',
+      ]),
+    );
+  });
+
   it('returns architecture recommendations with model sketch, risks, and questions', async () => {
     const result = await smrtArchitecture({
       rootDir,
