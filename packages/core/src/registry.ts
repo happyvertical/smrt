@@ -141,6 +141,16 @@ import {
   parseQualifiedName,
 } from './utils/qualified-names.js';
 
+// Re-export the canonical collection-base detector so downstream tooling
+// (e.g. @happyvertical/smrt-vitest's manifest-based test-db builder) can share
+// the single source of truth instead of maintaining a drift-prone copy. The
+// junction-collection schema-drop bug (#1342) half-survived precisely because
+// a second copy of this detector existed; exporting it publicly kills that
+// drift class. See `./registry/collection-resolution.ts`.
+export {
+  isSmrtCollectionExtendsName,
+  SMRT_COLLECTION_BASE_NAMES,
+} from './registry/collection-resolution';
 // Re-export types for backward compatibility
 export type {
   RelationshipMetadata,

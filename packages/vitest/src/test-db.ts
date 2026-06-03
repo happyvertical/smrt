@@ -34,6 +34,14 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+// Share the canonical collection-base detector with core instead of keeping a
+// local copy. A second copy is exactly how the #1342 junction schema-drop bug
+// half-survived: the core fix taught `collection-resolution.ts` to recognize
+// `SmrtJunction`, but this manifest-based test-db builder kept an older copy
+// that only knew `SmrtCollection`, so junction Collections filtered through
+// `createIsolatedTestDbFromManifest({ includeObjects: [...] })` were still
+// misclassified as table-bearing and lost their FK/junction columns.
+import { isSmrtCollectionExtendsName } from '@happyvertical/smrt-core';
 import type {
   DatabaseInterfaceWithTransaction,
   TransactionHandle,
@@ -747,13 +755,6 @@ function mergeIndexes(
     }
   }
   return merged;
-}
-
-function isSmrtCollectionExtendsName(extendsName: string | undefined): boolean {
-  return (
-    extendsName === 'SmrtCollection' ||
-    extendsName?.endsWith(':SmrtCollection') === true
-  );
 }
 
 function getPackageNameFromKey(key: string): string | undefined {

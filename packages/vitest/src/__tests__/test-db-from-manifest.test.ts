@@ -475,6 +475,75 @@ describe('createIsolatedTestDbFromManifest', () => {
         await cleanup();
       }
     });
+
+    // Regression for #1342: a junction Collection (`extends: 'SmrtJunction'`)
+    // ships with a base-columns-only schema, while its item class carries the
+    // full FK / junction columns under the SAME table name. When a consumer
+    // filters by the junction Collection name, the manifest test-db builder
+    // must classify it as a collection and redirect to the item class. The
+    // detector previously only recognized `SmrtCollection`, so the junction
+    // Collection was mistaken for a regular table-bearing class and created a
+    // base-columns-only `place_assets` table, dropping place_id / asset_id /
+    // relationship / sort_order. See packages/core's
+    // issue-1342-junction-collection-schema-drop.test.ts for the core path.
+    it('should map junction Collection filters to their item schema (#1342)', async () => {
+      const manifestPath = join(testDir, 'junction-collection-filter.json');
+      const manifest = {
+        packageName: '@test/places',
+        objects: {
+          // Junction Collection stub as the published manifest ships it:
+          // extends 'SmrtJunction', base-columns-only schema, tableName points
+          // at the junction table. Listed BEFORE its item class to reproduce
+          // the iteration order that broke place_assets.
+          '@test/places:PlaceAssetCollection': {
+            className: 'PlaceAssetCollection',
+            extends: 'SmrtJunction',
+            extendsTypeArg: 'PlaceAsset',
+            schema: {
+              tableName: 'place_assets',
+              ddl: 'CREATE TABLE IF NOT EXISTS "place_assets" ("id" TEXT PRIMARY KEY NOT NULL, "slug" TEXT NOT NULL, "context" TEXT NOT NULL DEFAULT \'\', "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp, "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp);',
+            },
+          },
+          // Item class carrying the full junction schema (FK + cross-package
+          // ref + regular junction columns) under the same table.
+          '@test/places:PlaceAsset': {
+            className: 'PlaceAsset',
+            extends: 'SmrtObject',
+            schema: {
+              tableName: 'place_assets',
+              ddl: 'CREATE TABLE IF NOT EXISTS "place_assets" ("id" TEXT PRIMARY KEY NOT NULL, "slug" TEXT NOT NULL, "context" TEXT NOT NULL DEFAULT \'\', "created_at" TIMESTAMP NOT NULL DEFAULT current_timestamp, "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp, "tenant_id" TEXT, "place_id" TEXT NOT NULL, "asset_id" TEXT NOT NULL, "relationship" TEXT NOT NULL, "sort_order" INTEGER NOT NULL DEFAULT 0);',
+            },
+          },
+        },
+      };
+
+      writeFileSync(manifestPath, JSON.stringify(manifest));
+
+      const { baseDb, cleanup } = await createIsolatedTestDbFromManifest({
+        manifestPath,
+        includeObjects: ['PlaceAssetCollection'],
+      });
+
+      try {
+        const columnsResult = await baseDb.query(
+          `PRAGMA table_info('place_assets')`,
+        );
+        const columns = Array.isArray(columnsResult)
+          ? columnsResult
+          : columnsResult.rows;
+        const columnNames = columns.map((row: { name: string }) => row.name);
+
+        // The full junction columns from the item class must be present — not
+        // just the Collection stub's base columns.
+        expect(columnNames).toContain('place_id');
+        expect(columnNames).toContain('asset_id');
+        expect(columnNames).toContain('relationship');
+        expect(columnNames).toContain('sort_order');
+        expect(columnNames).toContain('tenant_id');
+      } finally {
+        await cleanup();
+      }
+    });
   });
 
   describe('STI deduplication', () => {
