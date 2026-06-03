@@ -1,5 +1,118 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - enforce tenant isolation on relationship loaders (core)
+  - ObjectRegistry inheritance/STI lookups return qualified names (R5-canon main) (core)
+  - split Folder + rename Asset.parentId (R3-D) (assets,folders)
+  - introduce SmrtJunction base; rename junction surface (R2) (core)
+
+  ### Features
+
+  - extract SmrtPolymorphicAssociation base from AssetAssociation (core)
+  - generate child accessors for @oneToMany relationships (R10) (core)
+  - emit uuid ids and relationship columns (core)
+  - add UUID abstract column type + differ text<->uuid tolerance (R11) (core)
+  - complete FK declaration sweep across remaining domain packages (R1) (models)
+  - declare remaining FK relationships across domain packages (R1) (models)
+  - declare FK relationships on chat models (R1) (chat)
+  - adopt @crossPackageRef on cross-package FKs (R1) (ads,affiliates,commerce)
+  - stamp qualified name on registered constructors (R5-canon prep) (core)
+  - rename Fact.parentId → previousFactId (R3-C) (facts)
+  - migrate Tag to SmrtHierarchical (R3-B) (tags)
+  - SmrtHierarchical base class + Place/Event/Account/Zone migrations (R3-A) (core)
+  - manyToMany eager load + indexed meta fields (R6, R9) (core)
+  - add @crossPackageRef for typed cross-package references (R1) (core)
+
+  ### Bug Fixes
+
+  - warn when db:migrate-uuid manifest discovery is partial (cli)
+  - gate db:migrate-uuid conversion on declared-UUID schema + share one transaction (cli)
+  - chunk getDescendants frontier to stay under SQLITE_MAX_VARIABLE_NUMBER (core)
+  - coerce empty-string FK values to NULL for uuid columns + 0.27 upgrade guide (core)
+  - differ/migrate parity + type-upgrade safety + diverse-schema fixture suite (#1336) (core)
+  - break FK cycles in migration ordering (#1333) (#1334) (core)
+  - consumer registry drops plain fields from external package schemas (#1331) (#1332) (core)
+  - guard markPaid on price-lock expiry; carry payment tenant onto payouts (commerce)
+  - reconcile differ ADD COLUMN + tracker engine type post-merge (core)
+  - let hydrate() lazy-load errors propagate instead of nulling (core)
+  - surface real hydrate() failures, not just missing targets (core)
+  - harden SmrtPolymorphicAssociation per review (core)
+  - sync committed manifest with @oneToMany foreignKey hints (profiles)
+  - prefer exact-self inverse FK over ancestor fallback (core)
+  - never retry TenantIsolationError; clarify loader JSDoc (core)
+  - throw on invalid explicit foreignKey in eager oneToMany loader (core)
+  - resolve inherited oneToMany accessors on STI subclasses (core)
+  - address uuid schema review findings (core)
+  - declare Asset.primaryVersionId self-referential FK (R1 round-4) (assets)
+  - declare SmrtJobEvent.jobId FK to SmrtJob (R1 round-3) (jobs)
+  - round-2 FK fixups + video cross-pkg decorator correction (R1) (models)
+  - gate unscoped-alias inclusion to default-context merges only (tags)
+  - include unscoped aliases when merging default-context tags (tags)
+  - route getSTIHierarchyMembers through qualified name (Copilot) (core)
+  - scope mergeTag alias migration to the resolved context (tags)
+  - apply the manifest extends revert that round-6 commit missed (tags)
+  - round-6 review fixups — revert two wrong round-5 patches
+  - round-5 codex findings — qualified Asset lookup + tag manifest extends
+  - round-5 review fixups for R5-canon followup
+  - round-4 review fixups for R5-canon followup + R3-B mergeTag cycle
+  - qualified-name lookups in collection.ts + schema-builder.ts (R5-canon round-3) (core)
+  - round-2 review fixups for R5-canon (core)
+  - round-1 review fixups for R5-canon (core,cli,agents)
+  - resolve Copilot review findings on R3-D (assets)
+  - align getEvolutionTree docstring with the iterative BFS impl (facts)
+  - resolve Copilot review findings on R3-A follow-up (core)
+  - resolve Copilot review findings on R3-B (tags)
+  - drop leftover R3-A changeset to unblock auto-generation (core)
+  - drop manual changeset (tags)
+  - tighten round-3 ordering test + drop manual changeset (assets)
+  - drop manual changeset (facts)
+  - complete STI disambiguation via prototype-chain walk + drop manual changeset (core)
+  - preserve folder slug context across migration (R3-D round-5) (assets)
+  - route Asset.getSource/getDerivatives through the collection (R3-D round-4) (assets)
+  - R3-D round-3 review — context column + tree ordering (assets)
+  - preserve FolderCollection.getTree sub-tree ordering (R3-D round-2) (assets)
+  - address R3-D codex review findings (core,assets)
+  - hasPredecessor handles null previousFactId (R3-C round 2) (facts)
+  - SmrtHierarchical qualified-name resolution + browser export (R3-A follow-up) (core)
+  - R3-B round-2 review fixups (tags)
+  - address R3-B review findings (tags)
+  - address R3-A review findings (places,events)
+  - recognize SmrtJunction at scan time + runtime guard (R2 round-9) (core)
+  - expose ContentReferences.attach over REST (R2 round-8) (content)
+  - don't let collection @smrt() config clobber item-class api (R2 round-7)
+  - register undecorated SmrtJunction subclasses in the manifest (R2 round-6)
+  - setLinks must strip rightField from snapshot opts (R2 round-5) (core,assets)
+  - defend junction key fields against opts override (R2 round-4) (core,assets)
+  - restore ContentReferences attach idempotency (R2 round-3) (content)
+  - use positionField in AssetAssociationCollection.setLinks (R2 round-3) (assets)
+  - separate setLinks position field from sortField (R2 round-2) (core)
+  - address codex P1/P2 findings on R2 junction refactor (core,content)
+  - address review findings on Phase A additive batch (core)
+  - correct Postgres index syntax + avoid jsonPath drift loop (core)
+  - thread jsonPath through every index renderer (R9 follow-up) (core)
+  - route crossPackageRef through public relationship APIs (core)
+
+  ### Other Changes
+
+  - test: align full-registry integration with R5-canon + #1334 cycle-breaking (core)
+  - docs: correct loadRelated cross-tenant option name + hierarchical bind-count comment (core)
+  - test: align getSTIBase assertions with R5-canon (commerce,products)
+  - refactor: simplify SmrtHierarchical.\_hierarchyCollection (R5-canon main) (core)
+  - chore: de-duplicate SmrtHierarchical browser-entry export (core)
+  - chore: refresh auto-generated route handlers (formatter reflow) (content)
+  - chore: bump line-length limits and relax footer-leading-blank (commitlint)
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@1.0.0
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
 ## 0.26.5
 
 ### Patch Changes

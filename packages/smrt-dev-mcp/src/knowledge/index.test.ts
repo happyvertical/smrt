@@ -198,6 +198,25 @@ describe('SMRT knowledge index', () => {
     );
   });
 
+  it('ignores changelog stale patterns when changed mode is enabled', async () => {
+    execFileSync('git', ['init'], { cwd: rootDir });
+    await writeFile(
+      join(rootDir, 'packages', 'demo', 'CHANGELOG.md'),
+      `Historical note: @happyvertical/smrt-core/${'fields'}\n`,
+    );
+    execFileSync('git', ['add', 'packages/demo/CHANGELOG.md'], {
+      cwd: rootDir,
+    });
+
+    const result = await checkKnowledgeFreshness({
+      rootDir,
+      changed: true,
+      strict: true,
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
   it('builds review context with selected package and prompt bundle', async () => {
     const result = await buildReviewContext({
       rootDir,

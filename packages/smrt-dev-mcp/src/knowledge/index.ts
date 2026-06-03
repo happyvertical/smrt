@@ -923,6 +923,7 @@ function findStalePatternIssues(
     if (!existsSync(file) || lstatSync(file).isDirectory()) continue;
     const rel = relative(rootDir, file);
     if (rel === 'pnpm-lock.yaml') continue;
+    if (rel.includes('/CHANGELOG.md') || rel === 'CHANGELOG.md') continue;
     const content = readFileSync(file, 'utf8');
     for (const stale of STALE_PATTERNS) {
       if (!stale.pattern.test(content)) continue;
