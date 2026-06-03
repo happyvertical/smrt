@@ -1,5 +1,29 @@
 # @happyvertical/smrt-core
 
+## 0.27.1
+
+### Patch Changes
+
+- ### Features
+
+  - ship smrt review agent skill (dev-mcp)
+  - route public surface review findings (dev-mcp)
+  - enforce knowledge hooks (dev-mcp)
+  - enrich deterministic agent outputs (dev-mcp)
+  - build knowledge foundation (dev-mcp)
+
+  ### Bug Fixes
+
+  - address review feedback (smrt-dev-mcp)
+
+  ### Other Changes
+
+  - docs: document model-assisted workflow (dev-mcp)
+  - test: add stdio smoke coverage (dev-mcp)
+  - @happyvertical/smrt-scanner@0.27.1
+  - @happyvertical/smrt-config@0.27.1
+  - @happyvertical/smrt-types@0.27.1
+
 ## 1.0.0
 
 ### Minor Changes
