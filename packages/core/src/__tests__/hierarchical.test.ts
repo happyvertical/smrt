@@ -175,6 +175,59 @@ describe('SmrtHierarchical', () => {
       const descendants = await root.getDescendants();
       expect(descendants.find((n) => n.id === orphan.id)).toBeUndefined();
     });
+
+    // Regression (codex review P2): a single BFS level expands to one
+    // `parent_id IN (?, ?, …)` with one bind param per frontier id. The
+    // generic `collection.list()` does NOT chunk array-valued WHERE clauses,
+    // so a level wider than the backend's SQLITE_MAX_VARIABLE_NUMBER throws
+    // (`too many SQL variables` / `SQLITE_RANGE`) before traversal completes.
+    // The bundled @libsql/client build caps at 32766, so we go above that to
+    // prove the frontier is chunked. Children are inserted via raw SQL — the
+    // per-row create()/save() path would dominate the runtime at this width.
+    it('returns all descendants when a level exceeds the bind-variable limit', async () => {
+      // > 32766 (modern libSQL SQLITE_MAX_VARIABLE_NUMBER); also > 999 (legacy
+      // SQLite) and many multiples of IN_LIST_CHUNK_SIZE (900).
+      const WIDE = 33000;
+      const root = await nodes.create({ name: 'wide-root' });
+      await root.save();
+
+      const db = (nodes as unknown as { db: { query: Function } }).db;
+      const now = new Date().toISOString();
+      // Batch raw inserts so we don't blow the bind limit during setup either.
+      const COLS_PER_ROW = 6; // id, slug, context, parent_id, name, (created/updated default)
+      const ROWS_PER_INSERT = Math.floor(900 / COLS_PER_ROW);
+      let inserted = 0;
+      while (inserted < WIDE) {
+        const batch = Math.min(ROWS_PER_INSERT, WIDE - inserted);
+        const tuples: string[] = [];
+        const params: string[] = [];
+        for (let i = 0; i < batch; i++) {
+          const n = inserted + i;
+          tuples.push('(?, ?, ?, ?, ?, ?, ?)');
+          params.push(
+            `wide-${n}`, // id
+            `wide-child-${n}`, // slug
+            '', // context
+            root.id as string, // parent_id
+            `wide-child-${n}`, // name
+            now, // created_at
+            now, // updated_at
+          );
+        }
+        await db.query(
+          `INSERT INTO hierarchical_test_nodes (id, slug, context, parent_id, name, created_at, updated_at) VALUES ${tuples.join(', ')}`,
+          ...params,
+        );
+        inserted += batch;
+      }
+
+      const descendants = await root.getDescendants();
+      expect(descendants).toHaveLength(WIDE);
+      const returnedIds = new Set(descendants.map((n) => n.id));
+      expect(returnedIds.size).toBe(WIDE);
+      expect(returnedIds.has('wide-0')).toBe(true);
+      expect(returnedIds.has(`wide-${WIDE - 1}`)).toBe(true);
+    }, 120_000);
   });
 
   describe('getHierarchy', () => {
