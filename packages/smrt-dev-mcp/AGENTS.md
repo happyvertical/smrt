@@ -1,0 +1,60 @@
+# @happyvertical/smrt-dev-mcp
+
+Tier 2 MCP server for development — code generation, project introspection,
+deterministic SMRT ecosystem knowledge, and portable agent workflows.
+
+## Tools
+
+| Tool | Purpose |
+|------|---------|
+| `generate-smrt-class` | Generates `@smrt()` class with fields, decorator config, imports |
+| `introspect-project` | Scans project directory for SMRT objects, returns class/field/relationship report |
+| `reflect-knowledge` | Reports deterministic SMRT + HappyVertical SDK knowledge coverage and freshness |
+| `check-knowledge-freshness` | Runs deterministic agent-doc and stale-reference checks |
+| `build-review-context` | Builds model-ready SMRT review context and package expert routing |
+| `smrt-review` | Returns deterministic review findings and a reusable review prompt bundle |
+| `build-architecture-context` | Builds architecture planning context from an idea or docs |
+| `smrt-architecture` | Recommends SMRT/SDK packages, object-model sketch, risks, and questions |
+| `list-agent-skills` | Lists bundled harness-agnostic agent skills |
+| `get-agent-skill` | Returns a bundled agent skill as Markdown plus optional references |
+
+## Agent Skills
+
+Bundled skills live under `agent-skills/`. They are plain Markdown procedures
+with YAML frontmatter (`name` and `description`) and harness-neutral body text.
+Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
+
+- `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT code review workflow.
+  Agents should fetch it with `get-agent-skill`, then call `smrt-review` for
+  deterministic context, inspect the actual diff, and produce a findings-first
+  review.
+
+## Usage
+
+```jsonc
+// .mcp.json or Claude Desktop config
+{ "mcpServers": { "smrt-dev-mcp": { "command": "npx", "args": ["-y", "@happyvertical/smrt-dev-mcp"] } } }
+```
+
+## MCP Tier Context
+
+- **Tier 1** (Runtime): auto-generated from `@smrt()` objects — live data operations
+- **Tier 2** (Development): this package — code generation and project analysis
+- **Tier 3** (Docs): `smrt-docs-mcp` — framework documentation access
+
+## Key Files
+
+- `src/index.ts` — MCP server setup, tool registration
+- `src/agent-skills.ts` — bundled skill registry and file loader
+- `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
+- `src/tools/generate-smrt-class.ts` — class generation logic
+- `src/tools/introspect-project.ts` — project scanning (uses scanner package)
+
+## Gotchas
+
+- **Read-only**: never writes files or executes generated code
+- **Model-agnostic**: review and architecture tools return deterministic
+  findings/context and prompt bundles; they do not call model providers
+- **Skill loading**: bundled skills must be included in `package.json` `files`
+  because runtime reads them from the installed package directory
+- **Field type mapping**: `text`, `integer`, `decimal`, `boolean`, `datetime`, `json` — maps to SMRT field helpers (but prefer TypeScript defaults per framework convention)

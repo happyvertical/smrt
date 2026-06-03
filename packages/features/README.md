@@ -55,6 +55,6 @@ The first match wins.
 
 ## Documentation
 
-- See [`CLAUDE.md`](./CLAUDE.md) for package-internal patterns
+- See [`AGENTS.md`](./AGENTS.md) for package-internal patterns
 - See [`docs/standards.md`](../../docs/standards.md) for monorepo conventions
 - See [`docs/architecture/`](../../docs/architecture/) for cross-package architecture

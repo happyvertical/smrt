@@ -45,7 +45,11 @@ with `smrt db:migrate`.
 
 | Command | Description |
 |---------|------------|
-| `smrt docs:claude` | Generate `.claude/smrt-framework.md` for consumer projects |
+| `smrt docs:agents` | Generate `.agents/smrt-framework.md` for consumer projects |
+| `smrt docs:claude` | Deprecated compatibility alias for `.claude/smrt-framework.md` |
+| `smrt dev:knowledge-index --format markdown\|json` | Print the deterministic SMRT + SDK knowledge index |
+| `smrt dev:knowledge-check --format markdown\|json` | Check agent knowledge freshness |
+| `smrt dev:knowledge-diff --format markdown\|json` | Show changed files and affected package experts |
 
 ### Configuration
 
@@ -122,8 +126,15 @@ smrt playground list
 # Run a custom method on an object
 smrt agent:research abc123 --query "AI safety"
 
-# Generate CLAUDE.md for downstream projects
+# Generate agent context for downstream projects
+smrt docs:agents
+
+# Deprecated compatibility alias for Claude Code output
 smrt docs:claude
+
+# Check deterministic agent knowledge freshness
+smrt dev:knowledge-check --changed --strict --format markdown
+smrt dev:knowledge-check --strict --format json
 
 # Inspect discovered package playground modules
 smrt playground list

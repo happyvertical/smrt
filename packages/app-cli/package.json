@@ -17,7 +17,7 @@
   "files": [
     "dist",
     "CLAUDE.md",
-    "README.md"
+    "AGENTS.md"
   ],
   "scripts": {
     "build": "vite build && node postbuild.mjs",

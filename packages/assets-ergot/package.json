@@ -7,7 +7,8 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "CLAUDE.md"
+    "CLAUDE.md",
+    "AGENTS.md"
   ],
   "exports": {
     ".": {

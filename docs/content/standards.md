@@ -6,7 +6,7 @@ This document defines the standards every package in `packages/*` must follow. I
 - Catch drift early via a checkable list rather than ad-hoc review
 - Provide a single canonical reference the audit epic and per-package issues link to
 
-The standard is prescriptive. Where a package needs to deviate, it must document why in its own `CLAUDE.md`.
+The standard is prescriptive. Where a package needs to deviate, it must document why in its own `AGENTS.md`.
 
 The companion document `docs/PROJECT_REQUIREMENTS.md` defines requirements for SMRT *consumer* projects. This document defines requirements for *packages inside this monorepo*. The two overlap heavily, but the audiences are different.
 
@@ -42,7 +42,8 @@ packages/<name>/
 ├── vite.config.ts            # uses createPackageConfig(name, opts?)
 ├── vitest.config.ts          # uses smrtVitestPlugin()
 ├── README.md
-├── CLAUDE.md
+├── AGENTS.md                 # canonical package expert guidance
+├── CLAUDE.md                 # one-line Claude Code shim: @AGENTS.md
 └── CHANGELOG.md              # changesets-managed
 ```
 
@@ -81,7 +82,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
     "url": "https://github.com/happyvertical/smrt.git",
     "directory": "packages/<name>"
   },
-  "files": ["dist", "CLAUDE.md"],
+  "files": ["dist", "AGENTS.md", "CLAUDE.md"],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -114,7 +115,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
 - `type: "module"` — always
 - `author: "HappyVertical"` — uniform; replace `"HAVE Team"`, `"Will Griffin <willgriffin@gmail.com>"`, and missing fields
 - `repository.directory` — required
-- `files` — `["dist", "CLAUDE.md"]`. Add `"bin"` if package has a CLI. Do not add `README.md` (it is published automatically). Do not add directories that don't exist.
+- `files` — `["dist", "AGENTS.md", "CLAUDE.md"]`. Add `"bin"` if package has a CLI. Do not add `README.md` (it is published automatically). Do not add directories that don't exist.
 - **Exports map condition order**: `{types, import}` — `types` must come first (Node resolves the first matching condition; if `import` is first, types resolution silently fails). Bare-string targets are forbidden — every entry must be a conditional object.
 - **Dependencies**:
   - All `@happyvertical/smrt-*` references use `workspace:*`
@@ -126,7 +127,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
 - **`peerDependencies`**:
   - Svelte peer always `svelte: ^5.18.0` for packages shipping UI
   - Optional peers explicitly marked in `peerDependenciesMeta`
-  - Required peers (e.g. `users` requires `profiles`) documented in `CLAUDE.md`
+  - Required peers (e.g. `users` requires `profiles`) documented in `AGENTS.md`
 - **`publishConfig.registry`** always `https://npm.pkg.github.com` for published packages; templates may opt out
 
 ---
@@ -229,8 +230,9 @@ export default defineConfig({
 
 ### Required
 
-- **`README.md`** — ≥80 lines. Purpose, install, basic usage, link to `CLAUDE.md`, links to other relevant package READMEs.
-- **`CLAUDE.md`** — ≥30 lines. Package-specific patterns, gotchas, integration points. Included in `files:` allowlist.
+- **`README.md`** — ≥80 lines. Purpose, install, basic usage, link to `AGENTS.md`, links to other relevant package READMEs.
+- **`AGENTS.md`** — ≥30 lines. Package-specific patterns, gotchas, integration points. Included in `files:` allowlist.
+- **`CLAUDE.md`** — exactly one line: `@AGENTS.md`. Included in `files:` allowlist for Claude Code compatibility.
 - **`CHANGELOG.md`** — managed by changesets. Don't hand-edit.
 
 ### Discouraged
@@ -250,7 +252,7 @@ If you have content that would go into one of those files, the right home is:
 - Architectural reasoning → `docs/architecture/<topic>.md` (Docusaurus site)
 - Migration instructions for a specific change → ephemeral migration note in the changeset
 - Specs and brainstorms → `docs/rfcs/`
-- Detailed how-tos → `CLAUDE.md`
+- Detailed how-tos → `AGENTS.md`
 
 Existing files of these types should be migrated and the per-package files removed.
 
@@ -258,13 +260,17 @@ Existing files of these types should be migrated and the per-package files remov
 
 ## 7. Code conventions
 
-These are already documented in the root `CLAUDE.md` and `.claude/rules/smrt-patterns.md`. They are reproduced here for completeness:
+These are already documented in the root `AGENTS.md`. They are reproduced here for completeness:
 
 - `@smrt()` decorator on every persisted class
 - **Never override `toJSON()`.** Use `transformJSON()` instead. The base class handles STI discriminator and meta-field extraction.
   - Exception: `tenancy/interceptor.ts` calls `instance.toJSON()` directly to handle stub instances. This must be documented in the file with a comment.
-- Cross-package foreign keys: plain string IDs, not `@foreignKey()` (avoids circular dependencies)
-- `@TenantScoped({ mode: 'optional' })` on tenant-aware models. Tenant-aware packages without the decorator (`secrets`, `prompts`, `features`, `images` for some models) must document the tenant strategy in `CLAUDE.md`.
+- Same-package foreign keys: use `@foreignKey(Target)`.
+- Cross-package foreign keys: use `@crossPackageRef('@happyvertical/smrt-package:Class')`; this avoids circular DDL constraints while preserving runtime relationship metadata.
+- Junction collections extend `SmrtJunction` and expose `byLeft()` / `byRight()` plus options-object `attach()` / `detach()`.
+- Hierarchical tree models extend `SmrtHierarchical`; chains/DAGs use package-specific fields and methods.
+- Polymorphic generic/provenance links extend `SmrtPolymorphicAssociation`.
+- `@TenantScoped({ mode: 'optional' })` on tenant-aware models. Tenant-aware packages without the decorator (`secrets`, `prompts`, `features`, `images` for some models) must document the tenant strategy in `AGENTS.md`.
 - `__smrt-register__.ts` self-registration imported from `index.ts` (issue #1132 pattern)
 - `@meta()` for STI child-specific fields (stored in `_meta_data`, not as columns)
 - STI discriminator format: `@happyvertical/smrt-<package>:<ClassName>`
@@ -321,7 +327,7 @@ This is **opt-in**, not the default. Most packages are library-only. To opt in, 
 - Add `federation.config.ts`, `index.html`
 - Add scripts `dev:standalone`, `dev:federation`, `build:app`, `build:federation`
 - Use a hand-written `vite.config.ts` (not `createPackageConfig`)
-- Document in its `CLAUDE.md` why it needs all three modes
+- Document in its `AGENTS.md` why it needs all three modes
 
 Don't scaffold federation/standalone for a package unless there's a real consumer. `commerce`, `ads`, `affiliates`, `ledgers`, `analytics` — currently library-only — should stay that way.
 
@@ -346,17 +352,47 @@ Templates ship a `template/` directory that is copied wholesale by the scaffold 
 
 These never belong in `packages/*` and should be `.gitignore`'d at the repo root:
 
+Local Lefthook checks enforce the highest-signal subset of this list on staged
+files. The same hook suite also runs deterministic SMRT knowledge freshness
+checks:
+
+- pre-commit: `pnpm knowledge:check --changed --strict --format markdown`
+- pre-push: `pnpm knowledge:check --strict --format markdown`
+
+Knowledge hooks are deterministic and local. They must not call Codex, Claude,
+or any other model provider; model-assisted audits stay manual and must be
+followed by the deterministic checker.
+
+### Model-assisted knowledge workflow
+
+Use models as optional local reviewers, not as freshness gates:
+
+1. Ask `smrt-dev-mcp` for deterministic context with `build-review-context`,
+   `smrt-review`, `build-architecture-context`, or `smrt-architecture`.
+2. For formal downstream reviews, fetch the portable `smrt-code-review` procedure
+   with MCP tool `get-agent-skill` and follow it before writing findings.
+3. Send the returned prompt bundle to Codex, Claude, or another model under the
+   user's local plan.
+4. Apply only reviewed changes to source docs or package expertise.
+5. Re-run `pnpm knowledge:check --strict --format markdown` before committing.
+
+When an automation needs to consume checker output, use
+`pnpm knowledge:check --strict --format json`. Hooks and CI must stay
+token-free; prompt bundles are the boundary between deterministic SMRT tooling
+and optional model assistance. Bundled agent skills are procedural wrappers
+around that boundary; they must not require a specific model provider or harness.
+
 | Pattern | Source | Action |
 |---|---|---|
 | `vite.config.ts.timestamp-*.mjs` | Vite config write-cache | Add to root `.gitignore`; remove existing from agents, content (×2), tags |
-| `vite.config.ts.bak` | Manual backups | Remove (currently in profiles, with legacy `@have/*` refs) |
+| `vite.config.ts.bak` | Manual backups | Remove (currently in profiles, with legacy HappyVertical namespace refs) |
 | `temp-test-manifest-gen-*.ts` | Manifest builder driver scripts | Generate to a gitignored path; remove existing from agents, users, ads, affiliates |
 | `*.timestamp-*.mjs` | Vite write-cache | Catch-all for vite |
 | `.DS_Store` | macOS finder | Add to root `.gitignore` |
 | Empty `test-*.{js,mjs,ts}` files | Dev throwaways | Remove (currently in products) |
 | `woohoo.txt`, ASCII-art dumps | Random | Remove |
 | Binary assets >100KB in `src/` or package root | Misplaced | Move to top-level `assets/` if needed |
-| Generated `.claude/smrt-framework.md` | `smrt docs:claude` output | Generate to consumer projects only; remove from `cli/.claude/` |
+| Generated `.agents/smrt-framework.md` / `.claude/smrt-framework.md` | `smrt docs:agents` / compatibility `smrt docs:claude` output | Generate to consumer projects only; remove from package directories |
 | Per-package `.changeset/` | Changesets at sub-package level | Move to repo root (currently in `cli/`) |
 | Empty config files | Dead | Remove (currently in `vitest/vite.config.ts`) |
 
@@ -372,8 +408,8 @@ This is a snapshot of the monorepo as of the standards audit. Numbers reflect no
 2. Stale build/dev artifacts committed in 8 packages (see §11)
 3. 6 packages ship with zero tests: affiliates, voice, tags, gnode, template-sveltekit, template-site-static-json
 4. Templates pin `@happyvertical/smrt-core: ^0.17.0` while monorepo is at `0.23.11`
-5. `scanner` does not include `CLAUDE.md` in `files:` allowlist
-6. `smrt-playground` has no `CLAUDE.md`
+5. Historical packages drifted on `AGENTS.md` / `CLAUDE.md` shim publishing
+6. `smrt-playground` previously had no package agent guidance
 
 ### Drift dimensions
 

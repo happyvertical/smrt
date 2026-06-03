@@ -11,7 +11,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 |---------|---------|
 | core | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI |
 | config | cosmiconfig loader, secret sanitization, SSG export |
-| cli | Developer CLI: `smrt db:*`, `smrt docs:Codex`, introspection, code generation |
+| cli | Developer CLI: `smrt db:*`, `smrt docs:agents`, `smrt dev:knowledge-*`, introspection, code generation |
 | types | Shared TypeScript types/enums — zero runtime code |
 | vitest | Test plugin: auto-manifest generation, cross-package class loading, DB isolation |
 | scanner | oxc-parser AST scanner for class/field metadata extraction |
@@ -62,7 +62,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | Package | Purpose |
 |---------|---------|
 | smrt-svelte | Svelte 5: Provider, browser AI (STT/TTS/LLM) with warm cache, theme system |
-| smrt-dev-mcp | Tier 2 dev MCP: `generate-smrt-class`, `introspect-project` |
+| smrt-dev-mcp | Tier 2 dev MCP: code generation, project introspection, deterministic knowledge reflection, review/architecture context bundles, bundled agent skills |
 | gnode | Federation library — stubs only, not implemented |
 | template-sveltekit | Base SvelteKit scaffold with SMRT integration |
 | template-site-static-json | Community news site scaffold with Praeco/Caelus |
@@ -82,11 +82,17 @@ npm run format                  # Biome
 
 - **0 vs 0.0**: `count: number = 0` → INTEGER. `price: number = 0.0` → DECIMAL
 - **Never override toJSON()** — use `transformJSON()` (toJSON handles STI + meta fields)
-- **Cross-package FKs**: plain string IDs, not `@foreignKey()` (avoids circular deps)
+- **Same-package FKs**: use `@foreignKey(Target)` so relationships, schema, includes, and `loadRelated()` are registered.
+- **Cross-package FKs**: use `@crossPackageRef('@happyvertical/smrt-package:Class')`; it registers runtime relationships without emitting circular DDL constraints.
 - **System tables**: prefixed `_smrt_` (jobs, dispatch, schedules, migrations)
 - **Conflict columns**: set `conflictColumns` in `@smrt()` for junction/upsert tables
+- **Junction collections**: extend `SmrtJunction`; use `byLeft()` / `byRight()` and options-object `attach()` / `detach()`.
+- **Hierarchies**: extend `SmrtHierarchical` only for true `parentId` trees; use package-specific names for chains/DAGs like fact evolution or asset derivation.
+- **Polymorphic links**: extend `SmrtPolymorphicAssociation` for generic/provenance links that target `(metaType, metaId, role)`.
 - **Asset ownership joins**: base/domain-owned asset relationships belong on noun join tables like `content_assets`, `profile_assets`, `event_assets`, `place_assets`, and `product_assets`; use `asset_associations` only for generic/provenance links
 - **STI discriminator**: qualified names — `@happyvertical/smrt-content:Article`
+- **UUID storage**: `id` and declared FK columns are native `uuid` on PostgreSQL/DuckDB and `TEXT` on SQLite.
+- **Tenant relationship loads**: `loadRelated()` / `loadRelatedMany()` enforce tenant isolation unless `{ allowCrossTenant: true }` is explicit.
 - **Tenant scoping**: most domain models use `@TenantScoped({ mode: 'optional' })` + nullable tenantId
 - **JSON fields**: store as string, provide `getX()`/`setX()` helpers with graceful parse error handling
 - **No private reach-ins**: do not cast into underscored internals like `_db`, `_tableName`, or registry-private state from outside the owning class. If a public API is missing, add one upstream instead of reaching through a private implementation detail.
@@ -94,11 +100,23 @@ npm run format                  # Biome
 
 ## SDK Dependencies
 
-From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical/ai` (AI client), `@happyvertical/sql` (DB ops), `@happyvertical/files` (filesystem), `@happyvertical/utils` (utilities).
+From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical/ai`, `@happyvertical/sql`, `@happyvertical/files`, `@happyvertical/utils`, `@happyvertical/cache`, `@happyvertical/documents`, `@happyvertical/email`, `@happyvertical/encryption`, `@happyvertical/geo`, `@happyvertical/images`, `@happyvertical/jobs`, `@happyvertical/json`, `@happyvertical/logger`, `@happyvertical/messages`, `@happyvertical/ocr`, `@happyvertical/pdf`, `@happyvertical/projects`, `@happyvertical/repos`, `@happyvertical/secrets`, and `@happyvertical/spider`.
 
 ## Downstream Doc Generation
 
-`smrt docs:Codex` generates `.Codex/smrt-framework.md` for consumer projects by concatenating installed package AGENTS.md files with version tables. Code: `packages/cli/src/commands/docs-Codex.ts`.
+`smrt docs:agents` generates `.agents/smrt-framework.md` for consumer projects by concatenating installed package `AGENTS.md` files with version tables. `smrt docs:claude` remains a deprecated compatibility alias that writes `.claude/smrt-framework.md`. Code: `packages/cli/src/commands/docs-claude.ts`.
+
+## Agent Knowledge
+
+- `AGENTS.md` is canonical for root and package expert docs.
+- `CLAUDE.md` files are one-line Claude Code shims containing only `@AGENTS.md`.
+- Harnesses that do not resolve Claude Code `@AGENTS.md` shims should read
+  `AGENTS.md` directly.
+- `smrt dev:knowledge-index` prints the deterministic SMRT + HappyVertical SDK knowledge graph.
+- `smrt dev:knowledge-check` validates agent-doc freshness, stale references, package docs, package `files` entries, and relationship-aware manifest facts. Use `--format markdown` for human hook output and `--format json` for scripts.
+- Lefthook runs deterministic knowledge freshness locally: changed-file strict checks on pre-commit and full strict checks on pre-push. Model-assisted audits are never required in hooks or CI.
+- `smrt-dev-mcp` exposes the same knowledge through `reflect-knowledge`, `check-knowledge-freshness`, `build-review-context`, `smrt-review`, `build-architecture-context`, and `smrt-architecture`.
+- `smrt-dev-mcp` also ships harness-agnostic skills. Downstream agents can call `get-agent-skill` with `name: "smrt-code-review"` to fetch the portable review procedure before using `smrt-review` on a project diff.
 
 ## Gotchas
 

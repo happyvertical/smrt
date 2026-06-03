@@ -1,9 +1,9 @@
 /**
- * docs:claude Command
+ * docs:agents / docs:claude commands
  *
- * Generates .claude/smrt-framework.md from installed @happyvertical packages.
- * Includes both SMRT framework packages and HappyVertical SDK packages.
- * This provides Claude Code with framework context in downstream projects.
+ * Generates downstream SMRT framework context from installed @happyvertical
+ * packages. AGENTS.md is canonical; docs:claude remains a compatibility alias
+ * that writes to the historical .claude/smrt-framework.md path.
  */
 
 import {
@@ -21,7 +21,10 @@ export interface PackageInfo {
   name: string;
   version: string;
   readme: string | null;
-  claudeMd: string | null;
+  agentMd?: string | null;
+  /** Backward-compatible alias for older tests/importers. */
+  claudeMd?: string | null;
+  docSource?: 'AGENTS.md' | 'CLAUDE.md' | null;
 }
 
 export interface RootDocInfo {
@@ -30,124 +33,146 @@ export interface RootDocInfo {
   content: string;
 }
 
-export const docsClaudeCommand: CLICommand = {
-  name: 'docs:claude',
-  description:
-    'Generate .claude/smrt-framework.md from installed SMRT packages',
-  aliases: ['claude-docs'],
-  args: [],
-  options: {
-    output: {
-      type: 'string',
-      description: 'Output file path (default: .claude/smrt-framework.md)',
-      short: 'o',
+interface DocsCommandOptions {
+  commandName: 'docs:agents' | 'docs:claude';
+  description: string;
+  defaultOutput: string;
+  generatedBy: string;
+  deprecated?: boolean;
+}
+
+function createDocsCommand(config: DocsCommandOptions): CLICommand {
+  return {
+    name: config.commandName,
+    description: config.description,
+    aliases:
+      config.commandName === 'docs:agents' ? ['agents-docs'] : ['claude-docs'],
+    args: [],
+    options: {
+      output: {
+        type: 'string',
+        description: `Output file path (default: ${config.defaultOutput})`,
+        short: 'o',
+      },
+      'dry-run': {
+        type: 'boolean',
+        description: 'Print to stdout without writing file',
+        default: false,
+        short: 'd',
+      },
     },
-    'dry-run': {
-      type: 'boolean',
-      description: 'Print to stdout without writing file',
-      default: false,
-      short: 'd',
-    },
-  },
-  handler: async (_args: string[], options: any) => {
-    try {
-      const outputPath = options.output || '.claude/smrt-framework.md';
-      const dryRun = options['dry-run'];
+    handler: async (_args: string[], options: any) => {
+      try {
+        if (config.deprecated) {
+          console.warn(
+            '⚠️  smrt docs:claude is deprecated; use smrt docs:agents. This command still writes Claude-compatible output.',
+          );
+        }
 
-      // Detect monorepo and load root docs
-      const monorepoRoot = detectMonorepoRoot();
-      const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
+        const outputPath = options.output || config.defaultOutput;
+        const dryRun = options['dry-run'];
+        const monorepoRoot = detectMonorepoRoot();
+        const rootDocs = monorepoRoot ? loadRootDocs(monorepoRoot) : [];
+        const packages = await discoverInstalledPackages();
+        const sdkPackages = await discoverSdkPackages();
 
-      // Find installed @happyvertical/smrt-* packages
-      const packages = await discoverInstalledPackages();
+        if (packages.length === 0 && sdkPackages.length === 0) {
+          console.log('\n⚠️  No @happyvertical packages found in node_modules');
+          console.log(
+            '   Make sure packages are installed before running this command.\n',
+          );
+          process.exit(1);
+        }
 
-      // Find installed @happyvertical/* SDK packages (non-smrt)
-      const sdkPackages = await discoverSdkPackages();
-
-      if (packages.length === 0 && sdkPackages.length === 0) {
-        console.log('\n⚠️  No @happyvertical packages found in node_modules');
-        console.log(
-          '   Make sure packages are installed before running this command.\n',
+        const content = generateMarkdown(
+          packages,
+          rootDocs.length > 0 ? rootDocs : undefined,
+          sdkPackages.length > 0 ? sdkPackages : undefined,
+          config.generatedBy,
         );
+
+        if (dryRun) {
+          console.log(content);
+          return;
+        }
+
+        const outputDir = dirname(outputPath);
+        if (!existsSync(outputDir)) {
+          mkdirSync(outputDir, { recursive: true });
+        }
+
+        writeFileSync(outputPath, content, 'utf-8');
+
+        const totalPackages = packages.length + sdkPackages.length;
+        console.log(`\n✅ Generated ${outputPath}`);
+        console.log(`   ${totalPackages} packages documented`);
+        if (packages.length > 0) {
+          console.log(`   ${packages.length} SMRT packages`);
+        }
+        if (sdkPackages.length > 0) {
+          console.log(`   ${sdkPackages.length} SDK packages`);
+        }
+        const allPackages = [...packages, ...sdkPackages];
+        const withAgentDocs = allPackages.filter((p) => p.agentMd).length;
+        if (withAgentDocs > 0) {
+          console.log(`   ${withAgentDocs} with AGENTS.md`);
+        }
+        if (rootDocs.length > 0) {
+          console.log(`   ${rootDocs.length} framework documents included`);
+        }
+        console.log('');
+      } catch (error) {
+        console.error('\n❌ Failed to generate agent documentation:');
+        if (error instanceof Error) {
+          console.error(`   ${error.message}`);
+        }
         process.exit(1);
       }
+    },
+  };
+}
 
-      // Generate markdown content with optional root docs and SDK packages
-      const content = generateMarkdown(
-        packages,
-        rootDocs.length > 0 ? rootDocs : undefined,
-        sdkPackages.length > 0 ? sdkPackages : undefined,
-      );
+export const docsAgentsCommand: CLICommand = createDocsCommand({
+  commandName: 'docs:agents',
+  description:
+    'Generate .agents/smrt-framework.md from installed SMRT packages',
+  defaultOutput: '.agents/smrt-framework.md',
+  generatedBy: 'smrt docs:agents',
+});
 
-      if (dryRun) {
-        console.log(content);
-        return;
-      }
-
-      // Ensure output directory exists
-      const outputDir = dirname(outputPath);
-      if (!existsSync(outputDir)) {
-        mkdirSync(outputDir, { recursive: true });
-      }
-
-      // Write file
-      writeFileSync(outputPath, content, 'utf-8');
-
-      const totalPackages = packages.length + sdkPackages.length;
-      console.log(`\n✅ Generated ${outputPath}`);
-      console.log(`   ${totalPackages} packages documented`);
-      if (packages.length > 0) {
-        console.log(`   ${packages.length} SMRT packages`);
-      }
-      if (sdkPackages.length > 0) {
-        console.log(`   ${sdkPackages.length} SDK packages`);
-      }
-      const allPackages = [...packages, ...sdkPackages];
-      const withClaudeMd = allPackages.filter((p) => p.claudeMd).length;
-      if (withClaudeMd > 0) {
-        console.log(`   ${withClaudeMd} with CLAUDE.md`);
-      }
-      if (rootDocs.length > 0) {
-        console.log(`   ${rootDocs.length} framework documents included`);
-      }
-      console.log('');
-    } catch (error) {
-      console.error('\n❌ Failed to generate Claude documentation:');
-      if (error instanceof Error) {
-        console.error(`   ${error.message}`);
-      }
-      process.exit(1);
-    }
-  },
-};
+export const docsClaudeCommand: CLICommand = createDocsCommand({
+  commandName: 'docs:claude',
+  description:
+    'Deprecated alias for docs:agents that writes .claude/smrt-framework.md',
+  defaultOutput: '.claude/smrt-framework.md',
+  generatedBy: 'smrt docs:claude',
+  deprecated: true,
+});
 
 /**
- * Discover installed @happyvertical/smrt-* packages
- * Checks both node_modules and workspace packages directory
+ * Discover installed @happyvertical/smrt-* packages.
+ * Checks both node_modules and workspace packages directory.
  */
 async function discoverInstalledPackages(): Promise<PackageInfo[]> {
   const packages: PackageInfo[] = [];
   const { readdirSync } = await import('node:fs');
 
-  // First, try node_modules (for downstream projects)
   const nodeModulesPath = join(process.cwd(), 'node_modules', '@happyvertical');
   if (existsSync(nodeModulesPath)) {
     const entries = readdirSync(nodeModulesPath, { withFileTypes: true });
     for (const entry of entries) {
       if (!entry.name.startsWith('smrt-')) continue;
 
-      // Resolve symlinks for workspace packages
       const entryPath = join(nodeModulesPath, entry.name);
       let packagePath = entryPath;
 
       try {
-        // Use lstatSync to detect symlinks (statSync follows them)
         const stats = lstatSync(entryPath);
         if (stats.isSymbolicLink()) {
           packagePath = realpathSync(entryPath);
         }
       } catch {
-        // Not a symlink, use original path
+        // Not a symlink, use original path.
       }
 
       const pkg = loadPackageInfo(packagePath, entry.name);
@@ -155,7 +180,6 @@ async function discoverInstalledPackages(): Promise<PackageInfo[]> {
     }
   }
 
-  // If no packages found, check for workspace packages (for SMRT monorepo)
   if (packages.length === 0) {
     const workspacePath = join(process.cwd(), 'packages');
     const pnpmWorkspacePath = join(process.cwd(), 'pnpm-workspace.yaml');
@@ -167,32 +191,28 @@ async function discoverInstalledPackages(): Promise<PackageInfo[]> {
 
         const packagePath = join(workspacePath, entry.name);
         const packageJsonPath = join(packagePath, 'package.json');
-
         if (!existsSync(packageJsonPath)) continue;
 
         try {
           const packageJson = JSON.parse(
             readFileSync(packageJsonPath, 'utf-8'),
           );
-          // Only include @happyvertical/smrt-* packages
           if (!packageJson.name?.startsWith('@happyvertical/smrt-')) continue;
 
           const pkg = loadPackageInfo(packagePath, entry.name);
           if (pkg) packages.push(pkg);
         } catch {
-          // Skip invalid package.json
+          // Skip invalid package.json.
         }
       }
     }
   }
 
-  // Sort by package name
   return packages.sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
- * Discover installed @happyvertical/* SDK packages (non-smrt)
- * These are foundation packages like @happyvertical/ai, @happyvertical/sql, etc.
+ * Discover installed @happyvertical/* SDK packages (non-smrt).
  */
 async function discoverSdkPackages(): Promise<PackageInfo[]> {
   const packages: PackageInfo[] = [];
@@ -205,12 +225,9 @@ async function discoverSdkPackages(): Promise<PackageInfo[]> {
 
   const entries = readdirSync(nodeModulesPath, { withFileTypes: true });
   for (const entry of entries) {
-    // Skip smrt-* packages (handled by discoverInstalledPackages)
     if (entry.name.startsWith('smrt-')) continue;
-    // Skip smrt itself (the meta-package if it exists)
     if (entry.name === 'smrt') continue;
 
-    // Resolve symlinks for workspace packages
     const entryPath = join(nodeModulesPath, entry.name);
     let packagePath = entryPath;
 
@@ -220,7 +237,7 @@ async function discoverSdkPackages(): Promise<PackageInfo[]> {
         packagePath = realpathSync(entryPath);
       }
     } catch {
-      // Not a symlink, use original path
+      // Not a symlink, use original path.
     }
 
     const pkg = loadPackageInfo(packagePath, entry.name);
@@ -230,15 +247,11 @@ async function discoverSdkPackages(): Promise<PackageInfo[]> {
   return packages.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-/**
- * Load package info from a directory
- */
 function loadPackageInfo(
   packagePath: string,
   dirName: string,
 ): PackageInfo | null {
   const packageJsonPath = join(packagePath, 'package.json');
-
   if (!existsSync(packageJsonPath)) {
     return null;
   }
@@ -246,80 +259,81 @@ function loadPackageInfo(
   try {
     const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
     const readmePath = join(packagePath, 'README.md');
-    const claudeMdPath = join(packagePath, 'CLAUDE.md');
+    const agentsPath = join(packagePath, 'AGENTS.md');
+    const claudePath = join(packagePath, 'CLAUDE.md');
+    const agentDoc = loadAgentDoc(agentsPath, claudePath);
 
     const info: PackageInfo = {
       name: packageJson.name,
       version: packageJson.version,
-      readme: null,
-      claudeMd: null,
+      readme: existsSync(readmePath) ? readFileSync(readmePath, 'utf-8') : null,
+      agentMd: agentDoc.content,
+      claudeMd: agentDoc.content,
+      docSource: agentDoc.source,
     };
 
-    // Load README.md if it exists
-    if (existsSync(readmePath)) {
-      info.readme = readFileSync(readmePath, 'utf-8');
-    }
-
-    // Load CLAUDE.md if it exists
-    if (existsSync(claudeMdPath)) {
-      info.claudeMd = readFileSync(claudeMdPath, 'utf-8');
-    }
-
     return info;
-  } catch (e) {
+  } catch {
     console.warn(`   ⚠️  Could not read package.json for ${dirName}`);
     return null;
   }
 }
 
-/**
- * Detect if running in the SMRT monorepo
- * Returns the monorepo root path if detected, null otherwise
- * Walks up directory tree to find monorepo root markers
- */
+function loadAgentDoc(
+  agentsPath: string,
+  claudePath: string,
+): { content: string | null; source: 'AGENTS.md' | 'CLAUDE.md' | null } {
+  if (existsSync(agentsPath)) {
+    return {
+      content: readFileSync(agentsPath, 'utf-8'),
+      source: 'AGENTS.md',
+    };
+  }
+
+  if (!existsSync(claudePath)) {
+    return { content: null, source: null };
+  }
+
+  const claude = readFileSync(claudePath, 'utf-8');
+  if (claude.trim() === '@AGENTS.md') {
+    return { content: null, source: null };
+  }
+
+  return { content: claude, source: 'CLAUDE.md' };
+}
+
 export function detectMonorepoRoot(): string | null {
   try {
     let currentDir = realpathSync(process.cwd());
 
-    // Walk up the directory tree until we find the monorepo root or hit filesystem root
-    // Monorepo root is indicated by the presence of:
-    // - pnpm-workspace.yaml
-    // - packages/ directory
-    // - CLAUDE.md
     for (;;) {
       const pnpmWorkspace = join(currentDir, 'pnpm-workspace.yaml');
       const packagesDir = join(currentDir, 'packages');
-      const rootClaudeMd = join(currentDir, 'CLAUDE.md');
+      const rootAgentsMd = join(currentDir, 'AGENTS.md');
 
       if (
         existsSync(pnpmWorkspace) &&
         existsSync(packagesDir) &&
-        existsSync(rootClaudeMd)
+        existsSync(rootAgentsMd)
       ) {
         return currentDir;
       }
 
       const parentDir = dirname(currentDir);
-      if (parentDir === currentDir) {
-        // Reached filesystem root without finding monorepo markers
-        break;
-      }
+      if (parentDir === currentDir) break;
       currentDir = parentDir;
     }
   } catch {
-    // On any unexpected filesystem error, fall through and report no monorepo detected
+    // On filesystem errors, report no monorepo detected.
   }
   return null;
 }
 
-/**
- * Load root documentation files from the monorepo
- */
 function loadRootDocs(rootPath: string): RootDocInfo[] {
   const docs: RootDocInfo[] = [];
 
   const rootDocs = [
-    { filename: 'CLAUDE.md', heading: 'Framework Overview' },
+    { filename: 'AGENTS.md', heading: 'Framework Overview' },
     { filename: 'TESTING_STANDARD.md', heading: 'Testing Guide' },
     { filename: 'CONTRIBUTING.md', heading: 'Contributing' },
     { filename: 'WORKFLOW.md', heading: 'Development Workflow' },
@@ -334,7 +348,7 @@ function loadRootDocs(rootPath: string): RootDocInfo[] {
           heading: doc.heading,
           content: readFileSync(filePath, 'utf-8'),
         });
-      } catch (e) {
+      } catch {
         console.warn(`   ⚠️  Could not read ${doc.filename}`);
       }
     }
@@ -342,9 +356,6 @@ function loadRootDocs(rootPath: string): RootDocInfo[] {
   return docs;
 }
 
-/**
- * Extract H2 sections from README content
- */
 export function extractReadmeSections(
   readme: string,
   sectionNames: string[],
@@ -359,20 +370,16 @@ export function extractReadmeSections(
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-
-      // Check for H2 heading (## Title)
       const h2Match = line.match(/^##\s+(.+)$/);
       if (h2Match) {
         const headingText = h2Match[1].trim();
 
         if (inSection) {
-          // We hit another H2, end the current section
           sections[targetSection] = sectionContent.join('\n').trim();
           inSection = false;
           sectionContent = [];
         }
 
-        // Check if this is the section we're looking for (case-insensitive)
         if (
           headingText.toLowerCase() === targetLower ||
           headingText.toLowerCase().includes(targetLower)
@@ -382,7 +389,6 @@ export function extractReadmeSections(
         }
       }
 
-      // Check for H1 heading (# Title) - this ends H2 sections
       if (line.match(/^#\s+[^#]/) && inSection) {
         sections[targetSection] = sectionContent.join('\n').trim();
         inSection = false;
@@ -390,12 +396,9 @@ export function extractReadmeSections(
         continue;
       }
 
-      if (inSection) {
-        sectionContent.push(line);
-      }
+      if (inSection) sectionContent.push(line);
     }
 
-    // Handle case where section goes to end of file
     if (inSection && sectionContent.length > 0) {
       sections[targetSection] = sectionContent.join('\n').trim();
     }
@@ -404,11 +407,7 @@ export function extractReadmeSections(
   return sections;
 }
 
-/**
- * Render a single package's CLAUDE.md content into markdown lines.
- * Strips the H1 title to avoid duplication with the section heading.
- */
-function renderClaudeMd(content: string): string {
+function renderAgentMd(content: string): string {
   const h1Match = content.match(/^#\s+.+\n/);
   if (h1Match) {
     content = content.slice(h1Match[0].length);
@@ -416,17 +415,14 @@ function renderClaudeMd(content: string): string {
   return content.trim();
 }
 
-/**
- * Generate the markdown content for .claude/smrt-framework.md
- */
 export function generateMarkdown(
   packages: PackageInfo[],
   rootDocs?: RootDocInfo[],
   sdkPackages?: PackageInfo[],
+  generatedBy = 'smrt docs:agents',
 ): string {
   const lines: string[] = [];
 
-  // Header
   lines.push('# SMRT Framework Context');
   lines.push('');
   lines.push(
@@ -434,7 +430,6 @@ export function generateMarkdown(
   );
   lines.push('');
 
-  // Framework Documentation section (if root docs provided)
   if (rootDocs && rootDocs.length > 0) {
     lines.push('## Framework Documentation');
     lines.push('');
@@ -456,7 +451,6 @@ export function generateMarkdown(
     lines.push('');
   }
 
-  // Installed packages table
   lines.push('## Installed SMRT Packages');
   lines.push('');
   lines.push('| Package | Version |');
@@ -466,7 +460,6 @@ export function generateMarkdown(
   }
   lines.push('');
 
-  // SDK packages table
   if (sdkPackages && sdkPackages.length > 0) {
     lines.push('## Installed SDK Packages');
     lines.push('');
@@ -478,23 +471,22 @@ export function generateMarkdown(
     lines.push('');
   }
 
-  // Per-package sections (SMRT)
   for (const pkg of packages) {
     lines.push('---');
     lines.push('');
     lines.push(`## ${pkg.name}`);
     lines.push('');
 
-    if (pkg.claudeMd) {
-      lines.push(renderClaudeMd(pkg.claudeMd));
+    const content = pkg.agentMd ?? pkg.claudeMd;
+    if (content) {
+      lines.push(renderAgentMd(content));
       lines.push('');
     } else {
-      lines.push('*No CLAUDE.md found for this package.*');
+      lines.push('*No AGENTS.md found for this package.*');
       lines.push('');
     }
   }
 
-  // Per-package sections (SDK)
   if (sdkPackages && sdkPackages.length > 0) {
     lines.push('---');
     lines.push('');
@@ -507,17 +499,17 @@ export function generateMarkdown(
       lines.push(`### ${pkg.name}`);
       lines.push('');
 
-      if (pkg.claudeMd) {
-        lines.push(renderClaudeMd(pkg.claudeMd));
+      const content = pkg.agentMd ?? pkg.claudeMd;
+      if (content) {
+        lines.push(renderAgentMd(content));
         lines.push('');
       } else {
-        lines.push('*No CLAUDE.md found for this package.*');
+        lines.push('*No AGENTS.md found for this package.*');
         lines.push('');
       }
     }
   }
 
-  // Contributing section
   lines.push('---');
   lines.push('');
   lines.push('## Contributing to This Documentation');
@@ -534,10 +526,9 @@ export function generateMarkdown(
   lines.push('- Example code if applicable');
   lines.push('');
 
-  // Footer
   lines.push('---');
   lines.push(
-    '*Generated by `smrt docs:claude` — regenerate after dependency updates*',
+    `*Generated by \`${generatedBy}\` — regenerate after dependency updates*`,
   );
   lines.push('');
 
@@ -545,5 +536,6 @@ export function generateMarkdown(
 }
 
 export const docsCommands: Record<string, CLICommand> = {
+  'docs:agents': docsAgentsCommand,
   'docs:claude': docsClaudeCommand,
 };

@@ -76,7 +76,7 @@ All packages are published under `@happyvertical/smrt-*`. 38 packages total.
 |---------|-------------|
 | `smrt-core` | ORM (SmrtObject/SmrtCollection), `@smrt()` decorator, code generators (REST/CLI/MCP), DispatchBus, STI |
 | `smrt-config` | cosmiconfig loader, secret sanitization, SSG export |
-| `smrt-cli` | Developer CLI: `smrt db:*`, `smrt docs:claude`, introspection, code generation |
+| `smrt-cli` | Developer CLI: `smrt db:*`, `smrt docs:agents`, `smrt dev:knowledge-*`, introspection, code generation |
 | `smrt-types` | Shared TypeScript types/enums (zero runtime code except enums) |
 | `smrt-vitest` | Vitest plugin: auto-manifest generation, cross-package class loading, DB isolation |
 | `smrt-scanner` | OXC-based AST scanner for class/field metadata extraction |
@@ -133,7 +133,7 @@ All packages are published under `@happyvertical/smrt-*`. 38 packages total.
 | Package | Description |
 |---------|-------------|
 | `smrt-svelte` | Svelte 5: components, browser AI (STT/TTS/LLM) with warm cache, theme system |
-| `smrt-dev-mcp` | Dev MCP server: `generate-smrt-class`, `introspect-project` |
+| `smrt-dev-mcp` | Dev MCP server: code generation, project introspection, knowledge reflection, review/architecture context, and bundled agent skills |
 | `smrt-gnode` | Federation library (stubs only, not implemented) |
 | `smrt-template-sveltekit` | Base SvelteKit scaffold with SMRT integration |
 | `smrt-template-site-static-json` | Community news site scaffold with Praeco/Caelus |
@@ -170,7 +170,12 @@ Requires: `git clone git@github.com:happyvertical/sdk.git ../sdk` (or set `SDK_P
 
 ### Git Hooks
 
-Uses [Lefthook](https://lefthook.dev/) for commit message validation. Commits must follow [Conventional Commits](https://www.conventionalcommits.org/) format:
+Uses [Lefthook](https://lefthook.dev/) for local deterministic checks:
+
+- pre-commit formats staged JS/TS/Svelte files, rejects known forbidden artifacts, validates staged workflow YAML, and runs `pnpm knowledge:check --changed --strict --format markdown`.
+- pre-push runs full knowledge freshness, full Biome CI formatting, and workflow validation.
+- model-assisted knowledge audits are local/manual: use `smrt-dev-mcp` prompt bundles or bundled skills with Codex, Claude, or another model, then re-run `pnpm knowledge:check --strict --format markdown`.
+- commit messages must follow [Conventional Commits](https://www.conventionalcommits.org/) format:
 
 ```
 <type>(<scope>): <subject>
@@ -187,8 +192,8 @@ Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`
 ## Documentation
 
 - [UI Surfaces](./docs/ui-surfaces.md) -- when to use `./svelte`, `./playground`, and optional `./routes`
-- [Architecture Guide](./CLAUDE.md) -- Development guide and patterns
-- [Core Framework Docs](./packages/core/CLAUDE.md) -- Detailed framework documentation
+- [Architecture Guide](./AGENTS.md) -- Development guide and patterns
+- [Core Framework Docs](./packages/core/AGENTS.md) -- Detailed framework documentation
 - [API Reference](./packages/core/README.md) -- Complete API reference
 
 ## UI Surface Conventions

@@ -403,7 +403,7 @@ export class CLIGenerator {
 
       // Parse args first without built-in commands to avoid loading them unnecessarily
       const parsed = parseCliArgs(processedArgv, commands, {});
-      await this.executeCommand(parsed, commands);
+      await this.executeCommand(parsed, commands, processedArgv);
     };
   }
 
@@ -545,8 +545,9 @@ export class CLIGenerator {
     const lowerName = objectName.toLowerCase();
 
     // Return cached commands if available
-    if (this.objectCommandsCache.has(lowerName)) {
-      return this.objectCommandsCache.get(lowerName)!;
+    const cachedCommands = this.objectCommandsCache.get(lowerName);
+    if (cachedCommands) {
+      return cachedCommands;
     }
 
     // Find the actual registered class (may have different casing)
@@ -1008,6 +1009,7 @@ export class CLIGenerator {
   async executeCommand(
     parsed: ParsedArgs,
     commands: CLICommand[],
+    processedArgv: string[] = process.argv.slice(2),
   ): Promise<void> {
     if (!parsed.command) {
       // For help, we need all commands
@@ -1092,7 +1094,13 @@ export class CLIGenerator {
       ...playgroundCommands,
     };
 
-    const builtInCommand = builtInCommands[parsed.command];
+    const builtInCommand =
+      builtInCommands[parsed.command] ??
+      Object.values(builtInCommands).find(
+        (cmd) =>
+          cmd.name === parsed.command ||
+          cmd.aliases?.includes(parsed.command ?? ''),
+      );
     if (builtInCommand) {
       // Validate required arguments (args wrapped in [...] are optional)
       const requiredArgCount = countRequiredArgs(builtInCommand.args);
@@ -1116,12 +1124,10 @@ export class CLIGenerator {
 
       // Re-parse options for built-in command since they weren't in initial parse
       // The initial parseCliArgs only has object commands, not built-in commands
-      const reParsed = parseCliArgs(process.argv, [], {
-        [parsed.command]: builtInCommand,
-      });
+      const reParsed = parseCliArgs(processedArgv, [builtInCommand], {});
 
       try {
-        await builtInCommand.handler(parsed.args, reParsed.options);
+        await builtInCommand.handler(reParsed.args, reParsed.options);
         return;
       } catch (error) {
         this.exitWithError(

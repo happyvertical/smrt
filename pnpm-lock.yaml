@@ -547,6 +547,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-dev-mcp':
+        specifier: workspace:*
+        version: link:../smrt-dev-mcp
       '@happyvertical/smrt-playground':
         specifier: workspace:*
         version: link:../smrt-playground
@@ -1821,24 +1824,9 @@ importers:
 
   packages/smrt-dev-mcp:
     dependencies:
-      '@happyvertical/ai':
-        specifier: ^0.74.3
-        version: 0.74.3(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
-      '@happyvertical/files':
-        specifier: ^0.74.3
-        version: 0.74.3
-      '@happyvertical/logger':
-        specifier: ^0.74.3
-        version: 0.74.3(@sentry/node@10.51.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/sql':
-        specifier: ^0.74.3
-        version: 0.74.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
-      '@happyvertical/utils':
-        specifier: ^0.74.3
-        version: 0.74.3
       '@modelcontextprotocol/sdk':
         specifier: ^1.25.2
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)
@@ -3324,6 +3312,11 @@ packages:
     peerDependencies:
       jimp: '>=1.6.1'
       sharp: '>=0.34.5'
+    peerDependenciesMeta:
+      jimp:
+        optional: true
+      sharp:
+        optional: true
 
   '@happyvertical/jobs@0.74.3':
     resolution: {integrity: sha512-xsS0aOUb3qB7YTgPHcMjE3Nq28CEfcjCq3Ed8WIPx6lunyeWeOXyERZclD1dl3O3kva1Yf2z1NRh17Ssy7/qqA==, tarball: https://npm.pkg.github.com/download/@happyvertical/jobs/0.74.3/c0cecfd08f414ab2977592f31082503e80d1e86a}
@@ -3333,6 +3326,15 @@ packages:
       '@google-cloud/tasks': '>=4.1.0'
       bull: '>=4.16.5'
       bullmq: '>=5.76.0'
+    peerDependenciesMeta:
+      '@aws-sdk/client-sqs':
+        optional: true
+      '@google-cloud/tasks':
+        optional: true
+      bull:
+        optional: true
+      bullmq:
+        optional: true
 
   '@happyvertical/json@0.74.3':
     resolution: {integrity: sha512-DpoAnmYh/9rBI4sDlzjT//nzYnWDzXQvkJo1hLahRuwQKJbn6nWANzi1R5icz3mKcU7+3/yVsdaA/ag9GQlsiQ==, tarball: https://npm.pkg.github.com/download/@happyvertical/json/0.74.3/c5f3d1e8612f7214723020e7ee7908172c61e808}
@@ -3342,6 +3344,9 @@ packages:
     hasBin: true
     peerDependencies:
       '@sentry/node': '>=10.49.0'
+    peerDependenciesMeta:
+      '@sentry/node':
+        optional: true
 
   '@happyvertical/messages@0.74.3':
     resolution: {integrity: sha512-OvFg28BmhEldlV5EqpeSyvhIDfoUXLcukunQaROyr4GCpRt+ixG+xfB2Ow3lNVFhmM3BCZiPnONIPB3j9kT0cA==, tarball: https://npm.pkg.github.com/download/@happyvertical/messages/0.74.3/44e28035c173aa54181c21f1fc6042e7be0828af}
@@ -3376,6 +3381,11 @@ packages:
     peerDependencies:
       '@russellthehippo/honker-node': ^0.3.3
       '@sqliteai/sqlite-vector': ^1.0.0
+    peerDependenciesMeta:
+      '@russellthehippo/honker-node':
+        optional: true
+      '@sqliteai/sqlite-vector':
+        optional: true
 
   '@happyvertical/utils@0.74.3':
     resolution: {integrity: sha512-WMaZ4RdIUZzoOSr317VnWDdTQB2l052jyflqd7gBYwOhA3nQ0Ww4nCF6idX9/3IRoNcFFPtz/NgRzdIfbqt1kw==, tarball: https://npm.pkg.github.com/download/@happyvertical/utils/0.74.3/2670402eab8a7ff2ed203a3c32b12d30172693af}
@@ -11113,16 +11123,18 @@ snapshots:
   '@happyvertical/images@0.74.3(jimp@1.6.1)(sharp@0.34.5)':
     dependencies:
       '@resvg/resvg-js': 2.6.2
-      jimp: 1.6.1
       satori: 0.26.0
+    optionalDependencies:
+      jimp: 1.6.1
       sharp: 0.34.5
 
   '@happyvertical/jobs@0.74.3(@aws-sdk/client-sqs@3.1038.0)(@google-cloud/tasks@6.2.1)(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)(bull@4.16.5)(bullmq@5.76.4)':
     dependencies:
-      '@aws-sdk/client-sqs': 3.1038.0
-      '@google-cloud/tasks': 6.2.1
       '@happyvertical/sql': 0.74.3(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
       '@happyvertical/utils': 0.74.3
+    optionalDependencies:
+      '@aws-sdk/client-sqs': 3.1038.0
+      '@google-cloud/tasks': 6.2.1
       bull: 4.16.5
       bullmq: 5.76.4
     transitivePeerDependencies:
@@ -11138,6 +11150,7 @@ snapshots:
   '@happyvertical/logger@0.74.3(@sentry/node@10.51.0)':
     dependencies:
       '@happyvertical/utils': 0.74.3
+    optionalDependencies:
       '@sentry/node': 10.51.0
 
   '@happyvertical/messages@0.74.3(@sentry/node@10.51.0)':
@@ -11241,10 +11254,11 @@ snapshots:
       '@duckdb/node-api': 1.4.3-r.3
       '@happyvertical/utils': 0.74.3
       '@libsql/client': 0.17.2
-      '@russellthehippo/honker-node': 0.3.3
-      '@sqliteai/sqlite-vector': 1.0.0
       pg: 8.20.0
       sqlite-vss: 0.1.2
+    optionalDependencies:
+      '@russellthehippo/honker-node': 0.3.3
+      '@sqliteai/sqlite-vector': 1.0.0
     transitivePeerDependencies:
       - bufferutil
       - encoding
@@ -12637,6 +12651,7 @@ snapshots:
       '@russellthehippo/honker-node-darwin-x64': 0.3.3
       '@russellthehippo/honker-node-linux-arm64-gnu': 0.3.3
       '@russellthehippo/honker-node-linux-x64-gnu': 0.3.3
+    optional: true
 
   '@sapphire/async-queue@1.5.5': {}
 
@@ -13134,6 +13149,7 @@ snapshots:
       '@sqliteai/sqlite-vector-linux-x86_64': 1.0.0
       '@sqliteai/sqlite-vector-linux-x86_64-musl': 1.0.0
       '@sqliteai/sqlite-vector-win32-x86_64': 1.0.0
+    optional: true
 
   '@standard-schema/spec@1.1.0': {}
 

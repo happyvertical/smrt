@@ -13,7 +13,8 @@
     "README.md",
     "index.js",
     "template",
-    "template.config.js"
+    "template.config.js",
+    "AGENTS.md"
   ],
   "keywords": [
     "smrt",
