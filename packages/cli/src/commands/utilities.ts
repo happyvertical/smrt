@@ -37,6 +37,7 @@ import {
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
 } from './db-migrate-actions.js';
+import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { exportCommand } from './export.js';
@@ -2438,6 +2439,7 @@ export default testManifest;
   'db:diff': dbDiffCommand,
   'db:rollback': dbRollbackCommand,
   'db:generate': dbGenerateCommand,
+  'db:migrate-uuid': dbMigrateUuidCommand,
 
   // Configuration commands
   'config:export': configExportCommand,

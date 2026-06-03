@@ -1250,6 +1250,115 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Resolve the set of snake_case column names whose database type is `UUID`
+   * for the table this object writes to.
+   *
+   * Declared foreign keys (`@foreignKey()`) and cross-package references
+   * (`@crossPackageRef()`) generate native `UUID` columns (R11). Their default
+   * declared value in TypeScript is the empty string (`''`), which is not a
+   * valid UUID literal. Postgres rejects `''` on a `uuid` column with
+   * `invalid input syntax for type uuid`, so any optional/unset declared FK
+   * (a root entity's self-reference, an optional cross-package link, etc.)
+   * would fail to insert. We coerce `''` → `NULL` for these columns before
+   * binding (see {@link coerceEmptyUuidValuesToNull}); this method tells that
+   * coercion which columns are UUID-typed.
+   *
+   * Resolution prefers the built schema (`getSchema().columns`), which already
+   * reflects all reconciliation — e.g. a `@foreignKey()` whose target class
+   * uses `idType: 'text'` is downgraded to `TEXT` and is therefore correctly
+   * excluded here. For STI children, columns live on the STI base table, so we
+   * union the base schema's columns. When no built schema is available (pure
+   * runtime-registered classes without a manifest) we fall back to field
+   * metadata, mirroring the schema-builder's field→SQL mapping.
+   */
+  private async resolveUuidColumnNames(
+    className: string,
+  ): Promise<Set<string>> {
+    const uuidColumns = new Set<string>();
+
+    const collectFromSchema = (schemaName: string | null | undefined): void => {
+      if (!schemaName) return;
+      const schema = ObjectRegistry.getSchema(schemaName);
+      const columns = schema?.columns;
+      if (!columns) return;
+      for (const [columnName, columnDef] of Object.entries(columns)) {
+        if ((columnDef as { type?: string })?.type === 'UUID') {
+          uuidColumns.add(columnName);
+        }
+      }
+    };
+
+    // Own schema (covers non-STI and STI-base classes).
+    collectFromSchema(className);
+
+    // STI children: FK columns are declared on the base table.
+    const qualifiedName = this.getResolvedQualifiedName();
+    if (ObjectRegistry.getTableStrategy(qualifiedName) === 'sti') {
+      collectFromSchema(ObjectRegistry.getSTIBase(qualifiedName));
+    }
+
+    if (uuidColumns.size > 0) {
+      return uuidColumns;
+    }
+
+    // Fallback: derive UUID columns from field metadata when no built schema
+    // is available. Mirrors schema-builder's field→SQL mapping so that a
+    // text-id cross-package ref is not treated as UUID.
+    try {
+      const fields = await ObjectRegistry.getAllFields(className);
+      for (const [fieldName, field] of fields.entries()) {
+        if (!field) continue;
+        const type = field.type;
+        if (type !== 'foreignKey' && type !== 'crossPackageRef') {
+          continue;
+        }
+        const metaSqlType = field._meta?.sqlType;
+        if (metaSqlType) {
+          if (metaSqlType === 'UUID') {
+            uuidColumns.add(toSnakeCase(fieldName));
+          }
+          continue;
+        }
+        const isTextIdCrossRef =
+          type === 'crossPackageRef' &&
+          (field._meta?.idType === 'text' || field.idType === 'text');
+        if (!isTextIdCrossRef) {
+          uuidColumns.add(toSnakeCase(fieldName));
+        }
+      }
+    } catch {
+      // Best-effort fallback; never let UUID-column resolution block a save.
+    }
+
+    return uuidColumns;
+  }
+
+  /**
+   * Coerce empty-string values to `NULL` for UUID-typed columns in the
+   * snake_cased write payload.
+   *
+   * Framework-level fix for the whole class of bug where a declared FK field
+   * defaults to `''` (the natural TypeScript default for `string`) and is left
+   * unset on insert — e.g. creating a ROOT entity whose optional self-reference
+   * (`previousFactId`, `parentPartnerId`, …) is empty. On Postgres `uuid`
+   * columns, `''` raises `invalid input syntax for type uuid`. Coercing to
+   * `NULL` here fixes every such field uniformly without per-field type churn
+   * or consumer-facing type changes. Mutates `data` in place.
+   */
+  private async coerceEmptyUuidValuesToNull(
+    className: string,
+    data: Record<string, any>,
+  ): Promise<void> {
+    const uuidColumns = await this.resolveUuidColumnNames(className);
+    if (uuidColumns.size === 0) return;
+    for (const columnName of uuidColumns) {
+      if (data[columnName] === '') {
+        data[columnName] = null;
+      }
+    }
+  }
+
+  /**
    * Persists this object to the database using an upsert (insert or update).
    *
    * Steps performed on every save:
@@ -1389,6 +1498,13 @@ export class SmrtObject extends SmrtClass {
           data[toSnakeCase(key)] = value;
         }
       }
+
+      // Coerce empty-string values to NULL for native UUID columns (declared
+      // FKs / cross-package refs). The TypeScript default for an unset
+      // `string`-typed FK is `''`, which Postgres rejects on a `uuid` column
+      // ("invalid input syntax for type uuid"). This framework-level coercion
+      // fixes every optional/unset declared-FK field uniformly.
+      await this.coerceEmptyUuidValuesToNull(className, data);
 
       // Get conflict columns from registry (supports custom columns for junction tables)
       const conflictColumns = ObjectRegistry.getConflictColumns(className);

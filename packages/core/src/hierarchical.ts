@@ -38,6 +38,7 @@
 import type { SmrtCollection } from './collection';
 import { SmrtObject } from './object';
 import { ObjectRegistry } from './registry';
+import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 /**
  * Aggregate hierarchy view: ancestors (root-first), self, and all descendants
@@ -178,6 +179,14 @@ export class SmrtHierarchical extends SmrtObject {
    * on the previous level's IDs — eliminates the recursive-per-child N+1
    * pattern the duplicated implementations used.
    *
+   * Each level's frontier is chunked at `IN_LIST_CHUNK_SIZE` before being
+   * expanded into a `parent_id IN (?, ?, …)` clause: the generic
+   * `collection.list()` does NOT chunk array-valued WHERE clauses, so a level
+   * wider than the backend's `SQLITE_MAX_VARIABLE_NUMBER` (999 on legacy
+   * SQLite, 32766 on modern builds) would otherwise throw before traversal
+   * completes. Mirrors the chunking the relationship/junction loaders in
+   * `collection.ts` already do.
+   *
    * Cycle-safe via a visited Set keyed on row id.
    */
   async getDescendants(): Promise<this[]> {
@@ -188,17 +197,24 @@ export class SmrtHierarchical extends SmrtObject {
     let frontier: string[] = [this.id];
 
     while (frontier.length > 0) {
-      const children = (await collection.list({
-        where: { parentId: frontier },
-      })) as this[];
-
       const next: string[] = [];
-      for (const child of children) {
-        if (!child.id || visited.has(child.id)) continue;
-        visited.add(child.id);
-        descendants.push(child);
-        next.push(child.id);
+
+      // Chunk the frontier so each query stays under the bind-variable cap.
+      // Children are merged into the same BFS level in chunk order, so the
+      // overall ordering remains breadth-first.
+      for (const idChunk of chunkArray(frontier, IN_LIST_CHUNK_SIZE)) {
+        const children = (await collection.list({
+          where: { parentId: idChunk },
+        })) as this[];
+
+        for (const child of children) {
+          if (!child.id || visited.has(child.id)) continue;
+          visited.add(child.id);
+          descendants.push(child);
+          next.push(child.id);
+        }
       }
+
       frontier = next;
     }
 

@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### Breaking changes (0.27.0 — relationships-v2)
+
+0.27.0 is the relationships-v2 breaking release. It renames several columns
+(R3: `Tag.parentSlug→parentId`, `Fact.parentId→previousFactId`,
+`Asset.parentId→sourceAssetId`, the Folder split), makes `id`/FK columns native
+`uuid` on PostgreSQL (R11), adopts `@foreignKey()`/`@crossPackageRef()` across
+models (R1), extracts `SmrtPolymorphicAssociation` (R4), qualifies the
+`_meta_type` STI discriminator (R5-canon), enforces tenant isolation in
+`loadRelated()` (R8), and changes the `SmrtJunction` API
+(`getForX`→`byLeft`/`byRight`, options-object `attach`/`detach`).
+
+**Existing databases require a manual DATA migration** (column-rename backfills
++ TEXT→uuid conversion) because `smrt db:migrate` is additive-only and cannot
+rename columns or change types. A runnable helper ships as
+`smrt db:migrate-uuid`. **See [`UPGRADE-0.27.md`](./UPGRADE-0.27.md) for the
+full guide and migration checklist.** Consumers must also re-run
+`smrt docs:claude` to regenerate the downstream `.claude/smrt-framework.md`.
+
 ### Features
 
 * **core:** add 0 vs 0.0 heuristic for integer/decimal type inference

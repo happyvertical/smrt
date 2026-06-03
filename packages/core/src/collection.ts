@@ -18,28 +18,7 @@ import {
   toCamelCase,
   toSnakeCase,
 } from './utils';
-
-/**
- * Maximum size of an `IN (?, ?, ...)` placeholder list per query.
- *
- * SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is 999. Postgres allows up to
- * 65535 bind parameters per query, but a more conservative chunk size keeps
- * planner time predictable across backends. Hitting this cap inside the
- * relationship loaders is a real risk now that batch eager loading is
- * supported — pages of >999 source rows would otherwise throw
- * `SQLITE_RANGE: bind or column index out of range`.
- */
-const IN_LIST_CHUNK_SIZE = 900;
-
-function chunkArray<T>(items: T[], size: number): T[][] {
-  if (items.length === 0) return [];
-  if (size <= 0) return [items];
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
-}
+import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 /**
  * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
