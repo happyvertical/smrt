@@ -1985,8 +1985,20 @@ export class ObjectRegistry {
    * Uses topological sort to ensure that classes are initialized in
    * an order that respects foreignKey dependencies (dependencies first).
    *
-   * @returns Array of class names in initialization order
-   * @throws {Error} If circular dependencies are detected
+   * Foreign-key cycles (e.g. smrt-chat's ChatMessage.threadId -> ChatThread
+   * and ChatThread.rootMessageId -> ChatMessage) are BROKEN rather than
+   * treated as a fatal error: when a back-edge is encountered the recursion
+   * stops there, so every class still appears in the returned order. SMRT does
+   * not emit real DB `FOREIGN KEY` constraints in its generated CREATE TABLE
+   * DDL, so a table can be created before its cyclic reference target exists —
+   * the reference is satisfied once both tables are present. This mirrors the
+   * standard RDBMS approach (create tables first, wire cyclic references
+   * afterward) and matches SchemaManager.sortByDependencies, which already
+   * tolerates cycles. See issue #1333.
+   *
+   * @returns Array of class names in initialization order. Every registered
+   *   class appears exactly once; cycle back-edges are dropped from the
+   *   ordering constraints.
    * @example
    * ```typescript
    * const order = ObjectRegistry.getInitializationOrder();
@@ -1999,13 +2011,16 @@ export class ObjectRegistry {
     const visited = new Set<string>();
     const visiting = new Set<string>();
     const order: string[] = [];
+    const cycleMembers = new Set<string>();
 
     function visit(className: string): void {
-      // Circular dependency check
+      // Back-edge: this class is already on the current DFS path, so following
+      // it would close a foreign-key cycle. Break the cycle by stopping here
+      // instead of throwing — the class is created earlier on the path and the
+      // cyclic reference resolves once both tables exist (#1333).
       if (visiting.has(className)) {
-        throw new Error(
-          `Circular dependency detected involving class: ${className}`,
-        );
+        cycleMembers.add(className);
+        return;
       }
 
       // Already processed
@@ -2031,6 +2046,18 @@ export class ObjectRegistry {
       if (!visited.has(className)) {
         visit(className);
       }
+    }
+
+    if (cycleMembers.size > 0) {
+      // Informational only — cycles are handled, not fatal. Surfacing the
+      // involved classes helps operators understand why strict FK ordering
+      // could not be honored for these tables.
+      console.warn(
+        `[ObjectRegistry] Foreign-key cycle(s) detected and broken for ordering: ${[
+          ...cycleMembers,
+        ].join(', ')}. Tables are created without strict cyclic ordering; ` +
+          'SMRT does not emit DB-level FOREIGN KEY constraints, so this is safe.',
+      );
     }
 
     return order;
