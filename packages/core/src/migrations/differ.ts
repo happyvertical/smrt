@@ -259,7 +259,30 @@ export class SchemaComparer {
           (normalizedExpected === 'TEXT' && normalizedActual === 'UUID') ||
           (normalizedExpected === 'UUID' && normalizedActual === 'TEXT');
 
-        if (normalizedExpected !== normalizedActual && !isUuidTextEquivalent) {
+        // #1335: native `json`/`jsonb` (DB) and `text` (manifest) are
+        // interchangeable for SMRT — the convention is to serialize JSON values
+        // into TEXT columns, and a native-json column already holds exactly that
+        // data. So the differ must NOT flag a json<->text difference in EITHER
+        // direction:
+        //   - manifest TEXT vs DB json   (native-json column, text-convention manifest)
+        //   - manifest JSON vs DB text   (the canary case: an enum/plain field
+        //     mis-inferred as JSON by a downstream scanner, sitting on a real
+        //     `text` column holding bare values like 'active')
+        // Generating an ALTER here is pure churn at best and data-destroying at
+        // worst: `status::jsonb` on a column holding 'active' raises
+        // "invalid input syntax for type json" and aborts the whole atomic
+        // migration. Like the uuid/text tolerance, this lives at the equality
+        // gate only (not in `normalizeType`) so `isCompatibleTypeUpgrade` still
+        // treats JSON and TEXT as distinct buckets for OTHER upgrade paths.
+        const isJsonTextEquivalent =
+          (normalizedExpected === 'JSON' && normalizedActual === 'TEXT') ||
+          (normalizedExpected === 'TEXT' && normalizedActual === 'JSON');
+
+        if (
+          normalizedExpected !== normalizedActual &&
+          !isUuidTextEquivalent &&
+          !isJsonTextEquivalent
+        ) {
           // Check if this is a safe type upgrade that SMRT can handle
           // Since SMRT owns the data lifecycle, we know the intent from the manifest
           if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
@@ -720,8 +743,22 @@ export class SchemaComparer {
 
         let typeClause = `ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
         if (manifestNormalized === 'JSON' && dbNormalized === 'TEXT') {
-          typeClause += ` USING ${quotedCol}::${targetType.toLowerCase()}`;
+          // #1335: a bare `${col}::jsonb` cast raises "invalid input syntax for
+          // type json" on any row whose text is not already valid JSON (e.g. a
+          // legacy enum column holding 'active'). `to_jsonb(col)` instead wraps
+          // ANY text value as a JSON string and never errors, so a genuine
+          // TEXT->JSON widening survives non-JSON legacy data. (Note: with the
+          // json<->text equality tolerance added in this fix, the normal
+          // compare path no longer reaches here; this keeps the SQL safe for
+          // callers that construct a type_upgrade directly.)
+          typeClause += ` USING to_jsonb(${quotedCol})`;
         } else if (manifestNormalized === 'TEXT' && dbNormalized === 'JSON') {
+          // #1335: a native-json column cast back to text is value-preserving
+          // (`::text` renders the stored JSON as its text form), so this arm is
+          // safe. (Note: like the TEXT->JSON arm above, the json<->text equality
+          // tolerance means the normal compare path no longer reaches here; this
+          // keeps the SQL safe for callers that construct a type_upgrade
+          // directly.)
           typeClause += ` USING ${quotedCol}::text`;
         } else if (
           manifestNormalized === 'INTEGER' &&
