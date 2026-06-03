@@ -599,16 +599,30 @@ async function loadDeclaredUuidColumns(): Promise<Set<string>> {
   // so this only works when run from the project root. A discovery failure is
   // non-fatal: the registry may already be populated; we still read it below
   // and the empty-set fail-closed gate in the handler is the safety net.
+  let discoveryFailed = false;
   try {
     await autoDiscoverAndLoad();
   } catch (error) {
+    discoveryFailed = true;
     console.warn(
       `Failed to auto-discover SMRT manifests for declared-UUID gating: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
   try {
     const schemaDefinitions = ObjectRegistry.getAllSchemasAsDefinitions();
-    return buildDeclaredUuidColumnSet(schemaDefinitions);
+    const declared = buildDeclaredUuidColumnSet(schemaDefinitions);
+    // The empty-set fail-closed gate only fires when NOTHING is declared. A
+    // partial discovery failure can leave a non-empty-but-incomplete set, which
+    // slips past that gate and silently leaves some declared-UUID columns as
+    // TEXT (recoverable false-negatives). Surface that explicitly.
+    if (discoveryFailed && declared.size > 0) {
+      console.warn(
+        'Manifest discovery partially failed — the declared-UUID set may be INCOMPLETE; ' +
+          'some packages may not have been scanned, so some uuid columns could be silently left as TEXT. ' +
+          'Resolve the discovery error above and re-run from the project root before trusting the conversion.',
+      );
+    }
+    return declared;
   } catch (error) {
     console.warn(
       `Failed to read declared schema for UUID gating: ${error instanceof Error ? error.message : String(error)}`,
