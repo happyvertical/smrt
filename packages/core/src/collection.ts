@@ -18,6 +18,7 @@ import {
   toCamelCase,
   toSnakeCase,
 } from './utils';
+import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 
 /**
  * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
@@ -238,9 +239,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     validFieldNames.add('created_at');
     validFieldNames.add('updated_at');
 
-    // Add STI discriminator field for polymorphic queries
+    // Add STI discriminator field for polymorphic queries.
+    // R5-canon: use the qualified item name as the lookup key so a
+    // same-simple-name class in another package can't yield the wrong
+    // tableStrategy.
     const itemClassName = this.getResolvedItemClassName();
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     if (tableStrategy === 'sti') {
       // Add both with and without leading underscore (toSnakeCase strips leading _)
       validFieldNames.add('_meta_type');
@@ -249,13 +254,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       validFieldNames.add('meta_data');
 
       // Issue #869: For STI classes, also include fields from all ancestor classes
-      // This ensures child class collections can filter by parent class fields
+      // This ensures child class collections can filter by parent class fields.
+      //
+      // inheritanceChain entries are qualified names (when the
+      // registration has one). Compare self against the qualified form;
+      // the framework-base sentinels stay as simple names since they're
+      // never registered. The simple-name `itemClassName` is also checked
+      // as a defensive fall-through for unqualified registrations.
       const inheritanceChain =
-        ObjectRegistry.getInheritanceChain(itemClassName);
+        ObjectRegistry.getInheritanceChain(itemQualifiedName);
       for (const ancestorName of inheritanceChain) {
         if (
           ancestorName === 'SmrtObject' ||
           ancestorName === 'SmrtClass' ||
+          ancestorName === itemQualifiedName ||
           ancestorName === itemClassName
         ) {
           continue; // Skip framework base classes and self (already included)
@@ -550,6 +562,39 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       signals,
     };
 
+    // Defense-in-depth: SmrtJunction subclasses MUST have their ITEM class
+    // registered with ObjectRegistry — that's where the field metadata,
+    // tableName, and conflictColumns come from, which byLeft/byRight/
+    // attach/detach/setLinks all depend on. The scanner is supposed to
+    // catch every junction subclass via the FRAMEWORK_BASE_CLASSES list
+    // in packages/scanner, but if a future refactor adds a new abstract
+    // junction base without updating that list, or if a class is loaded
+    // outside the normal manifest pipeline, we'd silently fall through to
+    // empty-field-metadata behavior (the issue #1132 class of bug). Fail
+    // loudly here instead of producing wrong results later.
+    //
+    // We check the ITEM class registration (not the collection class) —
+    // collection constructors are stored separately via
+    // registerCollection(itemClassName, ctor), not in the classes map.
+    if ((this as any)._isJunctionBase === true) {
+      const itemCtor = (this as any)._itemClass;
+      const itemRegistered =
+        itemCtor && ObjectRegistry.getClassByConstructor(itemCtor);
+      if (!itemRegistered) {
+        throw new Error(
+          `SmrtJunction subclass "${this.name}" has no registered item class. ` +
+            `The scanner likely didn't pick up its model — usually because the ` +
+            `consuming package's manifest doesn't include "${itemCtor?.name ?? '<unknown>'}". ` +
+            `Check that the scanner's FRAMEWORK_BASE_CLASSES ` +
+            `(packages/scanner/src/inheritance-resolver.ts) recognizes every ` +
+            `framework abstract base in your inheritance chain, that the package ` +
+            `has been built (manifest.json present in dist/), and that runtime ` +
+            `manifest loading (__smrt-register__.ts) runs before any junction ` +
+            `is instantiated.`,
+        );
+      }
+    }
+
     // Create instance using protected constructor
     const instance = new this(collectionOptions);
 
@@ -740,14 +785,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           : { slug: interceptedFilter, context: '' }
         : interceptedFilter;
 
-    // Fix for issue #386: Add _meta_type filter for STI child collections
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // Fix for issue #386: Add _meta_type filter for STI child collections.
+    // R5-canon: use the qualified item name as the LOOKUP KEY too, not
+    // just for the comparison — passing the simple `itemClassName` can
+    // resolve to another package's same-simple-name class via
+    // `findClass`'s multi-strategy lookup, which would yield the WRONG
+    // table-strategy / STI base.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
-      // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== itemClassName) {
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
           ...where,
@@ -864,14 +913,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     let { where, offset, limit, orderBy } = interceptedOptions;
 
-    // STI: Child collections should automatically filter by _meta_type
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // STI: Child collections should automatically filter by _meta_type.
+    // R5-canon: qualified-key lookup so a same-simple-name class in
+    // another package can't yield the wrong table strategy / STI base.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
-      // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== itemClassName) {
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
           ...(where || {}),
@@ -994,16 +1044,22 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         continue;
       }
 
-      if (relationship.type === 'foreignKey') {
-        // Batch load foreignKey relationships
+      if (
+        relationship.type === 'foreignKey' ||
+        relationship.type === 'crossPackageRef'
+      ) {
+        // crossPackageRef target lives in another package — make sure its
+        // manifest is loaded before we try to instantiate the target collection.
+        if (relationship.type === 'crossPackageRef') {
+          await ObjectRegistry.ensureManifestLoaded(relationship.targetClass);
+        }
+        // Batch load foreignKey / crossPackageRef relationships
         await this.batchLoadForeignKeys(instances, fieldName, relationship);
       } else if (relationship.type === 'oneToMany') {
         // Load oneToMany relationships (less optimizable)
         await this.batchLoadOneToMany(instances, fieldName, relationship);
       } else if (relationship.type === 'manyToMany') {
-        console.warn(
-          `manyToMany eager loading not yet implemented for ${fieldName}`,
-        );
+        await this.batchLoadManyToMany(instances, fieldName, relationship);
       }
     }
   }
@@ -1047,10 +1103,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return;
     }
 
-    // Load all related objects in a single query
-    const relatedObjects = await targetCollection.list({
-      where: { 'id in': Array.from(foreignKeyValues) },
-    });
+    // Load all related objects, chunked to stay under SQLITE_MAX_VARIABLE_NUMBER (999).
+    const fkValueList = Array.from(foreignKeyValues);
+    const relatedObjects: any[] = [];
+    for (const idChunk of chunkArray(fkValueList, IN_LIST_CHUNK_SIZE)) {
+      const batch = await targetCollection.list({
+        where: { 'id in': idChunk },
+      });
+      relatedObjects.push(...batch);
+    }
 
     // Build a map of ID to object for quick lookup
     const relatedMap = new Map();
@@ -1084,16 +1145,41 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     fieldName: string,
     relationship: import('./registry').RelationshipMetadata,
   ): Promise<void> {
-    // Find the inverse foreignKey field
-    const inverseRelationships = ObjectRegistry.getInverseRelationships(
+    // Find the inverse foreignKey field. An instance can satisfy an inverse FK
+    // that targets its own class or any (STI) ancestor it inherits the
+    // oneToMany from. Mirrors loadRelatedMany so lazy and eager (`include:`)
+    // loading resolve the same inverse side.
+    const inverseRelationships = ObjectRegistry.getInverseRelationshipsForSelf(
       this._itemClass.name,
     );
-    const inverseForeignKey = inverseRelationships.find(
+    const inverseCandidates = inverseRelationships.filter(
       (r) =>
-        r.sourceClass === relationship.targetClass &&
-        r.type === 'foreignKey' &&
-        r.targetClass === this._itemClass.name,
+        r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
     );
+    // Honor an explicit `@oneToMany(Target, { foreignKey })` when the target
+    // declares multiple foreign keys back to this class; otherwise fall back
+    // to the first match (legacy behavior).
+    const explicitForeignKey = relationship.options?.foreignKey as
+      | string
+      | undefined;
+    const matchedForeignKey = explicitForeignKey
+      ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
+      : undefined;
+    if (explicitForeignKey && !matchedForeignKey) {
+      // A misspelled / stale `foreignKey` is a configuration error, not a
+      // recoverable data condition — fail loudly here too so eager (`include:`)
+      // loading behaves identically to lazy loadRelatedMany rather than
+      // silently producing empty arrays.
+      throw new Error(
+        `oneToMany ${fieldName} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
+      );
+    }
+    // Prefer an inverse FK that targets this exact class before falling back
+    // to an ancestor's (mirrors loadRelatedMany).
+    const inverseForeignKey =
+      matchedForeignKey ??
+      inverseCandidates.find((r) => r.targetClass === this._itemClass.name) ??
+      inverseCandidates[0];
 
     if (!inverseForeignKey) {
       console.warn(
@@ -1124,10 +1210,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return;
     }
 
-    // Load all related objects in a single query
-    const relatedObjects = await targetCollection.list({
-      where: { [`${inverseForeignKey.fieldName} in`]: instanceIds },
-    });
+    // Load all related objects, chunked to stay under SQLITE_MAX_VARIABLE_NUMBER (999).
+    const relatedObjects: any[] = [];
+    for (const idChunk of chunkArray(instanceIds, IN_LIST_CHUNK_SIZE)) {
+      const batch = await targetCollection.list({
+        where: { [`${inverseForeignKey.fieldName} in`]: idChunk },
+      });
+      relatedObjects.push(...batch);
+    }
 
     // Group related objects by the foreign key value
     const relatedMap = new Map<string, any[]>();
@@ -1146,6 +1236,125 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     for (const instance of instances) {
       const relatedArray = relatedMap.get(instance.id as string) || [];
       (instance as any)._loadedRelationships.set(fieldName, relatedArray);
+    }
+  }
+
+  /**
+   * Batch-load manyToMany relationships through a junction table.
+   *
+   * Issues two queries instead of N: one against the junction table to map
+   * source IDs to target IDs, and one against the target table to hydrate
+   * the related rows. Results are grouped by source instance.
+   *
+   * @param instances - Instances whose manyToMany field should be populated
+   * @param fieldName - Name of the @manyToMany decorated field
+   * @param relationship - Relationship metadata from the registry
+   * @private
+   */
+  private async batchLoadManyToMany(
+    instances: ModelType[],
+    fieldName: string,
+    relationship: import('./registry').RelationshipMetadata,
+  ): Promise<void> {
+    const instanceIds = instances
+      .map((i) => i.id)
+      .filter((id): id is string => !!id);
+    if (instanceIds.length === 0) return;
+
+    // Delegate join-coordinate resolution to a sample instance — it shares the
+    // same registry metadata as every other instance in this batch.
+    let through: string;
+    let sourceColumn: string;
+    let targetColumn: string;
+    let targetClassName: string;
+    try {
+      const sample: any = instances[0];
+      const join = await sample.resolveManyToManyJoin(fieldName, relationship);
+      through = join.through;
+      sourceColumn = join.sourceColumn;
+      targetColumn = join.targetColumn;
+      targetClassName = join.targetClassName;
+    } catch (error) {
+      console.warn(
+        `Could not resolve manyToMany join for ${fieldName} on ${this._itemClass.name}:`,
+        error,
+      );
+      return;
+    }
+
+    // Default empty arrays for every instance so callers always see an array
+    for (const instance of instances) {
+      (instance as any)._loadedRelationships.set(fieldName, []);
+    }
+
+    // Pull junction rows in chunks. SQLite's default SQLITE_MAX_VARIABLE_NUMBER
+    // is 999, so we cap each IN-list at IN_LIST_CHUNK_SIZE to stay well below
+    // the limit on the supported backends (sqlite/libsql/postgres).
+    const junctionRowsAll: Array<{
+      [key: string]: unknown;
+    }> = [];
+    for (const idChunk of chunkArray(instanceIds, IN_LIST_CHUNK_SIZE)) {
+      const placeholders = idChunk.map(() => '?').join(', ');
+      const result = await this.db.query(
+        `SELECT "${sourceColumn}", "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" IN (${placeholders})`,
+        idChunk,
+      );
+      junctionRowsAll.push(...result.rows);
+    }
+
+    if (junctionRowsAll.length === 0) return;
+
+    // sourceId -> [targetIds...]
+    const sourceToTargets = new Map<string, string[]>();
+    const allTargetIds = new Set<string>();
+    for (const row of junctionRowsAll as any[]) {
+      const sId = row[sourceColumn];
+      const tId = row[targetColumn];
+      if (typeof sId !== 'string' || typeof tId !== 'string') continue;
+      allTargetIds.add(tId);
+      const list = sourceToTargets.get(sId) ?? [];
+      list.push(tId);
+      sourceToTargets.set(sId, list);
+    }
+
+    if (allTargetIds.size === 0) return;
+
+    // Hydrate all target objects. Also chunked so we don't blow the
+    // placeholder limit on a wide manyToMany.
+    let targetCollection: SmrtCollection<any>;
+    try {
+      targetCollection = await ObjectRegistry.getCollection(
+        targetClassName,
+        this.options,
+      );
+    } catch (error) {
+      console.warn(
+        `Could not get collection for manyToMany target ${targetClassName}:`,
+        error,
+      );
+      return;
+    }
+    const targetIdList = Array.from(allTargetIds);
+    const targetObjects: any[] = [];
+    for (const idChunk of chunkArray(targetIdList, IN_LIST_CHUNK_SIZE)) {
+      const batch = await targetCollection.list({
+        where: { 'id in': idChunk },
+      });
+      targetObjects.push(...batch);
+    }
+
+    const targetById = new Map<string, any>();
+    for (const obj of targetObjects) {
+      if (obj.id) targetById.set(obj.id, obj);
+    }
+
+    // Assign grouped results
+    for (const instance of instances) {
+      const targetIds = sourceToTargets.get(instance.id as string) ?? [];
+      const objects = targetIds
+        .map((id) => targetById.get(id))
+        .filter((o) => o !== undefined);
+      (instance as any)._loadedRelationships.set(fieldName, objects);
     }
   }
 
@@ -1189,8 +1398,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
 
-    // STI: Check for polymorphic instantiation
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // STI: Check for polymorphic instantiation.
+    // R5-canon: qualified-key lookup so colliding simple names across
+    // packages don't yield the wrong table strategy.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
 
     if (tableStrategy === 'sti' && options._meta_type) {
       // Use polymorphic instantiation for STI child classes
@@ -1561,15 +1772,20 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      // For STI, use the base class's table name from schema (manifest-derived)
+      // For STI, use the base class's table name from schema (manifest-derived).
+      // R5-canon: use the qualified item name as the lookup key so a
+      // colliding simple name in another package can't yield the wrong
+      // tableStrategy / STI base and route every downstream query
+      // (get/list/count/create) to the wrong table.
       const className = this.getResolvedItemClassName();
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const qualifiedName = this.getResolvedItemQualifiedName();
+      const tableStrategy = ObjectRegistry.getTableStrategy(qualifiedName);
       const fallbackTableName =
         (this._itemClass as any).SMRT_TABLE_NAME ||
         classnameToTablename(className);
 
       if (tableStrategy === 'sti') {
-        const stiBase = ObjectRegistry.getSTIBase(className);
+        const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
         if (stiBase) {
           // Use base class's schema tableName (from manifest)
           const baseSchema = ObjectRegistry.getSchema(stiBase);
@@ -1675,19 +1891,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async count(options: { where?: Record<string, any> } = {}) {
     await this.ensureStorageReady();
-    const itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
 
     let { where } = options;
 
-    // Fix for issue #386: Add _meta_type filter for STI child collections
-    const tableStrategy = ObjectRegistry.getTableStrategy(itemClassName);
+    // Fix for issue #386: Add _meta_type filter for STI child collections.
+    // R5-canon: qualified-key lookup throughout — pass `itemQualifiedName`
+    // to both `getTableStrategy` and `getSTIBase` so a colliding
+    // simple-name class in another package can't yield the wrong table
+    // strategy / STI base.
+    const tableStrategy = ObjectRegistry.getTableStrategy(itemQualifiedName);
     const isSTI = tableStrategy === 'sti';
 
     if (isSTI) {
-      const stiBase = ObjectRegistry.getSTIBase(itemClassName);
-      // If this is a child collection (not the base), auto-filter by type
-      if (stiBase && stiBase !== itemClassName) {
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase && stiBase !== itemQualifiedName) {
         where = {
           _meta_type: itemQualifiedName,
           ...(where || {}),
@@ -1770,8 +1988,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
     const fields = this.getFieldsSync();
 
-    // STI: Check if we need polymorphic hydration
-    const tableStrategy = ObjectRegistry.getTableStrategy(this._itemClass.name);
+    // STI: Check if we need polymorphic hydration.
+    // R5-canon: pass the qualified item name so a colliding simple
+    // name in another package can't yield the wrong tableStrategy
+    // and feed the wrong `isSTI` boolean into `hydrateResultRow`.
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedItemQualifiedName(),
+    );
     const isSTI = tableStrategy === 'sti';
 
     const instances = await Promise.all(

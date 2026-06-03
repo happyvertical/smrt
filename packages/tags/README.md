@@ -17,20 +17,26 @@ import { sanitizeSlug, validateSlug, generateUniqueSlug } from '@happyvertical/s
 // Create a tag hierarchy
 const collection = await TagCollection.create();
 
-const tech = new Tag({
+// `collection.create(...)` returns the saved row, so use it directly
+// instead of `new Tag()` + a separate `.create(...)` step. The returned
+// instance has its persisted `id` set for use as a parent reference.
+const tech = await collection.create({
   slug: 'technology',
   name: 'Technology',
-  context: 'blog',  // defaults to 'global' if omitted
+  context: 'blog', // defaults to 'global' if omitted
 });
-await collection.create(tech);
 
-const ai = new Tag({
+// Children reference their parent by UUID (`parentId`). With `tech`
+// already saved, pass `tech.id` directly. `level` is recalculated by
+// `TagCollection.moveTag` / `mergeTag` for later moves; you can pass it
+// explicitly on create or let it stay at 0 and call moveTag later.
+const ai = await collection.create({
   slug: 'artificial-intelligence',
   name: 'Artificial Intelligence',
   context: 'blog',
-  parentSlug: 'technology',  // level auto-calculated from parent
+  parentId: tech.id,
+  level: 1,
 });
-await collection.create(ai);
 
 // Traverse hierarchy
 const children = await tech.getChildren();
@@ -50,10 +56,12 @@ const alias = new TagAlias({
 });
 await aliasCollection.create(alias);
 
-// Collection operations
-await collection.moveTag('ai', 'new-parent');       // with circular reference detection
-await collection.mergeTag('source', 'target');       // moves children + aliases, deletes source
-await collection.cleanupUnused();                    // deletes tags with no children and no aliases
+// Collection operations. Slug args resolve through (slug, context) —
+// pass an explicit context when the same slug exists in multiple
+// contexts, otherwise the resolver throws on ambiguity.
+await collection.moveTag('artificial-intelligence', 'technology', 'blog'); // cycle-checked
+await collection.mergeTag('source', 'target', 'blog');                     // moves children + aliases, deletes source
+await collection.cleanupUnused();                                          // deletes tags with no children and no aliases
 
 // Slug utilities
 sanitizeSlug('My Cool Tag!');   // 'my-cool-tag'
@@ -66,7 +74,7 @@ validateSlug('my-tag-123');     // true
 
 | Export | Description |
 |--------|------------|
-| `Tag` | Identified by `slug` + `context`. Hierarchical via `parentSlug`. Auto-calculated `level`. JSON `metadata`. Methods: `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getMetadata()`, `setMetadata()`, `updateMetadata()` |
+| `Tag` | Identified by `slug` + `context`. Hierarchical via `parentId` (UUID, inherited from `SmrtHierarchical`). Denormalised `level` recalculated by `TagCollection.moveTag` / `mergeTag`. JSON `metadata`. Hierarchy methods inherited: `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getHierarchy()`, `moveTo()`. Own helpers: `getMetadata()`, `setMetadata()`, `updateMetadata()` |
 | `TagAlias` | Language-specific translations: `tagSlug`, `alias`, `language` (ISO 639-1), optional `context` |
 
 ### Collections (SmrtCollection)

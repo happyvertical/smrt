@@ -39,27 +39,48 @@ export function sanitizeSlug(input: string): string {
  * Validate hierarchy for circular references
  *
  * Checks if setting a parent would create a circular reference
- * (e.g., making a tag its own ancestor).
+ * (e.g., making a tag its own ancestor). The actual move call in
+ * `TagCollection.moveTag` also runs `SmrtHierarchical.moveTo`'s
+ * descendant-cycle check; this helper remains exported for callers that
+ * want to pre-validate a candidate parent without attempting the move.
+ *
+ * Tags are identified by `(slug, context)`. If `context` is omitted,
+ * slug-only lookups are used — fine when slugs are unique across all
+ * contexts, but the walk can traverse the wrong chain when the same
+ * slug exists in multiple contexts. Pass the candidate parent's
+ * `context` for accurate cross-context-safe validation.
  *
  * @param slug - The tag being moved
  * @param parentSlug - The proposed new parent
  * @param tagCollection - TagCollection instance for queries
+ * @param context - Optional context to scope every slug lookup to
  * @returns True if circular reference detected
  */
 export async function hasCircularReference(
   slug: string,
   parentSlug: string,
   tagCollection: TagCollection,
+  context?: string,
 ): Promise<boolean> {
-  let current = parentSlug;
+  // Walk up the proposed parent's chain by slug. Resolve each step to its
+  // UUID parent so the iteration matches the new `parentId` FK storage.
+  let current: string | null = parentSlug;
+  const slugWhere = (slugValue: string): Record<string, string> => {
+    const w: Record<string, string> = { slug: slugValue };
+    if (context !== undefined) w.context = context;
+    return w;
+  };
 
   while (current) {
     if (current === slug) return true; // Circular reference found
 
-    const parent = await tagCollection.get({ slug: current });
-    if (!parent || !parent.parentSlug) break;
+    const parent = await tagCollection.get(slugWhere(current));
+    if (!parent?.parentId) break;
 
-    current = String(parent.parentSlug);
+    // Step to the grandparent by UUID. UUIDs are globally unique, so no
+    // context filter is needed here.
+    const grand = await tagCollection.get({ id: parent.parentId });
+    current = grand?.slug ?? null;
   }
 
   return false;

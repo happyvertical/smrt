@@ -231,6 +231,30 @@ describe('PaymentIntent', () => {
     ).toThrow(/cannot transition to PAID/);
   });
 
+  it('refuses to mark paid once the price lock has expired', async () => {
+    // Regression: a backend can report a payment after `priceLockExpiresAt`
+    // passes but before a cleanup job runs `expire()` — the intent is still
+    // AWAITING_PAYMENT. markPaid must refuse so funds aren't accepted at a
+    // lapsed USD price.
+    const intent = await intents.create({
+      offeringRef: 'sku-stale-pay',
+      licenseeEmail: 'b@example.test',
+      idempotencyKey: 'idem-stale-pay',
+      usdPriceLocked: 199,
+      paymentOptions: [usdcOption],
+      priceLockExpiresAt: new Date(Date.now() - 60_000),
+    });
+    await intent.save();
+
+    expect(intent.isExpired()).toBe(true);
+    expect(() =>
+      intent.markPaid({ backendId: 'base-usdc', paymentId: 'pmt-stale' }),
+    ).toThrow(/price lock expired/);
+    // The intent must NOT have been advanced to PAID.
+    expect(intent.status).toBe(PaymentIntentStatus.AWAITING_PAYMENT);
+    expect(intent.paymentId).toBe('');
+  });
+
   it('cancels an open intent but refuses to cancel a paid one', async () => {
     const intent = await intents.create({
       offeringRef: 'sku-cancel',

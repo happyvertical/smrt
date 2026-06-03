@@ -4,7 +4,13 @@ import {
   AssetTypeCollection,
 } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ContentContributionAttachment } from './content-contribution-attachment';
 import {
@@ -154,7 +160,7 @@ function inferAssetTypeSlug(mimeType: string): string {
   cli: true,
 })
 export class ContentContribution extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('ContentContributor', { required: true })
   contributorId = '';
 
   @field({ required: true })
@@ -169,8 +175,13 @@ export class ContentContribution extends SmrtObject {
   contributorEmail = '';
   contributorName = '';
   threadKey = '';
+
+  @crossPackageRef('@happyvertical/smrt-messages:Message')
   sourceMessageId = '';
+
   editorNotes = '';
+
+  @foreignKey('Content')
   promotedContentId = '';
   revisionCount = 0;
   approvedAt: Date | null = null;

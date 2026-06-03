@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TrackingEventStatus } from '../types/index.js';
 
 /**
@@ -30,6 +30,7 @@ export class AnalyticsEvent extends SmrtObject {
   /**
    * Parent property ID (references AnalyticsProperty)
    */
+  @foreignKey('AnalyticsProperty')
   propertyId: string = '';
 
   /**

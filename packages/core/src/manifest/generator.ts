@@ -4,7 +4,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import fg from 'fast-glob';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
@@ -116,9 +116,42 @@ export class ManifestBuilder {
     );
 
     // 5. Write output files
+    this.normalizeFilePaths(manifest);
     await this.writeOutput(manifest, options);
 
     return manifest;
+  }
+
+  private normalizeFilePaths(manifest: SmartObjectManifest): void {
+    const workspaceRoot = this.findWorkspaceRoot(process.cwd());
+
+    for (const obj of Object.values(manifest.objects || {})) {
+      if (obj.filePath && isAbsolute(obj.filePath)) {
+        obj.filePath = relative(workspaceRoot, obj.filePath).replace(
+          /\\/g,
+          '/',
+        );
+      }
+    }
+  }
+
+  private findWorkspaceRoot(startDir: string): string {
+    let current = resolve(startDir);
+
+    while (true) {
+      if (
+        existsSync(resolve(current, 'pnpm-workspace.yaml')) ||
+        existsSync(resolve(current, '.git'))
+      ) {
+        return current;
+      }
+
+      const parent = dirname(current);
+      if (parent === current) {
+        return resolve(startDir);
+      }
+      current = parent;
+    }
   }
 
   /**

@@ -2,14 +2,16 @@
  * Manifest generator for creating service manifests from AST scan results
  */
 
+import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
+import { SchemaGenerator } from '../schema/generator.js';
 import { generateToolManifest } from '../tools/tool-generator.js';
+import { classnameToTablename, toSnakeCase } from '../utils/naming.js';
 import { createQualifiedName } from '../utils/qualified-names.js';
-import { classnameToTablename, toSnakeCase } from '../utils.js';
 import { isTestFile } from './test-file-patterns.js';
 import type {
   AgentAdminRouteManifest,
@@ -19,6 +21,7 @@ import type {
   AgentMenuItem,
   AgentPermission,
   AgentUISlotManifest,
+  ManifestSchema,
   ScanResult,
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -26,8 +29,40 @@ import type {
   ValidationRule,
 } from './types.js';
 
+type SchemaGeneratorLike = {
+  generateSQL: (schema: any, engine?: any) => string;
+};
+
 // Create require function for synchronous module loading in ESM context
 const require = createRequire(import.meta.url);
+
+/**
+ * Framework abstract base classes whose declared fields must be merged
+ * into every subclass's `fields` map.
+ *
+ * These classes live in `@happyvertical/smrt-core`, have no `@smrt()`
+ * decorator, no table of their own, and contribute structural fields
+ * (e.g. `SmrtHierarchical.parentId`) that subclasses query against —
+ * without merging, downstream WHERE-clause validation rejects queries on
+ * those columns.
+ *
+ * SmrtObject / SmrtClass / SmrtCollection are intentionally NOT in this
+ * set even though they live in core. SmrtObject's universal columns
+ * (`id`, `slug`, `context`, `created_at`, `updated_at`) are added by a
+ * separate universal-baseline mechanism in `fieldsFromClass`, and merging
+ * them here would double-write with subtly different `_meta` payloads
+ * and regress existing field expectations.
+ *
+ * Keep in sync with `FRAMEWORK_BASE_CLASSES` in
+ * `packages/scanner/src/inheritance-resolver.ts` — note that set is
+ * broader: it controls scanner-level chain termination and stub
+ * resolution, while this one only controls field merging.
+ */
+const FRAMEWORK_ABSTRACT_BASE_NAMES = new Set([
+  'SmrtJunction',
+  'SmrtHierarchical',
+  'SmrtPolymorphicAssociation',
+]);
 
 /**
  * Infer visibility from file path and explicit config
@@ -509,15 +544,6 @@ export class ManifestGenerator {
    * @param manifest - The manifest to process in-place
    */
   generateSchemas(manifest: SmartObjectManifest): void {
-    // Import SchemaGenerator synchronously (using createRequire for ESM compatibility)
-    // In Vitest/source runs, prefer the TypeScript source so tests exercise the
-    // current branch instead of stale built artifacts.
-    let SchemaGenerator: any;
-    try {
-      SchemaGenerator = require('../schema/generator.ts').SchemaGenerator;
-    } catch {
-      SchemaGenerator = require('../schema/generator.js').SchemaGenerator;
-    }
     const generator = new SchemaGenerator();
 
     // Create aggregated manifest that includes external package objects
@@ -555,6 +581,7 @@ export class ManifestGenerator {
           tableName,
           obj.fields,
           aggregatedManifest,
+          obj.decoratorConfig,
         );
         this.applySqlTypeOverrides(obj);
       } else if (this.isSTIChildClass(obj, manifest)) {
@@ -583,6 +610,7 @@ export class ManifestGenerator {
             baseTableName,
             obj.fields,
             aggregatedManifest,
+            obj.decoratorConfig,
           );
           this.applySqlTypeOverrides(obj);
         }
@@ -601,6 +629,230 @@ export class ManifestGenerator {
         this.applySqlTypeOverrides(obj);
       }
     }
+
+    this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
+  }
+
+  private resolveSamePackageForeignKeyColumnTypes(
+    manifest: SmartObjectManifest,
+    generator: SchemaGeneratorLike,
+  ): void {
+    const schemaByTable = new Map<string, ManifestSchema>();
+    const ownerBySchema = new Map<
+      ManifestSchema,
+      { name: string; obj: SmartObjectDefinition }
+    >();
+    const changedSchemas = new Set<ManifestSchema>();
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      if (obj.schema?.tableName) {
+        schemaByTable.set(obj.schema.tableName, obj.schema);
+        ownerBySchema.set(obj.schema, { name, obj });
+      }
+    }
+
+    for (const obj of Object.values(manifest.objects)) {
+      const sourceTable = this.getObjectTableName(obj);
+      if (!sourceTable) {
+        continue;
+      }
+
+      const sourceSchema = schemaByTable.get(sourceTable);
+      if (!sourceSchema) {
+        continue;
+      }
+
+      for (const [fieldName, field] of Object.entries(obj.fields || {})) {
+        if (
+          field.type !== 'foreignKey' ||
+          !field.related ||
+          field._meta?.sqlType
+        ) {
+          continue;
+        }
+
+        const columnName = toSnakeCase(fieldName);
+        const sourceColumn = sourceSchema.columns[columnName];
+        if (!sourceColumn) {
+          continue;
+        }
+
+        const targetSchema = this.findForeignKeyTargetSchema(
+          field.related,
+          manifest,
+          schemaByTable,
+        );
+        const targetIdType = targetSchema?.columns.id?.type;
+        if (!targetIdType || sourceColumn.type === targetIdType) {
+          continue;
+        }
+
+        sourceSchema.columns[columnName] = {
+          ...sourceColumn,
+          type: targetIdType,
+        };
+        changedSchemas.add(sourceSchema);
+      }
+    }
+
+    for (const schema of changedSchemas) {
+      this.refreshManifestSchemaDDL(
+        schema,
+        generator,
+        ownerBySchema.get(schema),
+        manifest,
+      );
+    }
+  }
+
+  private findForeignKeyTargetSchema(
+    related: string,
+    manifest: SmartObjectManifest,
+    schemaByTable: Map<string, ManifestSchema>,
+  ): ManifestSchema | undefined {
+    const relatedTarget = related.split('.')[0];
+    if (schemaByTable.has(relatedTarget)) {
+      return schemaByTable.get(relatedTarget);
+    }
+
+    const targetObj = Object.values(manifest.objects).find(
+      (candidate) =>
+        candidate.className === relatedTarget ||
+        candidate.qualifiedName === relatedTarget ||
+        candidate.name === relatedTarget ||
+        candidate.decoratorConfig?.tableName === relatedTarget ||
+        candidate.schema?.tableName === relatedTarget,
+    );
+
+    if (!targetObj && relatedTarget.includes(':')) {
+      return undefined;
+    }
+
+    const targetTable = targetObj
+      ? this.getObjectTableName(targetObj)
+      : this.classNameToTableName(relatedTarget);
+
+    return targetTable ? schemaByTable.get(targetTable) : undefined;
+  }
+
+  private getObjectTableName(obj: SmartObjectDefinition): string | undefined {
+    return (
+      obj.schema?.tableName ||
+      obj.decoratorConfig?.tableName ||
+      this.classNameToTableName(obj.className)
+    );
+  }
+
+  private refreshManifestSchemaDDL(
+    schema: ManifestSchema,
+    generator: SchemaGeneratorLike,
+    owner: { name: string; obj: SmartObjectDefinition } | undefined,
+    manifest: SmartObjectManifest,
+  ): void {
+    const schemaDefinition = {
+      tableName: schema.tableName,
+      columns: Object.fromEntries(
+        Object.entries(schema.columns).map(([name, column]) => [
+          name,
+          {
+            type: column.type,
+            primaryKey: column.primaryKey,
+            notNull: column.notNull,
+            unique: column.unique,
+            defaultValue: column.default,
+          },
+        ]),
+      ),
+      indexes: (schema.indexes || []).map((index) => ({
+        name: index.name,
+        columns: index.columns,
+        unique: index.unique,
+        where: index.where,
+        jsonPath: index.jsonPath,
+      })),
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: schema.version,
+      packageName: '',
+    };
+
+    schema.ddl = generator.generateSQL(schemaDefinition);
+    schema.version = this.computeManifestSchemaVersion(schema, owner, manifest);
+  }
+
+  private computeManifestSchemaVersion(
+    schema: ManifestSchema,
+    owner: { name: string; obj: SmartObjectDefinition } | undefined,
+    manifest: SmartObjectManifest,
+  ): string {
+    if (schema.columns._meta_type && owner) {
+      const baseClassName =
+        owner.obj.decoratorConfig?.tableStrategy === 'sti'
+          ? owner.name
+          : this.findSTIBaseInfo(owner.obj, manifest)?.className || owner.name;
+
+      return createHash('sha256')
+        .update(
+          JSON.stringify({
+            columns: schema.columns,
+            baseClassName,
+            descendants: this.findDescendantsInManifest(
+              baseClassName,
+              manifest,
+            ),
+          }),
+        )
+        .digest('hex')
+        .substring(0, 8);
+    }
+
+    return createHash('sha256')
+      .update(
+        JSON.stringify({
+          columns: schema.columns,
+          className: owner?.name || schema.tableName,
+        }),
+      )
+      .digest('hex')
+      .substring(0, 8);
+  }
+
+  private findDescendantsInManifest(
+    baseClassName: string,
+    manifest: SmartObjectManifest,
+    visited: Set<string> = new Set(),
+  ): string[] {
+    const descendants: string[] = [];
+    if (visited.has(baseClassName)) {
+      return descendants;
+    }
+    visited.add(baseClassName);
+
+    const baseClassLower = this.simpleClassName(baseClassName).toLowerCase();
+
+    for (const [name, obj] of Object.entries(manifest.objects)) {
+      const classNameLower = this.simpleClassName(obj.className).toLowerCase();
+      const extendsLower = obj.extends
+        ? this.simpleClassName(obj.extends).toLowerCase()
+        : undefined;
+
+      if (
+        classNameLower === baseClassLower &&
+        extendsLower === baseClassLower
+      ) {
+        continue;
+      }
+
+      if (extendsLower === baseClassLower) {
+        descendants.push(name);
+        descendants.push(
+          ...this.findDescendantsInManifest(name, manifest, visited),
+        );
+      }
+    }
+
+    return descendants;
   }
 
   private applySqlTypeOverrides(obj: SmartObjectDefinition): void {
@@ -723,6 +975,59 @@ export class ManifestGenerator {
   }
 
   /**
+   * Check whether `obj` extends a framework abstract base class anywhere
+   * in its chain.
+   *
+   * Framework abstract bases (`SmrtHierarchical`, `SmrtJunction`, …) have
+   * no table of their own — fields they declare must be merged into every
+   * subclass's manifest, even when the subclass uses CTI. Without this,
+   * a class like `Account extends SmrtHierarchical` would silently lose
+   * `parentId` from its `fields` map and downstream WHERE-clause
+   * validation would reject queries on the inherited column.
+   *
+   * Identified by name against the same hardcoded set the scanner's
+   * `FRAMEWORK_BASE_CLASSES` recognizes (`packages/scanner/src/
+   * inheritance-resolver.ts`). Keep the two lists in sync.
+   */
+  private extendsFrameworkAbstractBase(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    manifest: SmartObjectManifest,
+  ): boolean {
+    if (!obj.extends) return false;
+
+    let currentClass: string | undefined = obj.extends;
+    const visited = new Set<string>();
+
+    while (currentClass) {
+      if (visited.has(currentClass)) break;
+      visited.add(currentClass);
+
+      if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(currentClass)) {
+        return true;
+      }
+
+      let parentObj = objectsByName.get(currentClass);
+      if (
+        !parentObj &&
+        manifest.smrtDependencies &&
+        manifest.smrtDependencies.length > 0
+      ) {
+        parentObj = this.loadParentFromExternalPackage(
+          currentClass,
+          manifest.smrtDependencies,
+          objectsByName,
+        );
+      }
+      if (!parentObj) break;
+
+      currentClass = parentObj.extends;
+    }
+
+    return false;
+  }
+
+  /**
    * Find full STI base class info (className + tableName)
    *
    * Walks up the inheritance chain to find the STI base class and returns
@@ -802,6 +1107,37 @@ export class ManifestGenerator {
     return classnameToTablename(className);
   }
 
+  private normalizeFrameworkInheritedField(
+    ancestorName: string,
+    fieldName: string,
+    fieldDef: any,
+    childClassName: string,
+  ): any {
+    if (
+      this.simpleClassName(ancestorName) === 'SmrtHierarchical' &&
+      fieldName === 'parentId'
+    ) {
+      return {
+        ...fieldDef,
+        type: 'foreignKey',
+        related: childClassName,
+        required: false,
+        _meta: {
+          ...(fieldDef._meta || {}),
+          nullable: true,
+        },
+      };
+    }
+
+    return fieldDef;
+  }
+
+  private simpleClassName(className: string): string {
+    return className.includes(':')
+      ? className.split(':').pop() || className
+      : className;
+  }
+
   /**
    * Merge inherited fields into child classes (build-time inheritance resolution)
    *
@@ -833,13 +1169,25 @@ export class ManifestGenerator {
     for (const obj of Object.values(manifest.objects)) {
       if (!obj.extends) continue; // No parent, skip
 
-      // Only merge if using STI (shared table with parent)
-      // For CTI (class table inheritance), each class has its own table and fields
-      // Check if this class or ANY ancestor uses STI (inherited strategy)
+      // Merge inherited fields when ANY of:
+      //   (a) STI is in play — shared table with parent, full chain merges.
+      //   (b) An ancestor in the chain is a framework abstract base class
+      //       (SmrtHierarchical, SmrtJunction, …) — those have no table of
+      //       their own, so structural fields they declare (e.g.
+      //       `SmrtHierarchical.parentId`) must propagate into every CTI
+      //       subclass's manifest, otherwise WHERE-clause validation
+      //       rejects queries against the inherited column.
+      // For plain CTI through a user-defined base with its own table, we
+      // skip merging — each class keeps its own table layout.
       const usesSTI = this.isSTIClass(obj, objectsByName, manifest);
+      const extendsFrameworkBase = this.extendsFrameworkAbstractBase(
+        obj,
+        objectsByName,
+        manifest,
+      );
 
-      if (!usesSTI) {
-        continue; // CTI - no field merging needed
+      if (!usesSTI && !extendsFrameworkBase) {
+        continue; // Plain CTI through a user-defined base — skip.
       }
 
       console.log(
@@ -892,7 +1240,16 @@ export class ManifestGenerator {
         `[manifest-generator] Inheritance chain for ${obj.className}: ${inheritanceChain.join(' -> ')}`,
       );
 
-      // Merge fields from all ancestors (base to child)
+      // Merge fields from ancestors (base to child).
+      //
+      // STI path: pull in fields from every ancestor — they all share one
+      // table.
+      //
+      // Non-STI (framework-base) path: pull in fields ONLY from framework
+      // abstract bases (SmrtHierarchical, …). User-defined ancestors with
+      // their own `@smrt()` decorator have their own tables in CTI, so
+      // merging their columns onto a descendant would generate the wrong
+      // schema.
       const mergedFields: Record<string, any> = {};
       const mergedMethods: Record<string, any> = {};
 
@@ -900,10 +1257,21 @@ export class ManifestGenerator {
         const ancestor = objectsByName.get(ancestorName);
         if (!ancestor) continue;
 
+        const ancestorIsFrameworkBase =
+          FRAMEWORK_ABSTRACT_BASE_NAMES.has(ancestorName);
+        if (!usesSTI && !ancestorIsFrameworkBase) {
+          continue;
+        }
+
         // Merge fields (child fields override parent fields with same name)
         for (const [fieldName, fieldDef] of Object.entries(ancestor.fields)) {
           if (!mergedFields[fieldName]) {
-            mergedFields[fieldName] = fieldDef;
+            mergedFields[fieldName] = this.normalizeFrameworkInheritedField(
+              ancestorName,
+              fieldName,
+              fieldDef,
+              obj.className,
+            );
           }
         }
 
@@ -1447,6 +1815,8 @@ ${fields}
         return 'any';
       case 'foreignKey':
         return 'string';
+      case 'crossPackageRef':
+        return 'string';
       default:
         return 'any';
     }
@@ -1872,6 +2242,8 @@ ${fields}
       case 'json':
         return 'object';
       case 'foreignKey':
+        return 'string';
+      case 'crossPackageRef':
         return 'string';
       default:
         return 'string';

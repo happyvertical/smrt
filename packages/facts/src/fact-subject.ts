@@ -5,7 +5,7 @@
  * using polymorphic entityType + entityId with role classification.
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FactSubjectOptions, SubjectRole } from './types';
 
@@ -17,7 +17,7 @@ import type { FactSubjectOptions, SubjectRole } from './types';
   cli: true,
 })
 export class FactSubject extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('Fact', { required: true })
   factId: string = '';
 
   @field({ required: true })

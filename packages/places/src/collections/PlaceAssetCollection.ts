@@ -1,14 +1,11 @@
 import type { Asset } from '@happyvertical/smrt-assets';
 import {
   addOwnedAssetFromCollection,
-  createOwnedAssetLink,
-  deleteOwnedAssetLinks,
   getOwnedAssetsFromCollection,
-  listOwnedAssetLinks,
   removeOwnedAssetFromCollection,
 } from '@happyvertical/smrt-assets';
 import type { SmrtCollectionOptions } from '@happyvertical/smrt-core';
-import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
+import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { PlaceAsset } from '../models/PlaceAsset';
 import type { PlaceCollection } from './PlaceCollection';
 
@@ -19,8 +16,11 @@ export interface PlaceAssetCollectionOptions extends SmrtCollectionOptions {}
   mcp: false,
   cli: false,
 })
-export class PlaceAssetCollection extends SmrtCollection<PlaceAsset> {
+export class PlaceAssetCollection extends SmrtJunction<PlaceAsset> {
   static readonly _itemClass = PlaceAsset;
+  protected leftField = 'placeId';
+  protected rightField = 'assetId';
+
   private placeCollectionPromise: Promise<PlaceCollection> | null = null;
 
   private async getPlaceCollection(): Promise<PlaceCollection> {
@@ -30,47 +30,6 @@ export class PlaceAssetCollection extends SmrtCollection<PlaceAsset> {
     }
 
     return this.placeCollectionPromise;
-  }
-
-  async getForPlace(
-    placeId: string,
-    relationship?: string,
-  ): Promise<PlaceAsset[]> {
-    return listOwnedAssetLinks(this, 'placeId', placeId, relationship);
-  }
-
-  async getForAsset(assetId: string): Promise<PlaceAsset[]> {
-    return listOwnedAssetLinks(this, 'assetId', assetId);
-  }
-
-  async attach(
-    placeId: string,
-    assetId: string,
-    relationship = 'attachment',
-    sortOrder = 0,
-    tenantId: string | null = null,
-  ): Promise<PlaceAsset> {
-    return createOwnedAssetLink(this, {
-      placeId,
-      assetId,
-      relationship,
-      sortOrder,
-      tenantId,
-    });
-  }
-
-  async detach(
-    placeId: string,
-    assetId: string,
-    relationship?: string,
-  ): Promise<void> {
-    await deleteOwnedAssetLinks(
-      this,
-      'placeId',
-      placeId,
-      assetId,
-      relationship,
-    );
   }
 
   async getAssets(placeId: string, relationship?: string): Promise<Asset[]> {

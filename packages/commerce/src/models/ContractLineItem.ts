@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
@@ -77,6 +82,7 @@ export class ContractLineItem extends SmrtObject {
   /**
    * Optional product reference (cross-package, plain string)
    */
+  @crossPackageRef('@happyvertical/smrt-products:Product')
   productId: string = '';
 
   /**

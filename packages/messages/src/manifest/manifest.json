@@ -1,15 +1,15 @@
 {
   "version": "1.0.0",
-  "timestamp": 1774147345640,
+  "timestamp": 1780379232967,
   "packageName": "@happyvertical/smrt-messages",
-  "packageVersion": "0.21.7",
+  "packageVersion": "0.25.8",
   "objects": {
     "@happyvertical/smrt-messages:AccountCollection": {
       "name": "accountcollection",
       "className": "AccountCollection",
       "qualifiedName": "@happyvertical/smrt-messages:AccountCollection",
       "collection": "accounts",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/AccountCollection.ts",
+      "filePath": "packages/messages/src/collections/AccountCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -128,10 +128,10 @@
       "collectionExportName": "AccountCollectionCollection",
       "schema": {
         "tableName": "account_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"account_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"account_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -171,7 +171,7 @@
             "unique": true
           }
         ],
-        "version": "592cd629"
+        "version": "87560196"
       }
     },
     "@happyvertical/smrt-messages:AttachmentCollection": {
@@ -179,7 +179,7 @@
       "className": "AttachmentCollection",
       "qualifiedName": "@happyvertical/smrt-messages:AttachmentCollection",
       "collection": "attachments",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/AttachmentCollection.ts",
+      "filePath": "packages/messages/src/collections/AttachmentCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -397,10 +397,10 @@
       "collectionExportName": "AttachmentCollectionCollection",
       "schema": {
         "tableName": "attachment_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"attachment_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"attachment_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -440,7 +440,7 @@
             "unique": true
           }
         ],
-        "version": "b641a19f"
+        "version": "bebd85b2"
       }
     },
     "@happyvertical/smrt-messages:BlacklistCollection": {
@@ -448,7 +448,7 @@
       "className": "BlacklistCollection",
       "qualifiedName": "@happyvertical/smrt-messages:BlacklistCollection",
       "collection": "blacklists",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/BlacklistCollection.ts",
+      "filePath": "packages/messages/src/collections/BlacklistCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -488,10 +488,10 @@
       "collectionExportName": "BlacklistCollectionCollection",
       "schema": {
         "tableName": "blacklist_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"blacklist_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"blacklist_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -531,7 +531,7 @@
             "unique": true
           }
         ],
-        "version": "d12e3015"
+        "version": "980ba8d2"
       }
     },
     "@happyvertical/smrt-messages:EmailAccountCollection": {
@@ -539,7 +539,7 @@
       "className": "EmailAccountCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAccountCollection",
       "collection": "accounts",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/EmailAccountCollection.ts",
+      "filePath": "packages/messages/src/collections/EmailAccountCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -736,10 +736,10 @@
       "collectionExportName": "EmailAccountCollectionCollection",
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -779,7 +779,7 @@
             "unique": true
           }
         ],
-        "version": "e4ebcf9f"
+        "version": "70e24d15"
       }
     },
     "@happyvertical/smrt-messages:EmailAttachmentCollection": {
@@ -787,7 +787,7 @@
       "className": "EmailAttachmentCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAttachmentCollection",
       "collection": "emailattachments",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/EmailAttachmentCollection.ts",
+      "filePath": "packages/messages/src/collections/EmailAttachmentCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -918,10 +918,10 @@
       "collectionExportName": "EmailAttachmentCollectionCollection",
       "schema": {
         "tableName": "email_attachment_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"email_attachment_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_attachment_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -961,7 +961,7 @@
             "unique": true
           }
         ],
-        "version": "a0b6d2fd"
+        "version": "4f45d3a5"
       }
     },
     "@happyvertical/smrt-messages:EmailCollection": {
@@ -969,7 +969,7 @@
       "className": "EmailCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailCollection",
       "collection": "messages",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/EmailCollection.ts",
+      "filePath": "packages/messages/src/collections/EmailCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -1262,10 +1262,10 @@
       "collectionExportName": "EmailCollectionCollection",
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -1305,7 +1305,7 @@
             "unique": true
           }
         ],
-        "version": "17f5fa18"
+        "version": "60500205"
       }
     },
     "@happyvertical/smrt-messages:EmailFolderCollection": {
@@ -1313,7 +1313,7 @@
       "className": "EmailFolderCollection",
       "qualifiedName": "@happyvertical/smrt-messages:EmailFolderCollection",
       "collection": "emailfolders",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/EmailFolderCollection.ts",
+      "filePath": "packages/messages/src/collections/EmailFolderCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -1581,10 +1581,10 @@
       "collectionExportName": "EmailFolderCollectionCollection",
       "schema": {
         "tableName": "email_folder_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"email_folder_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_folder_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -1624,7 +1624,7 @@
             "unique": true
           }
         ],
-        "version": "54ac3713"
+        "version": "21262f44"
       }
     },
     "@happyvertical/smrt-messages:MessageCollection": {
@@ -1632,7 +1632,7 @@
       "className": "MessageCollection",
       "qualifiedName": "@happyvertical/smrt-messages:MessageCollection",
       "collection": "messages",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/MessageCollection.ts",
+      "filePath": "packages/messages/src/collections/MessageCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -1886,10 +1886,10 @@
       "collectionExportName": "MessageCollectionCollection",
       "schema": {
         "tableName": "message_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"message_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"message_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -1929,7 +1929,7 @@
             "unique": true
           }
         ],
-        "version": "5972a4e9"
+        "version": "1c0d7725"
       }
     },
     "@happyvertical/smrt-messages:WhitelistCollection": {
@@ -1937,7 +1937,7 @@
       "className": "WhitelistCollection",
       "qualifiedName": "@happyvertical/smrt-messages:WhitelistCollection",
       "collection": "whitelists",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/collections/WhitelistCollection.ts",
+      "filePath": "packages/messages/src/collections/WhitelistCollection.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -1996,10 +1996,10 @@
       "collectionExportName": "WhitelistCollectionCollection",
       "schema": {
         "tableName": "whitelist_collections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"whitelist_collections\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"whitelist_collections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -2039,7 +2039,7 @@
             "unique": true
           }
         ],
-        "version": "3d63374a"
+        "version": "92ba926c"
       }
     },
     "@happyvertical/smrt-messages:Account": {
@@ -2047,15 +2047,15 @@
       "className": "Account",
       "qualifiedName": "@happyvertical/smrt-messages:Account",
       "collection": "accounts",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/Account.ts",
+      "filePath": "packages/messages/src/models/Account.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -2613,10 +2613,10 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -2729,7 +2729,7 @@
             ]
           }
         ],
-        "version": "8893770e"
+        "version": "73a86fa3"
       }
     },
     "@happyvertical/smrt-messages:Attachment": {
@@ -2737,7 +2737,7 @@
       "className": "Attachment",
       "qualifiedName": "@happyvertical/smrt-messages:Attachment",
       "collection": "attachments",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/Attachment.ts",
+      "filePath": "packages/messages/src/models/Attachment.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "tenantId": {
@@ -2745,8 +2745,9 @@
           "required": false
         },
         "messageId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Message"
         },
         "filename": {
           "type": "text",
@@ -2878,10 +2879,10 @@
       ],
       "schema": {
         "tableName": "attachments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"attachments\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"message_id\" TEXT,\n  \"filename\" TEXT,\n  \"content_type\" TEXT,\n  \"size\" INTEGER NOT NULL DEFAULT 0,\n  \"content_id\" TEXT,\n  \"content_disposition\" TEXT DEFAULT 'attachment',\n  \"file_path\" TEXT,\n  \"source_url\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"attachments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"message_id\" UUID,\n  \"filename\" TEXT,\n  \"content_type\" TEXT,\n  \"size\" INTEGER NOT NULL DEFAULT 0,\n  \"content_id\" TEXT,\n  \"content_disposition\" TEXT DEFAULT 'attachment',\n  \"file_path\" TEXT,\n  \"source_url\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -2910,7 +2911,7 @@
             "unique": false
           },
           "message_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
             "unique": false
           },
@@ -2968,7 +2969,7 @@
             "unique": true
           }
         ],
-        "version": "f9ec7f42"
+        "version": "8c0c8d4e"
       }
     },
     "@happyvertical/smrt-messages:Blacklist": {
@@ -2976,7 +2977,7 @@
       "className": "Blacklist",
       "qualifiedName": "@happyvertical/smrt-messages:Blacklist",
       "collection": "blacklists",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/Blacklist.ts",
+      "filePath": "packages/messages/src/models/Blacklist.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "pattern": {
@@ -3034,10 +3035,10 @@
       "collectionExportName": "BlacklistCollection",
       "schema": {
         "tableName": "blacklists",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"blacklists\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"reason\" TEXT DEFAULT '',\n  \"auto_archive\" BOOLEAN DEFAULT TRUE\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"blacklists\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"reason\" TEXT DEFAULT '',\n  \"auto_archive\" BOOLEAN DEFAULT TRUE\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -3101,7 +3102,7 @@
             "unique": true
           }
         ],
-        "version": "416ad1ad"
+        "version": "4cc4dc55"
       }
     },
     "@happyvertical/smrt-messages:Email": {
@@ -3109,15 +3110,15 @@
       "className": "Email",
       "qualifiedName": "@happyvertical/smrt-messages:Email",
       "collection": "messages",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/Email.ts",
+      "filePath": "packages/messages/src/models/Email.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -3125,8 +3126,9 @@
           "required": false
         },
         "accountId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Account"
         },
         "threadId": {
           "type": "text",
@@ -3208,8 +3210,9 @@
           "required": false
         },
         "inReplyToMessageId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Message"
         },
         "createdAt": {
           "type": "text",
@@ -4036,10 +4039,10 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" TEXT,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -4075,7 +4078,7 @@
             "notNull": false
           },
           "account_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "thread_id": {
@@ -4158,7 +4161,7 @@
             "notNull": false
           },
           "in_reply_to_message_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "message_id": {
@@ -4251,7 +4254,7 @@
             ]
           }
         ],
-        "version": "6a484284"
+        "version": "dd30941a"
       }
     },
     "@happyvertical/smrt-messages:EmailAccount": {
@@ -4259,15 +4262,15 @@
       "className": "EmailAccount",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAccount",
       "collection": "accounts",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/EmailAccount.ts",
+      "filePath": "packages/messages/src/models/EmailAccount.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -4914,10 +4917,10 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"email\" TEXT,\n  \"sync_interval_minutes\" INTEGER DEFAULT 60\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -5010,7 +5013,7 @@
             ]
           }
         ],
-        "version": "08589575"
+        "version": "fec6fc44"
       }
     },
     "@happyvertical/smrt-messages:EmailAttachment": {
@@ -5018,7 +5021,7 @@
       "className": "EmailAttachment",
       "qualifiedName": "@happyvertical/smrt-messages:EmailAttachment",
       "collection": "emailattachments",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/EmailAttachment.ts",
+      "filePath": "packages/messages/src/models/EmailAttachment.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {},
       "methods": {
@@ -5037,10 +5040,10 @@
       "collectionExportName": "EmailAttachmentCollection",
       "schema": {
         "tableName": "email_attachments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"email_attachments\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_attachments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -5080,7 +5083,7 @@
             "unique": true
           }
         ],
-        "version": "a8e73595"
+        "version": "2b01abc2"
       }
     },
     "@happyvertical/smrt-messages:EmailFolder": {
@@ -5088,7 +5091,7 @@
       "className": "EmailFolder",
       "qualifiedName": "@happyvertical/smrt-messages:EmailFolder",
       "collection": "emailfolders",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/EmailFolder.ts",
+      "filePath": "packages/messages/src/models/EmailFolder.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "tenantId": {
@@ -5096,8 +5099,9 @@
           "required": false
         },
         "accountId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Account"
         },
         "name": {
           "type": "text",
@@ -5289,10 +5293,10 @@
       ],
       "schema": {
         "tableName": "email_folders",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"email_folders\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" TEXT,\n  \"name\" TEXT,\n  \"path\" TEXT,\n  \"delimiter\" TEXT,\n  \"special_use\" TEXT,\n  \"message_count\" INTEGER NOT NULL DEFAULT 0,\n  \"unread_count\" INTEGER NOT NULL DEFAULT 0,\n  \"subscribed\" BOOLEAN NOT NULL DEFAULT TRUE\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"email_folders\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" UUID,\n  \"name\" TEXT,\n  \"path\" TEXT,\n  \"delimiter\" TEXT,\n  \"special_use\" TEXT,\n  \"message_count\" INTEGER NOT NULL DEFAULT 0,\n  \"unread_count\" INTEGER NOT NULL DEFAULT 0,\n  \"subscribed\" BOOLEAN NOT NULL DEFAULT TRUE\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -5321,7 +5325,7 @@
             "unique": false
           },
           "account_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
             "unique": false
           },
@@ -5380,7 +5384,7 @@
             "unique": true
           }
         ],
-        "version": "32fcee39"
+        "version": "0911de8e"
       }
     },
     "@happyvertical/smrt-messages:Message": {
@@ -5388,15 +5392,15 @@
       "className": "Message",
       "qualifiedName": "@happyvertical/smrt-messages:Message",
       "collection": "messages",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/Message.ts",
+      "filePath": "packages/messages/src/models/Message.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -5404,8 +5408,9 @@
           "required": false
         },
         "accountId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Account"
         },
         "threadId": {
           "type": "text",
@@ -5487,8 +5492,9 @@
           "required": false
         },
         "inReplyToMessageId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Message"
         },
         "createdAt": {
           "type": "text",
@@ -6129,10 +6135,10 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" TEXT,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"message_id\" TEXT,\n  \"in_reply_to\" TEXT,\n  \"cc_addresses\" TEXT,\n  \"bcc_addresses\" TEXT,\n  \"reply_to_address\" TEXT,\n  \"reply_to_name\" TEXT,\n  \"text_body\" TEXT,\n  \"html_body\" TEXT,\n  \"folder_id\" TEXT,\n  \"folder_path\" TEXT,\n  \"labels\" TEXT,\n  \"flags\" TEXT,\n  \"is_answered\" BOOLEAN DEFAULT FALSE,\n  \"is_draft\" BOOLEAN DEFAULT FALSE,\n  \"raw_message\" TEXT,\n  \"headers\" TEXT,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -6168,7 +6174,7 @@
             "notNull": false
           },
           "account_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "thread_id": {
@@ -6251,7 +6257,7 @@
             "notNull": false
           },
           "in_reply_to_message_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "message_id": {
@@ -6418,7 +6424,7 @@
             ]
           }
         ],
-        "version": "71b7a4b3"
+        "version": "38e8ba67"
       }
     },
     "@happyvertical/smrt-messages:SlackAccount": {
@@ -6426,15 +6432,15 @@
       "className": "SlackAccount",
       "qualifiedName": "@happyvertical/smrt-messages:SlackAccount",
       "collection": "accounts",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/SlackAccount.ts",
+      "filePath": "packages/messages/src/models/SlackAccount.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -7005,10 +7011,10 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"workspace_id\" TEXT,\n  \"workspace_name\" TEXT,\n  \"bot_user_id\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -7104,7 +7110,7 @@
             ]
           }
         ],
-        "version": "d4d6b5ba"
+        "version": "21b50e2a"
       }
     },
     "@happyvertical/smrt-messages:SlackMessage": {
@@ -7112,15 +7118,15 @@
       "className": "SlackMessage",
       "qualifiedName": "@happyvertical/smrt-messages:SlackMessage",
       "collection": "messages",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/SlackMessage.ts",
+      "filePath": "packages/messages/src/models/SlackMessage.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -7128,8 +7134,9 @@
           "required": false
         },
         "accountId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Account"
         },
         "threadId": {
           "type": "text",
@@ -7211,8 +7218,9 @@
           "required": false
         },
         "inReplyToMessageId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Message"
         },
         "createdAt": {
           "type": "text",
@@ -7925,10 +7933,10 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" TEXT,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"channel_id\" TEXT,\n  \"channel_name\" TEXT,\n  \"slack_ts\" TEXT,\n  \"slack_thread_ts\" TEXT,\n  \"reactions\" TEXT,\n  \"is_edited\" BOOLEAN DEFAULT FALSE,\n  \"message_type\" TEXT,\n  \"blocks\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -7964,7 +7972,7 @@
             "notNull": false
           },
           "account_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "thread_id": {
@@ -8047,7 +8055,7 @@
             "notNull": false
           },
           "in_reply_to_message_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "channel_id": {
@@ -8107,7 +8115,7 @@
             ]
           }
         ],
-        "version": "211f41ef"
+        "version": "aa92111d"
       }
     },
     "@happyvertical/smrt-messages:Tweet": {
@@ -8115,15 +8123,15 @@
       "className": "Tweet",
       "qualifiedName": "@happyvertical/smrt-messages:Tweet",
       "collection": "messages",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/Tweet.ts",
+      "filePath": "packages/messages/src/models/Tweet.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -8131,8 +8139,9 @@
           "required": false
         },
         "accountId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Account"
         },
         "threadId": {
           "type": "text",
@@ -8214,8 +8223,9 @@
           "required": false
         },
         "inReplyToMessageId": {
-          "type": "text",
-          "required": false
+          "type": "foreignKey",
+          "required": false,
+          "related": "Message"
         },
         "createdAt": {
           "type": "text",
@@ -8956,10 +8966,10 @@
       ],
       "schema": {
         "tableName": "messages",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" TEXT,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" TEXT,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"messages\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"account_id\" UUID,\n  \"thread_id\" TEXT,\n  \"subject\" TEXT,\n  \"body\" TEXT,\n  \"from_address\" TEXT,\n  \"from_name\" TEXT,\n  \"to_addresses\" TEXT,\n  \"date\" TIMESTAMP,\n  \"is_read\" BOOLEAN DEFAULT FALSE,\n  \"is_flagged\" BOOLEAN DEFAULT FALSE,\n  \"has_attachments\" BOOLEAN DEFAULT FALSE,\n  \"size\" INTEGER DEFAULT 0,\n  \"metadata\" TEXT,\n  \"send_status\" TEXT DEFAULT 'draft',\n  \"sent_at\" TIMESTAMP,\n  \"send_error\" TEXT,\n  \"retry_count\" INTEGER DEFAULT 0,\n  \"max_retries\" INTEGER DEFAULT 3,\n  \"scheduled_send_at\" TIMESTAMP,\n  \"in_reply_to_message_id\" UUID,\n  \"tweet_id\" TEXT,\n  \"retweet_count\" INTEGER DEFAULT 0,\n  \"like_count\" INTEGER DEFAULT 0,\n  \"reply_count\" INTEGER DEFAULT 0,\n  \"is_retweet\" BOOLEAN DEFAULT FALSE,\n  \"is_reply\" BOOLEAN DEFAULT FALSE,\n  \"media_urls\" TEXT,\n  \"hashtags\" TEXT,\n  \"mentions\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -8995,7 +9005,7 @@
             "notNull": false
           },
           "account_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "thread_id": {
@@ -9078,7 +9088,7 @@
             "notNull": false
           },
           "in_reply_to_message_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false
           },
           "tweet_id": {
@@ -9146,7 +9156,7 @@
             ]
           }
         ],
-        "version": "add1ac68"
+        "version": "5122913d"
       }
     },
     "@happyvertical/smrt-messages:TwitterAccount": {
@@ -9154,15 +9164,15 @@
       "className": "TwitterAccount",
       "qualifiedName": "@happyvertical/smrt-messages:TwitterAccount",
       "collection": "accounts",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/TwitterAccount.ts",
+      "filePath": "packages/messages/src/models/TwitterAccount.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "created_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "updated_at": {
-          "type": "json",
+          "type": "datetime",
           "required": false
         },
         "tenantId": {
@@ -9729,10 +9739,10 @@
       ],
       "schema": {
         "tableName": "accounts",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"accounts\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT,\n  \"provider_type\" TEXT,\n  \"credential_secret_id\" TEXT,\n  \"is_active\" BOOLEAN DEFAULT TRUE,\n  \"last_sync_at\" TIMESTAMP,\n  \"settings\" TEXT,\n  \"handle\" TEXT,\n  \"twitter_user_id\" TEXT\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -9824,7 +9834,7 @@
             ]
           }
         ],
-        "version": "83ce792f"
+        "version": "348ad94a"
       }
     },
     "@happyvertical/smrt-messages:Whitelist": {
@@ -9832,7 +9842,7 @@
       "className": "Whitelist",
       "qualifiedName": "@happyvertical/smrt-messages:Whitelist",
       "collection": "whitelists",
-      "filePath": "/Users/will/.codex/worktrees/b805/smrt/packages/messages/src/models/Whitelist.ts",
+      "filePath": "packages/messages/src/models/Whitelist.ts",
       "packageName": "@happyvertical/smrt-messages",
       "fields": {
         "pattern": {
@@ -9889,10 +9899,10 @@
       "collectionExportName": "WhitelistCollection",
       "schema": {
         "tableName": "whitelists",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"whitelists\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"category\" TEXT,\n  \"description\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"whitelists\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"pattern\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT 'email',\n  \"category\" TEXT,\n  \"description\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
-            "type": "TEXT",
+            "type": "UUID",
             "primaryKey": true,
             "notNull": true
           },
@@ -9955,12 +9965,14 @@
             "unique": true
           }
         ],
-        "version": "7f919088"
+        "version": "b5845567"
       }
     }
   },
   "moduleType": "smrt",
   "smrtDependencies": [
-    "@happyvertical/smrt-core"
+    "@happyvertical/smrt-core",
+    "@happyvertical/smrt-secrets",
+    "@happyvertical/smrt-tenancy"
   ]
 }

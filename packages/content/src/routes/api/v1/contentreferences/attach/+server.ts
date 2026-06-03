@@ -5,7 +5,7 @@ import { error, json } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 
-// Custom collection method: getForSource
+// Custom collection method: attach
 export const POST: RequestHandler = async ({ request }) => {
   const collection = await getCollection<any>(
     '@happyvertical/smrt-content:ContentReference',
@@ -18,7 +18,11 @@ export const POST: RequestHandler = async ({ request }) => {
     );
 
   const options = await request.json();
-  const result = await typedCollection.getForSource(options.sourceId);
+  const result = await typedCollection.attach(
+    options.sourceId,
+    options.targetId,
+    options.opts,
+  );
 
-  return json({ action: 'getForSource', result });
+  return json({ action: 'attach', result });
 };

@@ -26,6 +26,12 @@ export interface ErgotAssetSummary {
   status: string;
   updatedAt: string | null;
   sourceUri: string;
+  /**
+   * Derivation source on the Ergot side. Mirrors the field Ergot returns
+   * over its wire API; do not conflate with `Asset.sourceAssetId` on the
+   * local SMRT side. Renaming this would desync this adapter from the
+   * upstream service's response shape.
+   */
   parentId: string | null;
   version: number;
   width: number;

@@ -94,10 +94,9 @@ describe('Profile owned assets', () => {
     await profile.addAsset(asset, 'avatar', 0);
     await profile.addAsset(asset, 'avatar', 0);
 
-    const links = await profileAssets.getForProfile(
-      profile.id as string,
-      'avatar',
-    );
+    const links = await profileAssets.byLeft(profile.id as string, {
+      relationship: 'avatar',
+    });
     expect(links).toHaveLength(1);
     expect(links[0]?.tenantId).toBe('tenant-a');
   });

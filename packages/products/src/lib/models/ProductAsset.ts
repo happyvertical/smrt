@@ -1,5 +1,11 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 export interface ProductAssetOptions extends SmrtObjectOptions {
@@ -26,10 +32,10 @@ export class ProductAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ required: true })
+  @foreignKey('Product', { required: true })
   productId = '';
 
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
   assetId = '';
 
   @field({ required: true })

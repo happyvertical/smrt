@@ -218,13 +218,17 @@ export class AssetCollection extends SmrtCollection<Asset> {
   }
 
   /**
-   * Get child assets (derivatives) of a parent asset
+   * Get derivative assets of a source asset.
    *
-   * @param parentId - The parent asset ID
-   * @returns Array of child assets
+   * Renamed from `getChildren(parentId)` in R3-D to match the rename of
+   * the underlying column (`parent_id` → `source_asset_id`) and method
+   * (`Asset.getChildren` → `Asset.getDerivatives`).
+   *
+   * @param sourceAssetId - The source asset ID
+   * @returns Array of derivative assets
    */
-  async getChildren(parentId: string): Promise<Asset[]> {
-    return (await this.list({ where: { parentId } })) as Asset[];
+  async getDerivatives(sourceAssetId: string): Promise<Asset[]> {
+    return (await this.list({ where: { sourceAssetId } })) as Asset[];
   }
 
   /**

@@ -4,7 +4,12 @@
  * Examples: '2024 NBA Finals', 'Summer Tour 2024', 'Town Council 2024'
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EventSeriesOptions, RecurrencePattern } from '../types';
 
@@ -20,7 +25,9 @@ export class EventSeries extends SmrtObject {
   tenantId: string | null = null;
 
   name: string = '';
+  @foreignKey('EventType')
   typeId = ''; // FK to EventType
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   organizerId = ''; // FK to Profile (from @happyvertical/smrt-profiles)
   description = '';
   startDate: Date | null = null;

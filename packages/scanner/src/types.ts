@@ -54,6 +54,9 @@ export interface RawDecoratorConfig {
   /** Table strategy: 'sti' | 'cti' */
   tableStrategy?: 'sti' | 'cti';
 
+  /** Storage type for the generated id primary key */
+  idType?: 'uuid' | 'text';
+
   /** Code-owned feature toggle declarations */
   features?: Record<
     string,
@@ -363,7 +366,8 @@ export interface ExternalManifest {
  * | `boolean` | `BOOLEAN` | `boolean` annotation or literal initialiser |
  * | `datetime` | `DATETIME` | `Date` annotation |
  * | `json` | `JSON` / `TEXT` | Arrays, `Record<>`, object types |
- * | `foreignKey` | `TEXT` (FK column) | `@foreignKey(Class)` decorator |
+ * | `foreignKey` | `UUID` by default (FK column) | `@foreignKey(Class)` decorator |
+ * | `crossPackageRef` | `UUID` by default (no FK constraint) | `@crossPackageRef('@pkg:Class')` decorator |
  * | `oneToMany` | — (virtual) | `@oneToMany(Class)` decorator |
  * | `manyToMany` | — (virtual) | `@manyToMany(Class)` decorator |
  * | `meta` | Stored in `_meta_data` | STI child field wrapped in `Meta<T>` |
@@ -379,6 +383,7 @@ export type InferredFieldType =
   | 'datetime'
   | 'json'
   | 'foreignKey'
+  | 'crossPackageRef'
   | 'oneToMany'
   | 'manyToMany'
   | 'meta'
@@ -412,4 +417,12 @@ export interface FieldTypeInference {
 
   /** Underlying type for meta fields (e.g., 'string' inside Meta<string>) */
   underlyingType?: InferredFieldType;
+
+  /**
+   * Decorator-derived metadata that should be merged into the manifest
+   * field's `_meta` object. Used by `@crossPackageRef`, `@manyToMany`,
+   * `@meta` to carry options (`validate`, `through`, `indexed`, `idType`,
+   * etc.) that don't fit on the top-level FieldDefinition.
+   */
+  _meta?: Record<string, unknown>;
 }

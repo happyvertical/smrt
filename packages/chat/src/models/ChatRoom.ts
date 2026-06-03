@@ -1,4 +1,9 @@
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ChatRoomOptions,
@@ -46,7 +51,7 @@ export class ChatRoom extends SmrtObject {
   maxParticipants: number = 0;
   @field()
   metadata: string = '{}';
-  @field()
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   createdByProfileId: string = '';
   @field()
   lastMessageAt: Date | null = null;

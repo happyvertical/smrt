@@ -1,5 +1,5 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 export interface ContentReferenceOptions extends SmrtObjectOptions {
@@ -23,10 +23,10 @@ export class ContentReference extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ required: true })
+  @foreignKey('Content', { required: true })
   sourceId = '';
 
-  @field({ required: true })
+  @foreignKey('Content', { required: true })
   targetId = '';
 
   @field({ type: 'integer', nullable: true })

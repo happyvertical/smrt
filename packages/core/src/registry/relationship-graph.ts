@@ -83,6 +83,17 @@ export function getRelationshipMap(): Map<string, RelationshipMetadata[]> {
         });
       }
 
+      // Check for crossPackageRef relationships (cross-package, no DDL FK)
+      if (field.type === 'crossPackageRef' && field.related) {
+        relationships.push({
+          sourceClass: simpleName,
+          fieldName,
+          targetClass: field.related,
+          type: 'crossPackageRef',
+          options: field._meta,
+        });
+      }
+
       // Check for oneToMany relationships
       if (field.type === 'oneToMany' && field.related) {
         relationships.push({

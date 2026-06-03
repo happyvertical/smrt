@@ -1,4 +1,10 @@
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ChatParticipantOptions,
@@ -18,9 +24,9 @@ export class ChatParticipant extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ required: true })
+  @foreignKey('ChatRoom', { required: true })
   roomId: string = '';
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
   profileId: string = '';
   @field({ required: true })
   role: ChatParticipantRole = 'member';
@@ -28,7 +34,7 @@ export class ChatParticipant extends SmrtObject {
   status: ChatParticipantStatus = 'active';
   @field({ required: true })
   onlineStatus: OnlineStatus = 'offline';
-  @field()
+  @foreignKey('ChatMessage')
   lastReadMessageId: string | null = null;
   @field()
   lastSeenAt: Date | null = null;

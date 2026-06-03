@@ -1,4 +1,10 @@
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type {
   ChatMessageOptions,
@@ -17,13 +23,13 @@ export class ChatMessage extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ required: true })
+  @foreignKey('ChatRoom', { required: true })
   roomId: string = '';
-  @field()
+  @foreignKey('ChatThread')
   threadId: string | null = null;
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile', { required: true })
   senderProfileId: string = '';
-  @field()
+  @foreignKey('AgentSession')
   agentSessionId: string | null = null;
 
   @field()
@@ -39,7 +45,7 @@ export class ChatMessage extends SmrtObject {
   editedAt: Date | null = null;
   @field()
   isDeleted: boolean = false;
-  @field()
+  @foreignKey('ChatMessage')
   replyToMessageId: string | null = null;
 
   @field()

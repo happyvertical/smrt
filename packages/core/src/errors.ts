@@ -686,6 +686,95 @@ export class RuntimeError extends SmrtError {
 }
 
 /**
+ * Error thrown when a tenant isolation boundary is crossed while resolving a
+ * relationship.
+ *
+ * Raised by {@link SmrtObject.loadRelated} / {@link SmrtObject.loadRelatedMany}
+ * (and {@link SmrtObject.getRelated}, which delegates to them) when a
+ * tenant-scoped object resolves a relationship to an object belonging to a
+ * *different*, non-null tenant — the genuine cross-tenant data leak. The guard
+ * is a no-op when either side has a `null` tenant (global / non-tenant-scoped
+ * models) and when both sides share the same tenant, so it only fires on real
+ * leaks. Pass `{ allowCrossTenant: true }` to the loader to deliberately opt out.
+ *
+ * The `code` is always `'TENANT_ISOLATION_VIOLATION'` and the category is
+ * `'validation'`. It is never retried — `ErrorUtils.withRetry()` rethrows it
+ * immediately and `ErrorUtils.isRetryable()` returns `false` — because a tenant
+ * boundary violation is deterministic. `tenantId` is the owning object's tenant
+ * and `attemptedTenantId` is the tenant of the object that was reached.
+ *
+ * This shares its stable `code`, `name`, `tenantId`, and `attemptedTenantId`
+ * shape with the interceptor-level `TenantIsolationError` in
+ * `@happyvertical/smrt-tenancy`, so cross-cutting handlers can match either via
+ * `err.code === 'TENANT_ISOLATION_VIOLATION'`. They are intentionally distinct
+ * classes because `@happyvertical/smrt-core` cannot depend on the tenancy
+ * package (the dependency runs the other way).
+ *
+ * @example
+ * ```typescript
+ * try {
+ *   await order.loadRelated('customerId');
+ * } catch (err) {
+ *   if (err instanceof TenantIsolationError) {
+ *     // err.tenantId          — the order's tenant
+ *     // err.attemptedTenantId — the customer's tenant
+ *   }
+ * }
+ * ```
+ *
+ * @see SmrtObject.loadRelated
+ * @see SmrtObject.loadRelatedMany
+ */
+export class TenantIsolationError extends SmrtError {
+  /** The tenant ID of the object that owns the relationship. */
+  public readonly tenantId?: string;
+  /** The tenant ID of the related object that was reached (and rejected). */
+  public readonly attemptedTenantId?: string;
+
+  constructor(
+    message: string,
+    details?: {
+      tenantId?: string;
+      attemptedTenantId?: string;
+      [key: string]: any;
+    },
+    cause?: Error,
+  ) {
+    super(message, 'TENANT_ISOLATION_VIOLATION', 'validation', details, cause);
+    this.tenantId = details?.tenantId;
+    this.attemptedTenantId = details?.attemptedTenantId;
+  }
+
+  /**
+   * Builds a {@link TenantIsolationError} for a blocked cross-tenant
+   * relationship resolution, with a descriptive message and structured details.
+   */
+  static crossTenantReference(details: {
+    sourceClass: string;
+    fieldName: string;
+    sourceTenantId: string;
+    targetClass?: string;
+    targetTenantId: string;
+  }): TenantIsolationError {
+    const target = details.targetClass
+      ? `${details.targetClass} (tenant '${details.targetTenantId}')`
+      : `tenant '${details.targetTenantId}'`;
+    return new TenantIsolationError(
+      `Cross-tenant relationship access blocked on ${details.sourceClass}.${details.fieldName}: ` +
+        `owning tenant '${details.sourceTenantId}' does not match ${target}. ` +
+        `Pass { allowCrossTenant: true } to loadRelated()/loadRelatedMany()/getRelated() to override.`,
+      {
+        tenantId: details.sourceTenantId,
+        attemptedTenantId: details.targetTenantId,
+        sourceClass: details.sourceClass,
+        fieldName: details.fieldName,
+        targetClass: details.targetClass,
+      },
+    );
+  }
+}
+
+/**
  * Utility functions for error handling
  */
 export class ErrorUtils {
@@ -710,10 +799,13 @@ export class ErrorUtils {
           throw lastError;
         }
 
-        // Skip retry for certain error types
+        // Skip retry for certain error types. A tenant isolation violation is
+        // deterministic — retrying re-fetches the same cross-tenant target — and
+        // is a security boundary, so it must never be retried.
         if (
           error instanceof ValidationError ||
-          error instanceof ConfigurationError
+          error instanceof ConfigurationError ||
+          error instanceof TenantIsolationError
         ) {
           throw error;
         }

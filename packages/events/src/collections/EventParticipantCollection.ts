@@ -1,59 +1,36 @@
 /**
- * EventParticipantCollection - Collection manager for EventParticipant objects
+ * EventParticipantCollection — junction collection for Event ↔ Profile links.
  *
- * Provides queries for participants by event, profile, role, and placement.
+ * The generic junction surface (byLeft/byRight/attach/detach/setLinks) comes
+ * from `SmrtJunction`. Domain-specific helpers (placement-ordered queries,
+ * home/away accessors, statistics, tenant scoping) live alongside.
  */
 
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import { SmrtJunction, smrt } from '@happyvertical/smrt-core';
 import { EventParticipant } from '../models/EventParticipant';
-import type { ParticipantRole, ParticipantSearchFilters } from '../types';
+import type { ParticipantSearchFilters } from '../types';
 
-export class EventParticipantCollection extends SmrtCollection<EventParticipant> {
+// Decorator with empty config — only needed so the scanner detects the
+// class. See FactContentCollection for the full rationale.
+@smrt()
+export class EventParticipantCollection extends SmrtJunction<EventParticipant> {
   static readonly _itemClass = EventParticipant;
+  protected leftField = 'eventId';
+  protected rightField = 'profileId';
+  // EventParticipant has no sortOrder column; `placement` is domain ordering
+  // (0=home, 1=away) and must not be auto-assigned by setLinks.
+  protected sortField: string | null = null;
+  protected positionField: string | null = null;
+
+  // ============================================
+  // Domain helpers
+  // ============================================
 
   /**
-   * Get participants for an event
-   *
-   * @param eventId - Event ID
-   * @returns Array of EventParticipant instances
-   */
-  async getByEvent(eventId: string): Promise<EventParticipant[]> {
-    return await this.list({ where: { eventId } });
-  }
-
-  /**
-   * Get events for a participant (profile)
-   *
-   * @param profileId - Profile ID
-   * @returns Array of EventParticipant instances
-   */
-  async getByProfile(profileId: string): Promise<EventParticipant[]> {
-    return await this.list({ where: { profileId } });
-  }
-
-  /**
-   * Get participants by role for an event
-   *
-   * @param eventId - Event ID
-   * @param role - Participant role
-   * @returns Array of EventParticipant instances
-   */
-  async getByRole(
-    eventId: string,
-    role: ParticipantRole | string,
-  ): Promise<EventParticipant[]> {
-    const participants = await this.getByEvent(eventId);
-    return participants.filter((p) => p.role === role);
-  }
-
-  /**
-   * Get participants ordered by placement
-   *
-   * @param eventId - Event ID
-   * @returns Array of EventParticipant instances sorted by placement
+   * Get participants ordered by placement (nulls last).
    */
   async getByPlacement(eventId: string): Promise<EventParticipant[]> {
-    const participants = await this.getByEvent(eventId);
+    const participants = await this.byLeft(eventId);
 
     return participants.sort((a, b) => {
       if (a.placement === null && b.placement === null) return 0;
@@ -64,47 +41,31 @@ export class EventParticipantCollection extends SmrtCollection<EventParticipant>
   }
 
   /**
-   * Get participants by group
-   *
-   * @param eventId - Event ID
-   * @param groupId - Group ID
-   * @returns Array of EventParticipant instances
+   * Get participants by group within an event.
    */
   async getByGroup(
     eventId: string,
     groupId: string,
   ): Promise<EventParticipant[]> {
-    const participants = await this.getByEvent(eventId);
-    return participants.filter((p) => p.groupId === groupId);
+    return this.byLeft(eventId, { groupId });
   }
 
   /**
-   * Get home participant(s) (placement = 0)
-   *
-   * @param eventId - Event ID
-   * @returns Array of EventParticipant instances with placement 0
+   * Get the home participant(s) — placement = 0.
    */
   async getHome(eventId: string): Promise<EventParticipant[]> {
-    const participants = await this.getByEvent(eventId);
-    return participants.filter((p) => p.placement === 0);
+    return this.byLeft(eventId, { placement: 0 });
   }
 
   /**
-   * Get away participant(s) (placement = 1)
-   *
-   * @param eventId - Event ID
-   * @returns Array of EventParticipant instances with placement 1
+   * Get the away participant(s) — placement = 1.
    */
   async getAway(eventId: string): Promise<EventParticipant[]> {
-    const participants = await this.getByEvent(eventId);
-    return participants.filter((p) => p.placement === 1);
+    return this.byLeft(eventId, { placement: 1 });
   }
 
   /**
-   * Search participants with filters
-   *
-   * @param filters - Filter criteria
-   * @returns Array of matching EventParticipant instances
+   * Search participants with optional filters.
    */
   async search(filters: ParticipantSearchFilters): Promise<EventParticipant[]> {
     let participants = await this.list({});
@@ -128,11 +89,7 @@ export class EventParticipantCollection extends SmrtCollection<EventParticipant>
   }
 
   /**
-   * Get participant statistics for a profile
-   *
-   * @param profileId - Profile ID
-   * @param eventTypeId - Optional event type filter
-   * @returns Statistics object
+   * Get participation statistics for a profile, optionally filtered by event type.
    */
   async getParticipantStats(
     profileId: string,
@@ -142,9 +99,8 @@ export class EventParticipantCollection extends SmrtCollection<EventParticipant>
     byRole: Record<string, number>;
     byPlacement: Record<number, number>;
   }> {
-    const participants = await this.getByProfile(profileId);
+    const participants = await this.byRight(profileId);
 
-    // Filter by event type if provided
     let filteredParticipants = participants;
     if (eventTypeId) {
       filteredParticipants = [];
@@ -156,15 +112,12 @@ export class EventParticipantCollection extends SmrtCollection<EventParticipant>
       }
     }
 
-    // Calculate statistics
     const byRole: Record<string, number> = {};
     const byPlacement: Record<number, number> = {};
 
     for (const participant of filteredParticipants) {
-      // Count by role
       byRole[participant.role] = (byRole[participant.role] || 0) + 1;
 
-      // Count by placement
       if (participant.placement !== null) {
         byPlacement[participant.placement] =
           (byPlacement[participant.placement] || 0) + 1;
@@ -179,34 +132,17 @@ export class EventParticipantCollection extends SmrtCollection<EventParticipant>
   }
 
   // ============================================
-  // Tenant Helper Methods
+  // Tenant helpers
   // ============================================
 
-  /**
-   * Find all event participants for a specific tenant
-   *
-   * @param tenantId - Tenant ID to filter by
-   * @returns Array of EventParticipant instances for the tenant
-   */
   async findByTenant(tenantId: string): Promise<EventParticipant[]> {
     return this.list({ where: { tenantId } });
   }
 
-  /**
-   * Find all global event participants (no tenant association)
-   *
-   * @returns Array of EventParticipant instances with no tenant
-   */
   async findGlobal(): Promise<EventParticipant[]> {
     return this.list({ where: { tenantId: null } });
   }
 
-  /**
-   * Find event participants for a tenant including global participants
-   *
-   * @param tenantId - Tenant ID to filter by
-   * @returns Array of EventParticipant instances for the tenant and global participants
-   */
   async findWithGlobals(tenantId: string): Promise<EventParticipant[]> {
     return this.query(
       `SELECT * FROM ${this.tableName} WHERE tenant_id = ? OR tenant_id IS NULL`,

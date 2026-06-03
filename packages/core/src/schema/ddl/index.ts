@@ -7,12 +7,14 @@
 
 export { BaseDDLStrategy } from './base-strategy.js';
 export { DuckDBStrategy } from './duckdb-strategy.js';
+export { JsonDuckDBStrategy } from './json-duckdb-strategy.js';
 export { PostgresStrategy } from './postgres-strategy.js';
 export { SQLiteStrategy } from './sqlite-strategy.js';
 export * from './types.js';
 
 import type { SchemaDefinition } from '../types.js';
 import { DuckDBStrategy } from './duckdb-strategy.js';
+import { JsonDuckDBStrategy } from './json-duckdb-strategy.js';
 import { PostgresStrategy } from './postgres-strategy.js';
 import { SQLiteStrategy } from './sqlite-strategy.js';
 import type {
@@ -26,6 +28,7 @@ import type {
 const strategies: Record<DatabaseEngine, DDLStrategy> = {
   sqlite: new SQLiteStrategy(),
   duckdb: new DuckDBStrategy(),
+  json: new JsonDuckDBStrategy(),
   postgres: new PostgresStrategy(),
 };
 
@@ -86,6 +89,7 @@ export function generateMultiEngineDDL(
   return {
     sqlite: generateDDLForEngine(schema, 'sqlite'),
     duckdb: generateDDLForEngine(schema, 'duckdb'),
+    json: generateDDLForEngine(schema, 'json'),
     postgres: generateDDLForEngine(schema, 'postgres'),
   };
 }
@@ -106,7 +110,10 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
         return 'sqlite';
       case 'duckdb':
       case 'json':
-        return 'duckdb'; // JSON adapter uses DuckDB internally
+        // Query-level compatibility treats JSON as DuckDB. DDL callers that
+        // need JSON's UUID-as-TEXT behavior should detect the adapter
+        // structurally (exportTable) or request the `json` strategy directly.
+        return 'duckdb';
       case 'postgres':
       case 'postgresql':
       case 'pg':
@@ -139,7 +146,10 @@ export function detectEngine(url: string, type?: string): DatabaseEngine {
     urlLower.includes('/json/') ||
     urlLower.includes('-json')
   ) {
-    return 'duckdb'; // JSON adapter uses DuckDB
+    // Query-level compatibility treats JSON as DuckDB. DDL callers that need
+    // JSON's UUID-as-TEXT behavior should detect the adapter structurally
+    // (exportTable) or request the `json` strategy directly.
+    return 'duckdb';
   }
 
   // Default to SQLite for file-based databases

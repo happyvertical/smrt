@@ -31,6 +31,7 @@ import { join } from 'node:path';
 import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
 import { loadExternalManifestSync } from '../manifest/manifest-loader.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { renderIndexTarget } from './utils.js';
 
 // ============================================================================
 // Types
@@ -288,7 +289,10 @@ export class SchemaAggregator {
     }
 
     // 3. Extract and deduplicate schemas
-    const tables = this.extractSchemas(Array.from(manifests.values()));
+    const tables = this.extractSchemas(
+      Array.from(manifests.values()),
+      options.dialect,
+    );
 
     // 4. Apply minimal filtering if requested
     if (options.minimal) {
@@ -376,8 +380,15 @@ export class SchemaAggregator {
    */
   private extractSchemas(
     manifests: SmartObjectManifest[],
+    dialect?: 'postgres' | 'sqlite',
   ): Map<string, AggregatedTable> {
     const tables = new Map<string, AggregatedTable>();
+    // The aggregator only knows sqlite vs postgres; jsonPath rendering
+    // treats anything non-sqlite as the postgres-style `->>` form, which
+    // is also what DuckDB accepts. Default mirrors `AggregateOptions.dialect`
+    // (`@default 'postgres'`) so unspecified callers get the documented shape.
+    const engine: 'sqlite' | 'postgres' | 'duckdb' =
+      dialect === 'sqlite' ? 'sqlite' : 'postgres';
 
     for (const manifest of manifests) {
       for (const [_key, object] of Object.entries(manifest.objects)) {
@@ -401,7 +412,7 @@ export class SchemaAggregator {
 
           // Merge indexes (deduplicate by SQL text)
           for (const idx of schema.indexes || []) {
-            const indexDdl = this.formatIndexDdl(idx, tableName);
+            const indexDdl = this.formatIndexDdl(idx, tableName, engine);
             if (!existing.indexes.includes(indexDdl)) {
               existing.indexes.push(indexDdl);
             }
@@ -410,7 +421,7 @@ export class SchemaAggregator {
           // New table
           const indexes: string[] = [];
           for (const idx of schema.indexes || []) {
-            indexes.push(this.formatIndexDdl(idx, tableName));
+            indexes.push(this.formatIndexDdl(idx, tableName, engine));
           }
 
           tables.set(tableName, {
@@ -431,13 +442,19 @@ export class SchemaAggregator {
    * Format an index definition into a CREATE INDEX statement.
    */
   private formatIndexDdl(
-    idx: { name: string; columns: string[]; unique?: boolean },
+    idx: {
+      name: string;
+      columns: string[];
+      unique?: boolean;
+      jsonPath?: { column: string; path: string };
+    },
     tableName: string,
+    engine: 'sqlite' | 'postgres' | 'duckdb' = 'sqlite',
   ): string {
-    const cols = idx.columns.map((c) => `"${c}"`).join(', ');
+    const target = renderIndexTarget(idx, engine);
     return idx.unique
-      ? `CREATE UNIQUE INDEX IF NOT EXISTS "${idx.name}" ON "${tableName}" (${cols});`
-      : `CREATE INDEX IF NOT EXISTS "${idx.name}" ON "${tableName}" (${cols});`;
+      ? `CREATE UNIQUE INDEX IF NOT EXISTS "${idx.name}" ON "${tableName}" (${target});`
+      : `CREATE INDEX IF NOT EXISTS "${idx.name}" ON "${tableName}" (${target});`;
   }
 
   /**

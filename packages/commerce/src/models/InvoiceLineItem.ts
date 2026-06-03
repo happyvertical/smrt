@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
@@ -114,6 +119,7 @@ export class InvoiceLineItem extends SmrtObject {
    * Revenue account ID (cross-package ref to smrt-ledgers)
    * Used for revenue recognition to specific accounts
    */
+  @crossPackageRef('@happyvertical/smrt-ledgers:Account')
   revenueAccountId: string = '';
 
   /**

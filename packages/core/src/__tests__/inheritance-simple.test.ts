@@ -33,8 +33,9 @@ describe('Inheritance Core Functionality', () => {
     console.log('Inheritance chain:', chain);
 
     expect(chain.length).toBeGreaterThan(1);
-    expect(chain).toContain('BaseContent');
-    expect(chain).toContain('ExtendedContent');
+    // R5-canon: getInheritanceChain returns qualified names
+    expect(chain).toContain('@happyvertical/smrt-core:BaseContent');
+    expect(chain).toContain('@happyvertical/smrt-core:ExtendedContent');
   });
 
   it('should get direct fields from BaseContent', () => {

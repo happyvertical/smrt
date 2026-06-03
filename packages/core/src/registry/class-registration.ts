@@ -443,6 +443,38 @@ function setSmrtTableName(ctor: typeof SmrtObject, tableName: string): void {
   });
 }
 
+/**
+ * Attach the registry's qualified name to the constructor as a static
+ * property. Mirrors the `SMRT_TABLE_NAME` pattern.
+ *
+ * Survives:
+ * - Minification (the property is set on the constructor itself).
+ * - HMR / module duplication / federated-module boundaries where the
+ *   `constructorIndex` WeakMap holds an older constructor identity than
+ *   the one a caller has in hand.
+ *
+ * Acts as a belt-and-suspenders fallback for runtime code that has a
+ * constructor reference and wants its registry identity without going
+ * through a Map lookup (e.g. `SmrtHierarchical._hierarchyCollection`).
+ */
+function setSmrtQualifiedName(
+  ctor: typeof SmrtObject,
+  qualifiedName: string | undefined,
+): void {
+  if (!qualifiedName) return;
+  const existing = Object.getOwnPropertyDescriptor(ctor, '_smrtQualifiedName');
+  if (existing?.value === qualifiedName) {
+    return;
+  }
+
+  Object.defineProperty(ctor, '_smrtQualifiedName', {
+    value: qualifiedName,
+    writable: false,
+    enumerable: false,
+    configurable: true,
+  });
+}
+
 export function register(
   ctor: typeof SmrtObject,
   config: SmartObjectConfig = {},
@@ -495,6 +527,7 @@ export function register(
     existing.schema.tableName = nextTableName;
     existing.constructor = ctor;
     setSmrtTableName(ctor, nextTableName);
+    setSmrtQualifiedName(ctor, existing.qualifiedName);
 
     if (existingKey !== nextKey) {
       const classes = getClasses();
@@ -897,6 +930,7 @@ export function register(
           unique: idx.unique || false,
           where: idx.where,
           description: idx.description,
+          jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
       tableName: manifestEntry.schema.tableName || tableName,
@@ -1007,6 +1041,10 @@ export function register(
 
   // Index constructor for O(1) reverse lookups (Issue #713: constructor-based lookup)
   getConstructorIndex().set(ctor, registrationKey);
+  // Stamp the qualified name on the constructor itself as a fallback for
+  // runtime code that has a constructor reference but might hit a
+  // WeakMap miss (HMR / federated modules / multiple-copy edge cases).
+  setSmrtQualifiedName(ctor, qualifiedName);
 
   verboseLog(
     `🎯 Registered smrt object: ${name} (key: ${registrationKey}) with schema for ${schema.tableName} and ${(validators?.length || 0) + (validationRules?.length || 0)} validators/rules`,
@@ -1308,6 +1346,7 @@ function mergeManifestIntoExistingRegistration(
           unique: idx.unique || false,
           where: idx.where,
           description: idx.description,
+          jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
       tableName: objectDef.schema.tableName || manifestTableName,
@@ -1508,6 +1547,7 @@ export function registerFromManifest(
           unique: idx.unique || false,
           where: idx.where,
           description: idx.description,
+          jsonPath: idx.jsonPath,
         })) || [],
       triggers: [],
       tableName: objectDef.schema.tableName,
@@ -1591,6 +1631,10 @@ export function registerFromManifest(
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
     visibility, // New: Visibility control for manifest filtering
   });
+  // Tag the synthetic stub constructor with the qualified name so the
+  // same constructor-side identity convention holds for manifest-loaded
+  // classes as well as decorator-registered ones.
+  setSmrtQualifiedName(stubConstructor, qualifiedName);
 
   verboseLog(
     `📦 Registered ${simpleClassName} from manifest (key: ${registrationKey}, ${fields.size} fields, ${methods.size} methods)`,

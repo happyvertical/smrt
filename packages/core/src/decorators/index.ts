@@ -53,6 +53,7 @@ export type FieldType =
   | PrimitiveFieldType
   | 'meta'
   | 'foreignKey'
+  | 'crossPackageRef'
   | 'oneToMany'
   | 'manyToMany';
 
@@ -67,6 +68,16 @@ export interface FieldOptions {
   default?: any;
   /** Whether the field is unique */
   unique?: boolean;
+  /**
+   * When `true`, the schema emits a database index targeting this field.
+   *
+   * For regular (column-backed) fields the index is a plain column index.
+   * For `@meta()` fields stored inside `_meta_data` JSONB, the index targets
+   * the JSON path — `json_extract(_meta_data, '$.fieldName')` on SQLite,
+   * `(_meta_data->>'fieldName')` on Postgres — giving WHERE clauses on that
+   * meta key the same performance as a real column.
+   */
+  indexed?: boolean;
   /** Whether the field is nullable */
   nullable?: boolean;
   /** Whether the field should be excluded from database */
@@ -115,7 +126,33 @@ export interface RelationshipFieldOptions extends FieldOptions {
   /** Through table for many-to-many */
   through?: string;
   /** Relationship type */
-  type?: 'foreignKey' | 'oneToMany' | 'manyToMany';
+  type?: 'foreignKey' | 'crossPackageRef' | 'oneToMany' | 'manyToMany';
+}
+
+/**
+ * Options specific to cross-package references.
+ */
+export interface CrossPackageRefOptions
+  extends Omit<RelationshipFieldOptions, 'related' | 'type'> {
+  /**
+   * Storage type for the referenced target id. Defaults to 'uuid'.
+   *
+   * Use 'text' only when the external target model declares
+   * `@smrt({ idType: 'text' })`.
+   */
+  idType?: 'uuid' | 'text';
+
+  /**
+   * When `true`, the framework verifies the referenced object exists at save time.
+   * Validation uses the target package's manifest (loaded on demand via
+   * `ObjectRegistry.ensureManifestLoaded()`), so this requires the target manifest
+   * to be discoverable at runtime.
+   *
+   * Empty/null values are always allowed (treated as "no reference set").
+   *
+   * Defaults to `false` — same behavior as a plain string field today.
+   */
+  validate?: boolean;
 }
 
 /**
@@ -234,6 +271,68 @@ export function foreignKey(
 }
 
 /**
+ * Declares a cross-package foreign key reference.
+ *
+ * Use this for relationships that point to a `SmrtObject` in a *different* package
+ * (e.g. `Customer.profileId` pointing at `@happyvertical/smrt-profiles:Profile`).
+ * Unlike `@foreignKey()`, this decorator does **not** emit a DDL `FOREIGN KEY`
+ * constraint — cross-package classes are not visible at schema-generation time and
+ * adding a constraint would force a circular package dependency. The decorated
+ * property remains a plain `TEXT` column at the database level.
+ *
+ * What you get over a plain string field:
+ * - The relationship is registered with the `ObjectRegistry`, so `loadRelated()`
+ *   and `Collection.list({ include })` can resolve it once the target package's
+ *   manifest is loaded.
+ * - Optional save-time validation (`validate: true`) confirms the referenced
+ *   object exists, catching typos and stale IDs before they hit the database.
+ *
+ * The `qualifiedName` is a fully-qualified class identifier in the form
+ * `@package/scope:ClassName` — for example `@happyvertical/smrt-profiles:Profile`.
+ *
+ * @param qualifiedName - Qualified name of the target class
+ * @param options - Optional field constraints and `validate` flag
+ * @returns A TypeScript property decorator
+ *
+ * @example
+ * ```typescript
+ * @smrt()
+ * class Customer extends SmrtObject {
+ *   @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+ *   profileId: string = '';
+ *
+ *   // With save-time validation
+ *   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { validate: true })
+ *   primaryContactId: string = '';
+ * }
+ * ```
+ *
+ * @see {@link foreignKey} for same-package relationships (emits FK constraint)
+ * @see SmrtObject.loadRelated for runtime resolution
+ */
+export function crossPackageRef(
+  qualifiedName: string,
+  options: CrossPackageRefOptions = {},
+) {
+  return ((
+    targetOrValue: LegacyPropertyDecoratorTarget | undefined,
+    propertyKeyOrContext: CompatiblePropertyDecoratorContext<any, any>,
+  ) => {
+    registerCompatibleFieldDecorator(
+      targetOrValue,
+      propertyKeyOrContext,
+      (className, propertyKey) => {
+        ObjectRegistry.registerFieldDecorator(className, propertyKey, {
+          ...options,
+          type: 'crossPackageRef',
+          related: qualifiedName,
+        });
+      },
+    );
+  }) as CompatiblePropertyDecorator;
+}
+
+/**
  * Declares a one-to-many relationship from this object to a collection of related objects.
  *
  * The decorated property is `transient` — it is not persisted as a database column.
@@ -244,8 +343,19 @@ export function foreignKey(
  * The inverse side (`@foreignKey`) must exist on the `relatedClass` pointing back to this
  * class. The framework discovers it automatically via `ObjectRegistry.getInverseRelationships()`.
  *
+ * **Generated accessor (R10):** registering the class installs a consistent
+ * `get<FieldName>()` instance method (e.g. `items` → `order.getItems()`) that
+ * delegates to `loadRelatedMany('items')`. Generation is additive — a
+ * hand-rolled method of the same name is never overwritten.
+ *
+ * **Disambiguation:** when `relatedClass` declares more than one `@foreignKey`
+ * back to this class, pass `{ foreignKey: '<inverseFieldName>' }` so both
+ * `loadRelatedMany` and the generated accessor resolve the intended inverse
+ * side. Without it the first matching foreign key is used.
+ *
  * @param relatedClass - The class constructor of the child/related objects
- * @param options - Optional relationship options (foreign key override, etc.)
+ * @param options - Optional relationship options. `foreignKey` selects the
+ *   inverse foreign-key field on `relatedClass` when it has more than one.
  * @returns A TypeScript property decorator (sets `transient: true` automatically)
  *
  * @example
@@ -260,6 +370,21 @@ export function foreignKey(
  * class OrderItem extends SmrtObject {
  *   @foreignKey(Order)
  *   orderId: string = '';
+ * }
+ *
+ * const order = await orders.get({ id });
+ * const items = await order.getItems(); // generated; === loadRelatedMany('items')
+ * ```
+ *
+ * @example
+ * ```typescript
+ * // Multiple inverse foreign keys → disambiguate explicitly.
+ * @smrt()
+ * class Profile extends SmrtObject {
+ *   @oneToMany(ProfileRelationship, { foreignKey: 'fromProfileId' })
+ *   relationshipsFrom: ProfileRelationship[] = [];
+ *   @oneToMany(ProfileRelationship, { foreignKey: 'toProfileId' })
+ *   relationshipsTo: ProfileRelationship[] = [];
  * }
  * ```
  *
@@ -300,8 +425,8 @@ export function oneToMany(
  * be decorated with `@smrt({ conflictColumns: ['...', '...'] })` to use the natural
  * key columns for upsert operations.
  *
- * Note: Runtime eager loading for `manyToMany` relationships is not yet implemented.
- * Use `collection.query()` with a JOIN for now.
+ * Runtime loading: call `instance.loadRelatedMany('field')` to lazy-load, or
+ * pass `include: ['field']` to `collection.list()` for batched eager loading.
  *
  * @param relatedClass - The class constructor of the related objects
  * @param options - Relationship options; `through` specifies the junction table name

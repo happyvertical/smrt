@@ -1,7 +1,12 @@
 /**
- * FolderCollection - Collection manager for Folder instances
+ * FolderCollection — collection manager for Folder instances.
  *
- * Provides tree operations for organizing assets into hierarchical folders.
+ * Provides tree-oriented helpers that wrap the inherited SmrtHierarchical
+ * traversal methods, plus folder-content helpers (`getContents`,
+ * `moveAsset`) for working with the assets in a folder.
+ *
+ * Post R3-D, Folder lives on its own `folders` table; tree queries no
+ * longer have to filter by `type_slug='folder'`.
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
@@ -13,21 +18,31 @@ export class FolderCollection extends SmrtCollection<Folder> {
   static readonly _itemClass = Folder;
 
   /**
-   * Get the folder tree starting from an optional root
+   * Get the folder tree starting from an optional root.
+   *
+   * When `rootId` is omitted, returns top-level folders (those with no
+   * parent). When `rootId` is provided, returns all descendants of that
+   * folder via the inherited SmrtHierarchical BFS traversal — same
+   * cycle-safe, one-query-per-depth behaviour as Place/Event.
    *
    * @param rootId - Optional root folder ID; if omitted, returns top-level folders
    * @returns Array of folders (flat list; use parentId to reconstruct tree)
    */
   async getTree(rootId?: string): Promise<Folder[]> {
     if (!rootId) {
-      // Top-level folders (no parent)
       return (await this.list({
         where: { parentId: null },
         orderBy: 'name ASC',
       })) as Folder[];
     }
 
-    // All descendants — walk the tree breadth-first
+    // Walk the tree BFS-by-level, sorting siblings by name within each
+    // batch. This preserves two contracts from the pre-R3-D
+    // implementation that `SmrtHierarchical.getDescendants` alone does
+    // not — global name-sort would interleave parents and grandchildren
+    // (root → Zulu → Alpha would surface as `[Alpha, Zulu]`, putting
+    // grandchild before parent), and storage-order BFS would render
+    // unsorted siblings.
     const result: Folder[] = [];
     const queue: string[] = [rootId];
     const visited = new Set<string>([rootId]);
@@ -52,29 +67,23 @@ export class FolderCollection extends SmrtCollection<Folder> {
   }
 
   /**
-   * Get the path from root to a given folder (ancestors)
+   * Get the path from root to a given folder (ancestors + self).
    *
    * @param folderId - The folder ID to get the path for
    * @returns Array of folders from root to the given folder (inclusive)
    */
   async getPath(folderId: string): Promise<Folder[]> {
-    const path: Folder[] = [];
-    let currentId: string | null = folderId;
-    const visited = new Set<string>();
-
-    while (currentId && !visited.has(currentId)) {
-      visited.add(currentId);
-      const folder = (await this.get({ id: currentId })) as Folder | null;
-      if (!folder) break;
-      path.unshift(folder);
-      currentId = folder.parentId;
-    }
-
-    return path;
+    const folder = (await this.get({ id: folderId })) as Folder | null;
+    if (!folder) return [];
+    const ancestors = await folder.getAncestors();
+    return [...ancestors, folder];
   }
 
   /**
-   * Get all assets that are direct children of a folder
+   * Get all assets that are direct children of a folder.
+   *
+   * Folder membership is recorded on `Asset.folderId`, not on the folder
+   * itself, so this is delegated to the asset collection.
    *
    * @param folderId - The folder ID
    * @param assetCollection - An AssetCollection instance for querying
@@ -90,7 +99,7 @@ export class FolderCollection extends SmrtCollection<Folder> {
   }
 
   /**
-   * Move an asset into a folder
+   * Move an asset into a folder (or out, by passing `null`).
    *
    * @param asset - The asset to move
    * @param folderId - The target folder ID (or null to move to root)

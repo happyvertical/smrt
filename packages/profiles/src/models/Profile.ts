@@ -64,10 +64,15 @@ export class Profile extends SmrtObject {
   @oneToMany('ProfileMetadata')
   metadata: any[] = [];
 
-  @oneToMany('ProfileRelationship')
+  // ProfileRelationship declares multiple foreign keys back to Profile
+  // (fromProfileId / toProfileId / contextProfileId), so each oneToMany names
+  // its inverse side explicitly. This both disambiguates `loadRelatedMany`
+  // and gives the R10-generated `getRelationshipsFrom()` / `getRelationshipsTo()`
+  // accessors the correct inverse foreign key.
+  @oneToMany('ProfileRelationship', { foreignKey: 'fromProfileId' })
   relationshipsFrom: any[] = [];
 
-  @oneToMany('ProfileRelationship')
+  @oneToMany('ProfileRelationship', { foreignKey: 'toProfileId' })
   relationshipsTo: any[] = [];
 
   constructor(options: ProfileOptions = {}) {
@@ -232,9 +237,9 @@ export class Profile extends SmrtObject {
     }
 
     const profileAssets = await this.getProfileAssetCollection();
-    const linkedAssets = await profileAssets.getForProfile(
+    const linkedAssets = await profileAssets.byLeft(
       this.id,
-      relationship,
+      relationship ? { relationship } : {},
     );
 
     return resolveOwnedAssetsById(
@@ -257,13 +262,11 @@ export class Profile extends SmrtObject {
     assertValidOwnedAssetSortOrder(sortOrder);
 
     const profileAssets = await this.getProfileAssetCollection();
-    await profileAssets.attach(
-      this.id,
-      asset.id,
+    await profileAssets.attach(this.id, asset.id, {
       relationship,
       sortOrder,
-      this.tenantId,
-    );
+      tenantId: this.tenantId,
+    });
   }
 
   async removeAsset(assetId: string, relationship?: string): Promise<void> {
@@ -272,7 +275,11 @@ export class Profile extends SmrtObject {
     }
 
     const profileAssets = await this.getProfileAssetCollection();
-    await profileAssets.detach(this.id, assetId, relationship);
+    await profileAssets.detach(
+      this.id,
+      assetId,
+      relationship ? { relationship } : {},
+    );
   }
 
   /**

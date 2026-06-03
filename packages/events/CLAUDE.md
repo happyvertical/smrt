@@ -4,7 +4,7 @@ Infinite-nesting event hierarchy with series, types, participants, and role/plac
 
 ## Models
 
-- **Event** (STI): self-referencing parent-child via `parentEventId`. Links to `seriesId`, `typeId`, `placeId`. Status: scheduled/in_progress/completed/cancelled/postponed. Hierarchy traversal: `getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getRootEvent()`, `getHierarchy()`.
+- **Event** (STI, extends `SmrtHierarchical`): self-referencing parent-child via `parentId` (UUID). Links to `seriesId`, `typeId`, `placeId`. Status: scheduled/in_progress/completed/cancelled/postponed. Hierarchy traversal (`getParent()`, `getChildren()`, `getAncestors()`, `getDescendants()`, `getHierarchy()`, `moveTo()`) is provided by `SmrtHierarchical`; `getRootEvent()` and `isRoot()` remain on `Event`.
 - **EventAsset**: dedicated owned-asset join in `event_assets` with `relationship` and `sortOrder`.
 - **EventType**: classification with JSON schema for custom fields per type.
 - **EventSeries**: recurrence patterns (daily/weekly/monthly/yearly).

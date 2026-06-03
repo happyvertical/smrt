@@ -138,42 +138,37 @@ export const dbDiffCommand: CLICommand = {
       const { getDatabase } = await import('@happyvertical/sql');
       db = await getDatabase({ type: dbType, url: dbUrl });
 
-      // 5. Get all merged schemas
-      const allSchemas = ObjectRegistry.getAllSchemas();
+      // 5. Get all merged schemas.
+      //
+      // Parity (#1335): use the SAME schema source as db:migrate
+      // (`getAllSchemasAsDefinitions()`) rather than re-deriving columns by
+      // regex-parsing the generated DDL string. The old DDL-reparse path
+      // (`getAllSchemas()` + `parseColumnsFromDDL`) could and did diverge from
+      // the structured column definitions migrate uses — db:diff would report a
+      // different change set than db:migrate applied. The diff must be an exact
+      // preview of what migrate will do, so both commands must feed the
+      // SchemaComparer identical column metadata.
+      const schemaDefinitions = ObjectRegistry.getAllSchemasAsDefinitions();
 
       // 6. Import diff utilities
       const { SchemaComparer } = await import(
         '@happyvertical/smrt-core/migrations'
       );
 
-      // Convert merged schemas to SchemaDefinition format
-      // The allSchemas is Record<tableName, { ddl, tableName, indexes }>
-      // We need to convert to Record<tableName, SchemaDefinition>
-      const schemaDefinitions: Record<string, any> = {};
-
-      for (const [tableName, schema] of Object.entries(allSchemas)) {
-        // Parse columns from DDL if not already provided
-        const columns = parseColumnsFromDDL(schema.ddl);
-        const indexes = parseIndexesFromSchema(schema.indexes || []);
-
-        schemaDefinitions[tableName] = {
-          tableName,
-          ddl: schema.ddl,
-          columns,
-          indexes,
-          triggers: [],
-          foreignKeys: [],
-          version: '1.0.0',
-          dependencies: [],
-        };
-      }
-
-      // 7. Generate diff
+      // 7. Generate diff.
+      //
+      // Parity (#1335): mirror db:migrate's comparer options exactly. Previously
+      // `ignoreTypeMismatches: !options.verbose` meant a non-verbose db:diff
+      // silently dropped `type_mismatch` rows that db:migrate (which never sets
+      // that flag) would still surface — another way the two commands disagreed.
+      // `--verbose` now only controls how much DETAIL we print, never which
+      // changes are computed. The full change set (including type_mismatch and
+      // type_upgrade) is always rendered below so the diff is an honest preview
+      // of what migrate will do.
       const comparer = new SchemaComparer(db, {
         includeDroppedTables: false,
         includeDroppedColumns: false,
         includeDroppedIndexes: Boolean(options['drop-indexes']),
-        ignoreTypeMismatches: !options.verbose,
       });
 
       const diff = await comparer.compare(schemaDefinitions);
@@ -219,6 +214,9 @@ export const dbDiffCommand: CLICommand = {
       );
       const indexDrops = diff.changes.filter(
         (c: any) => c.type === 'drop_index',
+      );
+      const typeUpgrades = diff.changes.filter(
+        (c: any) => c.type === 'type_upgrade',
       );
       const typeMismatches = diff.changes.filter(
         (c: any) => c.type === 'type_mismatch',
@@ -278,6 +276,22 @@ export const dbDiffCommand: CLICommand = {
         console.log();
       }
 
+      // Type upgrades are auto-applied by db:migrate. They MUST appear in the
+      // human diff too — otherwise db:diff and db:migrate report different
+      // change sets (#1335: db:diff showed 31 changes while db:migrate computed
+      // 32 and aborted on an upgrade the operator never saw). The diff is a
+      // preview of what migrate will do; an applied change that the preview
+      // hides is a parity bug.
+      if (typeUpgrades.length > 0) {
+        console.log(`  🔁 Type upgrades (${typeUpgrades.length}):`);
+        for (const change of typeUpgrades) {
+          console.log(
+            `     ⤴ ${change.table}.${change.name}: ${change.mismatch?.actual} → ${change.mismatch?.expected}`,
+          );
+        }
+        console.log('     (auto-applied by smrt db:migrate)\n');
+      }
+
       if (typeMismatches.length > 0) {
         console.log(`  ⚠️  Type mismatches (${typeMismatches.length}):`);
         for (const change of typeMismatches) {
@@ -313,101 +327,3 @@ export const dbDiffCommand: CLICommand = {
     }
   },
 };
-
-/**
- * Parse column definitions from DDL string
- */
-function parseColumnsFromDDL(ddl: string): Record<string, any> {
-  const columns: Record<string, any> = {};
-
-  // Try to extract columns from CREATE TABLE statement
-  const createTableMatch = ddl.match(
-    /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["']?(\w+)["']?\s*\(([\s\S]+?)\)(?:\s*;)?$/im,
-  );
-
-  if (!createTableMatch) {
-    return columns;
-  }
-
-  const columnSection = createTableMatch[2];
-
-  // Split by comma, respecting parentheses
-  const parts: string[] = [];
-  let depth = 0;
-  let current = '';
-
-  for (const char of columnSection) {
-    if (char === '(') depth++;
-    else if (char === ')') depth--;
-
-    if (char === ',' && depth === 0) {
-      parts.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  if (current.trim()) {
-    parts.push(current.trim());
-  }
-
-  for (const part of parts) {
-    // Skip constraints
-    if (
-      /^\s*(FOREIGN\s+KEY|PRIMARY\s+KEY|UNIQUE|CHECK|CONSTRAINT)/i.test(part)
-    ) {
-      continue;
-    }
-
-    // Parse column: "column_name" TYPE [constraints]
-    const colMatch = part.match(
-      /^["']?(\w+)["']?\s+(\w+(?:\s*\([^)]+\))?)\s*(.*)?$/i,
-    );
-
-    if (colMatch) {
-      const colName = colMatch[1];
-      const colType = colMatch[2].toUpperCase();
-      const constraints = colMatch[3] || '';
-
-      columns[colName] = {
-        type: colType,
-        notNull:
-          /NOT\s+NULL/i.test(constraints) || /PRIMARY\s+KEY/i.test(constraints),
-        unique: /UNIQUE/i.test(constraints),
-        primaryKey: /PRIMARY\s+KEY/i.test(constraints),
-      };
-    }
-  }
-
-  return columns;
-}
-
-/**
- * Parse index definitions from schema indexes array
- */
-function parseIndexesFromSchema(indexes: string[]): any[] {
-  const result: any[] = [];
-
-  for (const indexSQL of indexes) {
-    const match = indexSQL.match(
-      /CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([^"]+)"|'([^']+)'|(\w+))\s+ON\s+(?:"[^"]+"|'[^']+'|\w+)\s*\(([^)]+)\)/i,
-    );
-
-    if (match) {
-      const isUnique = !!match[1];
-      const indexName = match[2] ?? match[3] ?? match[4];
-      const columnsStr = match[5];
-      const columns = columnsStr
-        .split(',')
-        .map((c: string) => c.trim().replace(/["']/g, ''));
-
-      result.push({
-        name: indexName,
-        columns,
-        unique: isUnique,
-      });
-    }
-  }
-
-  return result;
-}

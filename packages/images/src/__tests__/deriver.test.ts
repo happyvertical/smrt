@@ -21,9 +21,9 @@ describe('ImageDeriver', () => {
 
     vi.spyOn(deriver, 'derive').mockResolvedValue(derived);
 
-    const associate = vi.fn().mockResolvedValue(undefined);
+    const attach = vi.fn().mockResolvedValue(undefined);
     const associations = {
-      associate,
+      attach,
     } as unknown as AssetAssociationCollection;
 
     await deriver.deriveWithAssociations(
@@ -32,20 +32,24 @@ describe('ImageDeriver', () => {
       associations,
     );
 
-    expect(associate).toHaveBeenCalledTimes(2);
-    expect(associate).toHaveBeenNthCalledWith(
+    expect(attach).toHaveBeenCalledTimes(2);
+    expect(attach).toHaveBeenNthCalledWith(
       1,
+      'Image',
+      'derived-1',
       'source-1',
-      'Image',
-      'derived-1',
-      'derivation-source',
+      {
+        role: 'derivation-source',
+      },
     );
-    expect(associate).toHaveBeenNthCalledWith(
+    expect(attach).toHaveBeenNthCalledWith(
       2,
-      'source-2',
       'Image',
       'derived-1',
-      'derivation-source',
+      'source-2',
+      {
+        role: 'derivation-source',
+      },
     );
   });
 });

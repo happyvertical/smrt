@@ -11,10 +11,13 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { Profile } from '@happyvertical/smrt-profiles';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { VoiceProfile } from '@happyvertical/smrt-voice';
 import type { CharacterAssetRole } from './character-asset.js';
 import {
   assertValidVideoAssetRole,
@@ -167,13 +170,15 @@ export class Character extends SmrtObject {
   description: string | null = null;
 
   /** Asset ID of the seed image for I2V generation */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   imageAssetId: string | null = null;
 
   /** Asset ID of pre-baked base motion video */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   baseMotionAssetId: string | null = null;
 
   /** Voice profile ID for speech synthesis */
-  @foreignKey(() => VoiceProfile)
+  @crossPackageRef('@happyvertical/smrt-voice:VoiceProfile')
   voiceProfileId: string | null = null;
 
   /** Branding configuration for video overlays */
@@ -194,7 +199,7 @@ export class Character extends SmrtObject {
   sceneConfigs: CharacterSceneConfig[] = [];
 
   /** 1-1 profile record for this character */
-  @foreignKey(() => Profile)
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId: string | null = null;
 
   constructor(options: CharacterOptions = {}) {
@@ -320,9 +325,9 @@ export class Character extends SmrtObject {
       ? await listCanonicalOwnedAssetIds({
           tableName: 'character_assets',
           loadLinks: async () =>
-            (await this.getCharacterAssetCollection()).getForCharacter(
+            (await this.getCharacterAssetCollection()).byLeft(
               this.id as string,
-              role,
+              role ? { role } : {},
             ),
         })
       : [];
@@ -366,13 +371,11 @@ export class Character extends SmrtObject {
     assertValidVideoAssetSortOrder(sortOrder);
 
     const characterAssets = await this.getCharacterAssetCollection();
-    await characterAssets.attach(
-      this.id,
-      asset.id,
+    await characterAssets.attach(this.id, asset.id, {
       role,
       sortOrder,
-      this.tenantId,
-    );
+      tenantId: this.tenantId,
+    });
 
     if (this.setLegacyFieldAssetId(role, asset.id)) {
       await this.save();
@@ -385,7 +388,7 @@ export class Character extends SmrtObject {
     }
 
     const characterAssets = await this.getCharacterAssetCollection();
-    await characterAssets.detach(this.id, assetId, role);
+    await characterAssets.detach(this.id, assetId, role ? { role } : {});
 
     if (this.clearLegacyFieldAssetId(assetId, role)) {
       await this.save();

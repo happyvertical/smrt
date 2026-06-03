@@ -554,7 +554,12 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     ).toThrow(ConfigurationError);
   });
 
-  it('should return correct simple names from getDescendants()', () => {
+  // R5-canon switched these methods to return qualified names; updated
+  // expectations accordingly. (The test title was renamed from
+  // "should return correct simple names from getDescendants()" to reflect
+  // the new behavior; the issue's spirit — qualified keys as the canon —
+  // is preserved.)
+  it('should return correct qualified names from getDescendants()', () => {
     @smrt({ tableStrategy: 'sti' })
     class QualifiedBase extends SmrtObject {
       title: string = '';
@@ -566,10 +571,10 @@ describe('Issue #951: Qualified Names as Primary Keys', () => {
     }
 
     const descendants = ObjectRegistry.getDescendants('QualifiedBase');
-    expect(descendants).toContain('QualifiedChild');
+    expect(descendants).toContain('@happyvertical/smrt-core:QualifiedChild');
 
-    // Should not contain qualified keys
-    expect(descendants.some((d) => d.includes(':'))).toBe(false);
+    // Every returned descendant should be a qualified key.
+    expect(descendants.every((d) => d.includes(':'))).toBe(true);
   });
 
   it('should return qualified names from getDescendants() for qualified base names', () => {

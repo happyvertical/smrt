@@ -309,12 +309,22 @@ export async function getTestDatabase(
 
   // Use the same schema generation as production
   const schemaGenerator = new SchemaGenerator();
+  const ddlEngine =
+    type === 'json' || typeof (db as any).exportTable === 'function'
+      ? 'json'
+      : 'sqlite';
 
   // Track created tables to avoid duplicates (STI base classes)
   const createdTables = new Set<string>();
 
   for (const className of classNames) {
-    // Skip STI children - their schema is part of the base class table
+    // R11: the registration carries idType (native uuid vs text); read it
+    // below when building runtimeSchemaConfig.
+    const registered = ObjectRegistry.getClass(className);
+    // Skip STI children - their schema is part of the base class table.
+    // main (#1324): isSTIChild() compares RegisteredClass *identity* rather
+    // than raw strings, so it stays correct under R5-canon (getSTIBase returns
+    // qualified names) while also handling collection/override registrations.
     if (isSTIChild(className)) {
       continue;
     }
@@ -328,6 +338,8 @@ export async function getTestDatabase(
     const strategy = ObjectRegistry.getTableStrategy(className);
     const runtimeSchemaConfig = {
       conflictColumns: ObjectRegistry.getConflictColumns(className),
+      idType: registered?.config.idType,
+      registry: ObjectRegistry,
     };
 
     // Generate schema using SchemaGenerator (same as migrations)
@@ -337,6 +349,7 @@ export async function getTestDatabase(
             className,
             tableName,
             fields,
+            runtimeSchemaConfig,
           )
         : schemaGenerator.generateSchemaFromRegistry(
             className,
@@ -346,25 +359,25 @@ export async function getTestDatabase(
           );
 
     // Generate DDL using generateSQL() - the single source of truth
-    const ddl = schemaGenerator.generateSQL(schema);
+    const ddl = schemaGenerator.generateSQL(schema, ddlEngine);
 
     try {
       await db.query(ddl);
       createdTables.add(tableName);
 
-      // Create indexes
-      for (const index of schema.indexes) {
-        const uniqueStr = index.unique ? 'UNIQUE ' : '';
-        const quotedColumns = index.columns.map((c) => `"${c}"`).join(', ');
-        const indexSQL = `CREATE ${uniqueStr}INDEX IF NOT EXISTS "${index.name}" ON "${tableName}" (${quotedColumns})`;
-
+      // Create indexes (use DDL strategy so jsonPath / where / etc. render)
+      const ddlStrategy = (
+        await import('../schema/ddl/index.js')
+      ).getDDLStrategy(ddlEngine);
+      const indexStatements = ddlStrategy.generateIndexes(schema);
+      for (const indexSQL of indexStatements) {
         try {
           await db.query(indexSQL);
         } catch (indexError) {
           // Log but don't fail on index creation errors
           // Some indexes may fail if columns don't exist (STI meta fields)
           console.warn(
-            `[getTestDatabase] Warning: Failed to create index ${index.name}: ${indexError instanceof Error ? indexError.message : String(indexError)}`,
+            `[getTestDatabase] Warning: Failed to create index: ${indexError instanceof Error ? indexError.message : String(indexError)} (SQL: ${indexSQL})`,
           );
         }
       }

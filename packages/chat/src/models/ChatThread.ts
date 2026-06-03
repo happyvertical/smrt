@@ -1,4 +1,4 @@
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ChatThreadOptions } from '../types.js';
 
@@ -13,9 +13,9 @@ export class ChatThread extends SmrtObject {
   @tenantId()
   tenantId: string = '';
 
-  @field({ required: true })
+  @foreignKey('ChatRoom', { required: true })
   roomId: string = '';
-  @field()
+  @foreignKey('ChatMessage')
   rootMessageId: string = '';
   @field()
   title: string = '';

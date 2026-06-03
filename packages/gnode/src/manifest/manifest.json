@@ -1,7 +1,11 @@
 {
   "version": "1.0.0",
-  "timestamp": 1767322690409,
+  "timestamp": 1780379225707,
+  "packageName": "@happyvertical/smrt-gnode",
+  "packageVersion": "0.25.8",
   "objects": {},
   "moduleType": "smrt",
-  "packageName": "@happyvertical/smrt-gnode"
+  "smrtDependencies": [
+    "@happyvertical/smrt-core"
+  ]
 }

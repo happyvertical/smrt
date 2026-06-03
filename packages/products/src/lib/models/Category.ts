@@ -5,6 +5,7 @@
  */
 
 import {
+  foreignKey,
   SmrtObject,
   type SmrtObjectOptions,
   smrt,
@@ -58,6 +59,7 @@ export class Category extends SmrtObject {
 
   name = '';
   description = '';
+  @foreignKey('Category')
   parentId?: string; // For hierarchical categories
   level = 0; // Category depth in hierarchy
   productCount = 0; // Number of products in this category

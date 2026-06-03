@@ -132,8 +132,10 @@ async function findCachedVariant(
   externalId: string,
 ): Promise<Asset | null> {
   if (!input.asset.id) return null;
-  const children = await input.runtime.collection.getChildren(input.asset.id);
-  return children.find((child) => child.externalId === externalId) ?? null;
+  const derivatives = await input.runtime.collection.getDerivatives(
+    input.asset.id,
+  );
+  return derivatives.find((child) => child.externalId === externalId) ?? null;
 }
 
 export function createLocalAssetProcessor(

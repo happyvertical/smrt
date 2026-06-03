@@ -28,6 +28,7 @@
  * ```
  */
 
+import { applyOneToManyChildAccessors } from './child-accessors';
 import { SmrtCollection } from './collection';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
 import type {
@@ -171,6 +172,60 @@ async function discoverInstalledSmrtPackages(): Promise<string[]> {
 
   const { discoverSmrtPackages } = await import(discoverSpecifier);
   return discoverSmrtPackages();
+}
+
+/**
+ * Recover a package's `manifest.json` when the path derived from the
+ * `__smrt-register__` shim's `import.meta.url` does not exist.
+ *
+ * The shim resolves the manifest with `new URL('./manifest.json',
+ * import.meta.url)`, which assumes the compiled side-effect sits directly
+ * next to `dist/manifest.json`. Vite chunk-splitting is non-deterministic and
+ * occasionally hoists that side-effect into a `dist/chunks/<hash>.js` chunk,
+ * so the URL resolves to a non-existent `dist/chunks/manifest.json`. This
+ * walks up a bounded number of parent directories looking for a sibling
+ * `manifest.json`, keeping self-registration working regardless of where the
+ * bundler placed the shim (#1331).
+ *
+ * @param builtins - Node fs/path/url modules from `getNodeBuiltins()`.
+ * @param missingPath - The non-existent manifest path the shim derived.
+ * @returns The recovered manifest path, or `null` if none was found.
+ */
+function resolveManifestByUpwardSearch(
+  builtins: NonNullable<ReturnType<typeof getNodeBuiltins>>,
+  missingPath: string,
+): string | null {
+  const { fs, path } = builtins;
+  const fileName = path.basename(missingPath);
+  // Bound the walk so a stray, deeply-nested path can never trigger a slow or
+  // unbounded filesystem crawl. Chunks are normally one directory deep
+  // (`dist/chunks/`), so a handful of levels is comfortably sufficient. The
+  // package-root stop below is the authoritative guard; this is just a backstop.
+  const MAX_LEVELS = 4;
+  let dir = path.dirname(missingPath);
+  for (let level = 0; level < MAX_LEVELS; level++) {
+    const parent = path.dirname(dir);
+    // Reached the filesystem root — `dirname` is now idempotent.
+    if (parent === dir) {
+      break;
+    }
+    const candidate = path.join(parent, fileName);
+    if (fs.existsSync(candidate)) {
+      return candidate;
+    }
+    // Never search above the package root. The real manifest is always at
+    // `<pkg>/dist/manifest.json`; once we have checked the directory that holds
+    // `package.json` (the package root), stop. Otherwise a chunk whose
+    // `dist/manifest.json` is genuinely absent could match an unrelated
+    // `manifest.json` from a parent package, the monorepo root, or a
+    // `node_modules` ancestor — registering the WRONG package's schema, which
+    // is worse than a clean no-op.
+    if (fs.existsSync(path.join(parent, 'package.json'))) {
+      break;
+    }
+    dir = parent;
+  }
+  return null;
 }
 
 /**
@@ -1071,14 +1126,30 @@ export class ObjectRegistry {
         filePath = urlString;
       }
 
+      // The `__smrt-register__` shim resolves the manifest via
+      // `new URL('./manifest.json', import.meta.url)`, which assumes the
+      // compiled side-effect sits directly next to `dist/manifest.json`.
+      // Vite chunk-splitting is non-deterministic and sometimes hoists that
+      // side-effect into a `dist/chunks/<hash>.js` chunk (observed for
+      // smrt-users / smrt-profiles), so the shim's URL resolves to a
+      // non-existent `dist/chunks/manifest.json` and self-registration
+      // silently no-ops — dropping every plain (undecorated) field from the
+      // package's models in consumer runtimes (#1331). When the direct path
+      // is missing, walk up a bounded number of parent directories to locate
+      // the real `manifest.json`. This keeps resolution deterministic
+      // regardless of where the bundler places the shim.
       if (!builtins.fs.existsSync(filePath)) {
-        recordRegistryDiagnostic(
-          'warn',
-          'PACKAGE_MANIFEST_NOT_FOUND',
-          `Package manifest not found at ${filePath}. Self-registration is a no-op; the vitest plugin may still populate this manifest via its own path.`,
-          { manifestUrl: String(manifestUrl), filePath },
-        );
-        return { loaded: false, objectsRegistered: 0 };
+        const recovered = resolveManifestByUpwardSearch(builtins, filePath);
+        if (!recovered) {
+          recordRegistryDiagnostic(
+            'warn',
+            'PACKAGE_MANIFEST_NOT_FOUND',
+            `Package manifest not found at ${filePath}. Self-registration is a no-op; the vitest plugin may still populate this manifest via its own path.`,
+            { manifestUrl: String(manifestUrl), filePath },
+          );
+          return { loaded: false, objectsRegistered: 0 };
+        }
+        filePath = recovered;
       }
 
       const parsed = JSON.parse(
@@ -1914,8 +1985,20 @@ export class ObjectRegistry {
    * Uses topological sort to ensure that classes are initialized in
    * an order that respects foreignKey dependencies (dependencies first).
    *
-   * @returns Array of class names in initialization order
-   * @throws {Error} If circular dependencies are detected
+   * Foreign-key cycles (e.g. smrt-chat's ChatMessage.threadId -> ChatThread
+   * and ChatThread.rootMessageId -> ChatMessage) are BROKEN rather than
+   * treated as a fatal error: when a back-edge is encountered the recursion
+   * stops there, so every class still appears in the returned order. SMRT does
+   * not emit real DB `FOREIGN KEY` constraints in its generated CREATE TABLE
+   * DDL, so a table can be created before its cyclic reference target exists —
+   * the reference is satisfied once both tables are present. This mirrors the
+   * standard RDBMS approach (create tables first, wire cyclic references
+   * afterward) and matches SchemaManager.sortByDependencies, which already
+   * tolerates cycles. See issue #1333.
+   *
+   * @returns Array of class names in initialization order. Every registered
+   *   class appears exactly once; cycle back-edges are dropped from the
+   *   ordering constraints.
    * @example
    * ```typescript
    * const order = ObjectRegistry.getInitializationOrder();
@@ -1928,13 +2011,16 @@ export class ObjectRegistry {
     const visited = new Set<string>();
     const visiting = new Set<string>();
     const order: string[] = [];
+    const cycleMembers = new Set<string>();
 
     function visit(className: string): void {
-      // Circular dependency check
+      // Back-edge: this class is already on the current DFS path, so following
+      // it would close a foreign-key cycle. Break the cycle by stopping here
+      // instead of throwing — the class is created earlier on the path and the
+      // cyclic reference resolves once both tables exist (#1333).
       if (visiting.has(className)) {
-        throw new Error(
-          `Circular dependency detected involving class: ${className}`,
-        );
+        cycleMembers.add(className);
+        return;
       }
 
       // Already processed
@@ -1960,6 +2046,18 @@ export class ObjectRegistry {
       if (!visited.has(className)) {
         visit(className);
       }
+    }
+
+    if (cycleMembers.size > 0) {
+      // Informational only — cycles are handled, not fatal. Surfacing the
+      // involved classes helps operators understand why strict FK ordering
+      // could not be honored for these tables.
+      console.warn(
+        `[ObjectRegistry] Foreign-key cycle(s) detected and broken for ordering: ${[
+          ...cycleMembers,
+        ].join(', ')}. Tables are created without strict cyclic ordering; ` +
+          'SMRT does not emit DB-level FOREIGN KEY constraints, so this is safe.',
+      );
     }
 
     return order;
@@ -2010,15 +2108,33 @@ export class ObjectRegistry {
   /**
    * Get full inheritance chain for a class
    *
-   * Returns array of class names from base (SmrtObject) to child.
+   * Returns array of registered ancestor class names from the oldest
+   * registered ancestor down to the input class. Framework base classes
+   * (`SmrtObject`, `SmrtClass`, `SmrtCollection`) are **NOT** included
+   * because they are never registered — the walk terminates one step
+   * before them.
+   *
+   * Chain entries are **qualified names** (`@package/name:ClassName`)
+   * whenever the corresponding registration has one — i.e. for every
+   * class loaded via a manifest or `@smrt()` decorator with a package
+   * context. Classes registered without a package (some tests) fall
+   * back to their simple name.
+   *
    * Results are cached globally for performance (~100x faster than re-walking).
    *
-   * @param className - Name of the registered class
-   * @returns Array of class names from base to child, or empty array if not found
+   * @param className - Name of the registered class (simple or qualified)
+   * @returns Array of class names from oldest registered ancestor to
+   *   the input class, or empty array if not found
    * @example
    * ```typescript
-   * const chain = ObjectRegistry.getInheritanceChain('BentleyContent');
-   * // ['SmrtObject', 'Content', 'PraecoContent', 'BentleyContent']
+   * const chain = ObjectRegistry.getInheritanceChain(
+   *   '@happyvertical/smrt-content:BentleyContent',
+   * );
+   * // [
+   * //   '@happyvertical/smrt-content:Content',
+   * //   '@happyvertical/smrt-content:PraecoContent',
+   * //   '@happyvertical/smrt-content:BentleyContent',
+   * // ]
    * ```
    */
   static getInheritanceChain(className: string): string[] {
@@ -2068,7 +2184,11 @@ export class ObjectRegistry {
       }
       visited.add(current);
 
-      chain.unshift(current.name); // Add at start to build [ancestor, ..., descendant]
+      // R5-canon: emit the qualified name when the registration has one
+      // so chain entries are unambiguous across packages. Falls back to
+      // the simple `current.name` for classes that lack a package context
+      // (some tests, or classes that bypassed manifest registration).
+      chain.unshift(current.qualifiedName ?? current.name); // [ancestor, ..., descendant]
       if (!current.extends) break;
 
       // Skip framework base classes that are never registered
@@ -2570,6 +2690,59 @@ export class ObjectRegistry {
   }
 
   /**
+   * Names by which an instance of `className` can be referenced by an inverse
+   * foreign key: its own (simple) class name plus every registered ancestor in
+   * its inheritance chain.
+   *
+   * Used by oneToMany resolution so an STI subclass can resolve a relationship
+   * declared on its base — the inverse `@foreignKey` is declared against the
+   * base class name, while the runtime instance may be a subclass.
+   *
+   * @param className - Simple or qualified class name
+   * @returns Set of names (simple and, where available, qualified) the
+   *   instance is assignable to
+   */
+  static getSelfReferableNames(className: string): Set<string> {
+    const names = new Set<string>([className]);
+    for (const ancestor of ObjectRegistry.getInheritanceChain(className)) {
+      names.add(ancestor);
+      const simple = ObjectRegistry.getClass(ancestor)?.name;
+      if (simple) {
+        names.add(simple);
+      }
+    }
+    return names;
+  }
+
+  /**
+   * Inverse relationships targeting `className` OR any (STI) ancestor it
+   * inherits from.
+   *
+   * `getInverseRelationships` matches the target class name exactly. This
+   * variant also matches inverse foreign keys declared against an ancestor,
+   * so an STI subclass instance can resolve a `@oneToMany` declared on its
+   * base — whose inverse `@foreignKey` points at the base class name.
+   *
+   * @param className - Name of the class to find inverse relationships for
+   * @returns Relationship metadata whose target is the class or one of its
+   *   registered ancestors
+   */
+  static getInverseRelationshipsForSelf(
+    className: string,
+  ): RelationshipMetadata[] {
+    const names = ObjectRegistry.getSelfReferableNames(className);
+    const result: RelationshipMetadata[] = [];
+    for (const [, relationships] of ObjectRegistry.getRelationshipMap()) {
+      for (const rel of relationships) {
+        if (names.has(rel.targetClass)) {
+          result.push(rel);
+        }
+      }
+    }
+    return result;
+  }
+
+  /**
    * Get table inheritance strategy for a class
    *
    * Returns the table strategy (CTI or STI) for a class, with automatic
@@ -2705,11 +2878,16 @@ export class ObjectRegistry {
    * with `tableStrategy: 'sti'`. This is the class that owns the shared table.
    *
    * **Returns:**
-   * - The base class name if STI is configured in the hierarchy
-   * - null if the class uses CTI strategy
+   * - The base class's **qualified name** (`@package/name:ClassName`) when
+   *   the registration has one — same convention as
+   *   `getInheritanceChain`. Falls back to the simple name only for
+   *   registrations without a package context (some test classes).
+   * - `null` if the class uses CTI strategy.
+   *
+   * Accepts either a simple or a qualified name on input.
    *
    * @param className - Name of the class to find STI base for
-   * @returns Base class name or null if CTI
+   * @returns Qualified base class name or null if CTI
    * @example
    * ```typescript
    * @smrt({ tableStrategy: 'sti' })
@@ -2718,8 +2896,10 @@ export class ObjectRegistry {
    * @smrt()
    * class Meeting extends Event { }
    *
-   * ObjectRegistry.getSTIBase('Meeting'); // 'Event'
-   * ObjectRegistry.getSTIBase('Event'); // 'Event'
+   * ObjectRegistry.getSTIBase('@happyvertical/smrt-events:Meeting');
+   * // '@happyvertical/smrt-events:Event'
+   * ObjectRegistry.getSTIBase('@happyvertical/smrt-events:Event');
+   * // '@happyvertical/smrt-events:Event'
    * ```
    */
   static getSTIBase(className: string): string | null {
@@ -2739,6 +2919,10 @@ export class ObjectRegistry {
     // 2. registerFromManifest() derives a tableName from class name when null
     // 3. This causes tableName mismatch ('meetings' vs 'events')
     // 4. Instead, find the oldest ancestor with EXPLICIT tableStrategy: 'sti'
+    //
+    // R5-canon: chain entries are qualified names (when the class has a
+    // package context), so the returned STI base is also qualified —
+    // ambiguity across packages with same-simple-name STI roots is gone.
     const chain = ObjectRegistry.getInheritanceChain(className);
 
     // Walk the chain (ordered [root, ..., className]) to find oldest STI base
@@ -2751,13 +2935,15 @@ export class ObjectRegistry {
       if (ancestor.config?.tableStrategy === 'sti') {
         // Found the OLDEST ancestor with explicit STI - this is the base
         // All descendants inherit from this table regardless of their tableName
-        return ancestorName;
+        return ancestor.qualifiedName ?? ancestor.name;
       }
     }
 
     // If no explicit STI ancestor found but we detected STI strategy,
-    // this class is its own STI base (it must have declared tableStrategy: 'sti')
-    return className;
+    // this class is its own STI base (it must have declared tableStrategy: 'sti').
+    // Return its qualified name when available.
+    const self = ObjectRegistry.findClass(className);
+    return self?.qualifiedName ?? self?.name ?? className;
   }
 
   /**
@@ -2771,8 +2957,13 @@ export class ObjectRegistry {
    * - Polymorphic queries: Find all types to instantiate
    * - Documentation: Show class hierarchy
    *
-   * @param className - Name of the base class
-   * @returns Array of descendant class names (direct and indirect)
+   * Accepts either a simple or a qualified name on input. The returned
+   * descendant names are **qualified** (`@package/name:ClassName`) when
+   * the registration has one — same convention as `getInheritanceChain`
+   * and `getSTIBase`.
+   *
+   * @param className - Name of the base class (simple or qualified)
+   * @returns Array of qualified descendant class names (direct and indirect)
    * @example
    * ```typescript
    * @smrt({ tableStrategy: 'sti' })
@@ -2784,32 +2975,45 @@ export class ObjectRegistry {
    * @smrt()
    * class HockeyGame extends Event { }
    *
-   * ObjectRegistry.getDescendants('Event'); // ['Meeting', 'HockeyGame']
+   * ObjectRegistry.getDescendants('@happyvertical/smrt-events:Event');
+   * // [
+   * //   '@happyvertical/smrt-events:Meeting',
+   * //   '@happyvertical/smrt-events:HockeyGame',
+   * // ]
    * ```
    */
   static getDescendants(className: string): string[] {
     const descendants: string[] = [];
-    const baseClass = ObjectRegistry.findClass(className);
-    const baseSimpleName = baseClass?.name;
-    const returnQualifiedNames = isQualifiedName(className);
+    // main: dedup by RegisteredClass identity so a class registered under
+    // multiple map keys (simple + qualified) is only emitted once.
     const seenRegistrations = new Set<RegisteredClass>();
 
+    // R5-canon: inheritance chains are emitted with qualified names when
+    // available, so the comparison against `className` must accept either
+    // a qualified or simple input from the caller. Resolve once up-front
+    // to whichever form actually appears in the chain.
+    const target = ObjectRegistry.findClass(className);
+    const targetKey = target?.qualifiedName ?? target?.name ?? className;
+
     // Find all classes that extend the given class
-    // Issue #951: Use simple name for comparison since inheritance chains contain simple names
     for (const [_key, childClass] of ObjectRegistry.classes) {
+      // main: skip classes already visited under another map key so the same
+      // descendant isn't pushed twice (simple + qualified registrations point
+      // at the same RegisteredClass object).
       if (seenRegistrations.has(childClass)) {
         continue;
       }
       seenRegistrations.add(childClass);
 
-      const simpleName = childClass.name || _key;
-      const lookupName = childClass.qualifiedName || _key || simpleName;
-      const chain = ObjectRegistry.getInheritanceChain(lookupName);
-      const matchesBase =
-        chain.includes(className) ||
-        (baseSimpleName ? chain.includes(baseSimpleName) : false);
-      if (matchesBase && childClass !== baseClass) {
-        descendants.push(returnQualifiedNames ? lookupName : simpleName);
+      // R5-canon: compare and emit qualified-when-available names so the
+      // chain membership test (the chain holds qualified names) and the
+      // returned descendants stay unambiguous across packages.
+      const childKey = childClass.qualifiedName ?? childClass.name ?? _key;
+      if (childKey === targetKey) continue;
+
+      const chain = ObjectRegistry.getInheritanceChain(childKey);
+      if (chain.includes(targetKey)) {
+        descendants.push(childKey);
       }
     }
 
@@ -3101,14 +3305,30 @@ export function smrt(config: SmartObjectConfig = {}) {
         let tableName = config.tableName;
 
         if (!tableName) {
-          // Check if this class or any parent uses STI
+          // Check if this class or any parent uses STI.
+          // R5-canon: resolve the item class to its qualified
+          // registration first, then pass that qualified key to
+          // `getSTIBase` / `getTableStrategy` so a colliding simple
+          // name in another package can't yield the wrong base.
+          // Falls back to the simple name when no registration exists
+          // yet. Feeding a qualified string straight into
+          // `classnameToTablename` would yield a garbled identifier —
+          // route through the registered class's actual `schema.tableName`
+          // when present.
           const itemClassName = itemClass.name;
-          const stiBase = ObjectRegistry.getSTIBase(itemClassName);
+          const itemReg = ObjectRegistry.getClassByConstructor(
+            itemClass as any,
+          );
+          const itemQualified = itemReg?.qualifiedName ?? itemClassName;
+          const stiBase = ObjectRegistry.getSTIBase(itemQualified);
 
-          if (stiBase && stiBase !== itemClassName) {
+          if (stiBase && stiBase !== itemQualified) {
             // Use STI base's table name
-            tableName = classnameToTablename(stiBase);
-          } else if (ObjectRegistry.getTableStrategy(itemClassName) === 'sti') {
+            const baseReg = ObjectRegistry.getClass(stiBase);
+            tableName =
+              baseReg?.schema?.tableName ??
+              classnameToTablename(baseReg?.name ?? stiBase);
+          } else if (ObjectRegistry.getTableStrategy(itemQualified) === 'sti') {
             // This is the STI base - use its own table name
             tableName = classnameToTablename(itemClassName);
           } else {
@@ -3160,20 +3380,38 @@ export function smrt(config: SmartObjectConfig = {}) {
           // 3. Test scenarios without manifest generation
           // Note: This relies on parents being registered first, which is why
           // the manifest check above is preferred (it has correct build-time data).
+          //
+          // R5-canon: `getSTIBase` now returns the qualified name. We
+          // resolve back to the registered class and prefer its actual
+          // `schema.tableName` when present; otherwise fall back to the
+          // simple-name-derived table name. Deriving directly from a
+          // qualified string would produce a garbled identifier.
           let proto = Object.getPrototypeOf(ctor);
           let stiBaseName: string | null = null;
 
           while (proto?.name && proto.name !== 'SmrtObject') {
-            if (ObjectRegistry.getTableStrategy(proto.name) === 'sti') {
-              stiBaseName = ObjectRegistry.getSTIBase(proto.name);
+            // R5-canon: walk via constructor identity (qualified name
+            // from registration) rather than `proto.name`, so a
+            // colliding simple name in another package can't yield the
+            // wrong STI base. Falls through to simple `proto.name` for
+            // unregistered prototypes.
+            const protoReg = ObjectRegistry.getClassByConstructor(proto as any);
+            const protoKey = protoReg?.qualifiedName ?? proto.name;
+            if (ObjectRegistry.getTableStrategy(protoKey) === 'sti') {
+              stiBaseName = ObjectRegistry.getSTIBase(protoKey);
               break;
             }
             proto = Object.getPrototypeOf(proto);
           }
 
           if (stiBaseName) {
-            // This is an STI child - use parent's table name
-            tableName = classnameToTablename(stiBaseName);
+            // This is an STI child - use parent's table name. Resolve the
+            // qualified stiBaseName to its registration to pick the
+            // correct table identifier.
+            const baseReg = ObjectRegistry.getClass(stiBaseName);
+            tableName =
+              baseReg?.schema?.tableName ??
+              classnameToTablename(baseReg?.name ?? stiBaseName);
           } else {
             // This is the actual STI base - use its own table name
             tableName = classnameToTablename(ctor.name);
@@ -3185,18 +3423,29 @@ export function smrt(config: SmartObjectConfig = {}) {
           let stiBaseName: string | null = null;
 
           while (proto?.name && proto.name !== 'SmrtObject') {
-            // Use getTableStrategy() to properly detect inherited STI strategy
-            if (ObjectRegistry.getTableStrategy(proto.name) === 'sti') {
+            // Use getTableStrategy() to properly detect inherited STI strategy.
+            // R5-canon: walk via constructor identity (qualified name
+            // from registration) rather than `proto.name`, so a
+            // colliding simple name in another package can't yield the
+            // wrong STI base. Falls through to simple `proto.name` for
+            // unregistered prototypes. Mirrors the sibling branch above.
+            const protoReg = ObjectRegistry.getClassByConstructor(proto as any);
+            const protoKey = protoReg?.qualifiedName ?? proto.name;
+            if (ObjectRegistry.getTableStrategy(protoKey) === 'sti') {
               // Get the actual STI base (may be higher up the chain)
-              stiBaseName = ObjectRegistry.getSTIBase(proto.name);
+              stiBaseName = ObjectRegistry.getSTIBase(protoKey);
               break;
             }
             proto = Object.getPrototypeOf(proto);
           }
 
           if (stiBaseName) {
-            // Use STI base's table name
-            tableName = classnameToTablename(stiBaseName);
+            // Use STI base's table name. (R5-canon: see above — qualified
+            // stiBaseName resolves to its registration's tableName.)
+            const baseReg = ObjectRegistry.getClass(stiBaseName);
+            tableName =
+              baseReg?.schema?.tableName ??
+              classnameToTablename(baseReg?.name ?? stiBaseName);
           } else {
             // CTI: Use own table name
             tableName = classnameToTablename(ctor.name);
@@ -3205,6 +3454,15 @@ export function smrt(config: SmartObjectConfig = {}) {
       }
 
       ObjectRegistry.register(ctor as any, { ...config, tableName });
+
+      // R10: install a consistent `getX()` child accessor for every
+      // `@oneToMany` field, delegating to `loadRelatedMany`. Runs after
+      // registration so the relationship metadata is populated. Additive —
+      // never overrides a hand-rolled accessor of the same name.
+      applyOneToManyChildAccessors(
+        ctor as any,
+        ObjectRegistry.getRelationships(ctor.name),
+      );
     }
 
     return ctor;

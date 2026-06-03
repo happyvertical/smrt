@@ -12,6 +12,9 @@ import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types.js';
+import { classnameToTablename } from '../utils/naming.js';
+import { getDDLStrategy } from './ddl/index.js';
+import type { DatabaseEngine } from './ddl/types.js';
 import type {
   ColumnDefinition,
   ForeignKeyDefinition,
@@ -21,13 +24,27 @@ import type {
   TriggerDefinition,
 } from './types.js';
 
+type SchemaGeneratorConfig = {
+  conflictColumns?: string[];
+  idType?: 'uuid' | 'text';
+  registry?: {
+    getConfig?(className: string): { idType?: 'uuid' | 'text' };
+    getDescendants(baseClassName: string): string[];
+    getAllFields(className: string): Promise<Map<string, any>>;
+    getSTIBase?(className: string): string | null;
+  };
+};
+
 export class SchemaGenerator {
   /**
    * Generate schema definition from SMRT object definition
    */
   generateSchema(objectDef: SmartObjectDefinition): SchemaDefinition {
     const tableName = this.getTableName(objectDef);
-    const columns = this.generateColumns(objectDef.fields);
+    const columns = this.generateColumns(
+      objectDef.fields,
+      objectDef.decoratorConfig,
+    );
     const indexes = this.generateIndexes(objectDef, columns);
     const triggers = this.generateTriggers(objectDef, tableName);
     const foreignKeys = this.extractForeignKeys(columns);
@@ -65,9 +82,90 @@ export class SchemaGenerator {
       case 'json':
         return 'JSON';
       case 'foreignKey':
-        return 'TEXT'; // Foreign keys are typically TEXT
+        return 'UUID'; // Foreign keys default to UUID, then same-package refs can be reconciled to target idType
+      case 'crossPackageRef':
+        return 'UUID'; // Cross-package refs are UUID ids with no DDL FK constraint
       default:
         return 'TEXT'; // Default fallback
+    }
+  }
+
+  private getIdColumnType(config?: { idType?: 'uuid' | 'text' }): SQLDataType {
+    return config?.idType === 'text' ? 'TEXT' : 'UUID';
+  }
+
+  private getRelationshipColumnType(field: any): SQLDataType {
+    if (field?._meta?.sqlType) {
+      return field._meta.sqlType;
+    }
+
+    if (
+      field?.type === 'crossPackageRef' &&
+      (field._meta?.idType === 'text' || field.idType === 'text')
+    ) {
+      return 'TEXT';
+    }
+
+    return this.mapFieldTypeToSQL(field?.type || 'text');
+  }
+
+  private getRegistryTargetIdColumnType(
+    relatedName: string | undefined,
+    registry: SchemaGeneratorConfig['registry'] | undefined,
+  ): SQLDataType | undefined {
+    if (!relatedName || !registry?.getConfig) {
+      return undefined;
+    }
+
+    const targetName = relatedName.split('.')[0];
+    const targetNames = [targetName];
+    const stiBase = registry.getSTIBase?.(targetName);
+    if (stiBase && !targetNames.includes(stiBase)) {
+      targetNames.push(stiBase);
+    }
+
+    for (const name of targetNames) {
+      const idType = registry.getConfig(name)?.idType;
+      if (idType === 'text') {
+        return 'TEXT';
+      }
+      if (idType === 'uuid') {
+        return 'UUID';
+      }
+    }
+
+    return undefined;
+  }
+
+  private reconcileRegistryForeignKeyColumnTypes(
+    columns: Record<string, ColumnDefinition>,
+    fields: Map<string, any>,
+    registry: SchemaGeneratorConfig['registry'] | undefined,
+  ): void {
+    if (!registry?.getConfig) {
+      return;
+    }
+
+    for (const [fieldName, field] of fields.entries()) {
+      if (field.type !== 'foreignKey' || field._meta?.sqlType) {
+        continue;
+      }
+
+      const targetIdType = this.getRegistryTargetIdColumnType(
+        field.related,
+        registry,
+      );
+      if (!targetIdType) {
+        continue;
+      }
+
+      const columnName = this.toSnakeCase(fieldName);
+      if (columns[columnName]) {
+        columns[columnName] = {
+          ...columns[columnName],
+          type: targetIdType,
+        };
+      }
     }
   }
 
@@ -76,12 +174,13 @@ export class SchemaGenerator {
    */
   private generateColumns(
     fields: Record<string, FieldDefinition>,
+    config?: { idType?: 'uuid' | 'text' },
   ): Record<string, ColumnDefinition> {
     const columns: Record<string, ColumnDefinition> = {};
 
     // Always include base SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
       description: 'Primary identifier',
@@ -134,7 +233,7 @@ export class SchemaGenerator {
       }
 
       const column: ColumnDefinition = {
-        type: fieldDef._meta?.sqlType || this.mapFieldTypeToSQL(fieldDef.type),
+        type: this.getRelationshipColumnType(fieldDef),
         // If _meta.nullable is true, the field can be null regardless of required
         // This handles field helpers like text({ required: true, nullable: true })
         notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
@@ -306,11 +405,7 @@ export class SchemaGenerator {
    * Convert class name to table name (camelCase to snake_case, pluralized)
    */
   private classNameToTableName(className: string): string {
-    return `${className
-      .replace(/([A-Z])/g, '_$1')
-      .toLowerCase()
-      .replace(/^_/, '')
-      .replace(/s$/, '')}s`; // Simple pluralization
+    return classnameToTablename(className);
   }
 
   /**
@@ -336,7 +431,7 @@ export class SchemaGenerator {
     className: string,
     tableName: string,
     fields: Map<string, any>,
-    config?: { conflictColumns?: string[] },
+    config?: SchemaGeneratorConfig,
   ): SchemaDefinition {
     const columns: Record<string, ColumnDefinition> = {};
 
@@ -352,7 +447,7 @@ export class SchemaGenerator {
     // Add default SMRT fields if no custom primary key
     if (!hasCustomPK) {
       columns.id = {
-        type: 'TEXT',
+        type: this.getIdColumnType(config),
         primaryKey: true,
         notNull: true,
         description: 'Primary identifier',
@@ -375,6 +470,10 @@ export class SchemaGenerator {
     // Track timestamp fields to avoid duplicates
     let hasCreatedAt = false;
     let hasUpdatedAt = false;
+    // Track regular (column-backed) fields that opted into a plain column index
+    // via `indexed: true`. FK, unique, and meta fields each go through their
+    // own dedicated index emission paths and are excluded from this set.
+    const indexedColumns = new Set<string>();
 
     // Add fields from ObjectRegistry
     for (const [fieldName, field] of fields.entries()) {
@@ -433,8 +532,7 @@ export class SchemaGenerator {
         continue;
       }
 
-      const sqlType =
-        field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+      const sqlType = this.getRelationshipColumnType(field);
 
       const columnDef: ColumnDefinition = {
         type: sqlType,
@@ -470,6 +568,20 @@ export class SchemaGenerator {
         }
       }
 
+      // Track opt-in column indexes for regular (non-FK, non-unique) fields.
+      // FK columns already get auto-indexed below; unique columns produce
+      // their own unique index; meta fields go through the jsonPath path.
+      const isIndexed =
+        field._meta?.indexed === true || (field as any).indexed === true;
+      if (
+        isIndexed &&
+        !columnDef.foreignKey &&
+        !columnDef.unique &&
+        !columnDef.primaryKey
+      ) {
+        indexedColumns.add(this.toSnakeCase(fieldName));
+      }
+
       columns[this.toSnakeCase(fieldName)] = columnDef;
     }
 
@@ -490,6 +602,12 @@ export class SchemaGenerator {
         description: 'Last update timestamp',
       };
     }
+
+    this.reconcileRegistryForeignKeyColumnTypes(
+      columns,
+      fields,
+      config?.registry,
+    );
 
     // Generate indexes
     const indexes: IndexDefinition[] = [];
@@ -536,6 +654,15 @@ export class SchemaGenerator {
           description: `Foreign key index for ${colName}`,
         });
       }
+    }
+
+    // Emit opt-in column indexes for regular fields tagged with `indexed: true`
+    for (const colName of indexedColumns) {
+      indexes.push({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
+        description: `Index for ${colName}`,
+      });
     }
 
     return {
@@ -590,13 +717,15 @@ export class SchemaGenerator {
     baseClassName: string,
     tableName: string,
     _fields: Map<string, any>,
+    config?: SchemaGeneratorConfig,
   ): Promise<SchemaDefinition> {
-    const { ObjectRegistry } = await import('../registry.js');
+    const ObjectRegistry =
+      config?.registry ?? (await import('../registry.js')).ObjectRegistry;
     const columns: Record<string, ColumnDefinition> = {};
 
     // Add default SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
       description: 'Primary identifier',
@@ -639,6 +768,10 @@ export class SchemaGenerator {
 
     // Track FK columns by class for partial indexes
     const fkColumnsByClass = new Map<string, Set<string>>();
+    // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
+    const indexedMetaFields = new Set<string>();
+    // Track regular-field columns opted into plain column indexing
+    const indexedStiColumns = new Set<string>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
@@ -649,6 +782,14 @@ export class SchemaGenerator {
         // Skip transient fields
         if (field.transient || field._meta?.transient) {
           continue;
+        }
+
+        // Capture indexed meta fields before the skip-meta branch below
+        if (
+          field.type === 'meta' &&
+          (field.indexed === true || field._meta?.indexed === true)
+        ) {
+          indexedMetaFields.add(fieldName);
         }
 
         // Skip default fields already added
@@ -701,8 +842,7 @@ export class SchemaGenerator {
           continue;
         }
 
-        const sqlType =
-          field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+        const sqlType = this.getRelationshipColumnType(field);
 
         const columnDef: ColumnDefinition = {
           type: sqlType,
@@ -736,6 +876,13 @@ export class SchemaGenerator {
           }
         }
 
+        // Track opt-in column indexes for regular STI columns
+        const isIndexed =
+          field._meta?.indexed === true || (field as any).indexed === true;
+        if (isIndexed && !columnDef.foreignKey) {
+          indexedStiColumns.add(columnName);
+        }
+
         columns[columnName] = columnDef;
       }
     }
@@ -756,6 +903,15 @@ export class SchemaGenerator {
         defaultValue: 'current_timestamp',
         description: 'Last update timestamp',
       };
+    }
+
+    for (const className of allClassNames) {
+      const classFields = await ObjectRegistry.getAllFields(className);
+      this.reconcileRegistryForeignKeyColumnTypes(
+        columns,
+        classFields,
+        ObjectRegistry,
+      );
     }
 
     // Generate indexes
@@ -800,6 +956,25 @@ export class SchemaGenerator {
       }
     }
 
+    // JSON-path indexes for @meta({ indexed: true }) fields
+    for (const fieldName of indexedMetaFields) {
+      indexes.push({
+        name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
+        columns: [],
+        jsonPath: { column: '_meta_data', path: fieldName },
+        description: `JSON-path index for @meta({ indexed: true }) field ${fieldName}`,
+      });
+    }
+
+    // Plain column indexes for regular STI columns opted in via `indexed: true`
+    for (const colName of indexedStiColumns) {
+      indexes.push({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
+        description: `Index for ${colName}`,
+      });
+    }
+
     return {
       tableName,
       columns,
@@ -834,12 +1009,13 @@ export class SchemaGenerator {
     tableName: string,
     _baseFields: Record<string, FieldDefinition>,
     manifest: SmartObjectManifest,
+    config?: SchemaGeneratorConfig,
   ): ManifestSchema {
     const columns: Record<string, ManifestColumnDefinition> = {};
 
     // Add default SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
     };
@@ -886,6 +1062,10 @@ export class SchemaGenerator {
 
     // Track FK columns by class for partial indexes
     const fkColumnsByClass = new Map<string, Set<string>>();
+    // Track meta fields opted into JSON-path indexing (deduped across STI subtypes)
+    const indexedMetaFields = new Set<string>();
+    // Track regular columns opted into plain column indexing
+    const indexedStiColumns = new Set<string>();
 
     // Aggregate fields from base and all descendants
     for (const className of allClassNames) {
@@ -898,6 +1078,15 @@ export class SchemaGenerator {
         // Skip transient fields
         if (field.transient || field._meta?.transient) {
           continue;
+        }
+
+        // Capture indexed meta fields before the skip-meta branch below
+        if (
+          field.type === 'meta' &&
+          ((field as any).indexed === true ||
+            (field as any)._meta?.indexed === true)
+        ) {
+          indexedMetaFields.add(fieldName);
         }
 
         // Skip default fields already added
@@ -930,8 +1119,7 @@ export class SchemaGenerator {
           continue;
         }
 
-        const sqlType =
-          field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+        const sqlType = this.getRelationshipColumnType(field);
 
         const columnDef: ManifestColumnDefinition = {
           type: sqlType,
@@ -947,6 +1135,14 @@ export class SchemaGenerator {
         // Track FK columns for this class (for partial indexes)
         if (field.type === 'foreignKey') {
           fkColumnsByClass.get(className)?.add(columnName);
+        }
+
+        // Track opt-in column indexes for regular STI columns
+        const isIndexed =
+          (field as any).indexed === true ||
+          (field as any)._meta?.indexed === true;
+        if (isIndexed && field.type !== 'foreignKey') {
+          indexedStiColumns.add(columnName);
         }
 
         columns[columnName] = columnDef;
@@ -976,6 +1172,23 @@ export class SchemaGenerator {
       columns: ['_meta_type'],
     });
 
+    // JSON-path indexes for @meta({ indexed: true }) fields
+    for (const fieldName of indexedMetaFields) {
+      indexes.push({
+        name: `${tableName}_meta_${this.toSnakeCase(fieldName)}_idx`,
+        columns: [],
+        jsonPath: { column: '_meta_data', path: fieldName },
+      });
+    }
+
+    // Plain column indexes for regular STI columns opted in via `indexed: true`
+    for (const colName of indexedStiColumns) {
+      indexes.push({
+        name: `${tableName}_${colName}_idx`,
+        columns: [colName],
+      });
+    }
+
     // Generate DDL
     const schemaDefinition: SchemaDefinition = {
       tableName,
@@ -984,6 +1197,8 @@ export class SchemaGenerator {
         name: idx.name,
         columns: idx.columns,
         unique: idx.unique,
+        where: idx.where,
+        jsonPath: idx.jsonPath,
       })),
       triggers: [],
       foreignKeys: [],
@@ -1021,13 +1236,13 @@ export class SchemaGenerator {
     className: string,
     tableName: string,
     fields: Record<string, FieldDefinition>,
-    config?: { conflictColumns?: string[] },
+    config?: SchemaGeneratorConfig,
   ): ManifestSchema {
     const columns: Record<string, ManifestColumnDefinition> = {};
 
     // Add default SMRT fields
     columns.id = {
-      type: 'TEXT',
+      type: this.getIdColumnType(config),
       primaryKey: true,
       notNull: true,
     };
@@ -1087,8 +1302,7 @@ export class SchemaGenerator {
       }
 
       const columnName = this.toSnakeCase(fieldName);
-      const sqlType =
-        field._meta?.sqlType || this.mapFieldTypeToSQL(field.type);
+      const sqlType = this.getRelationshipColumnType(field);
 
       const columnDef: ManifestColumnDefinition = {
         type: sqlType,
@@ -1132,6 +1346,8 @@ export class SchemaGenerator {
         name: idx.name,
         columns: idx.columns,
         unique: idx.unique,
+        where: idx.where,
+        jsonPath: idx.jsonPath,
       })),
       triggers: [],
       foreignKeys: [],
@@ -1247,59 +1463,46 @@ export class SchemaGenerator {
    * @param schema - Schema definition object
    * @returns SQL CREATE TABLE statement with indexes
    */
-  generateSQL(schema: SchemaDefinition): string {
-    const { tableName, columns } = schema;
-
-    // Quote table name to handle SQL reserved keywords
-    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
-
-    // Track which columns we've added
-    const addedColumns: string[] = [];
-
-    // Add all columns
-    for (const [columnName, columnDef] of Object.entries(columns)) {
-      const parts: string[] = [];
-
-      // Column name and type - quote column name to handle SQL reserved keywords
-      parts.push(`  "${columnName}" ${columnDef.type}`);
-
-      // Primary key
-      if (columnDef.primaryKey) {
-        parts.push('PRIMARY KEY');
-      }
-
-      // Not null constraint
-      if (columnDef.notNull) {
-        parts.push('NOT NULL');
-      }
-
-      // Unique constraint
-      if (columnDef.unique && !columnDef.primaryKey) {
-        parts.push('UNIQUE');
-      }
-
-      // Default value with CAST for DuckDB compatibility
-      if (columnDef.defaultValue !== undefined) {
-        const defaultSQL = this.formatDefaultValue(
-          columnDef.defaultValue,
-          columnDef.type,
-        );
-        parts.push(`DEFAULT ${defaultSQL}`);
-      }
-
-      sql += `${parts.join(' ')},\n`;
-      addedColumns.push(columnName);
-    }
-
-    // Remove trailing comma and close table
-    sql = `${sql.slice(0, -2)}\n);`;
-
+  generateSQL(schema: SchemaDefinition, engine?: DatabaseEngine): string {
     // NOTE: We no longer append indexes to DDL string here.
     // The SDK expects ddl to contain ONLY the CREATE TABLE statement.
     // Indexes are stored separately in schema.indexes as SQL strings
     // and the SDK handles them via syncSchema() or dedicated index creation.
+    if (engine) {
+      return getDDLStrategy(engine).generateCreateTable(schema);
+    }
 
-    return sql;
+    const { tableName, columns } = schema;
+    let sql = `CREATE TABLE IF NOT EXISTS "${tableName}" (\n`;
+
+    for (const [columnName, columnDef] of Object.entries(columns)) {
+      const parts = [`  "${columnName}" ${columnDef.type}`];
+
+      if (columnDef.primaryKey) {
+        parts.push('PRIMARY KEY');
+      }
+
+      if (columnDef.notNull) {
+        parts.push('NOT NULL');
+      }
+
+      if (columnDef.unique && !columnDef.primaryKey) {
+        parts.push('UNIQUE');
+      }
+
+      if (columnDef.defaultValue !== undefined) {
+        parts.push(
+          `DEFAULT ${this.formatDefaultValue(
+            columnDef.defaultValue,
+            columnDef.type,
+          )}`,
+        );
+      }
+
+      sql += `${parts.join(' ')},\n`;
+    }
+
+    return `${sql.slice(0, -2)}\n);`;
   }
 
   /**

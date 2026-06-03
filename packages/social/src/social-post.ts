@@ -6,7 +6,12 @@
  */
 
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VideoContent } from '@happyvertical/smrt-video';
 import { SocialAccount } from './social-account.js';
@@ -228,6 +233,7 @@ export class SocialPost extends SmrtObject {
   /**
    * Generic content ID (for non-video content)
    */
+  @crossPackageRef('@happyvertical/smrt-content:Content')
   contentId: string | null = null;
 
   /**

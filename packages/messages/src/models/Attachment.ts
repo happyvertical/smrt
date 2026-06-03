@@ -4,7 +4,7 @@
  * Uses messageId instead of emailId for cross-type support.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AttachmentOptions } from '../types';
 
@@ -18,6 +18,7 @@ export class Attachment extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @foreignKey('Message')
   messageId = '';
   filename = '';
   contentType = '';

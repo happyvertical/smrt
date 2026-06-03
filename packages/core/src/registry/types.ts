@@ -155,6 +155,15 @@ export interface SmartObjectConfig {
   tableName?: string;
 
   /**
+   * Storage type for the synthetic `id` primary key (defaults to 'uuid').
+   *
+   * Use 'text' only for models that intentionally generate non-UUID ids.
+   * On SQLite, UUID maps to TEXT at DDL render time because SQLite has no
+   * native UUID type.
+   */
+  idType?: 'uuid' | 'text';
+
+  /**
    * Table inheritance strategy (defaults to 'cti')
    * - 'cti': Class Table Inheritance - one table per class (current default)
    * - 'sti': Single Table Inheritance - shared table with discriminator column
@@ -559,7 +568,11 @@ export type ValidatorFunction = (
 /**
  * Relationship type for the relationship map
  */
-export type RelationshipType = 'foreignKey' | 'oneToMany' | 'manyToMany';
+export type RelationshipType =
+  | 'foreignKey'
+  | 'crossPackageRef'
+  | 'oneToMany'
+  | 'manyToMany';
 
 /**
  * Metadata about a relationship between classes

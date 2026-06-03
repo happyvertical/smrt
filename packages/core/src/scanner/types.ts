@@ -27,6 +27,7 @@ export interface FieldDefinition {
     | 'datetime'
     | 'json'
     | 'foreignKey'
+    | 'crossPackageRef' // Cross-package reference — UUID id column by default, no DDL FK
     | 'oneToMany'
     | 'manyToMany'
     | 'meta'; // STI meta fields (_meta_type, _meta_data)
@@ -36,7 +37,7 @@ export interface FieldDefinition {
   max?: number;
   maxLength?: number;
   minLength?: number;
-  related?: string; // For foreignKey, oneToMany, manyToMany
+  related?: string; // For foreignKey, crossPackageRef, oneToMany, manyToMany
   description?: string;
   _meta?: Record<string, any>;
   transient?: boolean; // Field not persisted to database
@@ -82,6 +83,15 @@ export interface ManifestIndexDefinition {
   name: string;
   columns: string[];
   unique?: boolean;
+  where?: string;
+  /**
+   * Expression-based index target — when set, the DDL strategy renders the
+   * index over a JSON path inside `column` (dialect-specific syntax).
+   */
+  jsonPath?: {
+    column: string;
+    path: string;
+  };
 }
 
 /**

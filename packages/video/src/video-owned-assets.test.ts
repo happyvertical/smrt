@@ -119,7 +119,7 @@ describe('Video owned assets', () => {
 
     const links = await CharacterOwnedAssetCollection.create({ db: dbConfig });
     expect(
-      await links.getForCharacter(character.id as string, 'seed-image'),
+      await links.byLeft(character.id as string, { role: 'seed-image' }),
     ).toHaveLength(1);
   });
 

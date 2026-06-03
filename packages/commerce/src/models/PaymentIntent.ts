@@ -328,6 +328,19 @@ export class PaymentIntent extends SmrtObject {
         `PaymentIntent ${this.id}: cannot transition to PAID from status '${this.status}'`,
       );
     }
+    // Refuse stale quotes. A backend can report a payment after the price-lock
+    // window has passed but before a cleanup job has run `expire()` — the
+    // intent is still AWAITING_PAYMENT, yet honoring it would accept funds at
+    // an expired USD price. `isExpired()` is status-independent (it checks
+    // `priceLockExpiresAt`), so guard on it here; callers should `expire()`
+    // and re-quote rather than record against a lapsed lock.
+    if (this.isExpired()) {
+      throw new Error(
+        `PaymentIntent ${this.id}: price lock expired at ` +
+          `${this.priceLockExpiresAt?.toISOString() ?? 'unknown'}; cannot record a ` +
+          `payment against a stale quote (call expire() and re-quote)`,
+      );
+    }
     if (!args.backendId) {
       throw new Error(
         `PaymentIntent ${this.id}: markPaid requires a backendId`,

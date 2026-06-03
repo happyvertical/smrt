@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { SessionStatus } from '../types/index.js';
 
 /**
@@ -47,12 +47,14 @@ export class Session extends SmrtObject {
   /**
    * User who owns this session
    */
+  @foreignKey('User')
   userId: string = '';
 
   /**
    * Tenant context for this session (for multi-tenant apps)
    * Null means no tenant context selected
    */
+  @foreignKey('Tenant', { nullable: true })
   tenantId: string | null = null;
 
   /**

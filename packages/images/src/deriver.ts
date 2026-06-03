@@ -68,7 +68,7 @@ export class ImageDeriver {
         name: `derived-${sources[0].name}-${i + 1}`,
         mimeType: 'image/png',
         sourceUri: '',
-        parentId: sources[0].id,
+        sourceAssetId: sources[0].id,
         typeSlug: 'image',
         description: `Derived: ${prompt}`,
       })) as Image;
@@ -106,12 +106,9 @@ export class ImageDeriver {
     // Link all source images to each derived image
     for (const derived of results) {
       for (const source of sources) {
-        await associations.associate(
-          source.id!,
-          'Image',
-          derived.id!,
-          'derivation-source',
-        );
+        await associations.attach('Image', derived.id!, source.id!, {
+          role: 'derivation-source',
+        });
       }
     }
 

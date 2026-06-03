@@ -118,7 +118,7 @@ export interface AssetRuntimeLike {
  * Options for `AssetRuntime.storeDerivedAsset()`.
  */
 export interface StoreDerivedAssetOptions
-  extends Omit<StoreOptions, 'parentId'> {
+  extends Omit<StoreOptions, 'sourceAssetId'> {
   /**
    * Relationship role for the derivation link.
    *
@@ -133,9 +133,10 @@ export interface StoreDerivedAssetOptions
    * If true (default), also create an `AssetAssociation` record with
    * `assetId=source.id`, `metaType=<derivativeMetaType>`,
    * `metaId=<newAssetId>`, `role=<role>` so the provenance link is
-   * queryable independent of `parentId`.
+   * queryable independent of `sourceAssetId`.
    *
-   * Set to `false` if you only want the hierarchical `parentId` link.
+   * Set to `false` if you only want the column-level `sourceAssetId`
+   * derivation link.
    */
   linkAssociation?: boolean;
 
@@ -357,11 +358,11 @@ export class AssetRuntime implements AssetRuntimeLike {
    * Create a derivative of `source`, persist its bytes, and optionally
    * record a provenance association.
    *
-   * The new asset's `parentId` always points at `source.id`. When
+   * The new asset's `sourceAssetId` always points at `source.id`. When
    * `linkAssociation` is true (the default), the runtime also writes
    * an `AssetAssociation` so queries by role (e.g. "all `document_image`
    * derivatives for this `source_document`") work without scanning
-   * `parent_id` chains.
+   * `source_asset_id` chains.
    */
   async storeDerivedAsset(
     source: Asset,
@@ -385,15 +386,15 @@ export class AssetRuntime implements AssetRuntimeLike {
 
     const derived = await this.store.store(name, data, {
       ...storeOpts,
-      parentId: source.id,
+      sourceAssetId: source.id,
     });
 
     if (linkAssociation && derived.id) {
-      await this.associations.associate(
-        source.id,
+      await this.associations.attach(
         derivativeMetaType,
         derived.id,
-        role,
+        source.id,
+        { role },
       );
     }
 
@@ -416,11 +417,11 @@ export class AssetRuntime implements AssetRuntimeLike {
     }
     const role = opts.role ?? ASSET_ROLES.DERIVATION_SOURCE;
     const derivativeMetaType = opts.derivativeMetaType ?? 'Asset';
-    return this.associations.associate(
-      source.id,
+    return this.associations.attach(
       derivativeMetaType,
       derivative.id,
-      role,
+      source.id,
+      { role },
     );
   }
 

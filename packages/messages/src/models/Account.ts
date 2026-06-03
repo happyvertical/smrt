@@ -21,6 +21,10 @@ export class Account extends SmrtObject {
 
   name = '';
   providerType = '';
+  // credentialSecretId stores the Secret's NAME (keyed by name + tenant
+  // context in smrt-secrets), NOT its primary-key id — see setCredentials()/
+  // getCredentials() which call secretService.store/retrieve by name. So it is
+  // deliberately NOT a @crossPackageRef id FK.
   credentialSecretId: string | null = null;
   isActive = true;
   lastSyncAt: Date | null = null;

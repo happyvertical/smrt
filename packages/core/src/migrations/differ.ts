@@ -15,6 +15,7 @@ import type {
   SchemaDiff,
   SQLDataType,
 } from '../schema/types.js';
+import { isJsonPathIndex, renderIndexTarget } from '../schema/utils.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 /**
@@ -28,6 +29,7 @@ const VALID_SQL_DATA_TYPES: Set<SQLDataType> = new Set([
   'BOOLEAN',
   'JSON',
   'TIMESTAMP',
+  'UUID',
 ]);
 
 interface GeneratedTypeUpgradeSQL {
@@ -112,14 +114,15 @@ export class SchemaComparer {
       ...options,
     };
     // Use the shared detectEngine utility for consistent detection.
-    // Handles :memory:, .json, and other edge cases. `engineHint` lets
-    // callers override URL-based detection when `db.url` is empty or
-    // points at an adapter whose engine isn't obvious from the URL alone
-    // (JSON, some in-memory wrappers).
-    this.engine = detectEngine(
-      resolveDatabaseUrl(this.db),
-      this.options.engineHint,
-    );
+    // Handles :memory:, .json, and other edge cases. The JSON adapter is
+    // detected structurally (it exposes `exportTable`) because its url can be
+    // empty; otherwise fall back to URL-based detection, where `engineHint`
+    // lets callers override when `db.url` is empty or points at an adapter
+    // whose engine isn't obvious from the URL alone (some in-memory wrappers).
+    this.engine =
+      typeof (this.db as any).exportTable === 'function'
+        ? 'json'
+        : detectEngine(resolveDatabaseUrl(this.db), this.options.engineHint);
     this.ddlStrategy = getDDLStrategy(this.engine);
   }
 
@@ -242,7 +245,44 @@ export class SchemaComparer {
         const normalizedExpected = this.normalizeType(expectedEngineType);
         const normalizedActual = this.normalizeType(dbCol.type);
 
-        if (normalizedExpected !== normalizedActual) {
+        // R11: native `uuid` and `text` are interchangeable for SMRT — Postgres
+        // stores uuid-shaped ids either way, node-postgres maps `uuid` columns
+        // to/from JS strings, and SMRT's queries are param-bound. So the differ
+        // must NOT flag a text<->uuid difference: no `type_upgrade` (ALTER) and
+        // no `type_mismatch`, in either direction. Converting existing text ids
+        // to native uuid stays an explicit per-project migration. This
+        // equivalence is applied HERE (the equality gate) only — deliberately
+        // not inside `normalizeType`, so `isCompatibleTypeUpgrade` still sees
+        // `uuid` as a distinct type and won't classify e.g. `uuid`->`timestamp`
+        // as a compatible upgrade.
+        const isUuidTextEquivalent =
+          (normalizedExpected === 'TEXT' && normalizedActual === 'UUID') ||
+          (normalizedExpected === 'UUID' && normalizedActual === 'TEXT');
+
+        // #1335: native `json`/`jsonb` (DB) and `text` (manifest) are
+        // interchangeable for SMRT — the convention is to serialize JSON values
+        // into TEXT columns, and a native-json column already holds exactly that
+        // data. So the differ must NOT flag a json<->text difference in EITHER
+        // direction:
+        //   - manifest TEXT vs DB json   (native-json column, text-convention manifest)
+        //   - manifest JSON vs DB text   (the canary case: an enum/plain field
+        //     mis-inferred as JSON by a downstream scanner, sitting on a real
+        //     `text` column holding bare values like 'active')
+        // Generating an ALTER here is pure churn at best and data-destroying at
+        // worst: `status::jsonb` on a column holding 'active' raises
+        // "invalid input syntax for type json" and aborts the whole atomic
+        // migration. Like the uuid/text tolerance, this lives at the equality
+        // gate only (not in `normalizeType`) so `isCompatibleTypeUpgrade` still
+        // treats JSON and TEXT as distinct buckets for OTHER upgrade paths.
+        const isJsonTextEquivalent =
+          (normalizedExpected === 'JSON' && normalizedActual === 'TEXT') ||
+          (normalizedExpected === 'TEXT' && normalizedActual === 'JSON');
+
+        if (
+          normalizedExpected !== normalizedActual &&
+          !isUuidTextEquivalent &&
+          !isJsonTextEquivalent
+        ) {
           // Check if this is a safe type upgrade that SMRT can handle
           // Since SMRT owns the data lifecycle, we know the intent from the manifest
           if (this.isCompatibleTypeUpgrade(colDef.type, dbCol.type)) {
@@ -358,9 +398,7 @@ export class SchemaComparer {
     // entry "claimed" them by name.
     const manifestSignatureSet = new Set<string>();
     for (const idx of manifest.indexes) {
-      manifestSignatureSet.add(
-        this.getIndexSignature(idx.columns, idx.unique ?? false),
-      );
+      manifestSignatureSet.add(this.getIndexSignature(idx));
     }
 
     // Track which DB indexes a manifest entry has claimed, so the orphan
@@ -368,16 +406,24 @@ export class SchemaComparer {
     const claimedDbIndexes = new Set<string>();
 
     for (const idx of manifest.indexes) {
-      const manifestUnique = idx.unique ?? false;
-      const manifestSignature = this.getIndexSignature(
-        idx.columns,
-        manifestUnique,
-      );
+      const manifestSignature = this.getIndexSignature(idx);
 
       // (a) Same name in DB — verify shape matches.
       const dbByName = dbIndexesByName.get(idx.name);
       if (dbByName) {
         claimedDbIndexes.add(idx.name);
+
+        // JSON-path indexes (`@meta({ indexed: true })`) cannot be reliably
+        // compared by DB introspection — SQLite expression indexes surface
+        // as `[null]` columns, so the signature would always mismatch and
+        // every diff run would emit drop+recreate. Trust the name match
+        // here; if the json path itself changes, the index name changes
+        // too (we encode the field name into it), so a name match is a
+        // stronger guarantee than the column list for this index family.
+        if (isJsonPathIndex(idx)) {
+          continue;
+        }
+
         const dbSignature = this.getIndexSignature(
           dbByName.columns,
           dbByName.unique,
@@ -479,14 +525,26 @@ export class SchemaComparer {
    * so two partial indexes with the same columns but different WHERE clauses
    * cannot be distinguished and may be incorrectly treated as equivalent.
    *
-   * @param columns - Array of column names (order is preserved)
-   * @param unique - Whether the index is unique
-   * @returns Signature string like "col1,col2:false"
+   * For JSON-path indexes (`@meta({ indexed: true })`) the signature is
+   * derived from the JSON path instead of an empty column list, so the
+   * differ can distinguish two jsonPath indexes against different paths.
+   *
+   * @param idxOrColumns - Either an IndexDefinition or a column array (legacy)
+   * @param uniqueArg - Unique flag (used when first arg is a column array)
+   * @returns Signature string
    */
-  private getIndexSignature(columns: string[], unique: boolean): string {
-    // Preserve column order because it is semantically significant for composite indexes
-    const columnList = columns.join(',');
-    return `${columnList}:${unique}`;
+  private getIndexSignature(
+    idxOrColumns: IndexDefinition | string[],
+    uniqueArg?: boolean,
+  ): string {
+    if (Array.isArray(idxOrColumns)) {
+      return `${idxOrColumns.join(',')}:${Boolean(uniqueArg)}`;
+    }
+    const idx = idxOrColumns;
+    if (isJsonPathIndex(idx) && idx.jsonPath) {
+      return `json:${idx.jsonPath.column}.${idx.jsonPath.path}:${Boolean(idx.unique)}`;
+    }
+    return `${(idx.columns ?? []).join(',')}:${Boolean(idx.unique)}`;
   }
 
   /**
@@ -522,6 +580,16 @@ export class SchemaComparer {
     // Text types
     if (/^(TEXT|CLOB|STRING|VARCHAR|CHAR)/i.test(upper)) {
       return 'TEXT';
+    }
+
+    // UUID normalizes to its own bucket — deliberately NOT folded into TEXT.
+    // The text<->uuid drift tolerance (R11) is applied at the equality gate
+    // in `compare()` only, so that `isCompatibleTypeUpgrade` (which also
+    // calls normalizeType) still treats `uuid` as distinct from text and
+    // won't mis-classify e.g. `uuid`->`timestamp` as a compatible
+    // "TEXT->TIMESTAMP" upgrade.
+    if (/^UUID$/i.test(upper)) {
+      return 'UUID';
     }
 
     // Decimal types
@@ -675,8 +743,22 @@ export class SchemaComparer {
 
         let typeClause = `ALTER COLUMN ${quotedCol} TYPE ${targetType}`;
         if (manifestNormalized === 'JSON' && dbNormalized === 'TEXT') {
-          typeClause += ` USING ${quotedCol}::${targetType.toLowerCase()}`;
+          // #1335: a bare `${col}::jsonb` cast raises "invalid input syntax for
+          // type json" on any row whose text is not already valid JSON (e.g. a
+          // legacy enum column holding 'active'). `to_jsonb(col)` instead wraps
+          // ANY text value as a JSON string and never errors, so a genuine
+          // TEXT->JSON widening survives non-JSON legacy data. (Note: with the
+          // json<->text equality tolerance added in this fix, the normal
+          // compare path no longer reaches here; this keeps the SQL safe for
+          // callers that construct a type_upgrade directly.)
+          typeClause += ` USING to_jsonb(${quotedCol})`;
         } else if (manifestNormalized === 'TEXT' && dbNormalized === 'JSON') {
+          // #1335: a native-json column cast back to text is value-preserving
+          // (`::text` renders the stored JSON as its text form), so this arm is
+          // safe. (Note: like the TEXT->JSON arm above, the json<->text equality
+          // tolerance means the normal compare path no longer reaches here; this
+          // keeps the SQL safe for callers that construct a type_upgrade
+          // directly.)
           typeClause += ` USING ${quotedCol}::text`;
         } else if (
           manifestNormalized === 'INTEGER' &&
@@ -773,6 +855,14 @@ export class SchemaComparer {
     colName: string,
     colDef: ColumnDefinition,
   ): string {
+    // Build the ADD COLUMN definition inline (main) rather than delegating to
+    // the DDL strategy's generateColumnDefinition: that builder is for CREATE
+    // TABLE and would emit `PRIMARY KEY` (invalid in ALTER ... ADD COLUMN) and
+    // suppress single-column UNIQUE on engines that require inline unique at
+    // table-create time (DuckDB) — but an ADD COLUMN has no inline-constraint
+    // pass, so the UNIQUE must be emitted here. mapType still maps abstract
+    // types per dialect (UUID→native uuid / TEXT — R11); invalid types fall
+    // back to TEXT, matching the compareColumns guard.
     const validatedType: SQLDataType = isValidSQLDataType(colDef.type)
       ? colDef.type
       : 'TEXT';
@@ -821,10 +911,8 @@ export class SchemaComparer {
    */
   private generateAddIndexSQL(tableName: string, idx: IndexDefinition): string {
     const uniqueStr = idx.unique ? 'UNIQUE ' : '';
-    const quotedColumns = idx.columns
-      .map((c) => this.quoteIdentifier(c))
-      .join(', ');
-    return `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${quotedColumns})`;
+    const target = renderIndexTarget(idx, this.engine);
+    return `CREATE ${uniqueStr}INDEX ${this.quoteIdentifier(idx.name)} ON ${this.quoteIdentifier(tableName)} (${target})`;
   }
 
   /**

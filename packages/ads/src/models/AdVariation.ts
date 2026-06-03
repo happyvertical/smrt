@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdVariationStatus } from '../types/index.js';
 
@@ -58,6 +63,7 @@ export class AdVariation extends SmrtObject {
   /**
    * Asset ID (FK to smrt-assets Asset, cross-package)
    */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   assetId: string = '';
 
   /**

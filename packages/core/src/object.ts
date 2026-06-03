@@ -11,6 +11,7 @@ import {
   DatabaseError,
   ErrorUtils,
   RuntimeError,
+  TenantIsolationError,
   ValidationError,
 } from './errors';
 import { createInterceptorContext, GlobalInterceptors } from './interceptors';
@@ -63,8 +64,24 @@ function getExpectedMetaType(className: string): string {
   return registeredClass?.qualifiedName || className;
 }
 
-function getSTIHierarchyMembers(className: string): string[] {
-  const stiBase = ObjectRegistry.getSTIBase(className);
+/**
+ * Get all STI hierarchy members (base + descendants) for a class.
+ *
+ * R5-canon (Copilot follow-up): callers should pass a QUALIFIED name
+ * (e.g. via `this.getResolvedQualifiedName()`). Passing a bare simple
+ * name still works in single-package scenarios, but when two packages
+ * register classes sharing the same simple name, `ObjectRegistry.
+ * getClass(simpleName)` resolves to whichever match the multi-strategy
+ * lookup picks first — which can be the wrong package. Passing the
+ * qualified form makes STI sibling discovery collision-safe.
+ */
+function getSTIHierarchyMembers(qualifiedOrSimpleName: string): string[] {
+  // Best-effort qualify in case a caller passed a simple name; the
+  // collision risk for that case is documented in the docstring above.
+  const registered = ObjectRegistry.getClass(qualifiedOrSimpleName);
+  const lookupKey =
+    registered?.qualifiedName ?? registered?.name ?? qualifiedOrSimpleName;
+  const stiBase = ObjectRegistry.getSTIBase(lookupKey);
   if (!stiBase) {
     return [];
   }
@@ -150,6 +167,24 @@ export interface SmrtObjectOptions extends SmrtClassOptions {
    * Allow arbitrary field values to be passed
    */
   [key: string]: any;
+}
+
+/**
+ * Options for the relationship loaders {@link SmrtObject.loadRelated},
+ * {@link SmrtObject.loadRelatedMany}, and {@link SmrtObject.getRelated}.
+ */
+export interface LoadRelatedOptions {
+  /**
+   * Bypass the cross-tenant isolation guard.
+   *
+   * By default, resolving a relationship from a tenant-scoped object to an
+   * object in a *different*, non-null tenant throws a `TenantIsolationError`.
+   * Set this to `true` for deliberate cross-tenant flows (admin tooling,
+   * migrations, super-admin bypass paths) where the access is intentional.
+   *
+   * @default false
+   */
+  allowCrossTenant?: boolean;
 }
 
 /**
@@ -677,8 +712,12 @@ export class SmrtObject extends SmrtClass {
     const { formatDataJs } = await import('./utils.js');
     const formattedData = formatDataJs(data, fields);
 
-    // Check if this class uses STI (Single Table Inheritance)
-    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    // Check if this class uses STI (Single Table Inheritance).
+    // R5-canon: pass the qualified name so a colliding simple name in
+    // another package can't yield the wrong tableStrategy here.
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedQualifiedName(),
+    );
     const isSTI = tableStrategy === 'sti';
 
     if (process.env.DEBUG_STI) {
@@ -779,12 +818,16 @@ export class SmrtObject extends SmrtClass {
    */
   get tableName() {
     if (!this._tableName) {
-      // For STI, use the base class's table name from schema (manifest-derived)
+      // For STI, use the base class's table name from schema (manifest-derived).
+      // R5-canon: use the qualified name as the lookup key so a colliding
+      // simple name in another package can't yield the wrong tableStrategy
+      // / STI base and route every query through the wrong table.
       const className = this.getResolvedClassName();
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const qualifiedName = this.getResolvedQualifiedName();
+      const tableStrategy = ObjectRegistry.getTableStrategy(qualifiedName);
 
       if (tableStrategy === 'sti') {
-        const stiBase = ObjectRegistry.getSTIBase(className);
+        const stiBase = ObjectRegistry.getSTIBase(qualifiedName);
         if (stiBase) {
           // Use base class's schema tableName (from manifest)
           const baseSchema = ObjectRegistry.getSchema(stiBase);
@@ -908,7 +951,11 @@ export class SmrtObject extends SmrtClass {
     };
 
     // Check if this class uses STI (Single Table Inheritance)
-    const tableStrategy = ObjectRegistry.getTableStrategy(className);
+    // R5-canon: qualified-key lookup so a colliding simple name in
+    // another package can't yield the wrong STI strategy here.
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedQualifiedName(),
+    );
     const isSTI = tableStrategy === 'sti';
 
     // If STI, add discriminator and prepare meta_data container
@@ -928,9 +975,13 @@ export class SmrtObject extends SmrtClass {
       registered?.inheritedFields || ObjectRegistry.getFields(className);
 
     // In STI mode, we need to know about ALL sibling class fields to provide default values
-    // for fields that exist in siblings but not in this class (Issue #391)
+    // for fields that exist in siblings but not in this class (Issue #391).
+    // R5-canon (Copilot follow-up): pass the qualified name so STI
+    // sibling discovery is collision-safe across packages.
     if (isSTI) {
-      const descendants = getSTIHierarchyMembers(className);
+      const descendants = getSTIHierarchyMembers(
+        this.getResolvedQualifiedName(),
+      );
       if (descendants.length > 0) {
         const allSTIFields = new Map(registeredFields);
 
@@ -1199,6 +1250,115 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Resolve the set of snake_case column names whose database type is `UUID`
+   * for the table this object writes to.
+   *
+   * Declared foreign keys (`@foreignKey()`) and cross-package references
+   * (`@crossPackageRef()`) generate native `UUID` columns (R11). Their default
+   * declared value in TypeScript is the empty string (`''`), which is not a
+   * valid UUID literal. Postgres rejects `''` on a `uuid` column with
+   * `invalid input syntax for type uuid`, so any optional/unset declared FK
+   * (a root entity's self-reference, an optional cross-package link, etc.)
+   * would fail to insert. We coerce `''` → `NULL` for these columns before
+   * binding (see {@link coerceEmptyUuidValuesToNull}); this method tells that
+   * coercion which columns are UUID-typed.
+   *
+   * Resolution prefers the built schema (`getSchema().columns`), which already
+   * reflects all reconciliation — e.g. a `@foreignKey()` whose target class
+   * uses `idType: 'text'` is downgraded to `TEXT` and is therefore correctly
+   * excluded here. For STI children, columns live on the STI base table, so we
+   * union the base schema's columns. When no built schema is available (pure
+   * runtime-registered classes without a manifest) we fall back to field
+   * metadata, mirroring the schema-builder's field→SQL mapping.
+   */
+  private async resolveUuidColumnNames(
+    className: string,
+  ): Promise<Set<string>> {
+    const uuidColumns = new Set<string>();
+
+    const collectFromSchema = (schemaName: string | null | undefined): void => {
+      if (!schemaName) return;
+      const schema = ObjectRegistry.getSchema(schemaName);
+      const columns = schema?.columns;
+      if (!columns) return;
+      for (const [columnName, columnDef] of Object.entries(columns)) {
+        if ((columnDef as { type?: string })?.type === 'UUID') {
+          uuidColumns.add(columnName);
+        }
+      }
+    };
+
+    // Own schema (covers non-STI and STI-base classes).
+    collectFromSchema(className);
+
+    // STI children: FK columns are declared on the base table.
+    const qualifiedName = this.getResolvedQualifiedName();
+    if (ObjectRegistry.getTableStrategy(qualifiedName) === 'sti') {
+      collectFromSchema(ObjectRegistry.getSTIBase(qualifiedName));
+    }
+
+    if (uuidColumns.size > 0) {
+      return uuidColumns;
+    }
+
+    // Fallback: derive UUID columns from field metadata when no built schema
+    // is available. Mirrors schema-builder's field→SQL mapping so that a
+    // text-id cross-package ref is not treated as UUID.
+    try {
+      const fields = await ObjectRegistry.getAllFields(className);
+      for (const [fieldName, field] of fields.entries()) {
+        if (!field) continue;
+        const type = field.type;
+        if (type !== 'foreignKey' && type !== 'crossPackageRef') {
+          continue;
+        }
+        const metaSqlType = field._meta?.sqlType;
+        if (metaSqlType) {
+          if (metaSqlType === 'UUID') {
+            uuidColumns.add(toSnakeCase(fieldName));
+          }
+          continue;
+        }
+        const isTextIdCrossRef =
+          type === 'crossPackageRef' &&
+          (field._meta?.idType === 'text' || field.idType === 'text');
+        if (!isTextIdCrossRef) {
+          uuidColumns.add(toSnakeCase(fieldName));
+        }
+      }
+    } catch {
+      // Best-effort fallback; never let UUID-column resolution block a save.
+    }
+
+    return uuidColumns;
+  }
+
+  /**
+   * Coerce empty-string values to `NULL` for UUID-typed columns in the
+   * snake_cased write payload.
+   *
+   * Framework-level fix for the whole class of bug where a declared FK field
+   * defaults to `''` (the natural TypeScript default for `string`) and is left
+   * unset on insert — e.g. creating a ROOT entity whose optional self-reference
+   * (`previousFactId`, `parentPartnerId`, …) is empty. On Postgres `uuid`
+   * columns, `''` raises `invalid input syntax for type uuid`. Coercing to
+   * `NULL` here fixes every such field uniformly without per-field type churn
+   * or consumer-facing type changes. Mutates `data` in place.
+   */
+  private async coerceEmptyUuidValuesToNull(
+    className: string,
+    data: Record<string, any>,
+  ): Promise<void> {
+    const uuidColumns = await this.resolveUuidColumnNames(className);
+    if (uuidColumns.size === 0) return;
+    for (const columnName of uuidColumns) {
+      if (data[columnName] === '') {
+        data[columnName] = null;
+      }
+    }
+  }
+
+  /**
    * Persists this object to the database using an upsert (insert or update).
    *
    * Steps performed on every save:
@@ -1238,6 +1398,9 @@ export class SmrtObject extends SmrtClass {
       // Validate object state before saving
       await this.validateBeforeSave();
 
+      // Validate cross-package references that opted into save-time validation
+      await this.validateCrossPackageRefs();
+
       // Execute beforeSave interceptors (e.g., tenancy validation)
       const interceptorContext = createInterceptorContext(className, 'save');
       await GlobalInterceptors.executeBeforeSave(this, interceptorContext);
@@ -1260,9 +1423,12 @@ export class SmrtObject extends SmrtClass {
       await this.verifyStorageReady();
 
       // Execute save operation with retry logic for transient failures
-      // Use per-adapter upsert method instead of generating SQL
+      // Use per-adapter upsert method instead of generating SQL.
+      // R5-canon: qualified-key lookup avoids cross-package collisions.
 
-      const tableStrategy = ObjectRegistry.getTableStrategy(className);
+      const tableStrategy = ObjectRegistry.getTableStrategy(
+        this.getResolvedQualifiedName(),
+      );
 
       // Development-mode warning: Detect unsafe toJSON() overrides in STI classes
       if (process.env.NODE_ENV === 'development') {
@@ -1289,8 +1455,12 @@ export class SmrtObject extends SmrtClass {
         // this loop away via eager invalidation at re-registration time
         // is tracked as a separate follow-up (#1139).
         warnIfSkipRehydrateSet();
+        // R5-canon (Copilot follow-up): pass the qualified name to
+        // `getSTIHierarchyMembers` so STI sibling discovery is
+        // collision-safe across packages with same-simple-name classes.
+        const qualifiedName = this.getResolvedQualifiedName();
         const classesNeedingFreshSTIFieldState = Array.from(
-          new Set([className, ...getSTIHierarchyMembers(className)]),
+          new Set([qualifiedName, ...getSTIHierarchyMembers(qualifiedName)]),
         );
         for (const stiClassName of classesNeedingFreshSTIFieldState) {
           await ObjectRegistry.getAllFields(stiClassName);
@@ -1328,6 +1498,13 @@ export class SmrtObject extends SmrtClass {
           data[toSnakeCase(key)] = value;
         }
       }
+
+      // Coerce empty-string values to NULL for native UUID columns (declared
+      // FKs / cross-package refs). The TypeScript default for an unset
+      // `string`-typed FK is `''`, which Postgres rejects on a `uuid` column
+      // ("invalid input syntax for type uuid"). This framework-level coercion
+      // fixes every optional/unset declared-FK field uniformly.
+      await this.coerceEmptyUuidValuesToNull(className, data);
 
       // Get conflict columns from registry (supports custom columns for junction tables)
       const conflictColumns = ObjectRegistry.getConflictColumns(className);
@@ -1484,6 +1661,82 @@ export class SmrtObject extends SmrtClass {
         if (value === null || value === undefined || value === '') {
           throw ValidationError.requiredField(fieldName, className);
         }
+      }
+    }
+  }
+
+  /**
+   * Validates cross-package references that opted in via `validate: true`.
+   *
+   * Iterates registered fields of type `crossPackageRef`. For each one whose
+   * field options include `validate: true` AND has a non-empty value, looks up
+   * the referenced object via the target package's manifest and throws
+   * `ValidationError` if the target row does not exist.
+   *
+   * Empty/null/undefined values are treated as "no reference set" and skipped.
+   * Fields without `validate: true` are always skipped (the registered metadata
+   * still powers eager loading and `loadRelated()`).
+   */
+  protected async validateCrossPackageRefs(): Promise<void> {
+    const className = this.getResolvedClassName();
+    const registered = ObjectRegistry.getClass(className);
+    if (!registered) return;
+
+    const fields = registered.inheritedFields || registered.fields;
+    if (!fields || fields.size === 0) return;
+
+    type CrossRefCheck = {
+      fieldName: string;
+      qualifiedTarget: string;
+      value: string;
+    };
+    const checks: CrossRefCheck[] = [];
+
+    for (const [fieldName, field] of fields) {
+      if (field?.type !== 'crossPackageRef') continue;
+      const opts = field._meta || field;
+      if (!opts.validate) continue;
+      if (!field.related) continue;
+
+      const value = this.getFieldValue(fieldName);
+      if (value === null || value === undefined || value === '') continue;
+
+      checks.push({
+        fieldName,
+        qualifiedTarget: String(field.related),
+        value: String(value),
+      });
+    }
+
+    if (checks.length === 0) return;
+
+    for (const check of checks) {
+      await ObjectRegistry.ensureManifestLoaded(check.qualifiedTarget);
+
+      const targetClass =
+        ObjectRegistry.getClassByQualifiedName(check.qualifiedTarget) ??
+        ObjectRegistry.getClass(check.qualifiedTarget);
+
+      if (!targetClass) {
+        throw new ValidationError(
+          `crossPackageRef target ${check.qualifiedTarget} for ${className}.${check.fieldName} is not registered. ` +
+            `Ensure the target package's manifest is discoverable at runtime.`,
+          'VALIDATION_CROSS_PACKAGE_REF_UNREGISTERED',
+          { className, fieldName: check.fieldName, value: check.value },
+        );
+      }
+
+      const probe = new targetClass.constructor(this.options) as SmrtObject;
+      await probe.initialize();
+      await probe.verifyStorageReady();
+      const row = await probe.db.get(probe.tableName, { id: check.value });
+      if (!row) {
+        throw new ValidationError(
+          `crossPackageRef validation failed: ${className}.${check.fieldName} references ` +
+            `${check.qualifiedTarget} id="${check.value}" but no such row exists.`,
+          'VALIDATION_CROSS_PACKAGE_REF_MISSING',
+          { className, fieldName: check.fieldName, value: check.value },
+        );
       }
     }
   }
@@ -1824,7 +2077,8 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Lazy-loads a `foreignKey` relationship and caches the result.
+   * Lazy-loads a `foreignKey` or `crossPackageRef` relationship and caches the
+   * result.
    *
    * Looks up the relationship metadata in the ObjectRegistry, reads the
    * foreign key value on this object, and fetches the related object from
@@ -1834,10 +2088,21 @@ export class SmrtObject extends SmrtClass {
    * For STI relationships, the correct subclass is determined by reading
    * `_meta_type` from the database row before instantiation.
    *
-   * @param fieldName - Name of the `@foreignKey()` decorated property
+   * Enforces tenant isolation: if this object and the loaded target both carry
+   * a non-null `tenantId` that differ, a {@link TenantIsolationError} is thrown
+   * (unless `opts.allowCrossTenant` is set). The check is a no-op for
+   * global/null-tenant models and same-tenant loads, so it only catches genuine
+   * cross-tenant leaks (Issue #1321).
+   *
+   * @param fieldName - Name of the `@foreignKey()` or `@crossPackageRef()`
+   *   decorated property
+   * @param opts - Optional loader options; see {@link LoadRelatedOptions}
    * @returns The related object, or `null` if the foreign key is empty
-   * @throws {RuntimeError} If `fieldName` is not a `foreignKey` relationship,
-   *   or the target class is not found in the ObjectRegistry
+   * @throws {RuntimeError} If `fieldName` is not a `foreignKey` or
+   *   `crossPackageRef` relationship, or the target class is not found in the
+   *   ObjectRegistry
+   * @throws {TenantIsolationError} If the target belongs to a different,
+   *   non-null tenant and `opts.allowCrossTenant` is not set
    *
    * @example
    * ```typescript
@@ -1848,10 +2113,18 @@ export class SmrtObject extends SmrtClass {
    *
    * @see {@link getRelated} for a convenience wrapper that auto-detects relationship type
    */
-  public async loadRelated(fieldName: string): Promise<any> {
+  public async loadRelated(
+    fieldName: string,
+    opts?: LoadRelatedOptions,
+  ): Promise<any> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
-      return this._loadedRelationships.get(fieldName);
+      const cached = this._loadedRelationships.get(fieldName);
+      // Re-validate cached targets: a cache populated by an eager `include`
+      // load (or a prior allowCrossTenant load) must not leak cross-tenant data
+      // through a later guarded call (Issue #1321).
+      this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
+      return cached;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -1863,12 +2136,14 @@ export class SmrtObject extends SmrtClass {
       this.constructor.name,
     );
     const relationship = relationships.find(
-      (r) => r.fieldName === fieldName && r.type === 'foreignKey',
+      (r) =>
+        r.fieldName === fieldName &&
+        (r.type === 'foreignKey' || r.type === 'crossPackageRef'),
     );
 
     if (!relationship) {
       throw RuntimeError.invalidState(
-        `Field ${fieldName} is not a foreignKey relationship on ${this.constructor.name}`,
+        `Field ${fieldName} is not a foreignKey or crossPackageRef relationship on ${this.constructor.name}`,
         { fieldName, className: this.constructor.name },
       );
     }
@@ -1881,8 +2156,18 @@ export class SmrtObject extends SmrtClass {
       return null;
     }
 
-    // Get the target class constructor
-    const targetClassInfo = ObjectRegistry.getClass(relationship.targetClass);
+    // For crossPackageRef, the target is a qualified name and the target package's
+    // manifest may not be loaded yet — ensure it's available before lookup.
+    if (relationship.type === 'crossPackageRef') {
+      await ObjectRegistry.ensureManifestLoaded(relationship.targetClass);
+    }
+
+    // Get the target class constructor (try qualified name first for crossPackageRef)
+    const targetClassInfo =
+      relationship.type === 'crossPackageRef'
+        ? (ObjectRegistry.getClassByQualifiedName(relationship.targetClass) ??
+          ObjectRegistry.getClass(relationship.targetClass))
+        : ObjectRegistry.getClass(relationship.targetClass);
     if (!targetClassInfo) {
       throw RuntimeError.invalidState(
         `Target class ${relationship.targetClass} not found in ObjectRegistry`,
@@ -1929,9 +2214,73 @@ export class SmrtObject extends SmrtClass {
     relatedInstance.id = foreignKeyValue as string;
     await relatedInstance.loadFromId();
 
+    // Enforce tenant isolation before caching/returning so a blocked
+    // cross-tenant target is never cached (Issue #1321).
+    this.assertRelatedTenant(
+      relatedInstance,
+      fieldName,
+      opts?.allowCrossTenant,
+    );
+
     // Cache the loaded object
     this._loadedRelationships.set(fieldName, relatedInstance);
     return relatedInstance;
+  }
+
+  /**
+   * Guards a loaded relationship target against cross-tenant access.
+   *
+   * Throws {@link TenantIsolationError} when this object and `loaded` both carry
+   * a non-null `tenantId` that differ — the genuine cross-tenant leak. It is a
+   * no-op when `allowCrossTenant === true`, when `loaded` is `null`, when either
+   * side has a `null`/`undefined` tenant (global / non-tenant-scoped models),
+   * and when both sides share the same tenant (Issue #1321).
+   *
+   * `loaded` may be a single related object or an array (oneToMany / manyToMany);
+   * arrays are validated per item. This runs on both fresh loads and cache hits,
+   * so a cache populated by an eager `include` load — or by a prior
+   * `allowCrossTenant` load — cannot leak cross-tenant data through a later
+   * guarded call.
+   *
+   * @param loaded - The loaded related object, or array of objects.
+   * @param fieldName - The relationship field name (for error context).
+   * @param allowCrossTenant - When exactly `true`, bypasses the guard entirely.
+   */
+  private assertRelatedTenant(
+    loaded: unknown,
+    fieldName: string,
+    allowCrossTenant?: boolean,
+  ): void {
+    // Strict `=== true`: only the documented opt-in bypasses the guard, never an
+    // incidental truthy value passed from untyped JS callers.
+    if (allowCrossTenant === true || loaded == null) {
+      return;
+    }
+
+    if (Array.isArray(loaded)) {
+      for (const item of loaded) {
+        this.assertRelatedTenant(item, fieldName, allowCrossTenant);
+      }
+      return;
+    }
+
+    const sourceTenantId = (this as { tenantId?: unknown }).tenantId;
+    const targetTenantId = (loaded as { tenantId?: unknown }).tenantId;
+
+    if (
+      sourceTenantId != null &&
+      targetTenantId != null &&
+      sourceTenantId !== targetTenantId
+    ) {
+      throw TenantIsolationError.crossTenantReference({
+        sourceClass: this.constructor.name,
+        fieldName,
+        sourceTenantId: String(sourceTenantId),
+        targetClass: (loaded as { constructor?: { name?: string } })
+          ?.constructor?.name,
+        targetTenantId: String(targetTenantId),
+      });
+    }
   }
 
   /**
@@ -1940,9 +2289,18 @@ export class SmrtObject extends SmrtClass {
    * Loads all related objects from the database. For oneToMany, queries by
    * the inverse foreign key. For manyToMany, queries through the join table.
    *
+   * Enforces tenant isolation per item: if this object and a loaded target both
+   * carry a non-null `tenantId` that differ, a {@link TenantIsolationError} is
+   * thrown (unless `opts.allowCrossTenant` is set). The check is a no-op for
+   * global/null-tenant models and same-tenant loads, so it only catches genuine
+   * cross-tenant leaks (Issue #1321).
+   *
    * @param fieldName - Name of the oneToMany or manyToMany field
+   * @param opts - Optional loader options; see {@link LoadRelatedOptions}
    * @returns Promise resolving to array of related objects
    * @throws {RuntimeError} If the field is not a relationship or not implemented
+   * @throws {TenantIsolationError} If any loaded item belongs to a different,
+   *   non-null tenant and `opts.allowCrossTenant` is not set
    * @example
    * ```typescript
    * // Given: class Customer with orders = oneToMany(Order)
@@ -1950,10 +2308,18 @@ export class SmrtObject extends SmrtClass {
    * console.log(`${orders.length} orders found`);
    * ```
    */
-  public async loadRelatedMany(fieldName: string): Promise<any[]> {
+  public async loadRelatedMany(
+    fieldName: string,
+    opts?: LoadRelatedOptions,
+  ): Promise<any[]> {
     // Check if already loaded
     if (this._loadedRelationships.has(fieldName)) {
-      return this._loadedRelationships.get(fieldName);
+      const cached = this._loadedRelationships.get(fieldName);
+      // Re-validate cached targets: a cache populated by an eager `include`
+      // load (or a prior allowCrossTenant load) must not leak cross-tenant data
+      // through a later guarded call (Issue #1321).
+      this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
+      return cached;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -1974,16 +2340,48 @@ export class SmrtObject extends SmrtClass {
     }
 
     if (relationship.type === 'oneToMany') {
-      // Find the inverse foreignKey field on the target class
-      const inverseRelationships = ObjectRegistry.getInverseRelationships(
-        this.constructor.name,
-      );
-      const inverseForeignKey = inverseRelationships.find(
+      // Find the inverse foreignKey field on the target class. An instance can
+      // satisfy an inverse FK that targets its own class OR any (STI) ancestor
+      // it inherits the oneToMany from — the FK is declared against the base
+      // class name, while `this.constructor.name` may be a subclass (e.g. a
+      // Person inheriting Profile.relationshipsFrom).
+      const inverseRelationships =
+        ObjectRegistry.getInverseRelationshipsForSelf(this.constructor.name);
+      const inverseCandidates = inverseRelationships.filter(
         (r) =>
-          r.sourceClass === relationship.targetClass &&
-          r.type === 'foreignKey' &&
-          r.targetClass === this.constructor.name,
+          r.sourceClass === relationship.targetClass && r.type === 'foreignKey',
       );
+      // When the target declares multiple foreign keys back to this class
+      // (e.g. ProfileRelationship.fromProfileId / toProfileId), honor an
+      // explicit `@oneToMany(Target, { foreignKey })` to pick the right side.
+      // Otherwise fall back to the first match (legacy behavior).
+      const explicitForeignKey = relationship.options?.foreignKey as
+        | string
+        | undefined;
+      const matchedForeignKey = explicitForeignKey
+        ? inverseCandidates.find((r) => r.fieldName === explicitForeignKey)
+        : undefined;
+      if (explicitForeignKey && !matchedForeignKey) {
+        // A misspelled / stale `foreignKey` must fail loudly rather than
+        // silently resolving the wrong inverse side.
+        throw RuntimeError.invalidState(
+          `oneToMany ${fieldName} on ${this.constructor.name} specifies foreignKey '${explicitForeignKey}', but ${relationship.targetClass} has no matching inverse foreignKey. Candidates: ${inverseCandidates.map((r) => r.fieldName).join(', ') || '(none)'}`,
+          {
+            fieldName,
+            targetClass: relationship.targetClass,
+            foreignKey: explicitForeignKey,
+          },
+        );
+      }
+      // Prefer an inverse FK that targets this exact class before falling back
+      // to one inherited from an (STI) ancestor — preserves the pre-fallback
+      // selection when a target declares FKs to multiple levels of the chain.
+      const inverseForeignKey =
+        matchedForeignKey ??
+        inverseCandidates.find(
+          (r) => r.targetClass === this.constructor.name,
+        ) ??
+        inverseCandidates[0];
 
       if (!inverseForeignKey) {
         throw RuntimeError.invalidState(
@@ -2003,17 +2401,63 @@ export class SmrtObject extends SmrtClass {
         where: { [inverseForeignKey.fieldName]: this.id },
       });
 
+      // Enforce tenant isolation per item before caching (Issue #1321).
+      this.assertRelatedTenant(
+        relatedObjects,
+        fieldName,
+        opts?.allowCrossTenant,
+      );
+
       // Cache the loaded objects
       this._loadedRelationships.set(fieldName, relatedObjects);
       return relatedObjects;
     }
 
     if (relationship.type === 'manyToMany') {
-      // manyToMany requires a join table - not implemented yet
-      throw RuntimeError.invalidState(
-        `manyToMany relationship loading not yet implemented for ${fieldName}`,
-        { fieldName, type: 'manyToMany' },
+      const { through, sourceColumn, targetColumn, targetClassName } =
+        await this.resolveManyToManyJoin(fieldName, relationship);
+
+      if (!this.id) {
+        // No id yet — there can't be any join rows pointing at this instance.
+        this._loadedRelationships.set(fieldName, []);
+        return [];
+      }
+
+      await this.verifyStorageReady();
+
+      const junctionRows = await this.db.query(
+        `SELECT "${targetColumn}" FROM "${through}" WHERE "${sourceColumn}" = ?`,
+        [this.id],
       );
+
+      const targetIds = junctionRows.rows
+        .map((row: any) => row[targetColumn])
+        .filter(
+          (id: any): id is string => typeof id === 'string' && id.length > 0,
+        );
+
+      if (targetIds.length === 0) {
+        this._loadedRelationships.set(fieldName, []);
+        return [];
+      }
+
+      const targetCollection = await ObjectRegistry.getCollection(
+        targetClassName,
+        this.options,
+      );
+      const targetObjects = await targetCollection.list({
+        where: { 'id in': targetIds },
+      });
+
+      // Enforce tenant isolation per item before caching (Issue #1321).
+      this.assertRelatedTenant(
+        targetObjects,
+        fieldName,
+        opts?.allowCrossTenant,
+      );
+
+      this._loadedRelationships.set(fieldName, targetObjects);
+      return targetObjects;
     }
 
     throw RuntimeError.invalidState(
@@ -2023,13 +2467,80 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Resolves the junction-table coordinates for a manyToMany relationship.
+   *
+   * Discovers `through`, source-side column, and target-side column from the
+   * registered field metadata. Falls back to convention (`<class>_id`) when
+   * `sourceKey` / `targetKey` are not explicitly set.
+   */
+  protected async resolveManyToManyJoin(
+    fieldName: string,
+    relationship: {
+      sourceClass: string;
+      targetClass: string;
+      options?: any;
+    },
+  ): Promise<{
+    through: string;
+    sourceColumn: string;
+    targetColumn: string;
+    targetClassName: string;
+  }> {
+    const decorator = ObjectRegistry.getFieldDecorator(
+      relationship.sourceClass,
+      fieldName,
+    );
+    const opts = relationship.options || {};
+
+    const through = decorator?.through ?? opts.through ?? opts._meta?.through;
+    if (!through) {
+      throw RuntimeError.invalidState(
+        `manyToMany field ${fieldName} on ${relationship.sourceClass} is missing the 'through' join table name`,
+        { fieldName, type: 'manyToMany' },
+      );
+    }
+
+    // For cross-package qualified targets, derive the simple name for column conventions
+    const targetSimpleName = relationship.targetClass.includes(':')
+      ? relationship.targetClass.split(':').pop()!
+      : relationship.targetClass;
+    const sourceSimpleName = relationship.sourceClass.includes(':')
+      ? relationship.sourceClass.split(':').pop()!
+      : relationship.sourceClass;
+
+    const sourceColumn =
+      decorator?.sourceKey ??
+      opts.sourceKey ??
+      opts._meta?.sourceKey ??
+      `${toSnakeCase(sourceSimpleName)}_id`;
+    const targetColumn =
+      decorator?.targetKey ??
+      opts.targetKey ??
+      opts._meta?.targetKey ??
+      `${toSnakeCase(targetSimpleName)}_id`;
+
+    return {
+      through: String(through),
+      sourceColumn,
+      targetColumn,
+      targetClassName: relationship.targetClass,
+    };
+  }
+
+  /**
    * Get a related object, loading it if not already loaded
    *
    * Convenience method that checks if the relationship is loaded and
    * loads it if necessary. Automatically detects foreignKey vs oneToMany/manyToMany.
    *
+   * Tenant isolation is enforced by the underlying loaders; see
+   * {@link loadRelated} and {@link loadRelatedMany}.
+   *
    * @param fieldName - Name of the relationship field
+   * @param opts - Optional loader options; see {@link LoadRelatedOptions}
    * @returns Promise resolving to the related object(s)
+   * @throws {TenantIsolationError} If a loaded target belongs to a different,
+   *   non-null tenant and `opts.allowCrossTenant` is not set
    * @example
    * ```typescript
    * // Loads customer if not already loaded
@@ -2039,9 +2550,16 @@ export class SmrtObject extends SmrtClass {
    * const orders = await customer.getRelated('orders');
    * ```
    */
-  public async getRelated(fieldName: string): Promise<any> {
+  public async getRelated(
+    fieldName: string,
+    opts?: LoadRelatedOptions,
+  ): Promise<any> {
     if (this._loadedRelationships.has(fieldName)) {
-      return this._loadedRelationships.get(fieldName);
+      const cached = this._loadedRelationships.get(fieldName);
+      // Re-validate cached targets so an eager `include` load cannot leak
+      // cross-tenant data through this convenience accessor (Issue #1321).
+      this.assertRelatedTenant(cached, fieldName, opts?.allowCrossTenant);
+      return cached;
     }
 
     // Ensure manifest is loaded for external packages before accessing relationships
@@ -2062,11 +2580,14 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Load based on relationship type
-    if (relationship.type === 'foreignKey') {
-      return this.loadRelated(fieldName);
+    if (
+      relationship.type === 'foreignKey' ||
+      relationship.type === 'crossPackageRef'
+    ) {
+      return this.loadRelated(fieldName, opts);
     }
 
-    return this.loadRelatedMany(fieldName);
+    return this.loadRelatedMany(fieldName, opts);
   }
 
   /**

@@ -10,7 +10,12 @@ export type SQLDataType =
   | 'BLOB'
   | 'BOOLEAN'
   | 'JSON'
-  | 'TIMESTAMP';
+  | 'TIMESTAMP'
+  // UUID is an abstract id type (R11). Per-dialect mapping: native `uuid`
+  // on PostgreSQL, native `UUID` on DuckDB, and `TEXT` on SQLite (which has
+  // no uuid type). The differ treats UUID and TEXT as equivalent (no
+  // auto-conversion either direction) — see `normalizeType` in differ.ts.
+  | 'UUID';
 
 export interface ColumnDefinition {
   type: SQLDataType;
@@ -34,6 +39,17 @@ export interface IndexDefinition {
   unique?: boolean;
   where?: string; // Partial index condition
   description?: string;
+  /**
+   * Expression-based index target.
+   *
+   * When set, the DDL strategy renders the index over a JSON path inside
+   * `column` rather than the `columns` list. Used today by `@meta({ indexed: true })`
+   * which targets a key inside the `_meta_data` JSONB column.
+   */
+  jsonPath?: {
+    column: string;
+    path: string;
+  };
 }
 
 export interface TriggerDefinition {

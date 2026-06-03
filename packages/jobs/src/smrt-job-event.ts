@@ -5,6 +5,7 @@ import './__smrt-register__.js';
 import {
   ensureJobEventsSystemTableCompatibility,
   field,
+  foreignKey,
   SmrtCollection,
   SmrtObject,
   smrt,
@@ -66,7 +67,7 @@ export class SmrtJobEvent extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null | undefined = undefined;
 
-  @field({ type: 'text', required: true })
+  @foreignKey('SmrtJob', { required: true })
   jobId: string = '';
 
   @field({ type: 'text', required: true, default: 'log' })

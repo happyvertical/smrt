@@ -67,6 +67,15 @@ Registration sets `SMRT_TABLE_NAME` static property (survives minification).
 | CLI | `src/generators/cli.ts` | Commander commands with auto-help |
 | MCP Server | `src/generators/mcp.ts` | Model Context Protocol tools |
 
+## Child Accessors (R10)
+
+`src/child-accessors.ts` installs a consistent `get<FieldName>()` instance method for every `@oneToMany` field at `@smrt()` registration time (e.g. `@oneToMany('OrderItem') items` → `order.getItems()`), delegating to `loadRelatedMany`. Two invariants:
+
+- **Additive** — never overwrites a hand-rolled method of the same name (checks the whole prototype chain). `Profile.getMetadata()` (key-value) and `ProfileRelationship.getTerms()` are preserved.
+- **Runtime-only** — attached to the prototype, invisible to the build-time manifest, so it never leaks into the REST/CLI/MCP surface.
+
+When the target declares multiple FKs back to the parent, annotate `@oneToMany(Target, { foreignKey: '<inverseField>' })`; `loadRelatedMany` and the eager `include:` loader both honor it (else first-match).
+
 ## Vite Plugin
 
 ```typescript

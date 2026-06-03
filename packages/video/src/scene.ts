@@ -7,7 +7,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   assertValidVideoAssetRole,
@@ -193,6 +193,7 @@ export class Scene extends SmrtObject {
   description: string | null = null;
 
   /** Source media asset ID */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   sourceAssetId: string | null = null;
 
   /** Type of source media */
@@ -346,9 +347,9 @@ export class Scene extends SmrtObject {
       ? await listCanonicalOwnedAssetIds({
           tableName: 'scene_assets',
           loadLinks: async () =>
-            (await this.getSceneAssetCollection()).getForScene(
+            (await this.getSceneAssetCollection()).byLeft(
               this.id as string,
-              role,
+              role ? { role } : {},
             ),
         })
       : [];
@@ -392,7 +393,11 @@ export class Scene extends SmrtObject {
     assertValidVideoAssetSortOrder(sortOrder);
 
     const sceneAssets = await this.getSceneAssetCollection();
-    await sceneAssets.attach(this.id, asset.id, role, sortOrder, this.tenantId);
+    await sceneAssets.attach(this.id, asset.id, {
+      role,
+      sortOrder,
+      tenantId: this.tenantId,
+    });
 
     if (this.setLegacyFieldAssetId(role, asset.id)) {
       await this.save();
@@ -405,7 +410,7 @@ export class Scene extends SmrtObject {
     }
 
     const sceneAssets = await this.getSceneAssetCollection();
-    await sceneAssets.detach(this.id, assetId, role);
+    await sceneAssets.detach(this.id, assetId, role ? { role } : {});
 
     if (this.clearLegacyFieldAssetId(assetId, role)) {
       await this.save();

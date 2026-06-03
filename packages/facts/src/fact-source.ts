@@ -5,7 +5,7 @@
  * credibility, and extraction timestamp.
  */
 
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { FactSourceOptions } from './types';
 
@@ -17,7 +17,7 @@ import type { FactSourceOptions } from './types';
   cli: true,
 })
 export class FactSource extends SmrtObject {
-  @field({ required: true })
+  @foreignKey('Fact', { required: true })
   factId: string = '';
 
   @field()

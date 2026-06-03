@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import {
   promptMessageOptions,
@@ -36,6 +36,7 @@ export class AnalyticsReport extends SmrtObject {
   /**
    * Parent property ID (references AnalyticsProperty)
    */
+  @foreignKey('AnalyticsProperty')
   propertyId: string = '';
 
   /**

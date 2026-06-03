@@ -2,7 +2,7 @@
  * EmailFolder model - Folder/label tracking
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { EmailFolderOptions } from '../types';
 
@@ -16,6 +16,7 @@ export class EmailFolder extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
+  @foreignKey('Account')
   accountId = '';
   name = '';
   path = '';

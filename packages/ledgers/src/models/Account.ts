@@ -5,7 +5,7 @@
  * The 5 core types: Asset, Liability, Equity, Revenue, Expense
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { SmrtHierarchical, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
 
@@ -15,7 +15,7 @@ import type { AccountOptions, AccountTreeNode, AccountType } from '../types';
   mcp: { include: ['list', 'get', 'create'] },
   cli: true,
 })
-export class Account extends SmrtObject {
+export class Account extends SmrtHierarchical {
   /**
    * Tenant ID for multi-tenancy support (nullable for global accounts)
    */
@@ -42,10 +42,7 @@ export class Account extends SmrtObject {
    */
   type: AccountType = 'asset';
 
-  /**
-   * Parent account ID for sub-accounts (null = top-level)
-   */
-  parentId: string | null = null;
+  // parentId inherited from SmrtHierarchical (null = top-level)
 
   /**
    * Whether the account is active
@@ -96,40 +93,10 @@ export class Account extends SmrtObject {
     );
   }
 
-  /**
-   * Get the parent account (if any)
-   */
-  async getParent(): Promise<Account | null> {
-    if (!this.parentId) return null;
-    const { AccountCollection } = await import('../collections/Accounts');
-    const collection = await (AccountCollection as any).create(this.options);
-    return await collection.get({ id: this.parentId });
-  }
-
-  /**
-   * Get direct children of this account
-   */
-  async getChildren(): Promise<Account[]> {
-    if (!this.id) return [];
-    const { AccountCollection } = await import('../collections/Accounts');
-    const collection = await (AccountCollection as any).create(this.options);
-    return await collection.findChildren(this.id);
-  }
-
-  /**
-   * Get all ancestors up to the root
-   */
-  async getAncestors(): Promise<Account[]> {
-    const ancestors: Account[] = [];
-    let current: Account | null = await this.getParent();
-
-    while (current) {
-      ancestors.unshift(current); // Add to front (root first)
-      current = await current.getParent();
-    }
-
-    return ancestors;
-  }
+  // Hierarchy traversal (getParent / getChildren / getAncestors /
+  // getDescendants / getHierarchy / moveTo) provided by SmrtHierarchical.
+  // Account-specific helpers (getFullPath / getBalance / createChild /
+  // toTreeNode) remain below.
 
   /**
    * Get full account path (e.g., "Assets > Current > Cash")

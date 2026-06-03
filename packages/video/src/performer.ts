@@ -8,8 +8,7 @@
 
 import type { Asset } from '@happyvertical/smrt-assets';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
-import { Profile } from '@happyvertical/smrt-profiles';
+import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   assertValidVideoAssetRole,
@@ -147,16 +146,18 @@ export class Performer extends SmrtObject {
   referenceAssetIds: string[] = [];
 
   /** Generated seed image asset ID */
+  @crossPackageRef('@happyvertical/smrt-assets:Asset')
   seedImageAssetId: string | null = null;
 
   /** Default voice profile for this performer */
+  @crossPackageRef('@happyvertical/smrt-voice:VoiceProfile')
   voiceProfileId: string | null = null;
 
   /** Performer status */
   status: PerformerStatus = 'pending';
 
   /** 1-1 profile record for this performer */
-  @foreignKey(() => Profile)
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
   profileId: string | null = null;
 
   constructor(options: PerformerOptions = {}) {
@@ -249,9 +250,9 @@ export class Performer extends SmrtObject {
       ? await listCanonicalOwnedAssetIds({
           tableName: 'performer_assets',
           loadLinks: async () =>
-            (await this.getPerformerAssetCollection()).getForPerformer(
+            (await this.getPerformerAssetCollection()).byLeft(
               this.id as string,
-              role,
+              role ? { role } : {},
             ),
         })
       : [];
@@ -295,13 +296,11 @@ export class Performer extends SmrtObject {
     assertValidVideoAssetSortOrder(sortOrder);
 
     const performerAssets = await this.getPerformerAssetCollection();
-    await performerAssets.attach(
-      this.id,
-      asset.id,
+    await performerAssets.attach(this.id, asset.id, {
       role,
       sortOrder,
-      this.tenantId,
-    );
+      tenantId: this.tenantId,
+    });
 
     if (this.setLegacyFieldAssetId(role, asset.id)) {
       await this.save();
@@ -314,7 +313,7 @@ export class Performer extends SmrtObject {
     }
 
     const performerAssets = await this.getPerformerAssetCollection();
-    await performerAssets.detach(this.id, assetId, role);
+    await performerAssets.detach(this.id, assetId, role ? { role } : {});
 
     if (this.clearLegacyFieldAssetId(assetId, role)) {
       await this.save();

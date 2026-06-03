@@ -14,7 +14,7 @@ export interface AssetCapabilityRuntime {
     source: Asset,
     name: string,
     data: Buffer,
-    opts: Omit<StoreOptions, 'parentId'> & {
+    opts: Omit<StoreOptions, 'sourceAssetId'> & {
       role?: string;
       derivativeMetaType?: string;
       linkAssociation?: boolean;

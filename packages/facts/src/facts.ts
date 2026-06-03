@@ -218,10 +218,11 @@ export class FactCollection extends SmrtCollection<Fact> {
   }
 
   /**
-   * Get child facts for a parent
+   * Get successor facts for a given predecessor (facts that evolved
+   * directly from `previousFactId`).
    */
-  async getChildren(parentId: string): Promise<Fact[]> {
-    return this.list({ where: { parentId } });
+  async getSuccessors(previousFactId: string): Promise<Fact[]> {
+    return this.list({ where: { previousFactId } });
   }
 
   // =========================================================================
@@ -376,8 +377,8 @@ export class FactCollection extends SmrtCollection<Fact> {
     const { FactContentCollection } = await import('./fact-contents');
     const links = await FactContentCollection.create(this.options);
     const relatedLinks = relationship
-      ? await links.getForContentByRelationship(contentId, relationship)
-      : await links.getForContent(contentId);
+      ? await links.byRight(contentId, { relationship })
+      : await links.byRight(contentId);
 
     const uniqueFactIds = [...new Set(relatedLinks.map((link) => link.factId))];
     const loadedFacts = await Promise.all(
@@ -418,7 +419,7 @@ export class FactCollection extends SmrtCollection<Fact> {
    *    - Top match >= similarityThreshold (0.85) -> MERGE (add source, bump sourceCount)
    *    - Ambiguous zone (0.60-0.85) -> AI disambiguation via this.ai.message()
    *      - AI says "merge" -> MERGE
-   *      - AI says "branch" -> BRANCH (new fact as child, parent marked superseded)
+   *      - AI says "branch" -> BRANCH (new fact as successor, predecessor marked superseded)
    * 3. Record FactSource if source metadata provided
    * 4. Return { action, fact, source?, similarity?, matchedFact? }
    */
@@ -782,19 +783,24 @@ export class FactCollection extends SmrtCollection<Fact> {
   }
 
   /**
-   * Create a branched fact from an existing parent.
-   * For 'correction' and 'contradiction' evolution types,
-   * the parent is marked as superseded.
+   * Create a branched fact from an existing predecessor.
+   *
+   * For 'correction' and 'contradiction' evolution types, the
+   * predecessor is marked as superseded.
+   *
+   * @param previousFactId ID of the predecessor fact this branches from.
+   * @param data Partial fact options for the new successor.
+   * @param evolutionType How the successor relates to the predecessor.
    */
   async branch(
-    parentId: string,
+    previousFactId: string,
     data: Partial<FactOptions>,
     evolutionType: EvolutionType = 'extension',
   ): Promise<Fact> {
-    // Load parent fact
-    const parent = await this.get({ id: parentId });
-    if (!parent) {
-      throw new Error(`Parent fact not found: ${parentId}`);
+    // Load predecessor fact
+    const predecessor = await this.get({ id: previousFactId });
+    if (!predecessor) {
+      throw new Error(`Predecessor fact not found: ${previousFactId}`);
     }
 
     // Pre-process metadata if it's an object
@@ -806,40 +812,43 @@ export class FactCollection extends SmrtCollection<Fact> {
       createData.metadata = JSON.stringify(createData.metadata);
     }
 
-    // Create child fact with parentId and evolutionType
-    const child = await this.create({
+    // Create successor fact with previousFactId and evolutionType
+    const successor = await this.create({
       ...createData,
-      parentId,
+      previousFactId,
       evolutionType,
       status: data.status || 'active',
       _skipAutoEmbeddings: true,
     } as any);
 
-    // Generate embeddings for the child fact
+    // Generate embeddings for the successor fact
     try {
-      await child.generateEmbeddings();
+      await successor.generateEmbeddings();
     } catch {
       // Embedding generation may fail if no provider is configured
     }
 
-    // Mark parent as superseded if correction or contradiction
+    // Mark predecessor as superseded if correction or contradiction
     if (evolutionType === 'correction' || evolutionType === 'contradiction') {
-      parent.status = 'superseded';
-      await parent.save();
+      predecessor.status = 'superseded';
+      await predecessor.save();
     }
 
-    return child;
+    return successor;
   }
 
   /**
-   * Walk up via parentId to the root fact, returning root -> current array.
+   * Walk up the evolution chain via previousFactId, returning the
+   * predecessors followed by the current fact in order.
+   *
+   * @returns Array ordered from root (original) → current fact.
    */
   async getEvolutionChain(factId: string): Promise<Fact[]> {
     const chain: Fact[] = [];
     const visited = new Set<string>();
     let currentId: string = factId;
 
-    // Walk up the chain via parentId
+    // Walk up the chain via previousFactId
     while (currentId) {
       if (visited.has(currentId)) break;
       visited.add(currentId);
@@ -848,15 +857,15 @@ export class FactCollection extends SmrtCollection<Fact> {
         break;
       }
       chain.unshift(fact); // prepend to get root->current order
-      currentId = fact.parentId;
+      currentId = fact.previousFactId;
     }
 
     return chain;
   }
 
   /**
-   * Walk down children to find the latest (highest confidence) leaf.
-   * At each level, picks the child with the highest confidence score.
+   * Walk down successors to find the latest (highest confidence) leaf.
+   * At each level, picks the successor with the highest confidence score.
    */
   async getLatestInChain(factId: string): Promise<Fact> {
     let current = await this.get({ id: factId });
@@ -870,16 +879,16 @@ export class FactCollection extends SmrtCollection<Fact> {
       if (visited.has(currentId)) break;
       visited.add(currentId);
 
-      const children = await this.getChildren(currentId);
-      if (children.length === 0) {
+      const successors = await this.getSuccessors(currentId);
+      if (successors.length === 0) {
         break;
       }
 
-      // Pick child with highest confidence
-      let best = children[0];
-      for (let i = 1; i < children.length; i++) {
-        if (children[i].confidence > best.confidence) {
-          best = children[i];
+      // Pick successor with highest confidence
+      let best = successors[0];
+      for (let i = 1; i < successors.length; i++) {
+        if (successors[i].confidence > best.confidence) {
+          best = successors[i];
         }
       }
       current = best;
@@ -889,8 +898,10 @@ export class FactCollection extends SmrtCollection<Fact> {
   }
 
   /**
-   * Find root of chain via getEvolutionChain, then collect all descendants recursively.
-   * Returns the full tree as a flat array.
+   * Find the root of the chain via `getEvolutionChain`, then collect every
+   * successor iteratively via BFS (queue-based, with a `visited` set for
+   * cycle protection). Returns the full tree as a flat array in BFS
+   * order — root first, then each level of successors.
    */
   async getEvolutionTree(factId: string): Promise<Fact[]> {
     // Find root
@@ -914,8 +925,8 @@ export class FactCollection extends SmrtCollection<Fact> {
       if (visited.has(nodeId)) continue;
       visited.add(nodeId);
       tree.push(node);
-      const children = await this.getChildren(nodeId);
-      queue.push(...children);
+      const successors = await this.getSuccessors(nodeId);
+      queue.push(...successors);
     }
 
     return tree;

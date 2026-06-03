@@ -37,6 +37,7 @@ import {
   shouldApplySchemaMigrations,
   shouldFailDbMigrate,
 } from './db-migrate-actions.js';
+import { dbMigrateUuidCommand } from './db-migrate-uuid.js';
 import { dbRollbackCommand } from './db-rollback.js';
 import { dbStatusCommand } from './db-status.js';
 import { exportCommand } from './export.js';
@@ -130,10 +131,27 @@ interface IndexDef {
   unique?: boolean;
 }
 
+type DDLPreviewEngine = 'sqlite' | 'duckdb' | 'json' | 'postgres';
+
 export function resolveVitestEntrypoint(fromDir = process.cwd()): string {
   const requireFromDir = createRequire(resolve(fromDir, 'package.json'));
   const vitestPackageJson = requireFromDir.resolve('vitest/package.json');
   return join(dirname(vitestPackageJson), 'vitest.mjs');
+}
+
+function resolveDDLPreviewEngine(dbType: string): DDLPreviewEngine {
+  switch (dbType) {
+    case 'json':
+      return 'json';
+    case 'duckdb':
+      return 'duckdb';
+    case 'postgres':
+    case 'postgresql':
+    case 'pg':
+      return 'postgres';
+    default:
+      return 'sqlite';
+  }
 }
 
 /**
@@ -725,8 +743,17 @@ export default testManifest;
             const tableStrategy = ObjectRegistry.getTableStrategy(className);
             const stiBase = ObjectRegistry.getSTIBase(className);
 
-            // Skip STI children (they share the base class table)
-            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+            // R5-canon: `getSTIBase` returns the qualified name; compare
+            // against the qualified form so an STI base isn't
+            // mis-classified as a child.
+            const qualifiedClassName =
+              registered.qualifiedName ?? registered.name ?? className;
+            const isSTIChild =
+              tableStrategy === 'sti' &&
+              !!stiBase &&
+              stiBase !== qualifiedClassName &&
+              stiBase !== className;
+            if (isSTIChild) {
               console.log(
                 `-- Table: ${className} (Base: ${stiBase}, Strategy: STI)`,
               );
@@ -734,7 +761,11 @@ export default testManifest;
               continue;
             }
 
-            const schema = await generateSchema(registered.constructor);
+            const schema = await generateSchema(
+              registered.constructor,
+              undefined,
+              { engine: resolveDDLPreviewEngine(dbType) },
+            );
             if (schema && schema.trim() !== '') {
               const tableName = ObjectRegistry.getTableName(className);
               const strategy = tableStrategy === 'sti' ? 'STI' : 'CTI';
@@ -827,9 +858,18 @@ export default testManifest;
           try {
             const tableStrategy = ObjectRegistry.getTableStrategy(className);
             const stiBase = ObjectRegistry.getSTIBase(className);
+            // R5-canon: qualified-to-qualified STI-child detection.
+            const registered = ObjectRegistry.getClass(className);
+            const qualifiedClassName =
+              registered?.qualifiedName ?? registered?.name ?? className;
 
             // Skip STI children (schema already created by base class)
-            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+            if (
+              tableStrategy === 'sti' &&
+              stiBase &&
+              stiBase !== qualifiedClassName &&
+              stiBase !== className
+            ) {
               tablesSkipped++;
               if (options.verbose) {
                 console.log(`  ⊙ ${className} (shares table with ${stiBase})`);
@@ -1277,8 +1317,17 @@ export default testManifest;
             const tableName = ObjectRegistry.getTableName(className);
             const tableStrategy = ObjectRegistry.getTableStrategy(className);
             const stiBase = ObjectRegistry.getSTIBase(className);
+            // R5-canon: qualified-to-qualified STI-child detection.
+            const registered = ObjectRegistry.getClass(className);
+            const qualifiedClassName =
+              registered?.qualifiedName ?? registered?.name ?? className;
 
-            if (tableStrategy === 'sti' && stiBase && stiBase !== className) {
+            if (
+              tableStrategy === 'sti' &&
+              stiBase &&
+              stiBase !== qualifiedClassName &&
+              stiBase !== className
+            ) {
               console.log(
                 `  ${i + 1}. ${className} → ${tableName} (STI child of ${stiBase})`,
               );
@@ -2390,6 +2439,7 @@ export default testManifest;
   'db:diff': dbDiffCommand,
   'db:rollback': dbRollbackCommand,
   'db:generate': dbGenerateCommand,
+  'db:migrate-uuid': dbMigrateUuidCommand,
 
   // Configuration commands
   'config:export': configExportCommand,

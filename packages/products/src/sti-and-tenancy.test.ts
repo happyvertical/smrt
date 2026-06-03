@@ -52,7 +52,10 @@ describe('Product STI subtypes', () => {
     });
 
     it('resolves Product as STI base for Material', () => {
-      expect(ObjectRegistry.getSTIBase('Material')).toBe('Product');
+      // R5-canon: getSTIBase returns qualified names.
+      expect(ObjectRegistry.getSTIBase('Material')).toBe(
+        '@happyvertical/smrt-products:Product',
+      );
     });
 
     it('does NOT treat ProductVariant as a Product STI subtype', () => {

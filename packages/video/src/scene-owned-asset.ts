@@ -1,6 +1,13 @@
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
-import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+import { Scene } from './scene.js';
 import type { SceneAssetRole } from './scene-asset.js';
 
 export interface SceneOwnedAssetOptions extends SmrtObjectOptions {
@@ -24,10 +31,10 @@ export class SceneOwnedAsset extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
-  @field({ required: true })
+  @foreignKey(() => Scene, { required: true })
   sceneId = '';
 
-  @field({ required: true })
+  @crossPackageRef('@happyvertical/smrt-assets:Asset', { required: true })
   assetId = '';
 
   @field({ required: true })

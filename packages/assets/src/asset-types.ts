@@ -43,7 +43,9 @@ export class AssetTypeCollection extends SmrtCollection<AssetType> {
    * - video
    * - document
    * - audio
-   * - folder
+   *
+   * Note: `folder` was removed in R3-D. Folders are no longer an asset
+   * subtype — they live on their own `folders` table. See `folder.ts`.
    */
   async initializeCommonTypes(): Promise<void> {
     await this.getOrCreate(
@@ -65,11 +67,6 @@ export class AssetTypeCollection extends SmrtCollection<AssetType> {
       'audio',
       'Audio',
       'Audio files (MP3, WAV, AAC, etc.)',
-    );
-    await this.getOrCreate(
-      'folder',
-      'Folder',
-      'Container for organizing assets',
     );
   }
 }

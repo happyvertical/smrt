@@ -18,6 +18,11 @@
 
 // Built-in signal adapters
 export * from './adapters/index';
+// R10: generated child accessors for @oneToMany relationships
+export {
+  applyOneToManyChildAccessors,
+  childAccessorName,
+} from './child-accessors';
 // Core SMRT framework
 export * from './class';
 export * from './collection';
@@ -46,6 +51,8 @@ export {
 // Property decorators for field definition
 // Re-export decorator versions with priority over field helpers
 export {
+  type CrossPackageRefOptions,
+  crossPackageRef,
   type FieldOptions,
   field,
   foreignKey,
@@ -64,8 +71,14 @@ export * from './embeddings/index';
 export * from './errors';
 // Code generators (tree-shakeable)
 export * from './generators/index';
+export { type HierarchyView, SmrtHierarchical } from './hierarchical';
 // Global interceptors system (for tenancy, soft-delete, audit logging, etc.)
 export * from './interceptors';
+export {
+  type JunctionAttachOptions,
+  type JunctionFilterOptions,
+  SmrtJunction,
+} from './junction';
 // Lazy / execute-time config resolvers (for agent_config and similar
 // snapshot-prone payloads — see issue #1161)
 export type {
@@ -94,6 +107,10 @@ export {
   SchemaComparer,
 } from './migrations/differ';
 export * from './object';
+export {
+  SmrtPolymorphicAssociation,
+  type SmrtPolymorphicAssociationOptions,
+} from './polymorphic-association';
 export * from './registry';
 export { smrt as smrtRegistry } from './registry';
 // Runtime utilities

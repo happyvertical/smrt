@@ -1,24 +1,11 @@
-import pluralizeLib from 'pluralize';
 import { ObjectRegistry } from './registry';
+import {
+  classnameToTablename,
+  pluralize,
+  toSnakeCase,
+} from './utils/naming.js';
 
-/**
- * Converts a camelCase string to snake_case
- *
- * @param str - String in camelCase format
- * @returns String in snake_case format
- * @example
- * ```typescript
- * toSnakeCase('meetingsUrl'); // 'meetings_url'
- * toSnakeCase('createdAt'); // 'created_at'
- * toSnakeCase('id'); // 'id'
- * ```
- */
-export function toSnakeCase(str: string): string {
-  return str
-    .replace(/([A-Z])/g, '_$1')
-    .toLowerCase()
-    .replace(/^_/, '');
-}
+export { classnameToTablename, pluralize, toSnakeCase };
 
 /**
  * Converts a snake_case string to camelCase
@@ -176,41 +163,6 @@ export async function fieldsFromClass(
 // Import from './schema/utils' in Node.js code that needs schema generation.
 
 /**
- * Pluralizes an English word using the pluralize library.
- *
- * Uses the well-tested `pluralize` npm package which handles all English
- * pluralization rules including irregular plurals (person → people,
- * child → children), special cases (quiz → quizzes), and more.
- *
- * For snake_case table names with multiple words (e.g., 'journal_entry'),
- * only the last word is pluralized ('journal_entries').
- *
- * @param word - The word to pluralize (should be lowercase)
- * @returns The pluralized word
- * @example
- * ```typescript
- * pluralize('currency');        // 'currencies'
- * pluralize('journal_entry');   // 'journal_entries'
- * pluralize('statement_batch'); // 'statement_batches'
- * pluralize('product');         // 'products'
- * pluralize('person');          // 'people'
- * pluralize('child');           // 'children'
- * ```
- */
-export function pluralize(word: string): string {
-  // For snake_case words, only pluralize the last segment
-  // e.g., 'journal_entry' → 'journal_entries' (not 'journals_entries')
-  if (word.includes('_')) {
-    const parts = word.split('_');
-    const lastWord = parts.pop();
-    if (!lastWord) return word; // Safety check (shouldn't happen)
-    return [...parts, pluralizeLib(lastWord)].join('_');
-  }
-
-  return pluralizeLib(word);
-}
-
-/**
  * Returns the old (incorrect) pluralized table name for migration purposes.
  *
  * This function replicates the previous buggy behavior where 'y' → 'ies'
@@ -311,24 +263,6 @@ export function tableNameFromClass(
     // Convert to lowercase
     .toLowerCase();
 
-  return pluralize(snakeCase);
-}
-
-/**
- * Converts a class name to a table name with pluralization
- *
- * @param className - Name of the class
- * @returns Pluralized snake_case table name
- */
-export function classnameToTablename(className: string) {
-  // Convert camelCase/PascalCase to snake_case
-  const snakeCase = className
-    // Insert underscore between lower & upper case letters
-    .replace(/([a-z])([A-Z])/g, '$1_$2')
-    // Convert to lowercase
-    .toLowerCase();
-
-  // Pluralize using proper English rules
   return pluralize(snakeCase);
 }
 

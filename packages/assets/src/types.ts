@@ -2,7 +2,10 @@
  * Type definitions for @have/assets package
  */
 
-import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
+import type {
+  SmrtObjectOptions,
+  SmrtPolymorphicAssociationOptions,
+} from '@happyvertical/smrt-core';
 
 /**
  * Options for creating an AssetType instance
@@ -47,7 +50,11 @@ export interface AssetOptions extends SmrtObjectOptions {
   typeSlug?: string;
   statusSlug?: string;
   ownerProfileId?: string | null;
-  parentId?: string | null;
+  /**
+   * FK to the source asset this one was derived from. Renamed from
+   * `parentId` in R3-D — see `asset.ts` for context.
+   */
+  sourceAssetId?: string | null;
   folderId?: string | null;
   sourceType?: string;
   externalId?: string;
@@ -57,17 +64,29 @@ export interface AssetOptions extends SmrtObjectOptions {
 }
 
 /**
- * Options for creating an AssetAssociation instance
+ * Options for creating an AssetAssociation instance.
+ *
+ * The polymorphic `metaType` / `metaId` / `role` / `sortOrder` options come
+ * from `SmrtPolymorphicAssociationOptions`; this only adds the owner FK.
  */
-export interface AssetAssociationOptions extends SmrtObjectOptions {
+export interface AssetAssociationOptions
+  extends SmrtPolymorphicAssociationOptions {
   assetId?: string;
-  metaType?: string;
-  metaId?: string;
-  role?: string;
-  sortOrder?: number;
 }
 
 /**
- * Options for creating a Folder instance
+ * Options for creating a Folder instance.
+ *
+ * Post R3-D: Folder no longer extends Asset. It's a top-level
+ * SmrtHierarchical model with its own `folders` table.
  */
-export interface FolderOptions extends AssetOptions {}
+export interface FolderOptions extends SmrtObjectOptions {
+  name?: string;
+  slug?: string;
+  description?: string;
+  parentId?: string | null;
+  ownerProfileId?: string | null;
+  tenantId?: string | null;
+  createdAt?: Date;
+  updatedAt?: Date;
+}

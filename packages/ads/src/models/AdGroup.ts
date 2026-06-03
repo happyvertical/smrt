@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  foreignKey,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { AdGroupStatus } from '../types/index.js';
 
@@ -49,6 +54,7 @@ export class AdGroup extends SmrtObject {
   /**
    * Contract ID (FK to smrt-commerce Contract, cross-package)
    */
+  @crossPackageRef('@happyvertical/smrt-commerce:Contract')
   contractId: string = '';
 
   /**
