@@ -525,7 +525,7 @@ export class SecretService {
     if (!this.auditEnabled) return;
 
     try {
-      const tenantId = getCurrentTenant()?.tenantId;
+      const tenantId = getCurrentTenant()?.tenantId ?? null;
       const log = await this.auditLogs.create(
         createAuditEntry({
           secretId,

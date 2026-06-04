@@ -33,6 +33,14 @@ type StatusDrift = {
   recommendation: string;
 };
 
+type StatusPrecondition = {
+  name: string;
+  status: 'warning' | 'error';
+  message: string;
+  recommendation: string;
+  details?: Record<string, unknown>;
+};
+
 type FailedMigrationSummary = {
   total: number;
   actionRequired: number;
@@ -48,6 +56,130 @@ type FailedMigrationSummary = {
 };
 
 type FailedMigrationBuckets = ReturnType<typeof summarizeFailedMigrations>;
+
+const CANONICAL_UUID_RE =
+  '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+
+function getSchemaColumn(schema: any, columnName: string): any | null {
+  const columns = schema?.columns;
+  if (!columns) return null;
+
+  if (Array.isArray(columns)) {
+    return columns.find((column: any) => column?.name === columnName) ?? null;
+  }
+
+  return columns[columnName] ?? null;
+}
+
+function normalizeColumnType(type: unknown): string {
+  return String(type ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/\(.+\)$/, '');
+}
+
+function isTextColumnType(type: unknown): boolean {
+  const normalized = normalizeColumnType(type);
+  return (
+    normalized === 'text' ||
+    normalized === 'varchar' ||
+    normalized === 'character varying'
+  );
+}
+
+function isPostgresDatabase(dbType: string, dbUrl: string): boolean {
+  return dbType === 'postgres' || /^postgres/i.test(dbUrl);
+}
+
+function manifestDeclaresTenantIdUuid(
+  manifestSchemas: Record<string, any>,
+): boolean {
+  const tenantSchema =
+    manifestSchemas.tenants ??
+    Object.values(manifestSchemas).find(
+      (schema: any) => schema?.tableName === 'tenants',
+    );
+  const idColumn = getSchemaColumn(tenantSchema, 'id');
+  return normalizeColumnType(idColumn?.type) === 'uuid';
+}
+
+async function countNonUuidTenantIds(db: any): Promise<number> {
+  const result = await db.query(
+    `SELECT count(*)::text AS count
+       FROM tenants
+      WHERE nullif(btrim(id), '') IS NOT NULL
+        AND btrim(id) !~* '${CANONICAL_UUID_RE}'`,
+  );
+  const row = result?.rows?.[0] ?? {};
+  return Number(row.count ?? row.n ?? 0);
+}
+
+export async function checkTenantIdUuidPreconditions(input: {
+  db: any;
+  dbType: string;
+  dbUrl: string;
+  manifestSchemas: Record<string, any>;
+}): Promise<StatusPrecondition[]> {
+  const { db, dbType, dbUrl, manifestSchemas } = input;
+  if (
+    !isPostgresDatabase(dbType, dbUrl) ||
+    typeof db?.getTableSchema !== 'function' ||
+    !manifestDeclaresTenantIdUuid(manifestSchemas)
+  ) {
+    return [];
+  }
+
+  const tenantSchema = await db.getTableSchema('tenants');
+  const idColumn = getSchemaColumn(tenantSchema, 'id');
+  if (!idColumn) {
+    return [];
+  }
+
+  const idType = normalizeColumnType(idColumn.type);
+  if (idType === 'uuid') {
+    return [
+      {
+        name: 'tenants.id',
+        status: 'warning',
+        message:
+          '`tenants.id` is native uuid. Fresh 0.27 PostgreSQL schemas reject slug-shaped tenant primary keys.',
+        recommendation:
+          'Use UUID tenant primary keys, or remap existing slug/human-readable tenant IDs before creating fresh 0.27 schemas.',
+        details: { columnType: idColumn.type },
+      },
+    ];
+  }
+
+  if (!isTextColumnType(idColumn.type)) {
+    return [];
+  }
+
+  const nonUuidCount = await countNonUuidTenantIds(db);
+  if (nonUuidCount === 0) {
+    return [
+      {
+        name: 'tenants.id',
+        status: 'warning',
+        message:
+          '`tenants.id` is still TEXT while the current manifest declares UUID tenant IDs.',
+        recommendation:
+          'Run `smrt db:migrate-uuid` after `smrt db:migrate` to converge existing PostgreSQL schemas to native UUID columns.',
+        details: { columnType: idColumn.type },
+      },
+    ];
+  }
+
+  return [
+    {
+      name: 'tenants.id',
+      status: 'error',
+      message: `Found ${nonUuidCount} non-UUID tenant primary key value(s) in a schema whose manifest now declares UUID tenant IDs.`,
+      recommendation:
+        'Remap `tenants.id` and every tenant_id reference to canonical UUIDs before upgrading fresh environments to SMRT 0.27.',
+      details: { columnType: idColumn.type, nonUuidCount },
+    },
+  ];
+}
 
 export function summarizeSchemaDiff(diff: {
   added_tables: Array<{ tableName: string }>;
@@ -243,6 +375,7 @@ export const dbStatusCommand: CLICommand = {
           })),
         },
         drift: [] as StatusDrift[],
+        preconditions: [] as StatusPrecondition[],
         failedMigrations: summarizeFailedMigrations(failed, null),
         schemaContract: schemaContract as SchemaContractReport,
       };
@@ -261,6 +394,12 @@ export const dbStatusCommand: CLICommand = {
         const comparer = new SchemaComparer(db);
         diff = await comparer.compare(manifestSchemas);
         status.drift = summarizeSchemaDiff(diff);
+        status.preconditions = await checkTenantIdUuidPreconditions({
+          db,
+          dbType,
+          dbUrl,
+          manifestSchemas,
+        });
         status.failedMigrations = summarizeFailedMigrations(
           failed,
           getUnresolvedGeneratedMigrationNames(diff.changes),
@@ -288,7 +427,10 @@ export const dbStatusCommand: CLICommand = {
       // 9. Output results
       if (options.json) {
         console.log(JSON.stringify(status, null, 2));
-        if (!schemaContract.ok) {
+        if (
+          !schemaContract.ok ||
+          status.preconditions.some((item) => item.status === 'error')
+        ) {
           process.exitCode = 1;
         }
         return;
@@ -372,6 +514,21 @@ export const dbStatusCommand: CLICommand = {
       } else {
         console.log('✅ Schema contract passed');
         console.log();
+      }
+
+      if (status.preconditions.length > 0) {
+        console.log('⚠️  Compatibility Preconditions:');
+        for (const item of status.preconditions) {
+          const prefix = item.status === 'error' ? '❌' : '⚠️';
+          console.log(`   ${prefix} ${item.name}: ${item.message}`);
+          if (options.verbose) {
+            console.log(`      ${item.recommendation}`);
+          }
+        }
+        console.log();
+        if (status.preconditions.some((item) => item.status === 'error')) {
+          process.exitCode = 1;
+        }
       }
 
       printFailedMigrationGroup(

@@ -202,6 +202,11 @@ export function createAuditEntry(params: {
   userAgent?: string;
   details?: Record<string, unknown>;
 }): SmrtCreateInput<SecretAuditLog> {
+  const tenantId =
+    params.tenantId === undefined || params.tenantId === 'system'
+      ? null
+      : params.tenantId;
+
   const entry: SmrtCreateInput<SecretAuditLog> = {
     secretId: params.secretId ?? null,
     secretName: params.secretName,
@@ -211,7 +216,7 @@ export function createAuditEntry(params: {
     ipAddress: params.ipAddress ?? '',
     userAgent: params.userAgent ?? '',
     details: params.details ?? {},
-    ...(params.tenantId !== undefined ? { tenantId: params.tenantId } : {}),
+    tenantId,
   };
   return entry;
 }
