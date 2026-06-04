@@ -207,6 +207,115 @@ export class Model extends SmrtObject {
       expect(parsed.objects[0].fields).toContain('active: boolean');
     });
 
+    it('should use scanner inference for multi-class downstream-style files', async () => {
+      await writeFile(
+        join(tmpDir, 'models.ts'),
+        `
+import { crossPackageRef, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+
+@TenantScoped({ mode: 'optional' })
+@smrt({ tableName: 'tectum_projects', conflictColumns: ['tenant_id', 'slug'] })
+export class TectumProject extends SmrtObject {
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+  name = '';
+  count = 0;
+  price = 0.0;
+  @crossPackageRef('@happyvertical/smrt-profiles:Profile')
+  ownerProfileId: string | null = null;
+
+  isReady() {
+    if (this.name) return true;
+    return false;
+  }
+}
+
+@smrt()
+export class TectumTask extends SmrtObject {
+  @foreignKey('TectumProject')
+  projectId: string = '';
+  title: string = '';
+}
+        `.trim(),
+      );
+
+      const result = await introspectProject({
+        directory: tmpDir,
+        includeFields: true,
+        includeRelationships: true,
+      });
+
+      const parsed = JSON.parse(result);
+      expect(parsed.manifestSource).toBe('scanner');
+      expect(parsed.objectCount).toBe(2);
+
+      const project = parsed.objects.find(
+        (obj: any) => obj.className === 'TectumProject',
+      );
+      expect(project.fields).toContain('count: integer');
+      expect(project.fields).toContain('price: decimal');
+      expect(project.relationships).toContain(
+        'ownerProfileId -> @happyvertical/smrt-profiles:Profile (crossPackageRef)',
+      );
+      expect(project.conflictColumns).toEqual(['tenant_id', 'slug']);
+      expect(project.tableName).toBe('tectum_projects');
+      expect(project.tenantScope).toMatchObject({
+        source: 'TenantScoped',
+        mode: 'optional',
+        field: 'tenantId',
+      });
+      expect(project.methods).toContain('isReady()');
+      expect(project.methods).not.toContain('if()');
+    });
+
+    it('should finalize scanner fallback manifests before reporting schema details', async () => {
+      await writeFile(
+        join(tmpDir, 'package.json'),
+        JSON.stringify({ name: '@test/tenant-app', version: '1.0.0' }),
+      );
+      await writeFile(
+        join(tmpDir, 'tenant-project.ts'),
+        `
+import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+
+@smrt({ tenantScoped: true, tableName: 'tenant_projects' })
+export class TenantProject extends SmrtObject {
+  name: string = '';
+}
+        `.trim(),
+      );
+
+      const result = await introspectProject({
+        directory: tmpDir,
+        includeFields: true,
+      });
+
+      const parsed = JSON.parse(result);
+      const project = parsed.objects.find(
+        (obj: any) => obj.className === 'TenantProject',
+      );
+
+      expect(parsed.manifestSource).toBe('scanner');
+      expect(project.fields).toContain('tenantId: text');
+      expect(project.fieldDetails).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            name: 'tenantId',
+            type: 'text',
+            meta: expect.objectContaining({
+              generated: true,
+              source: 'tenantScoped_decorator',
+            }),
+          }),
+        ]),
+      );
+      expect(project.schema.columns.tenant_id).toEqual(
+        expect.objectContaining({ type: 'TEXT' }),
+      );
+      expect(project.tableName).toBe('tenant_projects');
+    });
+
     it('should not extract fields when disabled', async () => {
       await writeFile(
         join(tmpDir, 'model.ts'),
@@ -486,6 +595,61 @@ export class Configured extends SmrtObject {
 
       const parsed = JSON.parse(result);
       expect(parsed.objects[0].decoratorConfig).toBeDefined();
+    });
+
+    it('should prefer generated manifest artifacts with schema indexes', async () => {
+      await mkdir(join(tmpDir, '.smrt'), { recursive: true });
+      await writeFile(
+        join(tmpDir, '.smrt', 'manifest.json'),
+        JSON.stringify(
+          {
+            version: '1.0.0',
+            packageName: '@test/downstream',
+            packageVersion: '1.2.3',
+            objects: {
+              '@test/downstream:IndexedThing': {
+                name: 'indexedthing',
+                className: 'IndexedThing',
+                qualifiedName: '@test/downstream:IndexedThing',
+                collection: 'indexed_things',
+                filePath: 'src/indexed-thing.ts',
+                decoratorConfig: { tableName: 'indexed_things' },
+                fields: {
+                  name: { type: 'text', required: true },
+                },
+                methods: {},
+                schema: {
+                  tableName: 'indexed_things',
+                  columns: { name: { type: 'TEXT', notNull: true } },
+                  indexes: [
+                    {
+                      name: 'idx_indexed_things_name',
+                      columns: ['name'],
+                      unique: true,
+                    },
+                  ],
+                  version: 'schema-hash',
+                },
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const result = await introspectProject({ directory: tmpDir });
+      const parsed = JSON.parse(result);
+
+      expect(parsed.manifestSource).toBe('manifest');
+      expect(parsed.packageName).toBe('@test/downstream');
+      expect(parsed.objects[0].indexes).toEqual([
+        {
+          name: 'idx_indexed_things_name',
+          columns: ['name'],
+          unique: true,
+        },
+      ]);
     });
 
     it('should handle empty decorator', async () => {

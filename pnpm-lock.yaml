@@ -1830,6 +1830,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-scanner':
+        specifier: workspace:*
+        version: link:../scanner
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types

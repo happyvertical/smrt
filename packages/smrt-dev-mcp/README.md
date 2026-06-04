@@ -102,8 +102,15 @@ Generate a complete SMRT class with `@smrt()` decorator, fields, and imports.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `className` | `string` | Yes | Class name (PascalCase) |
-| `properties` | `array` | Yes | Property definitions (`name`, `type`, `required?`, `description?`) |
+| `properties` | `array` | Yes | Property definitions (`name`, `type`, `required?`, `nullable?`, `description?`, `defaultValue?`) |
 | `baseClass` | `string` | No | `'SmrtObject'` (default) or `'SmrtCollection'` |
+| `template` | `string` | No | `basic`, `global-catalog`, `optional-catalog`, `tenant-project-object`, `tenant-event-log-object`, or `cross-package-reference` |
+| `tableName` | `string` | No | Explicit `@smrt({ tableName })` value |
+| `conflictColumns` | `string[]` | No | Explicit upsert natural key columns |
+| `tenantScoped` | `boolean/object` | No | Add `@TenantScoped(...)`; object supports `mode`, `field`, and bypass/filter options |
+| `includeTenantIdField` | `boolean` | No | Emit a matching `@tenantId()` field |
+| `relationships` | `array` | No | Relationship definitions for `foreignKey`, `crossPackageRef`, `oneToMany`, or `manyToMany` |
+| `includeCompanionSnippets` | `boolean` | No | Append package wiring notes |
 | `includeApiConfig` | `boolean` | No | Include REST API config (default: true) |
 | `includeMcpConfig` | `boolean` | No | Include MCP config (default: true) |
 | `includeCliConfig` | `boolean` | No | Include CLI config (default: true) |
@@ -112,13 +119,33 @@ Supported property types: `text`, `integer`, `decimal`, `boolean`, `datetime`, `
 
 ### `introspect-project`
 
-Scan a project directory for SMRT objects and return a class/field/relationship report.
+Scan a project directory for SMRT objects and return a manifest-equivalent
+class/field/relationship report. Discovery prefers `.smrt/manifest.json`, then
+`dist/manifest.json`, then `src/manifest/manifest.json`; when no artifact is
+available it falls back to `@happyvertical/smrt-scanner`.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `directory` | `string` | No | Project directory (default: cwd) |
+| `manifestPath` | `string` | No | Explicit manifest artifact path |
 | `includeFields` | `boolean` | No | Include field details |
 | `includeRelationships` | `boolean` | No | Analyze relationships |
+| `includeMethods` | `boolean` | No | Include public method details |
+
+### `review-smrt-project`
+
+Run an advisory downstream ecosystem review. The tool scans package manifests
+and source imports for missing HappyVertical dependencies, direct storage
+bypasses, custom HTTP shells, custom object manifest generation, local
+auth/tenancy/audit seams, and UI shell drift. It returns deterministic findings
+and suggested follow-up issue titles; it does not modify files.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `directory` | `string` | No | Project directory (default: cwd) |
+| `rootDir` | `string` | No | Compatibility alias for `directory` |
+| `includeSourceEvidence` | `boolean` | No | Include file/line evidence (default: true) |
+| `maxFindings` | `number` | No | Limit findings returned |
 
 ### `reflect-knowledge`
 

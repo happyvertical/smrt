@@ -4,7 +4,8 @@
  * review/architecture prompt bundles, and portable agent skills.
  */
 
-import { realpathSync } from 'node:fs';
+import { readFileSync, realpathSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -29,10 +30,14 @@ import {
   smrtArchitecture,
   smrtReview,
 } from './knowledge/index.js';
-import { generateSmrtClass, introspectProject } from './tools/index.js';
+import {
+  generateSmrtClass,
+  introspectProject,
+  reviewSmrtProject,
+} from './tools/index.js';
 
 const SERVER_NAME = 'smrt-dev-mcp';
-const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = readPackageVersion();
 const DEBUG = process.env.DEBUG === 'true';
 const REVIEW_SKILL_NAME = 'smrt-code-review';
 const REVIEW_SKILL_URI = `smrt-dev-mcp://agent-skills/${REVIEW_SKILL_NAME}`;
@@ -77,7 +82,17 @@ export const TOOLS = [
                 ],
               },
               required: { type: 'boolean' },
+              nullable: { type: 'boolean' },
               description: { type: 'string' },
+              defaultValue: {
+                oneOf: [
+                  { type: 'string' },
+                  { type: 'number' },
+                  { type: 'boolean' },
+                  { type: 'object' },
+                  { type: 'null' },
+                ],
+              },
             },
             required: ['name', 'type'],
           },
@@ -87,6 +102,68 @@ export const TOOLS = [
           enum: ['SmrtObject', 'SmrtCollection'],
           default: 'SmrtObject',
         },
+        template: {
+          type: 'string',
+          enum: [
+            'basic',
+            'global-catalog',
+            'optional-catalog',
+            'tenant-project-object',
+            'tenant-event-log-object',
+            'cross-package-reference',
+          ],
+          default: 'basic',
+        },
+        tableName: { type: 'string' },
+        conflictColumns: {
+          type: 'array',
+          items: { type: 'string' },
+        },
+        tenantScoped: {
+          oneOf: [
+            { type: 'boolean' },
+            {
+              type: 'object',
+              properties: {
+                mode: { type: 'string', enum: ['required', 'optional'] },
+                field: { type: 'string' },
+                autoFilter: { type: 'boolean' },
+                autoPopulate: { type: 'boolean' },
+                allowSuperAdminBypass: { type: 'boolean' },
+              },
+            },
+          ],
+        },
+        includeTenantIdField: { type: 'boolean' },
+        relationships: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string' },
+              type: {
+                type: 'string',
+                enum: [
+                  'foreignKey',
+                  'crossPackageRef',
+                  'oneToMany',
+                  'manyToMany',
+                ],
+              },
+              related: { type: 'string' },
+              required: { type: 'boolean' },
+              nullable: { type: 'boolean' },
+              description: { type: 'string' },
+              validate: { type: 'boolean' },
+              foreignKey: { type: 'string' },
+              through: { type: 'string' },
+              sourceKey: { type: 'string' },
+              targetKey: { type: 'string' },
+            },
+            required: ['name', 'type', 'related'],
+          },
+        },
+        includeCompanionSnippets: { type: 'boolean', default: false },
         includeApiConfig: { type: 'boolean', default: true },
         includeMcpConfig: { type: 'boolean', default: true },
         includeCliConfig: { type: 'boolean', default: true },
@@ -105,6 +182,11 @@ export const TOOLS = [
           type: 'string',
           description: 'Project directory (default: cwd)',
         },
+        manifestPath: {
+          type: 'string',
+          description:
+            'Optional manifest path. Defaults to .smrt/manifest.json, dist/manifest.json, then source scanning.',
+        },
         includeFields: {
           type: 'boolean',
           description: 'Include field details',
@@ -112,6 +194,37 @@ export const TOOLS = [
         includeRelationships: {
           type: 'boolean',
           description: 'Analyze relationships',
+        },
+        includeMethods: {
+          type: 'boolean',
+          description: 'Include public method details',
+        },
+      },
+    },
+  },
+  {
+    name: 'review-smrt-project',
+    description:
+      'Advisory ecosystem alignment review for downstream SMRT projects',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        directory: {
+          type: 'string',
+          description: 'Project directory (default: cwd)',
+        },
+        rootDir: {
+          type: 'string',
+          description: 'Compatibility alias for directory',
+        },
+        includeSourceEvidence: {
+          type: 'boolean',
+          description: 'Include file and line evidence in findings',
+          default: true,
+        },
+        maxFindings: {
+          type: 'number',
+          description: 'Optional maximum number of findings to return',
         },
       },
     },
@@ -600,6 +713,10 @@ async function main() {
           result = await introspectProject(args as any);
           break;
 
+        case 'review-smrt-project':
+          result = await reviewSmrtProject(args as any);
+          break;
+
         case 'reflect-knowledge': {
           const index = await buildKnowledgeIndex(args as any);
           const freshness = await checkKnowledgeFreshnessFromIndex(
@@ -778,6 +895,21 @@ function isEntrypoint(): boolean {
     return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
   } catch {
     return import.meta.url === pathToFileURL(entry).href;
+  }
+}
+
+function readPackageVersion(): string {
+  try {
+    const packageRoot = dirname(fileURLToPath(import.meta.url));
+    const packageJsonPath = join(packageRoot, '..', 'package.json');
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8')) as {
+      version?: unknown;
+    };
+    return typeof packageJson.version === 'string'
+      ? packageJson.version
+      : '0.0.0';
+  } catch {
+    return '0.0.0';
   }
 }
 
