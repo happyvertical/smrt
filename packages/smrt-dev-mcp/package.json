@@ -51,6 +51,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.25.2"
   },

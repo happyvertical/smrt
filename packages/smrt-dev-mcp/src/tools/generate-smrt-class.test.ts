@@ -152,6 +152,103 @@ describe('generateSmrtClass', () => {
     });
   });
 
+  describe('Current Package Patterns', () => {
+    it('should generate tenant-scoped package-ready objects', async () => {
+      const result = await generateSmrtClass({
+        className: 'ProjectTask',
+        template: 'tenant-project-object',
+        tableName: 'project_tasks',
+        conflictColumns: ['tenant_id', 'slug'],
+        properties: [
+          { name: 'title', type: 'text', required: true },
+          { name: 'priority', type: 'integer' },
+        ],
+      });
+
+      expect(result).toContain(
+        "import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy'",
+      );
+      expect(result).toContain('@TenantScoped(');
+      expect(result).toContain('"mode": "required"');
+      expect(result).toContain('@tenantId()');
+      expect(result).toContain("tenantId: string = ''");
+      expect(result).toContain('"tableName": "project_tasks"');
+      expect(result).toContain('"conflictColumns"');
+      expect(result).toContain('"tenant_id"');
+    });
+
+    it('should generate same-package and cross-package relationships', async () => {
+      const result = await generateSmrtClass({
+        className: 'Order',
+        properties: [{ name: 'orderNumber', type: 'text', required: true }],
+        relationships: [
+          {
+            name: 'customerId',
+            type: 'foreignKey',
+            related: 'Customer',
+            required: true,
+          },
+          {
+            name: 'profileId',
+            type: 'crossPackageRef',
+            related: '@happyvertical/smrt-profiles:Profile',
+            nullable: true,
+          },
+        ],
+      });
+
+      expect(result).toContain('field, foreignKey, crossPackageRef');
+      expect(result).toContain('@foreignKey("Customer", {"required":true})');
+      expect(result).toContain("customerId: string = ''");
+      expect(result).toContain(
+        '@crossPackageRef("@happyvertical/smrt-profiles:Profile", {"nullable":true})',
+      );
+      expect(result).toContain('profileId: string | null = null');
+    });
+
+    it('should include a tenant id field by default for tenant-scoped generation', async () => {
+      const result = await generateSmrtClass({
+        className: 'TenantNote',
+        tenantScoped: true,
+        properties: [{ name: 'body', type: 'text' }],
+      });
+
+      expect(result).toContain(
+        "import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy'",
+      );
+      expect(result).toContain('@tenantId()');
+      expect(result).toContain("tenantId: string = ''");
+    });
+
+    it('should avoid unused tenantId imports when the tenant field is explicitly disabled', async () => {
+      const result = await generateSmrtClass({
+        className: 'TenantView',
+        tenantScoped: true,
+        includeTenantIdField: false,
+        properties: [{ name: 'name', type: 'text' }],
+      });
+
+      expect(result).toContain(
+        "import { TenantScoped } from '@happyvertical/smrt-tenancy'",
+      );
+      expect(result).not.toContain('tenantId }');
+      expect(result).not.toContain('@tenantId()');
+    });
+
+    it('should include companion snippets when requested', async () => {
+      const result = await generateSmrtClass({
+        className: 'CatalogEntry',
+        template: 'global-catalog',
+        properties: [{ name: 'name', type: 'text' }],
+        includeCompanionSnippets: true,
+      });
+
+      expect(result).toContain('Package wiring:');
+      expect(result).toContain('Export CatalogEntry');
+      expect(result).toContain('"slug"');
+    });
+  });
+
   describe('Base Class Selection', () => {
     it('should extend SmrtObject by default', async () => {
       const result = await generateSmrtClass({

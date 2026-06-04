@@ -9,6 +9,7 @@ deterministic SMRT ecosystem knowledge, and portable agent workflows.
 |------|---------|
 | `generate-smrt-class` | Generates `@smrt()` class with fields, decorator config, imports |
 | `introspect-project` | Scans project directory for SMRT objects, returns class/field/relationship report |
+| `review-smrt-project` | Advisory downstream ecosystem alignment review for dependencies, storage, app shell, auth/tenancy, and manifest generation |
 | `reflect-knowledge` | Reports deterministic SMRT + HappyVertical SDK knowledge coverage and freshness |
 | `reflect-domain-knowledge` | Reports downstream/domain artifact coverage and freshness |
 | `check-knowledge-freshness` | Runs deterministic agent-doc and stale-reference checks |
@@ -52,8 +53,9 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 - `src/knowledge/index.ts` — deterministic SMRT, SDK, and downstream domain knowledge discovery
 - `src/agent-skills.ts` — bundled skill registry and file loader
 - `agent-skills/smrt-code-review/SKILL.md` — downstream SMRT review procedure
-- `src/tools/generate-smrt-class.ts` — class generation logic
-- `src/tools/introspect-project.ts` — project scanning (uses scanner package)
+- `src/tools/generate-smrt-class.ts` — class generation logic and package-ready templates
+- `src/tools/introspect-project.ts` — manifest-first project scanning, falling back to `@happyvertical/smrt-scanner`
+- `src/tools/review-smrt-project.ts` — advisory ecosystem-alignment checks for downstream projects
 
 ## Gotchas
 

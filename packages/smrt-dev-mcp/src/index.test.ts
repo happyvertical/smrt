@@ -1,5 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { TOOLS } from './index.js';
+import { SERVER_VERSION, TOOLS } from './index.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 describe('smrt-dev-mcp tools', () => {
   it('lists deterministic knowledge, review, and architecture tools', () => {
@@ -15,7 +20,16 @@ describe('smrt-dev-mcp tools', () => {
     expect(names).toContain('build-architecture-context');
     expect(names).toContain('build-domain-architecture-context');
     expect(names).toContain('smrt-architecture');
+    expect(names).toContain('review-smrt-project');
     expect(names).toContain('list-agent-skills');
     expect(names).toContain('get-agent-skill');
+  });
+
+  it('advertises the package version', () => {
+    const packageJson = JSON.parse(
+      readFileSync(join(__dirname, '..', 'package.json'), 'utf-8'),
+    ) as { version: string };
+
+    expect(SERVER_VERSION).toBe(packageJson.version);
   });
 });
