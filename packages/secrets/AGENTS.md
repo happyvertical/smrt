@@ -21,6 +21,8 @@ Secret value → encrypted with TDEK (per-tenant Data Encryption Key)
 |--------|----------|
 | `store(name, value, options)` | Encrypt + save. Upsert if exists. Uses `context=tenantId` for per-tenant uniqueness. |
 | `retrieve(name)` | Decrypt + audit + increment accessCount |
+| `diagnoseTenantSecretKeyDrift(tenantId)` | Report active secret/key drift without exposing values. Checks `secrets`, SDK `tenant_encryption_keys`, and SMRT `tenant_keys`. |
+| `repairTenantSecretKeyDrift(tenantId, opts)` | Explicit repair path for unrecoverable drift. Use `dryRun` first; destructive cleanup requires `confirmDeleteUnrecoverableData: true`. |
 | `rotateKey()` | Create new TDEK, mark old as retired |
 | `reencryptAll()` | Decrypt with old TDEK, re-encrypt with new — **must call separately after rotateKey()** |
 | `disable(name)` / `enable(name)` | Toggle status |
@@ -30,6 +32,8 @@ Secret value → encrypted with TDEK (per-tenant Data Encryption Key)
 - **Key rotation doesn't auto-re-encrypt**: call `reencryptAll()` separately after `rotateKey()`
 - **retrieve() increments accessCount**: every read is tracked
 - **TenantKey NOT tenant-scoped**: it stores keys for tenants but isn't filtered by tenant context
+- **Two key tables**: `tenant_encryption_keys` is the lower-level SDK table used by `SecretService` encryption; `tenant_keys` is the SMRT model table. Drift diagnosis reports both so an empty `tenant_keys` view is not confused with missing SDK key material.
+- **Repair is destructive only by confirmation**: `repairTenantSecretKeyDrift()` deletes unrecoverable encrypted rows only when `confirmDeleteUnrecoverableData: true` is explicit. Do not silently discard encrypted secrets.
 - **Expired secrets filtered by default**: pass `includeExpired: true` to list them
 - **TenantKeyCollection.cleanupRetiredKeys()**: hard-deletes after 90 days
 - **Audit logging optional but default**: failures logged to console, not thrown
