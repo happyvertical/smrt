@@ -63,12 +63,12 @@ const {
 
   .elevated {
     border: 1px solid var(--smrt-color-outline-variant);
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   /* Hoverable state */
   .hoverable:hover {
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     transform: translateY(-2px);
   }
 
