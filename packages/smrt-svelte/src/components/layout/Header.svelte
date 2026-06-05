@@ -33,7 +33,7 @@ const { logo, nav }: Props = $props();
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     padding: var(--smrt-spacing-4) 0;
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .header-content {

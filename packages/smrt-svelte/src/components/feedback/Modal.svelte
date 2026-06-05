@@ -190,7 +190,7 @@ const sizeClasses = {
   }
 
   .modal::backdrop {
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
     backdrop-filter: blur(2px);
   }
 
@@ -205,7 +205,7 @@ const sizeClasses = {
     max-width: calc(100vw - var(--smrt-spacing-8, 2rem));
     background: var(--smrt-color-surface, #ffffff);
     border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-level3, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
+    box-shadow: var(--smrt-elevation-3, 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05));
     overflow: hidden;
     animation: modal-enter var(--smrt-duration-medium2, 300ms) var(--smrt-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
   }

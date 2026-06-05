@@ -102,7 +102,7 @@ async function handleToggle() {
     align-items: center;
     justify-content: center;
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
-    box-shadow: var(--smrt-elevation-level1, 0 2px 4px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-1, 0 2px 4px rgba(0, 0, 0, 0.1));
   }
 
   .mic-button:hover:not(:disabled) {

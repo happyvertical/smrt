@@ -220,7 +220,7 @@ const sizeClasses = {
   }
 
   .search-input:focus-within {
-    background: var(--smrt-surface, #ffffff);
+    background: var(--smrt-color-surface, #ffffff);
     border-color: var(--smrt-color-primary, #005ac1);
     box-shadow: 0 0 0 3px var(--smrt-color-primary-container, rgba(0, 90, 193, 0.1));
   }
@@ -259,7 +259,7 @@ const sizeClasses = {
   }
 
   .search-input__field::placeholder {
-    color: var(--smrt-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant, #9ca3af);
   }
 
   /* Hide default search clear button */
