@@ -71,11 +71,12 @@ under-floor packages get a remediation runway via Wave 3.
 Legend: ✅ required · ➖ waived for tier · ⚠️ best-effort (not blocking).
 
 ### 1. Packaging & scripts
-**PASS when:** `package.json` has `build`, `test`, `typecheck`, and `lint` scripts;
-`type: "module"`; `exports` map orders the `types` condition before `import`;
-`files` allowlist includes `dist` and the doc shim; `tsconfig.json` is `composite`
-with correct project `references`.
-**Proof:** `node scripts/check-standards.mjs` · `pnpm --filter <pkg> typecheck`
+**PASS when:** `package.json` has `build`, `test`, and `typecheck` scripts — lint and
+format are **root-level Biome tasks, not per-package scripts** (per `standards.md`);
+`type: "module"`; `exports` map orders the `types` condition before `import`; `files`
+allowlist includes `dist`, `AGENTS.md`, **and** `CLAUDE.md` (all three enforced by
+`check-standards.mjs`); `tsconfig.json` is `composite` with correct project `references`.
+**Proof:** `node scripts/check-standards.mjs` · `pnpm --filter <pkg> typecheck` · lint/format via root `turbo lint` / `npm run format-check`
 **Tiers:** T1 ✅ · T2 ✅ · T3 ✅ · T4 ✅
 
 ### 2. Type safety
@@ -97,9 +98,14 @@ recommended rules.
 (real in-memory SQLite via `createIsolatedTestDb*`; mock ONLY external APIs —
 `@happyvertical/ai`, HTTP — never SmrtObject/SmrtCollection/agents/business logic);
 correct naming (`*.test.ts` unit, `*.spec.ts` integration, `*.optional.test.ts`
-external); every fixed bug has a regression test; clean `afterEach`/`afterAll`.
-**Proof:** `npx vitest run packages/<pkg> --coverage` · `.claude/rules/testing.md`
+external) **and** the package's `vitest.config.ts` actually discovers both `*.test.ts`
+and `*.spec.ts` (many configs include only `*.test.ts`, so `*.spec.ts` files silently
+never run); every fixed bug has a regression test; clean `afterEach`/`afterAll`.
+**Proof:** `pnpm --filter @happyvertical/smrt-<pkg> exec vitest run --coverage` (the form in `TESTING_STANDARD.md`) · `.claude/rules/testing.md`
 **Tiers:** T1 ✅ (80%) · T2 ✅ (70%) · T3 ✅ (50%) · T4 ➖ (smoke test only)
+> Tier floors **refine** `TESTING_STANDARD.md`'s blanket 80% line-coverage minimum:
+> T1 retains 80%; T2/T3 are interim stabilization floors, ratcheted toward 80% as
+> packages are uplifted (Wave 3).
 
 ### 5. SMRT pattern compliance
 **PASS when:** `@smrt()` usage is correct; same-package FKs use `@foreignKey`,
@@ -117,9 +123,9 @@ registry internals) from outside the owning class.
 style blocks — components consume `--smrt-color-*` (and `--smrt-spacing/radius/
 elevation-*`) tokens; `var(--token, #fallback)` is allowed only when the fallback
 equals the token's real light value; basic a11y (labels, roles, focus states);
-no new component diagnostics from the Svelte autofixer.
-**Proof:** `rg -n '#[0-9a-fA-F]{3,8}|rgba?\(|hsl\(' packages/<pkg>/src --glob '*.svelte'`
-· svelte MCP autofixer · theme source: `packages/smrt-svelte/src/theme/tokens.ts`
+basic a11y (labels, roles, focus states).
+**Proof (current):** `rg -n '#[0-9a-fA-F]{3,8}|rgba?\(|hsl\(' packages/<pkg>/src --glob '*.svelte'` (deterministic) · theme source: `packages/smrt-svelte/src/theme/tokens.ts`
+**Future ratchet (not yet wired):** design-token lint rule (#1373), component test harness + axe (#1416), a11y enforcement (#1417). The svelte MCP autofixer is a local authoring aid, not a CI gate.
 **Tiers:** T1 ✅ · T2 ✅ · T3 ✅ · T4 ⚠️ (applies only if it ships `.svelte`)
 
 ### 7. Documentation
@@ -150,8 +156,8 @@ permission cascade is enforced on `@smrt()`-generated api/mcp/cli surfaces; no
 injection vectors (SQL / command / path / SSRF) in input handling; secret-bearing
 fields use the envelope-encryption/sanitization paths; logs & exports are redacted;
 no known-vuln dependencies.
-**Proof:** security audit pass (Prompt 7) · `/security-review` · gitleaks ·
-`pnpm audit` · config sanitization in `@happyvertical/smrt-config`
+**Proof (current):** manual AppSec review pass (the per-package security-audit issues in epic #1354) · `npx biome check` · config sanitization in `@happyvertical/smrt-config`
+**Future ratchet (not yet wired):** gitleaks secret scanning (#1412), `pnpm audit` / osv-scanner dependency gate (#1413). `/security-review` is an optional local tool, not a repo-wired gate.
 **Tiers:** T1 ✅ · T2 ✅ · T3 ✅ · T4 ✅
 
 ## Scorecard template
@@ -188,12 +194,12 @@ Every closed gap ends by tightening a deterministic, fast gate (no model-assiste
 checks in hooks/CI — see AGENTS.md):
 
 - **Packaging/scripts** → assert in `scripts/check-standards.mjs` (runs in CI).
-- **Lint/typecheck presence** → require the scripts in `check-standards.mjs`; run
-  `turbo lint` / `turbo typecheck` as PR gates.
+- **Typecheck presence** → require a per-package `typecheck` script in `check-standards.mjs`; run `turbo typecheck` as a PR gate.
+- **Lint/format** → root-level Biome only (no per-package `lint`/`format` scripts — `check-standards.mjs` should forbid them); `turbo lint` + `biome ci` + `npm run format-check` as PR gates.
 - **Type safety / lint rules** → flip the Biome `packages/*/src/**` overrides
   off → warn → error, package by package, until the blanket override is deleted.
-- **Design tokens** → enable/add a lint rule banning raw color literals in
-  `.svelte`/`.css`, wired into the `lint` script + lefthook + CI.
+- **Design tokens** → add a Biome (root) lint rule banning raw color literals in
+  `.svelte`/`.css`, wired into root Biome + lefthook + CI (#1373).
 - **Coverage** → HARD floor: any package touched by a PR must be ≥ its tier floor (T1 80 / T2 70 / T3 50) to merge — no grandfathering. Enforced once the coverage gate (S6) lands.
 - **Secret scanning** → gitleaks in lefthook pre-commit + CI; blocks committed credentials.
 - **Dependency risk** → `pnpm audit` / osv-scanner as a CI check for known-vuln deps.
