@@ -93,7 +93,16 @@ export {
 } from './models/TenantKey.js';
 // Service
 export {
+  type DiagnoseTenantSecretKeyDriftOptions,
+  type RepairTenantSecretKeyDriftOptions,
   type RetrievedSecret,
+  SecretKeyDriftError,
+  type SecretKeyDriftIssue,
+  type SecretKeyDriftIssueCode,
+  type SecretKeyDriftIssueSeverity,
+  type SecretKeyDriftRepairAction,
+  type SecretKeyDriftRepairResult,
+  type SecretKeyDriftReport,
   SecretService,
   type SecretServiceOptions,
   type StoreSecretOptions,
