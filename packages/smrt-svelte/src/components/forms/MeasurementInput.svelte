@@ -431,7 +431,7 @@ function handleUnitChange(e: Event) {
   .smrt-input:focus {
     outline: none;
     border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #0b57d0) 10%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
   }
 
   .input-wrapper.smrt-mode .smrt-input:focus {
@@ -477,8 +477,8 @@ function handleUnitChange(e: Event) {
 
   .unit-select:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #0b57d0) 10%, transparent);
+    border-color: var(--smrt-color-primary, #005ac1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
   }
 
   .unit-select.smrt-mode:focus {
