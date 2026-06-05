@@ -348,6 +348,6 @@ function formatFileSize(bytes: number): string {
 
   .file-list__remove:hover {
     background: var(--smrt-color-error-container, #f9dedc);
-    color: var(--smrt-color-error, #b3261e);
+    color: var(--smrt-color-error, #ba1a1a);
   }
 </style>

@@ -18,12 +18,18 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SecretCollection } from '../collections/SecretCollection.js';
+import { TenantKeyCollection } from '../collections/TenantKeyCollection.js';
 import { createAuditEntry } from '../models/SecretAuditLog.js';
-import { SecretService } from '../services/SecretService.js';
+import {
+  SecretKeyDriftError,
+  SecretService,
+} from '../services/SecretService.js';
 
 // Test AMK (64 hex chars = 32 bytes)
 const TEST_AMK =
   '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+const ROTATED_TEST_AMK =
+  'fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210';
 
 describe('SecretService', () => {
   let db: DatabaseInterface;
@@ -309,6 +315,176 @@ describe('SecretService', () => {
         expect((await service.retrieve('secret-1')).value).toBe('value-1');
         expect((await service.retrieve('secret-2')).value).toBe('value-2');
       });
+    });
+  });
+
+  describe('Tenant key drift diagnostics', () => {
+    it('does not require destructive confirmation for no-op repair', async () => {
+      const repair = await service.repairTenantSecretKeyDrift('tenant-empty');
+
+      expect(repair.wouldDeleteSecrets).toBe(0);
+      expect(repair.wouldDeleteTenantEncryptionKeys).toBe(0);
+      expect(repair.deletedSecrets).toBe(0);
+      expect(repair.deletedTenantEncryptionKeys).toBe(0);
+    });
+
+    it('diagnoses active secrets with no active tenant encryption key', async () => {
+      await service.storeForTenant('tenant-1', 'api-key', 'secret-value');
+      await db.query(
+        'DELETE FROM "tenant_encryption_keys" WHERE tenant_id = ?',
+        'tenant-1',
+      );
+
+      const report = await service.diagnoseTenantSecretKeyDrift('tenant-1');
+      const codes = report.issues.map((issue) => issue.code);
+
+      expect(report.ok).toBe(false);
+      expect(report.summary.activeSecretCount).toBe(1);
+      expect(report.summary.activeTenantEncryptionKeyCount).toBe(0);
+      expect(codes).toContain('missing_active_tenant_encryption_key');
+      expect(codes).toContain('active_secrets_without_usable_active_key');
+      expect(codes).toContain('secret_envelope_missing_tenant_encryption_key');
+    });
+
+    it('does not mark secrets unrecoverable when the AMK is unavailable', async () => {
+      await service.storeForTenant('tenant-1', 'api-key', 'old-value');
+
+      delete process.env.SMRT_SECRET_MASTER_KEY;
+      const noAmkService = await SecretService.create({ db });
+
+      const report = await noAmkService.diagnoseTenantSecretKeyDrift(
+        'tenant-1',
+        { secretNames: ['api-key'] },
+      );
+      const codes = report.issues.map((issue) => issue.code);
+      const destructiveIssues = report.issues.filter(
+        (issue) => issue.repairAction === 'delete-unrecoverable-secret',
+      );
+
+      expect(report.ok).toBe(false);
+      expect(codes).toContain('amk_unavailable');
+      expect(codes).not.toContain('secret_envelope_invalid_wrapped_key');
+      expect(codes).not.toContain('secret_envelope_unwrap_failed');
+      expect(destructiveIssues).toHaveLength(0);
+
+      const repair = await noAmkService.repairTenantSecretKeyDrift('tenant-1', {
+        confirmDeleteUnrecoverableData: true,
+        secretNames: ['api-key'],
+      });
+      expect(repair.deletedSecrets).toBe(0);
+      expect(repair.deletedTenantEncryptionKeys).toBe(0);
+
+      process.env.SMRT_SECRET_MASTER_KEY = TEST_AMK;
+      const restoredService = await SecretService.create({ db });
+      const retrieved = await restoredService.retrieveForTenant(
+        'tenant-1',
+        'api-key',
+      );
+      expect(retrieved.value).toBe('old-value');
+    });
+
+    it('surfaces tenant_keys diagnosis query failures', async () => {
+      await service.storeForTenant('tenant-1', 'api-key', 'secret-value');
+      const listKeyVersions = vi
+        .spyOn(TenantKeyCollection.prototype, 'listKeyVersions')
+        .mockRejectedValueOnce(new Error('tenant_keys unavailable'));
+
+      try {
+        const report = await service.diagnoseTenantSecretKeyDrift('tenant-1');
+        const codes = report.issues.map((issue) => issue.code);
+        const issue = report.issues.find(
+          (candidate) => candidate.code === 'smrt_tenant_keys_query_failed',
+        );
+
+        expect(report.ok).toBe(false);
+        expect(codes).toContain('smrt_tenant_keys_query_failed');
+        expect(codes).not.toContain('smrt_tenant_keys_not_mirrored');
+        expect(issue?.details?.error).toBe('tenant_keys unavailable');
+      } finally {
+        listKeyVersions.mockRestore();
+      }
+    });
+
+    it('reports stale key material and repairs only after explicit confirmation', async () => {
+      await service.storeForTenant('tenant-1', 'api-key', 'old-value');
+
+      process.env.SMRT_SECRET_MASTER_KEY = ROTATED_TEST_AMK;
+      const driftedService = await SecretService.create({ db });
+
+      const report = await driftedService.diagnoseTenantSecretKeyDrift(
+        'tenant-1',
+        { secretNames: ['api-key'] },
+      );
+      const codes = report.issues.map((issue) => issue.code);
+
+      expect(report.ok).toBe(false);
+      expect(codes).toContain('active_tenant_encryption_key_unwrap_failed');
+      expect(codes).toContain('secret_envelope_unwrap_failed');
+
+      await expect(
+        driftedService.storeForTenant('tenant-1', 'api-key', 'new-value'),
+      ).rejects.toBeInstanceOf(SecretKeyDriftError);
+
+      await expect(
+        driftedService.repairTenantSecretKeyDrift('tenant-1'),
+      ).rejects.toThrow('confirmDeleteUnrecoverableData');
+
+      const dryRun = await driftedService.repairTenantSecretKeyDrift(
+        'tenant-1',
+        {
+          dryRun: true,
+          secretNames: ['api-key'],
+        },
+      );
+      expect(dryRun.wouldDeleteSecrets).toBe(1);
+      expect(dryRun.wouldDeleteTenantEncryptionKeys).toBe(1);
+      expect(dryRun.deletedSecrets).toBe(0);
+      expect(dryRun.deletedTenantEncryptionKeys).toBe(0);
+
+      const transactionCapableDb = db as DatabaseInterface & {
+        transaction?: (
+          callback: (tx: DatabaseInterface) => Promise<unknown>,
+        ) => Promise<unknown>;
+      };
+      const transactionSpy =
+        typeof transactionCapableDb.transaction === 'function'
+          ? vi.spyOn(transactionCapableDb, 'transaction')
+          : null;
+      const repair = await driftedService.repairTenantSecretKeyDrift(
+        'tenant-1',
+        {
+          confirmDeleteUnrecoverableData: true,
+          secretNames: ['api-key'],
+        },
+      );
+      expect(repair.deletedSecrets).toBe(1);
+      expect(repair.deletedTenantEncryptionKeys).toBe(1);
+      if (transactionSpy) {
+        expect(transactionSpy).toHaveBeenCalledTimes(1);
+        transactionSpy.mockRestore();
+      }
+      expect(
+        repair.remainingIssues.some((issue) => issue.severity === 'error'),
+      ).toBe(false);
+
+      const logs = await withTenant({ tenantId: 'tenant-1' }, () =>
+        driftedService.getAuditLogs({ secretName: 'api-key' }),
+      );
+      expect(
+        logs.some(
+          (log) =>
+            log.action === 'delete' &&
+            log.details?.action === 'repairTenantSecretKeyDrift',
+        ),
+      ).toBe(true);
+
+      await driftedService.storeForTenant('tenant-1', 'api-key', 'new-value');
+      const retrieved = await driftedService.retrieveForTenant(
+        'tenant-1',
+        'api-key',
+      );
+
+      expect(retrieved.value).toBe('new-value');
     });
   });
 

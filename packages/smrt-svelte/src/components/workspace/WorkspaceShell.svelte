@@ -589,7 +589,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     min-height: var(--smrt-ws-topbar-height);
     background: var(--smrt-color-surface, #ffffff);
     border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    box-shadow: var(--smrt-elevation-level1, 0 1px 2px rgb(0 0 0 / 0.05));
+    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgb(0 0 0 / 0.05));
   }
 
   .topbar-left,
@@ -721,7 +721,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     flex-direction: column;
     background: var(--smrt-color-surface, #ffffff);
     border-left: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    box-shadow: var(--smrt-elevation-level2, 0 4px 6px -1px rgb(0 0 0 / 0.1));
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgb(0 0 0 / 0.1));
     z-index: 22;
   }
 

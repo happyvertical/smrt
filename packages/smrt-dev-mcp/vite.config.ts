@@ -30,6 +30,7 @@ export default defineConfig({
       external: [
         /^@modelcontextprotocol\/sdk/,
         /^@happyvertical\/smrt-core/,
+        /^@happyvertical\/smrt-scanner/,
         /^node:/,
       ],
       output: {

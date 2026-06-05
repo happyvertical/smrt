@@ -68,6 +68,7 @@ describe('smrt-dev-mcp stdio server', () => {
         'build-domain-architecture-context',
         'smrt-review',
         'smrt-architecture',
+        'review-smrt-project',
         'list-agent-skills',
         'get-agent-skill',
       ]),

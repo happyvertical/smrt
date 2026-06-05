@@ -105,7 +105,7 @@ function handleKeydown(e: KeyboardEvent) {
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: rgba(0, 0, 0, 0.4);
+    background-color: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
     z-index: var(--smrt-z-index-dialog, 1000);
     padding: 1rem;
     backdrop-filter: blur(2px);
@@ -117,7 +117,7 @@ function handleKeydown(e: KeyboardEvent) {
     padding: 24px;
     max-width: 400px;
     width: 100%;
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
     display: flex;
     flex-direction: column;
@@ -188,11 +188,11 @@ function handleKeydown(e: KeyboardEvent) {
   .btn-filled {
     background-color: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .btn-filled.destructive {

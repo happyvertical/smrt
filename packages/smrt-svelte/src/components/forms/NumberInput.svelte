@@ -263,7 +263,7 @@ function handleInput(e: Event) {
   .smrt-input:focus {
     outline: none;
     border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #005ac1) 10%, transparent);
   }
 
   .smrt-input:disabled {
@@ -281,7 +281,7 @@ function handleInput(e: Event) {
 
   .smrt-input.invalid:focus {
     border-color: #ef4444;
-    box-shadow: 0 0 0 3px rgba(186, 26, 26, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error, #ba1a1a) 10%, transparent);
   }
 
   /* Hide spinner buttons */
