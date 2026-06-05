@@ -92,6 +92,7 @@ export type SecretKeyDriftIssueCode =
   | 'secret_envelope_invalid_wrapped_key'
   | 'secret_envelope_missing_tenant_encryption_key'
   | 'secret_envelope_unwrap_failed'
+  | 'smrt_tenant_keys_query_failed'
   | 'smrt_tenant_keys_not_mirrored';
 
 export type SecretKeyDriftRepairAction =
@@ -206,6 +207,17 @@ interface WrappedKeyCheck {
   error?: string;
   fingerprint?: string;
 }
+
+interface SmrtTenantKeyDiagnosisRows {
+  keys: TenantKey[];
+  error?: Error;
+}
+
+type TransactionCapableDatabase = DatabaseInterface & {
+  transaction?: <T>(
+    callback: (tx: DatabaseInterface) => Promise<T>,
+  ) => Promise<T>;
+};
 
 /**
  * SecretService provides high-level operations for managing per-tenant secrets.
@@ -516,7 +528,9 @@ export class SecretService {
     );
     const tenantEncryptionKeys =
       await this.listTenantEncryptionKeyRows(tenantId);
-    const smrtTenantKeys = await this.listSmrtTenantKeysForDiagnosis(tenantId);
+    const smrtTenantKeyRows =
+      await this.listSmrtTenantKeysForDiagnosis(tenantId);
+    const smrtTenantKeys = smrtTenantKeyRows.keys;
     const issues: SecretKeyDriftIssue[] = [];
 
     const activeTenantEncryptionKeys = tenantEncryptionKeys.filter(
@@ -550,6 +564,20 @@ export class SecretService {
         sourceTable: 'tenant_encryption_keys',
         details: {
           activeSecretCount: activeSecrets.length,
+        },
+      });
+    }
+
+    if (smrtTenantKeyRows.error) {
+      issues.push({
+        code: 'smrt_tenant_keys_query_failed',
+        severity: 'error',
+        message:
+          'Unable to query SMRT tenant_keys while diagnosing tenant secret key drift.',
+        repairAction: 'none',
+        sourceTable: 'tenant_keys',
+        details: {
+          error: smrtTenantKeyRows.error.message,
         },
       });
     }
@@ -646,9 +674,16 @@ export class SecretService {
       const envelope = this.parseSecretEnvelopeForDiagnosis(secret, issues);
       if (!envelope) continue;
 
+      const envelopeFingerprint = this.getWrappedKeyFingerprint(
+        envelope.wrappedKey,
+      );
       const envelopeCheck = amk.value
         ? this.checkWrappedKey(envelope.wrappedKey, amk.value)
-        : { usable: false, error: amk.error };
+        : {
+            usable: false,
+            error: amk.error,
+            fingerprint: envelopeFingerprint,
+          };
 
       if (!envelopeCheck.fingerprint) {
         issues.push({
@@ -674,9 +709,11 @@ export class SecretService {
           severity: 'error',
           message:
             'Secret envelope does not match any tenant_encryption_keys row for this tenant.',
-          repairAction: envelopeCheck.usable
+          repairAction: !amk.value
             ? 'none'
-            : 'delete-unrecoverable-secret',
+            : envelopeCheck.usable
+              ? 'none'
+              : 'delete-unrecoverable-secret',
           secretId: secret.id,
           secretName: secret.name,
           sourceTable: 'secrets',
@@ -704,7 +741,8 @@ export class SecretService {
     if (
       activeSecrets.length > 0 &&
       tenantEncryptionKeys.length > 0 &&
-      smrtTenantKeys.length === 0
+      smrtTenantKeys.length === 0 &&
+      !smrtTenantKeyRows.error
     ) {
       issues.push({
         code: 'smrt_tenant_keys_not_mirrored',
@@ -795,16 +833,32 @@ export class SecretService {
     let deletedTenantEncryptionKeys = 0;
 
     if (!dryRun) {
-      deletedSecrets = await this.deleteRowsByIds(
-        'secrets',
-        tenantId,
-        secretIds,
-      );
-      deletedTenantEncryptionKeys = await this.deleteRowsByIds(
-        'tenant_encryption_keys',
-        tenantId,
-        tenantEncryptionKeyIds,
-      );
+      const runDeletes = async (db: DatabaseInterface) => {
+        const deletedSecretRows = await this.deleteRowsByIds(
+          'secrets',
+          tenantId,
+          secretIds,
+          db,
+        );
+        const deletedTenantEncryptionKeyRows = await this.deleteRowsByIds(
+          'tenant_encryption_keys',
+          tenantId,
+          tenantEncryptionKeyIds,
+          db,
+        );
+        return {
+          deletedSecrets: deletedSecretRows,
+          deletedTenantEncryptionKeys: deletedTenantEncryptionKeyRows,
+        };
+      };
+      const txDb = this.db as TransactionCapableDatabase;
+      const deleteResult =
+        typeof txDb.transaction === 'function'
+          ? await txDb.transaction((db) => runDeletes(db))
+          : await runDeletes(this.db);
+
+      deletedSecrets = deleteResult.deletedSecrets;
+      deletedTenantEncryptionKeys = deleteResult.deletedTenantEncryptionKeys;
       await this.auditSecretDriftRepairDeletes(
         tenantId,
         secretIds,
@@ -1048,11 +1102,11 @@ export class SecretService {
 
   private async listSmrtTenantKeysForDiagnosis(
     tenantId: string,
-  ): Promise<TenantKey[]> {
+  ): Promise<SmrtTenantKeyDiagnosisRows> {
     try {
-      return await this.tenantKeys.listKeyVersions(tenantId);
-    } catch {
-      return [];
+      return { keys: await this.tenantKeys.listKeyVersions(tenantId) };
+    } catch (error) {
+      return { keys: [], error: this.toError(error) };
     }
   }
 
@@ -1139,12 +1193,13 @@ export class SecretService {
     tableName: 'secrets' | 'tenant_encryption_keys',
     tenantId: string,
     ids: Set<string>,
+    db: DatabaseInterface = this.db,
   ): Promise<number> {
     if (ids.size === 0) return 0;
 
     const idList = Array.from(ids);
     const placeholders = idList.map(() => '?').join(', ');
-    const result = await this.db.query(
+    const result = await db.query(
       `DELETE FROM "${tableName}" WHERE tenant_id = ? AND id IN (${placeholders})`,
       tenantId,
       ...idList,

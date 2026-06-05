@@ -18,6 +18,7 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SecretCollection } from '../collections/SecretCollection.js';
+import { TenantKeyCollection } from '../collections/TenantKeyCollection.js';
 import {
   SecretKeyDriftError,
   SecretService,
@@ -344,6 +345,65 @@ describe('SecretService', () => {
       expect(codes).toContain('secret_envelope_missing_tenant_encryption_key');
     });
 
+    it('does not mark secrets unrecoverable when the AMK is unavailable', async () => {
+      await service.storeForTenant('tenant-1', 'api-key', 'old-value');
+
+      delete process.env.SMRT_SECRET_MASTER_KEY;
+      const noAmkService = await SecretService.create({ db });
+
+      const report = await noAmkService.diagnoseTenantSecretKeyDrift(
+        'tenant-1',
+        { secretNames: ['api-key'] },
+      );
+      const codes = report.issues.map((issue) => issue.code);
+      const destructiveIssues = report.issues.filter(
+        (issue) => issue.repairAction === 'delete-unrecoverable-secret',
+      );
+
+      expect(report.ok).toBe(false);
+      expect(codes).toContain('amk_unavailable');
+      expect(codes).not.toContain('secret_envelope_invalid_wrapped_key');
+      expect(codes).not.toContain('secret_envelope_unwrap_failed');
+      expect(destructiveIssues).toHaveLength(0);
+
+      const repair = await noAmkService.repairTenantSecretKeyDrift('tenant-1', {
+        confirmDeleteUnrecoverableData: true,
+        secretNames: ['api-key'],
+      });
+      expect(repair.deletedSecrets).toBe(0);
+      expect(repair.deletedTenantEncryptionKeys).toBe(0);
+
+      process.env.SMRT_SECRET_MASTER_KEY = TEST_AMK;
+      const restoredService = await SecretService.create({ db });
+      const retrieved = await restoredService.retrieveForTenant(
+        'tenant-1',
+        'api-key',
+      );
+      expect(retrieved.value).toBe('old-value');
+    });
+
+    it('surfaces tenant_keys diagnosis query failures', async () => {
+      await service.storeForTenant('tenant-1', 'api-key', 'secret-value');
+      const listKeyVersions = vi
+        .spyOn(TenantKeyCollection.prototype, 'listKeyVersions')
+        .mockRejectedValueOnce(new Error('tenant_keys unavailable'));
+
+      try {
+        const report = await service.diagnoseTenantSecretKeyDrift('tenant-1');
+        const codes = report.issues.map((issue) => issue.code);
+        const issue = report.issues.find(
+          (candidate) => candidate.code === 'smrt_tenant_keys_query_failed',
+        );
+
+        expect(report.ok).toBe(false);
+        expect(codes).toContain('smrt_tenant_keys_query_failed');
+        expect(codes).not.toContain('smrt_tenant_keys_not_mirrored');
+        expect(issue?.details?.error).toBe('tenant_keys unavailable');
+      } finally {
+        listKeyVersions.mockRestore();
+      }
+    });
+
     it('reports stale key material and repairs only after explicit confirmation', async () => {
       await service.storeForTenant('tenant-1', 'api-key', 'old-value');
 
@@ -380,6 +440,15 @@ describe('SecretService', () => {
       expect(dryRun.deletedSecrets).toBe(0);
       expect(dryRun.deletedTenantEncryptionKeys).toBe(0);
 
+      const transactionCapableDb = db as DatabaseInterface & {
+        transaction?: (
+          callback: (tx: DatabaseInterface) => Promise<unknown>,
+        ) => Promise<unknown>;
+      };
+      const transactionSpy =
+        typeof transactionCapableDb.transaction === 'function'
+          ? vi.spyOn(transactionCapableDb, 'transaction')
+          : null;
       const repair = await driftedService.repairTenantSecretKeyDrift(
         'tenant-1',
         {
@@ -389,6 +458,10 @@ describe('SecretService', () => {
       );
       expect(repair.deletedSecrets).toBe(1);
       expect(repair.deletedTenantEncryptionKeys).toBe(1);
+      if (transactionSpy) {
+        expect(transactionSpy).toHaveBeenCalledTimes(1);
+        transactionSpy.mockRestore();
+      }
       expect(
         repair.remainingIssues.some((issue) => issue.severity === 'error'),
       ).toBe(false);
