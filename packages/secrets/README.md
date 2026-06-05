@@ -45,6 +45,15 @@ await withTenant({ tenantId: 'tenant-123' }, async () => {
   // Query audit logs
   const logs = await service.getAuditLogs({ secretName: 'stripe-api-key' });
 
+  // Diagnose tenant secret/key drift without exposing values
+  const drift = await service.diagnoseTenantSecretKeyDrift('tenant-123');
+
+  // Preview and then explicitly repair unrecoverable drifted rows
+  await service.repairTenantSecretKeyDrift('tenant-123', { dryRun: true });
+  await service.repairTenantSecretKeyDrift('tenant-123', {
+    confirmDeleteUnrecoverableData: true,
+  });
+
   // Hard delete
   await service.delete('stripe-api-key');
 });
@@ -65,6 +74,20 @@ The AMK is loaded from `SMRT_SECRET_MASTER_KEY` (configurable via `amkEnvVar` op
 `rotateKey()` creates a new TDEK version and retires the old one. Existing secrets remain readable because retired keys are kept for decryption. Call `reencryptAll()` separately after rotation to re-encrypt all secrets with the new key. The method returns `{ success, failed }` counts.
 
 TenantKey statuses: `active` (current encryption key), `rotating` (transitional), `retired` (kept for decryption), `compromised` (should not be used).
+
+### Drift diagnosis and repair
+
+`diagnoseTenantSecretKeyDrift(tenantId)` reports tenant secret/key drift without
+returning secret values. It checks active `secrets` rows, lower-level
+`tenant_encryption_keys` rows used by `@happyvertical/secrets`, and SMRT-visible
+`tenant_keys` rows so operators can distinguish missing secrets from stale or
+unusable key material.
+
+`repairTenantSecretKeyDrift(tenantId, { dryRun: true })` previews rows that would
+be deleted. A destructive repair requires
+`confirmDeleteUnrecoverableData: true`; it deletes only encrypted secret/key rows
+identified as unrecoverable with the currently configured AMK. After repair,
+store fresh secret values with `storeForTenant()` or `store()`.
 
 ### Audit logging
 
@@ -96,7 +119,7 @@ The `Secret` and `TenantKey` models have no API or MCP exposure to prevent accid
 
 | Export | Description |
 |--------|------------|
-| `SecretService` | High-level API: store, retrieve, rotate, delete, audit |
+| `SecretService` | High-level API: store, retrieve, rotate, delete, audit, diagnose and repair key drift |
 
 ### Functions
 
@@ -110,7 +133,7 @@ The `Secret` and `TenantKey` models have no API or MCP exposure to prevent accid
 
 ### Key Types
 
-`SecretServiceOptions`, `StoreSecretOptions`, `RetrievedSecret`, `ListSecretsOptions`, `ListAuditLogsOptions`, `SecretStatus`, `SecretAuditAction`, `SecretAuditResult`, `TenantKeyStatus`, `ApplicationMasterKey`, `EncryptedEnvelope`, `TenantDataEncryptionKey`, `SecretStore`
+`SecretServiceOptions`, `StoreSecretOptions`, `RetrievedSecret`, `DiagnoseTenantSecretKeyDriftOptions`, `SecretKeyDriftReport`, `SecretKeyDriftIssue`, `RepairTenantSecretKeyDriftOptions`, `SecretKeyDriftRepairResult`, `ListSecretsOptions`, `ListAuditLogsOptions`, `SecretStatus`, `SecretAuditAction`, `SecretAuditResult`, `TenantKeyStatus`, `ApplicationMasterKey`, `EncryptedEnvelope`, `TenantDataEncryptionKey`, `SecretStore`
 
 ## Dependencies
 
