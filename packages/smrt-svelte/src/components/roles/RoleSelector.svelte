@@ -118,7 +118,7 @@ function handleKeydown(e: KeyboardEvent) {
   .trigger:focus {
     outline: none;
     border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #0b57d0) 10%, transparent);
   }
 
   .trigger.open {
@@ -160,7 +160,7 @@ function handleKeydown(e: KeyboardEvent) {
     background: var(--smrt-color-surface, white);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-radius: var(--smrt-radius-small, 0.375rem);
-    box-shadow: var(--smrt-elevation-level2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
     z-index: 50;
     max-height: 15rem;
     overflow-y: auto;

@@ -359,7 +359,7 @@ function handleInput(e: Event) {
   .smrt-input:focus {
     outline: none;
     border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #0b57d0) 10%, transparent);
   }
 
   .smrt-input.smrt-mode {
@@ -374,16 +374,16 @@ function handleInput(e: Event) {
 
   .smrt-phone.listening .smrt-input {
     border-color: var(--smrt-color-primary, #22c55e);
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #1e8e3e) 30%, transparent);
     animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
 
   @keyframes pulse-green {
     0%, 100% {
-      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #1e8e3e) 30%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success, #1e8e3e) 15%, transparent);
     }
   }
 
@@ -432,7 +432,7 @@ function handleInput(e: Event) {
 
   .smrt-input.invalid:focus {
     border-color: var(--smrt-color-error, #ba1a1a);
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error, #b3261e) 10%, transparent);
   }
 
   .smrt-input.processing {

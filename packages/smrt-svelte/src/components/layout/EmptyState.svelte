@@ -177,11 +177,11 @@ const icons = {
     transition: box-shadow 200ms, background-color 200ms;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .action-button:hover {
     background-color: var(--smrt-color-primary);
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 </style>

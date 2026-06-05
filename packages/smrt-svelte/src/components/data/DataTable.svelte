@@ -330,7 +330,7 @@ const sizeClasses = {
     border-spacing: 0;
     font-family: var(--smrt-font-family, inherit);
     font-size: var(--smrt-font-size-sm, 0.875rem);
-    color: var(--smrt-on-surface, #111827);
+    color: var(--smrt-color-on-surface, #111827);
     background: var(--smrt-surface, #ffffff);
   }
 
@@ -338,7 +338,7 @@ const sizeClasses = {
     padding: var(--smrt-spacing-3, 0.75rem);
     font-weight: 500;
     text-align: left;
-    color: var(--smrt-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     caption-side: top;
   }
 
@@ -362,7 +362,7 @@ const sizeClasses = {
     font-weight: 600;
     text-align: left;
     white-space: nowrap;
-    color: var(--smrt-on-surface, #111827);
+    color: var(--smrt-color-on-surface, #111827);
   }
 
   .data-table__cell--sortable {
@@ -457,7 +457,7 @@ const sizeClasses = {
     align-items: center;
     justify-content: center;
     gap: var(--smrt-spacing-2, 0.5rem);
-    color: var(--smrt-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .data-table__spinner {
@@ -476,7 +476,7 @@ const sizeClasses = {
   }
 
   .data-table__empty-state {
-    color: var(--smrt-on-surface-variant, #6b7280);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   /* Size variants */

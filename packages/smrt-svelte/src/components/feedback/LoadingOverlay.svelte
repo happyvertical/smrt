@@ -139,7 +139,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.overlay-backdrop {
 		position: absolute;
 		inset: 0;
-		background: rgba(0, 0, 0, 0.5);
+		background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
 		backdrop-filter: blur(4px);
 	}
 
@@ -151,7 +151,7 @@ function handleKeydown(e: KeyboardEvent) {
 		max-width: 400px;
 		width: 90%;
 		text-align: center;
-		box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+		box-shadow: var(--smrt-elevation-5, 0 25px 50px -12px rgba(0, 0, 0, 0.25));
 	}
 
 	.loading-icon {

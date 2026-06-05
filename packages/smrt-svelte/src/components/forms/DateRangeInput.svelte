@@ -518,7 +518,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   .smrt-input:focus {
     outline: none;
     border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #0b57d0) 10%, transparent);
   }
 
   .smrt-input:disabled {
@@ -574,21 +574,21 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 
   .smrt-daterange.listening .range-wrapper.smrt-mode {
     border-color: var(--smrt-color-primary, #22c55e);
-    box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #1e8e3e) 30%, transparent);
     animation: pulse-green 1.5s var(--smrt-easing-standard, ease-in-out) infinite;
   }
 
   .smrt-daterange.parsing .range-wrapper.smrt-mode {
     border-color: var(--smrt-color-secondary, #f59e0b);
-    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.2);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-warning, #f9ab00) 20%, transparent);
   }
 
   @keyframes pulse-green {
     0%, 100% {
-      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.3);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-success, #1e8e3e) 30%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 6px rgba(34, 197, 94, 0.15);
+      box-shadow: 0 0 0 6px color-mix(in srgb, var(--smrt-color-success, #1e8e3e) 15%, transparent);
     }
   }
 

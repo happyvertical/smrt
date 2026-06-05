@@ -259,7 +259,7 @@ const sizeClasses = {
   }
 
   .search-input__field::placeholder {
-    color: var(--smrt-on-surface-variant, #9ca3af);
+    color: var(--smrt-color-on-surface-variant, #9ca3af);
   }
 
   /* Hide default search clear button */

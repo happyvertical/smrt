@@ -58,7 +58,7 @@ let {
 	.select:focus {
 		outline: none;
 		border-color: var(--smrt-color-primary, #005ac1);
-		box-shadow: 0 0 0 3px rgba(0, 90, 193, 0.1);
+		box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #0b57d0) 10%, transparent);
 	}
 
 	.select:disabled {

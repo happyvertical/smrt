@@ -118,12 +118,12 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
     overflow: hidden;
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .clickable:hover {
     background-color: var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .summary-card.highlight {
