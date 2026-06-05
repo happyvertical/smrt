@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.27.6
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - align token fallbacks, fix DataTable color-var cluster (smrt-svelte)
+  - tokenize focus rings/scrim, fix broken token vars (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.6
+  - @happyvertical/smrt-config@0.27.6
+  - @happyvertical/smrt-types@0.27.6
+
 ## 0.27.5
 
 ### Patch Changes
