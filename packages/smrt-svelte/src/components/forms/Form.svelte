@@ -739,7 +739,10 @@ function getFormData(): Record<string, unknown> {
     left: 0;
     right: 0;
     padding: 12px 24px;
-    background: rgba(var(--smrt-color-primary-rgb, 22, 101, 52), 0.9);
+    /* 90%-opacity primary. The old `--smrt-color-primary-rgb` channel token
+       was never emitted (issue #1431); color-mix derives the alpha from the
+       emitted `--smrt-color-primary` token instead. */
+    background: color-mix(in srgb, var(--smrt-color-primary, #166534) 90%, transparent);
     color: white;
     font-size: 0.875rem;
     box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
