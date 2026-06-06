@@ -1,5 +1,23 @@
 # @happyvertical/smrt-core
 
+## 0.27.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve text id fallback schemas (core)
+  - tighten uuid text schema drift handling (core)
+  - raise vitest hookTimeout to 30s to match testTimeout (smrt-svelte)
+  - surface tenant UUID upgrade blockers (cli)
+
+  ### Other Changes
+
+  - test: expect uuid tenant schema metadata (dev-mcp)
+  - @happyvertical/smrt-scanner@0.27.8
+  - @happyvertical/smrt-config@0.27.8
+  - @happyvertical/smrt-types@0.27.8
+
 ## 0.27.7
 
 ### Patch Changes
