@@ -1047,6 +1047,31 @@ describe('ObjectRegistry', () => {
       expect((BundledSecret as any).SMRT_TABLE_NAME).toBe('bundled_secrets');
     });
 
+    it('should preserve text idType in fallback schema aggregation', () => {
+      class TextIdFallbackObject extends SmrtObject {
+        name: string = '';
+      }
+
+      ObjectRegistry.register(TextIdFallbackObject, {
+        tableName: 'text_id_fallback_objects',
+        idType: 'text',
+      });
+
+      const definitions = ObjectRegistry.getAllSchemasAsDefinitions();
+      expect(definitions.text_id_fallback_objects.columns.id).toEqual(
+        expect.objectContaining({
+          type: 'TEXT',
+          primaryKey: true,
+          referenceKind: 'id',
+        }),
+      );
+
+      const schemas = ObjectRegistry.getAllSchemas();
+      expect(schemas.text_id_fallback_objects.ddl).toContain(
+        '"id" TEXT PRIMARY KEY',
+      );
+    });
+
     it('should inject tenant metadata from external decorator config', () => {
       class ExternalTenantScopedSecret extends SmrtObject {
         name: string = '';

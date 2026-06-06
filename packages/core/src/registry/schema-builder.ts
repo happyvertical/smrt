@@ -130,6 +130,22 @@ function shouldEmitDefault(fieldDef: FieldDefinition, sqlType: SQLDataType) {
   );
 }
 
+function createBaseColumns(registered: {
+  config?: { idType?: 'uuid' | 'text' };
+}): Record<string, ColumnDefinition> {
+  return {
+    id: {
+      type: registered.config?.idType === 'text' ? 'TEXT' : 'UUID',
+      primaryKey: true,
+      referenceKind: 'id',
+    },
+    slug: { type: 'TEXT', notNull: true },
+    context: { type: 'TEXT' },
+    created_at: { type: 'TIMESTAMP' },
+    updated_at: { type: 'TIMESTAMP' },
+  };
+}
+
 /**
  * Get cached schema definition for a registered class
  *
@@ -313,13 +329,7 @@ export function getAllSchemas(): Record<
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
         // These are required for all tables but are skipped by fieldsToColumns()
-        const baseColumns: Record<string, ColumnDefinition> = {
-          id: { type: 'UUID', primaryKey: true, referenceKind: 'id' },
-          slug: { type: 'TEXT', notNull: true },
-          context: { type: 'TEXT' },
-          created_at: { type: 'TIMESTAMP' },
-          updated_at: { type: 'TIMESTAMP' },
-        };
+        const baseColumns = createBaseColumns(registered);
 
         // For STI tables, add discriminator and data columns
         // (Issue #690: db:diff needs these columns to detect schema changes)
@@ -517,13 +527,7 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
 
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
-        const baseColumns: Record<string, ColumnDefinition> = {
-          id: { type: 'UUID', primaryKey: true, referenceKind: 'id' },
-          slug: { type: 'TEXT', notNull: true },
-          context: { type: 'TEXT' },
-          created_at: { type: 'TIMESTAMP' },
-          updated_at: { type: 'TIMESTAMP' },
-        };
+        const baseColumns = createBaseColumns(registered);
 
         const isSTI = tableStrategy === 'sti';
         if (isSTI) {
