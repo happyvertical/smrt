@@ -122,8 +122,7 @@ registry internals) from outside the owning class.
 **PASS when:** no hardcoded color literals (hex / `rgb(a)` / `hsl()` / named) in
 style blocks — components consume `--smrt-color-*` (and `--smrt-spacing/radius/
 elevation-*`) tokens; `var(--token, #fallback)` is allowed only when the fallback
-equals the token's real light value; basic a11y (labels, roles, focus states);
-basic a11y (labels, roles, focus states).
+equals the token's real light value; basic a11y (labels, roles, focus states).
 **Proof (current):** `rg -n '#[0-9a-fA-F]{3,8}|rgba?\(|hsl\(' packages/<pkg>/src --glob '*.svelte'` (deterministic) · theme source: `packages/smrt-svelte/src/theme/tokens.ts`
 **Future ratchet (not yet wired):** design-token lint rule (#1373), component test harness + axe (#1416), a11y enforcement (#1417). The svelte MCP autofixer is a local authoring aid, not a CI gate.
 **Tiers:** T1 ✅ · T2 ✅ · T3 ✅ · T4 ⚠️ (applies only if it ships `.svelte`)
@@ -146,7 +145,7 @@ surface without a changeset-worthy commit.
 **PASS when:** uses `@happyvertical/logger` rather than `console.*` in library code;
 JSON parsing is guarded (try/catch with graceful fallback); thrown errors are typed
 and actionable.
-**Proof:** `rg -n 'console\.(log|error|warn)' packages/<pkg>/src`
+**Proof:** `rg -n 'console\.' packages/<pkg>/src`
 **Tiers:** T1 ✅ · T2 ✅ · T3 ⚠️ · T4 ⚠️
 
 ### 10. Security
@@ -204,6 +203,13 @@ checks in hooks/CI — see AGENTS.md):
 - **Secret scanning** → gitleaks in lefthook pre-commit + CI; blocks committed credentials.
 - **Dependency risk** → `pnpm audit` / osv-scanner as a CI check for known-vuln deps.
 - **Security/correctness lint** → promote Biome security rules to errors (ban `eval`, unsafe patterns) within the strictness ratchet.
+- **Logging (dim 9)** → enable Biome `suspicious.noConsole`
+  (`lint/suspicious/noConsole`) as an error in the root config for
+  `packages/*/src/**` library code, with scoped overrides for tests, scripts,
+  and CLI entrypoints. `@happyvertical/logger` is the sanctioned logger; the
+  rule gates all `console.*` calls, including `console.info` and
+  `console.debug`, instead of relying on the manual dim-9 `rg` proof. Migration
+  tracked in S14 #1432.
 - **Docs freshness** → `smrt dev:knowledge-check` as a PR gate.
 
 A fix that is not gated will rot back. Gating is the difference between a cleanup
