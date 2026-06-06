@@ -109,7 +109,7 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
   }
 
   .module-panel-placeholder__code {
-    font-family: var(--smrt-typography-font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
+    font-family: var(--smrt-font-family-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-2, 0.5rem);
     background: var(--smrt-color-surface-container-high, #e2e8f0);

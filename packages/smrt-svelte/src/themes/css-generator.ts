@@ -6,6 +6,14 @@
  */
 
 import { themes } from './registry.js';
+import {
+  borderRadiusAliases,
+  durationAliases,
+  fontFamilyAliases,
+  fontWeightTokens,
+  spacingAliases,
+  zIndexTokens,
+} from './shared.js';
 import type {
   BorderRadiusScale,
   ColorPalette,
@@ -64,6 +72,13 @@ function generateTypographyVariables(
     if (token.fontFamily) {
       vars[`${prefix}-typography-${cssKey}-font-family`] = token.fontFamily;
     }
+    // Additive `font` shorthand alias (issue #1431): components use
+    // `font: var(--smrt-typography-body-medium-font)`, expecting the CSS
+    // `font` shorthand order (style variant size/line-height family). Built
+    // from the emitted longhands so it stays in sync.
+    const family = token.fontFamily ?? `var(${prefix}-font-family)`;
+    vars[`${prefix}-typography-${cssKey}-font`] =
+      `${token.weight} ${token.size}/${token.lineHeight} ${family}`;
   }
 
   return vars;
@@ -84,6 +99,12 @@ function generateSpacingVariables(
     vars[`${prefix}-spacing-${cssKey}`] = value;
   }
 
+  // Additive Material-3 named aliases (issue #1431), mapped to numeric values.
+  for (const [alias, numericKey] of Object.entries(spacingAliases)) {
+    const value = spacing[numericKey];
+    if (value !== undefined) vars[`${prefix}-spacing-${alias}`] = value;
+  }
+
   return vars;
 }
 
@@ -99,6 +120,12 @@ function generateBorderRadiusVariables(
   for (const [key, value] of Object.entries(borderRadius)) {
     const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
     vars[`${prefix}-radius-${cssKey}`] = value;
+  }
+
+  // Additive Material-3 named aliases (issue #1431), mapped to t-shirt values.
+  for (const [alias, scaleKey] of Object.entries(borderRadiusAliases)) {
+    const value = borderRadius[scaleKey];
+    if (value !== undefined) vars[`${prefix}-radius-${alias}`] = value;
   }
 
   return vars;
@@ -132,6 +159,11 @@ function generateDurationVariables(
   for (const [key, value] of Object.entries(duration)) {
     const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
     vars[`${prefix}-duration-${cssKey}`] = value;
+  }
+
+  // Additive Material-3 motion aliases (issue #1431): short1…long4.
+  for (const [alias, value] of Object.entries(durationAliases)) {
+    vars[`${prefix}-duration-${alias}`] = value;
   }
 
   return vars;
@@ -169,6 +201,28 @@ function generateGlassVariables(
     [`${prefix}-glass-border-opacity`]: glass.borderOpacity,
     [`${prefix}-glass-background-opacity`]: glass.backgroundOpacity,
   };
+}
+
+/**
+ * Generate theme-independent helper tokens (issue #1431).
+ *
+ * Monospace font family, named font weights, and z-index stacking levels are
+ * the same across presets and color schemes. Emitting them as tokens lets
+ * components stop hardcoding magic values and keeps overlay layering / mono
+ * surfaces themeable.
+ */
+function generateStaticTokens(prefix: string): Record<string, string> {
+  const vars: Record<string, string> = {};
+  for (const [alias, value] of Object.entries(fontFamilyAliases)) {
+    vars[`${prefix}-font-family-${alias}`] = value;
+  }
+  for (const [name, value] of Object.entries(fontWeightTokens)) {
+    vars[`${prefix}-typography-weight-${name}`] = value;
+  }
+  for (const [name, value] of Object.entries(zIndexTokens)) {
+    vars[`${prefix}-z-index-${name}`] = value;
+  }
+  return vars;
 }
 
 /**
@@ -213,6 +267,9 @@ export function generateThemeVariables(
 
     // Easing
     ...generateEasingVariables(theme.easing, prefix),
+
+    // Theme-independent helper tokens (mono font, named weights, z-index)
+    ...generateStaticTokens(prefix),
 
     // Glass effects (if present)
     ...generateGlassVariables(theme.glass, prefix),
