@@ -314,7 +314,7 @@ describe('ManifestGenerator', () => {
         expect.objectContaining({
           type: 'text',
           _meta: expect.objectContaining({
-            sqlType: 'TEXT',
+            sqlType: 'UUID',
             __tenancy: expect.objectContaining({
               isTenantIdField: true,
               mode: 'required',
@@ -324,7 +324,7 @@ describe('ManifestGenerator', () => {
         }),
       );
       expect(secret.schema?.columns.tenant_id).toEqual(
-        expect.objectContaining({ type: 'TEXT' }),
+        expect.objectContaining({ type: 'UUID', referenceKind: 'tenantId' }),
       );
     });
 
@@ -367,7 +367,7 @@ describe('ManifestGenerator', () => {
           type: 'foreignKey',
           related: 'Tenant',
           _meta: expect.objectContaining({
-            sqlType: 'TEXT',
+            sqlType: 'UUID',
             indexed: true,
             __tenancy: expect.objectContaining({
               isTenantIdField: true,
@@ -378,7 +378,7 @@ describe('ManifestGenerator', () => {
         }),
       );
       expect(membership.schema?.columns.tenant_id).toEqual(
-        expect.objectContaining({ type: 'TEXT' }),
+        expect.objectContaining({ type: 'UUID', referenceKind: 'tenantId' }),
       );
     });
 
@@ -415,7 +415,7 @@ describe('ManifestGenerator', () => {
       );
     });
 
-    it('rejects tenant scoped objects with non-text tenant SQL columns', () => {
+    it('rejects tenant scoped objects with non-UUID-compatible tenant SQL columns', () => {
       const generator = new ManifestGenerator();
 
       expect(() =>
@@ -447,7 +447,7 @@ describe('ManifestGenerator', () => {
           },
         ]),
       ).toThrow(
-        /Secret: tenant-scoped field "tenantId" must use SQL type "TEXT"; received "INTEGER"/,
+        /Secret: tenant-scoped field "tenantId" must use SQL type "UUID" or legacy "TEXT"; received "INTEGER"/,
       );
     });
 
@@ -491,7 +491,7 @@ describe('ManifestGenerator', () => {
               tenantId: {
                 type: 'text',
                 _meta: {
-                  sqlType: 'TEXT',
+                  sqlType: 'UUID',
                   __tenancy: {
                     isTenantIdField: true,
                     mode: 'required',
@@ -530,7 +530,7 @@ describe('ManifestGenerator', () => {
               tenantId: {
                 type: 'text',
                 _meta: {
-                  sqlType: 'TEXT',
+                  sqlType: 'UUID',
                   __tenancy: {
                     isTenantIdField: true,
                     mode: 'required',

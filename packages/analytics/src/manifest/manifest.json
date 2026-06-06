@@ -150,7 +150,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -188,7 +189,7 @@
             "unique": true
           }
         ],
-        "version": "444aebe5"
+        "version": "196caa89"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsEventCollection": {
@@ -448,7 +449,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -486,7 +488,7 @@
             "unique": true
           }
         ],
-        "version": "be13478c"
+        "version": "4b399770"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsPropertyCollection": {
@@ -632,7 +634,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -670,7 +673,7 @@
             "unique": true
           }
         ],
-        "version": "96c06cb6"
+        "version": "bfe200c6"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsReportCollection": {
@@ -818,7 +821,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -856,7 +860,7 @@
             "unique": true
           }
         ],
-        "version": "bb8bd9b6"
+        "version": "68cfc4d7"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsDataStream": {
@@ -1410,7 +1414,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1441,7 +1446,8 @@
           },
           "property_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "display_name": {
             "type": "TEXT",
@@ -1515,7 +1521,7 @@
             ]
           }
         ],
-        "version": "1a96a399"
+        "version": "4e3cab4b"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsEvent": {
@@ -2162,7 +2168,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2193,7 +2200,8 @@
           },
           "property_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "event_name": {
             "type": "TEXT",
@@ -2291,7 +2299,7 @@
             ]
           }
         ],
-        "version": "f628b4b8"
+        "version": "7da163fe"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsProperty": {
@@ -2897,7 +2905,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3017,7 +3026,7 @@
             ]
           }
         ],
-        "version": "b38ffd95"
+        "version": "1701c6ac"
       }
     },
     "@happyvertical/smrt-analytics:AnalyticsReport": {
@@ -3707,7 +3716,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3738,7 +3748,8 @@
           },
           "property_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "name": {
             "type": "TEXT",
@@ -3845,7 +3856,7 @@
             ]
           }
         ],
-        "version": "411b88bb"
+        "version": "c56776b9"
       }
     }
   },

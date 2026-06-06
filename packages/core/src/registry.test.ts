@@ -1073,7 +1073,9 @@ describe('ObjectRegistry', () => {
               schema: {
                 tableName: 'external_tenant_scoped_secrets',
                 ddl: '',
-                columns: {},
+                columns: {
+                  tenant_id: { type: 'TEXT' },
+                },
                 indexes: [],
                 version: 'test',
               },
@@ -1087,14 +1089,65 @@ describe('ObjectRegistry', () => {
       );
       expect(registered?.tenantScopedConfig?.field).toBe('tenantId');
       expect(registered?.fields.has('tenantId')).toBe(true);
+      expect(registered?.fields.get('tenantId')?.type).toBe('foreignKey');
       expect(registered?.fields.get('tenantId')?.related).toBe('Tenant');
+      expect(registered?.fields.get('tenantId')?._meta?.sqlType).toBe('UUID');
       expect(
         (registered?.fields.get('tenantId') as any)?._meta?.__tenancy
           ?.isTenantIdField,
       ).toBe(true);
+      expect(registered?.schema.columns.tenant_id).toEqual(
+        expect.objectContaining({
+          type: 'UUID',
+          referenceKind: 'tenantId',
+        }),
+      );
+      expect(
+        ObjectRegistry.getAllSchemasAsDefinitions()
+          .external_tenant_scoped_secrets?.columns.tenant_id,
+      ).toEqual(
+        expect.objectContaining({
+          type: 'UUID',
+          referenceKind: 'tenantId',
+        }),
+      );
       expect(
         ObjectRegistry.getAllSchemas().external_tenant_scoped_secrets?.ddl,
       ).toContain('"tenant_id"');
+    });
+
+    it('should add structural reference metadata from legacy manifest fields', () => {
+      ObjectRegistry.registerFromManifest(
+        'LegacyCrossRefSecret',
+        {
+          className: 'LegacyCrossRefSecret',
+          fields: {
+            externalId: {
+              type: 'crossPackageRef',
+              related: '@test/targets:ExternalTarget',
+            },
+          },
+          schema: {
+            tableName: 'legacy_cross_ref_secrets',
+            ddl: '',
+            columns: {
+              external_id: { type: 'TEXT' },
+            },
+            indexes: [],
+            version: 'test',
+          },
+        },
+        '@test/pkg',
+      );
+
+      expect(ObjectRegistry.getSchema('LegacyCrossRefSecret')?.columns).toEqual(
+        expect.objectContaining({
+          external_id: expect.objectContaining({
+            type: 'TEXT',
+            referenceKind: 'crossPackageRef',
+          }),
+        }),
+      );
     });
 
     it('should preserve feature declarations from external decorator config', () => {

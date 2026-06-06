@@ -139,7 +139,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -177,7 +178,7 @@
             "unique": true
           }
         ],
-        "version": "cabc3d4f"
+        "version": "0cb00ee9"
       }
     },
     "@happyvertical/smrt-profiles:AuditLogCollection": {
@@ -331,7 +332,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -369,7 +371,7 @@
             "unique": true
           }
         ],
-        "version": "5087feea"
+        "version": "4db3924e"
       }
     },
     "@happyvertical/smrt-profiles:MagicLinkTokenCollection": {
@@ -550,7 +552,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -588,7 +591,7 @@
             "unique": true
           }
         ],
-        "version": "adf7d499"
+        "version": "e406b402"
       }
     },
     "@happyvertical/smrt-profiles:NostrIdentityCollection": {
@@ -785,7 +788,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -823,7 +827,7 @@
             "unique": true
           }
         ],
-        "version": "48c0c7d7"
+        "version": "cb131355"
       }
     },
     "@happyvertical/smrt-profiles:OidcIdentityCollection": {
@@ -940,7 +944,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -978,7 +983,7 @@
             "unique": true
           }
         ],
-        "version": "860138b2"
+        "version": "fd355bfc"
       }
     },
     "@happyvertical/smrt-profiles:ProfileAssetCollection": {
@@ -1191,7 +1196,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1229,7 +1235,7 @@
             "unique": true
           }
         ],
-        "version": "f818ea6e"
+        "version": "919e91b5"
       }
     },
     "@happyvertical/smrt-profiles:ProfileCollection": {
@@ -1457,7 +1463,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1495,7 +1502,7 @@
             "unique": true
           }
         ],
-        "version": "f4d04d88"
+        "version": "5ff9ed7e"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetadataCollection": {
@@ -1567,7 +1574,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1605,7 +1613,7 @@
             "unique": true
           }
         ],
-        "version": "bf484840"
+        "version": "e19c06c6"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetafieldCollection": {
@@ -1663,7 +1671,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1701,7 +1710,7 @@
             "unique": true
           }
         ],
-        "version": "7e7ca32f"
+        "version": "d50afde1"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipCollection": {
@@ -1807,7 +1816,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1845,7 +1855,7 @@
             "unique": true
           }
         ],
-        "version": "a6f0256f"
+        "version": "c2512065"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTermCollection": {
@@ -1912,7 +1922,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1950,7 +1961,7 @@
             "unique": true
           }
         ],
-        "version": "8511ee83"
+        "version": "0b826567"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTypeCollection": {
@@ -2024,7 +2035,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2062,7 +2074,7 @@
             "unique": true
           }
         ],
-        "version": "ef3c5ce5"
+        "version": "65243ce8"
       }
     },
     "@happyvertical/smrt-profiles:ProfileTypeCollection": {
@@ -2120,7 +2132,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2158,7 +2171,7 @@
             "unique": true
           }
         ],
-        "version": "abf23a07"
+        "version": "e0c2639e"
       }
     },
     "@happyvertical/smrt-profiles:ApiKey": {
@@ -2350,7 +2363,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2374,7 +2388,8 @@
           "profile_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "key_hash": {
             "type": "TEXT",
@@ -2432,7 +2447,7 @@
             "unique": true
           }
         ],
-        "version": "5115d1ab"
+        "version": "8a5e44ea"
       }
     },
     "@happyvertical/smrt-profiles:AuditLog": {
@@ -2561,12 +2576,13 @@
       ],
       "schema": {
         "tableName": "audit_logs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" UUID NOT NULL,\n  \"action\" TEXT DEFAULT '',\n  \"resource_type\" TEXT DEFAULT '',\n  \"resource_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT 'web',\n  \"metadata\" JSON DEFAULT '{}',\n  \"on_behalf_of_id\" UUID\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"audit_logs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"profile_id\" UUID NOT NULL,\n  \"action\" TEXT DEFAULT '',\n  \"resource_type\" TEXT DEFAULT '',\n  \"resource_id\" TEXT DEFAULT '',\n  \"source\" TEXT DEFAULT 'web',\n  \"metadata\" JSON DEFAULT '{}',\n  \"on_behalf_of_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2588,14 +2604,16 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "profile_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "action": {
             "type": "TEXT",
@@ -2630,7 +2648,8 @@
           "on_behalf_of_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           }
         },
         "indexes": [
@@ -2649,7 +2668,7 @@
             "unique": true
           }
         ],
-        "version": "50825815"
+        "version": "11439cb2"
       }
     },
     "@happyvertical/smrt-profiles:MagicLinkToken": {
@@ -2838,7 +2857,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2862,7 +2882,8 @@
           "nostr_identity_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "token_hash": {
             "type": "TEXT",
@@ -2909,7 +2930,7 @@
             "unique": true
           }
         ],
-        "version": "6f0efb13"
+        "version": "18deb8e3"
       }
     },
     "@happyvertical/smrt-profiles:NostrIdentity": {
@@ -3138,7 +3159,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3162,7 +3184,8 @@
           "profile_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "pubkey": {
             "type": "TEXT",
@@ -3227,7 +3250,7 @@
             "unique": true
           }
         ],
-        "version": "19f53fb6"
+        "version": "964d72ef"
       }
     },
     "@happyvertical/smrt-profiles:OidcIdentity": {
@@ -3374,7 +3397,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3398,7 +3422,8 @@
           "profile_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "provider": {
             "type": "TEXT",
@@ -3446,7 +3471,7 @@
             "unique": true
           }
         ],
-        "version": "e7e61106"
+        "version": "7bfcab24"
       }
     },
     "@happyvertical/smrt-profiles:Profile": {
@@ -4365,12 +4390,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -4400,12 +4426,14 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "email": {
             "type": "TEXT",
@@ -4444,7 +4472,7 @@
             ]
           }
         ],
-        "version": "9156e298"
+        "version": "dab71e12"
       }
     },
     "@happyvertical/smrt-profiles:ProfileAsset": {
@@ -4524,12 +4552,13 @@
       ],
       "schema": {
         "tableName": "profile_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"profile_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -4551,19 +4580,22 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "profile_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "asset_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "relationship": {
             "type": "TEXT",
@@ -4594,7 +4626,7 @@
             "unique": true
           }
         ],
-        "version": "e113ab6b"
+        "version": "784ce134"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetadata": {
@@ -5112,12 +5144,13 @@
       ],
       "schema": {
         "tableName": "profile_metadata",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadata\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"profile_id\" UUID,\n  \"metafield_id\" UUID,\n  \"value\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metadata\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"profile_id\" UUID,\n  \"metafield_id\" UUID,\n  \"value\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -5147,16 +5180,19 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "profile_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "metafield_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "value": {
             "type": "TEXT",
@@ -5187,7 +5223,7 @@
             ]
           }
         ],
-        "version": "21223f0b"
+        "version": "b33758b8"
       }
     },
     "@happyvertical/smrt-profiles:ProfileMetafield": {
@@ -5732,12 +5768,13 @@
       ],
       "schema": {
         "tableName": "profile_metafields",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafields\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"validation\" JSON DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_metafields\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT,\n  \"validation\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -5767,8 +5804,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "name": {
             "type": "TEXT",
@@ -5808,7 +5846,7 @@
             ]
           }
         ],
-        "version": "e4042aed"
+        "version": "e6b89f44"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationship": {
@@ -6376,12 +6414,13 @@
       ],
       "schema": {
         "tableName": "profile_relationships",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationships\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"from_profile_id\" UUID,\n  \"to_profile_id\" UUID,\n  \"type_id\" UUID,\n  \"context_profile_id\" UUID\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_relationships\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"from_profile_id\" UUID,\n  \"to_profile_id\" UUID,\n  \"type_id\" UUID,\n  \"context_profile_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -6411,24 +6450,29 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "from_profile_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "to_profile_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "context_profile_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           }
         },
         "indexes": [
@@ -6454,7 +6498,7 @@
             ]
           }
         ],
-        "version": "b429e459"
+        "version": "27104553"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipTerm": {
@@ -6977,7 +7021,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -7008,7 +7053,8 @@
           },
           "relationship_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "started_at": {
             "type": "TIMESTAMP",
@@ -7042,7 +7088,7 @@
             ]
           }
         ],
-        "version": "e8034c8e"
+        "version": "5f5314f3"
       }
     },
     "@happyvertical/smrt-profiles:ProfileRelationshipType": {
@@ -7584,7 +7630,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -7647,7 +7694,7 @@
             ]
           }
         ],
-        "version": "ce70af61"
+        "version": "0d5e7b48"
       }
     },
     "@happyvertical/smrt-profiles:ProfileType": {
@@ -8140,12 +8187,13 @@
       ],
       "schema": {
         "tableName": "profile_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profile_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -8175,8 +8223,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "name": {
             "type": "TEXT",
@@ -8211,7 +8260,7 @@
             ]
           }
         ],
-        "version": "5ffff646"
+        "version": "dd5baf19"
       }
     },
     "@happyvertical/smrt-profiles:Person": {
@@ -9113,12 +9162,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -9148,12 +9198,14 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "email": {
             "type": "TEXT",
@@ -9192,7 +9244,7 @@
             ]
           }
         ],
-        "version": "1440208d"
+        "version": "119055e0"
       }
     },
     "@happyvertical/smrt-profiles:Organization": {
@@ -10094,12 +10146,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -10129,12 +10182,14 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "email": {
             "type": "TEXT",
@@ -10173,7 +10228,7 @@
             ]
           }
         ],
-        "version": "72550014"
+        "version": "1dbcdde7"
       }
     },
     "@happyvertical/smrt-profiles:Bot": {
@@ -11075,12 +11130,13 @@
       ],
       "schema": {
         "tableName": "profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type_id\" UUID,\n  \"email\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -11110,12 +11166,14 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "email": {
             "type": "TEXT",
@@ -11154,7 +11212,7 @@
             ]
           }
         ],
-        "version": "70948c50"
+        "version": "8ebc0e80"
       }
     }
   },

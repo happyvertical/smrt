@@ -131,9 +131,9 @@ import type {
   SmrtVisibility,
   ValidationRule,
 } from './scanner/types.js';
-import type { SchemaDefinition } from './schema/types.js';
+import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
 import { prependSmrtSystemFields } from './system-fields';
-import { classnameToTablename } from './utils';
+import { classnameToTablename, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
 import {
   createQualifiedName,
@@ -173,6 +173,58 @@ function getManifestLoaderSpecifier(): string {
 
 async function importManifestLoader(): Promise<ManifestLoaderModule> {
   return (await import(getManifestLoaderSpecifier())) as ManifestLoaderModule;
+}
+
+function getReferenceKindFromFieldOptions(
+  fieldOptions: any,
+): ColumnDefinition['referenceKind'] | undefined {
+  if (
+    fieldOptions?.__tenancy?.isTenantIdField ||
+    fieldOptions?._meta?.__tenancy?.isTenantIdField
+  ) {
+    return 'tenantId';
+  }
+
+  if (fieldOptions?.type === 'foreignKey') {
+    return 'foreignKey';
+  }
+
+  if (fieldOptions?.type === 'crossPackageRef') {
+    return 'crossPackageRef';
+  }
+
+  return undefined;
+}
+
+function applyManifestFieldColumnMetadata(
+  columns: Record<string, ColumnDefinition>,
+  fieldEntries: Iterable<[string, any]> | undefined,
+): void {
+  if (!fieldEntries) {
+    return;
+  }
+
+  for (const [fieldName, fieldOptions] of fieldEntries) {
+    const sqlType = fieldOptions?.sqlType ?? fieldOptions?._meta?.sqlType;
+    const referenceKind = getReferenceKindFromFieldOptions(fieldOptions);
+    if (!sqlType && !referenceKind) {
+      continue;
+    }
+
+    const columnName = toSnakeCase(fieldName);
+    const existingColumn = columns[columnName];
+    if (!existingColumn) {
+      continue;
+    }
+
+    columns[columnName] = {
+      ...existingColumn,
+      ...(sqlType
+        ? { type: String(sqlType).toUpperCase() as ColumnDefinition['type'] }
+        : {}),
+      ...(referenceKind ? { referenceKind } : {}),
+    };
+  }
 }
 
 async function discoverInstalledSmrtPackages(): Promise<string[]> {
@@ -1707,13 +1759,18 @@ export class ObjectRegistry {
       }
 
       if (manifestEntry.schema) {
+        const columns = cloneManifestSchemaColumns(
+          manifestEntry.schema.columns,
+        );
+        applyManifestFieldColumnMetadata(columns, registered.fields.entries());
+
         registered.schema = {
           ddl: manifestEntry.schema.ddl,
           tableName:
             manifestEntry.schema.tableName ||
             registered.schema?.tableName ||
             classnameToTablename(registered.name),
-          columns: cloneManifestSchemaColumns(manifestEntry.schema.columns),
+          columns,
           indexes:
             manifestEntry.schema.indexes?.map((indexDef) => ({
               ...indexDef,

@@ -294,7 +294,7 @@ class SecretLike extends SmrtObject {
           expect.objectContaining({
             type: 'text',
             _meta: expect.objectContaining({
-              sqlType: 'TEXT',
+              sqlType: 'UUID',
               __tenancy: expect.objectContaining({
                 isTenantIdField: true,
                 mode: 'required',
@@ -304,9 +304,9 @@ class SecretLike extends SmrtObject {
           }),
         );
         expect(secretLike?.schema?.columns.tenant_id).toEqual(
-          expect.objectContaining({ type: 'TEXT' }),
+          expect.objectContaining({ type: 'UUID', referenceKind: 'tenantId' }),
         );
-        expect(secretLike?.schema?.ddl).toContain('"tenant_id" TEXT');
+        expect(secretLike?.schema?.ddl).toContain('"tenant_id" UUID');
       } finally {
         process.chdir(originalCwd);
       }

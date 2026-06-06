@@ -833,22 +833,11 @@ export function register(
       allowSuperAdminBypass: tenantOpts.allowSuperAdminBypass ?? false,
     };
 
-    // Inject tenantId field if not already defined
+    // Inject or enrich tenantId field
     const fieldName = tenantScopedConfig.field;
-    if (!fields.has(fieldName)) {
-      fields.set(fieldName, {
-        type: 'foreignKey',
-        related: 'Tenant',
-        required: tenantScopedConfig.mode === 'required',
-        _meta: {
-          reference: 'Tenant',
-          sqlType: 'TEXT',
-          __tenancy: {
-            isTenantIdField: true,
-            ...tenantScopedConfig,
-          },
-        },
-      });
+    const hadTenantField = fields.has(fieldName);
+    ensureTenantScopedField(fields, tenantScopedConfig);
+    if (!hadTenantField) {
       verboseLog(
         `[registry] ✅ Injected ${fieldName} field for tenant-scoped class ${name}`,
       );
@@ -959,8 +948,11 @@ export function register(
     };
   }
 
-  if (schema.columns && decorators && decorators.size > 0) {
-    applySqlTypeOverrides(schema.columns, decorators.entries());
+  if (schema.columns) {
+    applySqlTypeOverrides(schema.columns, fields.entries());
+    if (decorators && decorators.size > 0) {
+      applySqlTypeOverrides(schema.columns, decorators.entries());
+    }
   }
 
   // Use pre-computed validation rules from manifest if available (Issue #782)
@@ -1144,7 +1136,23 @@ function ensureTenantScopedField(
   }
 
   const fieldName = tenantScopedConfig.field;
-  if (fields.has(fieldName)) {
+  const existingField = fields.get(fieldName);
+  if (existingField) {
+    fields.set(fieldName, {
+      ...existingField,
+      required:
+        existingField.required ?? tenantScopedConfig.mode === 'required',
+      _meta: {
+        ...existingField._meta,
+        reference: existingField._meta?.reference ?? 'Tenant',
+        sqlType: 'UUID',
+        __tenancy: {
+          ...existingField._meta?.__tenancy,
+          isTenantIdField: true,
+          ...tenantScopedConfig,
+        },
+      },
+    });
     return;
   }
 
@@ -1154,7 +1162,7 @@ function ensureTenantScopedField(
     required: tenantScopedConfig.mode === 'required',
     _meta: {
       reference: 'Tenant',
-      sqlType: 'TEXT',
+      sqlType: 'UUID',
       __tenancy: {
         isTenantIdField: true,
         ...tenantScopedConfig,
@@ -1184,6 +1192,27 @@ function mergeIndexDefinitions(
 // cloneManifestSchemaColumns lives in ../manifest/store.ts — imported above.
 // (Hoisted out of the duplicate definition here and in registry.ts.)
 
+function getReferenceKindFromFieldOptions(
+  fieldOptions: any,
+): ColumnDefinition['referenceKind'] | undefined {
+  if (
+    fieldOptions?.__tenancy?.isTenantIdField ||
+    fieldOptions?._meta?.__tenancy?.isTenantIdField
+  ) {
+    return 'tenantId';
+  }
+
+  if (fieldOptions?.type === 'foreignKey') {
+    return 'foreignKey';
+  }
+
+  if (fieldOptions?.type === 'crossPackageRef') {
+    return 'crossPackageRef';
+  }
+
+  return undefined;
+}
+
 function applySqlTypeOverrides(
   columns: Record<string, ColumnDefinition>,
   fieldEntries: Iterable<[string, any]> | undefined,
@@ -1194,7 +1223,8 @@ function applySqlTypeOverrides(
 
   for (const [fieldName, fieldOptions] of fieldEntries) {
     const sqlType = fieldOptions?.sqlType ?? fieldOptions?._meta?.sqlType;
-    if (!sqlType) {
+    const referenceKind = getReferenceKindFromFieldOptions(fieldOptions);
+    if (!sqlType && !referenceKind) {
       continue;
     }
 
@@ -1206,7 +1236,10 @@ function applySqlTypeOverrides(
 
     columns[columnName] = {
       ...existingColumn,
-      type: sqlType,
+      ...(sqlType
+        ? { type: String(sqlType).toUpperCase() as ColumnDefinition['type'] }
+        : {}),
+      ...(referenceKind ? { referenceKind } : {}),
     };
   }
 }
@@ -1557,6 +1590,7 @@ export function registerFromManifest(
       version: objectDef.schema.version || '',
       packageName: packageName,
     };
+    applySqlTypeOverrides(schema.columns, fields.entries());
     applySqlTypeOverrides(schema.columns, decorators?.entries());
     verboseLog(
       `[registry] Loaded pre-generated schema for ${name} (${Object.keys(objectDef.schema.columns || {}).length} columns)`,

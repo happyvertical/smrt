@@ -214,7 +214,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -252,7 +253,7 @@
             "unique": true
           }
         ],
-        "version": "e8626c67"
+        "version": "53d08f89"
       }
     },
     "@happyvertical/smrt-events:EventCollection": {
@@ -538,7 +539,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -576,7 +578,7 @@
             "unique": true
           }
         ],
-        "version": "ab0de818"
+        "version": "94538784"
       }
     },
     "@happyvertical/smrt-events:EventParticipantCollection": {
@@ -841,7 +843,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -879,7 +882,7 @@
             "unique": true
           }
         ],
-        "version": "942c35fc"
+        "version": "3e50d31f"
       }
     },
     "@happyvertical/smrt-events:EventSeriesCollection": {
@@ -1009,7 +1012,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1047,7 +1051,7 @@
             "unique": true
           }
         ],
-        "version": "6bdab34a"
+        "version": "b309d9f7"
       }
     },
     "@happyvertical/smrt-events:EventTypeCollection": {
@@ -1149,7 +1153,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1187,7 +1192,7 @@
             "unique": true
           }
         ],
-        "version": "d8f92580"
+        "version": "a447fd5d"
       }
     },
     "@happyvertical/smrt-events:Event": {
@@ -1937,12 +1942,13 @@
       "collectionExportName": "EventCollection",
       "schema": {
         "tableName": "events",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" UUID,\n  \"type_id\" UUID,\n  \"place_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" INTEGER,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"series_id\" UUID,\n  \"type_id\" UUID,\n  \"place_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"status\" TEXT DEFAULT 'scheduled',\n  \"round\" INTEGER,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1973,11 +1979,13 @@
           },
           "parent_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "name": {
             "type": "TEXT",
@@ -1986,15 +1994,18 @@
           },
           "series_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "place_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "description": {
             "type": "TEXT",
@@ -2053,7 +2064,7 @@
             ]
           }
         ],
-        "version": "e48a7ab2"
+        "version": "8a381a21"
       }
     },
     "@happyvertical/smrt-events:EventAsset": {
@@ -2133,12 +2144,13 @@
       ],
       "schema": {
         "tableName": "event_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"event_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"event_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2160,19 +2172,22 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "event_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "asset_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "relationship": {
             "type": "TEXT",
@@ -2203,7 +2218,7 @@
             "unique": true
           }
         ],
-        "version": "02ded4f6"
+        "version": "684609f5"
       }
     },
     "@happyvertical/smrt-events:EventParticipant": {
@@ -2370,12 +2385,13 @@
       "collectionExportName": "EventParticipantCollection",
       "schema": {
         "tableName": "event_participants",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participants\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"event_id\" UUID,\n  \"profile_id\" UUID,\n  \"role\" TEXT DEFAULT '',\n  \"placement\" INTEGER,\n  \"group_id\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_participants\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"event_id\" UUID,\n  \"profile_id\" UUID,\n  \"role\" TEXT DEFAULT '',\n  \"placement\" INTEGER,\n  \"group_id\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2397,19 +2413,22 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "event_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "profile_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "role": {
             "type": "TEXT",
@@ -2460,7 +2479,7 @@
             "unique": true
           }
         ],
-        "version": "822f86e6"
+        "version": "dd97eb53"
       }
     },
     "@happyvertical/smrt-events:EventSeries": {
@@ -3064,12 +3083,13 @@
       "collectionExportName": "EventSeriesCollection",
       "schema": {
         "tableName": "event_series",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"type_id\" UUID,\n  \"organizer_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"recurrence\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_series\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"type_id\" UUID,\n  \"organizer_id\" UUID,\n  \"description\" TEXT,\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"recurrence\" TEXT,\n  \"metadata\" TEXT,\n  \"external_id\" TEXT,\n  \"source\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3099,8 +3119,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "name": {
             "type": "TEXT",
@@ -3109,11 +3130,13 @@
           },
           "type_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "organizer_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "description": {
             "type": "TEXT",
@@ -3167,7 +3190,7 @@
             ]
           }
         ],
-        "version": "a6e42355"
+        "version": "ca161261"
       }
     },
     "@happyvertical/smrt-events:EventType": {
@@ -3725,12 +3748,13 @@
       ],
       "schema": {
         "tableName": "event_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"event_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"schema\" TEXT DEFAULT '',\n  \"participant_schema\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"event_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"schema\" TEXT DEFAULT '',\n  \"participant_schema\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3760,8 +3784,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "name": {
             "type": "TEXT",
@@ -3807,7 +3832,7 @@
             ]
           }
         ],
-        "version": "cb404685"
+        "version": "af2ba9bf"
       }
     }
   },
