@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.9
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: add dim-9 logging enforcement ratchet (noConsole) (#1433) (rubric)
+  - @happyvertical/smrt-scanner@0.27.9
+  - @happyvertical/smrt-config@0.27.9
+  - @happyvertical/smrt-types@0.27.9
+
 ## 0.27.8
 
 ### Patch Changes
