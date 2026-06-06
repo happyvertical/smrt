@@ -388,7 +388,7 @@ const yearOptions = $derived(() => {
   .today-btn {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-4, 1rem);
     border: 1px solid var(--calendar-border);
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--smrt-radius-small, 4px);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     background: var(--calendar-bg);
     color: var(--smrt-color-primary, #005ac1);

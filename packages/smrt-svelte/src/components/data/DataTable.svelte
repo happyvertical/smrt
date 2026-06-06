@@ -132,12 +132,13 @@ const sortedData = $derived.by(() => {
   if (!column) return data;
 
   const accessor = column.accessor ?? column.id;
+  const direction = sort.direction;
 
   return [...data].sort((a, b) => {
     if (column.sortFn) {
-      return column.sortFn(a, b, sort.direction!);
+      return column.sortFn(a, b, direction);
     }
-    return defaultSort(a, b, String(accessor), sort.direction!);
+    return defaultSort(a, b, String(accessor), direction);
   });
 });
 
@@ -329,7 +330,7 @@ const sizeClasses = {
     border-collapse: collapse;
     border-spacing: 0;
     font-family: var(--smrt-font-family, inherit);
-    font-size: var(--smrt-typography-body-small-size, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface, #111827);
     background: var(--smrt-color-surface, #ffffff);
   }

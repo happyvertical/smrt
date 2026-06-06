@@ -98,6 +98,10 @@ export const lightColors = {
   surfaceContainer: '#f3f4f6',
   surfaceContainerLow: '#f9fafb',
   surfaceContainerHigh: '#e5e7eb',
+  surfaceContainerHighest: '#d1d5db',
+  surfaceContainerLowest: '#ffffff',
+  surfaceDim: '#e5e7eb',
+  surfaceBright: '#ffffff',
 
   // Outline
   outline: '#d1d5db',
@@ -113,6 +117,7 @@ export const lightColors = {
   inversePrimary: '#93c5fd',
 
   // Scrim
+  shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.5)',
 };
 
@@ -165,6 +170,10 @@ export const darkColors = {
   surfaceContainer: '#1f2937',
   surfaceContainerLow: '#111827',
   surfaceContainerHigh: '#374151',
+  surfaceContainerHighest: '#4b5563',
+  surfaceContainerLowest: '#030712',
+  surfaceDim: '#1f2937',
+  surfaceBright: '#374151',
 
   // Outline
   outline: '#4b5563',
@@ -180,6 +189,7 @@ export const darkColors = {
   inversePrimary: '#2563eb',
 
   // Scrim
+  shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.7)',
 };
 

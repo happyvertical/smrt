@@ -72,8 +72,9 @@ function collectDefinedInCss(text, into) {
  * The theme scale KEYS the generator iterates over. Mirrors
  * src/themes/types.ts (SpacingScale / TypographyScale / etc.) and
  * src/themes/shared.ts. Kept here so the check stays a pure string diff with
- * no module loading; src/themes/__tests__/css-generator.test.ts asserts the
- * generator output matches these keys so drift is caught by unit tests too.
+ * no module loading; src/themes/__tests__/token-aliases.test.ts compares
+ * static preset CSS against the real generator output so name-surface drift is
+ * caught by unit tests too.
  */
 const SCALE_KEYS = {
   spacing: [

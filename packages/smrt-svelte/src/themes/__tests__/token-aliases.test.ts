@@ -92,6 +92,14 @@ const TYPOGRAPHY_FONT_SHORTHANDS = [
   '--smrt-typography-headline-medium-font',
 ];
 
+const BASE_COMPONENT_COLOR_TOKENS = [
+  '--smrt-color-surface-container-highest',
+  '--smrt-color-surface-container-lowest',
+  '--smrt-color-surface-dim',
+  '--smrt-color-surface-bright',
+  '--smrt-color-shadow',
+];
+
 const packageRoot = process.cwd().endsWith('packages/smrt-svelte')
   ? process.cwd()
   : join(process.cwd(), 'packages/smrt-svelte');
@@ -174,6 +182,7 @@ describe('simple ThemeProvider alias emission (#1431)', () => {
         ...REQUIRED_ALIASES,
         ...SPACING_NUMERIC_TOKENS,
         ...TYPOGRAPHY_FONT_SHORTHANDS,
+        ...BASE_COMPONENT_COLOR_TOKENS,
       ]) {
         expect(vars[token], `${token} should be emitted`).toBeDefined();
         expect(vars[token]).not.toBe('');
