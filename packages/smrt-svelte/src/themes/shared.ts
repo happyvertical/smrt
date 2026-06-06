@@ -39,6 +39,24 @@ export const spacingScale: SpacingScale = {
 };
 
 /**
+ * Material-3 spacing aliases (issue #1431).
+ *
+ * Components authored against Material-3 vocabulary consume `--smrt-spacing-sm`
+ * / `-md` / `-xl` etc. The numeric scale above is canonical; these aliases map
+ * the named sizes onto numeric-scale keys so both vocabularies resolve. Emitted
+ * in addition to (never instead of) the numeric scale.
+ */
+export const spacingAliases: Record<string, keyof SpacingScale> = {
+  xs: 1, // 0.25rem
+  sm: 2, // 0.5rem
+  md: 4, // 1rem
+  lg: 6, // 1.5rem
+  xl: 8, // 2rem
+  '2xl': 12, // 3rem
+  '3xl': 16, // 4rem
+};
+
+/**
  * Shared border radius scale
  */
 export const borderRadiusScale: BorderRadiusScale = {
@@ -53,6 +71,20 @@ export const borderRadiusScale: BorderRadiusScale = {
 };
 
 /**
+ * Material-3 border-radius aliases (issue #1431).
+ *
+ * Maps Material-3 named radii (`extra-small` … `extra-large`) onto the
+ * canonical t-shirt scale. Emitted in addition to the canonical names.
+ */
+export const borderRadiusAliases: Record<string, keyof BorderRadiusScale> = {
+  'extra-small': 'sm',
+  small: 'sm',
+  medium: 'md',
+  large: 'lg',
+  'extra-large': 'xl',
+};
+
+/**
  * Shared duration scale
  */
 export const durationScale: DurationScale = {
@@ -61,6 +93,70 @@ export const durationScale: DurationScale = {
   normal: '200ms',
   slow: '300ms',
   slower: '500ms',
+};
+
+/**
+ * Material-3 motion-duration aliases (issue #1431).
+ *
+ * Components consume Material-3 motion tokens (`short2`, `short3`, `medium1`…).
+ * These map onto absolute millisecond values following the M3 motion spec
+ * (short1=50 … long4=600). Emitted in addition to the canonical
+ * instant/fast/normal/slow/slower scale so both vocabularies resolve.
+ */
+export const durationAliases: Record<string, string> = {
+  short1: '50ms',
+  short2: '100ms',
+  short3: '150ms',
+  short4: '200ms',
+  medium1: '250ms',
+  medium2: '300ms',
+  medium3: '350ms',
+  medium4: '400ms',
+  long1: '450ms',
+  long2: '500ms',
+  long3: '550ms',
+  long4: '600ms',
+};
+
+/**
+ * Shared font-family aliases (issue #1431).
+ *
+ * The base body font is `--smrt-font-family`; components also reference a
+ * monospace family. Emitted as an explicit token so monospace surfaces (code,
+ * transcripts, module IDs) are themeable rather than frozen at a fallback.
+ */
+export const fontFamilyAliases: Record<string, string> = {
+  mono: 'ui-monospace, "SF Mono", "Monaco", "Cascadia Code", "Consolas", monospace',
+};
+
+/**
+ * Shared named font-weight tokens (issue #1431).
+ *
+ * The typography scale exposes per-variant weights; these named weights cover
+ * generic emphasis (badges, progress labels) that aren't tied to a variant.
+ */
+export const fontWeightTokens: Record<string, string> = {
+  normal: '400',
+  medium: '500',
+  semibold: '600',
+  bold: '700',
+};
+
+/**
+ * Shared z-index scale (issue #1431).
+ *
+ * Stacking-context tokens for overlay surfaces so consumers stop hardcoding
+ * magic numbers and overlays can be re-layered theme-wide.
+ */
+export const zIndexTokens: Record<string, string> = {
+  dropdown: '1000',
+  sticky: '1100',
+  overlay: '1200',
+  modal: '1300',
+  dialog: '1300',
+  popover: '1400',
+  toast: '1500',
+  tooltip: '1600',
 };
 
 /**

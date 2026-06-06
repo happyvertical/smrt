@@ -329,7 +329,7 @@ const sizeClasses = {
     border-collapse: collapse;
     border-spacing: 0;
     font-family: var(--smrt-font-family, inherit);
-    font-size: var(--smrt-font-size-sm, 0.875rem);
+    font-size: var(--smrt-typography-body-small-size, 0.875rem);
     color: var(--smrt-color-on-surface, #111827);
     background: var(--smrt-color-surface, #ffffff);
   }

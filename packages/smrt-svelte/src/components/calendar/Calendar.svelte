@@ -300,15 +300,20 @@ const yearOptions = $derived(() => {
     overflow: hidden;
   }
 
-  /* Dark mode */
+  /*
+   * Dark mode. The base `--smrt-color-*` tokens already swap to dark values
+   * under the active dark scheme, so reference them directly (issue #1431 —
+   * the old `--smrt-color-*-dark` tokens were never emitted). Hardcoded
+   * fallbacks preserve the calendar's dark palette when no theme is applied.
+   */
   :global([data-theme="dark"]) .calendar {
-    --calendar-bg: var(--smrt-color-surface-dark, #242424);
-    --calendar-border: var(--smrt-color-outline-variant-dark, #3a3a3a);
-    --calendar-header-bg: var(--smrt-color-surface-container-low-dark, #2e2e2e);
-    --day-hover: var(--smrt-color-surface-container-high-dark, #3a3a3a);
-    --today-bg: var(--smrt-color-primary-container-dark, #1e3a5f);
-    --today-border: var(--smrt-color-primary-dark, #64b5f6);
-    --other-month: var(--smrt-color-on-surface-variant-dark, #666666);
+    --calendar-bg: var(--smrt-color-surface, #242424);
+    --calendar-border: var(--smrt-color-outline-variant, #3a3a3a);
+    --calendar-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+    --day-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+    --today-bg: var(--smrt-color-primary-container, #1e3a5f);
+    --today-border: var(--smrt-color-primary, #64b5f6);
+    --other-month: var(--smrt-color-on-surface-variant, #666666);
   }
 
   @media (prefers-color-scheme: dark) {

@@ -190,3 +190,152 @@
   --smrt-color-scheme: dark;
   --smrt-font-family: "Google Sans", "Roboto", system-ui, -apple-system, sans-serif;
 }
+
+/*
+ * Material-3 vocabulary aliases + helper tokens (issue #1431).
+ * Scheme-independent, so declared once on the theme selector. These mirror the
+ * additive aliases emitted by src/themes/css-generator.ts so the static-CSS
+ * delivery path resolves the same consumed tokens as the JS ThemeProvider.
+ * Radius aliases reference the canonical t-shirt tokens so a preset that
+ * retunes its radius scale updates the aliases automatically.
+ */
+[data-theme="material"] {
+  /* Radius aliases -> canonical t-shirt scale */
+  --smrt-radius-extra-small: var(--smrt-radius-sm);
+  --smrt-radius-small: var(--smrt-radius-sm);
+  --smrt-radius-medium: var(--smrt-radius-md);
+  --smrt-radius-large: var(--smrt-radius-lg);
+  --smrt-radius-extra-large: var(--smrt-radius-xl);
+
+  /* Spacing aliases (named -> numeric-scale values; static CSS has no
+     numeric spacing tokens, so literal rems matching shared.ts) */
+  --smrt-spacing-xs: 0.25rem;
+  --smrt-spacing-sm: 0.5rem;
+  --smrt-spacing-md: 1rem;
+  --smrt-spacing-lg: 1.5rem;
+  --smrt-spacing-xl: 2rem;
+  --smrt-spacing-2xl: 3rem;
+  --smrt-spacing-3xl: 4rem;
+
+  /* Motion duration aliases (M3 short1..long4) */
+  --smrt-duration-short1: 50ms;
+  --smrt-duration-short2: 100ms;
+  --smrt-duration-short3: 150ms;
+  --smrt-duration-short4: 200ms;
+  --smrt-duration-medium1: 250ms;
+  --smrt-duration-medium2: 300ms;
+  --smrt-duration-medium3: 350ms;
+  --smrt-duration-medium4: 400ms;
+  --smrt-duration-long1: 450ms;
+  --smrt-duration-long2: 500ms;
+  --smrt-duration-long3: 550ms;
+  --smrt-duration-long4: 600ms;
+
+  /* Helper tokens */
+  --smrt-font-family-mono: ui-monospace, "SF Mono", "Monaco", "Cascadia Code", "Consolas", monospace;
+  --smrt-typography-weight-normal: 400;
+  --smrt-typography-weight-medium: 500;
+  --smrt-typography-weight-semibold: 600;
+  --smrt-typography-weight-bold: 700;
+  --smrt-z-index-dropdown: 1000;
+  --smrt-z-index-sticky: 1100;
+  --smrt-z-index-overlay: 1200;
+  --smrt-z-index-modal: 1300;
+  --smrt-z-index-dialog: 1300;
+  --smrt-z-index-popover: 1400;
+  --smrt-z-index-toast: 1500;
+  --smrt-z-index-tooltip: 1600;
+
+  /* Typography (issue #1431): full scale incl. `font` shorthand,
+     so the static-CSS path matches the JS ThemeProvider output) */
+  --smrt-typography-display-large-size: 3.5rem;
+  --smrt-typography-display-large-line-height: 1.1;
+  --smrt-typography-display-large-weight: 400;
+  --smrt-typography-display-large-tracking: -0.02em;
+  --smrt-typography-display-large-font-family: var(--smrt-font-family);
+  --smrt-typography-display-large-font: 400 3.5rem/1.1 var(--smrt-font-family);
+  --smrt-typography-display-medium-size: 2.75rem;
+  --smrt-typography-display-medium-line-height: 1.15;
+  --smrt-typography-display-medium-weight: 400;
+  --smrt-typography-display-medium-tracking: -0.01em;
+  --smrt-typography-display-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-display-medium-font: 400 2.75rem/1.15 var(--smrt-font-family);
+  --smrt-typography-display-small-size: 2.25rem;
+  --smrt-typography-display-small-line-height: 1.2;
+  --smrt-typography-display-small-weight: 400;
+  --smrt-typography-display-small-tracking: 0;
+  --smrt-typography-display-small-font-family: var(--smrt-font-family);
+  --smrt-typography-display-small-font: 400 2.25rem/1.2 var(--smrt-font-family);
+  --smrt-typography-headline-large-size: 2rem;
+  --smrt-typography-headline-large-line-height: 1.25;
+  --smrt-typography-headline-large-weight: 400;
+  --smrt-typography-headline-large-tracking: 0;
+  --smrt-typography-headline-large-font-family: var(--smrt-font-family);
+  --smrt-typography-headline-large-font: 400 2rem/1.25 var(--smrt-font-family);
+  --smrt-typography-headline-medium-size: 1.75rem;
+  --smrt-typography-headline-medium-line-height: 1.3;
+  --smrt-typography-headline-medium-weight: 400;
+  --smrt-typography-headline-medium-tracking: 0;
+  --smrt-typography-headline-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-headline-medium-font: 400 1.75rem/1.3 var(--smrt-font-family);
+  --smrt-typography-headline-small-size: 1.5rem;
+  --smrt-typography-headline-small-line-height: 1.35;
+  --smrt-typography-headline-small-weight: 400;
+  --smrt-typography-headline-small-tracking: 0;
+  --smrt-typography-headline-small-font-family: var(--smrt-font-family);
+  --smrt-typography-headline-small-font: 400 1.5rem/1.35 var(--smrt-font-family);
+  --smrt-typography-title-large-size: 1.375rem;
+  --smrt-typography-title-large-line-height: 1.4;
+  --smrt-typography-title-large-weight: 500;
+  --smrt-typography-title-large-tracking: 0;
+  --smrt-typography-title-large-font-family: var(--smrt-font-family);
+  --smrt-typography-title-large-font: 500 1.375rem/1.4 var(--smrt-font-family);
+  --smrt-typography-title-medium-size: 1rem;
+  --smrt-typography-title-medium-line-height: 1.5;
+  --smrt-typography-title-medium-weight: 500;
+  --smrt-typography-title-medium-tracking: 0.01em;
+  --smrt-typography-title-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-title-medium-font: 500 1rem/1.5 var(--smrt-font-family);
+  --smrt-typography-title-small-size: 0.875rem;
+  --smrt-typography-title-small-line-height: 1.5;
+  --smrt-typography-title-small-weight: 500;
+  --smrt-typography-title-small-tracking: 0.01em;
+  --smrt-typography-title-small-font-family: var(--smrt-font-family);
+  --smrt-typography-title-small-font: 500 0.875rem/1.5 var(--smrt-font-family);
+  --smrt-typography-body-large-size: 1rem;
+  --smrt-typography-body-large-line-height: 1.5;
+  --smrt-typography-body-large-weight: 400;
+  --smrt-typography-body-large-tracking: 0.03em;
+  --smrt-typography-body-large-font-family: var(--smrt-font-family);
+  --smrt-typography-body-large-font: 400 1rem/1.5 var(--smrt-font-family);
+  --smrt-typography-body-medium-size: 0.875rem;
+  --smrt-typography-body-medium-line-height: 1.5;
+  --smrt-typography-body-medium-weight: 400;
+  --smrt-typography-body-medium-tracking: 0.02em;
+  --smrt-typography-body-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-body-medium-font: 400 0.875rem/1.5 var(--smrt-font-family);
+  --smrt-typography-body-small-size: 0.75rem;
+  --smrt-typography-body-small-line-height: 1.4;
+  --smrt-typography-body-small-weight: 400;
+  --smrt-typography-body-small-tracking: 0.03em;
+  --smrt-typography-body-small-font-family: var(--smrt-font-family);
+  --smrt-typography-body-small-font: 400 0.75rem/1.4 var(--smrt-font-family);
+  --smrt-typography-label-large-size: 0.875rem;
+  --smrt-typography-label-large-line-height: 1.4;
+  --smrt-typography-label-large-weight: 500;
+  --smrt-typography-label-large-tracking: 0.01em;
+  --smrt-typography-label-large-font-family: var(--smrt-font-family);
+  --smrt-typography-label-large-font: 500 0.875rem/1.4 var(--smrt-font-family);
+  --smrt-typography-label-medium-size: 0.75rem;
+  --smrt-typography-label-medium-line-height: 1.4;
+  --smrt-typography-label-medium-weight: 500;
+  --smrt-typography-label-medium-tracking: 0.05em;
+  --smrt-typography-label-medium-font-family: var(--smrt-font-family);
+  --smrt-typography-label-medium-font: 500 0.75rem/1.4 var(--smrt-font-family);
+  --smrt-typography-label-small-size: 0.6875rem;
+  --smrt-typography-label-small-line-height: 1.4;
+  --smrt-typography-label-small-weight: 500;
+  --smrt-typography-label-small-tracking: 0.05em;
+  --smrt-typography-label-small-font-family: var(--smrt-font-family);
+  --smrt-typography-label-small-font: 500 0.6875rem/1.4 var(--smrt-font-family);
+}

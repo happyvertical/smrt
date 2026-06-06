@@ -3,7 +3,22 @@
  *
  * Based on Material Design 3 color system with semantic tokens
  * for consistent theming across components.
+ *
+ * NOTE: this is the simple/legacy `src/theme/` ThemeProvider. The canonical
+ * full token surface (spacing + typography included) lives in the preset
+ * system under `src/themes/` (Material/Glass/Studio + css-generator.ts). The
+ * additive Material-3 aliases (issue #1431) are imported from the shared
+ * preset tokens so both providers stay in lock-step where their categories
+ * overlap.
  */
+
+import {
+  borderRadiusAliases,
+  durationAliases,
+  fontFamilyAliases,
+  fontWeightTokens,
+  zIndexTokens,
+} from '../themes/shared.js';
 
 /**
  * Color scheme type
@@ -371,7 +386,7 @@ export function generateThemeVariables(
   const colors = isDark ? darkColors : lightColors;
   const colorVars = generateColorVariables(colors);
 
-  return {
+  const vars: Record<string, string> = {
     ...colorVars,
     // Border radius
     '--smrt-radius-none': borderRadius.none,
@@ -403,4 +418,24 @@ export function generateThemeVariables(
     '--smrt-easing-emphasized-decelerate': easing.emphasizedDecelerate,
     '--smrt-easing-emphasized-accelerate': easing.emphasizedAccelerate,
   };
+
+  // Additive Material-3 aliases + theme-independent helper tokens (#1431),
+  // mirroring the preset system so both providers expose the same vocabulary.
+  for (const [alias, scaleKey] of Object.entries(borderRadiusAliases)) {
+    vars[`--smrt-radius-${alias}`] = borderRadius[scaleKey];
+  }
+  for (const [alias, value] of Object.entries(durationAliases)) {
+    vars[`--smrt-duration-${alias}`] = value;
+  }
+  for (const [alias, value] of Object.entries(fontFamilyAliases)) {
+    vars[`--smrt-font-family-${alias}`] = value;
+  }
+  for (const [name, value] of Object.entries(fontWeightTokens)) {
+    vars[`--smrt-typography-weight-${name}`] = value;
+  }
+  for (const [name, value] of Object.entries(zIndexTokens)) {
+    vars[`--smrt-z-index-${name}`] = value;
+  }
+
+  return vars;
 }
