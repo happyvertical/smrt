@@ -205,6 +205,8 @@ describe('Issue #688: @smrt({ tenantScoped: true })', () => {
       // The existing field should be preserved (from manifest)
       // or the injected one should be used if no manifest exists
       expect(tenantIdField).toBeDefined();
+      expect(tenantIdField._meta?.sqlType).toBe('UUID');
+      expect(tenantIdField._meta?.__tenancy?.isTenantIdField).toBe(true);
     });
   });
 
@@ -219,7 +221,7 @@ describe('Issue #688: @smrt({ tenantScoped: true })', () => {
       const tenantIdField = fields.get('tenantId');
 
       expect(tenantIdField).toBeDefined();
-      expect(tenantIdField._meta?.sqlType).toBe('TEXT');
+      expect(tenantIdField._meta?.sqlType).toBe('UUID');
       expect(tenantIdField._meta?.__tenancy?.isTenantIdField).toBe(true);
     });
   });

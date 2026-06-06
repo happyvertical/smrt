@@ -533,12 +533,13 @@
       ],
       "schema": {
         "tableName": "tag_aliases",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_aliases\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tag_slug\" TEXT DEFAULT '',\n  \"alias\" TEXT DEFAULT '',\n  \"language\" TEXT DEFAULT '',\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tag_aliases\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tag_slug\" TEXT DEFAULT '',\n  \"alias\" TEXT DEFAULT '',\n  \"language\" TEXT DEFAULT '',\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -583,8 +584,9 @@
             "default": ""
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -610,7 +612,7 @@
             ]
           }
         ],
-        "version": "34f24cc7"
+        "version": "21768488"
       }
     },
     "@happyvertical/smrt-tags:TagAliasCollection": {
@@ -804,7 +806,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -842,7 +845,7 @@
             "unique": true
           }
         ],
-        "version": "b7be72e8"
+        "version": "89a21186"
       }
     },
     "@happyvertical/smrt-tags:Tag": {
@@ -1475,12 +1478,13 @@
       ],
       "schema": {
         "tableName": "tags",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tags\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"level\" INTEGER DEFAULT 0,\n  \"description\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT '',\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tags\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"level\" INTEGER DEFAULT 0,\n  \"description\" TEXT DEFAULT '',\n  \"metadata\" TEXT DEFAULT '',\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1511,7 +1515,8 @@
           },
           "parent_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "name": {
             "type": "TEXT",
@@ -1534,8 +1539,9 @@
             "default": ""
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -1561,7 +1567,7 @@
             ]
           }
         ],
-        "version": "9ca078d6"
+        "version": "a1b5c361"
       }
     },
     "@happyvertical/smrt-tags:TagCollection": {
@@ -1795,7 +1801,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1833,7 +1840,7 @@
             "unique": true
           }
         ],
-        "version": "51787577"
+        "version": "fb2cf35b"
       }
     }
   },

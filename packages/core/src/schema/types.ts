@@ -13,13 +13,19 @@ export type SQLDataType =
   | 'TIMESTAMP'
   // UUID is an abstract id type (R11). Per-dialect mapping: native `uuid`
   // on PostgreSQL, native `UUID` on DuckDB, and `TEXT` on SQLite (which has
-  // no uuid type). The differ treats UUID and TEXT as equivalent (no
-  // auto-conversion either direction) — see `normalizeType` in differ.ts.
+  // no uuid type). The differ tolerates UUID/TEXT drift only for structural
+  // ID/reference columns — see `isUuidTextEquivalentColumn` in differ.ts.
   | 'UUID';
 
 export interface ColumnDefinition {
   type: SQLDataType;
   primaryKey?: boolean;
+  /**
+   * Non-DDL marker for SMRT-owned identifier/reference columns. The migration
+   * differ uses this to distinguish intentionally UUID-compatible references
+   * from plain text provenance fields whose names may also end in `_id`.
+   */
+  referenceKind?: 'id' | 'foreignKey' | 'crossPackageRef' | 'tenantId';
   unique?: boolean;
   notNull?: boolean;
   defaultValue?: any;

@@ -96,7 +96,7 @@ export class SchemaGenerator {
 
   private getRelationshipColumnType(field: any): SQLDataType {
     if (field?._meta?.sqlType) {
-      return field._meta.sqlType;
+      return String(field._meta.sqlType).toUpperCase() as SQLDataType;
     }
 
     if (
@@ -107,6 +107,35 @@ export class SchemaGenerator {
     }
 
     return this.mapFieldTypeToSQL(field?.type || 'text');
+  }
+
+  private getReferenceKind(
+    field: any,
+  ): ColumnDefinition['referenceKind'] | undefined {
+    if (
+      field?.__tenancy?.isTenantIdField ||
+      field?._meta?.__tenancy?.isTenantIdField
+    ) {
+      return 'tenantId';
+    }
+
+    if (field?.type === 'foreignKey') {
+      return 'foreignKey';
+    }
+
+    if (field?.type === 'crossPackageRef') {
+      return 'crossPackageRef';
+    }
+
+    return undefined;
+  }
+
+  private shouldEmitDefault(field: any, defaultValue: unknown): boolean {
+    return !(
+      this.getReferenceKind(field) === 'tenantId' &&
+      this.getRelationshipColumnType(field) === 'UUID' &&
+      defaultValue === ''
+    );
   }
 
   private getRegistryTargetIdColumnType(
@@ -182,6 +211,7 @@ export class SchemaGenerator {
     columns.id = {
       type: this.getIdColumnType(config),
       primaryKey: true,
+      referenceKind: 'id',
       notNull: true,
       description: 'Primary identifier',
     };
@@ -234,6 +264,7 @@ export class SchemaGenerator {
 
       const column: ColumnDefinition = {
         type: this.getRelationshipColumnType(fieldDef),
+        referenceKind: this.getReferenceKind(fieldDef),
         // If _meta.nullable is true, the field can be null regardless of required
         // This handles field helpers like text({ required: true, nullable: true })
         notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
@@ -242,7 +273,10 @@ export class SchemaGenerator {
       };
 
       // Handle default values
-      if (fieldDef.default !== undefined) {
+      if (
+        fieldDef.default !== undefined &&
+        this.shouldEmitDefault(fieldDef, fieldDef.default)
+      ) {
         column.defaultValue = fieldDef.default;
       }
       // Note: Removed automatic NOT NULL DEFAULT '' for TEXT columns
@@ -449,6 +483,7 @@ export class SchemaGenerator {
       columns.id = {
         type: this.getIdColumnType(config),
         primaryKey: true,
+        referenceKind: 'id',
         notNull: true,
         description: 'Primary identifier',
       };
@@ -536,6 +571,7 @@ export class SchemaGenerator {
 
       const columnDef: ColumnDefinition = {
         type: sqlType,
+        referenceKind: this.getReferenceKind(field),
         // If _meta.nullable is true, the field can be null regardless of required
         notNull: field._meta?.nullable ? false : field._meta?.required || false,
         primaryKey: field._meta?.primaryKey || false,
@@ -544,7 +580,10 @@ export class SchemaGenerator {
       };
 
       // Get default value
-      if (field._meta?.default !== undefined) {
+      if (
+        field._meta?.default !== undefined &&
+        this.shouldEmitDefault(field, field._meta.default)
+      ) {
         columnDef.defaultValue = field._meta.default;
       }
       // Note: Removed automatic NOT NULL DEFAULT '' for TEXT columns
@@ -727,6 +766,7 @@ export class SchemaGenerator {
     columns.id = {
       type: this.getIdColumnType(config),
       primaryKey: true,
+      referenceKind: 'id',
       notNull: true,
       description: 'Primary identifier',
     };
@@ -846,6 +886,7 @@ export class SchemaGenerator {
 
         const columnDef: ColumnDefinition = {
           type: sqlType,
+          referenceKind: this.getReferenceKind(field),
           // STI: All columns nullable (union of child fields)
           notNull: false,
           primaryKey: false,
@@ -854,7 +895,10 @@ export class SchemaGenerator {
         };
 
         // Get default value (but not applied in STI - defaults handled by application)
-        if (field._meta?.default !== undefined) {
+        if (
+          field._meta?.default !== undefined &&
+          this.shouldEmitDefault(field, field._meta.default)
+        ) {
           columnDef.defaultValue = field._meta.default;
         }
 
@@ -1017,6 +1061,7 @@ export class SchemaGenerator {
     columns.id = {
       type: this.getIdColumnType(config),
       primaryKey: true,
+      referenceKind: 'id',
       notNull: true,
     };
 
@@ -1123,12 +1168,16 @@ export class SchemaGenerator {
 
         const columnDef: ManifestColumnDefinition = {
           type: sqlType,
+          referenceKind: this.getReferenceKind(field),
           // STI: All columns nullable (union of child fields)
           notNull: false,
         };
 
         // Get default value
-        if (field.default !== undefined) {
+        if (
+          field.default !== undefined &&
+          this.shouldEmitDefault(field, field.default)
+        ) {
           columnDef.default = field.default;
         }
 
@@ -1244,6 +1293,7 @@ export class SchemaGenerator {
     columns.id = {
       type: this.getIdColumnType(config),
       primaryKey: true,
+      referenceKind: 'id',
       notNull: true,
     };
 
@@ -1306,11 +1356,15 @@ export class SchemaGenerator {
 
       const columnDef: ManifestColumnDefinition = {
         type: sqlType,
+        referenceKind: this.getReferenceKind(field),
         notNull: field._meta?.nullable ? false : field.required || false,
         unique: field._meta?.unique || false,
       };
 
-      if (field.default !== undefined) {
+      if (
+        field.default !== undefined &&
+        this.shouldEmitDefault(field, field.default)
+      ) {
         columnDef.default = field.default;
       }
 
@@ -1435,6 +1489,7 @@ export class SchemaGenerator {
       columns[name] = {
         type: col.type as SQLDataType,
         primaryKey: col.primaryKey,
+        referenceKind: col.referenceKind,
         notNull: col.notNull,
         unique: col.unique,
         defaultValue: col.default,

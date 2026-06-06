@@ -52,9 +52,11 @@ function applyDecoratorSqlTypeOverrides(
       continue;
     }
 
+    const referenceKind = getReferenceKind(options as FieldDefinition);
     columns[columnName] = {
       ...existing,
-      type: options.sqlType,
+      type: String(options.sqlType).toUpperCase() as SQLDataType,
+      ...(referenceKind ? { referenceKind } : {}),
     };
   }
 
@@ -75,10 +77,57 @@ function mergeRuntimeFieldColumns(
         columnsToUse[columnName] = columnDef;
       }
     }
+
+    for (const [fieldName, fieldDef] of fields) {
+      const columnName = toSnakeCase(fieldName);
+      const existing = columnsToUse[columnName];
+      if (!existing) {
+        continue;
+      }
+
+      const sqlType = fieldDef._meta?.sqlType || (fieldDef as any).sqlType;
+      const referenceKind = getReferenceKind(fieldDef);
+      columnsToUse[columnName] = {
+        ...existing,
+        ...(sqlType
+          ? { type: String(sqlType).toUpperCase() as SQLDataType }
+          : {}),
+        ...(referenceKind ? { referenceKind } : {}),
+      };
+    }
   }
 
   applyDecoratorSqlTypeOverrides(className, columnsToUse);
   return columnsToUse;
+}
+
+function getReferenceKind(
+  fieldDef: FieldDefinition,
+): ColumnDefinition['referenceKind'] | undefined {
+  if (
+    (fieldDef as any).__tenancy?.isTenantIdField ||
+    fieldDef._meta?.__tenancy?.isTenantIdField
+  ) {
+    return 'tenantId';
+  }
+
+  if (fieldDef.type === 'foreignKey') {
+    return 'foreignKey';
+  }
+
+  if (fieldDef.type === 'crossPackageRef') {
+    return 'crossPackageRef';
+  }
+
+  return undefined;
+}
+
+function shouldEmitDefault(fieldDef: FieldDefinition, sqlType: SQLDataType) {
+  return !(
+    getReferenceKind(fieldDef) === 'tenantId' &&
+    sqlType === 'UUID' &&
+    fieldDef.default === ''
+  );
 }
 
 /**
@@ -265,7 +314,7 @@ export function getAllSchemas(): Record<
         // First class for this table - initialize with base columns
         // These are required for all tables but are skipped by fieldsToColumns()
         const baseColumns: Record<string, ColumnDefinition> = {
-          id: { type: 'TEXT', primaryKey: true },
+          id: { type: 'UUID', primaryKey: true, referenceKind: 'id' },
           slug: { type: 'TEXT', notNull: true },
           context: { type: 'TEXT' },
           created_at: { type: 'TIMESTAMP' },
@@ -469,7 +518,7 @@ export function getAllSchemasAsDefinitions(): Record<string, SchemaDefinition> {
       if (!tableSchemas[tableName]) {
         // First class for this table - initialize with base columns
         const baseColumns: Record<string, ColumnDefinition> = {
-          id: { type: 'TEXT', primaryKey: true },
+          id: { type: 'UUID', primaryKey: true, referenceKind: 'id' },
           slug: { type: 'TEXT', notNull: true },
           context: { type: 'TEXT' },
           created_at: { type: 'TIMESTAMP' },
@@ -726,16 +775,22 @@ export function fieldsToColumns(
       (fieldDef._meta?.idType === 'text' || (fieldDef as any).idType === 'text')
         ? 'TEXT'
         : mapFieldTypeToSQL(fieldDef.type));
+    const normalizedSqlType = String(sqlType).toUpperCase() as SQLDataType;
+    const referenceKind = getReferenceKind(fieldDef);
 
     const column: ColumnDefinition = {
-      type: sqlType,
+      type: normalizedSqlType,
+      referenceKind,
       notNull: fieldDef._meta?.nullable ? false : fieldDef.required || false,
       unique: fieldDef._meta?.unique || false,
       description: fieldDef.description,
     };
 
     // Handle default values
-    if (fieldDef.default !== undefined) {
+    if (
+      fieldDef.default !== undefined &&
+      shouldEmitDefault(fieldDef, normalizedSqlType)
+    ) {
       column.defaultValue = fieldDef.default;
     }
 

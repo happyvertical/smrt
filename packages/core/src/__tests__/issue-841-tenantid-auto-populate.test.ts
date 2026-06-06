@@ -29,7 +29,7 @@ describe('Issue #841: toJSON() should not convert tenant fields to empty string'
     ObjectRegistry.registerFieldDecorator('TestProduct', 'tenantId', {
       type: 'foreignKey',
       related: 'Tenant',
-      sqlType: 'TEXT',
+      sqlType: 'UUID',
       nullable: true,
       __tenancy: {
         isTenantIdField: true,
@@ -68,7 +68,7 @@ describe('Issue #841: toJSON() should not convert tenant fields to empty string'
     ObjectRegistry.registerFieldDecorator('TestItem', 'tenantId', {
       type: 'foreignKey',
       related: 'Tenant',
-      sqlType: 'TEXT',
+      sqlType: 'UUID',
       nullable: true,
       __tenancy: {
         isTenantIdField: true,

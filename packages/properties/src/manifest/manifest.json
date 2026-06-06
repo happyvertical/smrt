@@ -153,7 +153,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -191,7 +192,7 @@
             "unique": true
           }
         ],
-        "version": "a18c7ad1"
+        "version": "0339cbd1"
       }
     },
     "@happyvertical/smrt-properties:ZoneCollection": {
@@ -469,7 +470,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -507,7 +509,7 @@
             "unique": true
           }
         ],
-        "version": "132b9f18"
+        "version": "b359922a"
       }
     },
     "@happyvertical/smrt-properties:Property": {
@@ -1055,12 +1057,13 @@
       "collectionExportName": "PropertyCollection",
       "schema": {
         "tableName": "properties",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"properties\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"domain\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"repository_id\" UUID,\n  \"owner_id\" UUID,\n  \"status\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"properties\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"domain\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"repository_id\" UUID,\n  \"owner_id\" UUID,\n  \"status\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1090,8 +1093,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "name": {
             "type": "TEXT",
@@ -1115,11 +1119,13 @@
           },
           "repository_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "owner_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "status": {
             "type": "TEXT",
@@ -1155,7 +1161,7 @@
             ]
           }
         ],
-        "version": "5994212b"
+        "version": "66a7ac4d"
       }
     },
     "@happyvertical/smrt-properties:Zone": {
@@ -1395,12 +1401,13 @@
       "collectionExportName": "ZoneCollection",
       "schema": {
         "tableName": "zones",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"zones\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"tenant_id\" TEXT,\n  \"property_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT '',\n  \"path\" TEXT DEFAULT '',\n  \"selector\" TEXT DEFAULT '',\n  \"position\" TEXT DEFAULT '',\n  \"width\" INTEGER,\n  \"height\" INTEGER,\n  \"allowed_formats\" JSON DEFAULT '[]',\n  \"default_content_id\" TEXT,\n  \"metadata\" JSON DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"zones\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"parent_id\" UUID,\n  \"tenant_id\" UUID,\n  \"property_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"type\" TEXT DEFAULT '',\n  \"path\" TEXT DEFAULT '',\n  \"selector\" TEXT DEFAULT '',\n  \"position\" TEXT DEFAULT '',\n  \"width\" INTEGER,\n  \"height\" INTEGER,\n  \"allowed_formats\" JSON DEFAULT '[]',\n  \"default_content_id\" TEXT,\n  \"metadata\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1424,17 +1431,20 @@
           "parent_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "property_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "name": {
             "type": "TEXT",
@@ -1510,7 +1520,7 @@
             "unique": true
           }
         ],
-        "version": "55d6db2b"
+        "version": "9b05650b"
       }
     }
   },

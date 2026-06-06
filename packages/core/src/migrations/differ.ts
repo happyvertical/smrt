@@ -245,19 +245,20 @@ export class SchemaComparer {
         const normalizedExpected = this.normalizeType(expectedEngineType);
         const normalizedActual = this.normalizeType(dbCol.type);
 
-        // R11: native `uuid` and `text` are interchangeable for SMRT — Postgres
-        // stores uuid-shaped ids either way, node-postgres maps `uuid` columns
-        // to/from JS strings, and SMRT's queries are param-bound. So the differ
-        // must NOT flag a text<->uuid difference: no `type_upgrade` (ALTER) and
-        // no `type_mismatch`, in either direction. Converting existing text ids
-        // to native uuid stays an explicit per-project migration. This
-        // equivalence is applied HERE (the equality gate) only — deliberately
-        // not inside `normalizeType`, so `isCompatibleTypeUpgrade` still sees
-        // `uuid` as a distinct type and won't classify e.g. `uuid`->`timestamp`
-        // as a compatible upgrade.
-        const isUuidTextEquivalent =
-          (normalizedExpected === 'TEXT' && normalizedActual === 'UUID') ||
-          (normalizedExpected === 'UUID' && normalizedActual === 'TEXT');
+        // R11: native `uuid` and `text` are interchangeable for SMRT-owned
+        // identifiers/references, but not for arbitrary provenance text. Keep
+        // the tolerance directional:
+        //   - manifest UUID + DB text is tolerated for structural ID/ref
+        //     columns so old deployments are not forced into native UUID.
+        //   - manifest TEXT + DB uuid is tolerated only for structural ID/ref
+        //     columns that are intentionally UUID-compatible.
+        // Plain TEXT columns with DB uuid now surface as repairable drift.
+        const isUuidTextEquivalent = this.isUuidTextEquivalentColumn(
+          colName,
+          colDef,
+          normalizedExpected,
+          normalizedActual,
+        );
 
         // #1335: native `json`/`jsonb` (DB) and `text` (manifest) are
         // interchangeable for SMRT — the convention is to serialize JSON values
@@ -338,6 +339,39 @@ export class SchemaComparer {
     }
 
     return changes;
+  }
+
+  private isUuidTextEquivalentColumn(
+    columnName: string,
+    colDef: ColumnDefinition,
+    normalizedExpected: string,
+    normalizedActual: string,
+  ): boolean {
+    const expectedUuidActualText =
+      normalizedExpected === 'UUID' && normalizedActual === 'TEXT';
+    const expectedTextActualUuid =
+      normalizedExpected === 'TEXT' && normalizedActual === 'UUID';
+
+    if (!expectedUuidActualText && !expectedTextActualUuid) {
+      return false;
+    }
+
+    return this.isStructuralUuidCompatibleColumn(columnName, colDef);
+  }
+
+  private isStructuralUuidCompatibleColumn(
+    columnName: string,
+    colDef: ColumnDefinition,
+  ): boolean {
+    return (
+      colDef.primaryKey === true ||
+      Boolean(colDef.foreignKey) ||
+      colDef.referenceKind === 'id' ||
+      colDef.referenceKind === 'foreignKey' ||
+      colDef.referenceKind === 'crossPackageRef' ||
+      colDef.referenceKind === 'tenantId' ||
+      (columnName === 'id' && colDef.type === 'TEXT')
+    );
   }
 
   /**
@@ -653,6 +687,13 @@ export class SchemaComparer {
       return true;
     }
 
+    // UUID → TEXT is safe for plain text/provenance fields that were
+    // mistakenly materialized as native uuid: the stored UUID value can be
+    // rendered losslessly as text.
+    if (manifest === 'TEXT' && db === 'UUID') {
+      return true;
+    }
+
     // INTEGER → REAL is safe (widening)
     if (manifest === 'REAL' && db === 'INTEGER') {
       return true;
@@ -759,6 +800,8 @@ export class SchemaComparer {
           // tolerance means the normal compare path no longer reaches here; this
           // keeps the SQL safe for callers that construct a type_upgrade
           // directly.)
+          typeClause += ` USING ${quotedCol}::text`;
+        } else if (manifestNormalized === 'TEXT' && dbNormalized === 'UUID') {
           typeClause += ` USING ${quotedCol}::text`;
         } else if (
           manifestNormalized === 'INTEGER' &&

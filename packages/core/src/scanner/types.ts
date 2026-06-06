@@ -71,6 +71,10 @@ export interface MethodDefinition {
 export interface ManifestColumnDefinition {
   type: string; // SQL type: TEXT, INTEGER, DECIMAL, BOOLEAN, DATETIME, JSON
   primaryKey?: boolean;
+  /**
+   * Non-DDL marker for SMRT-owned identifier/reference columns.
+   */
+  referenceKind?: 'id' | 'foreignKey' | 'crossPackageRef' | 'tenantId';
   notNull?: boolean;
   unique?: boolean;
   default?: any;

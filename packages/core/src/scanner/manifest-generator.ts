@@ -21,6 +21,7 @@ import type {
   AgentMenuItem,
   AgentPermission,
   AgentUISlotManifest,
+  ManifestColumnDefinition,
   ManifestSchema,
   ScanResult,
   SmartObjectDefinition,
@@ -274,9 +275,7 @@ export class ManifestGenerator {
 
       existingField._meta = {
         ...existingField._meta,
-        sqlType: existingField._meta?.sqlType
-          ? String(existingField._meta.sqlType).toUpperCase()
-          : 'TEXT',
+        sqlType: 'UUID',
         __tenancy: {
           ...existingField._meta?.__tenancy,
           ...tenancyMeta,
@@ -294,7 +293,7 @@ export class ManifestGenerator {
       _meta: {
         generated: true,
         source: 'tenantScoped_decorator',
-        sqlType: 'TEXT',
+        sqlType: 'UUID',
         __tenancy: tenancyMeta,
       },
     };
@@ -396,8 +395,8 @@ export class ManifestGenerator {
     }
 
     const sqlType = field._meta?.sqlType;
-    if (sqlType && String(sqlType).toUpperCase() !== 'TEXT') {
-      return `${objectDef.className}: tenant-scoped field "${fieldName}" must use SQL type "TEXT"; received "${sqlType}"`;
+    if (sqlType && !['TEXT', 'UUID'].includes(String(sqlType).toUpperCase())) {
+      return `${objectDef.className}: tenant-scoped field "${fieldName}" must use SQL type "UUID" or legacy "TEXT"; received "${sqlType}"`;
     }
 
     return undefined;
@@ -862,7 +861,8 @@ export class ManifestGenerator {
 
     for (const [fieldName, field] of Object.entries(obj.fields || {})) {
       const sqlType = field?._meta?.sqlType;
-      if (!sqlType) {
+      const referenceKind = this.getReferenceKind(field);
+      if (!sqlType && !referenceKind) {
         continue;
       }
 
@@ -873,9 +873,28 @@ export class ManifestGenerator {
 
       obj.schema.columns[columnName] = {
         ...obj.schema.columns[columnName],
-        type: sqlType,
+        ...(sqlType ? { type: String(sqlType).toUpperCase() } : {}),
+        ...(referenceKind ? { referenceKind } : {}),
       };
     }
+  }
+
+  private getReferenceKind(
+    field: SmartObjectDefinition['fields'][string] | undefined,
+  ): ManifestColumnDefinition['referenceKind'] | undefined {
+    if (field?._meta?.__tenancy?.isTenantIdField) {
+      return 'tenantId';
+    }
+
+    if (field?.type === 'foreignKey') {
+      return 'foreignKey';
+    }
+
+    if (field?.type === 'crossPackageRef') {
+      return 'crossPackageRef';
+    }
+
+    return undefined;
   }
 
   /**

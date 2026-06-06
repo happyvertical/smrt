@@ -589,12 +589,13 @@
       },
       "schema": {
         "tableName": "agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"status\" TEXT DEFAULT 'idle'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"status\" TEXT DEFAULT 'idle'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -624,8 +625,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "status": {
             "type": "TEXT",
@@ -656,7 +658,7 @@
             ]
           }
         ],
-        "version": "9831fba1"
+        "version": "d7a23769"
       }
     },
     "@happyvertical/smrt-agents:AgentConfig": {
@@ -804,12 +806,13 @@
       "collectionExportName": "AgentConfigCollection",
       "schema": {
         "tableName": "agent_configs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -831,9 +834,10 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "agent_id": {
             "type": "TEXT",
@@ -877,7 +881,7 @@
             "unique": true
           }
         ],
-        "version": "1e0d4929"
+        "version": "e515bf45"
       }
     },
     "@happyvertical/smrt-agents:AgentConfigCollection": {
@@ -940,7 +944,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -978,7 +983,7 @@
             "unique": true
           }
         ],
-        "version": "5a4fb895"
+        "version": "10ae297c"
       }
     },
     "@happyvertical/smrt-agents:AgentSchedule": {
@@ -1225,12 +1230,13 @@
       "collectionExportName": "AgentScheduleCollection",
       "schema": {
         "tableName": "_smrt_agent_schedules",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1252,9 +1258,10 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "agent_type": {
             "type": "TEXT",
@@ -1368,7 +1375,7 @@
             "unique": true
           }
         ],
-        "version": "521aef40"
+        "version": "1a6959d4"
       }
     },
     "@happyvertical/smrt-agents:AgentScheduleCollection": {
@@ -1491,7 +1498,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1529,7 +1537,7 @@
             "unique": true
           }
         ],
-        "version": "7ec14c29"
+        "version": "6ba9791d"
       }
     },
     "@happyvertical/smrt-agents:TenantAgent": {
@@ -1604,12 +1612,13 @@
       "collectionExportName": "TenantAgentCollection",
       "schema": {
         "tableName": "tenant_agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT DEFAULT '',\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1631,10 +1640,10 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
             "unique": false,
-            "default": ""
+            "referenceKind": "tenantId"
           },
           "agent_class": {
             "type": "TEXT",
@@ -1673,7 +1682,7 @@
             "unique": true
           }
         ],
-        "version": "6ef2fe23"
+        "version": "b23631f9"
       }
     },
     "@happyvertical/smrt-agents:TenantAgentCollection": {
@@ -1824,7 +1833,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1862,7 +1872,7 @@
             "unique": true
           }
         ],
-        "version": "8c429d39"
+        "version": "f20fc7ee"
       }
     }
   },
