@@ -26,6 +26,20 @@ export default defineConfig({
     environment: 'jsdom',
     include: ['src/**/*.{test,spec}.ts'],
     testTimeout: 30000,
+    // Match testTimeout. The smrt-vitest setup file
+    // (`@happyvertical/smrt-vitest/setup`) registers an async `afterAll` that
+    // dynamically loads `@happyvertical/smrt-core`'s table-cache module
+    // (falling back to a tsx on-the-fly transpile of the core source when the
+    // built export isn't resolvable in the worker). That module work is fast
+    // locally but can exceed the 10s `hookTimeout` default in constrained CI —
+    // where this package's two largest suites (RoleShell, define-tools-dock)
+    // timed out the teardown hook even though every test body passed
+    // (issue #1426). Other packages hitting the same setup hook already raise
+    // this (core: 120000; ads/assets/ledgers/products/vitest: 30000+);
+    // smrt-svelte previously bumped only testTimeout and left hookTimeout at
+    // the default. Surfaced repo-wide by the Vitest 4 upgrade shifting test
+    // isolation/contention timing.
+    hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
     poolOptions: {
