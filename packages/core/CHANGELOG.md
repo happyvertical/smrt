@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.27.7
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: reconcile production readiness rubric with standards docs
+  - docs: ratify production readiness rubric for stabilization epic
+  - @happyvertical/smrt-scanner@0.27.7
+  - @happyvertical/smrt-config@0.27.7
+  - @happyvertical/smrt-types@0.27.7
+
 ## 0.27.6
 
 ### Patch Changes
