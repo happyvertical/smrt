@@ -2035,9 +2035,6 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
-      '@happyvertical/smrt-features':
-        specifier: workspace:*
-        version: link:../features
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy

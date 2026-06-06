@@ -37,7 +37,6 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-features": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*"
   },
   "peerDependencies": {
