@@ -26,7 +26,7 @@ describe('Field Merging - __tenancy Metadata Preservation (Issue #841)', () => {
       const parentField = {
         type: 'foreignKey',
         related: 'Tenant',
-        sqlType: 'TEXT',
+        sqlType: 'UUID',
         __tenancy: {
           isTenantIdField: true,
           autoFilter: true,
@@ -185,7 +185,7 @@ describe('Field Merging - __tenancy Metadata Preservation (Issue #841)', () => {
       ObjectRegistry.registerFieldDecorator('TestClass', 'tenantId', {
         type: 'foreignKey',
         related: 'Tenant',
-        sqlType: 'TEXT',
+        sqlType: 'UUID',
         nullable: true,
         __tenancy: {
           isTenantIdField: true,

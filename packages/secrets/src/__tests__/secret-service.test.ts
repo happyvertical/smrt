@@ -19,6 +19,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SecretCollection } from '../collections/SecretCollection.js';
 import { TenantKeyCollection } from '../collections/TenantKeyCollection.js';
+import { createAuditEntry } from '../models/SecretAuditLog.js';
 import {
   SecretKeyDriftError,
   SecretService,
@@ -488,6 +489,18 @@ describe('SecretService', () => {
   });
 
   describe('Audit logging', () => {
+    it('normalizes system audit tenant sentinels to null', () => {
+      const entry = createAuditEntry({
+        secretName: 'system-secret',
+        tenantId: 'system',
+        userId: 'system',
+        action: 'read',
+        result: 'success',
+      });
+
+      expect(entry.tenantId).toBeNull();
+    });
+
     it('should log secret operations', async () => {
       await withTenant({ tenantId: 'tenant-1' }, async () => {
         // Perform operations

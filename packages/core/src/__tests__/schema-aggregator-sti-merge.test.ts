@@ -47,7 +47,7 @@ describe('SchemaAggregator STI merge', () => {
   "_meta_data" JSON,
   "title" TEXT NOT NULL DEFAULT '',
   "body" TEXT NOT NULL DEFAULT '',
-  "tenant_id" TEXT
+  "tenant_id" UUID
 );`,
               columns: {
                 id: { type: 'TEXT', primaryKey: true, notNull: true },
@@ -67,7 +67,7 @@ describe('SchemaAggregator STI merge', () => {
                 _meta_data: { type: 'JSON' },
                 title: { type: 'TEXT', notNull: true, defaultValue: '' },
                 body: { type: 'TEXT', notNull: true, defaultValue: '' },
-                tenant_id: { type: 'TEXT' },
+                tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
               },
               indexes: [],
             },
@@ -94,7 +94,7 @@ describe('SchemaAggregator STI merge', () => {
   "_meta_data" JSON,
   "title" TEXT NOT NULL DEFAULT '',
   "body" TEXT NOT NULL DEFAULT '',
-  "tenant_id" TEXT,
+  "tenant_id" UUID,
   "meeting_id" TEXT,
   "url" TEXT NOT NULL DEFAULT ''
 );`,
@@ -116,7 +116,7 @@ describe('SchemaAggregator STI merge', () => {
               _meta_data: { type: 'JSON' },
               title: { type: 'TEXT', notNull: true, defaultValue: '' },
               body: { type: 'TEXT', notNull: true, defaultValue: '' },
-              tenant_id: { type: 'TEXT' },
+              tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
               meeting_id: { type: 'TEXT' },
               url: { type: 'TEXT', notNull: true, defaultValue: '' },
             },

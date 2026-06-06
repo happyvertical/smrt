@@ -4,7 +4,7 @@
  * Commit 1 of R11 makes SMRT *know* and *tolerate* the abstract `UUID`
  * SQLDataType without yet emitting it from the generator:
  *  - per-dialect mapping (Postgres `uuid`, DuckDB `UUID`, SQLite `TEXT`)
- *  - the differ treats `uuid` and `text` as equivalent (no auto-convert)
+ *  - the differ tolerates `uuid` and `text` for structural id/reference columns
  */
 
 import type { DatabaseProvider } from '@happyvertical/sql';
@@ -32,7 +32,7 @@ describe('R11 UUID type mapping (per-dialect)', () => {
   });
 });
 
-describe('R11 differ tolerance: UUID <-> TEXT are equivalent', () => {
+describe('R11 differ tolerance: UUID <-> TEXT are equivalent for structural ids', () => {
   let db: DatabaseProvider;
   let comparer: SchemaComparer;
 
@@ -68,7 +68,7 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent', () => {
       },
     }) satisfies Record<string, SchemaDefinition>;
 
-  it('does NOT flag a change when the DB has `text` and the manifest says UUID', async () => {
+  it('does NOT flag a primary-key change when the DB has `text` and the manifest says UUID', async () => {
     // Existing deployment: text id column. Manifest now declares UUID.
     // (On SQLite the manifest UUID maps to TEXT via the dialect strategy, so
     // the suppression here is via that mapping; the Postgres side — where
@@ -127,7 +127,7 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent', () => {
     expect(whenChange).toBeDefined();
   });
 
-  it('does NOT flag a change when the DB has `uuid` and the manifest says TEXT', async () => {
+  it('does NOT flag a primary-key change when the DB has `uuid` and the manifest says TEXT', async () => {
     // Project hand-migrated to native uuid. Manifest still says TEXT. The
     // differ must not try to convert it back. (SQLite accepts arbitrary
     // declared type names, so we can store a column typed `UUID`.)
@@ -138,6 +138,141 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent', () => {
     const idTypeChange = diff.changes.find(
       (c) =>
         c.table === 'things' &&
+        c.name === 'id' &&
+        (c.type === 'type_mismatch' || c.type === 'type_upgrade'),
+    );
+    expect(idTypeChange).toBeUndefined();
+  });
+
+  it('does NOT flag a reference change when the DB has `uuid` and the manifest says TEXT', async () => {
+    await db.query(
+      'CREATE TABLE things (id UUID PRIMARY KEY, owner_id UUID, external_id UUID)',
+      [],
+    );
+
+    const diff = await comparer.compare({
+      things: {
+        tableName: 'things',
+        ddl: '',
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          owner_id: {
+            type: 'TEXT',
+            foreignKey: { table: 'owners', column: 'id' },
+          },
+          external_id: { type: 'TEXT', referenceKind: 'crossPackageRef' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const structuralChanges = diff.changes.filter(
+      (c) =>
+        ['id', 'owner_id', 'external_id'].includes(c.name ?? '') &&
+        (c.type === 'type_mismatch' || c.type === 'type_upgrade'),
+    );
+    expect(structuralChanges).toEqual([]);
+  });
+
+  it('repairs plain TEXT manifest columns that drifted to uuid in the DB', async () => {
+    const postgresDb = {
+      url: 'postgresql://localhost/smrt_test',
+      query: async () => ({ rows: [{ table_name: 'assets' }] }),
+      getTableSchema: async () => ({
+        tableName: 'assets',
+        columns: {
+          id: { name: 'id', type: 'uuid', primaryKey: true },
+          external_id: { name: 'external_id', type: 'uuid' },
+        },
+        indexes: [],
+      }),
+    } as unknown as DatabaseProvider;
+    const postgresComparer = new SchemaComparer(postgresDb);
+
+    const diff = await postgresComparer.compare({
+      assets: {
+        tableName: 'assets',
+        ddl: '',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          external_id: { type: 'TEXT' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const externalIdChange = diff.changes.find(
+      (c) => c.table === 'assets' && c.name === 'external_id',
+    );
+    expect(externalIdChange).toEqual(
+      expect.objectContaining({
+        type: 'type_upgrade',
+        mismatch: { expected: 'TEXT', actual: 'uuid' },
+        sql: 'ALTER TABLE "assets" ALTER COLUMN "external_id" TYPE TEXT USING "external_id"::text',
+      }),
+    );
+
+    const idTypeChange = diff.changes.find(
+      (c) =>
+        c.table === 'assets' &&
+        c.name === 'id' &&
+        (c.type === 'type_mismatch' || c.type === 'type_upgrade'),
+    );
+    expect(idTypeChange).toBeUndefined();
+  });
+
+  it('does flag plain UUID manifest columns that are still text in the DB', async () => {
+    const postgresDb = {
+      url: 'postgresql://localhost/smrt_test',
+      query: async () => ({ rows: [{ table_name: 'assets' }] }),
+      getTableSchema: async () => ({
+        tableName: 'assets',
+        columns: {
+          id: { name: 'id', type: 'text', primaryKey: true },
+          import_uuid: { name: 'import_uuid', type: 'text' },
+        },
+        indexes: [],
+      }),
+    } as unknown as DatabaseProvider;
+    const postgresComparer = new SchemaComparer(postgresDb);
+
+    const diff = await postgresComparer.compare({
+      assets: {
+        tableName: 'assets',
+        ddl: '',
+        columns: {
+          id: { type: 'UUID', primaryKey: true },
+          import_uuid: { type: 'UUID' },
+        },
+        indexes: [],
+        triggers: [],
+        foreignKeys: [],
+        dependencies: [],
+        version: '1.0.0',
+      },
+    });
+
+    const importUuidChange = diff.changes.find(
+      (c) => c.table === 'assets' && c.name === 'import_uuid',
+    );
+    expect(importUuidChange).toEqual(
+      expect.objectContaining({
+        type: 'type_mismatch',
+        mismatch: { expected: 'UUID', actual: 'text' },
+      }),
+    );
+
+    const idTypeChange = diff.changes.find(
+      (c) =>
+        c.table === 'assets' &&
         c.name === 'id' &&
         (c.type === 'type_mismatch' || c.type === 'type_upgrade'),
     );

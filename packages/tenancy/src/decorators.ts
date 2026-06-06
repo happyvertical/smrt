@@ -212,7 +212,7 @@ export function tenantId(options: TenantIdFieldOptions = {}) {
         ObjectRegistry.registerFieldDecorator(className, propertyKey, {
           type: 'foreignKey',
           related: 'Tenant',
-          sqlType: 'TEXT',
+          sqlType: 'UUID',
           required: opts.required,
           nullable: opts.nullable,
           __tenancy: {

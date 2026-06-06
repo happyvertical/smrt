@@ -51,6 +51,7 @@ function schemaDefinitionFromManifest(
         {
           type: column.type as SchemaDefinition['columns'][string]['type'],
           primaryKey: column.primaryKey,
+          referenceKind: column.referenceKind,
           notNull: column.notNull,
           unique: column.unique,
           defaultValue: column.default,
@@ -229,5 +230,45 @@ describe('R11 UUID schema generation', () => {
 
     expect(schema.columns.external_id.type).toBe('TEXT');
     expect(schema.ddl).toContain('"external_id" TEXT');
+  });
+
+  it('emits tenant scoped tenantId storage as UUID while keeping the field string-shaped', () => {
+    const doc = objectDef(
+      'TenantScopedDoc',
+      {
+        tenantId: { type: 'text', default: '' },
+      },
+      { tenantScoped: { mode: 'optional' } },
+    );
+    const smrtManifest = manifest({ TenantScopedDoc: doc });
+
+    const generator = new ManifestGenerator();
+    generator.injectTenantScopedFields(smrtManifest);
+    generator.generateSchemas(smrtManifest);
+
+    expect(doc.fields.tenantId).toEqual(
+      expect.objectContaining({
+        type: 'text',
+        _meta: expect.objectContaining({
+          sqlType: 'UUID',
+          __tenancy: expect.objectContaining({
+            isTenantIdField: true,
+          }),
+        }),
+      }),
+    );
+    expect(doc.schema?.columns.tenant_id.type).toBe('UUID');
+    expect(doc.schema?.columns.tenant_id.referenceKind).toBe('tenantId');
+    expect(doc.schema?.columns.tenant_id.default).toBeUndefined();
+
+    if (!doc.schema) {
+      throw new Error('expected tenant scoped schema to be generated');
+    }
+    const postgresDDL = new SchemaGenerator().generateSQL(
+      schemaDefinitionFromManifest(doc.schema),
+      'postgres',
+    );
+    expect(postgresDDL).toContain('"tenant_id" uuid');
+    expect(postgresDDL).not.toContain('"tenant_id" uuid DEFAULT');
   });
 });

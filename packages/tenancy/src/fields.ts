@@ -63,7 +63,7 @@ export interface TenantIdFieldDefinition {
   /** Reference to Tenant class (placeholder - actual class resolved at runtime) */
   reference: 'Tenant';
   /** SQL type */
-  sqlType: 'TEXT';
+  sqlType: 'UUID';
   /** Field is required */
   required: boolean;
   /** Field allows null */

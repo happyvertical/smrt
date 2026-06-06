@@ -91,7 +91,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -152,7 +153,7 @@
             "unique": true
           }
         ],
-        "version": "ad28e83a"
+        "version": "4696526e"
       }
     },
     "@happyvertical/smrt-ads:AdEvent": {
@@ -683,12 +684,13 @@
       "collectionExportName": "AdEventCollection",
       "schema": {
         "tableName": "ad_events",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"variation_id\" UUID,\n  \"zone_id\" UUID,\n  \"site_id\" TEXT DEFAULT '',\n  \"event_type\" TEXT,\n  \"timestamp\" TIMESTAMP,\n  \"metadata\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_events\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"variation_id\" UUID,\n  \"zone_id\" UUID,\n  \"site_id\" TEXT DEFAULT '',\n  \"event_type\" TEXT,\n  \"timestamp\" TIMESTAMP,\n  \"metadata\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -718,16 +720,19 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "variation_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "zone_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "site_id": {
             "type": "TEXT",
@@ -771,7 +776,7 @@
             ]
           }
         ],
-        "version": "9059954f"
+        "version": "e2802275"
       }
     },
     "@happyvertical/smrt-ads:AdFormat": {
@@ -863,7 +868,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -930,7 +936,7 @@
             "unique": true
           }
         ],
-        "version": "307f1905"
+        "version": "ef31f338"
       }
     },
     "@happyvertical/smrt-ads:AdGroup": {
@@ -1577,12 +1583,13 @@
       "collectionExportName": "AdGroupCollection",
       "schema": {
         "tableName": "ad_groups",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_groups\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"contract_id\" UUID,\n  \"tier_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"vertical_slug\" TEXT DEFAULT '',\n  \"targeting\" TEXT DEFAULT '',\n  \"zone_ids\" TEXT DEFAULT '',\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"daily_budget\" REAL DEFAULT 0,\n  \"total_budget\" REAL DEFAULT 0,\n  \"status\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_groups\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"contract_id\" UUID,\n  \"tier_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"vertical_slug\" TEXT DEFAULT '',\n  \"targeting\" TEXT DEFAULT '',\n  \"zone_ids\" TEXT DEFAULT '',\n  \"start_date\" TIMESTAMP,\n  \"end_date\" TIMESTAMP,\n  \"daily_budget\" REAL DEFAULT 0,\n  \"total_budget\" REAL DEFAULT 0,\n  \"status\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1612,16 +1619,19 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "contract_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "tier_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "name": {
             "type": "TEXT",
@@ -1689,7 +1699,7 @@
             ]
           }
         ],
-        "version": "7cc44420"
+        "version": "a12961f9"
       }
     },
     "@happyvertical/smrt-ads:AdVariation": {
@@ -2247,12 +2257,13 @@
       "collectionExportName": "AdVariationCollection",
       "schema": {
         "tableName": "ad_variations",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_variations\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"group_id\" UUID,\n  \"format_id\" UUID,\n  \"asset_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"click_url\" TEXT DEFAULT '',\n  \"alt_text\" TEXT DEFAULT '',\n  \"weight\" INTEGER DEFAULT 1,\n  \"status\" TEXT,\n  \"impressions\" INTEGER DEFAULT 0,\n  \"clicks\" INTEGER DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"ad_variations\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"group_id\" UUID,\n  \"format_id\" UUID,\n  \"asset_id\" UUID,\n  \"name\" TEXT DEFAULT '',\n  \"click_url\" TEXT DEFAULT '',\n  \"alt_text\" TEXT DEFAULT '',\n  \"weight\" INTEGER DEFAULT 1,\n  \"status\" TEXT,\n  \"impressions\" INTEGER DEFAULT 0,\n  \"clicks\" INTEGER DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2282,20 +2293,24 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "group_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "format_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "asset_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "name": {
             "type": "TEXT",
@@ -2355,7 +2370,7 @@
             ]
           }
         ],
-        "version": "e56c1b67"
+        "version": "de845595"
       }
     },
     "@happyvertical/smrt-ads:AdDeliveryTierCollection": {
@@ -2434,7 +2449,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2472,7 +2488,7 @@
             "unique": true
           }
         ],
-        "version": "8229e958"
+        "version": "45441aca"
       }
     },
     "@happyvertical/smrt-ads:AdEventCollection": {
@@ -2707,7 +2723,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2745,7 +2762,7 @@
             "unique": true
           }
         ],
-        "version": "1e5ee847"
+        "version": "ee9190c8"
       }
     },
     "@happyvertical/smrt-ads:AdFormatCollection": {
@@ -2827,7 +2844,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2865,7 +2883,7 @@
             "unique": true
           }
         ],
-        "version": "5f32a70c"
+        "version": "78d0142f"
       }
     },
     "@happyvertical/smrt-ads:AdGroupCollection": {
@@ -3042,7 +3060,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3080,7 +3099,7 @@
             "unique": true
           }
         ],
-        "version": "e7850ea1"
+        "version": "dc38dfbc"
       }
     },
     "@happyvertical/smrt-ads:AdVariationCollection": {
@@ -3249,7 +3268,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3287,7 +3307,7 @@
             "unique": true
           }
         ],
-        "version": "d8ef9671"
+        "version": "a8907ee9"
       }
     }
   },

@@ -8,7 +8,7 @@
  *   - an FK cycle (A → B → A)
  *   - a native-`json` DB column vs a TEXT-convention json manifest field
  *   - an enum-typed field that a downstream scanner mis-infers as JSON
- *   - a `text` column holding uuid-shaped values
+ *   - a plain `text` provenance column holding uuid-shaped values
  *   - a plain, undecorated field
  *   - a slug-style FK (plain string id, not a native FK)
  *   - a renamed column (old column lingers in the DB, new column in manifest)
@@ -126,7 +126,7 @@ function diverseManifest(): Record<string, SchemaDefinition> {
       updated_at: { type: 'TIMESTAMP' },
       // slug-style cross-package FK: a plain string id, not a native FK.
       owner_slug: { type: 'TEXT' },
-      // text column holding uuid-shaped values; DB may store it as native uuid.
+      // Plain provenance text can hold uuid-shaped values, but is not structural.
       external_ref: { type: 'TEXT' },
       // enum field mis-inferred as JSON downstream; DB column is real `text`.
       status: { type: 'JSON' },
@@ -157,7 +157,6 @@ describe('diverse-schema migration fixture (#1335)', () => {
       // exercise every equivalence the differ must honor:
       //   - status: manifest JSON  vs DB text      (the #1335 canary)
       //   - metadata: manifest TEXT vs DB json      (native-json column)
-      //   - external_ref: manifest TEXT vs DB uuid  (R11 uuid/text tolerance)
       //   - created_at/updated_at: TIMESTAMP vs 'timestamp without time zone'
       const db = makePostgresFake([
         {
@@ -169,7 +168,7 @@ describe('diverse-schema migration fixture (#1335)', () => {
             { name: 'created_at', type: 'timestamp without time zone' },
             { name: 'updated_at', type: 'timestamp without time zone' },
             { name: 'owner_slug', type: 'text' },
-            { name: 'external_ref', type: 'uuid' }, // native uuid vs manifest TEXT
+            { name: 'external_ref', type: 'text' },
             { name: 'status', type: 'text' }, // text vs manifest JSON
             { name: 'label', type: 'text' },
             { name: 'metadata', type: 'json' }, // native json vs manifest TEXT
@@ -203,14 +202,17 @@ describe('diverse-schema migration fixture (#1335)', () => {
       expect(diff.has_changes).toBe(false);
     });
 
-    it('treats a text column holding uuid values as equivalent to native uuid', async () => {
+    it('treats structural text reference columns as equivalent to native uuid', async () => {
       const manifest = {
         nodes: {
           tableName: 'nodes',
           ddl: '',
           columns: {
             id: { type: 'TEXT', primaryKey: true } as ColumnDefinition,
-            external_ref: { type: 'TEXT' } as ColumnDefinition,
+            external_ref: {
+              type: 'TEXT',
+              referenceKind: 'crossPackageRef',
+            } as ColumnDefinition,
           },
           indexes: [],
           triggers: [],
@@ -235,6 +237,7 @@ describe('diverse-schema migration fixture (#1335)', () => {
 
       manifest.nodes.columns.external_ref = {
         type: 'UUID',
+        referenceKind: 'crossPackageRef',
       } as ColumnDefinition;
       const dbText = makePostgresFake([
         {
@@ -262,7 +265,7 @@ describe('diverse-schema migration fixture (#1335)', () => {
             { name: 'context', type: 'text' },
             { name: 'created_at', type: 'timestamp without time zone' },
             { name: 'updated_at', type: 'timestamp without time zone' },
-            { name: 'external_ref', type: 'uuid' },
+            { name: 'external_ref', type: 'text' },
             { name: 'status', type: 'text' },
             { name: 'metadata', type: 'json' },
             { name: 'head_edge_id', type: 'text' },
@@ -516,7 +519,7 @@ describe('diverse-schema migration fixture (#1335)', () => {
               { name: 'created_at', type: 'timestamp without time zone' },
               { name: 'updated_at', type: 'timestamp without time zone' },
               { name: 'status', type: 'text' },
-              { name: 'external_ref', type: 'uuid' },
+              { name: 'external_ref', type: 'text' },
               { name: 'metadata', type: 'json' },
               // head_edge_id missing → one add_column on nodes
             ],

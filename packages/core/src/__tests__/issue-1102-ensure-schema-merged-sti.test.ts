@@ -51,12 +51,12 @@ describe('Issue #1102: ensureSchema() uses merged STI table definition', () => {
   "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
   "_meta_type" TEXT NOT NULL DEFAULT '',
   "_meta_data" JSON,
-  "tenant_id" TEXT,
+  "tenant_id" UUID,
   "name" TEXT DEFAULT '',
   "start_date" TIMESTAMP
 );`,
           columns: {
-            tenant_id: { type: 'TEXT' },
+            tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
             name: { type: 'TEXT', defaultValue: '' },
             start_date: { type: 'TIMESTAMP' },
           },
@@ -94,12 +94,12 @@ describe('Issue #1102: ensureSchema() uses merged STI table definition', () => {
   "updated_at" TIMESTAMP NOT NULL DEFAULT current_timestamp,
   "_meta_type" TEXT NOT NULL DEFAULT '',
   "_meta_data" JSON,
-  "tenant_id" TEXT,
+  "tenant_id" UUID,
   "council_id" TEXT DEFAULT '',
   "agenda_url" TEXT DEFAULT ''
 );`,
           columns: {
-            tenant_id: { type: 'TEXT' },
+            tenant_id: { type: 'UUID', referenceKind: 'tenantId' },
             council_id: { type: 'TEXT', defaultValue: '' },
             agenda_url: { type: 'TEXT', defaultValue: '' },
           },

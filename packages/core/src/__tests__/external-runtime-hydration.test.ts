@@ -319,6 +319,73 @@ describe('external runtime field hydration', () => {
     expect(hydratedField?._meta?.description).toBe('Current delivery status');
   });
 
+  it('hydrates legacy schema reference metadata from manifest fields', async () => {
+    const packageName = '@happyvertical/smrt-runtime-fixture-cross-ref';
+
+    writeScopedPackage(
+      appDir,
+      packageName,
+      fixtureManifest(packageName, {
+        FixtureLegacyCrossRef: {
+          decoratorConfig: {
+            tableName: 'fixture_legacy_cross_refs',
+            api: false,
+            cli: false,
+            mcp: false,
+          },
+          fields: {
+            externalId: {
+              type: 'crossPackageRef',
+              related: '@fixture/targets:ExternalTarget',
+            },
+          },
+          schema: {
+            tableName: 'fixture_legacy_cross_refs',
+            ddl: '',
+            columns: {
+              external_id: { type: 'TEXT' },
+            },
+            indexes: [],
+            version: 'test',
+          },
+        },
+      }),
+    );
+
+    @smrt({
+      tableName: 'fixture_legacy_cross_refs',
+      api: false,
+      cli: false,
+      mcp: false,
+    })
+    class FixtureLegacyCrossRef extends SmrtObject {
+      @field()
+      externalId: string = '';
+    }
+
+    const registered = ObjectRegistry.findClass('FixtureLegacyCrossRef');
+    if (!registered) {
+      throw new Error('FixtureLegacyCrossRef was not registered');
+    }
+
+    registered.packageName = packageName;
+    registered.qualifiedName = createQualifiedName(
+      packageName,
+      'FixtureLegacyCrossRef',
+    );
+
+    await ObjectRegistry.ensureManifestLoaded('FixtureLegacyCrossRef');
+
+    expect(
+      ObjectRegistry.getSchema('FixtureLegacyCrossRef')?.columns.external_id,
+    ).toEqual(
+      expect.objectContaining({
+        type: 'TEXT',
+        referenceKind: 'crossPackageRef',
+      }),
+    );
+  });
+
   it('preserves existing field metadata when fallback manifest hydration only refines adjacent properties', async () => {
     const packageName = '@happyvertical/smrt-runtime-fixture-fallback-metadata';
 

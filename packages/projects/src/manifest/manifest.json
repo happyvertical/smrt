@@ -208,7 +208,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -246,7 +247,7 @@
             "unique": true
           }
         ],
-        "version": "9a30d763"
+        "version": "6878d960"
       }
     },
     "@happyvertical/smrt-projects:ProjectCollection": {
@@ -410,7 +411,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -448,7 +450,7 @@
             "unique": true
           }
         ],
-        "version": "e9eabb1e"
+        "version": "e20f67a7"
       }
     },
     "@happyvertical/smrt-projects:PullRequestCollection": {
@@ -671,7 +673,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -709,7 +712,7 @@
             "unique": true
           }
         ],
-        "version": "6eb52552"
+        "version": "6b253fe9"
       }
     },
     "@happyvertical/smrt-projects:RepositoryCollection": {
@@ -863,7 +866,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -901,7 +905,7 @@
             "unique": true
           }
         ],
-        "version": "ede10607"
+        "version": "8a21736d"
       }
     },
     "@happyvertical/smrt-projects:Comment": {
@@ -1025,12 +1029,13 @@
       "collectionExportName": "CommentCollection",
       "schema": {
         "tableName": "comments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"comments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"issue_id\" UUID,\n  \"comment_id\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"author\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT ''\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"comments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"issue_id\" UUID,\n  \"comment_id\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"author\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT ''\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1052,14 +1057,16 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "issue_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "comment_id": {
             "type": "TEXT",
@@ -1102,7 +1109,7 @@
             "unique": true
           }
         ],
-        "version": "351ad194"
+        "version": "846958c1"
       }
     },
     "@happyvertical/smrt-projects:Issue": {
@@ -1818,12 +1825,13 @@
       ],
       "schema": {
         "tableName": "issues",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"repository_id\" UUID,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '[]',\n  \"assignees\" JSON DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"repository_id\" UUID,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '[]',\n  \"assignees\" JSON DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1853,12 +1861,14 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "repository_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "number": {
             "type": "INTEGER",
@@ -1987,7 +1997,7 @@
             ]
           }
         ],
-        "version": "a622fea0"
+        "version": "6be412cc"
       }
     },
     "@happyvertical/smrt-projects:Label": {
@@ -2122,7 +2132,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2146,7 +2157,8 @@
           "repository_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "name": {
             "type": "TEXT",
@@ -2183,7 +2195,7 @@
             "unique": true
           }
         ],
-        "version": "15f82076"
+        "version": "e872a7c3"
       }
     },
     "@happyvertical/smrt-projects:Project": {
@@ -2504,12 +2516,13 @@
       "collectionExportName": "ProjectCollection",
       "schema": {
         "tableName": "projects",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"projects\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"project_id\" TEXT DEFAULT '',\n  \"project_number\" INTEGER DEFAULT 0,\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"owner\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"statuses\" JSON DEFAULT '[]',\n  \"fields\" JSON DEFAULT '[]',\n  \"status_field_id\" TEXT DEFAULT '',\n  \"status_options\" JSON DEFAULT '{}',\n  \"last_synced_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"projects\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"project_id\" TEXT DEFAULT '',\n  \"project_number\" INTEGER DEFAULT 0,\n  \"title\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"owner\" TEXT DEFAULT '',\n  \"url\" TEXT DEFAULT '',\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"statuses\" JSON DEFAULT '[]',\n  \"fields\" JSON DEFAULT '[]',\n  \"status_field_id\" TEXT DEFAULT '',\n  \"status_options\" JSON DEFAULT '{}',\n  \"last_synced_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2531,9 +2544,10 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "project_id": {
             "type": "TEXT",
@@ -2629,7 +2643,7 @@
             "unique": true
           }
         ],
-        "version": "c8ef0a68"
+        "version": "6c5ebaa2"
       }
     },
     "@happyvertical/smrt-projects:PullRequest": {
@@ -3477,12 +3491,13 @@
       ],
       "schema": {
         "tableName": "issues",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"repository_id\" UUID,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '[]',\n  \"assignees\" JSON DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"issues\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"repository_id\" UUID,\n  \"number\" INTEGER DEFAULT 0,\n  \"node_id\" TEXT DEFAULT '',\n  \"title\" TEXT DEFAULT '',\n  \"body\" TEXT DEFAULT '',\n  \"state\" TEXT DEFAULT 'open',\n  \"author\" TEXT DEFAULT '',\n  \"labels\" JSON DEFAULT '[]',\n  \"assignees\" JSON DEFAULT '[]',\n  \"comments_count\" INTEGER DEFAULT 0,\n  \"last_synced_at\" TIMESTAMP,\n  \"original_body\" TEXT DEFAULT '',\n  \"synthesis_count\" INTEGER DEFAULT 0,\n  \"head_ref\" TEXT DEFAULT '',\n  \"base_ref\" TEXT DEFAULT '',\n  \"merged\" BOOLEAN DEFAULT FALSE,\n  \"merged_at\" TIMESTAMP,\n  \"mergeable\" BOOLEAN DEFAULT TRUE,\n  \"draft\" BOOLEAN DEFAULT FALSE,\n  \"additions\" INTEGER DEFAULT 0,\n  \"deletions\" INTEGER DEFAULT 0,\n  \"changed_files\" INTEGER DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3512,12 +3527,14 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "repository_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "number": {
             "type": "INTEGER",
@@ -3646,7 +3663,7 @@
             ]
           }
         ],
-        "version": "696351ce"
+        "version": "7f869200"
       }
     },
     "@happyvertical/smrt-projects:Repository": {
@@ -3875,12 +3892,13 @@
       "collectionExportName": "RepositoryCollection",
       "schema": {
         "tableName": "repositories",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"repositories\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"owner\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"full_name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"default_branch\" TEXT DEFAULT 'main',\n  \"is_private\" BOOLEAN DEFAULT FALSE,\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"base_url\" TEXT DEFAULT '',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"last_synced_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"repositories\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"owner\" TEXT DEFAULT '',\n  \"name\" TEXT DEFAULT '',\n  \"full_name\" TEXT DEFAULT '',\n  \"description\" TEXT DEFAULT '',\n  \"default_branch\" TEXT DEFAULT 'main',\n  \"is_private\" BOOLEAN DEFAULT FALSE,\n  \"provider_type\" TEXT DEFAULT 'github',\n  \"base_url\" TEXT DEFAULT '',\n  \"token_config_key\" TEXT DEFAULT 'GITHUB_TOKEN',\n  \"last_synced_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3902,9 +3920,10 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "owner": {
             "type": "TEXT",
@@ -3982,7 +4001,7 @@
             "unique": true
           }
         ],
-        "version": "426c7380"
+        "version": "0b8823bb"
       }
     }
   },

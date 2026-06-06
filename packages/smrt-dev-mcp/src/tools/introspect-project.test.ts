@@ -311,7 +311,10 @@ export class TenantProject extends SmrtObject {
         ]),
       );
       expect(project.schema.columns.tenant_id).toEqual(
-        expect.objectContaining({ type: 'TEXT' }),
+        expect.objectContaining({
+          type: 'UUID',
+          referenceKind: 'tenantId',
+        }),
       );
       expect(project.tableName).toBe('tenant_projects');
     });

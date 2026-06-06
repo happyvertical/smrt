@@ -81,12 +81,13 @@
       ],
       "schema": {
         "tableName": "content_assets",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"content_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_assets\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"content_id\" UUID NOT NULL,\n  \"asset_id\" UUID NOT NULL,\n  \"relationship\" TEXT NOT NULL,\n  \"sort_order\" INTEGER NOT NULL DEFAULT 0\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -108,19 +109,22 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "content_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "asset_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "relationship": {
             "type": "TEXT",
@@ -151,7 +155,7 @@
             "unique": true
           }
         ],
-        "version": "85d04e7f"
+        "version": "a794c9f1"
       }
     },
     "@happyvertical/smrt-content:ContentAssetCollection": {
@@ -291,7 +295,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -329,7 +334,7 @@
             "unique": true
           }
         ],
-        "version": "42994d88"
+        "version": "d7b22717"
       }
     },
     "@happyvertical/smrt-content:ContentContributionAttachment": {
@@ -453,12 +458,13 @@
       ],
       "schema": {
         "tableName": "content_contribution_attachments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_attachments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" UUID NOT NULL,\n  \"revision_id\" UUID,\n  \"filename\" TEXT,\n  \"mime_type\" TEXT,\n  \"size\" INTEGER NOT NULL DEFAULT 0,\n  \"file_key\" TEXT,\n  \"source_uri\" TEXT,\n  \"channel\" TEXT DEFAULT 'web',\n  \"promoted_asset_id\" UUID,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_attachments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" UUID NOT NULL,\n  \"revision_id\" UUID,\n  \"filename\" TEXT,\n  \"mime_type\" TEXT,\n  \"size\" INTEGER NOT NULL DEFAULT 0,\n  \"file_key\" TEXT,\n  \"source_uri\" TEXT,\n  \"channel\" TEXT DEFAULT 'web',\n  \"promoted_asset_id\" UUID,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -482,12 +488,14 @@
           "contribution_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "revision_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "filename": {
             "type": "TEXT",
@@ -524,7 +532,8 @@
           "promoted_asset_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "metadata": {
             "type": "TEXT",
@@ -532,9 +541,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -552,7 +562,7 @@
             "unique": true
           }
         ],
-        "version": "e7280ad1"
+        "version": "ef166492"
       }
     },
     "@happyvertical/smrt-content:ContentContributionAttachmentCollection": {
@@ -607,7 +617,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -645,7 +656,7 @@
             "unique": true
           }
         ],
-        "version": "5dd478ad"
+        "version": "e80b2ce8"
       }
     },
     "@happyvertical/smrt-content:ContentContributionRevision": {
@@ -765,12 +776,13 @@
       ],
       "schema": {
         "tableName": "content_contribution_revisions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_revisions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" UUID NOT NULL,\n  \"revision_number\" INTEGER NOT NULL DEFAULT 1,\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"source_message_id\" UUID,\n  \"source_thread_key\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_revisions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contribution_id\" UUID NOT NULL,\n  \"revision_number\" INTEGER NOT NULL DEFAULT 1,\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"source_message_id\" UUID,\n  \"source_thread_key\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -794,7 +806,8 @@
           "contribution_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "revision_number": {
             "type": "INTEGER",
@@ -826,7 +839,8 @@
           "source_message_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "source_thread_key": {
             "type": "TEXT",
@@ -839,9 +853,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -860,7 +875,7 @@
             "unique": true
           }
         ],
-        "version": "6a88bf13"
+        "version": "0f7f4aaf"
       }
     },
     "@happyvertical/smrt-content:ContentContributionRevisionCollection": {
@@ -915,7 +930,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -953,7 +969,7 @@
             "unique": true
           }
         ],
-        "version": "399c4d91"
+        "version": "dfedf465"
       }
     },
     "@happyvertical/smrt-content:ContentContributionType": {
@@ -1187,12 +1203,13 @@
       ],
       "schema": {
         "tableName": "content_contribution_types",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allowed_channels\" TEXT,\n  \"allow_text\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allow_files\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"allow_empty_text\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"intake_rules\" TEXT,\n  \"promotion\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contribution_types\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allowed_channels\" TEXT,\n  \"allow_text\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"allow_files\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"allow_empty_text\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"intake_rules\" TEXT,\n  \"promotion\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1268,9 +1285,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -1288,7 +1306,7 @@
             "unique": true
           }
         ],
-        "version": "ac1450c1"
+        "version": "d62482c9"
       }
     },
     "@happyvertical/smrt-content:ContentContributionTypeCollection": {
@@ -1329,7 +1347,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1367,7 +1386,7 @@
             "unique": true
           }
         ],
-        "version": "273025ab"
+        "version": "eaae1d99"
       }
     },
     "@happyvertical/smrt-content:ContentContribution": {
@@ -1714,12 +1733,13 @@
       ],
       "schema": {
         "tableName": "content_contributions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contributor_id\" UUID NOT NULL,\n  \"contribution_type_key\" TEXT NOT NULL,\n  \"status\" TEXT DEFAULT 'submitted',\n  \"intake_decision\" TEXT DEFAULT 'accepted',\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"contributor_email\" TEXT,\n  \"contributor_name\" TEXT,\n  \"thread_key\" TEXT,\n  \"source_message_id\" UUID,\n  \"editor_notes\" TEXT,\n  \"promoted_content_id\" UUID,\n  \"revision_count\" INTEGER NOT NULL DEFAULT 0,\n  \"approved_at\" TIMESTAMP,\n  \"promoted_at\" TIMESTAMP,\n  \"rejected_at\" TIMESTAMP,\n  \"withdrawn_at\" TIMESTAMP,\n  \"requested_changes_at\" TIMESTAMP,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"contributor_id\" UUID NOT NULL,\n  \"contribution_type_key\" TEXT NOT NULL,\n  \"status\" TEXT DEFAULT 'submitted',\n  \"intake_decision\" TEXT DEFAULT 'accepted',\n  \"channel\" TEXT DEFAULT 'web',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"contributor_email\" TEXT,\n  \"contributor_name\" TEXT,\n  \"thread_key\" TEXT,\n  \"source_message_id\" UUID,\n  \"editor_notes\" TEXT,\n  \"promoted_content_id\" UUID,\n  \"revision_count\" INTEGER NOT NULL DEFAULT 0,\n  \"approved_at\" TIMESTAMP,\n  \"promoted_at\" TIMESTAMP,\n  \"rejected_at\" TIMESTAMP,\n  \"withdrawn_at\" TIMESTAMP,\n  \"requested_changes_at\" TIMESTAMP,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -1743,7 +1763,8 @@
           "contributor_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "contribution_type_key": {
             "type": "TEXT",
@@ -1801,7 +1822,8 @@
           "source_message_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "editor_notes": {
             "type": "TEXT",
@@ -1811,7 +1833,8 @@
           "promoted_content_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "revision_count": {
             "type": "INTEGER",
@@ -1850,9 +1873,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -1870,7 +1894,7 @@
             "unique": true
           }
         ],
-        "version": "c87be5bc"
+        "version": "6e3d7da5"
       }
     },
     "@happyvertical/smrt-content:ContentContributions": {
@@ -1999,7 +2023,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2037,7 +2062,7 @@
             "unique": true
           }
         ],
-        "version": "10114762"
+        "version": "cbe156a4"
       }
     },
     "@happyvertical/smrt-content:ContentContributor": {
@@ -2147,12 +2172,13 @@
       ],
       "schema": {
         "tableName": "content_contributors",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributors\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID,\n  \"email\" TEXT NOT NULL,\n  \"name\" TEXT,\n  \"trust_level\" TEXT DEFAULT 'standard',\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_contributors\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"profile_id\" UUID,\n  \"email\" TEXT NOT NULL,\n  \"name\" TEXT,\n  \"trust_level\" TEXT DEFAULT 'standard',\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2176,7 +2202,8 @@
           "profile_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "email": {
             "type": "TEXT",
@@ -2200,9 +2227,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -2220,7 +2248,7 @@
             "unique": true
           }
         ],
-        "version": "99516741"
+        "version": "80cda408"
       }
     },
     "@happyvertical/smrt-content:ContentContributorCollection": {
@@ -2289,7 +2317,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2327,7 +2356,7 @@
             "unique": true
           }
         ],
-        "version": "fae5dcf8"
+        "version": "f8ed51af"
       }
     },
     "@happyvertical/smrt-content:ContentCorrection": {
@@ -2450,12 +2479,13 @@
       ],
       "schema": {
         "tableName": "content_corrections",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_corrections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"content_version_id\" UUID,\n  \"fact_id\" UUID,\n  \"replacement_fact_id\" UUID,\n  \"correction_type\" TEXT DEFAULT 'fact',\n  \"status\" TEXT DEFAULT 'draft',\n  \"summary\" TEXT,\n  \"incorrect_text\" TEXT,\n  \"corrected_text\" TEXT,\n  \"public_note\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT,\n  \"published_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_corrections\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"content_version_id\" UUID,\n  \"fact_id\" UUID,\n  \"replacement_fact_id\" UUID,\n  \"correction_type\" TEXT DEFAULT 'fact',\n  \"status\" TEXT DEFAULT 'draft',\n  \"summary\" TEXT,\n  \"incorrect_text\" TEXT,\n  \"corrected_text\" TEXT,\n  \"public_note\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID,\n  \"published_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2479,22 +2509,26 @@
           "content_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "content_version_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "fact_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "replacement_fact_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "crossPackageRef"
           },
           "correction_type": {
             "type": "TEXT",
@@ -2534,9 +2568,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "published_at": {
             "type": "TIMESTAMP",
@@ -2560,7 +2595,7 @@
             "unique": true
           }
         ],
-        "version": "5d060ebf"
+        "version": "84492d81"
       }
     },
     "@happyvertical/smrt-content:ContentCorrectionCollection": {
@@ -2629,7 +2664,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2667,7 +2703,7 @@
             "unique": true
           }
         ],
-        "version": "14c7d5f5"
+        "version": "3dc9d0ee"
       }
     },
     "@happyvertical/smrt-content:ContentFeedSource": {
@@ -2889,12 +2925,13 @@
       ],
       "schema": {
         "tableName": "content_feed_sources",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"name\" TEXT NOT NULL,\n  \"feed_url\" TEXT NOT NULL,\n  \"homepage_url\" TEXT,\n  \"format\" TEXT,\n  \"status\" TEXT NOT NULL DEFAULT 'active',\n  \"default_category\" TEXT,\n  \"source_group\" TEXT,\n  \"poll_interval_minutes\" INTEGER NOT NULL DEFAULT 15,\n  \"etag\" TEXT,\n  \"last_modified\" TEXT,\n  \"last_fetched_at\" TIMESTAMP,\n  \"last_success_at\" TIMESTAMP,\n  \"last_error\" TEXT,\n  \"metadata\" JSON DEFAULT '{}'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_feed_sources\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"name\" TEXT NOT NULL,\n  \"feed_url\" TEXT NOT NULL,\n  \"homepage_url\" TEXT,\n  \"format\" TEXT,\n  \"status\" TEXT NOT NULL DEFAULT 'active',\n  \"default_category\" TEXT,\n  \"source_group\" TEXT,\n  \"poll_interval_minutes\" INTEGER NOT NULL DEFAULT 15,\n  \"etag\" TEXT,\n  \"last_modified\" TEXT,\n  \"last_fetched_at\" TIMESTAMP,\n  \"last_success_at\" TIMESTAMP,\n  \"last_error\" TEXT,\n  \"metadata\" JSON DEFAULT '{}'\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -2916,9 +2953,10 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "name": {
             "type": "TEXT",
@@ -3010,7 +3048,7 @@
             "unique": true
           }
         ],
-        "version": "1cb78b84"
+        "version": "bfcbcc5f"
       }
     },
     "@happyvertical/smrt-content:ContentFeedSourceCollection": {
@@ -3089,7 +3127,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3127,7 +3166,7 @@
             "unique": true
           }
         ],
-        "version": "daee797b"
+        "version": "69c18233"
       }
     },
     "@happyvertical/smrt-content:ContentGovernanceAssignment": {
@@ -3290,12 +3329,13 @@
       ],
       "schema": {
         "tableName": "content_governance_assignments",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_assignments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"content_type\" TEXT NOT NULL,\n  \"content_variant\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"fact_linking_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"transparency_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"publication_profile_key\" TEXT,\n  \"correction_profile_key\" TEXT,\n  \"enforce_publish_readiness\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"default_fact_relationship\" TEXT DEFAULT 'supports',\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_assignments\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"content_type\" TEXT NOT NULL,\n  \"content_variant\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"fact_linking_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"transparency_enabled\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"publication_profile_key\" TEXT,\n  \"correction_profile_key\" TEXT,\n  \"enforce_publish_readiness\" BOOLEAN NOT NULL DEFAULT FALSE,\n  \"default_fact_relationship\" TEXT DEFAULT 'supports',\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3382,9 +3422,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -3402,7 +3443,7 @@
             "unique": true
           }
         ],
-        "version": "54ac80dd"
+        "version": "997ffc6f"
       }
     },
     "@happyvertical/smrt-content:ContentGovernanceAssignmentCollection": {
@@ -3457,7 +3498,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3495,7 +3537,7 @@
             "unique": true
           }
         ],
-        "version": "314f6b01"
+        "version": "4eca4c7f"
       }
     },
     "@happyvertical/smrt-content:ContentGovernancePolicyCollection": {
@@ -3536,7 +3578,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3574,7 +3617,7 @@
             "unique": true
           }
         ],
-        "version": "c50051e0"
+        "version": "1e3e0162"
       }
     },
     "@happyvertical/smrt-content:ContentGovernancePolicy": {
@@ -3695,12 +3738,13 @@
       ],
       "schema": {
         "tableName": "content_governance_policies",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_policies\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"instructions\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_policies\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"instructions\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3754,9 +3798,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -3774,7 +3819,7 @@
             "unique": true
           }
         ],
-        "version": "fdd36975"
+        "version": "432ceae2"
       }
     },
     "@happyvertical/smrt-content:ContentGovernanceProfile": {
@@ -3902,12 +3947,13 @@
       ],
       "schema": {
         "tableName": "content_governance_profiles",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"description\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"requirements\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_governance_profiles\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key\" TEXT NOT NULL,\n  \"label\" TEXT,\n  \"description\" TEXT,\n  \"enabled\" BOOLEAN NOT NULL DEFAULT TRUE,\n  \"requirements\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -3960,9 +4006,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -3980,7 +4027,7 @@
             "unique": true
           }
         ],
-        "version": "df478060"
+        "version": "7c5e159e"
       }
     },
     "@happyvertical/smrt-content:ContentGovernanceProfileCollection": {
@@ -4021,7 +4068,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -4059,7 +4107,7 @@
             "unique": true
           }
         ],
-        "version": "56f8978c"
+        "version": "e0a3c94c"
       }
     },
     "@happyvertical/smrt-content:ContentReference": {
@@ -4127,12 +4175,13 @@
       ],
       "schema": {
         "tableName": "content_references",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"source_id\" UUID NOT NULL,\n  \"target_id\" UUID NOT NULL,\n  \"target_version\" INTEGER\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_references\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"source_id\" UUID NOT NULL,\n  \"target_id\" UUID NOT NULL,\n  \"target_version\" INTEGER\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -4154,19 +4203,22 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           },
           "source_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "target_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "target_version": {
             "type": "INTEGER",
@@ -4190,7 +4242,7 @@
             "unique": true
           }
         ],
-        "version": "f8bfb756"
+        "version": "ae8b14c6"
       }
     },
     "@happyvertical/smrt-content:ContentReferences": {
@@ -4374,7 +4426,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -4412,7 +4465,7 @@
             "unique": true
           }
         ],
-        "version": "2a91ce1c"
+        "version": "ddf6154b"
       }
     },
     "@happyvertical/smrt-content:ContentReview": {
@@ -4529,12 +4582,13 @@
       ],
       "schema": {
         "tableName": "content_reviews",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_reviews\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"content_version_id\" UUID,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"policy_key\" TEXT,\n  \"status\" TEXT DEFAULT 'pending',\n  \"summary\" TEXT,\n  \"findings\" TEXT,\n  \"reviewer\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_reviews\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"content_version_id\" UUID,\n  \"kind\" TEXT DEFAULT 'custom',\n  \"policy_key\" TEXT,\n  \"status\" TEXT DEFAULT 'pending',\n  \"summary\" TEXT,\n  \"findings\" TEXT,\n  \"reviewer\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -4558,12 +4612,14 @@
           "content_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "content_version_id": {
             "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "kind": {
             "type": "TEXT",
@@ -4603,9 +4659,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -4624,7 +4681,7 @@
             "unique": true
           }
         ],
-        "version": "d425c0ed"
+        "version": "aa7a67ef"
       }
     },
     "@happyvertical/smrt-content:ContentReviewCollection": {
@@ -4741,7 +4798,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -4779,7 +4837,7 @@
             "unique": true
           }
         ],
-        "version": "bf081e09"
+        "version": "c48ffe2c"
       }
     },
     "@happyvertical/smrt-content:Article": {
@@ -6162,12 +6220,13 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -6197,8 +6256,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type": {
             "type": "TEXT",
@@ -6283,7 +6343,8 @@
           },
           "thumbnail_asset_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           }
         },
         "indexes": [
@@ -6309,7 +6370,7 @@
             ]
           }
         ],
-        "version": "aade2a35"
+        "version": "78c209bf"
       }
     },
     "@happyvertical/smrt-content:ContentDocument": {
@@ -7692,12 +7753,13 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -7727,8 +7789,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type": {
             "type": "TEXT",
@@ -7813,7 +7876,8 @@
           },
           "thumbnail_asset_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           }
         },
         "indexes": [
@@ -7839,7 +7903,7 @@
             ]
           }
         ],
-        "version": "55c307f2"
+        "version": "05f9bb8d"
       }
     },
     "@happyvertical/smrt-content:Mirror": {
@@ -9251,12 +9315,13 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID,\n  \"feed_source_id\" UUID,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID,\n  \"feed_source_id\" UUID,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -9286,8 +9351,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type": {
             "type": "TEXT",
@@ -9372,11 +9438,13 @@
           },
           "thumbnail_asset_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "feed_source_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "foreignKey"
           },
           "source_guid": {
             "type": "TEXT",
@@ -9426,7 +9494,7 @@
             ]
           }
         ],
-        "version": "f45d26f5"
+        "version": "ba99a342"
       }
     },
     "@happyvertical/smrt-content:ContentVersion": {
@@ -9576,12 +9644,13 @@
       ],
       "schema": {
         "tableName": "content_versions",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"content_versions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"version\" INTEGER NOT NULL DEFAULT 1,\n  \"kind\" TEXT DEFAULT 'manual',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"status\" TEXT,\n  \"summary\" TEXT,\n  \"snapshot\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"content_versions\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"content_id\" UUID NOT NULL,\n  \"version\" INTEGER NOT NULL DEFAULT 1,\n  \"kind\" TEXT DEFAULT 'manual',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"status\" TEXT,\n  \"summary\" TEXT,\n  \"snapshot\" TEXT,\n  \"metadata\" TEXT,\n  \"tenant_id\" UUID);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -9605,7 +9674,8 @@
           "content_id": {
             "type": "UUID",
             "notNull": true,
-            "unique": false
+            "unique": false,
+            "referenceKind": "foreignKey"
           },
           "version": {
             "type": "INTEGER",
@@ -9655,9 +9725,10 @@
             "unique": false
           },
           "tenant_id": {
-            "type": "TEXT",
+            "type": "UUID",
             "notNull": false,
-            "unique": false
+            "unique": false,
+            "referenceKind": "tenantId"
           }
         },
         "indexes": [
@@ -9676,7 +9747,7 @@
             "unique": true
           }
         ],
-        "version": "3c488e19"
+        "version": "d73d2597"
       }
     },
     "@happyvertical/smrt-content:ContentVersionCollection": {
@@ -9816,7 +9887,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -9854,7 +9926,7 @@
             "unique": true
           }
         ],
-        "version": "341957d7"
+        "version": "ac7a610a"
       }
     },
     "@happyvertical/smrt-content:Content": {
@@ -11349,12 +11421,13 @@
       ],
       "schema": {
         "tableName": "contents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" TEXT,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID,\n  \"feed_source_id\" UUID,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"contents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"type\" TEXT,\n  \"variant\" TEXT,\n  \"file_key\" TEXT,\n  \"author\" TEXT,\n  \"name\" TEXT DEFAULT '',\n  \"title\" TEXT,\n  \"description\" TEXT,\n  \"body\" TEXT,\n  \"body_format\" TEXT,\n  \"publish_date\" TIMESTAMP,\n  \"url\" TEXT,\n  \"source\" TEXT,\n  \"original_url\" TEXT,\n  \"language\" TEXT,\n  \"tags\" JSON DEFAULT '[]',\n  \"category\" TEXT,\n  \"status\" TEXT DEFAULT 'draft',\n  \"state\" TEXT DEFAULT 'active',\n  \"metadata\" JSON DEFAULT '{}',\n  \"thumbnail_asset_id\" UUID,\n  \"feed_source_id\" UUID,\n  \"source_guid\" TEXT,\n  \"source_name\" TEXT,\n  \"source_homepage_url\" TEXT,\n  \"external_url\" TEXT,\n  \"original_published_at\" TIMESTAMP,\n  \"dedupe_key\" TEXT\n);",
         "columns": {
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -11384,8 +11457,9 @@
             "default": "current_timestamp"
           },
           "tenant_id": {
-            "type": "TEXT",
-            "notNull": false
+            "type": "UUID",
+            "notNull": false,
+            "referenceKind": "tenantId"
           },
           "type": {
             "type": "TEXT",
@@ -11470,7 +11544,8 @@
           },
           "thumbnail_asset_id": {
             "type": "UUID",
-            "notNull": false
+            "notNull": false,
+            "referenceKind": "crossPackageRef"
           },
           "feed_source_id": {
             "type": "UUID",
@@ -11524,7 +11599,7 @@
             ]
           }
         ],
-        "version": "af288b0a"
+        "version": "656404e7"
       }
     },
     "@happyvertical/smrt-content:Contents": {
@@ -11756,7 +11831,8 @@
           "id": {
             "type": "UUID",
             "primaryKey": true,
-            "notNull": true
+            "notNull": true,
+            "referenceKind": "id"
           },
           "slug": {
             "type": "TEXT",
@@ -11804,7 +11880,7 @@
             "unique": true
           }
         ],
-        "version": "33c2d9b6"
+        "version": "0fe727be"
       }
     }
   },
