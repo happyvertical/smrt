@@ -7,6 +7,7 @@ import type {
   SummarizeUsageOptions,
   UsageSummary,
 } from '../types.js';
+import { stringifyJson } from '../utils.js';
 
 export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetric> {
   static readonly _itemClass = TenantUsageMetric;
@@ -20,9 +21,8 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
       windowEnd: options.windowEnd,
       source: options.source ?? '',
       sourceId: options.sourceId ?? '',
+      dimensions: stringifyJson(options.dimensions ?? {}),
     });
-    metric.setDimensions(options.dimensions ?? {});
-    await metric.save();
     return metric;
   }
 

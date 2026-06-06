@@ -3,7 +3,8 @@ import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
 import { TenantSubscription } from '../models/TenantSubscription.js';
 import { SubscriptionResolver } from '../services/subscription-resolver.js';
 import { evaluateThreshold } from '../services/threshold-evaluator.js';
-import type { UsageSummary } from '../types.js';
+import type { PlanThreshold, UsageSummary } from '../types.js';
+import { isValidThreshold } from '../utils.js';
 
 describe('smrt-subscriptions', () => {
   it('stores plan feature grants and thresholds as typed accessors', () => {
@@ -62,6 +63,68 @@ describe('smrt-subscriptions', () => {
         usage,
       ),
     ).toMatchObject({ state: 'blocked', allowed: false, remaining: 0 });
+
+    const zeroUsage: UsageSummary = {
+      ...usage,
+      quantity: 0,
+    };
+
+    expect(
+      evaluateThreshold(
+        {
+          metricKey: 'messages.sent',
+          limit: 0,
+          window: 'month',
+          enforcement: 'block',
+        },
+        zeroUsage,
+      ),
+    ).toMatchObject({ state: 'ok', allowed: true, remaining: 0 });
+
+    expect(
+      evaluateThreshold(
+        {
+          metricKey: 'messages.sent',
+          limit: 0,
+          window: 'month',
+          enforcement: 'block',
+        },
+        {
+          ...zeroUsage,
+          quantity: 1,
+        },
+      ),
+    ).toMatchObject({ state: 'blocked', allowed: false, remaining: 0 });
+  });
+
+  it('rejects malformed threshold values parsed from JSON', () => {
+    const validThreshold: PlanThreshold = {
+      metricKey: 'ai.tokens.total',
+      limit: 100,
+      window: 'month',
+      enforcement: 'warn',
+      warningRatio: 0.8,
+    };
+
+    expect(isValidThreshold(validThreshold)).toBe(true);
+    expect(
+      isValidThreshold({
+        ...validThreshold,
+        window: 'forever',
+      } as unknown as PlanThreshold),
+    ).toBe(false);
+    expect(
+      isValidThreshold({
+        ...validThreshold,
+        enforcement: 'disable',
+      } as unknown as PlanThreshold),
+    ).toBe(false);
+    expect(
+      isValidThreshold({
+        ...validThreshold,
+        warningRatio: 1.5,
+      }),
+    ).toBe(false);
   });
 
   it('resolves feature entitlements and threshold blocks', async () => {
@@ -161,5 +224,49 @@ describe('smrt-subscriptions', () => {
       allowed: false,
       featureKeys: [],
     });
+  });
+
+  it('uses the resolver time when selecting the current subscription', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'pro',
+      name: 'Pro',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-pro' });
+
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-pro',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-1' });
+
+    const expectedNow = new Date('2026-06-15T00:00:00Z');
+    let selectedAt: Date | undefined;
+    const resolver = new SubscriptionResolver({
+      plans: {
+        async get() {
+          return plan;
+        },
+      },
+      subscriptions: {
+        async findCurrentForTenant(_tenantId, now) {
+          selectedAt = now;
+          return subscription;
+        },
+      },
+      usage: {
+        async summarize() {
+          throw new Error('usage should not be read without thresholds');
+        },
+      },
+    });
+
+    await resolver.resolveTenantEntitlements('tenant-1', {
+      now: expectedNow,
+    });
+
+    expect(selectedAt).toBe(expectedNow);
   });
 });

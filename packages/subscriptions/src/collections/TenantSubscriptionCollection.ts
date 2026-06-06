@@ -13,10 +13,11 @@ export class TenantSubscriptionCollection extends SmrtCollection<TenantSubscript
 
   async findCurrentForTenant(
     tenantId: string,
+    now = new Date(),
   ): Promise<TenantSubscription | null> {
     const subscriptions = await this.findByTenant(tenantId);
     return (
-      subscriptions.find((subscription) => subscription.isEntitled()) ??
+      subscriptions.find((subscription) => subscription.isEntitled(now)) ??
       subscriptions[0] ??
       null
     );

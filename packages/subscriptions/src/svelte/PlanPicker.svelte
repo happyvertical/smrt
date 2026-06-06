@@ -15,6 +15,7 @@ let {
 <div class="smrt-plan-picker">
   {#each plans as plan (plan.id)}
     <button
+      aria-pressed={plan.planKey === selectedPlanKey}
       class:selected={plan.planKey === selectedPlanKey}
       class="smrt-plan-picker__plan"
       type="button"

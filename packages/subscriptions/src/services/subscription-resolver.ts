@@ -4,6 +4,7 @@ import type {
   EntitlementResolution,
   PlanThreshold,
   SubscriptionResolverOptions,
+  ThresholdEvaluation,
   UsageSummary,
   UsageWindow,
 } from '../types.js';
@@ -15,7 +16,10 @@ export interface SubscriptionPlanReader {
 }
 
 export interface TenantSubscriptionReader {
-  findCurrentForTenant(tenantId: string): Promise<TenantSubscription | null>;
+  findCurrentForTenant(
+    tenantId: string,
+    now?: Date,
+  ): Promise<TenantSubscription | null>;
 }
 
 export interface UsageSummaryReader {
@@ -40,8 +44,10 @@ export class SubscriptionResolver {
     options: SubscriptionResolverOptions = {},
   ): Promise<EntitlementResolution> {
     const now = options.now ?? new Date();
-    const subscription =
-      await this.readers.subscriptions.findCurrentForTenant(tenantId);
+    const subscription = await this.readers.subscriptions.findCurrentForTenant(
+      tenantId,
+      now,
+    );
 
     if (!subscription) {
       return emptyResolution(tenantId);
@@ -62,7 +68,7 @@ export class SubscriptionResolver {
     }
 
     const thresholds = plan.getThresholds().filter(isValidThreshold);
-    const thresholdEvaluations = [];
+    const thresholdEvaluations: ThresholdEvaluation[] = [];
 
     for (const threshold of thresholds) {
       const window =

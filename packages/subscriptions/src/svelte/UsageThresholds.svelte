@@ -20,6 +20,7 @@ let {
         <span>{evaluation.usage.quantity} / {evaluation.threshold.limit}</span>
       </div>
       <progress
+        aria-label={`${evaluation.threshold.label ?? evaluation.threshold.metricKey} usage`}
         max="1"
         value={Number.isFinite(evaluation.ratio)
           ? Math.min(1, evaluation.ratio)

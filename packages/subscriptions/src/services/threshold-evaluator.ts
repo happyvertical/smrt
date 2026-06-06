@@ -16,7 +16,10 @@ export function evaluateThreshold(
       : usage.quantity / threshold.limit;
   const warningRatio = threshold.warningRatio ?? 0.8;
   const blocked =
-    threshold.enforcement === 'block' && usage.quantity >= threshold.limit;
+    threshold.enforcement === 'block' &&
+    (threshold.limit === 0
+      ? usage.quantity > 0
+      : usage.quantity >= threshold.limit);
   const warned = !blocked && ratio >= warningRatio;
 
   return {

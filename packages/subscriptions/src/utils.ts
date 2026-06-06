@@ -2,9 +2,23 @@ import type {
   JsonObject,
   PlanFeatureGrant,
   PlanThreshold,
+  ThresholdEnforcement,
   ThresholdWindow,
   UsageWindow,
 } from './types.js';
+
+const THRESHOLD_WINDOWS: ThresholdWindow[] = [
+  'day',
+  'week',
+  'month',
+  'year',
+  'rolling',
+];
+const THRESHOLD_ENFORCEMENTS: ThresholdEnforcement[] = [
+  'observe',
+  'warn',
+  'block',
+];
 
 export function parseJsonArray<T>(value: string, fallback: T[] = []): T[] {
   if (!value) {
@@ -79,7 +93,27 @@ export function isValidThreshold(threshold: PlanThreshold): boolean {
     typeof threshold.metricKey === 'string' &&
     threshold.metricKey.length > 0 &&
     Number.isFinite(threshold.limit) &&
-    threshold.limit >= 0
+    threshold.limit >= 0 &&
+    isThresholdWindow(threshold.window) &&
+    isThresholdEnforcement(threshold.enforcement) &&
+    (threshold.warningRatio === undefined ||
+      (Number.isFinite(threshold.warningRatio) &&
+        threshold.warningRatio >= 0 &&
+        threshold.warningRatio <= 1))
+  );
+}
+
+function isThresholdWindow(value: unknown): value is ThresholdWindow {
+  return (
+    typeof value === 'string' &&
+    THRESHOLD_WINDOWS.includes(value as ThresholdWindow)
+  );
+}
+
+function isThresholdEnforcement(value: unknown): value is ThresholdEnforcement {
+  return (
+    typeof value === 'string' &&
+    THRESHOLD_ENFORCEMENTS.includes(value as ThresholdEnforcement)
   );
 }
 
