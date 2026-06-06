@@ -71,7 +71,11 @@ vi.mock('@happyvertical/smrt-core/migrations', () => ({
   MigrationTracker: MigrationTrackerMock,
 }));
 
-import { dbStatusCommand, summarizeSchemaDiff } from '../db-status.js';
+import {
+  checkTenantIdUuidPreconditions,
+  dbStatusCommand,
+  summarizeSchemaDiff,
+} from '../db-status.js';
 
 describe('db:status', () => {
   beforeEach(() => {
@@ -174,6 +178,75 @@ describe('db:status', () => {
     ]);
   });
 
+  it('warns when tenants.id is native uuid in a 0.27 Postgres schema', async () => {
+    const db = {
+      getTableSchema: vi.fn().mockResolvedValue({
+        columns: {
+          id: { type: 'uuid' },
+        },
+      }),
+      query: vi.fn(),
+    };
+
+    await expect(
+      checkTenantIdUuidPreconditions({
+        db,
+        dbType: 'postgres',
+        dbUrl: 'postgresql://localhost/db',
+        manifestSchemas: {
+          tenants: {
+            tableName: 'tenants',
+            columns: {
+              id: { type: 'UUID' },
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        name: 'tenants.id',
+        status: 'warning',
+        message: expect.stringContaining('native uuid'),
+      }),
+    ]);
+    expect(db.query).not.toHaveBeenCalled();
+  });
+
+  it('errors when a 0.27 Postgres tenant table still stores non-UUID ids', async () => {
+    const db = {
+      getTableSchema: vi.fn().mockResolvedValue({
+        columns: {
+          id: { type: 'TEXT' },
+        },
+      }),
+      query: vi.fn().mockResolvedValue({
+        rows: [{ count: '2' }],
+      }),
+    };
+
+    await expect(
+      checkTenantIdUuidPreconditions({
+        db,
+        dbType: 'postgres',
+        dbUrl: 'postgresql://localhost/db',
+        manifestSchemas: {
+          tenants: {
+            tableName: 'tenants',
+            columns: {
+              id: { type: 'UUID' },
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        name: 'tenants.id',
+        status: 'error',
+        message: expect.stringContaining('2 non-UUID tenant primary key'),
+      }),
+    ]);
+  });
+
   it('reports live drift in JSON output instead of only migration history', async () => {
     compareMock.mockResolvedValue({
       added_tables: [],
@@ -244,6 +317,51 @@ describe('db:status', () => {
       other: [],
     });
     expect(closeMock).toHaveBeenCalledOnce();
+  });
+
+  it('includes tenant id compatibility precondition failures in JSON status', async () => {
+    getDatabaseMock.mockResolvedValue({
+      url: 'postgresql://test:test@localhost:5432/test_db',
+      getTableSchema: vi.fn().mockResolvedValue({
+        columns: {
+          id: { type: 'TEXT' },
+        },
+      }),
+      query: vi.fn().mockResolvedValue({
+        rows: [{ count: '1' }],
+      }),
+      close: closeMock,
+    });
+    getAllSchemasAsDefinitionsMock.mockReturnValue({
+      tenants: {
+        tableName: 'tenants',
+        columns: {
+          id: { type: 'UUID' },
+        },
+      },
+    });
+    compareMock.mockResolvedValue({
+      added_tables: [],
+      dropped_tables: [],
+      has_changes: false,
+      changes: [],
+    });
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await dbStatusCommand.handler([], { json: true });
+
+    const parsed = JSON.parse(
+      logSpy.mock.calls.map((call) => call.join('')).join('\n'),
+    );
+    expect(process.exitCode).toBe(1);
+    expect(parsed.preconditions).toEqual([
+      expect.objectContaining({
+        name: 'tenants.id',
+        status: 'error',
+        details: expect.objectContaining({ nonUuidCount: 1 }),
+      }),
+    ]);
   });
 
   it('fails JSON status when only package manifests were discovered', async () => {

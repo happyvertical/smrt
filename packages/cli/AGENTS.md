@@ -8,6 +8,7 @@ Developer CLI with lazy-loaded commands, manifest discovery, and class introspec
 smrt introspect              # Discover SMRT objects in project
 smrt db:status               # Pending schema changes + failed migration classification
 smrt db:migrate              # Apply migrations
+smrt db:migrate-uuid         # Convert schema-declared UUID text columns after data remap
 smrt db:diff                 # Show schema differences without generating migration files
 smrt db:rollback             # Rollback migrations
 smrt docs:agents             # Generate .agents/smrt-framework.md

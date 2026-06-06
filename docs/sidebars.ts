@@ -53,6 +53,7 @@ const sidebars: SidebarsConfig = {
       items: [
         { type: 'doc', id: 'architecture/core-architecture', label: 'Core Architecture' },
         { type: 'doc', id: 'architecture/core-migration-history', label: 'Core Migration History' },
+        { type: 'doc', id: 'architecture/relationships-v2-uuid-migration', label: '0.27 UUID Tenant Migration' },
         { type: 'doc', id: 'architecture/tenancy-auto-populate', label: 'Tenancy Auto-Populate' },
         { type: 'doc', id: 'architecture/messages-secrets-migration', label: 'Messages Secrets Migration' },
         { type: 'doc', id: 'architecture/products-as-template', label: 'Products as Template' },

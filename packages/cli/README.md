@@ -26,6 +26,7 @@ pnpm add -D @happyvertical/smrt-cli
 |---------|------------|
 | `smrt db:status` | Show pending schema changes and classify failed migration history |
 | `smrt db:migrate` | Apply pending migrations |
+| `smrt db:migrate-uuid` | Convert schema-declared UUID text columns to native PostgreSQL uuid after data has been remapped |
 | `smrt db:diff` | Show schema differences without generating migration files |
 | `smrt db:rollback` | Rollback last migration |
 | `smrt db:history` | Show migration history with active-vs-superseded failure classification |
