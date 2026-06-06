@@ -60,7 +60,7 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
 
 ## Themes
 
-Two theme systems: `src/theme/` (simple ThemeProvider with design tokens) and `src/themes/` (full preset system with material/glass/studio, CSS generation, runtime switching). **`src/themes/` is canonical** — it is the only path that delivers the complete `--smrt-*` token surface (colors + typography + spacing + radius + elevation + motion) across all presets. `src/theme/` is the simpler/legacy provider; it emits the same vocabulary where its categories overlap (colors, radius, elevation, motion, plus the shared aliases) but does not emit per-variant typography or the numeric spacing scale.
+Two theme systems: `src/theme/` (simple ThemeProvider with design tokens) and `src/themes/` (full preset system with material/glass/studio, CSS generation, runtime switching). **`src/themes/` is canonical** — it is the only path that delivers the complete preset-aware `--smrt-*` token surface (colors + typography + spacing + radius + elevation + motion) across material/glass/studio. `src/theme/` is the simpler/legacy provider; it emits the same CSS variable vocabulary from its single built-in scale for backward compatibility, but it does not support preset switching or preset-specific values.
 
 ### Design-token vocabulary (issue #1431)
 

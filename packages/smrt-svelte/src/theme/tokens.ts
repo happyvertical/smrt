@@ -17,6 +17,7 @@ import {
   durationAliases,
   fontFamilyAliases,
   fontWeightTokens,
+  spacingAliases,
   zIndexTokens,
 } from '../themes/shared.js';
 
@@ -378,6 +379,44 @@ export function generateColorVariables(
 }
 
 /**
+ * Generate CSS custom properties from typography tokens.
+ */
+function generateTypographyVariables(): Record<string, string> {
+  const vars: Record<string, string> = {};
+
+  for (const [key, token] of Object.entries(typography)) {
+    const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+    const family =
+      'var(--smrt-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)';
+    vars[`--smrt-typography-${cssKey}-size`] = token.size;
+    vars[`--smrt-typography-${cssKey}-line-height`] = token.lineHeight;
+    vars[`--smrt-typography-${cssKey}-weight`] = String(token.weight);
+    vars[`--smrt-typography-${cssKey}-tracking`] = token.tracking;
+    vars[`--smrt-typography-${cssKey}-font-family`] = family;
+    vars[`--smrt-typography-${cssKey}-font`] =
+      `${token.weight} ${token.size}/${token.lineHeight} ${family}`;
+  }
+
+  return vars;
+}
+
+/**
+ * Generate CSS custom properties from spacing tokens.
+ */
+function generateSpacingVariables(): Record<string, string> {
+  const vars: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(spacing)) {
+    vars[`--smrt-spacing-${key.replace(/\./g, '_')}`] = value;
+  }
+  for (const [alias, scaleKey] of Object.entries(spacingAliases)) {
+    vars[`--smrt-spacing-${alias}`] = spacing[scaleKey];
+  }
+
+  return vars;
+}
+
+/**
  * Generate all CSS custom properties for a theme
  */
 export function generateThemeVariables(
@@ -388,6 +427,11 @@ export function generateThemeVariables(
 
   const vars: Record<string, string> = {
     ...colorVars,
+    '--smrt-color-scheme': isDark ? 'dark' : 'light',
+    '--smrt-font-family':
+      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    ...generateTypographyVariables(),
+    ...generateSpacingVariables(),
     // Border radius
     '--smrt-radius-none': borderRadius.none,
     '--smrt-radius-sm': borderRadius.sm,

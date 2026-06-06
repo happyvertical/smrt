@@ -19,6 +19,8 @@
  * .svelte / .ts / .css file under packages/smrt-svelte/src.
  *
  * Exit code: 0 if every consumed token is emitted, 1 otherwise.
+ * Also verifies that each static preset stylesheet contains the token names
+ * emitted by the JS preset generator for that preset.
  *
  * Run: `node scripts/check-svelte-tokens.mjs` or `pnpm check:svelte-tokens`.
  */
@@ -45,7 +47,7 @@ function listFiles(dir, exts) {
   return out;
 }
 
-const VAR_RE = /var\(\s*(--smrt-[a-z0-9-]+)/gi;
+const VAR_RE = /var\(\s*(--smrt-[a-z0-9_-]+)/gi;
 
 /** Collect every `--smrt-*` token referenced via var() under SRC. */
 function collectConsumed() {
@@ -59,7 +61,7 @@ function collectConsumed() {
   return consumed;
 }
 
-const DEFINE_RE = /(--smrt-[a-z0-9-]+)\s*:/gi;
+const DEFINE_RE = /(--smrt-[a-z0-9_-]+)\s*:/gi;
 
 /** Collect every `--smrt-*` token DEFINED (`--smrt-x: value`) in a CSS string. */
 function collectDefinedInCss(text, into) {
@@ -113,7 +115,7 @@ const TYPOGRAPHY_SUFFIXES = [
   'font',
 ];
 
-const COLOR_TOKENS = [
+const BASE_COLOR_TOKENS = [
   'primary', 'on-primary', 'primary-container', 'on-primary-container',
   'secondary', 'on-secondary', 'secondary-container', 'on-secondary-container',
   'tertiary', 'on-tertiary', 'tertiary-container', 'on-tertiary-container',
@@ -128,7 +130,24 @@ const COLOR_TOKENS = [
   'outline', 'outline-variant',
   'inverse-surface', 'inverse-on-surface', 'inverse-primary',
   'shadow', 'scrim',
+];
+
+const GLASS_COLOR_TOKENS = [
   'glass-backdrop', 'glass-border',
+];
+
+const GLASS_EFFECT_TOKENS = [
+  '--smrt-glass-blur',
+  '--smrt-glass-saturation',
+  '--smrt-glass-border-opacity',
+  '--smrt-glass-background-opacity',
+];
+
+const FONT_WEIGHT_TOKEN_NAMES = ['normal', 'medium', 'semibold', 'bold'];
+
+const Z_INDEX_TOKEN_NAMES = [
+  'dropdown', 'sticky', 'overlay', 'modal', 'dialog', 'popover', 'toast',
+  'tooltip',
 ];
 
 /**
@@ -137,15 +156,14 @@ const COLOR_TOKENS = [
  * real runtime delivery path, so a consumed token they emit is themeable.
  */
 function collectGeneratorEmitted(into) {
-  for (const c of COLOR_TOKENS) into.add(`--smrt-color-${c}`);
+  for (const c of [...BASE_COLOR_TOKENS, ...GLASS_COLOR_TOKENS]) {
+    into.add(`--smrt-color-${c}`);
+  }
   into.add('--smrt-color-scheme');
   into.add('--smrt-theme-id');
   into.add('--smrt-theme-name');
   into.add('--smrt-font-family');
-  into.add('--smrt-glass-blur');
-  into.add('--smrt-glass-saturation');
-  into.add('--smrt-glass-border-opacity');
-  into.add('--smrt-glass-background-opacity');
+  for (const token of GLASS_EFFECT_TOKENS) into.add(token);
   for (const k of SCALE_KEYS.spacing) into.add(`--smrt-spacing-${k}`);
   for (const k of SCALE_KEYS.radius) into.add(`--smrt-radius-${k}`);
   for (const k of SCALE_KEYS.duration) into.add(`--smrt-duration-${k}`);
@@ -156,6 +174,68 @@ function collectGeneratorEmitted(into) {
       into.add(`--smrt-typography-${v}-${s}`);
     }
   }
+  into.add('--smrt-font-family-mono');
+  for (const name of FONT_WEIGHT_TOKEN_NAMES) {
+    into.add(`--smrt-typography-weight-${name}`);
+  }
+  for (const name of Z_INDEX_TOKEN_NAMES) {
+    into.add(`--smrt-z-index-${name}`);
+  }
+}
+
+function collectPresetGeneratorTokens({ includeGlass = false } = {}) {
+  const emitted = new Set();
+  for (const c of BASE_COLOR_TOKENS) emitted.add(`--smrt-color-${c}`);
+  if (includeGlass) {
+    for (const c of GLASS_COLOR_TOKENS) emitted.add(`--smrt-color-${c}`);
+  }
+  emitted.add('--smrt-color-scheme');
+  emitted.add('--smrt-theme-id');
+  emitted.add('--smrt-theme-name');
+  emitted.add('--smrt-font-family');
+  if (includeGlass) {
+    for (const token of GLASS_EFFECT_TOKENS) emitted.add(token);
+  }
+  for (const k of SCALE_KEYS.spacing) emitted.add(`--smrt-spacing-${k}`);
+  for (const k of SCALE_KEYS.radius) emitted.add(`--smrt-radius-${k}`);
+  for (const k of SCALE_KEYS.duration) emitted.add(`--smrt-duration-${k}`);
+  for (const k of SCALE_KEYS.easing) emitted.add(`--smrt-easing-${k}`);
+  for (const k of SCALE_KEYS.elevation) emitted.add(`--smrt-elevation-${k}`);
+  for (const v of TYPOGRAPHY_VARIANTS) {
+    for (const s of TYPOGRAPHY_SUFFIXES) {
+      emitted.add(`--smrt-typography-${v}-${s}`);
+    }
+  }
+  emitted.add('--smrt-font-family-mono');
+  for (const name of FONT_WEIGHT_TOKEN_NAMES) {
+    emitted.add(`--smrt-typography-weight-${name}`);
+  }
+  for (const name of Z_INDEX_TOKEN_NAMES) {
+    emitted.add(`--smrt-z-index-${name}`);
+  }
+  return emitted;
+}
+
+function collectStaticPresetMissing() {
+  const stylesDir = join(SRC, 'themes', 'styles');
+  const presetFiles = {
+    material: 'material.css',
+    glass: 'glass.css',
+    studio: 'studio.css',
+  };
+  const missingByPreset = [];
+
+  for (const [preset, fileName] of Object.entries(presetFiles)) {
+    const defined = new Set();
+    collectDefinedInCss(readFileSync(join(stylesDir, fileName), 'utf8'), defined);
+    const required = collectPresetGeneratorTokens({
+      includeGlass: preset === 'glass',
+    });
+    const missing = [...required].filter((token) => !defined.has(token)).sort();
+    if (missing.length > 0) missingByPreset.push({ preset, missing });
+  }
+
+  return missingByPreset;
 }
 
 /** Collect every emitted token across all delivery paths. */
@@ -184,28 +264,47 @@ function collectEmitted() {
 
 const consumed = collectConsumed();
 const emitted = collectEmitted();
+const staticMissingByPreset = collectStaticPresetMissing();
 
 const undefinedTokens = [...consumed.keys()]
   .filter((t) => !emitted.has(t))
   .sort();
 
-if (undefinedTokens.length === 0) {
+if (undefinedTokens.length === 0 && staticMissingByPreset.length === 0) {
   console.log(
     `✓ svelte-token-check: ${consumed.size} consumed --smrt-* tokens, all emitted`,
   );
   process.exit(0);
 }
 
-console.error(
-  `✗ svelte-token-check: ${undefinedTokens.length} consumed --smrt-* token(s) are never emitted\n`,
-);
-for (const t of undefinedTokens) {
-  console.error(`    - ${t} (consumed ${consumed.get(t)}×)`);
+if (undefinedTokens.length > 0) {
+  console.error(
+    `✗ svelte-token-check: ${undefinedTokens.length} consumed --smrt-* token(s) are never emitted\n`,
+  );
+  for (const t of undefinedTokens) {
+    console.error(`    - ${t} (consumed ${consumed.get(t)}×)`);
+  }
+  console.error(
+    '\nThese tokens are frozen at their var(..., fallback) values and cannot be\n' +
+      'themed. Either emit them (extend src/themes/css-generator.ts + the static\n' +
+      'preset CSS in src/themes/styles/*.css) or change the consumers to a token\n' +
+      'that is emitted. See issue #1431.',
+  );
 }
-console.error(
-  '\nThese tokens are frozen at their var(..., fallback) values and cannot be\n' +
-    'themed. Either emit them (extend src/themes/css-generator.ts + the static\n' +
-    'preset CSS in src/themes/styles/*.css) or change the consumers to a token\n' +
-    'that is emitted. See issue #1431.',
-);
+
+if (staticMissingByPreset.length > 0) {
+  console.error(
+    `${undefinedTokens.length > 0 ? '\n' : ''}✗ svelte-token-check: static preset CSS is missing generated token(s)\n`,
+  );
+  for (const { preset, missing } of staticMissingByPreset) {
+    console.error(`    ${preset}:`);
+    for (const token of missing) console.error(`      - ${token}`);
+  }
+  console.error(
+    '\nStatic preset CSS should expose the same token names as the JS preset\n' +
+      'generator for that preset. Add missing definitions to\n' +
+      'packages/smrt-svelte/src/themes/styles/*.css.',
+  );
+}
+
 process.exit(1);

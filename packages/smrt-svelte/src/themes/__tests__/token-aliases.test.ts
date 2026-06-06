@@ -9,6 +9,8 @@
  * here as well as in scripts/check-svelte-tokens.mjs.
  */
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { generateThemeVariables as generateSimpleThemeVariables } from '../../theme/tokens.js';
 import { generateThemeVariables } from '../css-generator.js';
@@ -22,6 +24,14 @@ const REQUIRED_ALIASES = [
   '--smrt-radius-medium',
   '--smrt-radius-large',
   '--smrt-radius-extra-large',
+  // Spacing (named aliases)
+  '--smrt-spacing-xs',
+  '--smrt-spacing-sm',
+  '--smrt-spacing-md',
+  '--smrt-spacing-lg',
+  '--smrt-spacing-xl',
+  '--smrt-spacing-2xl',
+  '--smrt-spacing-3xl',
   // Motion (Material-3 duration scale)
   '--smrt-duration-short1',
   '--smrt-duration-short2',
@@ -44,15 +54,28 @@ const REQUIRED_ALIASES = [
   '--smrt-z-index-dialog',
 ];
 
-/** Spacing aliases are only emitted by the preset generator. */
-const PRESET_ONLY_ALIASES = [
-  '--smrt-spacing-xs',
-  '--smrt-spacing-sm',
-  '--smrt-spacing-md',
-  '--smrt-spacing-lg',
-  '--smrt-spacing-xl',
-  '--smrt-spacing-2xl',
-  '--smrt-spacing-3xl',
+const SPACING_NUMERIC_TOKENS = [
+  '--smrt-spacing-0',
+  '--smrt-spacing-0_5',
+  '--smrt-spacing-1',
+  '--smrt-spacing-1_5',
+  '--smrt-spacing-2',
+  '--smrt-spacing-2_5',
+  '--smrt-spacing-3',
+  '--smrt-spacing-3_5',
+  '--smrt-spacing-4',
+  '--smrt-spacing-5',
+  '--smrt-spacing-6',
+  '--smrt-spacing-7',
+  '--smrt-spacing-8',
+  '--smrt-spacing-9',
+  '--smrt-spacing-10',
+  '--smrt-spacing-11',
+  '--smrt-spacing-12',
+  '--smrt-spacing-14',
+  '--smrt-spacing-16',
+  '--smrt-spacing-20',
+  '--smrt-spacing-24',
 ];
 
 const TYPOGRAPHY_FONT_SHORTHANDS = [
@@ -69,6 +92,22 @@ const TYPOGRAPHY_FONT_SHORTHANDS = [
   '--smrt-typography-headline-medium-font',
 ];
 
+const packageRoot = process.cwd().endsWith('packages/smrt-svelte')
+  ? process.cwd()
+  : join(process.cwd(), 'packages/smrt-svelte');
+
+const STATIC_STYLE_PATHS = {
+  material: join(packageRoot, 'src/themes/styles/material.css'),
+  glass: join(packageRoot, 'src/themes/styles/glass.css'),
+  studio: join(packageRoot, 'src/themes/styles/studio.css'),
+};
+
+function collectDefinedTokens(css: string): Set<string> {
+  return new Set(
+    [...css.matchAll(/(--smrt-[a-z0-9_-]+)\s*:/gi)].map((match) => match[1]),
+  );
+}
+
 describe('preset generator alias emission (#1431)', () => {
   for (const theme of Object.values(themes)) {
     for (const isDark of [false, true]) {
@@ -76,7 +115,7 @@ describe('preset generator alias emission (#1431)', () => {
         const vars = generateThemeVariables(theme, isDark);
         for (const token of [
           ...REQUIRED_ALIASES,
-          ...PRESET_ONLY_ALIASES,
+          ...SPACING_NUMERIC_TOKENS,
           ...TYPOGRAPHY_FONT_SHORTHANDS,
         ]) {
           expect(vars[token], `${token} should be emitted`).toBeDefined();
@@ -109,11 +148,33 @@ describe('preset generator alias emission (#1431)', () => {
   });
 });
 
+describe('static preset CSS token surface (#1431)', () => {
+  for (const theme of Object.values(themes)) {
+    it(`${theme.id} stylesheet contains the generated token surface`, () => {
+      const css = readFileSync(STATIC_STYLE_PATHS[theme.id], 'utf8');
+      const defined = collectDefinedTokens(css);
+      const generatedTokens = new Set([
+        ...Object.keys(generateThemeVariables(theme, false)),
+        ...Object.keys(generateThemeVariables(theme, true)),
+      ]);
+      const missing = [...generatedTokens]
+        .filter((token) => !defined.has(token))
+        .sort();
+
+      expect(missing).toEqual([]);
+    });
+  }
+});
+
 describe('simple ThemeProvider alias emission (#1431)', () => {
   for (const isDark of [false, true]) {
-    it(`${isDark ? 'dark' : 'light'} emits radius/duration/helper aliases`, () => {
+    it(`${isDark ? 'dark' : 'light'} emits shared aliases and component scale tokens`, () => {
       const vars = generateSimpleThemeVariables(isDark);
-      for (const token of REQUIRED_ALIASES) {
+      for (const token of [
+        ...REQUIRED_ALIASES,
+        ...SPACING_NUMERIC_TOKENS,
+        ...TYPOGRAPHY_FONT_SHORTHANDS,
+      ]) {
         expect(vars[token], `${token} should be emitted`).toBeDefined();
         expect(vars[token]).not.toBe('');
       }
