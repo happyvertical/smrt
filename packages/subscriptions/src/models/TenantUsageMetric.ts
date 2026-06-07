@@ -12,7 +12,7 @@ import { parseJsonObject, stringifyJson } from '../utils.js';
 })
 export class TenantUsageMetric extends SmrtObject {
   @tenantId()
-  tenantId: string = '';
+  tenantId?: string;
 
   metricKey: string = '';
   quantity: number = 0.0;

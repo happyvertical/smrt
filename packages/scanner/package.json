@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-scanner",
-  "version": "0.27.11",
+  "version": "0.27.12",
   "description": "High-performance TypeScript scanner using OXC for SMRT manifest generation",
   "author": "HappyVertical",
   "type": "module",
@@ -54,6 +54,7 @@
     "build:watch": "vite build --watch",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "rm -rf dist"
   },
   "publishConfig": {

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-languages",
-  "version": "0.27.11",
+  "version": "0.27.12",
   "description": "Code-first language strings with config + tenant overrides and AI auto-translation for SMRT",
   "type": "module",
   "main": "./dist/index.js",
@@ -34,6 +34,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-types",
-  "version": "0.27.11",
+  "version": "0.27.12",
   "description": "Shared type definitions for the HAVE SDK",
   "type": "module",
   "main": "./dist/index.js",
@@ -14,6 +14,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "vite build",
     "build:watch": "vite build --watch",
     "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",

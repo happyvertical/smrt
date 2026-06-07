@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve tenant scoped uuid metadata (#1439) (scanner)
+  - @happyvertical/smrt-scanner@0.27.12
+  - @happyvertical/smrt-config@0.27.12
+  - @happyvertical/smrt-types@0.27.12
+
 ## 0.27.11
 
 ### Patch Changes
