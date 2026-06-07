@@ -16,9 +16,11 @@
  * These exports feed static-site-generation (SSG) artifacts that are typically
  * served publicly, so the cost of leaking a secret is far higher than the cost
  * of over-redacting a benign key. We therefore **bias toward over-redaction**:
- * the patterns are case-insensitive *substring* matches (no word boundaries) so
- * they catch every common casing/separator convention — `apiKey`, `api_key`,
- * `API-KEY`, `apikey`, etc.
+ * the patterns are mostly case-insensitive *substring* matches (no word
+ * boundaries) so they catch every common casing/separator convention —
+ * `apiKey`, `api_key`, `API-KEY`, `apikey`, etc. A few are deliberately scoped
+ * to avoid benign collisions: `\bcert\b` (not `concert`), and `oauth` /
+ * `authorization` rather than a bare `auth` (which would hit `author`/`authors`).
  *
  * The previous implementation used `\b` word boundaries (e.g. `/\bauth\b/i`,
  * `/\bkey\b$/i`). In JS regex `\b` sits between a word char and a non-word char,
@@ -40,7 +42,14 @@ const SECRET_PATTERNS = [
   /token/i,
   /credential/i,
   /private/i,
-  /auth/i, // covers auth, authorization, oauth, auth_token, authToken
+  // NB: not a bare /auth/i — that also matches benign `author`/`authors`
+  // metadata (common in site/content/agent config). The segment-anchored form
+  // strips a key literally named `auth` (and `auth_token`, `x_auth`,
+  // `oauth_token`) without hitting `author`; `oauth`/`authorization` cover the
+  // no-separator camelCase cases. (authToken/authSecret also hit /token//secret/.)
+  /oauth/i,
+  /authorization/i,
+  /(^|[_-])auth([_-]|$)/i,
   /cookie/i,
   /salt/i,
   /passphrase/i,

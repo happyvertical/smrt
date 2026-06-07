@@ -27,7 +27,7 @@ function deepMerge<T extends Record<string, any>>(
 ): T {
   const result = { ...target };
 
-  for (const key in source) {
+  for (const key of Object.keys(source)) {
     // Guard against prototype pollution when merging untrusted/DB-exported
     // input: never write to __proto__/constructor/prototype keys.
     if (key === '__proto__' || key === 'constructor' || key === 'prototype') {

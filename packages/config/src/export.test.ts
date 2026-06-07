@@ -137,6 +137,10 @@ describe('sanitizeConfig — secret-key stripping (issue #1357)', () => {
     'monkey',
     'description',
     'title',
+    // #1357 review (codex): the `auth` matcher must NOT redact benign author
+    // metadata (common in site/content/agent config exported for SSG).
+    'author',
+    'authors',
   ];
 
   it.each(benignKeys)('preserves benign key %p', (key) => {
