@@ -32,7 +32,8 @@
     "build": "vite build --mode library",
     "build:watch": "vite build --mode library --watch",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@happyvertical/smrt-assets": "workspace:*",

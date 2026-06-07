@@ -9,6 +9,7 @@
  *   - `files` allowlist: must include "AGENTS.md" and "CLAUDE.md" shim
  *   - vitest.config.ts presence + smrtVitestPlugin usage
  *   - no `--passWithNoTests` in test scripts (allowlist for templates)
+ *   - `typecheck` script presence (allowlist for plain-JS templates)
  *
  * Exit code: 0 if all packages pass, 1 if any violation. Prints a report
  * grouped by package.
@@ -62,6 +63,19 @@ const EXEMPTIONS = {
     'products',
     'template-sveltekit',
     'template-site-static-json',
+  ]),
+  // Packages that legitimately ship without a `typecheck` script. Templates
+  // are plain-JS scaffolding wrappers (`./index.js`) with no buildable
+  // TypeScript source at the package root; their typecheck obligation lives in
+  // the scaffolded `template/package.json` (which ships the svelte-kit sync +
+  // tsc + svelte-check form per docs/content/standards.md §10).
+  noTypecheckScript: new Set([
+    'template-sveltekit',
+    'template-site-static-json',
+    // TODO(#1370): products is the triple-consumption reference; its app-mode
+    // entry files (Vite virtual modules, Bun globals, runes) don't resolve under
+    // plain tsc. Re-add a typecheck script once #1370 makes it green.
+    'products',
   ]),
 };
 
@@ -270,6 +284,18 @@ function checkPackage(name) {
       if (script.includes('--project')) continue;
       violations.push(
         `scripts.${key} uses --passWithNoTests — write at least one real test`,
+      );
+    }
+  }
+
+  // 8. typecheck script presence. Every package must ship a `typecheck`
+  //    script so `turbo typecheck` is a meaningful, repo-wide gate. See
+  //    EXEMPTIONS.noTypecheckScript for documented carve-outs (templates).
+  if (!EXEMPTIONS.noTypecheckScript.has(name)) {
+    if (!json.scripts || typeof json.scripts.typecheck !== 'string') {
+      violations.push(
+        'scripts.typecheck is missing — add "tsc --noEmit -p tsconfig.json" ' +
+          '(packages with a ./svelte export must also run svelte-check)',
       );
     }
   }
