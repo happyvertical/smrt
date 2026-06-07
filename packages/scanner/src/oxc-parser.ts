@@ -854,10 +854,19 @@ function extractClassDeclaration(
   // Extract decorators
   const decorators = node.decorators || [];
   const smrtDecorator = decorators.find((d) => isSmrtDecorator(d));
+  const tenantScopedDecorator = decorators.find((d) =>
+    isNamedDecorator(d, 'TenantScoped'),
+  );
   const hasSmartDecorator = !!smrtDecorator;
-  const decoratorConfig = smrtDecorator
+  const smrtConfig = smrtDecorator
     ? extractDecoratorConfig(smrtDecorator, sourceText)
     : null;
+  const decoratorConfig = tenantScopedDecorator
+    ? {
+        ...(smrtConfig ?? {}),
+        tenantScoped: extractDecoratorConfig(tenantScopedDecorator, sourceText),
+      }
+    : smrtConfig;
 
   // Extract extends clause
   const { extendsClause, extendsTypeArg } = extractExtendsClause(
@@ -901,18 +910,22 @@ function extractClassDeclaration(
  * Check if a decorator is @smrt()
  */
 function isSmrtDecorator(decorator: Decorator): boolean {
+  return isNamedDecorator(decorator, 'smrt');
+}
+
+function isNamedDecorator(decorator: Decorator, name: string): boolean {
   const expr = decorator.expression;
 
-  // @smrt() - CallExpression
+  // @decoratorName() - CallExpression
   if (expr.type === 'CallExpression') {
     const callee = expr.callee;
-    if (callee.type === 'Identifier' && callee.name === 'smrt') {
+    if (callee.type === 'Identifier' && callee.name === name) {
       return true;
     }
   }
 
-  // @smrt - Identifier (no parentheses)
-  if (expr.type === 'Identifier' && expr.name === 'smrt') {
+  // @decoratorName - Identifier (no parentheses)
+  if (expr.type === 'Identifier' && expr.name === name) {
     return true;
   }
 

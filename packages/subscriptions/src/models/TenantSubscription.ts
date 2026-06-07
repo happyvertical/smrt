@@ -13,7 +13,7 @@ import { parseJsonObject, stringifyJson } from '../utils.js';
 })
 export class TenantSubscription extends SmrtObject {
   @tenantId()
-  tenantId: string = '';
+  tenantId?: string;
 
   @foreignKey('SubscriptionPlan')
   planId: string = '';
