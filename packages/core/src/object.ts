@@ -25,7 +25,12 @@ import {
 } from './tools/tool-executor';
 import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
 
-const logger = createLogger({ level: 'info' });
+// DEBUG_STI raises the level to 'debug' so the env-gated STI hydration traces
+// below (logger.debug, inside `if (process.env.DEBUG_STI)` guards) actually emit;
+// otherwise they're filtered at the default 'info' level.
+const logger = createLogger({
+  level: process.env.DEBUG_STI ? 'debug' : 'info',
+});
 
 /**
  * Validate that _meta_type matches the expected class (Issue #713)
