@@ -109,8 +109,6 @@ function updateValue(start: string, end: string) {
 async function parseNaturalLanguageRange(
   text: string,
 ): Promise<{ start: string; end: string } | null> {
-  console.log('[SMRTDateRange] Parsing text:', text);
-
   // Dynamically import chrono-node only when needed
   let chrono: typeof import('chrono-node');
   try {
@@ -535,7 +533,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
     background: transparent;
     border: none;
     border-radius: 4px;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
     flex-shrink: 0;

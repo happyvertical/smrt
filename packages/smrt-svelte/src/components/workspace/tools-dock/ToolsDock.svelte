@@ -369,7 +369,8 @@
     overflow: hidden;
     border-left: 1px solid var(--smrt-color-outline-variant, #30343a);
     border-right: 1px solid var(--smrt-color-outline-variant, #30343a);
-    box-shadow: -24px 0 40px rgba(0, 0, 0, 0.18);
+    box-shadow: -24px 0 40px
+      color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     transform: translateX(calc(100% + var(--tools-dock-rail-width)));
     opacity: 0;
     pointer-events: none;
@@ -519,7 +520,7 @@
       z-index: 65;
       padding: 0;
       border: 0;
-      background: rgba(0, 0, 0, 0.34);
+      background: var(--smrt-color-scrim);
       cursor: default;
     }
 

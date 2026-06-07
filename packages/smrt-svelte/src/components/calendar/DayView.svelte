@@ -185,10 +185,10 @@ function getTypeLabel(type: string): string {
 
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .day-view {
-      --view-bg: #242424;
-      --view-border: #3a3a3a;
-      --header-bg: #2e2e2e;
-      --card-hover: #3a3a3a;
+      --view-bg: var(--smrt-color-surface, #242424);
+      --view-border: var(--smrt-color-outline-variant, #3a3a3a);
+      --header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+      --card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
     }
   }
 

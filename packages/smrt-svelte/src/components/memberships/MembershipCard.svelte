@@ -66,8 +66,8 @@ function formatDate(date: Date | string | null | undefined): string {
 <style>
   .membership-card {
     padding: 1rem;
-    background: white;
-    border: 1px solid #e5e7eb;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.5rem;
   }
 
@@ -86,7 +86,7 @@ function formatDate(date: Date | string | null | undefined): string {
 
   .tenant-name {
     font-weight: 500;
-    color: #111827;
+    color: var(--smrt-color-on-surface);
   }
 
   .status {
@@ -98,18 +98,18 @@ function formatDate(date: Date | string | null | undefined): string {
   }
 
   .status-active {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
   }
 
   .status-pending {
-    background: #fef3c7;
-    color: #92400e;
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
   }
 
   .status-suspended {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .role-info {
@@ -122,12 +122,12 @@ function formatDate(date: Date | string | null | undefined): string {
     justify-content: space-between;
     margin-top: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid var(--smrt-color-surface-container);
   }
 
   .date {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .actions {
@@ -138,23 +138,23 @@ function formatDate(date: Date | string | null | undefined): string {
   .action-btn {
     padding: 0.25rem 0.5rem;
     background: none;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--smrt-color-outline);
     border-radius: 0.25rem;
     font-size: 0.75rem;
-    color: #374151;
+    color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }
 
   .action-btn:hover {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
   }
 
   .action-btn.danger {
-    color: #dc2626;
-    border-color: #fecaca;
+    color: var(--smrt-color-error);
+    border-color: var(--smrt-color-error);
   }
 
   .action-btn.danger:hover {
-    background: #fef2f2;
+    background: var(--smrt-color-error-container);
   }
 </style>

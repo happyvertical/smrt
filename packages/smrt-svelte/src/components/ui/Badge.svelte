@@ -49,18 +49,18 @@ const { variant = 'default', size = 'md', children, ...rest }: Props = $props();
   }
 
   .success {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
   }
 
   .warning {
-    background: #fff3e0;
-    color: #e65100;
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
   }
 
   .error {
-    background: #ffebee;
-    color: #c62828;
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .info {
