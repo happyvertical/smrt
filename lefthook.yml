@@ -111,6 +111,16 @@ pre-push:
 
         Your code has formatting issues. Run `npm run format` to fix them.
 
+    color-literals:
+      # Bans raw color literals in component CSS. Strict for smrt-svelte,
+      # report-only elsewhere until later phases of #1373. Node-only, no deps.
+      run: node scripts/check-color-literals.mjs
+      fail_text: |
+        ❌ Raw color literals found in a strict UI package!
+
+        Replace hardcoded colors with semantic --smrt-color-* tokens.
+        Run: node scripts/check-color-literals.mjs
+
     validate-all-workflows:
       run: |
         echo "🔍 Validating ALL workflow files before push..."

@@ -22,6 +22,7 @@
     "validate-build": "node scripts/validate-build.js",
     "check:standards": "node scripts/check-standards.mjs",
     "check:svelte-tokens": "node scripts/check-svelte-tokens.mjs",
+    "check:color-literals": "node scripts/check-color-literals.mjs",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "changeset": "changeset",
     "changeset:auto": "npx tsx scripts/auto-changeset.ts",

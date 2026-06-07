@@ -211,7 +211,7 @@ async function handleSave(slotId: string, config: unknown) {
 		margin: 0;
 		font-size: var(--smrt-typography-headline-medium-size, 1.5rem);
 		font-weight: 600;
-		color: #1e293b;
+		color: var(--smrt-color-on-surface);
 	}
 
 	.agent-subtitle {
@@ -227,8 +227,8 @@ async function handleSave(slotId: string, config: unknown) {
 		justify-content: center;
 		padding: 4rem 2rem;
 		text-align: center;
-		background: #f8fafc;
-		border: 1px dashed #e2e8f0;
+		background: var(--smrt-color-surface-variant);
+		border: 1px dashed var(--smrt-color-outline-variant);
 		border-radius: 8px;
 		min-height: 300px;
 	}

@@ -890,7 +890,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       display: block;
       position: fixed;
       inset: 0;
-      background: rgba(3, 7, 14, 0.55);
+      background: var(--smrt-color-scrim);
       opacity: 0;
       pointer-events: none;
       transition: opacity 180ms ease;
@@ -934,7 +934,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       pointer-events: auto;
       position: fixed;
       inset: 0;
-      background: rgba(3, 7, 14, 0.4);
+      background: var(--smrt-color-scrim);
       border: 0;
       z-index: 21;
     }

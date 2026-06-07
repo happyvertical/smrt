@@ -280,7 +280,7 @@ function handleInput(e: Event) {
   }
 
   .smrt-input.invalid:focus {
-    border-color: #ef4444;
+    border-color: var(--smrt-color-error);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error, #ba1a1a) 10%, transparent);
   }
 

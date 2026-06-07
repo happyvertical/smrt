@@ -486,7 +486,7 @@ function handleUnitChange(e: Event) {
   }
 
   .unit-select:disabled {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     cursor: not-allowed;
   }
 
