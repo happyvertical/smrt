@@ -2,7 +2,7 @@ import type { AIClientOptions } from '@happyvertical/ai';
 import { type AIClient, getAI } from '@happyvertical/ai';
 import type { FilesystemAdapterOptions } from '@happyvertical/files';
 import { FilesystemAdapter } from '@happyvertical/files';
-import type { LoggerConfig } from '@happyvertical/logger';
+import { createLogger, type LoggerConfig } from '@happyvertical/logger';
 import type {
   AiTokenUsage,
   AiUsageHandler,
@@ -42,6 +42,8 @@ import { ALL_SYSTEM_TABLES, SMRT_SCHEMA_VERSION } from './system/schema.js';
 
 const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
   "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
+
+const logger = createLogger({ level: 'info' });
 
 type DatabaseWithConfig = DatabaseInterface & {
   config?: {
@@ -902,7 +904,7 @@ export class SmrtClass {
         await tx.rollback();
       }
     } catch (rollbackError) {
-      console.warn(
+      logger.warn(
         `[smrt] Failed to rollback system table bootstrap transaction: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`,
       );
     }
@@ -976,14 +978,14 @@ export class SmrtClass {
             vector,
           );
         } else {
-          console.warn(
+          logger.warn(
             '[smrt] Embedding storage set to "native" but database has no vector capability. Falling back to JSON storage.',
           );
         }
       }
     } catch (error) {
       // Don't fail system table initialization for vector setup errors
-      console.warn(
+      logger.warn(
         `[smrt] Failed to initialize vector storage: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
@@ -1389,7 +1391,7 @@ export class SmrtClass {
 
     for (const result of results) {
       if (result.status === 'rejected') {
-        console.warn(
+        logger.warn(
           `[smrt] AI usage handler failed for ${normalizedEvent.provider}:${normalizedEvent.model}: ${
             result.reason instanceof Error
               ? result.reason.message

@@ -1,5 +1,60 @@
 # @happyvertical/smrt-core
 
+## 0.27.13
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: typecheck script rollout + turbo typecheck gate (#1375) (#1437) (repo)
+  - @happyvertical/smrt-scanner@0.27.13
+  - @happyvertical/smrt-config@0.27.13
+  - @happyvertical/smrt-types@0.27.13
+
+## 0.27.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve tenant scoped uuid metadata (#1439) (scanner)
+  - @happyvertical/smrt-scanner@0.27.12
+  - @happyvertical/smrt-config@0.27.12
+  - @happyvertical/smrt-types@0.27.12
+
+## 0.27.11
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] add SMRT subscriptions package
+  - @happyvertical/smrt-scanner@0.27.11
+  - @happyvertical/smrt-config@0.27.11
+  - @happyvertical/smrt-types@0.27.11
+
+## 0.27.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - emit consumed design tokens so themes resolve (#1431) (#1434) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.10
+  - @happyvertical/smrt-config@0.27.10
+  - @happyvertical/smrt-types@0.27.10
+
+## 0.27.9
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: add dim-9 logging enforcement ratchet (noConsole) (#1433) (rubric)
+  - @happyvertical/smrt-scanner@0.27.9
+  - @happyvertical/smrt-config@0.27.9
+  - @happyvertical/smrt-types@0.27.9
+
 ## 0.27.8
 
 ### Patch Changes

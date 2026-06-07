@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-gnode",
-  "version": "0.27.8",
+  "version": "0.27.13",
   "description": "SMRT federation library for building federated local knowledge bases (gnodes)",
   "author": "HappyVertical",
   "type": "module",
@@ -31,6 +31,7 @@
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "vite build",
     "build:watch": "vite build --watch",
     "docs": "typedoc --plugin typedoc-plugin-markdown --out docs --entryPoints ./src/index.ts --tsconfig ./tsconfig.json --excludePrivate --excludeInternal --hideGenerator --fileExtension .md --readme none --categorizeByGroup false --includeVersion false --hidePageHeader --hidePageTitle false --outputFileStrategy modules",

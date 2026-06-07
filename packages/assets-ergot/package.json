@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-assets-ergot",
-  "version": "0.27.8",
+  "version": "0.27.13",
   "description": "Ergot-backed processing, search, and workflow adapter for SMRT assets",
   "type": "module",
   "main": "./dist/index.js",
@@ -20,7 +20,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@happyvertical/smrt-assets": "workspace:*"

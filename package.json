@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.27.8",
+  "version": "0.27.13",
   "scripts": {
     "format": "turbo format",
     "format-check": "turbo format-check",
@@ -21,6 +21,7 @@
     "dev": "turbo dev --parallel",
     "validate-build": "node scripts/validate-build.js",
     "check:standards": "node scripts/check-standards.mjs",
+    "check:svelte-tokens": "node scripts/check-svelte-tokens.mjs",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "changeset": "changeset",
     "changeset:auto": "npx tsx scripts/auto-changeset.ts",

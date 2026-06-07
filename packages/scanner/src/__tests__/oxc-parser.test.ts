@@ -281,6 +281,28 @@ describe('OXC Parser', () => {
       expect(tagsField?.decorators[0].name).toBe('manyToMany');
     });
 
+    it('should merge @TenantScoped config into the class decorator config', () => {
+      const source = `
+        @TenantScoped({ mode: 'optional', allowSuperAdminBypass: true })
+        @smrt({ tableName: 'documents' })
+        class Document extends SmrtObject {
+          @tenantId({ nullable: true })
+          tenantId: string | null = null;
+        }
+      `;
+
+      const result = parseSource(source);
+
+      expect(result.classes).toHaveLength(1);
+      expect(result.classes[0].decoratorConfig).toMatchObject({
+        tableName: 'documents',
+        tenantScoped: {
+          mode: 'optional',
+          allowSuperAdminBypass: true,
+        },
+      });
+    });
+
     it('should handle parse errors gracefully', () => {
       const source = `
         @smrt()

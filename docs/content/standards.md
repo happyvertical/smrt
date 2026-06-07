@@ -123,7 +123,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - `@types/node` always `catalog:`
   - `vite`, `vitest`, `vite-plugin-dts`, `typescript` come from root devDependencies — do not redeclare per-package unless overriding
   - Pinning style: prefer caret (`^X.Y.Z`) for third-party deps; exact pins (`X.Y.Z`) only for tools where minor bumps cause breakage (document why)
-- **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. No `lint` or `format` scripts — those are root-level via Biome.
+- **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. No `lint` or `format` scripts — those are root-level via Biome. The presence of `typecheck` is enforced by `scripts/check-standards.mjs`; the only carve-outs are the plain-JS template wrappers (`template-sveltekit`, `template-site-static-json`), whose typecheck obligation lives in their scaffolded `template/package.json` (see §10).
 - **`peerDependencies`**:
   - Svelte peer always `svelte: ^5.18.0` for packages shipping UI
   - Optional peers explicitly marked in `peerDependenciesMeta`
@@ -444,7 +444,7 @@ This is a snapshot of the monorepo as of the standards audit. Numbers reflect no
 | Wrong exports map condition order (`{import, types}`) | config, cli, types |
 | Bare-string export targets | scanner |
 | `@types/node` pinned to `24.10.9` (vs catalog `25.0.9`) | core, affiliates, prompts, features |
-| Missing `typecheck` script | ~33 packages (only ~8 have one) |
+| Missing `typecheck` script | resolved (#1375) — every package ships one except `products` (carved out in check-standards EXEMPTIONS pending #1370) |
 | Missing `prepack` / `verify:pack` | secrets, sites, properties, social, video, voice, ads, affiliates, ledgers, smrt-svelte, smrt-dev-mcp |
 | Inconsistent `author` field | ~all (3 different forms in use) |
 | Missing `repository` field | ~39 of 41 |

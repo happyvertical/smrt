@@ -108,8 +108,8 @@ const {
     padding: var(--smrt-spacing-6);
     border-top: 1px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface-container-low);
-    border-bottom-left-radius: var(--radius-md);
-    border-bottom-right-radius: var(--radius-md);
+    border-bottom-left-radius: var(--smrt-radius-medium);
+    border-bottom-right-radius: var(--smrt-radius-medium);
   }
 
   .padding-sm .card-footer {
