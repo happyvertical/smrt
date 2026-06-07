@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.11
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] add SMRT subscriptions package
+  - @happyvertical/smrt-scanner@0.27.11
+  - @happyvertical/smrt-config@0.27.11
+  - @happyvertical/smrt-types@0.27.11
+
 ## 0.27.10
 
 ### Patch Changes
