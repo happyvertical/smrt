@@ -87,12 +87,18 @@ export default defineConfig({
 ### SSG-safe export
 
 ```typescript
-import { exportConfig, sanitizeConfig } from '@happyvertical/smrt-config';
+import { loadConfig, exportConfig, sanitizeConfig } from '@happyvertical/smrt-config';
+
+const config = await loadConfig();
 
 // Export config without secrets (safe for static site generation)
-const safeConfig = exportConfig({ includeSecrets: false });
+const safeJson = exportConfig(config, { includeSecrets: false });
 
-// Or manually sanitize — strips keys matching: apiKey, password, secret, token, credential, private, auth, key
+// Or manually sanitize — strips secret-bearing keys (case-insensitive, across
+// camelCase / snake_case / kebab / UPPER variants): apiKey, password, secret,
+// token, credential, private, oauth, authorization, accessKey, signingKey, encryptionKey,
+// connectionString, dbUrl, cookie, salt, cert, and similar. Biases toward
+// over-redaction; pass `{ includeSecrets: true }` to opt out.
 const sanitized = sanitizeConfig(config);
 ```
 

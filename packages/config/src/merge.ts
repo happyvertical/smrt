@@ -25,10 +25,18 @@ function deepMerge<T extends Record<string, any>>(
   target: T,
   source: Partial<T>,
 ): T {
-  const result = { ...target };
+  // Typed as Record<string, unknown> (not the generic T) so the own-key writes
+  // below are well-typed — indexing a generic T for *write* is a TS2862 error.
+  const result: Record<string, unknown> = { ...target };
+  const src = source as Record<string, unknown>;
 
-  for (const key in source) {
-    const sourceValue = source[key];
+  for (const key of Object.keys(src)) {
+    // Guard against prototype pollution when merging untrusted/DB-exported
+    // input: never write to __proto__/constructor/prototype keys.
+    if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+      continue;
+    }
+    const sourceValue = src[key];
     const targetValue = result[key];
 
     if (
@@ -42,13 +50,13 @@ function deepMerge<T extends Record<string, any>>(
       result[key] = deepMerge(
         targetValue as Record<string, any>,
         sourceValue as Record<string, any>,
-      ) as T[Extract<keyof T, string>];
+      );
     } else if (sourceValue !== undefined && sourceValue !== null) {
-      result[key] = sourceValue as T[Extract<keyof T, string>];
+      result[key] = sourceValue;
     }
   }
 
-  return result;
+  return result as T;
 }
 
 /**
