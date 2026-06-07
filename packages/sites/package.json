@@ -24,7 +24,8 @@
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",

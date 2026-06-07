@@ -30,7 +30,8 @@
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
     "@happyvertical/ai": "catalog:",

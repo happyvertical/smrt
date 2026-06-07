@@ -99,6 +99,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json && svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js .",
     "clean": "rm -rf dist src/lib/types/smrt-generated",
     "prepare": "test -f ../smrt/dist/vite-plugin/index.js && npm run build:lib || echo 'Skipping products build:lib (smrt vite-plugin not available yet)'"
