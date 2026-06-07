@@ -34,7 +34,8 @@
       "recommended": true,
       "suspicious": {
         "noExplicitAny": "info",
-        "noArrayIndexKey": "warn"
+        "noArrayIndexKey": "warn",
+        "noConsole": "warn"
       },
       "correctness": {
         "noUnusedVariables": "warn",
@@ -78,7 +79,8 @@
         "rules": {
           "suspicious": {
             "noExplicitAny": "off",
-            "noArrayIndexKey": "off"
+            "noArrayIndexKey": "off",
+            "noConsole": "off"
           },
           "correctness": {
             "noUnusedVariables": "off",
@@ -166,11 +168,44 @@
       "linter": {
         "rules": {
           "suspicious": {
-            "noExplicitAny": "off"
+            "noExplicitAny": "off",
+            "noConsole": "off"
           },
           "correctness": {
             "noUnusedVariables": "off",
             "noUnusedFunctionParameters": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/*/bin/**/*.js",
+        "packages/*/scripts/**/*.{js,ts}",
+        "packages/*/playground/**/*.{js,ts}",
+        "scripts/**/*.{js,ts}",
+        "docs/src/**/*.{js,ts,tsx,jsx}"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
+        "packages/core/src/object.ts",
+        "packages/core/src/collection.ts",
+        "packages/core/src/registry.ts",
+        "packages/core/src/class.ts",
+        "packages/core/src/dispatch/bus.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "error"
           }
         }
       }

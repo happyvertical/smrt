@@ -224,8 +224,13 @@ describe('SmrtClass AI usage tracking', () => {
       timestamp: new Date('2026-03-12T02:30:00.000Z'),
     });
 
+    // The warning is routed through @happyvertical/logger (S14 #1432), whose
+    // console transport prefixes the level (e.g. "[WARN] "), so assert on the
+    // message substring rather than an exact-match string.
     expect(warnSpy).toHaveBeenCalledWith(
-      '[smrt] AI usage handler failed for openai:gpt-4o-mini: handler exploded',
+      expect.stringContaining(
+        '[smrt] AI usage handler failed for openai:gpt-4o-mini: handler exploded',
+      ),
     );
   });
 
