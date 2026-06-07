@@ -444,7 +444,7 @@ This is a snapshot of the monorepo as of the standards audit. Numbers reflect no
 | Wrong exports map condition order (`{import, types}`) | config, cli, types |
 | Bare-string export targets | scanner |
 | `@types/node` pinned to `24.10.9` (vs catalog `25.0.9`) | core, affiliates, prompts, features |
-| Missing `typecheck` script | resolved (#1375) — every package ships one; gate excludes `products` pending #1370 |
+| Missing `typecheck` script | resolved (#1375) — every package ships one except `products` (carved out in check-standards EXEMPTIONS pending #1370) |
 | Missing `prepack` / `verify:pack` | secrets, sites, properties, social, video, voice, ads, affiliates, ledgers, smrt-svelte, smrt-dev-mcp |
 | Inconsistent `author` field | ~all (3 different forms in use) |
 | Missing `repository` field | ~39 of 41 |

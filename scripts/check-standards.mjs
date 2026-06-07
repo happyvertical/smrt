@@ -72,6 +72,10 @@ const EXEMPTIONS = {
   noTypecheckScript: new Set([
     'template-sveltekit',
     'template-site-static-json',
+    // TODO(#1370): products is the triple-consumption reference; its app-mode
+    // entry files (Vite virtual modules, Bun globals, runes) don't resolve under
+    // plain tsc. Re-add a typecheck script once #1370 makes it green.
+    'products',
   ]),
 };
 
