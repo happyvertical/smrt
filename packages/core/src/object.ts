@@ -1,6 +1,7 @@
 // import type { AIMessageOptions } from '@happyvertical/ai';
 
 import type { AITool } from '@happyvertical/ai';
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import { ContentHasher } from './embeddings/hash';
@@ -23,6 +24,13 @@ import {
   type ToolCallResult,
 } from './tools/tool-executor';
 import { fieldsFromClass, tableNameFromClass, toSnakeCase } from './utils';
+
+// DEBUG_STI raises the level to 'debug' so the env-gated STI hydration traces
+// below (logger.debug, inside `if (process.env.DEBUG_STI)` guards) actually emit;
+// otherwise they're filtered at the default 'info' level.
+const logger = createLogger({
+  level: process.env.DEBUG_STI ? 'debug' : 'info',
+});
 
 /**
  * Validate that _meta_type matches the expected class (Issue #713)
@@ -106,7 +114,7 @@ function warnIfSkipRehydrateSet(): void {
   if (didWarnSkipRehydrate) return;
   didWarnSkipRehydrate = true;
   if (process.env.SMRT_SKIP_STI_REHYDRATE !== undefined) {
-    console.warn(
+    logger.warn(
       '[smrt] SMRT_SKIP_STI_REHYDRATE is set but has no effect since ' +
         'Release C (#1134). The flag is retired; unconditional STI ' +
         'descendant rehydration is the only behavior. Remove the env ' +
@@ -690,7 +698,7 @@ export class SmrtObject extends SmrtClass {
     const className = this.getResolvedClassName();
 
     if (process.env.DEBUG_STI) {
-      console.log('[loadDataFromDb] Loading:', {
+      logger.debug('[loadDataFromDb] Loading', {
         class: className,
         dataKeys: Object.keys(data),
         metaType: data._meta_type,
@@ -701,7 +709,7 @@ export class SmrtObject extends SmrtClass {
     const fields = await this.getFields();
 
     if (process.env.DEBUG_STI) {
-      console.log('[loadDataFromDb] Field definitions:', {
+      logger.debug('[loadDataFromDb] Field definitions', {
         class: className,
         fieldKeys: Object.keys(fields),
       });
@@ -721,7 +729,7 @@ export class SmrtObject extends SmrtClass {
     const isSTI = tableStrategy === 'sti';
 
     if (process.env.DEBUG_STI) {
-      console.log('[loadDataFromDb] After formatDataJs:', {
+      logger.debug('[loadDataFromDb] After formatDataJs', {
         class: className,
         isSTI,
         formattedDataKeys: Object.keys(formattedData),
@@ -756,7 +764,7 @@ export class SmrtObject extends SmrtClass {
     // No additional processing needed
 
     if (process.env.DEBUG_STI) {
-      console.log('[loadDataFromDb] Starting field hydration:', {
+      logger.debug('[loadDataFromDb] Starting field hydration', {
         class: className,
         fieldCount: Object.keys(fields).length,
       });
@@ -786,7 +794,7 @@ export class SmrtObject extends SmrtClass {
           const value = formattedData[field];
 
           if (process.env.DEBUG_STI && value !== undefined) {
-            console.log(`[loadDataFromDb] Setting field '${field}':`, {
+            logger.debug(`[loadDataFromDb] Setting field '${field}'`, {
               value,
               valueType: typeof value,
             });
@@ -797,14 +805,14 @@ export class SmrtObject extends SmrtClass {
         } else {
           skippedCount++;
           if (process.env.DEBUG_STI) {
-            console.log(`[loadDataFromDb] Skipping readonly field '${field}'`);
+            logger.debug(`[loadDataFromDb] Skipping readonly field '${field}'`);
           }
         }
       }
     }
 
     if (process.env.DEBUG_STI) {
-      console.log('[loadDataFromDb] Hydration complete:', {
+      logger.debug('[loadDataFromDb] Hydration complete', {
         class: className,
         hydratedCount,
         skippedCount,
@@ -1436,7 +1444,7 @@ export class SmrtObject extends SmrtClass {
         const usesSTI = tableStrategy === 'sti';
 
         if (hasOverride && usesSTI) {
-          console.warn(
+          logger.warn(
             `[SMRT STI Warning] ${this.constructor.name} overrides toJSON() but uses STI.\n` +
               `Ensure super.toJSON() is called or _meta_type is set manually.\n` +
               `This can cause "Missing _meta_type discriminator" errors.\n` +
@@ -1577,9 +1585,9 @@ export class SmrtObject extends SmrtClass {
           if (isStale) {
             // Generate embeddings in background to avoid blocking save
             this.generateEmbeddings().catch((error) => {
-              console.warn(
-                `Failed to auto-generate embeddings for ${this.constructor.name}:`,
-                error instanceof Error ? error.message : error,
+              logger.warn(
+                `Failed to auto-generate embeddings for ${this.constructor.name}`,
+                { error: error instanceof Error ? error.message : error },
               );
             });
           }
@@ -2010,7 +2018,7 @@ export class SmrtObject extends SmrtClass {
       if (typeof method === 'function') {
         await method.call(this);
       } else {
-        console.warn(
+        logger.warn(
           `Hook method '${hook}' not found on ${this.constructor.name}`,
         );
       }
