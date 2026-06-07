@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - emit consumed design tokens so themes resolve (#1431) (#1434) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.10
+  - @happyvertical/smrt-config@0.27.10
+  - @happyvertical/smrt-types@0.27.10
+
 ## 0.27.9
 
 ### Patch Changes
