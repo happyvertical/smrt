@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.14
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: logging ratchet scaffolding + core runtime migration (S14 #1432 phase 1) (#1438) (core)
+  - @happyvertical/smrt-scanner@0.27.14
+  - @happyvertical/smrt-config@0.27.14
+  - @happyvertical/smrt-types@0.27.14
+
 ## 0.27.13
 
 ### Patch Changes
