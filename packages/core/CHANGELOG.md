@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.16
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals + color-literal ratchet (S1 #1373 phase 1) (#1443) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.16
+  - @happyvertical/smrt-config@0.27.16
+  - @happyvertical/smrt-types@0.27.16
+
 ## 0.27.15
 
 ### Patch Changes
