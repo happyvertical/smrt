@@ -102,18 +102,37 @@ function stripScriptBlocks(source) {
 }
 
 /**
- * Whether the literal at `index` on `line` sits inside a `var(..., literal)`
- * fallback. We look back to the nearest unbalanced `var(` and require a comma
- * after it — i.e. the literal is the fallback argument.
+ * Blank out whole `var(...)` calls — balanced parens, across multiple lines —
+ * so literals used as `var(--token, #fallback)` fallbacks are never flagged,
+ * regardless of how the call is wrapped by the formatter. Newlines are
+ * preserved so reported line numbers stay accurate.
  */
-function isVarFallback(line, index) {
-  const before = line.slice(0, index);
-  const lastVar = before.lastIndexOf('var(');
-  if (lastVar === -1) return false;
-  const seg = before.slice(lastVar);
-  const opens = (seg.match(/\(/g) || []).length;
-  const closes = (seg.match(/\)/g) || []).length;
-  return opens > closes && seg.includes(',');
+function stripVarCalls(source) {
+  let out = '';
+  let i = 0;
+  while (i < source.length) {
+    if (source.startsWith('var(', i)) {
+      let depth = 0;
+      let j = i + 3; // points at the '('
+      for (; j < source.length; j++) {
+        const ch = source[j];
+        if (ch === '(') depth++;
+        else if (ch === ')') {
+          depth--;
+          if (depth === 0) {
+            j++;
+            break;
+          }
+        }
+      }
+      out += source.slice(i, j).replace(/[^\n]/g, ' ');
+      i = j;
+    } else {
+      out += source[i];
+      i += 1;
+    }
+  }
+  return out;
 }
 
 /**
@@ -134,12 +153,14 @@ function stripComments(source) {
 function findViolations(file, source) {
   let text = file.endsWith('.svelte') ? stripScriptBlocks(source) : source;
   text = stripComments(text);
+  // Blank out var(...) calls (multi-line aware) so allowed `var(--token,
+  // #fallback)` fallbacks are never flagged, however the call is wrapped.
+  text = stripVarCalls(text);
   const lines = text.split('\n');
   const hits = [];
   lines.forEach((line, i) => {
     for (const re of [HEX_RE, FUNC_RE]) {
       for (const m of line.matchAll(re)) {
-        if (isVarFallback(line, m.index)) continue;
         hits.push({ line: i + 1, value: m[0], snippet: line.trim().slice(0, 100) });
       }
     }
