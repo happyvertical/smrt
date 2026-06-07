@@ -125,6 +125,8 @@ function extractFieldsFromText(text: string): Record<string, unknown> {
   // Normalize text: remove commas, extra spaces
   const normalized = text.replace(/,/g, ' ').replace(/\s+/g, ' ').trim();
 
+  console.log('[SMRTForm] Normalized text:', normalized);
+
   // Build list of all field triggers for boundary detection
   const allTriggers: string[] = [];
   for (const f of fieldDefs) {
@@ -187,6 +189,7 @@ function extractFieldsFromText(text: string): Record<string, unknown> {
 
         if (value) {
           result[field.name] = value;
+          console.log(`[SMRTForm] Regex extracted ${field.name}:`, value);
           break; // Found value for this field, move to next
         }
       }
@@ -199,9 +202,13 @@ function extractFieldsFromText(text: string): Record<string, unknown> {
 // Extract fields from spoken text
 // Currently uses regex-only since small local LLMs produce unreliable output
 async function extractFields(text: string): Promise<Record<string, unknown>> {
+  console.log('[SMRTForm] Extracting fields from:', text);
+
   // Use regex extraction directly - fast and reliable
   // TODO: Add LLM enhancement when larger models are available
   const result = extractFieldsFromText(text);
+
+  console.log('[SMRTForm] Extracted:', result);
   return result;
 }
 
@@ -224,6 +231,7 @@ function resetSilenceTimer() {
   lastSpeechTime = Date.now();
   silenceTimer = setTimeout(() => {
     if (isFormListening) {
+      console.log('[SMRTForm] Silence timeout - stopping');
       stopFormListening();
     }
   }, silenceTimeout * 1000);
@@ -251,6 +259,11 @@ async function startAudioLevelMonitoring(stream: MediaStream) {
     const SPEECH_THRESHOLD = 20; // Lowered from 30 for better sensitivity
     let checksWithSpeech = 0;
 
+    console.log(
+      '[SMRTForm] Audio level monitoring started, AudioContext state:',
+      audioContext.state,
+    );
+
     audioLevelInterval = setInterval(() => {
       if (!analyser || !isFormListening) return;
 
@@ -260,6 +273,7 @@ async function startAudioLevelMonitoring(stream: MediaStream) {
       // Log periodically to debug
       checksWithSpeech++;
       if (checksWithSpeech % 10 === 0) {
+        console.log('[SMRTForm] Audio level avg:', average.toFixed(1));
       }
 
       if (average > SPEECH_THRESHOLD) {
@@ -267,7 +281,9 @@ async function startAudioLevelMonitoring(stream: MediaStream) {
         resetSilenceTimer();
       }
     }, 200); // Check every 200ms
-  } catch (err) {}
+  } catch (err) {
+    console.warn('[SMRTForm] Could not set up audio level monitoring:', err);
+  }
 }
 
 // Stop audio level monitoring
@@ -326,6 +342,7 @@ $effect(() => {
 
     // Check for "done" keyword
     if (checkForDoneKeyword(newText)) {
+      console.log('[SMRTForm] "Done" keyword detected - stopping');
       // Don't set isStopping here - let stopFormListening() do it after passing the guard
       stopFormListening();
     }
@@ -337,6 +354,7 @@ $effect(() => {
   // If form thinks we're listening but STT has stopped, handle it
   // Don't trigger during startup phase (isStarting) or shutdown phase (isStopping)
   if (isFormListening && !stt.isListening && !isStopping && !isStarting) {
+    console.log('[SMRTForm] STT stopped unexpectedly - handling end of speech');
     // Use setTimeout to avoid state update during render
     setTimeout(() => {
       if (isFormListening && !isStopping && !isStarting) {
@@ -347,12 +365,21 @@ $effect(() => {
 });
 
 async function toggleFormListening() {
+  console.log(
+    '[SMRTForm] toggleFormListening called, isFormListening:',
+    isFormListening,
+  );
+
   if (isFormListening) {
     await stopFormListening();
   } else {
     // Prevent immediate restart after stopping (UI might lag behind state)
     const timeSinceStop = Date.now() - lastStopTime;
     if (lastStopTime > 0 && timeSinceStop < RESTART_COOLDOWN_MS) {
+      console.log(
+        '[SMRTForm] Ignoring start - cooldown active, time since stop:',
+        timeSinceStop,
+      );
       return;
     }
     await startFormListening();
@@ -367,6 +394,7 @@ async function startFormListening() {
 
   // Initialize STT with selected adapter
   if (!stt.isReady || stt.adapterType !== sttAdapter) {
+    console.log(`[SMRTForm] Initializing STT adapter: ${sttAdapter}`);
     await stt.initialize({ type: sttAdapter });
   }
 
@@ -389,7 +417,9 @@ async function startFormListening() {
         audio: true,
       });
       startAudioLevelMonitoring(levelStream);
-    } catch (err) {}
+    } catch (err) {
+      console.warn('[SMRTForm] Could not get mic for level monitoring:', err);
+    }
   }
 
   await stt.start({ continuous: true, interimResults: true });
@@ -399,7 +429,14 @@ async function startFormListening() {
 }
 
 async function stopFormListening() {
+  console.log(
+    '[SMRTForm] stopFormListening called, isFormListening:',
+    isFormListening,
+    'isStopping:',
+    isStopping,
+  );
   if (!isFormListening || isStopping) {
+    console.log('[SMRTForm] stopFormListening returning early');
     return;
   }
   isStopping = true;
@@ -413,6 +450,7 @@ async function stopFormListening() {
 
   // Stop audio level monitoring
   stopAudioLevelMonitoring();
+  console.log('[SMRTForm] Audio monitoring stopped, calling stt.stop()');
 
   // IMPORTANT: Keep isFormListening = true until after stt.stop() completes
   // This allows the $effect to capture any final results
@@ -429,15 +467,19 @@ async function stopFormListening() {
   const textToExtract = (finalResult || spokenText || '')
     .replace(/\s*done\.?$/i, '')
     .trim();
+  console.log('[SMRTForm] Final text to extract:', textToExtract);
 
   if (textToExtract) {
     isExtracting = true;
     extractError = null;
 
     try {
+      console.log('[SMRTForm] Running final extraction...');
       const values = await extractFields(textToExtract);
+      console.log('[SMRTForm] Extracted values:', values);
       applyExtractedValues(values);
     } catch (err) {
+      console.error('[SMRTForm] Extraction error:', err);
       extractError =
         err instanceof Error ? err.message : 'Failed to extract fields';
     } finally {
@@ -445,11 +487,13 @@ async function stopFormListening() {
       isStopping = false;
     }
   } else {
+    console.log('[SMRTForm] No text to extract');
     isStopping = false;
   }
 
   // Record stop time to prevent immediate restart
   lastStopTime = Date.now();
+  console.log('[SMRTForm] Stop complete, cooldown started');
 }
 
 // Cleanup on destroy
@@ -625,8 +669,7 @@ function getFormData(): Record<string, unknown> {
   .mode-btn.active {
     background: var(--smrt-color-surface, #fff);
     color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: 0 1px 3px
-      color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent);
   }
 
   .form-listen-btn {
@@ -667,8 +710,7 @@ function getFormData(): Record<string, unknown> {
 
   @keyframes pulse-btn {
     0%, 100% {
-      box-shadow: 0 0 0 0
-        color-mix(in srgb, var(--smrt-color-success) 40%, transparent);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--smrt-color-success) 40%, transparent);
     }
     50% {
       box-shadow: 0 0 0 8px transparent;
@@ -703,8 +745,7 @@ function getFormData(): Record<string, unknown> {
     background: color-mix(in srgb, var(--smrt-color-primary, #166534) 90%, transparent);
     color: white;
     font-size: 0.875rem;
-    box-shadow: 0 -2px 12px
-      color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
+    box-shadow: 0 -2px 12px color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
     z-index: 9999;
     text-align: center;
     backdrop-filter: blur(8px);

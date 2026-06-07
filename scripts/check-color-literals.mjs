@@ -13,12 +13,12 @@
  *     any raw literal there fails the check (exit 1).
  *   - Every other package is REPORT-ONLY (warn): literals are listed but do not
  *     fail. Those packages migrate in later phases of #1373; flipping a package
- *     to strict means removing it from REPORT_ONLY once it is clean.
+ *     to strict means adding it to STRICT_PACKAGES once it is clean.
  *
  * What is allowed (never flagged):
  *   - `var(--token, #fallback)` fallbacks — the literal is only a fallback for
  *     an emitted token, which the svelte-token-check already guards.
- *   - Theme-definition / token-source files (THEME_DEFINITION_GLOBS) that
+ *   - Theme-definition / token-source files (THEME_DEFINITION_FRAGMENTS) that
  *     legitimately hold literal values: the `--smrt-*` preset CSS, the simple
  *     ThemeProvider token map, the shared scales, the css-generator, and the
  *     legacy `--color-*` token sheet.

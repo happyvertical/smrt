@@ -122,7 +122,7 @@ function formatDate(date: Date | string | null | undefined): string {
     justify-content: space-between;
     margin-top: 0.75rem;
     padding-top: 0.75rem;
-    border-top: 1px solid var(--smrt-color-surface-container);
+    border-top: 1px solid var(--smrt-color-outline-variant);
   }
 
   .date {

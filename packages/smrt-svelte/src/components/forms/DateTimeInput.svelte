@@ -130,6 +130,8 @@ onDestroy(() => {
 
 // Parse natural language to ISO date using chrono-node (no LLM needed)
 async function parseNaturalLanguage(text: string): Promise<string> {
+  console.log('[SMRTDateTime] Parsing text:', text);
+
   // Dynamically import chrono-node only when needed
   let chrono: typeof import('chrono-node');
   try {
@@ -148,6 +150,7 @@ async function parseNaturalLanguage(text: string): Promise<string> {
   }
 
   const parsed = results[0].start.date();
+  console.log('[SMRTDateTime] Chrono parsed:', parsed);
 
   if (Number.isNaN(parsed.getTime())) {
     throw new Error('Invalid date');

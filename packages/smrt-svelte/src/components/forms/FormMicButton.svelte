@@ -29,6 +29,12 @@ $effect(() => {
       const newExtracting = formContext.isExtracting;
       // Only log on change to reduce noise
       if (newListening !== isListening || newExtracting !== isExtracting) {
+        console.log(
+          '[FormMicButton] State change: listening:',
+          newListening,
+          'extracting:',
+          newExtracting,
+        );
       }
       isListening = newListening;
       isExtracting = newExtracting;
@@ -45,6 +51,12 @@ $effect(() => {
 });
 
 function handleClick() {
+  console.log(
+    '[FormMicButton] Click! isListening:',
+    isListening,
+    'isExtracting:',
+    isExtracting,
+  );
   formContext?.toggleListening();
 }
 </script>
@@ -134,8 +146,7 @@ function handleClick() {
     border-radius: 0.375rem;
     white-space: nowrap;
     z-index: 9999;
-    box-shadow: 0 4px 6px -1px
-      color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent);
+    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent);
   }
 
   .tooltip::before {

@@ -109,6 +109,8 @@ function updateValue(start: string, end: string) {
 async function parseNaturalLanguageRange(
   text: string,
 ): Promise<{ start: string; end: string } | null> {
+  console.log('[SMRTDateRange] Parsing text:', text);
+
   // Dynamically import chrono-node only when needed
   let chrono: typeof import('chrono-node');
   try {
