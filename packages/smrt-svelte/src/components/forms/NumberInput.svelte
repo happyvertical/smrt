@@ -58,6 +58,7 @@ const isInRange = $derived.by(() => {
   return true;
 });
 const showInvalid = $derived(value !== null && !isInRange);
+const validationErrorId = $derived(`${name}-validation-error`);
 
 function updateValue(newValue: number | null) {
   value = newValue;
@@ -209,6 +210,8 @@ function handleInput(e: Event) {
       {step}
       {disabled}
       {required}
+      aria-describedby={showInvalid ? validationErrorId : undefined}
+      aria-invalid={showInvalid ? 'true' : undefined}
       class="smrt-input"
       class:smrt-mode={isSmrt}
       class:invalid={showInvalid}
@@ -217,7 +220,7 @@ function handleInput(e: Event) {
   </div>
 
   {#if showInvalid}
-    <div class="validation-error">
+    <div id={validationErrorId} class="validation-error" aria-live="polite">
       {#if min !== undefined && value !== null && value < min}
         Value must be at least {min}
       {:else if max !== undefined && value !== null && value > max}

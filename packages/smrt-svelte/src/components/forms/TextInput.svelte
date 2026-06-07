@@ -76,6 +76,16 @@ const isValidEmail = $derived.by(() => {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 });
 const showInvalid = $derived(type === 'email' && value && !isValidEmail);
+const supportingTextId = $derived(`${name}-supporting-text`);
+const hasSupportingText = $derived(
+  isInitializing ||
+    isHolding ||
+    isProcessing ||
+    !!processError ||
+    !!showInvalid ||
+    !!(description && isFocused),
+);
+const ariaInvalid = $derived(showInvalid || processError ? 'true' : undefined);
 
 // Helper to update value (works with $bindable)
 function updateValue(newValue: string) {
@@ -225,6 +235,8 @@ function handleInput(e: Event) {
         {value}
         disabled={disabled || isProcessing}
         {required}
+        aria-describedby={hasSupportingText ? supportingTextId : undefined}
+        aria-invalid={ariaInvalid}
         class="input"
         oninput={handleInput}
         onfocus={() => isFocused = true}
@@ -259,7 +271,7 @@ function handleInput(e: Event) {
     <div class="active-indicator"></div>
   </div>
 
-  <div class="supporting-text">
+  <div id={supportingTextId} class="supporting-text" aria-live="polite">
     {#if isInitializing}
       <span class="info">Downloading Whisper model... {downloadProgress}%</span>
     {:else if isHolding}

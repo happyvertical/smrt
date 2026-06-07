@@ -47,6 +47,8 @@ const formContext = tryGetFormContext();
 
 let isFocused = $state(false);
 const isSmrt = $derived(app.state.mode === 'smrt');
+const supportingTextId = $derived(`${name}-supporting-text`);
+const hasSupportingText = $derived(!!(description && isFocused));
 
 // Helper to update value
 function updateValue(newValue: string) {
@@ -114,6 +116,7 @@ function handleChange(e: Event) {
         {value}
         {disabled}
         {required}
+        aria-describedby={hasSupportingText ? supportingTextId : undefined}
         class="input"
         onchange={handleChange}
         onfocus={() => isFocused = true}
@@ -134,7 +137,7 @@ function handleChange(e: Event) {
   </div>
 
   {#if description && isFocused}
-    <div class="supporting-text">
+    <div id={supportingTextId} class="supporting-text">
       <span class="info">{description}</span>
     </div>
   {/if}

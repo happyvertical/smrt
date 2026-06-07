@@ -64,6 +64,15 @@ const MIN_TRANSCRIPT_LENGTH = 2;
 const isSmrt = $derived(app.state.mode === 'smrt');
 const isInitializing = $derived(stt.isInitializing);
 const downloadProgress = $derived(stt.downloadProgress);
+const supportingTextId = $derived(`${name}-supporting-text`);
+const hasSupportingText = $derived(
+  isInitializing ||
+    isHolding ||
+    isProcessing ||
+    !!processError ||
+    !!(description && isFocused),
+);
+const ariaInvalid = $derived(processError ? 'true' : undefined);
 
 function updateValue(newValue: string) {
   value = newValue;
@@ -204,6 +213,8 @@ function handleInput(e: Event) {
         {rows}
         disabled={disabled || isProcessing}
         {required}
+        aria-describedby={hasSupportingText ? supportingTextId : undefined}
+        aria-invalid={ariaInvalid}
         class="input"
         oninput={handleInput}
         onfocus={() => isFocused = true}
@@ -237,7 +248,7 @@ function handleInput(e: Event) {
     <div class="active-indicator"></div>
   </div>
 
-  <div class="supporting-text">
+  <div id={supportingTextId} class="supporting-text" aria-live="polite">
     {#if isInitializing}
       <span class="info">Downloading Whisper model... {downloadProgress}%</span>
     {:else if isHolding}

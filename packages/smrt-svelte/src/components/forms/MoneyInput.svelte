@@ -92,6 +92,7 @@ const isInRange = $derived.by(() => {
   return true;
 });
 const showInvalid = $derived((value !== null && !isInRange) || !!error);
+const validationErrorId = $derived(`${name}-validation-error`);
 
 function updateValue(cents: number | null) {
   value = cents;
@@ -296,6 +297,8 @@ function handleBlur() {
       value={displayValue}
       {disabled}
       {required}
+      aria-describedby={showInvalid ? validationErrorId : undefined}
+      aria-invalid={showInvalid ? 'true' : undefined}
       class="smrt-input"
       class:smrt-mode={isSmrt}
       class:invalid={showInvalid}
@@ -310,9 +313,9 @@ function handleBlur() {
   <input type="hidden" name="{name}_cents" value={value ?? ''} />
 
   {#if error}
-    <div class="validation-error">{error}</div>
+    <div id={validationErrorId} class="validation-error" aria-live="polite">{error}</div>
   {:else if showInvalid && !isInRange}
-    <div class="validation-error">
+    <div id={validationErrorId} class="validation-error" aria-live="polite">
       {#if min !== undefined && value !== null && value < min}
         Value must be at least ${(min / 100).toFixed(2)}
       {:else if max !== undefined && value !== null && value > max}
