@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.13
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: typecheck script rollout + turbo typecheck gate (#1375) (#1437) (repo)
+  - @happyvertical/smrt-scanner@0.27.13
+  - @happyvertical/smrt-config@0.27.13
+  - @happyvertical/smrt-types@0.27.13
+
 ## 0.27.12
 
 ### Patch Changes
