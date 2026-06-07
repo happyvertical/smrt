@@ -45,6 +45,7 @@ All `@happyvertical/smrt-*` packages are version-locked via changesets. pnpm wor
 | affiliates | Revenue sharing: multi-type partners, multi-tier commissions, payout processing |
 | ledgers | Double-entry accounting, balance enforcement (EPSILON=0.01), journal lifecycle |
 | analytics | GA4/Plausible: properties, data streams, server-side events, AI-powered reports |
+| subscriptions | Tenant subscription plans, feature grants, usage thresholds, and entitlement resolution |
 
 ### Domain
 | Package | Purpose |
