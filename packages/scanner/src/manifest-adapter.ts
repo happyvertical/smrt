@@ -772,6 +772,35 @@ export class ManifestAdapter {
       };
     }
 
+    // @tenantId({ nullable?, required?, autoFilter?, autoPopulate? }) decorator
+    if (decorator.name === 'tenantId') {
+      const parsedOptions = this.parseFieldDecoratorOptions(
+        decorator.arguments[0],
+      );
+      const nullable = parsedOptions?.nullable === true;
+      const required =
+        parsedOptions?.required !== undefined
+          ? Boolean(parsedOptions.required)
+          : !nullable;
+
+      return {
+        type: 'text',
+        required,
+        _meta: {
+          sqlType: 'UUID',
+          ...(parsedOptions ?? {}),
+          __tenancy: {
+            isTenantIdField: true,
+            autoFilter: parsedOptions?.autoFilter ?? true,
+            required,
+            autoPopulate: parsedOptions?.autoPopulate ?? true,
+            nullable,
+          },
+        },
+        source: 'decorator',
+      };
+    }
+
     // @crossPackageRef('@pkg:Class', { validate?, unique?, nullable?, default?, description? }) decorator
     if (decorator.name === 'crossPackageRef') {
       const qualifiedName = stripQuotes(decorator.arguments[0]?.trim());

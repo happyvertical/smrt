@@ -165,6 +165,86 @@ describe('ManifestAdapter', () => {
       });
     });
 
+    describe('@tenantId decorator', () => {
+      it('should mark tenant ID fields as UUID tenant references', () => {
+        const field: RawFieldDefinition = {
+          name: 'tenantId',
+          accessibility: 'public',
+          typeAnnotation: 'string',
+          initializer: null,
+          optional: true,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name: 'tenantId',
+              arguments: [''],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.convertField(field);
+
+        expect(result).toMatchObject({
+          type: 'text',
+          required: true,
+          _meta: {
+            sqlType: 'UUID',
+            __tenancy: {
+              isTenantIdField: true,
+              autoFilter: true,
+              required: true,
+              autoPopulate: true,
+              nullable: false,
+            },
+          },
+        });
+      });
+
+      it('should preserve nullable tenant ID decorator options', () => {
+        const field: RawFieldDefinition = {
+          name: 'tenantId',
+          accessibility: 'public',
+          typeAnnotation: 'string | null',
+          initializer: 'null',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: null,
+          decorators: [
+            {
+              name: 'tenantId',
+              arguments: ['{ nullable: true, autoPopulate: false }'],
+            },
+          ],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.convertField(field);
+
+        expect(result).toMatchObject({
+          type: 'text',
+          required: false,
+          _meta: {
+            sqlType: 'UUID',
+            nullable: true,
+            autoPopulate: false,
+            __tenancy: {
+              isTenantIdField: true,
+              autoFilter: true,
+              required: false,
+              autoPopulate: false,
+              nullable: true,
+            },
+          },
+        });
+      });
+    });
+
     describe('string literal union types', () => {
       it('should infer text for inline string literal union', () => {
         const field: RawFieldDefinition = {
