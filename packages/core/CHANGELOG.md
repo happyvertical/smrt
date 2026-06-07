@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stop SSG export leaking camelCase/snake_case secrets (#1441) (config)
+  - @happyvertical/smrt-scanner@0.27.15
+  - @happyvertical/smrt-config@0.27.15
+  - @happyvertical/smrt-types@0.27.15
+
 ## 0.27.14
 
 ### Patch Changes
