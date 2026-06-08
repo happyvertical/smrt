@@ -139,15 +139,22 @@ function stripComments(source) {
     );
 }
 
-/** Blank `var(...)` and `calc(...)` calls so px inside them is never flagged. */
+/**
+ * Blank `calc(...)` (px there is layout math) and `var(--smrt-spacing-*, ...)`
+ * (already on the scale). NOT other `var(...)`: a numeric px fallback inside a
+ * non-spacing var — e.g. `padding: var(--x, 16px)` — must still be flagged,
+ * otherwise it's an easy bypass.
+ */
 function stripAllowedCalls(source) {
   let out = '';
   let i = 0;
   while (i < source.length) {
-    const isVar = source.startsWith('var(', i);
     const isCalc = source.startsWith('calc(', i);
-    if (isVar || isCalc) {
-      const start = i + (isVar ? 3 : 4); // index of '('
+    const isSpacingVar = /^var\(\s*--smrt-spacing-/.test(
+      source.slice(i, i + 24),
+    );
+    if (isCalc || isSpacingVar) {
+      const start = source.indexOf('(', i); // index of '('
       let depth = 0;
       let j = start;
       for (; j < source.length; j++) {
