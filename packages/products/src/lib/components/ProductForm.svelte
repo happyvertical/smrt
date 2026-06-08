@@ -170,7 +170,7 @@ function _handleSubmit(event: Event) {
     padding: 1.5rem;
     background: white;
     border-radius: 8px;
-    border: 1px solid #e2e8f0;
+    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
   }
   
   .form-group {
@@ -187,27 +187,27 @@ function _handleSubmit(event: Event) {
     display: block;
     margin-bottom: 0.25rem;
     font-weight: 500;
-    color: #374151;
+    color: var(--smrt-color-on-surface, #374151);
     font-size: 0.875rem;
   }
-  
+
   .form-input, .form-textarea {
     width: 100%;
     padding: 0.5rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: 4px;
     font-size: 0.875rem;
     transition: border-color 0.2s;
   }
-  
+
   .form-input:focus, .form-textarea:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--smrt-color-primary, #3b82f6);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 10%, transparent);
   }
-  
+
   .form-input.error {
-    border-color: #dc2626;
+    border-color: var(--smrt-color-error, #dc2626);
   }
   
   .form-textarea {
@@ -227,25 +227,25 @@ function _handleSubmit(event: Event) {
   }
   
   .form-hint {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     font-size: 0.75rem;
     margin-top: 0.25rem;
   }
-  
+
   .error-message {
-    color: #dc2626;
+    color: var(--smrt-color-error, #dc2626);
     font-size: 0.75rem;
     margin-top: 0.25rem;
     display: block;
   }
-  
+
   .form-actions {
     display: flex;
     gap: 0.75rem;
     justify-content: flex-end;
     margin-top: 1.5rem;
     padding-top: 1rem;
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
   }
   
   .cancel-btn, .submit-btn {
@@ -260,22 +260,22 @@ function _handleSubmit(event: Event) {
   
   .cancel-btn {
     background: white;
-    border-color: #d1d5db;
-    color: #374151;
+    border-color: var(--smrt-color-outline-variant, #d1d5db);
+    color: var(--smrt-color-on-surface, #374151);
   }
-  
+
   .cancel-btn:hover:not(:disabled) {
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container-low, #f9fafb);
   }
-  
+
   .submit-btn {
-    background: #3b82f6;
-    border-color: #3b82f6;
+    background: var(--smrt-color-primary, #3b82f6);
+    border-color: var(--smrt-color-primary, #3b82f6);
     color: white;
   }
-  
+
   .submit-btn:hover:not(:disabled) {
-    background: #2563eb;
+    background: var(--smrt-color-primary, #2563eb);
   }
   
   .submit-btn:disabled, .cancel-btn:disabled {

@@ -27,12 +27,10 @@ let _autoFormData = $state({ ...sampleProduct });
 let _customFormData = $state({ ...sampleProduct });
 
 function _handleAutoSubmit(data: ProductData) {
-  console.log('Auto form submitted:', data);
   _autoFormData = { ...data };
 }
 
 function _handleCustomSubmit(data: ProductData) {
-  console.log('Custom form submitted:', data);
   _customFormData = { ...data };
 }
 </script>
@@ -185,27 +183,31 @@ function _handleCustomSubmit(data: ProductData) {
 <style>
   .demo-page {
     min-height: 100vh;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: #1f2937;
+    background: linear-gradient(
+      135deg,
+      var(--smrt-color-primary, #667eea) 0%,
+      var(--smrt-color-primary-container, #764ba2) 100%
+    );
+    color: var(--smrt-color-on-surface, #1f2937);
   }
 
   .demo-header {
     text-align: center;
     padding: 2rem 1rem;
-    background: rgba(255, 255, 255, 0.95);
+    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 95%, transparent);
     margin-bottom: 2rem;
   }
 
   .demo-header h1 {
     font-size: 2.5rem;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--smrt-color-on-surface, #1f2937);
     margin: 0 0 0.5rem 0;
   }
 
   .demo-subtitle {
     font-size: 1.125rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     margin: 0;
   }
 
@@ -219,7 +221,7 @@ function _handleCustomSubmit(data: ProductData) {
 
   .nav-btn {
     padding: 0.75rem 1.5rem;
-    background: rgba(255, 255, 255, 0.9);
+    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 90%, transparent);
     border: 2px solid transparent;
     border-radius: 0.5rem;
     font-weight: 500;
@@ -234,8 +236,8 @@ function _handleCustomSubmit(data: ProductData) {
 
   .nav-btn.active {
     background: white;
-    border-color: #3b82f6;
-    color: #3b82f6;
+    border-color: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-primary, #3b82f6);
   }
 
   .demo-content {
@@ -245,7 +247,7 @@ function _handleCustomSubmit(data: ProductData) {
   .demo-section {
     max-width: 1200px;
     margin: 0 auto;
-    background: rgba(255, 255, 255, 0.95);
+    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 95%, transparent);
     border-radius: 1rem;
     padding: 2rem;
     margin-bottom: 2rem;
@@ -253,7 +255,7 @@ function _handleCustomSubmit(data: ProductData) {
 
   .section-description {
     font-size: 1rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     margin-bottom: 2rem;
     text-align: center;
   }
@@ -267,7 +269,7 @@ function _handleCustomSubmit(data: ProductData) {
   .demo-column h3 {
     text-align: center;
     margin-bottom: 1rem;
-    color: #374151;
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .comparison-grid {
@@ -278,9 +280,9 @@ function _handleCustomSubmit(data: ProductData) {
 
   .comparison-column {
     padding: 1.5rem;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container-low, #f9fafb);
     border-radius: 0.5rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
   }
 
   .comparison-column h3 {
@@ -298,11 +300,11 @@ function _handleCustomSubmit(data: ProductData) {
 
   .feature {
     font-size: 0.875rem;
-    color: #374151;
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .demo-footer {
-    background: rgba(255, 255, 255, 0.95);
+    background: color-mix(in srgb, var(--smrt-color-surface, #fff) 95%, transparent);
     padding: 2rem;
     margin-top: 2rem;
   }
@@ -317,7 +319,7 @@ function _handleCustomSubmit(data: ProductData) {
     font-size: 1.25rem;
     font-weight: 600;
     margin-bottom: 1rem;
-    color: #1f2937;
+    color: var(--smrt-color-on-surface, #1f2937);
   }
 
   .framework-info ul {
@@ -330,7 +332,7 @@ function _handleCustomSubmit(data: ProductData) {
 
   .framework-info li {
     padding: 0.75rem;
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container, #f3f4f6);
     border-radius: 0.375rem;
     font-size: 0.875rem;
   }
