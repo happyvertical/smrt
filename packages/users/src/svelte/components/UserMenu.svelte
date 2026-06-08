@@ -187,8 +187,8 @@ function getInitials(name: string): string {
   .user-menu-trigger {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
+    gap: var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: transparent;
     border: none;
     border-radius: 20px;
@@ -236,21 +236,21 @@ function getInitials(name: string): string {
     position: absolute;
     top: 100%;
     right: 0;
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
     min-width: 200px;
     background-color: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-medium, 4px);
     box-shadow: var(--smrt-elevation-level2);
     z-index: var(--smrt-z-index-dropdown, 1000);
-    padding: 4px 0;
+    padding: var(--smrt-spacing-1, 4px) 0;
     overflow: hidden;
   }
 
   .dropdown-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
+    gap: var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface);
     text-decoration: none;
@@ -274,10 +274,10 @@ function getInitials(name: string): string {
   }
 
   .user-info {
-    padding: 12px 16px;
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .user-info-name {
@@ -302,7 +302,7 @@ function getInitials(name: string): string {
   }
 
   .divider {
-    margin: 4px 0;
+    margin: var(--smrt-spacing-1, 4px) 0;
     border: none;
     border-top: 1px solid var(--smrt-color-outline-variant);
   }

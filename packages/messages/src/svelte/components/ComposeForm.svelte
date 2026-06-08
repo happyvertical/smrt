@@ -258,16 +258,16 @@ export interface Props {
   .compose-form {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 16px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-4, 16px);
     font-family: var(--smrt-typography-body, system-ui);
   }
 
   .field {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 0;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1, 4px) 0;
     border-bottom: 1px solid var(--smrt-color-outline-variant, #cac4d0);
   }
 
@@ -284,14 +284,14 @@ export interface Props {
     outline: none;
     font-family: inherit;
     font-size: 14px;
-    padding: 6px 0;
+    padding: var(--smrt-spacing-2, 8px) 0;
     background: transparent;
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .cc-toggles {
     display: flex;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     justify-content: flex-end;
   }
 
@@ -312,7 +312,7 @@ export interface Props {
     width: 100%;
     border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-md, 12px);
-    padding: 12px;
+    padding: var(--smrt-spacing-3, 12px);
     font-family: var(--smrt-typography-body, system-ui);
     font-size: 14px;
     resize: vertical;
@@ -330,7 +330,7 @@ export interface Props {
     text-align: right;
     font-size: 12px;
     color: var(--smrt-color-outline, #79747e);
-    padding-top: 4px;
+    padding-top: var(--smrt-spacing-1, 4px);
   }
 
   .char-count.over-limit {
@@ -340,12 +340,12 @@ export interface Props {
 
   .actions {
     display: flex;
-    gap: 8px;
-    padding-top: 8px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding-top: var(--smrt-spacing-2, 8px);
   }
 
   .btn-primary {
-    padding: 8px 24px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-6, 24px);
     border-radius: var(--smrt-radius-full, 20px);
     border: none;
     background: var(--smrt-color-primary, #6750a4);
@@ -361,7 +361,7 @@ export interface Props {
   }
 
   .btn-secondary {
-    padding: 8px 16px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
     border-radius: var(--smrt-radius-full, 20px);
     border: 1px solid var(--smrt-color-outline, #79747e);
     background: transparent;
@@ -372,7 +372,7 @@ export interface Props {
   }
 
   .btn-text {
-    padding: 8px 16px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #49454f);
