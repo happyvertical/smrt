@@ -130,7 +130,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.loading-overlay {
 		position: fixed;
 		inset: 0;
-		z-index: 9999;
+		z-index: var(--smrt-z-index-overlay, 1200);
 		display: flex;
 		align-items: center;
 		justify-content: center;

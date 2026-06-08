@@ -746,7 +746,7 @@ function getFormData(): Record<string, unknown> {
     color: white;
     font-size: 0.875rem;
     box-shadow: 0 -2px 12px color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
-    z-index: 9999;
+    z-index: var(--smrt-z-index-toast, 1500);
     text-align: center;
     backdrop-filter: blur(8px);
     animation: slideUp 0.2s ease-out;

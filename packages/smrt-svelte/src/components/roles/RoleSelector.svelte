@@ -161,7 +161,7 @@ function handleKeydown(e: KeyboardEvent) {
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-radius: var(--smrt-radius-small, 0.375rem);
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
-    z-index: 50;
+    z-index: var(--smrt-z-index-dropdown, 1000);
     max-height: 15rem;
     overflow-y: auto;
   }
