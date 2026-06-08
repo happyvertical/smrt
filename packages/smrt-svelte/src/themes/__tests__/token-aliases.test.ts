@@ -52,6 +52,7 @@ const REQUIRED_ALIASES = [
   '--smrt-typography-weight-semibold',
   '--smrt-typography-weight-bold',
   '--smrt-z-index-dialog',
+  '--smrt-z-index-loading',
 ];
 
 const SPACING_NUMERIC_TOKENS = [
