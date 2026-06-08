@@ -1587,7 +1587,7 @@ function removeAsset(id: string) {
   .form-container textarea:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
   }
 
   .form-container textarea {
@@ -1795,24 +1795,24 @@ function removeAsset(id: string) {
   }
 
   .evidence-status--supports {
-    background: #dcfce7;
-    color: #166534;
+    background: var(--smrt-color-success-container);
+    color: var(--smrt-color-on-success-container);
   }
 
   .evidence-status--contradicts,
   .evidence-status--invalid {
-    background: #fee2e2;
-    color: #991b1b;
+    background: var(--smrt-color-error-container);
+    color: var(--smrt-color-on-error-container);
   }
 
   .evidence-status--unclear {
-    background: #fef3c7;
-    color: #92400e;
+    background: var(--smrt-color-warning-container);
+    color: var(--smrt-color-on-warning-container);
   }
 
   .evidence-status--irrelevant {
-    background: #f1f5f9;
-    color: #475569;
+    background: var(--smrt-color-surface-container);
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .resource-claim-body {
@@ -1886,7 +1886,7 @@ function removeAsset(id: string) {
   }
 
   .add-reference-row button:hover {
-    background: #f1f5f9;
+    background: var(--smrt-color-surface-container-low, #f1f5f9);
   }
   
   .add-image-btn {
@@ -1910,8 +1910,12 @@ function removeAsset(id: string) {
   }
 
   .save-button {
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    color: white;
+    background: linear-gradient(
+      135deg,
+      var(--smrt-color-primary) 0%,
+      color-mix(in srgb, var(--smrt-color-primary) 80%, black) 100%
+    );
+    color: var(--smrt-color-on-primary);
     border: none;
     padding: 0.75rem 1.5rem;
     border-radius: 0.5rem;
@@ -1922,7 +1926,7 @@ function removeAsset(id: string) {
 
   .save-button:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.4);
+    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 40%, transparent);
   }
 
   .save-button:disabled {
@@ -1951,11 +1955,11 @@ function removeAsset(id: string) {
     min-height: 400px; /* Reduced for inline view */
     max-height: 60vh;
     overflow-y: auto;
-    background: white;
-    border: 1px solid #e2e8f0;
+    background: var(--smrt-color-surface);
+    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     margin-top: 1rem;
     border-radius: 0.75rem;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent);
     /* Svelte built-in slide animations will be handled if implemented */
   }
 
@@ -1969,8 +1973,12 @@ function removeAsset(id: string) {
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.625rem 1rem;
-    background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%);
-    border: 1px solid #93c5fd;
+    background: linear-gradient(
+      135deg,
+      var(--smrt-color-primary-container) 0%,
+      color-mix(in srgb, var(--smrt-color-primary-container) 80%, var(--smrt-color-surface)) 100%
+    );
+    border: 1px solid color-mix(in srgb, var(--smrt-color-primary) 50%, transparent);
     border-radius: 0.5rem;
     animation: undo-slide-in 0.3s ease-out;
   }
@@ -2053,7 +2061,7 @@ function removeAsset(id: string) {
     gap: 0.5rem;
     align-items: center;
     justify-content: center;
-    background: rgba(0,0,0,0.5);
+    background: color-mix(in srgb, var(--smrt-color-scrim) 50%, transparent);
     opacity: 0;
     transition: opacity 0.2s;
   }
@@ -2066,8 +2074,8 @@ function removeAsset(id: string) {
     padding: 0.4rem;
     border: none;
     border-radius: 0.375rem;
-    background: rgba(255,255,255,0.9);
-    color: #1e293b;
+    background: color-mix(in srgb, var(--smrt-color-surface) 90%, transparent);
+    color: var(--smrt-color-on-surface);
     cursor: pointer;
     transition: background 0.15s, transform 0.15s;
     display: flex;
@@ -2077,13 +2085,13 @@ function removeAsset(id: string) {
 
   .media-item-overlay button:hover {
     transform: scale(1.1);
-    background: white;
+    background: var(--smrt-color-surface);
   }
 
   .btn-remove-asset:hover {
-    background: #fef2f2 !important;
-    color: #dc2626 !important;
-    border-color: #fecaca !important;
+    background: var(--smrt-color-error-container) !important;
+    color: var(--smrt-color-error) !important;
+    border-color: var(--smrt-color-error) !important;
   }
 
   .thumbnail-badge {
