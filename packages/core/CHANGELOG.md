@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.23
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap border-radius to --smrt-radius-\* across UI packages (S1 #1373) (#1459)
+  - @happyvertical/smrt-scanner@0.27.23
+  - @happyvertical/smrt-config@0.27.23
+  - @happyvertical/smrt-types@0.27.23
+
 ## 0.27.22
 
 ### Patch Changes

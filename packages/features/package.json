@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-features",
-  "version": "0.27.22",
+  "version": "0.27.23",
   "description": "Code-first feature flags and tenant-aware overrides for the SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
