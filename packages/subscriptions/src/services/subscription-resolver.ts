@@ -42,12 +42,14 @@ export interface TenantSubscriptionReader {
  * `summarize(options)` already accepts the polymorphic
  * `subscriberKind`/`subscriberExternalId` fields. When omitted the reader
  * defaults to `'tenant'`, which is what existing callers got before this
- * change — no behavior shift for them.
+ * change — no behavior shift for them. The discriminator type is derived
+ * from `Subscriber['kind']` rather than inlined so any future additions to
+ * the union stay consistent across the package.
  */
 export interface UsageSummaryReader {
   summarize(options: {
     tenantId: string;
-    subscriberKind?: 'tenant' | 'external';
+    subscriberKind?: Subscriber['kind'];
     subscriberExternalId?: string;
     metricKey: string;
     window: UsageWindow;

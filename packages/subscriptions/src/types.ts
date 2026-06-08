@@ -116,8 +116,15 @@ export interface ThresholdEvaluation {
 export interface EntitlementResolution {
   /** Issuing/owning tenant scope. */
   tenantId: string;
-  /** The subscriber identity this resolution was computed for. */
-  subscriber: Subscriber;
+  /**
+   * The subscriber identity this resolution was computed for.
+   *
+   * Always populated at runtime by `SubscriptionResolver.resolveEntitlements`,
+   * but kept optional on the interface so downstream code that constructs
+   * or mocks `EntitlementResolution` (pre-#1454) continues to typecheck
+   * without code changes.
+   */
+  subscriber?: Subscriber;
   planId: string | null;
   planKey: string | null;
   subscriptionId: string | null;
