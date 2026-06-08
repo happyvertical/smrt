@@ -72,14 +72,18 @@ const THEME_DEFINITION_FRAGMENTS = [
 ];
 
 /**
- * Files that legitimately hold intentional brand / 3rd-party fixed color
- * literals which must NOT be tokenized (theming them would break recognition).
- * Matched as substrings of the package-relative path.
+ * Intentional brand / 3rd-party fixed color literals that must NOT be tokenized
+ * (theming them would break recognition). Scoped to specific files AND specific
+ * values: only these exact literals are exempt, so any OTHER raw literal
+ * introduced in the same file is still caught.
  */
-const BRAND_LITERAL_FRAGMENTS = [
-  // Channel-brand avatar colors (Slack purple, Twitter blue) kept for
-  // at-a-glance recognition; the generic email avatar is tokenized.
-  'messages/src/svelte/components/AccountAvatar.svelte',
+const BRAND_LITERAL_ALLOWLIST = [
+  {
+    // Channel-brand avatar colors (Slack purple, Twitter blue) kept for
+    // at-a-glance recognition; the generic email avatar is tokenized.
+    fragment: 'messages/src/svelte/components/AccountAvatar.svelte',
+    values: new Set(['#e8def8', '#4a1175', '#d3e8fd', '#0c4a6e']),
+  },
 ];
 
 /**
@@ -246,10 +250,15 @@ for (const file of files) {
   const pkg = packageNameOf(relPath);
   if (SCOPE_EXCLUDED_PACKAGES.has(pkg)) continue;
   if (isThemeDefinition(relPath)) continue;
-  if (BRAND_LITERAL_FRAGMENTS.some((f) => toPosix(relPath).includes(f))) {
-    continue;
+  let hits = findViolations(file, readFileSync(file, 'utf8'));
+  // Drop only the explicitly allow-listed brand literals (by value) so the file
+  // stays scanned — any other raw literal in it is still caught.
+  const allow = BRAND_LITERAL_ALLOWLIST.find((b) =>
+    toPosix(relPath).includes(b.fragment),
+  );
+  if (allow) {
+    hits = hits.filter((h) => !allow.values.has(h.value.toLowerCase()));
   }
-  const hits = findViolations(file, readFileSync(file, 'utf8'));
   if (hits.length === 0) continue;
   if (STRICT_PACKAGES.has(pkg)) {
     strictViolations.push({ file: relPath, hits });
