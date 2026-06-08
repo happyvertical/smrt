@@ -148,6 +148,47 @@ describe('polymorphic subscriber — model defaults', () => {
       /subscriberExternalId must be empty when subscriberKind is "tenant"/,
     );
   });
+
+  it('refuses null subscriberExternalId with external kind from JSON/CLI input', () => {
+    // Regression for the fifth-pass Codex finding: REST/CLI JSON can pass
+    // `null` (or `undefined`) for subscriberExternalId. The `=== ''` check
+    // wouldn't catch null, the malformed row would persist with a NULL
+    // external id, and `findCurrentForSubscriber()` (which queries by string)
+    // would never find it again. We refuse here so the malformed row is
+    // impossible end-to-end.
+    expect(
+      () =>
+        new TenantSubscription({
+          tenantId: 'marketplace-tenant',
+          subscriberKind: 'external',
+          subscriberExternalId: null as unknown as string,
+          planId: 'plan-mkt',
+        }),
+    ).toThrow(/subscriberExternalId must be a string/);
+
+    expect(
+      () =>
+        new TenantUsageMetric({
+          tenantId: 'marketplace-tenant',
+          subscriberKind: 'external',
+          subscriberExternalId: null as unknown as string,
+          metricKey: 'license.downloads',
+          quantity: 1,
+        }),
+    ).toThrow(/subscriberExternalId must be a string/);
+  });
+
+  it('refuses an invalid subscriberKind discriminator', () => {
+    expect(
+      () =>
+        new TenantSubscription({
+          tenantId: 'tenant-1',
+          subscriberKind: 'foo' as unknown as 'tenant',
+          subscriberExternalId: 'x',
+          planId: 'plan-pro',
+        }),
+    ).toThrow(/subscriberKind must be "tenant" or "external"/);
+  });
 });
 
 describe('polymorphic subscriber — normalizeSubscriber', () => {

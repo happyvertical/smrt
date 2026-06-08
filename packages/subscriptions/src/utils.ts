@@ -83,11 +83,28 @@ export function normalizeFeatureGrants(
  */
 export function normalizeSubscriber(input: {
   tenantId: string;
-  subscriberKind?: SubscriberKind;
-  subscriberExternalId?: string;
+  subscriberKind?: SubscriberKind | null;
+  subscriberExternalId?: string | null;
 }): Subscriber {
-  const externalId = input.subscriberExternalId ?? '';
-  const kind: SubscriberKind = input.subscriberKind ?? 'tenant';
+  // Treat null/undefined external ids as "absent" — but only after the
+  // discriminator-derived branch decides what to do. We never coerce null
+  // into the persisted column because the invariant on the model is
+  // re-checked at save time via assertSubscriberInvariant.
+  const rawExternalId = input.subscriberExternalId;
+  const externalIdAbsent =
+    rawExternalId === null || rawExternalId === undefined;
+  const externalId = externalIdAbsent ? '' : String(rawExternalId);
+
+  const rawKind = input.subscriberKind;
+  const kind: SubscriberKind =
+    rawKind === null || rawKind === undefined ? 'tenant' : rawKind;
+
+  if (kind !== 'tenant' && kind !== 'external') {
+    throw new Error(
+      `subscriberKind must be "tenant" or "external" (got ${JSON.stringify(rawKind)})`,
+    );
+  }
+
   if (kind === 'tenant') {
     if (externalId !== '') {
       throw new Error(
@@ -138,16 +155,41 @@ export function subscriberToColumns(subscriber: Subscriber): {
  * `validateBeforeSave` override (catches mutations applied via the
  * generated PUT/PATCH update path that bypass the constructor).
  *
+ * Defensive about types because both call sites can receive JSON or untyped
+ * fixture data via the generated REST/CLI surface — `null` arriving in place
+ * of `''` would otherwise slip past an `=== ''` check, land in the
+ * `(tenant_id, subscriber_kind, subscriber_external_id)` conflict key, and
+ * (on Postgres) not collide with other NULLs while `findCurrentForSubscriber`
+ * keeps querying by a string external id.
+ *
  * @param modelName - Prepended to error messages so callers can tell whether
  *   the failure originated in `TenantSubscription` or `TenantUsageMetric`.
  */
 export function assertSubscriberInvariant(
   modelName: string,
   fields: {
-    subscriberKind: SubscriberKind;
-    subscriberExternalId: string;
+    subscriberKind: unknown;
+    subscriberExternalId: unknown;
   },
 ): void {
+  if (
+    fields.subscriberKind !== 'tenant' &&
+    fields.subscriberKind !== 'external'
+  ) {
+    throw new Error(
+      `${modelName}: subscriberKind must be "tenant" or "external" (got ${describe(
+        fields.subscriberKind,
+      )})`,
+    );
+  }
+  if (typeof fields.subscriberExternalId !== 'string') {
+    throw new Error(
+      `${modelName}: subscriberExternalId must be a string (got ${describe(
+        fields.subscriberExternalId,
+      )})`,
+    );
+  }
+
   if (
     fields.subscriberKind === 'tenant' &&
     fields.subscriberExternalId !== ''
@@ -164,6 +206,13 @@ export function assertSubscriberInvariant(
       `${modelName}: subscriberKind="external" requires a non-empty subscriberExternalId`,
     );
   }
+}
+
+function describe(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return `"${value}"`;
+  return String(value);
 }
 
 export function getWindowForThreshold(
