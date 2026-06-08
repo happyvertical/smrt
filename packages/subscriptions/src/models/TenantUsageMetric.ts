@@ -1,7 +1,11 @@
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { JsonObject, Subscriber, SubscriberKind } from '../types.js';
-import { parseJsonObject, stringifyJson } from '../utils.js';
+import {
+  assertSubscriberInvariant,
+  parseJsonObject,
+  stringifyJson,
+} from '../utils.js';
 
 @TenantScoped({ mode: 'required' })
 @smrt({
@@ -42,24 +46,12 @@ export class TenantUsageMetric extends SmrtObject {
       this.subscriberKind = options.subscriberKind;
     if (options.subscriberExternalId !== undefined)
       this.subscriberExternalId = options.subscriberExternalId;
-    // Enforce the subscriber XOR invariant at the model boundary so generated
-    // create endpoints can't persist usage rows whose subscriber kind and
-    // external id are inconsistent.
-    if (this.subscriberKind === 'tenant' && this.subscriberExternalId !== '') {
-      throw new Error(
-        'TenantUsageMetric: subscriberExternalId must be empty when ' +
-          'subscriberKind is "tenant"',
-      );
-    }
-    if (
-      this.subscriberKind === 'external' &&
-      this.subscriberExternalId === ''
-    ) {
-      throw new Error(
-        'TenantUsageMetric: subscriberKind="external" requires a non-empty ' +
-          'subscriberExternalId',
-      );
-    }
+    // Construction-time guard; the same invariant is re-checked in
+    // `validateBeforeSave` so the generated update path can't bypass it.
+    assertSubscriberInvariant('TenantUsageMetric', {
+      subscriberKind: this.subscriberKind,
+      subscriberExternalId: this.subscriberExternalId,
+    });
     if (options.metricKey !== undefined) this.metricKey = options.metricKey;
     if (options.quantity !== undefined) this.quantity = options.quantity;
     if (options.windowStart !== undefined)
@@ -68,6 +60,15 @@ export class TenantUsageMetric extends SmrtObject {
     if (options.source !== undefined) this.source = options.source;
     if (options.sourceId !== undefined) this.sourceId = options.sourceId;
     if (options.dimensions !== undefined) this.dimensions = options.dimensions;
+  }
+
+  /** See `TenantSubscription.validateBeforeSave` for the rationale. */
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    assertSubscriberInvariant('TenantUsageMetric', {
+      subscriberKind: this.subscriberKind,
+      subscriberExternalId: this.subscriberExternalId,
+    });
   }
 
   /**

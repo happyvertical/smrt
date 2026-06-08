@@ -8,6 +8,27 @@ import { SubscriptionResolver } from '../services/subscription-resolver.js';
 import { TenantUsageMeter } from '../services/usage-meter.js';
 import { normalizeSubscriber, subscriberToColumns } from '../utils.js';
 
+/** Walk the .cause chain to find the message most likely to be ours. */
+function rootCauseMessage(err: unknown): string {
+  let cursor: unknown = err;
+  let last = '';
+  while (cursor instanceof Error) {
+    last = cursor.message;
+    cursor = (cursor as { cause?: unknown }).cause;
+  }
+  return last;
+}
+
+/** Run a thunk and return whatever it threw (or `undefined`). */
+async function catchError(thunk: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await thunk();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
 const AI_USAGE_DDL = `
   CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
     id TEXT PRIMARY KEY,
@@ -485,6 +506,44 @@ describe('polymorphic subscriber — TenantSubscriptionCollection conflict key',
 
     const rows = await subs.findByTenant('tenant-1');
     expect(rows.length).toBe(1);
+  });
+
+  it('rejects an update-path mutation that breaks the XOR invariant', async () => {
+    // Regression for the third-pass Codex finding: SmrtCollection.update()
+    // mutates an existing instance via Object.assign() and calls save()
+    // directly — the constructor never re-runs. Without a save-time guard a
+    // PATCH like `{ subscriberExternalId: 'buyer:alice' }` on a tenant-kind
+    // row would persist a malformed conflict key. We refuse via the
+    // validateBeforeSave override.
+    //
+    // save() wraps the underlying validation error inside `Operation failed:
+    // save in TenantSubscription#<id>`, so we read the wrapped error's cause
+    // chain to verify our invariant fired.
+    const sub = await subs.create({
+      tenantId: 'tenant-1',
+      planId: 'plan-pro',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+
+    sub.subscriberExternalId = 'buyer-contact:alice';
+    await expect(sub.save()).rejects.toThrow();
+    expect(rootCauseMessage(await catchError(() => sub.save()))).toMatch(
+      /subscriberExternalId must be empty when subscriberKind is "tenant"/,
+    );
+
+    // Mutating the kind without setting an id should also fail.
+    const sub2 = await subs.create({
+      tenantId: 'tenant-2',
+      planId: 'plan-pro',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    sub2.subscriberKind = 'external';
+    await expect(sub2.save()).rejects.toThrow();
+    expect(rootCauseMessage(await catchError(() => sub2.save()))).toMatch(
+      /subscriberKind="external" requires a non-empty subscriberExternalId/,
+    );
   });
 
   it('allows a tenant-kind and an external-kind subscription on the same tenant simultaneously', async () => {

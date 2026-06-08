@@ -6,7 +6,11 @@ import type {
   SubscriberKind,
   SubscriptionStatus,
 } from '../types.js';
-import { parseJsonObject, stringifyJson } from '../utils.js';
+import {
+  assertSubscriberInvariant,
+  parseJsonObject,
+  stringifyJson,
+} from '../utils.js';
 
 @TenantScoped({ mode: 'required' })
 @smrt({
@@ -80,28 +84,15 @@ export class TenantSubscription extends SmrtObject {
       this.subscriberKind = options.subscriberKind;
     if (options.subscriberExternalId !== undefined)
       this.subscriberExternalId = options.subscriberExternalId;
-    // Enforce the subscriber XOR invariant at the model boundary so generated
-    // create/update endpoints can't persist invalid combinations:
-    //   - tenant-kind rows MUST have subscriberExternalId === ''
-    //   - external-kind rows MUST have a non-empty subscriberExternalId
-    // Without this guard the new conflict key (tenant_id, kind, external_id)
-    // would let tenant-kind rows carrying stray external ids coexist, breaking
-    // the "one tenant-kind subscription per tenant" invariant.
-    if (this.subscriberKind === 'tenant' && this.subscriberExternalId !== '') {
-      throw new Error(
-        'TenantSubscription: subscriberExternalId must be empty when ' +
-          'subscriberKind is "tenant"',
-      );
-    }
-    if (
-      this.subscriberKind === 'external' &&
-      this.subscriberExternalId === ''
-    ) {
-      throw new Error(
-        'TenantSubscription: subscriberKind="external" requires a non-empty ' +
-          'subscriberExternalId',
-      );
-    }
+    // Enforce the subscriber XOR invariant at construction time so callers
+    // catch mistakes early. The same check also runs in `validateBeforeSave`
+    // below so the generated PUT/PATCH update path — which mutates an existing
+    // instance via `Object.assign()` and bypasses this constructor — can't
+    // sneak a malformed row past us either.
+    assertSubscriberInvariant('TenantSubscription', {
+      subscriberKind: this.subscriberKind,
+      subscriberExternalId: this.subscriberExternalId,
+    });
     if (options.planId !== undefined) this.planId = options.planId;
     if (options.status !== undefined) this.status = options.status;
     if (options.startedAt !== undefined) this.startedAt = options.startedAt;
@@ -130,6 +121,23 @@ export class TenantSubscription extends SmrtObject {
       this.stripeCheckoutSessionId = options.stripeCheckoutSessionId;
     }
     if (options.metadata !== undefined) this.metadata = options.metadata;
+  }
+
+  /**
+   * Validates the subscriber XOR invariant before every save. Critical for the
+   * generated update path: `SmrtCollection.update()` mutates the existing
+   * instance via `Object.assign()` and calls `save()` directly — the
+   * constructor never re-runs, so without this hook a partial update like
+   * `{ subscriberExternalId: 'buyer:alice' }` on a tenant-kind row would
+   * persist a malformed conflict key and let two tenant-kind rows coexist
+   * under the same tenant.
+   */
+  protected async validateBeforeSave(): Promise<void> {
+    await super.validateBeforeSave();
+    assertSubscriberInvariant('TenantSubscription', {
+      subscriberKind: this.subscriberKind,
+      subscriberExternalId: this.subscriberExternalId,
+    });
   }
 
   isEntitled(now = new Date()): boolean {

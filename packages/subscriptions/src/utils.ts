@@ -132,6 +132,40 @@ export function subscriberToColumns(subscriber: Subscriber): {
   };
 }
 
+/**
+ * Enforce the subscriber XOR invariant on a row's columns. Used by both the
+ * model constructors (catches construction-time mistakes) and the
+ * `validateBeforeSave` override (catches mutations applied via the
+ * generated PUT/PATCH update path that bypass the constructor).
+ *
+ * @param modelName - Prepended to error messages so callers can tell whether
+ *   the failure originated in `TenantSubscription` or `TenantUsageMetric`.
+ */
+export function assertSubscriberInvariant(
+  modelName: string,
+  fields: {
+    subscriberKind: SubscriberKind;
+    subscriberExternalId: string;
+  },
+): void {
+  if (
+    fields.subscriberKind === 'tenant' &&
+    fields.subscriberExternalId !== ''
+  ) {
+    throw new Error(
+      `${modelName}: subscriberExternalId must be empty when subscriberKind is "tenant"`,
+    );
+  }
+  if (
+    fields.subscriberKind === 'external' &&
+    fields.subscriberExternalId === ''
+  ) {
+    throw new Error(
+      `${modelName}: subscriberKind="external" requires a non-empty subscriberExternalId`,
+    );
+  }
+}
+
 export function getWindowForThreshold(
   thresholdWindow: ThresholdWindow,
   now = new Date(),

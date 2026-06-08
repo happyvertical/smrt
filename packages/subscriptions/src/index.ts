@@ -53,6 +53,7 @@ export type {
   UsageWindow,
 } from './types.js';
 export {
+  assertSubscriberInvariant,
   getWindowForThreshold,
   getWindowKey,
   isValidThreshold,

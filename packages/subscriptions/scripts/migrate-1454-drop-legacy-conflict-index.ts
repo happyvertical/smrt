@@ -34,6 +34,26 @@ import { getDatabase } from '@happyvertical/sql';
 
 const LEGACY_INDEX_NAME = '_smrt_tenant_subscriptions_tenant_id_idx';
 
+/**
+ * Detect the database engine from the URL / path. Supports the three engines
+ * SMRT itself supports — Postgres, DuckDB, SQLite — with SQLite as the
+ * last-resort fallback (matches DUcDB-less repos pre-#1438).
+ */
+function detectDatabaseType(input: string): 'postgres' | 'duckdb' | 'sqlite' {
+  if (
+    input.startsWith('postgres://') ||
+    input.startsWith('postgresql://') ||
+    input.startsWith('postgres:') ||
+    input.startsWith('postgresql:')
+  ) {
+    return 'postgres';
+  }
+  if (input.startsWith('duckdb://') || /\.duckdb($|\?)/i.test(input)) {
+    return 'duckdb';
+  }
+  return 'sqlite';
+}
+
 async function main(): Promise<void> {
   const databaseUrl = process.argv[2];
   if (!databaseUrl) {
@@ -43,15 +63,12 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const config = databaseUrl.startsWith('postgres')
-    ? { type: 'postgres' as const, url: databaseUrl }
-    : { type: 'sqlite' as const, url: databaseUrl };
-
-  const db = await getDatabase(config);
+  const type = detectDatabaseType(databaseUrl);
+  const db = await getDatabase({ type, url: databaseUrl });
 
   try {
     process.stdout.write(
-      `Dropping legacy index ${LEGACY_INDEX_NAME} (if present)...\n`,
+      `Connecting via ${type} adapter. Dropping legacy index ${LEGACY_INDEX_NAME} (if present)...\n`,
     );
     await db.query(`DROP INDEX IF EXISTS "${LEGACY_INDEX_NAME}"`);
     process.stdout.write('Done.\n');
