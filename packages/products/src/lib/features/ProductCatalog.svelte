@@ -183,21 +183,21 @@ function _handleCancelForm() {
     align-items: center;
     margin-bottom: 1.5rem;
     padding-bottom: 1rem;
-    border-bottom: 2px solid #e2e8f0;
+    border-bottom: 2px solid var(--smrt-color-outline-variant, #e2e8f0);
   }
-  
+
   .catalog-header h2 {
     margin: 0;
-    color: #1f2937;
+    color: var(--smrt-color-on-surface, #1f2937);
     font-size: 1.875rem;
     font-weight: 700;
   }
-  
+
   .catalog-stats {
     display: flex;
     gap: 1.5rem;
     font-size: 0.875rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
   
   .catalog-controls {
@@ -216,7 +216,7 @@ function _handleCancelForm() {
   
   .search-input, .category-filter {
     padding: 0.5rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: 4px;
     font-size: 0.875rem;
   }
@@ -231,8 +231,8 @@ function _handleCancelForm() {
   }
   
   .create-btn {
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-on-primary, white);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -240,9 +240,9 @@ function _handleCancelForm() {
     cursor: pointer;
     transition: background-color 0.2s;
   }
-  
+
   .create-btn:hover {
-    background: #2563eb;
+    background: var(--smrt-color-primary, #2563eb);
   }
   
   .products-grid {
@@ -254,26 +254,26 @@ function _handleCancelForm() {
   .loading-state, .error-state, .empty-state {
     text-align: center;
     padding: 3rem 1rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
-  
+
   .error-state button {
     margin-top: 0.5rem;
-    background: #dc2626;
-    color: white;
+    background: var(--smrt-color-error, #dc2626);
+    color: var(--smrt-color-on-error, white);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 4px;
     cursor: pointer;
   }
-  
+
   .form-overlay {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
     display: flex;
     align-items: center;
     justify-content: center;
@@ -292,7 +292,7 @@ function _handleCancelForm() {
   .form-container h3 {
     margin: 0 0 1rem 0;
     padding: 1.5rem 1.5rem 0 1.5rem;
-    color: #1f2937;
+    color: var(--smrt-color-on-surface, #1f2937);
     font-size: 1.25rem;
     font-weight: 600;
   }

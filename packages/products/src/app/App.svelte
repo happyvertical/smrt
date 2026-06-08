@@ -56,12 +56,12 @@ onMount(() => {
   .placeholder-page h2 {
     margin: 0 0 1rem 0;
     font-size: 2rem;
-    color: #1f2937;
+    color: var(--smrt-color-on-surface, #1f2937);
   }
-  
+
   .placeholder-page p {
     margin: 0;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     font-size: 1.125rem;
   }
 </style>
