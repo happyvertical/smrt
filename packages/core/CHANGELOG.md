@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.27.17
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals (S1 #1373 phase 2) (#1445) (products)
+  - refactor: tokenize color literals + flip to strict (S1 #1373 phase 2) (#1446) (content)
+  - @happyvertical/smrt-scanner@0.27.17
+  - @happyvertical/smrt-config@0.27.17
+  - @happyvertical/smrt-types@0.27.17
+
 ## 0.27.16
 
 ### Patch Changes
