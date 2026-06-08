@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-jobs",
-  "version": "0.27.21",
+  "version": "0.27.22",
   "description": "Background job processing for SMRT objects with persistence and scheduling",
   "author": "HappyVertical",
   "type": "module",
