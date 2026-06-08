@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.20
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: adopt --smrt-z-index-\* scale across UI packages (S1 #1373 phase 2) (#1450)
+  - @happyvertical/smrt-scanner@0.27.20
+  - @happyvertical/smrt-config@0.27.20
+  - @happyvertical/smrt-types@0.27.20
+
 ## 0.27.19
 
 ### Patch Changes
