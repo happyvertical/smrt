@@ -131,6 +131,16 @@ pre-push:
         Use the centralized scale: z-index: var(--smrt-z-index-<layer>, <fallback>).
         Run: node scripts/check-z-index.mjs
 
+    spacing:
+      # Bans raw spacing px (padding/margin/gap) in component CSS. Strict for
+      # smrt-svelte, report-only elsewhere until later phases of #1373. No deps.
+      run: node scripts/check-spacing.mjs
+      fail_text: |
+        ❌ Raw spacing px found in a strict UI package!
+
+        Snap to the 4px grid: padding/margin/gap: var(--smrt-spacing-<n>, <px>).
+        Run: node scripts/check-spacing.mjs
+
     validate-all-workflows:
       run: |
         echo "🔍 Validating ALL workflow files before push..."
