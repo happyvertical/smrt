@@ -211,7 +211,7 @@ function handleSubmit(event: SubmitEvent) {
     gap: 0.5rem;
     flex-wrap: wrap;
     font-size: 0.9rem;
-    color: #555;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .actions {

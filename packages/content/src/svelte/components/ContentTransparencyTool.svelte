@@ -290,21 +290,21 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
   }
 
   .pill--passed {
-    background: rgba(22, 163, 74, 0.14);
-    color: #166534;
+    background: color-mix(in srgb, var(--smrt-color-success) 14%, transparent);
+    color: var(--smrt-color-on-success-container);
   }
 
   .pill--neutral {
-    background: rgba(59, 130, 246, 0.14);
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .tool-error {
     margin: 0;
     border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    background: rgba(220, 38, 38, 0.1);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
     font-size: 0.9rem;
   }
 </style>

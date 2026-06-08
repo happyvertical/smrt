@@ -594,7 +594,7 @@ function closeTry() {
   }
 
   .group-btn.active .group-count {
-    background: rgba(0,0,0,0.08);
+    background: color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent);
   }
 
   .endpoints-panel {
@@ -602,7 +602,7 @@ function closeTry() {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: 1rem;
     padding: 1.5rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent);
   }
 
   .endpoints-panel h2 {

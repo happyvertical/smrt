@@ -412,7 +412,7 @@ function handleDeleteContent(content: any) {
   .search-filters select:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 20%, transparent);
   }
 
   .actions-group {
@@ -444,7 +444,7 @@ function handleDeleteContent(content: any) {
 
   .view-toggles button:hover {
     color: var(--smrt-color-on-surface);
-    background: rgba(0,0,0,0.05);
+    background: color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
   }
 
   .view-toggles button.active {
@@ -457,8 +457,12 @@ function handleDeleteContent(content: any) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    color: white;
+    background: linear-gradient(
+      135deg,
+      var(--smrt-color-primary) 0%,
+      color-mix(in srgb, var(--smrt-color-primary) 80%, black) 100%
+    );
+    color: var(--smrt-color-on-primary);
     border: none;
     padding: 0.5rem 1rem;
     height: 38px;
@@ -470,7 +474,7 @@ function handleDeleteContent(content: any) {
 
   .add-button:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 6px -1px rgba(59,130,246,0.5);
+    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 50%, transparent);
   }
 
   .content-header__eyebrow,
@@ -575,13 +579,13 @@ function handleDeleteContent(content: any) {
     letter-spacing: 0.05em;
   }
 
-  .status-published { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-  .status-draft { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-  .status-archived { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+  .status-published { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
+  .status-draft { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning); }
+  .status-archived { background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface-variant); border: 1px solid var(--smrt-color-outline-variant); }
 
-  .state-highlighted { background: #fef3c7; color: #92400e; border: 1px solid #fde68a;}
-  .state-active { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-  .state-deprecated { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+  .state-highlighted { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning);}
+  .state-active { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
+  .state-deprecated { background: var(--smrt-color-error-container); color: var(--smrt-color-on-error-container); border: 1px solid var(--smrt-color-error); }
 
   .content-description {
     color: var(--smrt-color-on-surface-variant);
@@ -605,14 +609,14 @@ function handleDeleteContent(content: any) {
 
   .source, .file {
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .source a {
-    color: #3b82f6;
+    color: var(--smrt-color-primary);
     text-decoration: none;
   }
   
@@ -655,12 +659,12 @@ function handleDeleteContent(content: any) {
   }
 
   .delete-btn {
-    color: #dc2626 !important;
+    color: var(--smrt-color-error) !important;
   }
 
   .delete-btn:hover {
-    background: #fef2f2 !important;
-    border-color: #fecaca !important;
+    background: var(--smrt-color-error-container) !important;
+    border-color: var(--smrt-color-error) !important;
   }
 
   /* GRID View Specifics */
@@ -742,7 +746,7 @@ function handleDeleteContent(content: any) {
   }
 
   .quiet-action--danger {
-    color: #b91c1c;
+    color: var(--smrt-color-error);
   }
 
   .content-row__links {
