@@ -229,7 +229,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     bottom: 0;
     height: 3px;
     background-color: var(--smrt-color-primary);
-    border-radius: 3px 3px 0 0;
+    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
     transition: width 200ms, opacity 200ms;
     width: 0;
     opacity: 0;

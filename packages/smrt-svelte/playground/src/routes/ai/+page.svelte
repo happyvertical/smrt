@@ -141,7 +141,7 @@ const caps = $derived(app.state.capabilities);
     padding: 8px 16px;
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-weight: 600;
   }
 
@@ -164,7 +164,7 @@ const caps = $derived(app.state.capabilities);
   .cap-card {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 16px;
   }
 
@@ -212,7 +212,7 @@ const caps = $derived(app.state.capabilities);
     padding: 20px;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     text-decoration: none;
     transition: all 0.2s;
   }

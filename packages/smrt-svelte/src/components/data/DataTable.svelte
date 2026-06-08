@@ -466,7 +466,7 @@ const sizeClasses = {
     height: 20px;
     border: 2px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-top-color: var(--smrt-color-primary, #3b82f6);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

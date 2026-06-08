@@ -1616,7 +1616,7 @@ function removeAsset(id: string) {
     align-items: center;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.25rem 0.25rem 0.25rem 0.75rem;
     font-size: 0.875rem;
     color: var(--smrt-color-on-surface);
@@ -1784,7 +1784,7 @@ function removeAsset(id: string) {
   .evidence-status {
     align-items: center;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     display: inline-flex;
     font-size: 0.75rem;
     font-weight: 800;

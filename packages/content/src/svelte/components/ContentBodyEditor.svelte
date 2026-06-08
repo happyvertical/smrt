@@ -1387,7 +1387,7 @@ function handleEditorDragEnd() {
     gap: 0.1rem;
     padding: 0.25rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(in srgb, var(--smrt-color-surface) 96%, transparent);
     color: var(--smrt-color-on-surface);
     box-shadow: 0 0.75rem 1.75rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
@@ -1408,7 +1408,7 @@ function handleEditorDragEnd() {
   .image-control-popover button {
     width: 1.85rem;
     height: 1.85rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .image-control-popover button:hover,
@@ -1430,7 +1430,7 @@ function handleEditorDragEnd() {
     width: 1.45rem;
     height: 1.45rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface);
     box-shadow: 0 0.45rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     cursor: nwse-resize;

@@ -405,7 +405,7 @@ function handleInput(e: Event) {
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
     transition: all 0.2s;
@@ -452,7 +452,7 @@ function handleInput(e: Event) {
     width: 8px;
     height: 8px;
     background: var(--smrt-color-success);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: pulse-dot 1s ease-in-out infinite;
   }
 
@@ -496,7 +496,7 @@ function handleInput(e: Event) {
     height: 12px;
     border: 2px solid var(--smrt-color-outline-variant);
     border-top-color: var(--smrt-color-primary);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

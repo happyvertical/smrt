@@ -191,7 +191,7 @@ function getInitials(name: string): string {
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: transparent;
     border: none;
-    border-radius: 20px;
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     color: var(--smrt-color-on-surface);

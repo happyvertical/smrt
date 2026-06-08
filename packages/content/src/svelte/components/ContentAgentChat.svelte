@@ -526,7 +526,7 @@ async function handleSendMessage(content: string) {
     height: 16px;
     border: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 1s linear infinite;
     margin-right: var(--smrt-spacing-2, 8px);
     vertical-align: middle;
@@ -542,7 +542,7 @@ async function handleSendMessage(content: string) {
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     cursor: pointer;
   }
 
@@ -554,7 +554,7 @@ async function handleSendMessage(content: string) {
   .smrt-select {
     width: 100%;
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: none;
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     color: var(--smrt-color-on-surface, #1a1c1e);
@@ -609,7 +609,7 @@ async function handleSendMessage(content: string) {
     gap: var(--smrt-spacing-1, 4px);
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: 5px;
+    border-radius: var(--smrt-radius-sm, 4px);
     background: none;
     color: var(--smrt-color-on-surface-variant, #43474e);
     font-size: 0.75rem;
@@ -640,7 +640,7 @@ async function handleSendMessage(content: string) {
     flex: 1;
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: 5px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.8125rem;
     outline: none;
     background: var(--smrt-color-surface, #ffffff);

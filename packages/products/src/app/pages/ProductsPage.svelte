@@ -90,7 +90,7 @@
   .info-card {
     background: white;
     padding: 1.5rem;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     text-align: center;
   }

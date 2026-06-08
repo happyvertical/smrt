@@ -277,7 +277,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     padding: 0.75rem 1.25rem;
     background: var(--smrt-color-surface-container-highest, #333);
     border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     color: inherit;
     font-size: 0.95rem;
     transition: box-shadow 0.2s, border-color 0.2s;
@@ -318,7 +318,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     color: var(--smrt-color-error, #ef4444);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .gallery-grid {
@@ -415,7 +415,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     background: var(--smrt-color-surface-container-high, #242424);
     color: var(--smrt-color-primary, #3b82f6);
     border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     cursor: pointer;
     transition: background 0.2s;

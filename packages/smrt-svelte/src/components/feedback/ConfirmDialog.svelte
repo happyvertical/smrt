@@ -113,7 +113,7 @@ function handleKeydown(e: KeyboardEvent) {
 
   .dialog-content {
     background-color: var(--smrt-color-surface-container-high);
-    border-radius: 28px;
+    border-radius: var(--smrt-radius-3xl, 32px);
     padding: var(--smrt-spacing-6, 24px);
     max-width: 400px;
     width: 100%;
@@ -162,7 +162,7 @@ function handleKeydown(e: KeyboardEvent) {
     padding: 0 var(--smrt-spacing-6, 24px);
     font: var(--smrt-typography-label-large-font);
     font-weight: 500;
-    border-radius: 20px;
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     border: none;
@@ -205,7 +205,7 @@ function handleKeydown(e: KeyboardEvent) {
     height: 18px;
     border: 2px solid transparent;
     border-top-color: currentColor;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

@@ -588,7 +588,7 @@ function closeTry() {
   .group-count {
     background: var(--smrt-color-surface-variant, #e1e2ec);
     padding: 0.1rem 0.4rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-size: 0.7rem;
     font-weight: 600;
   }

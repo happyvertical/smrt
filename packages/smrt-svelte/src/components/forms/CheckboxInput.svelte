@@ -127,7 +127,7 @@ function handleChange(e: Event) {
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     margin: -10px; /* Offset the 40x40 container to align 18x18 checkbox */
   }
 
@@ -145,7 +145,7 @@ function handleChange(e: Event) {
     width: 18px;
     height: 18px;
     border: 2px solid var(--smrt-color-on-surface-variant);
-    border-radius: 2px;
+    border-radius: var(--smrt-radius-sm, 4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -196,7 +196,7 @@ function handleChange(e: Event) {
     left: 0;
     right: 0;
     bottom: 0;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     pointer-events: none;
     transition: opacity var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
   }

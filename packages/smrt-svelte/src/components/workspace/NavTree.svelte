@@ -277,7 +277,7 @@ function navChildrenId(href: string): string {
     font-size: 0.7rem;
     font-weight: 600;
     line-height: 1.2;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }

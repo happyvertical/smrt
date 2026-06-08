@@ -98,7 +98,7 @@ function handleClick(value: string) {
     color: var(--smrt-color-on-surface-variant);
     background-color: transparent;
     border: 1px solid var(--smrt-color-outline);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     cursor: pointer;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     white-space: nowrap;

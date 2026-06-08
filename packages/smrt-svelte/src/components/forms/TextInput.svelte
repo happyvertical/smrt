@@ -293,7 +293,7 @@ function handleInput(e: Event) {
     display: flex;
     align-items: center;
     background-color: var(--field-bg);
-    border-radius: 4px 4px 0 0;
+    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
     min-height: 56px;
     padding: 0 var(--smrt-spacing-4, 16px);
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
@@ -369,7 +369,7 @@ function handleInput(e: Event) {
     border: none;
     background: transparent;
     color: var(--field-color);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     cursor: pointer;
     margin-right: -8px;
     transition: all 200ms;

@@ -58,7 +58,7 @@ const { product, onEdit, onDelete }: Props = $props();
 <style>
   .product-card {
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
     background: white;
     box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent);
@@ -101,7 +101,7 @@ const { product, onEdit, onDelete }: Props = $props();
     color: var(--smrt-color-on-surface, #374151);
     background: var(--smrt-color-surface-container, #f3f4f6);
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     display: inline-block;
     margin-bottom: 0.5rem;
   }
@@ -129,7 +129,7 @@ const { product, onEdit, onDelete }: Props = $props();
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-on-surface, #374151);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-size: 0.75rem;
   }
 
@@ -143,7 +143,7 @@ const { product, onEdit, onDelete }: Props = $props();
   
   .edit-btn, .delete-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.875rem;
     font-weight: 500;
     border: 1px solid;

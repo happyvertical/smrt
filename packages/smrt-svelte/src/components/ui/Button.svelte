@@ -190,7 +190,7 @@ const linkProps = $derived(() => {
     height: 1em;
     border: 2px solid currentColor;
     border-right-color: transparent;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.75s linear infinite;
   }
 

@@ -337,7 +337,7 @@ async function handleAIEdit() {
   .mode-selector {
     display: flex;
     background: var(--smrt-color-surface-container-high, #242424);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.25rem;
     gap: 0.25rem;
   }
@@ -350,7 +350,7 @@ async function handleAIEdit() {
     color: var(--smrt-color-outline, #666);
     cursor: pointer;
     font-weight: 500;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     transition: all 0.2s;
   }
 
@@ -415,7 +415,7 @@ async function handleAIEdit() {
     color: var(--smrt-color-primary, #3b82f6);
     border: 1px solid var(--smrt-color-outline-variant, #444);
     padding: 0.6rem 1.2rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     cursor: pointer;
     transition: background 0.2s;
@@ -442,7 +442,7 @@ async function handleAIEdit() {
     color: white;
     border: none;
     padding: 0.6rem 1.5rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     cursor: pointer;
     transition: background 0.2s, opacity 0.2s;
@@ -467,7 +467,7 @@ async function handleAIEdit() {
     color: var(--smrt-color-error, #ef4444);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.85rem;
   }
 
@@ -475,7 +475,7 @@ async function handleAIEdit() {
     color: var(--smrt-color-success, #22c55e);
     background: color-mix(in srgb, var(--smrt-color-success) 10%, transparent);
     padding: 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.85rem;
   }
 </style>

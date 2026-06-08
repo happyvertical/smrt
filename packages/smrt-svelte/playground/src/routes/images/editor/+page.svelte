@@ -86,7 +86,7 @@ function handleSave(image: any) {
   .success-panel pre {
     background: #000;
     padding: 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-family: monospace;
     font-size: 0.85rem;
     overflow-x: auto;

@@ -187,6 +187,12 @@ jobs:
       - name: Check raw spacing px
         run: node scripts/check-spacing.mjs
 
+      # Bans raw border-radius px/% in component CSS. Strict (fails) for UI
+      # packages; report-only elsewhere until later phases of the design-token
+      # sweep (issue #1373). Node-only, no deps.
+      - name: Check raw border-radius
+        run: node scripts/check-radius.mjs
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

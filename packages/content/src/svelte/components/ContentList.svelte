@@ -489,7 +489,7 @@ function handleDeleteContent(content: any) {
   .type-pill {
     display: inline-flex;
     align-items: center;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.65rem;
     font-size: 0.72rem;
     font-weight: 700;
@@ -572,7 +572,7 @@ function handleDeleteContent(content: any) {
 
   .badge {
     padding: 0.25rem 0.6rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -732,7 +732,7 @@ function handleDeleteContent(content: any) {
     justify-content: center;
     min-height: 2.4rem;
     padding: 0 0.85rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: transparent;
     color: var(--smrt-color-on-surface);

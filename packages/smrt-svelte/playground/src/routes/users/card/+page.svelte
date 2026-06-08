@@ -162,7 +162,7 @@ let selectedId = $state<string | null>(null);
   code {
     background: var(--smrt-color-surface-container);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.8rem;
   }
 </style>

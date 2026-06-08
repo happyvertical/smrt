@@ -75,7 +75,7 @@ const statusClass = $derived.by(() => {
     gap: var(--smrt-spacing-4, 16px);
     padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     width: 100%;
     text-align: left;
     cursor: default;
@@ -142,7 +142,7 @@ const statusClass = $derived.by(() => {
     align-items: center;
     background-color: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-on-surface-variant);
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     text-transform: capitalize;
   }
 
@@ -152,7 +152,7 @@ const statusClass = $derived.by(() => {
     height: 20px;
     display: inline-flex;
     align-items: center;
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     text-transform: capitalize;
     font-weight: 600;
   }

@@ -534,7 +534,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);

@@ -56,7 +56,7 @@ const _icon = $derived.by(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-secondary-container, #d7e3f7);
     color: var(--smrt-color-on-secondary-container, #101c2b);
     font-weight: 500;

@@ -350,7 +350,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
     height: 20px;
     border: 2px solid var(--color-neutral-gray200, #e5e7eb);
     border-top-color: var(--color-primary, #3b82f6);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

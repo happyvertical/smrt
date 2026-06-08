@@ -217,7 +217,7 @@ const count = $derived(selectedAssets.length);
 
   .confirm-card {
     background: var(--smrt-color-surface-container-high, #ffffff);
-    border-radius: 28px;
+    border-radius: var(--smrt-radius-3xl, 32px);
     padding: var(--smrt-spacing-6, 24px);
     max-width: 400px;
     width: 100%;
@@ -259,7 +259,7 @@ const count = $derived(selectedAssets.length);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: 500;
-    border-radius: 20px;
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
     border: none;
     transition: all 200ms ease;
@@ -294,7 +294,7 @@ const count = $derived(selectedAssets.length);
     height: 16px;
     border: 2px solid transparent;
     border-top-color: currentColor;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

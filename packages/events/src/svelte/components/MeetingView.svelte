@@ -163,7 +163,7 @@ const hasDocuments = $derived(
     padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
     background: var(--view-bg);
     border: 1px solid var(--view-border);
-    border-radius: var(--radius-full, 9999px);
+    border-radius: var(--smrt-radius-full, 9999px);
     font-size: var(--font-size-sm, 0.875rem);
     color: var(--color-text-secondary, #666);
     margin-bottom: var(--spacing-sm, 0.5rem);
@@ -223,7 +223,7 @@ const hasDocuments = $derived(
     padding: var(--spacing-md, 1rem);
     background: var(--view-bg);
     border: 1px solid var(--view-border);
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--smrt-radius-md, 8px);
     text-decoration: none;
     color: var(--color-text-primary, #333);
     transition: all var(--transition-fast, 150ms);
