@@ -38,7 +38,14 @@ const PACKAGES = join(ROOT, 'packages');
 const THRESHOLD = 50;
 
 /** Packages held to ERROR. Everything else is report-only for now (#1373). */
-const STRICT_PACKAGES = new Set(['smrt-svelte']);
+const STRICT_PACKAGES = new Set([
+  'smrt-svelte',
+  'chat',
+  'products',
+  'users',
+  'content',
+  'projects',
+]);
 
 /**
  * Packages skipped entirely — dev/playground hosts, not shippable product

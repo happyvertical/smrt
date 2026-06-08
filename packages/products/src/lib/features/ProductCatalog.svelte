@@ -277,7 +277,7 @@ function _handleCancelForm() {
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 1000;
+    z-index: var(--smrt-z-index-dialog, 1300);
   }
   
   .form-container {
