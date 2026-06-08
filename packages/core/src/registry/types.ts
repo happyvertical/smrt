@@ -283,6 +283,16 @@ export interface SmartObjectConfig {
          * routes) rather than over HTTP.
          */
         skipApiCheck?: boolean;
+
+        /**
+         * Whether this CLI surface should be advertised through HTTP discovery
+         * (`GET /api/_resources`) for `@happyvertical/smrt-app-cli`.
+         *
+         * Set to `false` for package-internal or in-process CLI resources that
+         * may still be useful to local generators but do not have app HTTP
+         * routes in downstream deployments.
+         */
+        http?: boolean;
       };
 
   /**
