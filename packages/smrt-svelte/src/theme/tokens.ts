@@ -3,7 +3,23 @@
  *
  * Based on Material Design 3 color system with semantic tokens
  * for consistent theming across components.
+ *
+ * NOTE: this is the simple/legacy `src/theme/` ThemeProvider. The canonical
+ * full token surface (spacing + typography included) lives in the preset
+ * system under `src/themes/` (Material/Glass/Studio + css-generator.ts). The
+ * additive Material-3 aliases (issue #1431) are imported from the shared
+ * preset tokens so both providers stay in lock-step where their categories
+ * overlap.
  */
+
+import {
+  borderRadiusAliases,
+  durationAliases,
+  fontFamilyAliases,
+  fontWeightTokens,
+  spacingAliases,
+  zIndexTokens,
+} from '../themes/shared.js';
 
 /**
  * Color scheme type
@@ -82,6 +98,10 @@ export const lightColors = {
   surfaceContainer: '#f3f4f6',
   surfaceContainerLow: '#f9fafb',
   surfaceContainerHigh: '#e5e7eb',
+  surfaceContainerHighest: '#d1d5db',
+  surfaceContainerLowest: '#ffffff',
+  surfaceDim: '#e5e7eb',
+  surfaceBright: '#ffffff',
 
   // Outline
   outline: '#d1d5db',
@@ -97,6 +117,7 @@ export const lightColors = {
   inversePrimary: '#93c5fd',
 
   // Scrim
+  shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.5)',
 };
 
@@ -149,6 +170,10 @@ export const darkColors = {
   surfaceContainer: '#1f2937',
   surfaceContainerLow: '#111827',
   surfaceContainerHigh: '#374151',
+  surfaceContainerHighest: '#4b5563',
+  surfaceContainerLowest: '#030712',
+  surfaceDim: '#1f2937',
+  surfaceBright: '#374151',
 
   // Outline
   outline: '#4b5563',
@@ -164,6 +189,7 @@ export const darkColors = {
   inversePrimary: '#2563eb',
 
   // Scrim
+  shadow: '#000000',
   scrim: 'rgba(0, 0, 0, 0.7)',
 };
 
@@ -363,6 +389,44 @@ export function generateColorVariables(
 }
 
 /**
+ * Generate CSS custom properties from typography tokens.
+ */
+function generateTypographyVariables(): Record<string, string> {
+  const vars: Record<string, string> = {};
+
+  for (const [key, token] of Object.entries(typography)) {
+    const cssKey = key.replace(/([A-Z])/g, '-$1').toLowerCase();
+    const family =
+      'var(--smrt-font-family, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif)';
+    vars[`--smrt-typography-${cssKey}-size`] = token.size;
+    vars[`--smrt-typography-${cssKey}-line-height`] = token.lineHeight;
+    vars[`--smrt-typography-${cssKey}-weight`] = String(token.weight);
+    vars[`--smrt-typography-${cssKey}-tracking`] = token.tracking;
+    vars[`--smrt-typography-${cssKey}-font-family`] = family;
+    vars[`--smrt-typography-${cssKey}-font`] =
+      `${token.weight} ${token.size}/${token.lineHeight} ${family}`;
+  }
+
+  return vars;
+}
+
+/**
+ * Generate CSS custom properties from spacing tokens.
+ */
+function generateSpacingVariables(): Record<string, string> {
+  const vars: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(spacing)) {
+    vars[`--smrt-spacing-${key.replace(/\./g, '_')}`] = value;
+  }
+  for (const [alias, scaleKey] of Object.entries(spacingAliases)) {
+    vars[`--smrt-spacing-${alias}`] = spacing[scaleKey];
+  }
+
+  return vars;
+}
+
+/**
  * Generate all CSS custom properties for a theme
  */
 export function generateThemeVariables(
@@ -371,8 +435,13 @@ export function generateThemeVariables(
   const colors = isDark ? darkColors : lightColors;
   const colorVars = generateColorVariables(colors);
 
-  return {
+  const vars: Record<string, string> = {
     ...colorVars,
+    '--smrt-color-scheme': isDark ? 'dark' : 'light',
+    '--smrt-font-family':
+      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    ...generateTypographyVariables(),
+    ...generateSpacingVariables(),
     // Border radius
     '--smrt-radius-none': borderRadius.none,
     '--smrt-radius-sm': borderRadius.sm,
@@ -403,4 +472,24 @@ export function generateThemeVariables(
     '--smrt-easing-emphasized-decelerate': easing.emphasizedDecelerate,
     '--smrt-easing-emphasized-accelerate': easing.emphasizedAccelerate,
   };
+
+  // Additive Material-3 aliases + theme-independent helper tokens (#1431),
+  // mirroring the preset system so both providers expose the same vocabulary.
+  for (const [alias, scaleKey] of Object.entries(borderRadiusAliases)) {
+    vars[`--smrt-radius-${alias}`] = borderRadius[scaleKey];
+  }
+  for (const [alias, value] of Object.entries(durationAliases)) {
+    vars[`--smrt-duration-${alias}`] = value;
+  }
+  for (const [alias, value] of Object.entries(fontFamilyAliases)) {
+    vars[`--smrt-font-family-${alias}`] = value;
+  }
+  for (const [name, value] of Object.entries(fontWeightTokens)) {
+    vars[`--smrt-typography-weight-${name}`] = value;
+  }
+  for (const [name, value] of Object.entries(zIndexTokens)) {
+    vars[`--smrt-z-index-${name}`] = value;
+  }
+
+  return vars;
 }

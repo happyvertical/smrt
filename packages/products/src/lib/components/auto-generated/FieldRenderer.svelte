@@ -152,18 +152,18 @@ function _handleObjectInput(event: Event) {
 
   .field-label {
     font-weight: 500;
-    color: #374151;
+    color: var(--smrt-color-on-surface, #374151);
     font-size: 0.875rem;
   }
 
   .required {
-    color: #dc2626;
+    color: var(--smrt-color-error, #dc2626);
   }
 
   .field-input,
   .field-textarea {
     padding: 0.5rem 0.75rem;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: 0.375rem;
     font-size: 0.875rem;
     transition: border-color 0.2s, box-shadow 0.2s;
@@ -172,8 +172,8 @@ function _handleObjectInput(event: Event) {
   .field-input:focus,
   .field-textarea:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: var(--smrt-color-primary, #3b82f6);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-primary, #3b82f6) 10%, transparent);
   }
 
   .field-textarea {
@@ -188,13 +188,13 @@ function _handleObjectInput(event: Event) {
 
   .field-hint {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     font-style: italic;
   }
 
   .field-input:read-only,
   .field-textarea:read-only {
-    background-color: #f9fafb;
+    background-color: var(--smrt-color-surface-container-low, #f9fafb);
     cursor: not-allowed;
   }
 </style>

@@ -412,7 +412,7 @@ function handleInput(e: Event) {
   }
 
   .mic-btn:hover {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface, #374151);
   }
 
@@ -444,14 +444,14 @@ function handleInput(e: Event) {
     align-items: center;
     gap: 6px;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: #22c55e;
+    color: var(--smrt-color-success);
     margin-top: 4px;
   }
 
   .listening-dot {
     width: 8px;
     height: 8px;
-    background: #22c55e;
+    background: var(--smrt-color-success);
     border-radius: 50%;
     animation: pulse-dot 1s ease-in-out infinite;
   }
@@ -487,15 +487,15 @@ function handleInput(e: Event) {
     align-items: center;
     gap: 6px;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: #8b5cf6;
+    color: var(--smrt-color-tertiary);
     margin-top: 4px;
   }
 
   .processing-spinner {
     width: 12px;
     height: 12px;
-    border: 2px solid #e5e7eb;
-    border-top-color: #3b82f6;
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }

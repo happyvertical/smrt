@@ -669,7 +669,7 @@ function getFormData(): Record<string, unknown> {
   .mode-btn.active {
     background: var(--smrt-color-surface, #fff);
     color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent);
   }
 
   .form-listen-btn {
@@ -678,8 +678,8 @@ function getFormData(): Record<string, unknown> {
     gap: 8px;
     padding: 10px 20px;
     border: 2px solid var(--smrt-color-primary, #3b82f6);
-    background: #fff;
-    color: #3b82f6;
+    background: var(--smrt-color-surface);
+    color: var(--smrt-color-primary);
     border-radius: 8px;
     cursor: pointer;
     font-size: 0.875rem;
@@ -710,10 +710,10 @@ function getFormData(): Record<string, unknown> {
 
   @keyframes pulse-btn {
     0%, 100% {
-      box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+      box-shadow: 0 0 0 0 color-mix(in srgb, var(--smrt-color-success) 40%, transparent);
     }
     50% {
-      box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+      box-shadow: 0 0 0 8px transparent;
     }
   }
 
@@ -739,10 +739,13 @@ function getFormData(): Record<string, unknown> {
     left: 0;
     right: 0;
     padding: 12px 24px;
-    background: rgba(var(--smrt-color-primary-rgb, 22, 101, 52), 0.9);
+    /* 90%-opacity primary. The old `--smrt-color-primary-rgb` channel token
+       was never emitted (issue #1431); color-mix derives the alpha from the
+       emitted `--smrt-color-primary` token instead. */
+    background: color-mix(in srgb, var(--smrt-color-primary, #166534) 90%, transparent);
     color: white;
     font-size: 0.875rem;
-    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 -2px 12px color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
     z-index: 9999;
     text-align: center;
     backdrop-filter: blur(8px);
@@ -766,11 +769,11 @@ function getFormData(): Record<string, unknown> {
 
   .extract-error {
     padding: 12px 16px;
-    background: #fef2f2;
-    border: 1px solid #fecaca;
+    background: var(--smrt-color-error-container);
+    border: 1px solid var(--smrt-color-error);
     border-radius: 8px;
     font-size: 0.875rem;
-    color: #dc2626;
+    color: var(--smrt-color-error);
   }
 
   .form-fields {

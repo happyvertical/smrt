@@ -300,26 +300,31 @@ const yearOptions = $derived(() => {
     overflow: hidden;
   }
 
-  /* Dark mode */
+  /*
+   * Dark mode. The base `--smrt-color-*` tokens already swap to dark values
+   * under the active dark scheme, so reference them directly (issue #1431 —
+   * the old `--smrt-color-*-dark` tokens were never emitted). Hardcoded
+   * fallbacks preserve the calendar's dark palette when no theme is applied.
+   */
   :global([data-theme="dark"]) .calendar {
-    --calendar-bg: var(--smrt-color-surface-dark, #242424);
-    --calendar-border: var(--smrt-color-outline-variant-dark, #3a3a3a);
-    --calendar-header-bg: var(--smrt-color-surface-container-low-dark, #2e2e2e);
-    --day-hover: var(--smrt-color-surface-container-high-dark, #3a3a3a);
-    --today-bg: var(--smrt-color-primary-container-dark, #1e3a5f);
-    --today-border: var(--smrt-color-primary-dark, #64b5f6);
-    --other-month: var(--smrt-color-on-surface-variant-dark, #666666);
+    --calendar-bg: var(--smrt-color-surface, #242424);
+    --calendar-border: var(--smrt-color-outline-variant, #3a3a3a);
+    --calendar-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+    --day-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+    --today-bg: var(--smrt-color-primary-container, #1e3a5f);
+    --today-border: var(--smrt-color-primary, #64b5f6);
+    --other-month: var(--smrt-color-on-surface-variant, #666666);
   }
 
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .calendar {
-      --calendar-bg: #242424;
-      --calendar-border: #3a3a3a;
-      --calendar-header-bg: #2e2e2e;
-      --day-hover: #3a3a3a;
-      --today-bg: #1e3a5f;
-      --today-border: #64b5f6;
-      --other-month: #666666;
+      --calendar-bg: var(--smrt-color-surface, #242424);
+      --calendar-border: var(--smrt-color-outline-variant, #3a3a3a);
+      --calendar-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+      --day-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+      --today-bg: var(--smrt-color-primary-container, #1e3a5f);
+      --today-border: var(--smrt-color-primary, #64b5f6);
+      --other-month: var(--smrt-color-on-surface-variant, #666666);
     }
   }
 
@@ -383,7 +388,7 @@ const yearOptions = $derived(() => {
   .today-btn {
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-4, 1rem);
     border: 1px solid var(--calendar-border);
-    border-radius: var(--radius-sm, 4px);
+    border-radius: var(--smrt-radius-small, 4px);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     background: var(--calendar-bg);
     color: var(--smrt-color-primary, #005ac1);

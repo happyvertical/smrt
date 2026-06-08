@@ -40,11 +40,11 @@ export class SiteService {
       tier: data.tier ?? 'free',
       databaseUrl: data.databaseUrl ?? '',
       databaseType: data.databaseType ?? '',
-      portalConfig: data.portalConfig ?? {},
+      portalConfig: JSON.stringify(data.portalConfig ?? {}),
       repositoryUrl: data.repositoryUrl ?? '',
       templateName: data.templateName ?? '',
       provisioningStatus: 'pending',
-      metadata: data.metadata ?? {},
+      metadata: JSON.stringify(data.metadata ?? {}),
     });
     await site.save();
     return site;

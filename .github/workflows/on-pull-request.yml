@@ -164,6 +164,17 @@ jobs:
       - name: Run standards check
         run: node scripts/check-standards.mjs
 
+      # Fails if any --smrt-* token consumed by smrt-svelte components is never
+      # emitted by a theme-delivery path (issue #1431). Node-only, no deps.
+      - name: Check smrt-svelte design tokens
+        run: node scripts/check-svelte-tokens.mjs
+
+      # Bans raw color literals in component CSS. Strict (fails) for
+      # smrt-svelte; report-only for other UI packages until later phases of
+      # the design-token sweep (issue #1373). Node-only, no deps.
+      - name: Check raw color literals
+        run: node scripts/check-color-literals.mjs
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

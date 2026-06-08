@@ -1,5 +1,94 @@
 # @happyvertical/smrt-core
 
+## 0.27.17
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals (S1 #1373 phase 2) (#1445) (products)
+  - refactor: tokenize color literals + flip to strict (S1 #1373 phase 2) (#1446) (content)
+  - @happyvertical/smrt-scanner@0.27.17
+  - @happyvertical/smrt-config@0.27.17
+  - @happyvertical/smrt-types@0.27.17
+
+## 0.27.16
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals + color-literal ratchet (S1 #1373 phase 1) (#1443) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.16
+  - @happyvertical/smrt-config@0.27.16
+  - @happyvertical/smrt-types@0.27.16
+
+## 0.27.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stop SSG export leaking camelCase/snake_case secrets (#1441) (config)
+  - @happyvertical/smrt-scanner@0.27.15
+  - @happyvertical/smrt-config@0.27.15
+  - @happyvertical/smrt-types@0.27.15
+
+## 0.27.14
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: logging ratchet scaffolding + core runtime migration (S14 #1432 phase 1) (#1438) (core)
+  - @happyvertical/smrt-scanner@0.27.14
+  - @happyvertical/smrt-config@0.27.14
+  - @happyvertical/smrt-types@0.27.14
+
+## 0.27.13
+
+### Patch Changes
+
+- ### Other Changes
+
+  - build: typecheck script rollout + turbo typecheck gate (#1375) (#1437) (repo)
+  - @happyvertical/smrt-scanner@0.27.13
+  - @happyvertical/smrt-config@0.27.13
+  - @happyvertical/smrt-types@0.27.13
+
+## 0.27.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - preserve tenant scoped uuid metadata (#1439) (scanner)
+  - @happyvertical/smrt-scanner@0.27.12
+  - @happyvertical/smrt-config@0.27.12
+  - @happyvertical/smrt-types@0.27.12
+
+## 0.27.11
+
+### Patch Changes
+
+- ### Merged Changes
+
+  - [codex] add SMRT subscriptions package
+  - @happyvertical/smrt-scanner@0.27.11
+  - @happyvertical/smrt-config@0.27.11
+  - @happyvertical/smrt-types@0.27.11
+
+## 0.27.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - emit consumed design tokens so themes resolve (#1431) (#1434) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.10
+  - @happyvertical/smrt-config@0.27.10
+  - @happyvertical/smrt-types@0.27.10
+
 ## 0.27.9
 
 ### Patch Changes

@@ -248,10 +248,10 @@ function handleSubmit() {
 
   .card,
   .editor {
-    border: 1px solid #d9d9d9;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.75rem;
     padding: 0.9rem;
-    background: #fff;
+    background: var(--smrt-color-surface);
   }
 
   .card,

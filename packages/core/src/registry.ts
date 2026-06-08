@@ -28,6 +28,7 @@
  * ```
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { applyOneToManyChildAccessors } from './child-accessors';
 import { SmrtCollection } from './collection';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
@@ -140,6 +141,8 @@ import {
   isQualifiedName,
   parseQualifiedName,
 } from './utils/qualified-names.js';
+
+const logger = createLogger({ level: 'info' });
 
 // Re-export the canonical collection-base detector so downstream tooling
 // (e.g. @happyvertical/smrt-vitest's manifest-based test-db builder) can share
@@ -2119,7 +2122,7 @@ export class ObjectRegistry {
       // Informational only — cycles are handled, not fatal. Surfacing the
       // involved classes helps operators understand why strict FK ordering
       // could not be honored for these tables.
-      console.warn(
+      logger.warn(
         `[ObjectRegistry] Foreign-key cycle(s) detected and broken for ordering: ${[
           ...cycleMembers,
         ].join(', ')}. Tables are created without strict cyclic ordering; ` +
@@ -2241,7 +2244,7 @@ export class ObjectRegistry {
         // extends a parent with the same className and only one is installed.
         // Longer cycles indicate misconfigured manifests.
         if (chain.length > 1) {
-          console.warn(
+          logger.warn(
             `[ObjectRegistry] Circular inheritance detected in chain: ${chain.join(' -> ')} -> ${current.name}. ` +
               `Check that '${current.extends ?? current.name}' resolves to the correct package class.`,
           );
@@ -2382,7 +2385,7 @@ export class ObjectRegistry {
               `  - Or set smrt.inheritance.onMissingAncestor='warn' in config`,
           );
         } else if (onMissingAncestor === 'warn') {
-          console.warn(`[ObjectRegistry] ${message}`);
+          logger.warn(`[ObjectRegistry] ${message}`);
         }
 
         continue;
@@ -2442,7 +2445,7 @@ export class ObjectRegistry {
         parentField.__tenancy?.isTenantIdField ||
         parentField._meta?.__tenancy?.isTenantIdField;
       if (!(isTenantField && fieldName === 'tenantId')) {
-        console.warn(
+        logger.warn(
           `Field type mismatch: "${fieldName}" is ${parentField.type} in parent but ${childField.type} in child. Using child type.`,
         );
       }

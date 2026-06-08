@@ -466,7 +466,7 @@ function handleNativeChange(e: Event) {
   }
 
   .mic-btn:hover {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface, #374151);
   }
 

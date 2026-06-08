@@ -397,18 +397,18 @@ async function recheckFactClaims(claimIds: string[]) {
   }
 
   .pill--passed {
-    background: rgba(22, 163, 74, 0.14);
-    color: #166534;
+    background: color-mix(in srgb, var(--smrt-color-success) 14%, transparent);
+    color: var(--smrt-color-on-success-container);
   }
 
   .pill--flagged {
-    background: rgba(245, 158, 11, 0.16);
-    color: #92400e;
+    background: color-mix(in srgb, var(--smrt-color-warning) 16%, transparent);
+    color: var(--smrt-color-on-warning-container);
   }
 
   .pill--failed {
-    background: rgba(220, 38, 38, 0.14);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 14%, transparent);
+    color: var(--smrt-color-on-error-container);
   }
 
   .tool-error,
@@ -421,17 +421,17 @@ async function recheckFactClaims(claimIds: string[]) {
   }
 
   .tool-error {
-    background: rgba(220, 38, 38, 0.1);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
   }
 
   .tool-notice {
-    background: rgba(37, 99, 235, 0.1);
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .tool-warning {
-    background: rgba(245, 158, 11, 0.12);
-    color: #92400e;
+    background: color-mix(in srgb, var(--smrt-color-warning) 12%, transparent);
+    color: var(--smrt-color-on-warning-container);
   }
 </style>

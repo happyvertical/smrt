@@ -207,7 +207,11 @@ function handleKeydown(e: KeyboardEvent) {
 
 	.progress-fill {
 		height: 100%;
-		background: linear-gradient(90deg, #3b82f6, #60a5fa);
+		background: linear-gradient(
+			90deg,
+			var(--smrt-color-primary),
+			color-mix(in srgb, var(--smrt-color-primary) 70%, white)
+		);
 		border-radius: 4px;
 		transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
 	}

@@ -24,6 +24,7 @@
  * ```
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import {
@@ -50,6 +51,8 @@ import type {
   DispatchRetryOptions,
   DispatchSubscribeOptions,
 } from './types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Registered in-memory handler
@@ -611,16 +614,16 @@ export class DispatchBus {
         // Handle both sync and async handlers
         if (result && typeof result.catch === 'function') {
           void result.catch((error: unknown) => {
-            console.error(
+            logger.error(
               `DispatchBus: Handler for "${registered.pattern}" failed`,
-              error,
+              { error },
             );
           });
         }
       } catch (error) {
-        console.error(
+        logger.error(
           `DispatchBus: Handler for "${registered.pattern}" failed`,
-          error,
+          { error },
         );
       }
     }

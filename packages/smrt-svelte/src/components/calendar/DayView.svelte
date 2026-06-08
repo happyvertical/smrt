@@ -171,20 +171,24 @@ function getTypeLabel(type: string): string {
     background: var(--view-bg);
   }
 
-  /* Dark mode */
+  /*
+   * Dark mode. Reference the base `--smrt-color-*` tokens, which already swap
+   * to dark values under the active dark scheme (issue #1431 — the old
+   * `--smrt-color-*-dark` tokens were never emitted).
+   */
   :global([data-theme="dark"]) .day-view {
-    --view-bg: var(--smrt-color-surface-dark, #242424);
-    --view-border: var(--smrt-color-outline-variant-dark, #3a3a3a);
-    --header-bg: var(--smrt-color-surface-container-low-dark, #2e2e2e);
-    --card-hover: var(--smrt-color-surface-container-high-dark, #3a3a3a);
+    --view-bg: var(--smrt-color-surface, #242424);
+    --view-border: var(--smrt-color-outline-variant, #3a3a3a);
+    --header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+    --card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
   }
 
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .day-view {
-      --view-bg: #242424;
-      --view-border: #3a3a3a;
-      --header-bg: #2e2e2e;
-      --card-hover: #3a3a3a;
+      --view-bg: var(--smrt-color-surface, #242424);
+      --view-border: var(--smrt-color-outline-variant, #3a3a3a);
+      --header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+      --card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
     }
   }
 
