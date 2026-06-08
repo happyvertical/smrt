@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.27.18
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals in assets/chat/images (S1 #1373 phase 3) (#1447)
+  - chore: sync sdk packages to v0.74.4 (#1436) (deps)
+  - @happyvertical/smrt-scanner@0.27.18
+  - @happyvertical/smrt-config@0.27.18
+  - @happyvertical/smrt-types@0.27.18
+
 ## 0.27.17
 
 ### Patch Changes
