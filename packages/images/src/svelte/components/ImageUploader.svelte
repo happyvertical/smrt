@@ -499,7 +499,7 @@ onDestroy(() => {
 
   .tabs button:hover {
     color: var(--smrt-color-on-surface-variant, #ccc);
-    background: rgba(255,255,255,0.02);
+    background: color-mix(in srgb, var(--smrt-color-on-surface, #fff) 2%, transparent);
   }
 
   .tabs button.active {

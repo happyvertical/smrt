@@ -97,15 +97,28 @@ const HEX_RE = /#[0-9a-fA-F]{3}\b|#[0-9a-fA-F]{4}\b|#[0-9a-fA-F]{6}\b|#[0-9a-fA-
 const FUNC_RE = /\b(?:rgba?|hsla?)\([^)]*\)/gi;
 
 /**
- * Strip `<script>` / `<script module>` blocks from a `.svelte` source so color
- * literals that are JS values are not treated as CSS. Replaces each block with
- * blank lines to keep line numbers stable.
+ * For a `.svelte` source, keep ONLY the contents of `<style>` blocks and blank
+ * everything else (script + markup), preserving newlines so reported line
+ * numbers stay accurate.
+ *
+ * Scanning real CSS only (rather than "everything but <script>") avoids false
+ * matches from markup — notably a `/*` inside an attribute like
+ * `accept="image/*"`, which would otherwise make the CSS block-comment scanner
+ * swallow every literal up to the next `*​/` and silently hide them (#1373).
+ * Inline `style="..."` attributes are intentionally not scanned; component CSS
+ * lives in `<style>` blocks.
  */
-function stripScriptBlocks(source) {
-  return source.replace(
-    /<script\b[^>]*>[\s\S]*?<\/script>/gi,
-    (block) => block.replace(/[^\n]/g, ' '),
-  );
+function extractStyleBlocks(source) {
+  const out = source.replace(/[^\n]/g, ' ').split('');
+  const re = /(<style\b[^>]*>)([\s\S]*?)(<\/style>)/gi;
+  for (const m of source.matchAll(re)) {
+    const innerStart = m.index + m[1].length;
+    const inner = m[2];
+    for (let k = 0; k < inner.length; k++) {
+      out[innerStart + k] = inner[k];
+    }
+  }
+  return out.join('');
 }
 
 /**
@@ -168,7 +181,7 @@ function stripHtmlEntities(source) {
 
 /** Collect raw color-literal violations in a single file's source. */
 function findViolations(file, source) {
-  let text = file.endsWith('.svelte') ? stripScriptBlocks(source) : source;
+  let text = file.endsWith('.svelte') ? extractStyleBlocks(source) : source;
   if (file.endsWith('.svelte')) text = stripHtmlEntities(text);
   text = stripComments(text);
   // Blank out var(...) calls (multi-line aware) so allowed `var(--token,
