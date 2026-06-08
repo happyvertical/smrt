@@ -258,7 +258,7 @@ function getFileIcon(type: string): string {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 8px);
-    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-small, 4px);
     background: var(--smrt-color-surface, #fefbff);
   }
