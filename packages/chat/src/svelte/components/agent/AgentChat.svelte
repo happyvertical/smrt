@@ -435,7 +435,7 @@ $effect(() => {
   }
 
   .diff-dialog::backdrop {
-    background: color-mix(in srgb, var(--smrt-color-scrim) 30%, transparent);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.3));
   }
 
   .diff-dialog__header {

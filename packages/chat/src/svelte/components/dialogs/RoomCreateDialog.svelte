@@ -198,7 +198,7 @@ $effect(() => {
   .dialog-backdrop {
     position: fixed;
     inset: 0;
-    background: color-mix(in srgb, var(--smrt-color-scrim) 32%, transparent);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.32));
     display: flex;
     align-items: center;
     justify-content: center;

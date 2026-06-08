@@ -359,7 +359,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .detail-modal::backdrop {
-    background: color-mix(in srgb, var(--smrt-color-scrim) 50%, transparent);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
     backdrop-filter: blur(2px);
   }
 

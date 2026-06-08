@@ -209,7 +209,7 @@ const count = $derived(selectedAssets.length);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--smrt-color-scrim) 40%, transparent);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
     backdrop-filter: blur(2px);
     z-index: var(--smrt-z-index-dialog, 1000);
     padding: 1rem;

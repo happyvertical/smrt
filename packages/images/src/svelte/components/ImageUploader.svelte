@@ -619,7 +619,7 @@ onDestroy(() => {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: color-mix(in srgb, var(--smrt-color-scrim) 70%, transparent);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.7));
     color: white;
   }
 
