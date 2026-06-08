@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.22
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap spacing px to --smrt-spacing-\* across UI packages (S1 #1373 phase 2) (#1457)
+  - @happyvertical/smrt-scanner@0.27.22
+  - @happyvertical/smrt-config@0.27.22
+  - @happyvertical/smrt-types@0.27.22
+
 ## 0.27.21
 
 ### Patch Changes
