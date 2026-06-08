@@ -1390,7 +1390,7 @@ function handleEditorDragEnd() {
     border-radius: 999px;
     background: color-mix(in srgb, var(--smrt-color-surface) 96%, transparent);
     color: var(--smrt-color-on-surface);
-    box-shadow: 0 0.75rem 1.75rem rgba(0, 0, 0, 0.18);
+    box-shadow: 0 0.75rem 1.75rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     transform: translateX(-50%);
     backdrop-filter: blur(10px);
   }
@@ -1432,7 +1432,7 @@ function handleEditorDragEnd() {
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 999px;
     background: var(--smrt-color-surface);
-    box-shadow: 0 0.45rem 1rem rgba(0, 0, 0, 0.18);
+    box-shadow: 0 0.45rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     cursor: nwse-resize;
   }
 

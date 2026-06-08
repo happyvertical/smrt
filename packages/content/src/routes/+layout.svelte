@@ -78,7 +78,7 @@ const navItems = [
     position: sticky;
     top: 0;
     z-index: 100;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent);
   }
 
   .header-inner {
