@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.27.19
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: adopt --smrt-z-index-\* scale + add z-index ratchet (#1373) (#1449) (smrt-svelte)
+  - refactor: close out S1 — tokenize tail + scope the ratchet (#1373) (#1448)
+  - @happyvertical/smrt-scanner@0.27.19
+  - @happyvertical/smrt-config@0.27.19
+  - @happyvertical/smrt-types@0.27.19
+
 ## 0.27.18
 
 ### Patch Changes
