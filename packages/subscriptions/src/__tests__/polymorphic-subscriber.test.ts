@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
 import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
 import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
 import { TenantSubscription } from '../models/TenantSubscription.js';
@@ -311,6 +312,122 @@ describe('polymorphic subscriber — UsageMeter DB roundtrip', () => {
       window,
     });
     expect(tenantSummary.quantity).toBe(140);
+  });
+});
+
+describe('polymorphic subscriber — TenantSubscriptionCollection conflict key', () => {
+  let subs: TenantSubscriptionCollection;
+
+  beforeEach(async () => {
+    subs = await TenantSubscriptionCollection.create({
+      db: { type: 'sqlite', url: ':memory:' },
+    });
+  });
+
+  afterEach(async () => {
+    await subs.db.close?.();
+  });
+
+  it('persists multiple distinct external subscribers under the same issuing tenant', async () => {
+    // Regression for the Codex P1 review on smrt#1454 — the legacy
+    // `conflictColumns: ['tenant_id']` made two external subscribers under one
+    // tenant collide on the unique index. With the widened
+    // (tenant_id, subscriber_kind, subscriber_external_id) key they coexist.
+    const alice = await subs.create({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      planId: 'plan-mkt',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    const bob = await subs.create({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:bob',
+      planId: 'plan-mkt',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+
+    expect(alice.id).toBeTruthy();
+    expect(bob.id).toBeTruthy();
+    expect(alice.id).not.toBe(bob.id);
+
+    const aliceFound = await subs.findCurrentForSubscriber({
+      kind: 'external',
+      tenantId: 'marketplace-tenant',
+      externalId: 'buyer-contact:alice',
+    });
+    const bobFound = await subs.findCurrentForSubscriber({
+      kind: 'external',
+      tenantId: 'marketplace-tenant',
+      externalId: 'buyer-contact:bob',
+    });
+
+    expect(aliceFound?.id).toBe(alice.id);
+    expect(bobFound?.id).toBe(bob.id);
+  });
+
+  it('preserves the tenant-uniqueness invariant for tenant-kind subscriptions', async () => {
+    // The widened key (tenant_id, subscriber_kind, subscriber_external_id)
+    // preserves the pre-polymorphic invariant: at most one *committed*
+    // tenant-kind row per tenant. Whether the second insert upserts onto the
+    // first row or is rejected by the unique index, the query result must
+    // contain a single row — that's the schema-level guarantee callers depend
+    // on.
+    await subs.create({
+      tenantId: 'tenant-1',
+      planId: 'plan-pro',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    // Second create may upsert or throw; either is correct under the
+    // invariant. We only care that we don't end up with two distinct rows.
+    try {
+      await subs.create({
+        tenantId: 'tenant-1',
+        planId: 'plan-pro',
+        status: 'canceled',
+        currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+      });
+    } catch {
+      // Unique-constraint rejection is an acceptable outcome.
+    }
+
+    const rows = await subs.findByTenant('tenant-1');
+    expect(rows.length).toBe(1);
+  });
+
+  it('allows a tenant-kind and an external-kind subscription on the same tenant simultaneously', async () => {
+    const tenantSub = await subs.create({
+      tenantId: 'marketplace-tenant',
+      planId: 'plan-operator',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    const buyerSub = await subs.create({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      planId: 'plan-mkt',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+
+    expect(tenantSub.id).not.toBe(buyerSub.id);
+
+    const tenantFound = await subs.findCurrentForTenant('marketplace-tenant');
+    expect(tenantFound?.id).toBe(tenantSub.id);
+    expect(tenantFound?.planId).toBe('plan-operator');
+
+    const buyerFound = await subs.findCurrentForSubscriber({
+      kind: 'external',
+      tenantId: 'marketplace-tenant',
+      externalId: 'buyer-contact:alice',
+    });
+    expect(buyerFound?.id).toBe(buyerSub.id);
+    expect(buyerFound?.planId).toBe('plan-mkt');
   });
 });
 

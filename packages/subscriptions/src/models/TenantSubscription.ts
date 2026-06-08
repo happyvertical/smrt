@@ -14,11 +14,15 @@ import { parseJsonObject, stringifyJson } from '../utils.js';
   api: { include: ['list', 'get', 'create', 'update'] },
   cli: true,
   mcp: { include: ['list', 'get'] },
-  // NOTE: `tenant_id` alone is no longer a sufficient conflict key now that an
-  // issuing tenant can host multiple external subscribers (e.g. marketplace
-  // buyers). Callers that need uniqueness should rely on
-  // `stripe_subscription_id` or their own deduplication.
-  conflictColumns: ['tenant_id'],
+  // The conflict key includes the subscriber discriminator so an issuing tenant
+  // can host many distinct external subscribers without collisions on the
+  // unique index:
+  //   - tenant-kind rows always have subscriber_external_id = '' → uniqueness
+  //     reduces to (tenant_id, 'tenant', '') = at most one tenant-kind row per
+  //     tenant (preserves the pre-polymorphic invariant).
+  //   - external-kind rows are unique on (tenant_id, 'external', externalId) =
+  //     at most one active subscription per (issuer, external subscriber).
+  conflictColumns: ['tenant_id', 'subscriber_kind', 'subscriber_external_id'],
 })
 export class TenantSubscription extends SmrtObject {
   @tenantId()
