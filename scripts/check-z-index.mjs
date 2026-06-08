@@ -109,54 +109,30 @@ function stripComments(source) {
     );
 }
 
+// Matches a `z-index:` declaration's value up to the statement / rule end.
+const ZINDEX_DECL_RE = /z-index:\s*([^;}]+)/gi;
+
 /**
- * Blank whole `var(...)` calls (balanced parens, multi-line) so a value already
- * on the token scale — `z-index: var(--smrt-z-index-modal, 1300)` — is never
- * flagged by its numeric fallback.
+ * Collect raw global-layer z-index violations. A declaration is allowed ONLY
+ * when it references the centralized scale (`var(--smrt-z-index-*)`). Otherwise
+ * any numeric value >= THRESHOLD is flagged — including a numeric fallback inside
+ * a NON-token `var(...)` such as `z-index: var(--local, 9999)`, which would
+ * otherwise be an easy bypass.
  */
-function stripVarCalls(source) {
-  let out = '';
-  let i = 0;
-  while (i < source.length) {
-    if (source.startsWith('var(', i)) {
-      let depth = 0;
-      let j = i + 3; // points at the '('
-      for (; j < source.length; j++) {
-        const ch = source[j];
-        if (ch === '(') depth++;
-        else if (ch === ')') {
-          depth--;
-          if (depth === 0) {
-            j++;
-            break;
-          }
-        }
-      }
-      out += source.slice(i, j).replace(/[^\n]/g, ' ');
-      i = j;
-    } else {
-      out += source[i];
-      i += 1;
-    }
-  }
-  return out;
-}
-
-const ZINDEX_RE = /z-index:\s*(\d+)/gi;
-
-/** Collect raw global-layer z-index violations in a single file's source. */
 function findViolations(file, source) {
   let text = file.endsWith('.svelte') ? extractStyleBlocks(source) : source;
   text = stripComments(text);
-  text = stripVarCalls(text);
   const lines = text.split('\n');
   const hits = [];
   lines.forEach((line, i) => {
-    for (const m of line.matchAll(ZINDEX_RE)) {
-      if (Number(m[1]) >= THRESHOLD) {
+    for (const m of line.matchAll(ZINDEX_DECL_RE)) {
+      const value = m[1].trim();
+      if (/var\(\s*--smrt-z-index-/.test(value)) continue;
+      const nums = value.match(/\d+/g) || [];
+      if (nums.some((n) => Number(n) >= THRESHOLD)) {
         hits.push({
           line: i + 1,
-          value: m[0],
+          value: `z-index: ${value}`,
           snippet: line.trim().slice(0, 100),
         });
       }
