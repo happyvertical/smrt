@@ -18,7 +18,11 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-// Generate a consistent color based on name
+// Deterministic per-name avatar color (identicon-style): a fixed decorative
+// palette hashed by name for at-a-glance user differentiation. These are
+// intentionally NOT --smrt-color-* tokens — a variety palette, not themeable
+// semantic roles (cf. the channel-brand avatars in smrt-messages). Applied via
+// an inline style binding, so the color-literal ratchet does not scan them.
 function getColor(name: string): string {
   const colors = [
     '#ef4444',

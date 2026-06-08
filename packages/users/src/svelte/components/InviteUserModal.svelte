@@ -170,7 +170,7 @@ function handleKeydown(e: KeyboardEvent) {
     position: absolute;
     inset: 0;
     border: none;
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
     cursor: pointer;
   }
 
