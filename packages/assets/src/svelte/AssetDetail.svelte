@@ -417,7 +417,7 @@ function formatDate(date: Date | string | undefined): string {
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 

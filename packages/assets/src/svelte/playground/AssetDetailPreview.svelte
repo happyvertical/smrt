@@ -114,7 +114,7 @@ function handleEdit() {
   button {
     justify-self: start;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.75rem 1rem;
     font: inherit;
     font-weight: 600;

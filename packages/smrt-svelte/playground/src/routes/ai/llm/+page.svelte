@@ -216,7 +216,7 @@ function clearChat() {
     padding: 4px 8px;
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.75rem;
     font-weight: 500;
   }
@@ -225,7 +225,7 @@ function clearChat() {
     padding: 4px 12px;
     background: var(--smrt-color-surface-container);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     font-size: 0.75rem;
@@ -234,7 +234,7 @@ function clearChat() {
   .chat-container {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     overflow: hidden;
   }
 
@@ -277,7 +277,7 @@ function clearChat() {
 
   .message-content {
     padding: 12px 16px;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     background: var(--smrt-color-surface-container);
     line-height: 1.5;
     white-space: pre-wrap;
@@ -308,7 +308,7 @@ function clearChat() {
     flex: 1;
     padding: 12px 16px;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
   }
 
@@ -322,7 +322,7 @@ function clearChat() {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-weight: 500;
     cursor: pointer;
   }
@@ -337,7 +337,7 @@ function clearChat() {
     text-align: center;
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     color: var(--smrt-color-on-error-container);
   }
 
@@ -366,7 +366,7 @@ function clearChat() {
   .load-btn {
     padding: 8px 16px;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     cursor: pointer;

@@ -39,7 +39,7 @@ let {
 
   .smrt-usage-thresholds__row {
     border: 1px solid var(--smrt-border, #d8dde6);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     display: grid;
     gap: 0.45rem;
     padding: 0.875rem;

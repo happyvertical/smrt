@@ -217,7 +217,7 @@ function _handleCancelForm() {
   .search-input, .category-filter {
     padding: 0.5rem;
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.875rem;
   }
   
@@ -235,7 +235,7 @@ function _handleCancelForm() {
     color: var(--smrt-color-on-primary, white);
     border: none;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-weight: 500;
     cursor: pointer;
     transition: background-color 0.2s;
@@ -263,7 +263,7 @@ function _handleCancelForm() {
     color: var(--smrt-color-on-error, white);
     border: none;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     cursor: pointer;
   }
 
@@ -282,7 +282,7 @@ function _handleCancelForm() {
   
   .form-container {
     background: white;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     max-width: 500px;
     width: 90vw;
     max-height: 90vh;

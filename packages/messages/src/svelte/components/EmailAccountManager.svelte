@@ -348,7 +348,7 @@ function getProviderLabel(type: string): string {
 
   .add-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-primary, #005ac1);
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
@@ -368,7 +368,7 @@ function getProviderLabel(type: string): string {
   .entry-form {
     background: var(--smrt-color-surface-container, #f0f1f9);
     border: 1px solid var(--smrt-color-primary, #005ac1);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -411,7 +411,7 @@ function getProviderLabel(type: string): string {
   .form-input,
   .form-select {
     padding: 0.5rem 0.625rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
@@ -459,7 +459,7 @@ function getProviderLabel(type: string): string {
 
   .cancel-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
@@ -475,7 +475,7 @@ function getProviderLabel(type: string): string {
 
   .save-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-primary, #005ac1);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #fff);
@@ -497,7 +497,7 @@ function getProviderLabel(type: string): string {
 
   .test-result {
     padding: 0.5rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.8125rem;
     display: flex;
     align-items: center;
@@ -535,7 +535,7 @@ function getProviderLabel(type: string): string {
     justify-content: space-between;
     background: var(--smrt-color-surface-container, #f0f1f9);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 0.75rem 1rem;
     cursor: pointer;
     transition: background 150ms ease, border-color 150ms ease;
@@ -580,7 +580,7 @@ function getProviderLabel(type: string): string {
     background: var(--smrt-color-surface, #fefbff);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     flex-shrink: 0;
     min-width: 2rem;
     text-align: center;
@@ -624,7 +624,7 @@ function getProviderLabel(type: string): string {
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface, #fefbff);
     padding: 0.125rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     flex-shrink: 0;
   }
 
@@ -633,13 +633,13 @@ function getProviderLabel(type: string): string {
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface-container-high, #e6e7ef);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 
   .test-btn {
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
@@ -663,7 +663,7 @@ function getProviderLabel(type: string): string {
     font-size: 1rem;
     line-height: 1;
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
@@ -684,6 +684,6 @@ function getProviderLabel(type: string): string {
     text-align: center;
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface-container, #f0f1f9);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 </style>

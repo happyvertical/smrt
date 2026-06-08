@@ -371,7 +371,7 @@ function handleCreateInvoice(ids: string[]) {
   .invoice-demo {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 24px;
     display: flex;
     flex-direction: column;
@@ -391,14 +391,14 @@ function handleCreateInvoice(ids: string[]) {
   .status-controls select {
     padding: 6px 12px;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.875rem;
   }
 
   .demo-box {
     background: var(--smrt-color-surface-container);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 16px;
   }
 
@@ -431,7 +431,7 @@ function handleCreateInvoice(ids: string[]) {
   code {
     background: var(--smrt-color-surface-container);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.8rem;
   }
 </style>

@@ -146,7 +146,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.overlay-content {
 		position: relative;
 		background: var(--smrt-color-surface-container-high, white);
-		border-radius: 16px;
+		border-radius: var(--smrt-radius-xl, 16px);
 		padding: var(--smrt-spacing-8, 32px) var(--smrt-spacing-10, 40px);
 		max-width: 400px;
 		width: 90%;
@@ -201,7 +201,7 @@ function handleKeydown(e: KeyboardEvent) {
 		flex: 1;
 		height: 8px;
 		background: var(--smrt-color-surface-container-highest, #e5e7eb);
-		border-radius: 4px;
+		border-radius: var(--smrt-radius-sm, 4px);
 		overflow: hidden;
 	}
 
@@ -212,7 +212,7 @@ function handleKeydown(e: KeyboardEvent) {
 			var(--smrt-color-primary),
 			color-mix(in srgb, var(--smrt-color-primary) 70%, white)
 		);
-		border-radius: 4px;
+		border-radius: var(--smrt-radius-sm, 4px);
 		transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
 	}
 
@@ -234,7 +234,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.item-badge {
 		font-size: 0.75rem;
 		padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-3, 12px);
-		border-radius: 9999px;
+		border-radius: var(--smrt-radius-full, 9999px);
 		background: var(--smrt-color-primary-container, #dcfce7);
 		color: var(--smrt-color-on-primary-container, #166534);
 	}
@@ -245,7 +245,7 @@ function handleKeydown(e: KeyboardEvent) {
 		margin: var(--smrt-spacing-4, 16px) 0 0;
 		padding: var(--smrt-spacing-3, 12px);
 		background: var(--smrt-color-error-container, #fef2f2);
-		border-radius: 8px;
+		border-radius: var(--smrt-radius-md, 8px);
 	}
 
 	.dismiss-btn {
@@ -255,7 +255,7 @@ function handleKeydown(e: KeyboardEvent) {
 		color: var(--smrt-color-on-surface-variant, #6b7280);
 		background: transparent;
 		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-		border-radius: 8px;
+		border-radius: var(--smrt-radius-md, 8px);
 		cursor: pointer;
 		transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
 	}

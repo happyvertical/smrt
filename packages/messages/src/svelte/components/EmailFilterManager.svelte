@@ -373,7 +373,7 @@ function getPatternPlaceholder(type: string): string {
     gap: 0.25rem;
     background: var(--smrt-color-surface-container, #f0f1f9);
     padding: 0.25rem;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .section-btn {
@@ -382,7 +382,7 @@ function getPatternPlaceholder(type: string): string {
     gap: 0.375rem;
     padding: 0.375rem 0.75rem;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
     font-size: 0.8125rem;
@@ -404,7 +404,7 @@ function getPatternPlaceholder(type: string): string {
     font-size: 0.6875rem;
     background: var(--smrt-color-outline-variant, #c2c7cf);
     padding: 0.0625rem 0.375rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .section-content {
@@ -427,7 +427,7 @@ function getPatternPlaceholder(type: string): string {
 
   .add-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-primary, #005ac1);
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
@@ -447,7 +447,7 @@ function getPatternPlaceholder(type: string): string {
   .entry-form {
     background: var(--smrt-color-surface-container, #f0f1f9);
     border: 1px solid var(--smrt-color-primary, #005ac1);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -486,7 +486,7 @@ function getPatternPlaceholder(type: string): string {
   .form-input,
   .form-select {
     padding: 0.5rem 0.625rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
@@ -534,7 +534,7 @@ function getPatternPlaceholder(type: string): string {
 
   .cancel-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
@@ -550,7 +550,7 @@ function getPatternPlaceholder(type: string): string {
 
   .save-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-primary, #005ac1);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #fff);
@@ -582,7 +582,7 @@ function getPatternPlaceholder(type: string): string {
     justify-content: space-between;
     background: var(--smrt-color-surface-container, #f0f1f9);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 0.75rem 1rem;
     transition: background 150ms ease, border-color 150ms ease;
   }
@@ -614,7 +614,7 @@ function getPatternPlaceholder(type: string): string {
     background: var(--smrt-color-surface, #fefbff);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     flex-shrink: 0;
     min-width: 2rem;
     text-align: center;
@@ -646,7 +646,7 @@ function getPatternPlaceholder(type: string): string {
     color: var(--smrt-color-tertiary, #6b5778);
     background: var(--smrt-color-tertiary-container, #f2daff);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 
@@ -655,7 +655,7 @@ function getPatternPlaceholder(type: string): string {
     color: var(--smrt-color-warning, #ca8a04);
     background: var(--smrt-color-warning-container, #fef9c3);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 
@@ -663,7 +663,7 @@ function getPatternPlaceholder(type: string): string {
     font-size: 1rem;
     line-height: 1;
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
@@ -684,6 +684,6 @@ function getPatternPlaceholder(type: string): string {
     text-align: center;
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface-container, #f0f1f9);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 </style>

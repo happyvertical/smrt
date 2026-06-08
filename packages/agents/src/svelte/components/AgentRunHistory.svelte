@@ -205,7 +205,7 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
     height: 20px;
     border: 2px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

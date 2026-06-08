@@ -316,7 +316,7 @@ onMount(() => {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -461,7 +461,7 @@ onMount(() => {
     align-items: center;
     min-height: 1.9rem;
     padding: 0 0.7rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface-container-low);
     font-size: 0.82rem;
   }
@@ -519,7 +519,7 @@ onMount(() => {
     align-items: center;
     min-height: 1.65rem;
     padding: 0 0.6rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(
       in srgb,
       var(--smrt-color-primary) 12%,

@@ -282,7 +282,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
   }
 
   .pill {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
     font-size: 0.75rem;
     font-weight: 700;

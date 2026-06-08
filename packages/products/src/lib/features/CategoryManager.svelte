@@ -57,7 +57,7 @@ const _loading = $state(false);
   .placeholder-content {
     background: var(--smrt-color-surface-container-low, #f9fafb);
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 2rem;
     text-align: center;
   }

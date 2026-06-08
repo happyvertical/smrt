@@ -95,7 +95,7 @@ const { children }: Props = $props();
     text-decoration: none;
     font-weight: 500;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     transition: all 0.2s;
   }
 
@@ -121,7 +121,7 @@ const { children }: Props = $props();
   .status-dot {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
   
   .status-dot.online {

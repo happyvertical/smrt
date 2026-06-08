@@ -42,7 +42,7 @@ const variantClass = $derived.by(() => {
     height: 24px;
     font: var(--smrt-typography-label-large-font);
     font-weight: 600;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     white-space: nowrap;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
   }

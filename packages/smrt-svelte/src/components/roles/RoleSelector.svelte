@@ -204,7 +204,7 @@ function handleKeydown(e: KeyboardEvent) {
     padding: 0.125rem 0.375rem;
     background: var(--smrt-color-primary-container, #dbeafe);
     color: var(--smrt-color-on-primary-container, #1e40af);
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     text-transform: uppercase;
     font-weight: 600;
   }

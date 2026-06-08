@@ -253,7 +253,7 @@ $effect(() => {
     flex-direction: column;
     gap: var(--smrt-spacing-1, 4px);
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     word-break: break-word;
     font-size: 0.8125rem;
     line-height: 1.45;
@@ -262,13 +262,13 @@ $effect(() => {
   .agent-chat__bubble--user {
     background: var(--smrt-color-primary-container, #d6e3ff);
     color: var(--smrt-color-on-primary-container, #001a41);
-    border-bottom-right-radius: 3px;
+    border-bottom-right-radius: var(--smrt-radius-sm, 4px);
   }
 
   .agent-chat__bubble--agent {
     background: var(--smrt-color-surface-container-high, #e6e6ea);
     color: var(--smrt-color-on-surface, #1a1c1e);
-    border-bottom-left-radius: 3px;
+    border-bottom-left-radius: var(--smrt-radius-sm, 4px);
   }
 
   .agent-chat__msg--system .agent-chat__bubble {
@@ -323,7 +323,7 @@ $effect(() => {
   .agent-chat__input {
     flex: 1;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     font-size: 0.8125rem;
     line-height: 1.4;
@@ -353,7 +353,7 @@ $effect(() => {
     border: none;
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     cursor: pointer;
     flex-shrink: 0;
     transition: opacity 150ms;
@@ -377,7 +377,7 @@ $effect(() => {
     color: var(--smrt-color-on-success-container, #16a34a);
     background: var(--smrt-color-success-container, #f0fdf4);
     border: 1px solid var(--smrt-color-success, #bbf7d0);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .field-update-block {
@@ -397,7 +397,7 @@ $effect(() => {
   .markdown-block__content {
     margin: 0;
     padding: var(--smrt-spacing-3, 12px);
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     background: color-mix(in srgb, var(--smrt-color-surface-container-low, #f4f2f6) 85%, white);
     overflow-x: auto;
     white-space: pre-wrap;
@@ -411,7 +411,7 @@ $effect(() => {
     font-size: 0.625rem;
     font-weight: 600;
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: none;
     color: var(--smrt-color-on-surface-variant, #43474e);
     cursor: pointer;
@@ -425,7 +425,7 @@ $effect(() => {
 
   .diff-dialog {
     border: none;
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     padding: 0;
     width: min(420px, 90vw);
     max-height: 60vh;
@@ -459,7 +459,7 @@ $effect(() => {
     cursor: pointer;
     color: var(--smrt-color-outline, #74777f);
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
   }
 
   .diff-dialog__close:hover {
@@ -496,7 +496,7 @@ $effect(() => {
     font-size: 0.75rem;
     line-height: 1.5;
     background: var(--smrt-color-surface-container-low, #f7f7fb);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     white-space: pre-wrap;
     word-break: break-word;
     font-family: inherit;
@@ -517,7 +517,7 @@ $effect(() => {
   .thinking-dots span {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-outline, #74777f);
     animation: thinking-bounce 1.2s ease-in-out infinite;
   }

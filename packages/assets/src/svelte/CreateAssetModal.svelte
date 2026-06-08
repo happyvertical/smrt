@@ -317,7 +317,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .create-modal__close:hover {
@@ -438,7 +438,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .file-preview__remove:hover {

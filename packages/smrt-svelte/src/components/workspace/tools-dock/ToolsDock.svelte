@@ -344,7 +344,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #7dd3fc);
     color: var(--smrt-color-on-primary, #061014);
     font-size: 0.58rem;

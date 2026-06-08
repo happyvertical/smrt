@@ -169,7 +169,7 @@ function _handleSubmit(event: Event) {
     max-width: 500px;
     padding: 1.5rem;
     background: white;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
   }
   
@@ -195,7 +195,7 @@ function _handleSubmit(event: Event) {
     width: 100%;
     padding: 0.5rem;
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.875rem;
     transition: border-color 0.2s;
   }
@@ -250,7 +250,7 @@ function _handleSubmit(event: Event) {
   
   .cancel-btn, .submit-btn {
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
