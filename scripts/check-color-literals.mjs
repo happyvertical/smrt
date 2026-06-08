@@ -38,7 +38,14 @@ const ROOT = resolve(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');
 
 /** Packages held to ERROR. Everything else is report-only for now (#1373). */
-const STRICT_PACKAGES = new Set(['smrt-svelte', 'content', 'products']);
+const STRICT_PACKAGES = new Set([
+  'smrt-svelte',
+  'content',
+  'products',
+  'assets',
+  'chat',
+  'images',
+]);
 
 /**
  * Path fragments (POSIX `/` separators) for token-source / theme-definition
@@ -149,9 +156,20 @@ function stripComments(source) {
     );
 }
 
+/**
+ * Blank out numeric HTML character references (`&#9662;`, `&#x25BC;`) so markup
+ * glyphs — e.g. a chevron `&#9662;` or gear `&#9881;` icon — are not mistaken
+ * for a 3/4-digit hex color literal. Newlines are preserved so line numbers stay
+ * accurate.
+ */
+function stripHtmlEntities(source) {
+  return source.replace(/&#x?[0-9a-fA-F]+;/g, (m) => ' '.repeat(m.length));
+}
+
 /** Collect raw color-literal violations in a single file's source. */
 function findViolations(file, source) {
   let text = file.endsWith('.svelte') ? stripScriptBlocks(source) : source;
+  if (file.endsWith('.svelte')) text = stripHtmlEntities(text);
   text = stripComments(text);
   // Blank out var(...) calls (multi-line aware) so allowed `var(--token,
   // #fallback)` fallbacks are never flagged, however the call is wrapped.

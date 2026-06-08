@@ -170,19 +170,19 @@ function handleCreate(data: {
   description: string;
   altText: string;
 }) {
-  showCreateModal = false;
   console.log('Create asset:', data);
+  showCreateModal = false;
 }
 
 function handleDelete(toDelete: PersistedAsset[]) {
   assets = assets.filter(
     (asset) => !toDelete.some((item) => item.id === asset.id),
   );
-  selectedIds = new Set();
   console.log(
     'Delete assets:',
     toDelete.map((asset) => asset.id),
   );
+  selectedIds = new Set();
 }
 
 function handlePaste(event: ClipboardEvent) {
@@ -353,7 +353,7 @@ function handleManagerDrop(event: DragEvent) {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 90, 193, 0.08);
+    background: color-mix(in srgb, var(--smrt-color-primary) 8%, transparent);
     border: 2px dashed var(--smrt-color-primary, #005ac1);
     border-radius: var(--smrt-radius-large, 0.75rem);
     z-index: 10;

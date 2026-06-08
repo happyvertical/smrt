@@ -175,7 +175,7 @@ const {
   }
 
   .chat-tab__icon-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: color-mix(in srgb, var(--smrt-color-on-primary) 15%, transparent);
   }
 
   .chat-tab__icon-btn:focus-visible {

@@ -121,15 +121,15 @@ function handleImgError() {
   }
 
   .avatar__presence.online {
-    background: #4caf50;
+    background: var(--smrt-color-success, #4caf50);
   }
 
   .avatar__presence.away {
-    background: #ff9800;
+    background: var(--smrt-color-warning, #ff9800);
   }
 
   .avatar__presence.dnd {
-    background: #f44336;
+    background: var(--smrt-color-error, #f44336);
   }
 
   .avatar__presence.offline {

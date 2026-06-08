@@ -359,7 +359,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .detail-modal::backdrop {
-    background: rgba(0, 0, 0, 0.5);
+    background: color-mix(in srgb, var(--smrt-color-scrim) 50%, transparent);
     backdrop-filter: blur(2px);
   }
 
@@ -617,7 +617,7 @@ function formatDate(date: Date | string | undefined): string {
   .copy-feedback {
     margin-top: var(--smrt-spacing-2, 0.5rem);
     font-size: 0.8rem;
-    color: #22c55e;
+    color: var(--smrt-color-success, #22c55e);
     font-weight: 500;
     animation: fadeIn 150ms ease;
   }

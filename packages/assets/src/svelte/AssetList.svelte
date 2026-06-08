@@ -357,7 +357,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   }
 
   .status-dot--active {
-    background: #22c55e;
+    background: var(--smrt-color-success, #22c55e);
   }
 
   /* Sort */

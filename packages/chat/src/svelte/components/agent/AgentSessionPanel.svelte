@@ -255,8 +255,8 @@ const statusLabel: Record<string, string> = {
   }
 
   .session-panel__item-status--active {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: var(--smrt-color-success-container, #e8f5e9);
+    color: var(--smrt-color-on-success-container, #2e7d32);
   }
 
   .session-panel__item-status--closed {

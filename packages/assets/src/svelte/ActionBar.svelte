@@ -163,7 +163,7 @@ const count = $derived(selectedAssets.length);
   }
 
   .action-bar__clear:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
   }
 
   .action-bar__actions {
@@ -209,7 +209,7 @@ const count = $derived(selectedAssets.length);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
+    background: color-mix(in srgb, var(--smrt-color-scrim) 40%, transparent);
     backdrop-filter: blur(2px);
     z-index: var(--smrt-z-index-dialog, 1000);
     padding: 1rem;
