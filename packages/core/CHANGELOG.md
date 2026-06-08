@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.21
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap spacing px to --smrt-spacing-\* + ratchet (S1 #1373 phase 1) (#1451) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.21
+  - @happyvertical/smrt-config@0.27.21
+  - @happyvertical/smrt-types@0.27.21
+
 ## 0.27.20
 
 ### Patch Changes
