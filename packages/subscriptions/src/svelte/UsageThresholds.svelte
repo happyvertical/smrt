@@ -46,11 +46,11 @@ let {
   }
 
   .smrt-usage-thresholds__row.warn {
-    border-color: #d97706;
+    border-color: var(--smrt-color-warning, #d97706);
   }
 
   .smrt-usage-thresholds__row.blocked {
-    border-color: #dc2626;
+    border-color: var(--smrt-color-error, #dc2626);
   }
 
   .smrt-usage-thresholds__header {

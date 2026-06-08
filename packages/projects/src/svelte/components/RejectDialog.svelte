@@ -137,7 +137,7 @@ $effect(() => {
     position: absolute;
     inset: 0;
     border: none;
-    background: rgba(0, 0, 0, 0.32);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.32));
     cursor: pointer;
   }
 

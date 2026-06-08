@@ -45,7 +45,18 @@ const STRICT_PACKAGES = new Set([
   'assets',
   'chat',
   'images',
+  'subscriptions',
+  'projects',
+  'users',
+  'messages',
 ]);
+
+/**
+ * Packages skipped entirely — dev/playground hosts, not shippable product
+ * component libraries (the ratchet's contract). Their chrome is dev tooling,
+ * not themeable product UI, so raw literals there are out of scope (#1373).
+ */
+const SCOPE_EXCLUDED_PACKAGES = new Set(['smrt-playground']);
 
 /**
  * Path fragments (POSIX `/` separators) for token-source / theme-definition
@@ -58,6 +69,17 @@ const THEME_DEFINITION_FRAGMENTS = [
   'src/themes/shared.ts', // shared spacing/radius/duration scales
   'src/themes/css-generator.ts', // JS theme generator
   'src/styles/tokens.css', // legacy --color-* token sheet
+];
+
+/**
+ * Files that legitimately hold intentional brand / 3rd-party fixed color
+ * literals which must NOT be tokenized (theming them would break recognition).
+ * Matched as substrings of the package-relative path.
+ */
+const BRAND_LITERAL_FRAGMENTS = [
+  // Channel-brand avatar colors (Slack purple, Twitter blue) kept for
+  // at-a-glance recognition; the generic email avatar is tokenized.
+  'messages/src/svelte/components/AccountAvatar.svelte',
 ];
 
 /**
@@ -221,8 +243,12 @@ const reportOnly = new Map(); // package -> count
 for (const file of files) {
   const relPath = relative(PACKAGES, file);
   if (!isInPackageSrc(relPath)) continue;
-  if (isThemeDefinition(relPath)) continue;
   const pkg = packageNameOf(relPath);
+  if (SCOPE_EXCLUDED_PACKAGES.has(pkg)) continue;
+  if (isThemeDefinition(relPath)) continue;
+  if (BRAND_LITERAL_FRAGMENTS.some((f) => toPosix(relPath).includes(f))) {
+    continue;
+  }
   const hits = findViolations(file, readFileSync(file, 'utf8'));
   if (hits.length === 0) continue;
   if (STRICT_PACKAGES.has(pkg)) {
