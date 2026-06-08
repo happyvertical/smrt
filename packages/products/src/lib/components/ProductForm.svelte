@@ -271,7 +271,7 @@ function _handleSubmit(event: Event) {
   .submit-btn {
     background: var(--smrt-color-primary, #3b82f6);
     border-color: var(--smrt-color-primary, #3b82f6);
-    color: white;
+    color: var(--smrt-color-on-primary, white);
   }
 
   .submit-btn:hover:not(:disabled) {

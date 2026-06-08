@@ -232,7 +232,7 @@ function _handleCancelForm() {
   
   .create-btn {
     background: var(--smrt-color-primary, #3b82f6);
-    color: white;
+    color: var(--smrt-color-on-primary, white);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -260,7 +260,7 @@ function _handleCancelForm() {
   .error-state button {
     margin-top: 0.5rem;
     background: var(--smrt-color-error, #dc2626);
-    color: white;
+    color: var(--smrt-color-on-error, white);
     border: none;
     padding: 0.5rem 1rem;
     border-radius: 4px;

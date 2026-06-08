@@ -184,7 +184,7 @@ function _getFieldType(
 
   .submit-btn {
     background: var(--smrt-color-primary, #3b82f6);
-    color: white;
+    color: var(--smrt-color-on-primary, white);
     border: none;
     padding: 0.75rem 1.5rem;
     border-radius: 0.375rem;
