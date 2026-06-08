@@ -48,20 +48,24 @@ async function _handleDeleteProduct(id: string) {
   if (confirm('Are you sure you want to delete this product?')) {
     try {
       await productStore.deleteProduct(id);
-    } catch (error) {}
+    } catch (error) {
+      console.error('Failed to delete product:', error);
+    }
   }
 }
 
 async function _handleSubmitProduct(productData: Partial<ProductData>) {
   try {
-    if (editingProduct?.id) {
+    if (editingProduct && editingProduct.id) {
       await productStore.updateProduct(editingProduct.id, productData);
     } else {
       await productStore.createProduct(productData);
     }
     _showForm = false;
     editingProduct = null;
-  } catch (error) {}
+  } catch (error) {
+    console.error('Failed to save product:', error);
+  }
 }
 
 function _handleCancelForm() {
