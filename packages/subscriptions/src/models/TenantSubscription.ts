@@ -22,6 +22,14 @@ import { parseJsonObject, stringifyJson } from '../utils.js';
   //     tenant (preserves the pre-polymorphic invariant).
   //   - external-kind rows are unique on (tenant_id, 'external', externalId) =
   //     at most one active subscription per (issuer, external subscriber).
+  //
+  // UPGRADE NOTE: databases created against the pre-#1454 conflict key
+  // ['tenant_id'] still carry the legacy `_smrt_tenant_subscriptions_tenant_id_idx`.
+  // `smrt db:migrate` does not sweep orphan indexes by default, so the legacy
+  // index persists and continues to reject external subscriptions until it's
+  // dropped. Run scripts/migrate-1454-drop-legacy-conflict-index.ts once on
+  // upgrade, or pass `--drop-indexes` to `db:migrate`. Fresh databases need
+  // neither — the generated schema already reflects the new key.
   conflictColumns: ['tenant_id', 'subscriber_kind', 'subscriber_external_id'],
 })
 export class TenantSubscription extends SmrtObject {

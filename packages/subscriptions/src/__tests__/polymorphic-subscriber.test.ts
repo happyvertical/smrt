@@ -106,6 +106,26 @@ describe('polymorphic subscriber — normalizeSubscriber', () => {
     ).toThrow(/non-empty subscriberExternalId/);
   });
 
+  it('rejects an external id when subscriberKind defaults to or is explicitly tenant', () => {
+    // Without an explicit kind, an external id would be silently dropped and
+    // the caller's buyer-scoped usage would land as tenant-scoped usage —
+    // breaking the XOR invariant invisibly. We refuse instead.
+    expect(() =>
+      normalizeSubscriber({
+        tenantId: 't-1',
+        subscriberExternalId: 'buyer-contact:alice',
+      }),
+    ).toThrow(/subscriberExternalId is set but subscriberKind is "tenant"/);
+
+    expect(() =>
+      normalizeSubscriber({
+        tenantId: 't-1',
+        subscriberKind: 'tenant',
+        subscriberExternalId: 'buyer-contact:alice',
+      }),
+    ).toThrow(/subscriberExternalId is set but subscriberKind is "tenant"/);
+  });
+
   it('round-trips a tenant subscriber through subscriberToColumns', () => {
     const subscriber = normalizeSubscriber({ tenantId: 't-1' });
     expect(subscriberToColumns(subscriber)).toEqual({

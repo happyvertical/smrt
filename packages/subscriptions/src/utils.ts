@@ -74,19 +74,29 @@ export function normalizeFeatureGrants(
  * place that contains "if kind is omitted, default to tenant" logic — every
  * other site works with a typed `Subscriber`.
  *
- * Throws if `subscriberKind === 'external'` is requested without a non-empty
- * `subscriberExternalId`, since the XOR invariant is the whole point.
+ * Throws when:
+ * - `subscriberKind === 'external'` is requested without a non-empty
+ *   `subscriberExternalId` (the XOR invariant is the whole point), or
+ * - the input carries a non-empty `subscriberExternalId` but the kind resolves
+ *   to `'tenant'` (silent re-scoping would write buyer-scoped usage as tenant
+ *   usage, which then disappears from external summaries).
  */
 export function normalizeSubscriber(input: {
   tenantId: string;
   subscriberKind?: SubscriberKind;
   subscriberExternalId?: string;
 }): Subscriber {
+  const externalId = input.subscriberExternalId ?? '';
   const kind: SubscriberKind = input.subscriberKind ?? 'tenant';
   if (kind === 'tenant') {
+    if (externalId !== '') {
+      throw new Error(
+        'subscriberExternalId is set but subscriberKind is "tenant"; ' +
+          'set subscriberKind="external" explicitly or omit subscriberExternalId',
+      );
+    }
     return { kind: 'tenant', tenantId: input.tenantId };
   }
-  const externalId = input.subscriberExternalId ?? '';
   if (externalId === '') {
     throw new Error(
       'subscriberKind="external" requires a non-empty subscriberExternalId',
