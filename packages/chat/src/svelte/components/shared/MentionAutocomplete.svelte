@@ -112,7 +112,7 @@ function highlightMatch(
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-medium, 8px);
     box-shadow: var(--smrt-elevation-level2, 0 2px 8px rgba(0, 0, 0, 0.15));
-    z-index: 100;
+    z-index: var(--smrt-z-index-dropdown, 1000);
     padding: 4px;
     display: flex;
     flex-direction: column;

@@ -130,7 +130,7 @@ $effect(() => {
     align-items: center;
     justify-content: center;
     padding: 1rem;
-    z-index: 1000;
+    z-index: var(--smrt-z-index-dialog, 1300);
   }
 
   .dialog-overlay {

@@ -71,7 +71,7 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
     align-items: flex-end;
     gap: 8px;
     padding: 0 16px;
-    z-index: 1000;
+    z-index: var(--smrt-z-index-sticky, 1100);
     pointer-events: none;
   }
 

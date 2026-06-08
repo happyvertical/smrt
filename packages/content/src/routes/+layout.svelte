@@ -77,7 +77,7 @@ const navItems = [
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: var(--smrt-z-index-sticky, 1100);
     box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent);
   }
 
