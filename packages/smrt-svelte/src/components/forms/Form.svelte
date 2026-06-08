@@ -633,25 +633,25 @@ function getFormData(): Record<string, unknown> {
   .smrt-form {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--smrt-spacing-4, 16px);
   }
 
   .form-controls {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: var(--smrt-spacing-4, 16px);
     flex-wrap: wrap;
   }
 
   .mode-toggle {
     display: flex;
     background: var(--smrt-color-surface-container-high, #f3f4f6);
-    padding: 4px;
+    padding: var(--smrt-spacing-1, 4px);
     border-radius: 8px;
   }
 
   .mode-btn {
-    padding: 8px 16px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
@@ -675,8 +675,8 @@ function getFormData(): Record<string, unknown> {
   .form-listen-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px 20px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-5, 20px);
     border: 2px solid var(--smrt-color-primary, #3b82f6);
     background: var(--smrt-color-surface);
     color: var(--smrt-color-primary);
@@ -738,7 +738,7 @@ function getFormData(): Record<string, unknown> {
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 12px 24px;
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-6, 24px);
     /* 90%-opacity primary. The old `--smrt-color-primary-rgb` channel token
        was never emitted (issue #1431); color-mix derives the alpha from the
        emitted `--smrt-color-primary` token instead. */
@@ -768,7 +768,7 @@ function getFormData(): Record<string, unknown> {
   }
 
   .extract-error {
-    padding: 12px 16px;
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
     border-radius: 8px;
@@ -779,6 +779,6 @@ function getFormData(): Record<string, unknown> {
   .form-fields {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: var(--smrt-spacing-4, 16px);
   }
 </style>

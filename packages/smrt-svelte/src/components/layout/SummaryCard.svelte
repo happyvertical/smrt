@@ -152,7 +152,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .card-label {

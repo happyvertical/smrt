@@ -384,7 +384,7 @@ function handleCountryChange(e: Event) {
   .smrt-address {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .smrt-label {
@@ -395,7 +395,7 @@ function handleCountryChange(e: Event) {
 
   .smrt-label .required {
     color: var(--smrt-color-error, #ba1a1a);
-    margin-left: 2px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .address-fields {
@@ -421,7 +421,7 @@ function handleCountryChange(e: Event) {
 
   .field-row-group {
     display: flex;
-    gap: 12px;
+    gap: var(--smrt-spacing-3, 12px);
   }
 
   .full-width {
@@ -475,7 +475,7 @@ function handleCountryChange(e: Event) {
   .validation-error {
     font-size: 0.75rem;
     color: var(--smrt-color-error, #ba1a1a);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   @media (max-width: 600px) {

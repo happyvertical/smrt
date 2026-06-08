@@ -83,16 +83,16 @@ function handleClick(value: string) {
 <style>
   .filter-chips {
     display: flex;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     flex-wrap: wrap;
   }
 
   .filter-chip {
     display: inline-flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     height: 32px;
-    padding: 0 16px;
+    padding: 0 var(--smrt-spacing-4, 16px);
     font: var(--smrt-typography-label-large-font);
     font-weight: 500;
     color: var(--smrt-color-on-surface-variant);
@@ -108,9 +108,9 @@ function handleClick(value: string) {
 
   .sm .filter-chip {
     height: 28px;
-    padding: 0 12px;
+    padding: 0 var(--smrt-spacing-3, 12px);
     font: var(--smrt-typography-label-medium-font);
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .filter-chip:hover:not(:disabled) {
@@ -121,11 +121,11 @@ function handleClick(value: string) {
     background-color: var(--smrt-color-secondary-container);
     border-color: transparent;
     color: var(--smrt-color-on-secondary-container);
-    padding-left: 12px;
+    padding-left: var(--smrt-spacing-3, 12px);
   }
 
   .sm .filter-chip.active {
-    padding-left: 8px;
+    padding-left: var(--smrt-spacing-2, 8px);
   }
 
   .filter-chip:disabled {

@@ -81,7 +81,7 @@ const {
   .header-content {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     flex: 1;
     min-width: 200px;
   }
@@ -89,12 +89,12 @@ const {
   .back-link {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     color: var(--smrt-color-primary);
     font: var(--smrt-typography-label-large-font);
     text-decoration: none;
     margin-bottom: 0.75rem;
-    padding: 4px 8px 4px 4px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px) var(--smrt-spacing-1, 4px) var(--smrt-spacing-1, 4px);
     border-radius: 8px;
     margin-left: -4px; /* Align icon with text below */
     transition: background-color 200ms;
@@ -115,7 +115,7 @@ const {
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface-variant);
     margin: 0;
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .header-actions {
