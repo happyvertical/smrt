@@ -16,6 +16,24 @@ export type ThresholdEnforcement = 'observe' | 'warn' | 'block';
 
 export type ThresholdWindow = 'day' | 'week' | 'month' | 'year' | 'rolling';
 
+export type SubscriberKind = 'tenant' | 'external';
+
+/**
+ * Discriminated union identifying who a subscription/usage record is for.
+ *
+ * - `tenant`: the subscriber IS the owning tenant — preserves the existing
+ *   single-tenant SaaS shape end-to-end.
+ * - `external`: the subscriber is a caller-defined identity (opaque to this
+ *   package) scoped under an issuing `tenantId`. The `externalId` is a free-form
+ *   string that the caller namespaces (e.g. `buyer-contact:abc123`). Use this
+ *   for B2C buyers, anonymous-email subscribers, agent identities, etc.
+ *
+ * For both kinds, `tenantId` carries the owning/issuing tenant scope.
+ */
+export type Subscriber =
+  | { kind: 'tenant'; tenantId: string }
+  | { kind: 'external'; tenantId: string; externalId: string };
+
 export interface PlanFeatureGrant {
   featureKey: string;
   enabled?: boolean;
@@ -38,7 +56,21 @@ export interface UsageWindow {
 }
 
 export interface UsageMetricRecord {
+  /**
+   * Owning/issuing tenant scope. For `subscriberKind: 'tenant'` records this is
+   * also the subscriber. For `'external'` records this is the issuer.
+   */
   tenantId: string;
+  /**
+   * Defaults to `'tenant'` when omitted — preserves the historical single-tenant
+   * shape for existing callers.
+   */
+  subscriberKind?: SubscriberKind;
+  /**
+   * Required when `subscriberKind` is `'external'`. Caller-namespaced opaque
+   * identifier (e.g. `buyer-contact:abc123`).
+   */
+  subscriberExternalId?: string;
   metricKey: string;
   quantity: number;
   windowStart: Date;
@@ -49,7 +81,12 @@ export interface UsageMetricRecord {
 }
 
 export interface UsageSummary {
+  /** Owning/issuing tenant scope. */
   tenantId: string;
+  /** Subscriber kind this summary represents. Defaults to `'tenant'`. */
+  subscriberKind?: SubscriberKind;
+  /** Set when `subscriberKind === 'external'`. */
+  subscriberExternalId?: string;
   metricKey: string;
   quantity: number;
   windowStart: Date;
@@ -77,7 +114,10 @@ export interface ThresholdEvaluation {
 }
 
 export interface EntitlementResolution {
+  /** Issuing/owning tenant scope. */
   tenantId: string;
+  /** The subscriber identity this resolution was computed for. */
+  subscriber: Subscriber;
   planId: string | null;
   planKey: string | null;
   subscriptionId: string | null;
@@ -100,7 +140,12 @@ export interface UsageMeterOptions {
 export interface RecordUsageOptions extends UsageMetricRecord {}
 
 export interface SummarizeUsageOptions {
+  /** Owning/issuing tenant scope. */
   tenantId: string;
+  /** Defaults to `'tenant'`. */
+  subscriberKind?: SubscriberKind;
+  /** Required when `subscriberKind === 'external'`. */
+  subscriberExternalId?: string;
   metricKey: string;
   window: UsageWindow;
 }

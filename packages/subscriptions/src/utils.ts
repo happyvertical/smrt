@@ -2,6 +2,8 @@ import type {
   JsonObject,
   PlanFeatureGrant,
   PlanThreshold,
+  Subscriber,
+  SubscriberKind,
   ThresholdEnforcement,
   ThresholdWindow,
   UsageWindow,
@@ -61,6 +63,63 @@ export function normalizeFeatureGrants(
   return grants.map((grant) =>
     typeof grant === 'string' ? { featureKey: grant, enabled: true } : grant,
   );
+}
+
+/**
+ * Coerce inputs from the legacy tenant-only API into a {@link Subscriber}.
+ *
+ * Existing callers that pass only `tenantId` (with optional `subscriberKind` /
+ * `subscriberExternalId` fields, e.g. on `RecordUsageOptions`) get normalized
+ * into the discriminated union exactly once at the boundary. This is the only
+ * place that contains "if kind is omitted, default to tenant" logic — every
+ * other site works with a typed `Subscriber`.
+ *
+ * Throws if `subscriberKind === 'external'` is requested without a non-empty
+ * `subscriberExternalId`, since the XOR invariant is the whole point.
+ */
+export function normalizeSubscriber(input: {
+  tenantId: string;
+  subscriberKind?: SubscriberKind;
+  subscriberExternalId?: string;
+}): Subscriber {
+  const kind: SubscriberKind = input.subscriberKind ?? 'tenant';
+  if (kind === 'tenant') {
+    return { kind: 'tenant', tenantId: input.tenantId };
+  }
+  const externalId = input.subscriberExternalId ?? '';
+  if (externalId === '') {
+    throw new Error(
+      'subscriberKind="external" requires a non-empty subscriberExternalId',
+    );
+  }
+  return {
+    kind: 'external',
+    tenantId: input.tenantId,
+    externalId,
+  };
+}
+
+/**
+ * Project a {@link Subscriber} back onto column values for persistence or query
+ * filters. Counterpart to {@link normalizeSubscriber}.
+ */
+export function subscriberToColumns(subscriber: Subscriber): {
+  tenantId: string;
+  subscriberKind: SubscriberKind;
+  subscriberExternalId: string;
+} {
+  if (subscriber.kind === 'tenant') {
+    return {
+      tenantId: subscriber.tenantId,
+      subscriberKind: 'tenant',
+      subscriberExternalId: '',
+    };
+  }
+  return {
+    tenantId: subscriber.tenantId,
+    subscriberKind: 'external',
+    subscriberExternalId: subscriber.externalId,
+  };
 }
 
 export function getWindowForThreshold(

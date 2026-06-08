@@ -7,14 +7,26 @@ import type {
   SummarizeUsageOptions,
   UsageSummary,
 } from '../types.js';
-import { stringifyJson } from '../utils.js';
+import {
+  normalizeSubscriber,
+  stringifyJson,
+  subscriberToColumns,
+} from '../utils.js';
 
 export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetric> {
   static readonly _itemClass = TenantUsageMetric;
 
   async recordUsage(options: RecordUsageOptions): Promise<TenantUsageMetric> {
-    const metric = await this.create({
+    const subscriber = normalizeSubscriber({
       tenantId: options.tenantId,
+      subscriberKind: options.subscriberKind,
+      subscriberExternalId: options.subscriberExternalId,
+    });
+    const columns = subscriberToColumns(subscriber);
+    const metric = await this.create({
+      tenantId: columns.tenantId,
+      subscriberKind: columns.subscriberKind,
+      subscriberExternalId: columns.subscriberExternalId,
       metricKey: options.metricKey,
       quantity: options.quantity,
       windowStart: options.windowStart,
@@ -26,33 +38,56 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
     return metric;
   }
 
+  /**
+   * Legacy accessor — finds metrics for `subscriberKind = 'tenant'` under the
+   * given tenant. External-kind rows scoped to the same tenant are excluded.
+   */
   async findByTenantAndMetric(
     tenantId: string,
     metricKey: string,
   ): Promise<TenantUsageMetric[]> {
     return this.list({
-      where: { tenantId, metricKey },
+      where: { tenantId, metricKey, subscriberKind: 'tenant' },
       orderBy: 'windowStart DESC',
     });
   }
 
   async summarizeUsage(options: SummarizeUsageOptions): Promise<UsageSummary> {
-    const metrics = await this.list({
-      where: {
-        tenantId: options.tenantId,
-        metricKey: options.metricKey,
-        'windowStart <': options.window.end.toISOString(),
-        'windowEnd >': options.window.start.toISOString(),
-      },
-    });
-
-    return {
+    const subscriber = normalizeSubscriber({
       tenantId: options.tenantId,
+      subscriberKind: options.subscriberKind,
+      subscriberExternalId: options.subscriberExternalId,
+    });
+    const columns = subscriberToColumns(subscriber);
+
+    const where: Record<string, unknown> = {
+      tenantId: columns.tenantId,
+      subscriberKind: columns.subscriberKind,
+      metricKey: options.metricKey,
+      'windowStart <': options.window.end.toISOString(),
+      'windowEnd >': options.window.start.toISOString(),
+    };
+    if (subscriber.kind === 'external') {
+      where.subscriberExternalId = columns.subscriberExternalId;
+    }
+
+    const metrics = await this.list({ where });
+
+    const baseSummary: UsageSummary = {
+      tenantId: columns.tenantId,
       metricKey: options.metricKey,
       quantity: metrics.reduce((sum, metric) => sum + metric.quantity, 0),
       windowStart: options.window.start,
       windowEnd: options.window.end,
     };
+    if (subscriber.kind === 'external') {
+      return {
+        ...baseSummary,
+        subscriberKind: 'external',
+        subscriberExternalId: subscriber.externalId,
+      };
+    }
+    return baseSummary;
   }
 
   /**

@@ -4,6 +4,10 @@
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
   "version": "0.27.20",
+  "files": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
   "scripts": {
     "format": "turbo format",
     "format-check": "turbo format-check",

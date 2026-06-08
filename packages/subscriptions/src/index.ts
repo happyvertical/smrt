@@ -37,6 +37,8 @@ export type {
   PlanFeatureGrant,
   PlanThreshold,
   RecordUsageOptions,
+  Subscriber,
+  SubscriberKind,
   SubscriptionPlanStatus,
   SubscriptionResolverOptions,
   SubscriptionStatus,
@@ -55,4 +57,6 @@ export {
   getWindowKey,
   isValidThreshold,
   normalizeFeatureGrants,
+  normalizeSubscriber,
+  subscriberToColumns,
 } from './utils.js';

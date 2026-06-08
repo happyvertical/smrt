@@ -1,0 +1,551 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { TenantUsageMetricCollection } from '../collections/TenantUsageMetricCollection.js';
+import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
+import { TenantSubscription } from '../models/TenantSubscription.js';
+import { TenantUsageMetric } from '../models/TenantUsageMetric.js';
+import { SubscriptionResolver } from '../services/subscription-resolver.js';
+import { TenantUsageMeter } from '../services/usage-meter.js';
+import { normalizeSubscriber, subscriberToColumns } from '../utils.js';
+
+const AI_USAGE_DDL = `
+  CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
+    id TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    model TEXT NOT NULL,
+    operation TEXT NOT NULL,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    total_tokens INTEGER,
+    estimated_cost REAL,
+    duration INTEGER NOT NULL,
+    class_name TEXT,
+    tenant_id TEXT,
+    tags TEXT,
+    created_at TIMESTAMP NOT NULL
+  )
+`;
+
+describe('polymorphic subscriber — model defaults', () => {
+  it('defaults TenantSubscription.subscriberKind to "tenant" with no external id', () => {
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-1',
+    });
+
+    expect(subscription.subscriberKind).toBe('tenant');
+    expect(subscription.subscriberExternalId).toBe('');
+    expect(subscription.getSubscriber()).toEqual({
+      kind: 'tenant',
+      tenantId: 'tenant-1',
+    });
+  });
+
+  it('projects external subscriber columns onto the discriminated union', () => {
+    const subscription = new TenantSubscription({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:abc123',
+      planId: 'plan-license',
+    });
+
+    expect(subscription.getSubscriber()).toEqual({
+      kind: 'external',
+      tenantId: 'marketplace-tenant',
+      externalId: 'buyer-contact:abc123',
+    });
+  });
+
+  it('returns null from getSubscriber when external kind has no external id', () => {
+    const subscription = new TenantSubscription({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      // No subscriberExternalId — invalid row.
+    });
+
+    expect(subscription.getSubscriber()).toBeNull();
+  });
+
+  it('defaults TenantUsageMetric to tenant kind and exposes getSubscriber', () => {
+    const metric = new TenantUsageMetric({
+      tenantId: 'tenant-1',
+      metricKey: 'tokens.openai.gpt5',
+      quantity: 1247,
+    });
+
+    expect(metric.subscriberKind).toBe('tenant');
+    expect(metric.getSubscriber()).toEqual({
+      kind: 'tenant',
+      tenantId: 'tenant-1',
+    });
+  });
+});
+
+describe('polymorphic subscriber — normalizeSubscriber', () => {
+  it('defaults to tenant kind when subscriberKind is omitted', () => {
+    expect(normalizeSubscriber({ tenantId: 't-1' })).toEqual({
+      kind: 'tenant',
+      tenantId: 't-1',
+    });
+  });
+
+  it('rejects external kind without a non-empty external id', () => {
+    expect(() =>
+      normalizeSubscriber({
+        tenantId: 't-1',
+        subscriberKind: 'external',
+        subscriberExternalId: '',
+      }),
+    ).toThrow(/non-empty subscriberExternalId/);
+
+    expect(() =>
+      normalizeSubscriber({
+        tenantId: 't-1',
+        subscriberKind: 'external',
+      }),
+    ).toThrow(/non-empty subscriberExternalId/);
+  });
+
+  it('round-trips a tenant subscriber through subscriberToColumns', () => {
+    const subscriber = normalizeSubscriber({ tenantId: 't-1' });
+    expect(subscriberToColumns(subscriber)).toEqual({
+      tenantId: 't-1',
+      subscriberKind: 'tenant',
+      subscriberExternalId: '',
+    });
+  });
+
+  it('round-trips an external subscriber through subscriberToColumns', () => {
+    const subscriber = normalizeSubscriber({
+      tenantId: 'marketplace',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:abc',
+    });
+    expect(subscriberToColumns(subscriber)).toEqual({
+      tenantId: 'marketplace',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:abc',
+    });
+  });
+});
+
+describe('polymorphic subscriber — UsageMeter DB roundtrip', () => {
+  let metrics: TenantUsageMetricCollection;
+
+  beforeEach(async () => {
+    metrics = await TenantUsageMetricCollection.create({
+      db: { type: 'sqlite', url: ':memory:' },
+    });
+    await metrics.db.query(AI_USAGE_DDL);
+  });
+
+  afterEach(async () => {
+    await metrics.db.close?.();
+  });
+
+  it('records and summarizes tenant-kind usage (default)', async () => {
+    const meter = new TenantUsageMeter(metrics);
+    const window = {
+      start: new Date('2026-06-01T00:00:00Z'),
+      end: new Date('2026-07-01T00:00:00Z'),
+    };
+
+    await meter.record({
+      tenantId: 'tenant-1',
+      metricKey: 'storage.bytes',
+      quantity: 1024,
+      windowStart: new Date('2026-06-10T00:00:00Z'),
+      windowEnd: new Date('2026-06-10T01:00:00Z'),
+    });
+    await meter.record({
+      tenantId: 'tenant-1',
+      metricKey: 'storage.bytes',
+      quantity: 2048,
+      windowStart: new Date('2026-06-20T00:00:00Z'),
+      windowEnd: new Date('2026-06-20T01:00:00Z'),
+    });
+
+    const summary = await meter.summarize({
+      tenantId: 'tenant-1',
+      metricKey: 'storage.bytes',
+      window,
+    });
+
+    expect(summary.quantity).toBe(3072);
+    expect(summary.subscriberKind).toBeUndefined();
+    expect(summary.subscriberExternalId).toBeUndefined();
+  });
+
+  it('records and summarizes external-kind usage scoped under an issuing tenant', async () => {
+    const meter = new TenantUsageMeter(metrics);
+    const window = {
+      start: new Date('2026-06-01T00:00:00Z'),
+      end: new Date('2026-07-01T00:00:00Z'),
+    };
+
+    await meter.record({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      metricKey: 'license.downloads',
+      quantity: 3,
+      windowStart: new Date('2026-06-10T00:00:00Z'),
+      windowEnd: new Date('2026-06-10T01:00:00Z'),
+    });
+    await meter.record({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      metricKey: 'license.downloads',
+      quantity: 2,
+      windowStart: new Date('2026-06-20T00:00:00Z'),
+      windowEnd: new Date('2026-06-20T01:00:00Z'),
+    });
+    // A different buyer scoped under the same issuing tenant; must be excluded.
+    await meter.record({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:bob',
+      metricKey: 'license.downloads',
+      quantity: 99,
+      windowStart: new Date('2026-06-15T00:00:00Z'),
+      windowEnd: new Date('2026-06-15T01:00:00Z'),
+    });
+    // The issuing tenant's own tenant-kind usage; must be excluded from the
+    // external buyer's summary.
+    await meter.record({
+      tenantId: 'marketplace-tenant',
+      metricKey: 'license.downloads',
+      quantity: 7,
+      windowStart: new Date('2026-06-12T00:00:00Z'),
+      windowEnd: new Date('2026-06-12T01:00:00Z'),
+    });
+
+    const summary = await meter.summarize({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      metricKey: 'license.downloads',
+      window,
+    });
+
+    expect(summary).toMatchObject({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      quantity: 5,
+    });
+  });
+
+  it('throws when recording external usage without an external id', async () => {
+    const meter = new TenantUsageMeter(metrics);
+
+    await expect(
+      meter.record({
+        tenantId: 'marketplace-tenant',
+        subscriberKind: 'external',
+        // No subscriberExternalId — XOR violation.
+        metricKey: 'license.downloads',
+        quantity: 1,
+        windowStart: new Date(),
+        windowEnd: new Date(),
+      }),
+    ).rejects.toThrow(/non-empty subscriberExternalId/);
+  });
+
+  it('bypasses the ai.* short-circuit for external subscribers', async () => {
+    const meter = new TenantUsageMeter(metrics);
+    const window = {
+      start: new Date('2026-06-01T00:00:00Z'),
+      end: new Date('2026-07-01T00:00:00Z'),
+    };
+
+    // Seed `_smrt_ai_usage` for the issuing tenant — this would normally be
+    // picked up by the `ai.*` short-circuit for a tenant-kind summarize.
+    await metrics.db.query(
+      `INSERT INTO _smrt_ai_usage
+       (id, provider, model, operation, prompt_tokens, completion_tokens,
+        total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      'ai-1',
+      'openai',
+      'gpt-5',
+      'do',
+      100,
+      40,
+      140,
+      0.5,
+      0,
+      'TestClass',
+      'marketplace-tenant',
+      null,
+      '2026-06-15T12:00:00.000Z',
+    );
+    // Record buyer-scoped ai.tokens.total separately — that's what the buyer's
+    // summary should reflect (not the tenant-scoped _smrt_ai_usage rows).
+    await meter.record({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      metricKey: 'ai.tokens.total',
+      quantity: 12,
+      windowStart: new Date('2026-06-15T12:00:00Z'),
+      windowEnd: new Date('2026-06-15T13:00:00Z'),
+    });
+
+    const buyerSummary = await meter.summarize({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      metricKey: 'ai.tokens.total',
+      window,
+    });
+    // Buyer summary draws from _smrt_tenant_usage_metrics only, not
+    // _smrt_ai_usage — would be 140 if the short-circuit had fired.
+    expect(buyerSummary.quantity).toBe(12);
+
+    // Sanity: the issuing tenant's own tenant-kind summary DOES fire the
+    // short-circuit and reads the _smrt_ai_usage row.
+    const tenantSummary = await meter.summarize({
+      tenantId: 'marketplace-tenant',
+      metricKey: 'ai.tokens.total',
+      window,
+    });
+    expect(tenantSummary.quantity).toBe(140);
+  });
+});
+
+describe('polymorphic subscriber — SubscriptionResolver', () => {
+  it('resolves an external subscriber via findCurrentForSubscriber', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'marketplace-month',
+      name: 'Marketplace Monthly',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-mkt' });
+    plan.setFeatureGrants(['marketplace:download']);
+    plan.setThresholds([
+      {
+        metricKey: 'license.downloads',
+        limit: 10,
+        window: 'month',
+        enforcement: 'block',
+      },
+    ]);
+
+    const buyerSubscription = new TenantSubscription({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      planId: 'plan-mkt',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(buyerSubscription, { id: 'sub-buyer-alice' });
+
+    let seenSubscriber: unknown;
+    let seenUsageSubscriberKind: string | undefined;
+    const resolver = new SubscriptionResolver({
+      plans: {
+        async get() {
+          return plan;
+        },
+      },
+      subscriptions: {
+        async findCurrentForTenant() {
+          throw new Error(
+            'tenant lookup should not be used for external subscribers',
+          );
+        },
+        async findCurrentForSubscriber(subscriber) {
+          seenSubscriber = subscriber;
+          return buyerSubscription;
+        },
+      },
+      usage: {
+        async summarize(options) {
+          seenUsageSubscriberKind = options.subscriberKind;
+          return {
+            tenantId: options.tenantId,
+            metricKey: options.metricKey,
+            quantity: 4,
+            windowStart: options.window.start,
+            windowEnd: options.window.end,
+          };
+        },
+      },
+    });
+
+    const resolution = await resolver.resolveEntitlements(
+      {
+        kind: 'external',
+        tenantId: 'marketplace-tenant',
+        externalId: 'buyer-contact:alice',
+      },
+      { now: new Date('2026-06-15T00:00:00Z') },
+    );
+
+    expect(seenSubscriber).toEqual({
+      kind: 'external',
+      tenantId: 'marketplace-tenant',
+      externalId: 'buyer-contact:alice',
+    });
+    expect(seenUsageSubscriberKind).toBe('external');
+    expect(resolution).toMatchObject({
+      tenantId: 'marketplace-tenant',
+      subscriber: {
+        kind: 'external',
+        tenantId: 'marketplace-tenant',
+        externalId: 'buyer-contact:alice',
+      },
+      planKey: 'marketplace-month',
+      status: 'active',
+      featureKeys: ['marketplace:download'],
+      allowed: true,
+    });
+    expect(resolution.thresholdEvaluations[0]).toMatchObject({
+      state: 'ok',
+      remaining: 6,
+    });
+  });
+
+  it('errors loudly when external resolve has only a legacy tenant reader', async () => {
+    const resolver = new SubscriptionResolver({
+      plans: {
+        async get() {
+          return null;
+        },
+      },
+      subscriptions: {
+        async findCurrentForTenant() {
+          return null;
+        },
+      },
+      usage: {
+        async summarize() {
+          throw new Error('usage should not be read in this path');
+        },
+      },
+    });
+
+    await expect(
+      resolver.resolveEntitlements({
+        kind: 'external',
+        tenantId: 'marketplace-tenant',
+        externalId: 'buyer-contact:alice',
+      }),
+    ).rejects.toThrow(/findCurrentForSubscriber/);
+  });
+
+  it('keeps the legacy resolveTenantEntitlements path working unchanged', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'pro',
+      name: 'Pro',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-pro' });
+    plan.setFeatureGrants(['smrt:chat']);
+
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-pro',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-1' });
+
+    const resolver = new SubscriptionResolver({
+      plans: {
+        async get() {
+          return plan;
+        },
+      },
+      subscriptions: {
+        async findCurrentForTenant() {
+          return subscription;
+        },
+      },
+      usage: {
+        async summarize() {
+          throw new Error('usage should not be read without thresholds');
+        },
+      },
+    });
+
+    const resolution = await resolver.resolveTenantEntitlements('tenant-1', {
+      now: new Date('2026-06-15T00:00:00Z'),
+    });
+
+    expect(resolution).toMatchObject({
+      tenantId: 'tenant-1',
+      subscriber: { kind: 'tenant', tenantId: 'tenant-1' },
+      planKey: 'pro',
+      featureKeys: ['smrt:chat'],
+      allowed: true,
+    });
+  });
+
+  it('throws with the external id in the message when external thresholds block', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'mkt',
+      name: 'Mkt',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-mkt' });
+    plan.setThresholds([
+      {
+        metricKey: 'license.downloads',
+        limit: 5,
+        window: 'month',
+        enforcement: 'block',
+      },
+    ]);
+
+    const subscription = new TenantSubscription({
+      tenantId: 'marketplace-tenant',
+      subscriberKind: 'external',
+      subscriberExternalId: 'buyer-contact:alice',
+      planId: 'plan-mkt',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-buyer-alice' });
+
+    const resolver = new SubscriptionResolver({
+      plans: {
+        async get() {
+          return plan;
+        },
+      },
+      subscriptions: {
+        async findCurrentForTenant() {
+          return null;
+        },
+        async findCurrentForSubscriber() {
+          return subscription;
+        },
+      },
+      usage: {
+        async summarize(options) {
+          return {
+            tenantId: options.tenantId,
+            metricKey: options.metricKey,
+            quantity: 12,
+            windowStart: options.window.start,
+            windowEnd: options.window.end,
+          };
+        },
+      },
+    });
+
+    await expect(
+      resolver.assertWithinThresholds(
+        {
+          kind: 'external',
+          tenantId: 'marketplace-tenant',
+          externalId: 'buyer-contact:alice',
+        },
+        { now: new Date('2026-06-15T00:00:00Z') },
+      ),
+    ).rejects.toThrow(/external:buyer-contact:alice.*license\.downloads/);
+  });
+});
