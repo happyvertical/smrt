@@ -528,7 +528,7 @@ async function handleSendMessage(content: string) {
     border-top-color: var(--smrt-color-primary, #005ac1);
     border-radius: 50%;
     animation: spin 1s linear infinite;
-    margin-right: 8px;
+    margin-right: var(--smrt-spacing-2, 8px);
     vertical-align: middle;
   }
   
@@ -547,13 +547,13 @@ async function handleSendMessage(content: string) {
   }
 
   .model-bar {
-    padding: 6px 10px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: var(--smrt-color-surface-container-lowest, #ffffff);
   }
 
   .smrt-select {
     width: 100%;
-    padding: 5px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: 6px;
     border: none;
     background: var(--smrt-color-surface-container-low, #f7f7fb);
@@ -594,8 +594,8 @@ async function handleSendMessage(content: string) {
   .topic-footer {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 10px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: var(--smrt-color-surface-container-lowest, #ffffff);
   }
 
@@ -606,8 +606,8 @@ async function handleSendMessage(content: string) {
   .topic-action-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: 5px;
     background: none;
@@ -624,7 +624,7 @@ async function handleSendMessage(content: string) {
   }
 
   .topic-cancel-btn {
-    padding: 4px 6px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: none;
     color: var(--smrt-color-outline, #74777f);
   }
@@ -632,13 +632,13 @@ async function handleSendMessage(content: string) {
   .new-topic-row {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     width: 100%;
   }
 
   .new-topic-input {
     flex: 1;
-    padding: 4px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: 5px;
     font-size: 0.8125rem;

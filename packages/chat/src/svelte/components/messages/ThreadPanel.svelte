@@ -110,7 +110,7 @@ const replyCount = $derived(
   }
 
   .thread-panel__resolved {
-    padding: 2px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: 500;
     color: var(--smrt-color-on-success-container, #2e7d32);

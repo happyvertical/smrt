@@ -259,7 +259,7 @@ const hasDocuments = $derived(
     display: block;
     font-size: var(--font-size-sm, 0.875rem);
     color: var(--color-text-secondary, #666);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .document-arrow {

@@ -122,7 +122,7 @@ const {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
     min-height: 44px;
@@ -131,7 +131,7 @@ const {
   .chat-tab__header-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     background: none;
     border: none;
     color: inherit;
@@ -156,7 +156,7 @@ const {
   .chat-tab__actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     flex-shrink: 0;
   }
 
@@ -191,8 +191,8 @@ const {
   .chat-tab--collapsed {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: var(--smrt-color-surface-container, #f0f0f4);
     border: none;
     border-radius: var(--smrt-radius-large, 12px) var(--smrt-radius-large, 12px) 0 0;
@@ -218,7 +218,7 @@ const {
     justify-content: center;
     min-width: 18px;
     height: 18px;
-    padding: 0 5px;
+    padding: 0 var(--smrt-spacing-1, 4px);
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-error, #ba1a1a);
     color: var(--smrt-color-on-error, #ffffff);

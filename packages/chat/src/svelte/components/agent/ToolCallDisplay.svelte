@@ -151,9 +151,9 @@ function formatDuration(ms: number | undefined): string {
   .tool-call__header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     width: 100%;
-    padding: 8px 12px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border: none;
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     cursor: pointer;
@@ -209,7 +209,7 @@ function formatDuration(ms: number | undefined): string {
   .tool-call__header-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     flex-shrink: 0;
   }
 
@@ -233,10 +233,10 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call__body {
-    padding: 8px 12px 12px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px) var(--smrt-spacing-3, 12px);
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     background: var(--smrt-color-surface, #fefbff);
   }
@@ -244,7 +244,7 @@ function formatDuration(ms: number | undefined): string {
   .tool-call__section {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .tool-call__section-label {
@@ -256,7 +256,7 @@ function formatDuration(ms: number | undefined): string {
 
   .tool-call__json {
     margin: 0;
-    padding: 8px;
+    padding: var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-small, 4px);
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     color: var(--smrt-color-on-surface, #1a1c1e);
@@ -283,8 +283,8 @@ function formatDuration(ms: number | undefined): string {
   .tool-call__running {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-primary, #005ac1);
   }

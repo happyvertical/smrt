@@ -187,7 +187,7 @@ function getFileIcon(type: string): string {
   .file-upload {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .file-upload--disabled {
@@ -198,7 +198,7 @@ function getFileIcon(type: string): string {
   .file-upload__drop-zone {
     border: 2px dashed var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-large, 12px);
-    padding: 20px;
+    padding: var(--smrt-spacing-5, 20px);
     text-align: center;
     transition:
       border-color var(--smrt-duration-short2, 150ms),
@@ -218,7 +218,7 @@ function getFileIcon(type: string): string {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     cursor: pointer;
   }
 
@@ -247,8 +247,8 @@ function getFileIcon(type: string): string {
   .file-upload__preview {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 8px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-2, 8px);
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     border-radius: var(--smrt-radius-medium, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
@@ -257,8 +257,8 @@ function getFileIcon(type: string): string {
   .file-upload__file {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-small, 4px);
     background: var(--smrt-color-surface, #fefbff);
   }
@@ -281,7 +281,7 @@ function getFileIcon(type: string): string {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: var(--smrt-spacing-1, 4px);
     min-width: 0;
   }
 
@@ -320,12 +320,12 @@ function getFileIcon(type: string): string {
 
   .file-upload__preview-actions {
     display: flex;
-    gap: 8px;
-    padding-top: 4px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding-top: var(--smrt-spacing-1, 4px);
   }
 
   .file-upload__confirm-btn {
-    padding: 6px 16px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
     border: none;
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #005ac1);
@@ -345,7 +345,7 @@ function getFileIcon(type: string): string {
   }
 
   .file-upload__clear-btn {
-    padding: 6px 16px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
     border: 1px solid var(--smrt-color-outline, #74777f);
     border-radius: var(--smrt-radius-full, 9999px);
     background: transparent;
@@ -360,7 +360,7 @@ function getFileIcon(type: string): string {
   }
 
   .file-upload__error {
-    padding: 8px 12px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border-radius: var(--smrt-radius-small, 4px);
     background: var(--smrt-color-error-container, #ffdad6);
     color: var(--smrt-color-on-error-container, #410002);
