@@ -265,7 +265,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
   }
 
   .create-modal::backdrop {
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
     backdrop-filter: blur(2px);
   }
 

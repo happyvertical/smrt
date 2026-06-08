@@ -141,7 +141,7 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call--success {
-    border-left: 3px solid #4caf50;
+    border-left: 3px solid var(--smrt-color-success, #4caf50);
   }
 
   .tool-call--error {
@@ -189,7 +189,7 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call--success .tool-call__status-dot {
-    background: #4caf50;
+    background: var(--smrt-color-success, #4caf50);
   }
 
   .tool-call--error .tool-call__status-dot {
@@ -271,8 +271,8 @@ function formatDuration(ms: number | undefined): string {
   }
 
   .tool-call__json--result {
-    background: #f1f8e9;
-    color: #33691e;
+    background: var(--smrt-color-success-container, #f1f8e9);
+    color: var(--smrt-color-on-success-container, #33691e);
   }
 
   .tool-call__json--error {

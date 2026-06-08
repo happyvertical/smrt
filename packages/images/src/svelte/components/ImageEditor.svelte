@@ -357,7 +357,7 @@ async function handleAIEdit() {
   .mode-selector button.active {
     background: var(--smrt-color-surface-container, #1a1a1a);
     color: var(--smrt-color-on-surface, #fff);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent);
   }
 
   .tool-section h4 {
@@ -465,7 +465,7 @@ async function handleAIEdit() {
 
   .error-msg {
     color: var(--smrt-color-error, #ef4444);
-    background: rgba(239, 68, 68, 0.1);
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 0.5rem;
     border-radius: 4px;
     font-size: 0.85rem;
@@ -473,7 +473,7 @@ async function handleAIEdit() {
 
   .success-msg {
     color: var(--smrt-color-success, #22c55e);
-    background: rgba(34, 197, 94, 0.1);
+    background: color-mix(in srgb, var(--smrt-color-success) 10%, transparent);
     padding: 0.5rem;
     border-radius: 4px;
     font-size: 0.85rem;

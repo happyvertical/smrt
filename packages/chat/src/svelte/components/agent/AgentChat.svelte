@@ -374,9 +374,9 @@ $effect(() => {
     padding: 2px 8px;
     font-size: 0.6875rem;
     font-weight: 600;
-    color: #16a34a;
-    background: #f0fdf4;
-    border: 1px solid #bbf7d0;
+    color: var(--smrt-color-on-success-container, #16a34a);
+    background: var(--smrt-color-success-container, #f0fdf4);
+    border: 1px solid var(--smrt-color-success, #bbf7d0);
     border-radius: 999px;
   }
 
@@ -429,13 +429,13 @@ $effect(() => {
     padding: 0;
     width: min(420px, 90vw);
     max-height: 60vh;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    box-shadow: 0 8px 32px color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
 
   .diff-dialog::backdrop {
-    background: rgba(0,0,0,0.3);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.3));
   }
 
   .diff-dialog__header {

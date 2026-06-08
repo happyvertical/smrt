@@ -105,16 +105,16 @@ function handleEditorSave(image: StudioImage) {
     display: flex;
     flex-direction: column;
     gap: 1.75rem;
-    color: #e2e8f0;
+    color: var(--smrt-color-on-surface, #e2e8f0);
     background:
-      radial-gradient(circle at top, rgba(37, 99, 235, 0.22), transparent 40%),
-      #020617;
+      radial-gradient(circle at top, color-mix(in srgb, var(--smrt-color-primary) 22%, transparent), transparent 40%),
+      var(--smrt-color-background, #020617);
     min-height: 100vh;
   }
 
   .images-route__eyebrow {
     margin: 0 0 0.5rem;
-    color: #7dd3fc;
+    color: var(--smrt-color-primary, #7dd3fc);
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -133,7 +133,7 @@ function handleEditorSave(image: StudioImage) {
   .images-route__lede,
   .images-route__section-copy p {
     margin: 0.75rem 0 0;
-    color: #cbd5e1;
+    color: var(--smrt-color-on-surface-variant, #cbd5e1);
     line-height: 1.6;
     max-width: 60rem;
   }
@@ -149,9 +149,9 @@ function handleEditorSave(image: StudioImage) {
     margin-top: 1rem;
     padding: 0.875rem 1rem;
     border-radius: 0.85rem;
-    background: rgba(15, 23, 42, 0.72);
-    border: 1px solid rgba(125, 211, 252, 0.2);
-    color: #e0f2fe;
+    background: color-mix(in srgb, var(--smrt-color-surface-container) 72%, transparent);
+    border: 1px solid color-mix(in srgb, var(--smrt-color-primary) 20%, transparent);
+    color: var(--smrt-color-on-surface, #e0f2fe);
   }
 
   .images-route__workspace-grid {
@@ -163,9 +163,9 @@ function handleEditorSave(image: StudioImage) {
 
   .images-route__card {
     border-radius: 1rem;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(15, 23, 42, 0.72);
-    box-shadow: 0 24px 60px rgba(2, 6, 23, 0.35);
+    border: 1px solid color-mix(in srgb, var(--smrt-color-outline-variant) 18%, transparent);
+    background: color-mix(in srgb, var(--smrt-color-surface-container) 72%, transparent);
+    box-shadow: 0 24px 60px color-mix(in srgb, var(--smrt-color-shadow) 35%, transparent);
     overflow: hidden;
   }
 

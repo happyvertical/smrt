@@ -297,18 +297,18 @@ function toggleReactionPicker() {
   }
 
   .message-item__tool-status.running {
-    background: #e3f2fd;
-    color: #1565c0;
+    background: var(--smrt-color-primary-container, #e3f2fd);
+    color: var(--smrt-color-on-primary-container, #1565c0);
   }
 
   .message-item__tool-status.success {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: var(--smrt-color-success-container, #e8f5e9);
+    color: var(--smrt-color-on-success-container, #2e7d32);
   }
 
   .message-item__tool-status.error {
-    background: #ffebee;
-    color: #c62828;
+    background: var(--smrt-color-error-container, #ffebee);
+    color: var(--smrt-color-on-error-container, #c62828);
   }
 
   .message-item__tool-duration {
@@ -316,7 +316,7 @@ function toggleReactionPicker() {
   }
 
   .message-item__tool-error {
-    color: #c62828;
+    color: var(--smrt-color-on-error-container, #c62828);
   }
 
   .message-item__reactions {

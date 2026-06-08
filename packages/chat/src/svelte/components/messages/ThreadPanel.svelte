@@ -113,8 +113,8 @@ const replyCount = $derived(
     padding: 2px 8px;
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     font-weight: 500;
-    color: #2e7d32;
-    background: #e8f5e9;
+    color: var(--smrt-color-on-success-container, #2e7d32);
+    background: var(--smrt-color-success-container, #e8f5e9);
     border-radius: var(--smrt-radius-full, 9999px);
     white-space: nowrap;
     flex-shrink: 0;

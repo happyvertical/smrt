@@ -111,7 +111,7 @@ const customActions = [
 
   .assets-route__eyebrow {
     margin: 0 0 0.5rem;
-    color: #0f766e;
+    color: var(--smrt-color-primary, #0f766e);
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -126,7 +126,7 @@ const customActions = [
   .assets-route__lede {
     max-width: 56rem;
     margin: 0.75rem 0 0;
-    color: #475569;
+    color: var(--smrt-color-on-surface-variant, #475569);
     line-height: 1.6;
   }
 
@@ -148,11 +148,11 @@ const customActions = [
   }
 
   .assets-route__panel {
-    background: #fff;
-    border: 1px solid #dbe3ef;
+    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant, #dbe3ef);
     border-radius: 1rem;
     padding: 1.25rem;
-    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 10px 30px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent);
   }
 
   .assets-route__panel h2 {
@@ -162,15 +162,15 @@ const customActions = [
 
   .assets-route__empty {
     margin: 0;
-    color: #64748b;
+    color: var(--smrt-color-on-surface-variant, #64748b);
   }
 
   .assets-route__message {
     margin: 0.75rem 0 0;
     padding: 0.75rem 0.875rem;
     border-radius: 0.75rem;
-    background: #ecfeff;
-    color: #155e75;
+    background: var(--smrt-color-primary-container, #ecfeff);
+    color: var(--smrt-color-on-primary-container, #155e75);
   }
 
   .assets-route__selection-list {
@@ -187,13 +187,13 @@ const customActions = [
     gap: 0.25rem;
     padding: 0.625rem 0.75rem;
     border-radius: 0.75rem;
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--smrt-color-surface-container, #f8fafc);
+    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
   }
 
   .assets-route__selection-list code {
     font-size: 0.75rem;
-    color: #155e75;
+    color: var(--smrt-color-on-primary-container, #155e75);
   }
 
   @media (max-width: 960px) {
