@@ -121,6 +121,16 @@ pre-push:
         Replace hardcoded colors with semantic --smrt-color-* tokens.
         Run: node scripts/check-color-literals.mjs
 
+    z-index:
+      # Bans raw global-layer z-index in component CSS. Strict for smrt-svelte,
+      # report-only elsewhere until later phases of #1373. Node-only, no deps.
+      run: node scripts/check-z-index.mjs
+      fail_text: |
+        ❌ Raw global-layer z-index found in a strict UI package!
+
+        Use the centralized scale: z-index: var(--smrt-z-index-<layer>, <fallback>).
+        Run: node scripts/check-z-index.mjs
+
     validate-all-workflows:
       run: |
         echo "🔍 Validating ALL workflow files before push..."

@@ -517,7 +517,7 @@
       display: block;
       position: fixed;
       inset: 0;
-      z-index: 65;
+      z-index: var(--smrt-z-index-overlay, 1200);
       padding: 0;
       border: 0;
       background: var(--smrt-color-scrim);
@@ -532,7 +532,7 @@
       width: var(--tools-dock-rail-width);
       height: 100vh;
       height: 100dvh;
-      z-index: 70;
+      z-index: var(--smrt-z-index-modal, 1300);
       --tools-dock-panel-width: min(420px, calc(100vw - var(--tools-dock-rail-width)));
     }
 
@@ -541,11 +541,11 @@
        the panel (no z-index) and rail (z-index: 2) within the same stacking
        context — every tap hit the close button instead of the tool. */
     .tools-dock__panel {
-      z-index: 70;
+      z-index: var(--smrt-z-index-modal, 1300);
     }
 
     .tools-dock__rail {
-      z-index: 70;
+      z-index: var(--smrt-z-index-modal, 1300);
     }
   }
 
