@@ -147,7 +147,7 @@ function handleKeydown(e: KeyboardEvent) {
 		position: relative;
 		background: var(--smrt-color-surface-container-high, white);
 		border-radius: 16px;
-		padding: 32px 40px;
+		padding: var(--smrt-spacing-8, 32px) var(--smrt-spacing-10, 40px);
 		max-width: 400px;
 		width: 90%;
 		text-align: center;
@@ -157,7 +157,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.loading-icon {
 		width: 48px;
 		height: 48px;
-		margin: 0 auto 16px;
+		margin: 0 auto var(--smrt-spacing-4, 16px);
 	}
 
 	.icon {
@@ -187,14 +187,14 @@ function handleKeydown(e: KeyboardEvent) {
 		font-size: 1.25rem;
 		font-weight: 600;
 		color: var(--smrt-color-on-surface, #1f2937);
-		margin: 0 0 16px;
+		margin: 0 0 var(--smrt-spacing-4, 16px);
 	}
 
 	.progress-container {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		margin: 16px 0;
+		gap: var(--smrt-spacing-3, 12px);
+		margin: var(--smrt-spacing-4, 16px) 0;
 	}
 
 	.progress-bar {
@@ -226,14 +226,14 @@ function handleKeydown(e: KeyboardEvent) {
 	.items-container {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: var(--smrt-spacing-2, 8px);
 		justify-content: center;
-		margin-top: 16px;
+		margin-top: var(--smrt-spacing-4, 16px);
 	}
 
 	.item-badge {
 		font-size: 0.75rem;
-		padding: 4px 10px;
+		padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-3, 12px);
 		border-radius: 9999px;
 		background: var(--smrt-color-primary-container, #dcfce7);
 		color: var(--smrt-color-on-primary-container, #166534);
@@ -242,15 +242,15 @@ function handleKeydown(e: KeyboardEvent) {
 	.error-message {
 		font-size: 0.875rem;
 		color: var(--smrt-color-error, #ef4444);
-		margin: 16px 0 0;
-		padding: 12px;
+		margin: var(--smrt-spacing-4, 16px) 0 0;
+		padding: var(--smrt-spacing-3, 12px);
 		background: var(--smrt-color-error-container, #fef2f2);
 		border-radius: 8px;
 	}
 
 	.dismiss-btn {
-		margin-top: 20px;
-		padding: 10px 20px;
+		margin-top: var(--smrt-spacing-5, 20px);
+		padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-5, 20px);
 		font-size: 0.875rem;
 		color: var(--smrt-color-on-surface-variant, #6b7280);
 		background: transparent;

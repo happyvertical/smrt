@@ -326,7 +326,7 @@ function handleBlur() {
   .smrt-money {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .smrt-label {
@@ -337,7 +337,7 @@ function handleBlur() {
 
   .smrt-label .required {
     color: var(--smrt-color-error, #ba1a1a);
-    margin-left: 2px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {
@@ -401,6 +401,6 @@ function handleBlur() {
   .validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #ba1a1a);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 </style>

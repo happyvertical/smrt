@@ -117,7 +117,7 @@ const icons = {
     background-color: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
     border-radius: 28px; /* M3 extra large shape */
-    padding: 24px;
+    padding: var(--smrt-spacing-6, 24px);
   }
 
   .sm .icon-container {
@@ -125,7 +125,7 @@ const icons = {
     height: 64px;
     margin-bottom: 1.5rem;
     border-radius: 16px;
-    padding: 16px;
+    padding: var(--smrt-spacing-4, 16px);
   }
 
   .lg .icon-container {
@@ -133,7 +133,7 @@ const icons = {
     height: 120px;
     margin-bottom: 2.5rem;
     border-radius: 32px;
-    padding: 32px;
+    padding: var(--smrt-spacing-8, 32px);
   }
 
   .empty-title {
@@ -163,8 +163,8 @@ const icons = {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    padding: 0 24px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-6, 24px);
     height: 40px;
     font: var(--smrt-typography-label-large-font);
     font-weight: 500;

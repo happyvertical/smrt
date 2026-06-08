@@ -326,7 +326,7 @@ function handleInput(e: Event) {
   .smrt-phone {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     position: relative;
   }
 
@@ -338,7 +338,7 @@ function handleInput(e: Event) {
 
   .smrt-label .required {
     color: var(--smrt-color-error, #ba1a1a);
-    margin-left: 2px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {
@@ -363,7 +363,7 @@ function handleInput(e: Event) {
   }
 
   .smrt-input.smrt-mode {
-    padding-right: 44px;
+    padding-right: var(--smrt-spacing-11, 44px);
     cursor: pointer;
   }
 
@@ -442,10 +442,10 @@ function handleInput(e: Event) {
   .listening-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-success);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .listening-dot {
@@ -476,19 +476,19 @@ function handleInput(e: Event) {
   .processing-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .downloading-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-tertiary);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .processing-spinner {
@@ -509,12 +509,12 @@ function handleInput(e: Event) {
   .error-message {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #f97316);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #ba1a1a);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 </style>

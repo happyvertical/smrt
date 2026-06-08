@@ -104,7 +104,7 @@ const displayLabel = $derived.by(() => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: var(--smrt-spacing-2, 8px);
   }
 
   .progress-label {

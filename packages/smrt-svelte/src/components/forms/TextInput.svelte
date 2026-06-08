@@ -295,7 +295,7 @@ function handleInput(e: Event) {
     background-color: var(--field-bg);
     border-radius: 4px 4px 0 0;
     min-height: 56px;
-    padding: 0 16px;
+    padding: 0 var(--smrt-spacing-4, 16px);
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
@@ -309,7 +309,7 @@ function handleInput(e: Event) {
     flex-direction: column;
     justify-content: center;
     height: 100%;
-    padding-top: 8px;
+    padding-top: var(--smrt-spacing-2, 8px);
   }
 
   .label {
@@ -381,7 +381,7 @@ function handleInput(e: Event) {
   }
 
   .supporting-text {
-    padding: 4px 16px 0;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-4, 16px) 0;
     font-size: 0.75rem;
     min-height: 16px;
   }
