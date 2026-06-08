@@ -215,24 +215,17 @@ export class TaskRunner extends EventEmitter {
     const available = this.config.concurrency - this.activeJobs.size;
     if (available <= 0) return;
 
-    // Find ready jobs
-    const jobs = await this.collection.listReady({
+    // Atomically claim ready jobs before processing so multiple workers cannot
+    // receive the same pending row.
+    const jobs = await this.collection.claimReady({
+      workerId: this.id,
       queues: this.config.queues,
       limit: available,
     });
 
-    // Claim and process each job
     for (const job of jobs) {
       const jobId = job.id;
       if (!jobId) continue;
-
-      // Claim the job
-      job.status = 'running';
-      job.workerId = this.id;
-      job.workerHeartbeat = new Date();
-      job.startedAt = new Date();
-      job.attempts += 1;
-      await job.save();
 
       // Process asynchronously
       this.processJob(job);
@@ -648,9 +641,6 @@ export class TaskRunner extends EventEmitter {
 
       const timeout = setTimeout(() => {
         clearInterval(checkInterval);
-        console.warn(
-          `Shutdown timeout: ${this.activeJobs.size} jobs still active`,
-        );
         resolve();
       }, this.config.shutdownTimeout);
     });

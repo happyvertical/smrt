@@ -83,6 +83,7 @@ export {
 } from './schedule-runner.js';
 // Core job model
 export {
+  type ClaimReadyOptions,
   type JobStatus,
   type ListReadyOptions,
   SmrtJob,
