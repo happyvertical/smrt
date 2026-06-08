@@ -130,8 +130,6 @@ onDestroy(() => {
 
 // Parse natural language to ISO date using chrono-node (no LLM needed)
 async function parseNaturalLanguage(text: string): Promise<string> {
-  console.log('[SMRTDateTime] Parsing text:', text);
-
   // Dynamically import chrono-node only when needed
   let chrono: typeof import('chrono-node');
   try {
@@ -150,7 +148,6 @@ async function parseNaturalLanguage(text: string): Promise<string> {
   }
 
   const parsed = results[0].start.date();
-  console.log('[SMRTDateTime] Chrono parsed:', parsed);
 
   if (Number.isNaN(parsed.getTime())) {
     throw new Error('Invalid date');
@@ -381,7 +378,7 @@ function handleNativeChange(e: Event) {
   .smrt-datetime {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     position: relative;
   }
 
@@ -393,7 +390,7 @@ function handleNativeChange(e: Event) {
 
   .smrt-label .required {
     color: var(--smrt-color-error, #ba1a1a);
-    margin-left: 2px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {
@@ -418,7 +415,7 @@ function handleNativeChange(e: Event) {
   }
 
   .smrt-input.smrt-mode {
-    padding-right: 44px;
+    padding-right: var(--smrt-spacing-11, 44px);
     cursor: pointer;
   }
 
@@ -499,18 +496,18 @@ function handleNativeChange(e: Event) {
   .listening-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-primary, #22c55e);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .parsing-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-secondary, #f59e0b);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .error-indicator {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #ba1a1a);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 </style>

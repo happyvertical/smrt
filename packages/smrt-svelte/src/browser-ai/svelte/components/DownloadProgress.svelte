@@ -109,14 +109,14 @@ function formatBytes(bytes: number): string {
   .bytes {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    margin-top: 6px;
+    margin-top: var(--smrt-spacing-2, 8px);
     text-align: center;
   }
 
   .current-file {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-outline, #74777f);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
     text-align: center;
     white-space: nowrap;
     overflow: hidden;
@@ -126,7 +126,7 @@ function formatBytes(bytes: number): string {
   .error {
     font: var(--smrt-typography-body-small-font, 0.75rem / 1.25 sans-serif);
     color: var(--smrt-color-error, #ba1a1a);
-    margin-top: 6px;
+    margin-top: var(--smrt-spacing-2, 8px);
   }
 
   @media (prefers-reduced-motion: reduce) {

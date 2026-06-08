@@ -407,7 +407,7 @@ const yearOptions = $derived(() => {
   .day-headers {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     margin-bottom: var(--smrt-spacing-1, 0.25rem);
   }
 
@@ -422,7 +422,7 @@ const yearOptions = $derived(() => {
   .days {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .day-cell {
@@ -467,7 +467,7 @@ const yearOptions = $derived(() => {
   .event-indicators {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     justify-content: center;
     margin-top: auto;
     font-size: 12px;

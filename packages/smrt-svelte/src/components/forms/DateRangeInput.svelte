@@ -109,8 +109,6 @@ function updateValue(start: string, end: string) {
 async function parseNaturalLanguageRange(
   text: string,
 ): Promise<{ start: string; end: string } | null> {
-  console.log('[SMRTDateRange] Parsing text:', text);
-
   // Dynamically import chrono-node only when needed
   let chrono: typeof import('chrono-node');
   try {
@@ -421,7 +419,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   .smrt-daterange {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .smrt-label {
@@ -432,7 +430,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 
   .smrt-label .required {
     color: var(--smrt-color-error, #ba1a1a);
-    margin-left: 2px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .range-wrapper {
@@ -453,15 +451,15 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   .voice-input-wrapper {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
-    gap: 8px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .voice-display {
     flex: 1;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     font-size: 1rem;
   }
 
@@ -489,7 +487,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .field-label {
@@ -610,7 +608,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   @media (max-width: 600px) {
     .date-inputs {
       flex-direction: column;
-      gap: 8px;
+      gap: var(--smrt-spacing-2, 8px);
     }
 
     .range-arrow {

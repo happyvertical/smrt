@@ -348,7 +348,7 @@ function getTypeLabel(type: string): string {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #666);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .event-arrow {

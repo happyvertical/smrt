@@ -31,7 +31,6 @@ const downloadProgress = $derived(sttState.downloadProgress);
 function log(msg: string) {
   const timestamp = new Date().toLocaleTimeString();
   logs = [...logs, `[${timestamp}] ${msg}`];
-  console.log(`[STTTest] ${msg}`);
 }
 
 async function initializeAdapter() {
@@ -211,7 +210,7 @@ function clearLogs() {
   .adapter-select {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     flex: 1;
   }
 
@@ -259,7 +258,7 @@ function clearLogs() {
 
   .status-item {
     display: flex;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .record-controls {
@@ -335,7 +334,7 @@ function clearLogs() {
   }
 
   .logs-header button {
-    padding: 4px var(--smrt-spacing-sm, 8px);
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-sm, 8px);
     font: var(--smrt-typography-label-small-font, 0.75rem / 1 sans-serif);
     background: var(--smrt-color-surface-container, #e5e7eb);
     border: none;
@@ -359,7 +358,7 @@ function clearLogs() {
   }
 
   .log-entry {
-    padding: 2px 0;
+    padding: var(--smrt-spacing-1, 4px) 0;
   }
 
   @media (prefers-reduced-motion: reduce) {
