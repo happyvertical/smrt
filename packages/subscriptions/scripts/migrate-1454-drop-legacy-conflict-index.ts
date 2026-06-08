@@ -30,7 +30,7 @@
  * Idempotent: re-running is a no-op (`DROP INDEX IF EXISTS`).
  */
 
-import { Database } from '@happyvertical/sql';
+import { getDatabase } from '@happyvertical/sql';
 
 const LEGACY_INDEX_NAME = '_smrt_tenant_subscriptions_tenant_id_idx';
 
@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     ? { type: 'postgres' as const, url: databaseUrl }
     : { type: 'sqlite' as const, url: databaseUrl };
 
-  const db = await Database.connect(config);
+  const db = await getDatabase(config);
 
   try {
     process.stdout.write(

@@ -57,11 +57,16 @@ describe('polymorphic subscriber — model defaults', () => {
   });
 
   it('returns null from getSubscriber when external kind has no external id', () => {
+    // Constructor now refuses this state, so simulate a malformed row arriving
+    // via direct DB hydration (e.g. legacy data, manual SQL) by mutating after
+    // construction. getSubscriber() must still defend against the invalid
+    // combination rather than emit `{ kind: 'external', externalId: '' }`.
     const subscription = new TenantSubscription({
       tenantId: 'marketplace-tenant',
-      subscriberKind: 'external',
-      // No subscriberExternalId — invalid row.
+      planId: 'plan-mkt',
     });
+    subscription.subscriberKind = 'external';
+    subscription.subscriberExternalId = '';
 
     expect(subscription.getSubscriber()).toBeNull();
   });
@@ -78,6 +83,49 @@ describe('polymorphic subscriber — model defaults', () => {
       kind: 'tenant',
       tenantId: 'tenant-1',
     });
+  });
+
+  it('refuses to construct a tenant-kind TenantSubscription with a stray external id', () => {
+    expect(
+      () =>
+        new TenantSubscription({
+          tenantId: 'tenant-1',
+          // subscriberKind defaults to 'tenant'; the stray external id would
+          // slip past the conflict key and let multiple tenant subscriptions
+          // exist for the same tenant.
+          subscriberExternalId: 'buyer-contact:alice',
+          planId: 'plan-pro',
+        }),
+    ).toThrow(
+      /subscriberExternalId must be empty when subscriberKind is "tenant"/,
+    );
+  });
+
+  it('refuses to construct an external-kind TenantSubscription without an external id', () => {
+    expect(
+      () =>
+        new TenantSubscription({
+          tenantId: 'marketplace-tenant',
+          subscriberKind: 'external',
+          planId: 'plan-mkt',
+        }),
+    ).toThrow(
+      /subscriberKind="external" requires a non-empty subscriberExternalId/,
+    );
+  });
+
+  it('refuses to construct a tenant-kind TenantUsageMetric with a stray external id', () => {
+    expect(
+      () =>
+        new TenantUsageMetric({
+          tenantId: 'tenant-1',
+          subscriberExternalId: 'buyer-contact:alice',
+          metricKey: 'tokens.openai.gpt5',
+          quantity: 100,
+        }),
+    ).toThrow(
+      /subscriberExternalId must be empty when subscriberKind is "tenant"/,
+    );
   });
 });
 
@@ -271,6 +319,26 @@ describe('polymorphic subscriber — UsageMeter DB roundtrip', () => {
         windowEnd: new Date(),
       }),
     ).rejects.toThrow(/non-empty subscriberExternalId/);
+  });
+
+  it('refuses summarize when subscriberExternalId is passed without external kind', async () => {
+    const meter = new TenantUsageMeter(metrics);
+    // Regression for the second-pass Codex finding: a caller passing an
+    // external id but omitting the kind would have bypassed normalization and
+    // gotten tenant-wide AI totals from the short-circuit. Now both the AI
+    // short-circuit and the standard summarize path refuse the same XOR
+    // violation.
+    await expect(
+      meter.summarize({
+        tenantId: 'marketplace-tenant',
+        subscriberExternalId: 'buyer-contact:alice',
+        metricKey: 'ai.tokens.total',
+        window: {
+          start: new Date('2026-06-01T00:00:00Z'),
+          end: new Date('2026-07-01T00:00:00Z'),
+        },
+      }),
+    ).rejects.toThrow(/subscriberKind is "tenant"/);
   });
 
   it('bypasses the ai.* short-circuit for external subscribers', async () => {

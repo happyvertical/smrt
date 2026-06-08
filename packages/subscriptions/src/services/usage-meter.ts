@@ -7,6 +7,7 @@ import type {
   SummarizeUsageOptions,
   UsageSummary,
 } from '../types.js';
+import { normalizeSubscriber } from '../utils.js';
 
 export class TenantUsageMeter {
   constructor(
@@ -42,6 +43,17 @@ export class TenantUsageMeter {
    * fall through to the normal `_smrt_tenant_usage_metrics` aggregation.
    */
   async summarize(options: SummarizeUsageOptions): Promise<UsageSummary> {
+    // Normalize at the boundary so the `ai.*` short-circuit and the standard
+    // `summarizeUsage` path both refuse the same XOR violations (e.g. caller
+    // passes subscriberExternalId without subscriberKind: 'external'). Without
+    // this, the AI short-circuit would silently re-scope to tenant-wide
+    // _smrt_ai_usage totals.
+    normalizeSubscriber({
+      tenantId: options.tenantId,
+      subscriberKind: options.subscriberKind,
+      subscriberExternalId: options.subscriberExternalId,
+    });
+
     const aiSummary = await this.trySummarizeAiMetric(options);
     if (aiSummary) {
       return aiSummary;

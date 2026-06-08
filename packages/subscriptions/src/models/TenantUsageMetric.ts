@@ -42,6 +42,24 @@ export class TenantUsageMetric extends SmrtObject {
       this.subscriberKind = options.subscriberKind;
     if (options.subscriberExternalId !== undefined)
       this.subscriberExternalId = options.subscriberExternalId;
+    // Enforce the subscriber XOR invariant at the model boundary so generated
+    // create endpoints can't persist usage rows whose subscriber kind and
+    // external id are inconsistent.
+    if (this.subscriberKind === 'tenant' && this.subscriberExternalId !== '') {
+      throw new Error(
+        'TenantUsageMetric: subscriberExternalId must be empty when ' +
+          'subscriberKind is "tenant"',
+      );
+    }
+    if (
+      this.subscriberKind === 'external' &&
+      this.subscriberExternalId === ''
+    ) {
+      throw new Error(
+        'TenantUsageMetric: subscriberKind="external" requires a non-empty ' +
+          'subscriberExternalId',
+      );
+    }
     if (options.metricKey !== undefined) this.metricKey = options.metricKey;
     if (options.quantity !== undefined) this.quantity = options.quantity;
     if (options.windowStart !== undefined)

@@ -80,6 +80,28 @@ export class TenantSubscription extends SmrtObject {
       this.subscriberKind = options.subscriberKind;
     if (options.subscriberExternalId !== undefined)
       this.subscriberExternalId = options.subscriberExternalId;
+    // Enforce the subscriber XOR invariant at the model boundary so generated
+    // create/update endpoints can't persist invalid combinations:
+    //   - tenant-kind rows MUST have subscriberExternalId === ''
+    //   - external-kind rows MUST have a non-empty subscriberExternalId
+    // Without this guard the new conflict key (tenant_id, kind, external_id)
+    // would let tenant-kind rows carrying stray external ids coexist, breaking
+    // the "one tenant-kind subscription per tenant" invariant.
+    if (this.subscriberKind === 'tenant' && this.subscriberExternalId !== '') {
+      throw new Error(
+        'TenantSubscription: subscriberExternalId must be empty when ' +
+          'subscriberKind is "tenant"',
+      );
+    }
+    if (
+      this.subscriberKind === 'external' &&
+      this.subscriberExternalId === ''
+    ) {
+      throw new Error(
+        'TenantSubscription: subscriberKind="external" requires a non-empty ' +
+          'subscriberExternalId',
+      );
+    }
     if (options.planId !== undefined) this.planId = options.planId;
     if (options.status !== undefined) this.status = options.status;
     if (options.startedAt !== undefined) this.startedAt = options.startedAt;
