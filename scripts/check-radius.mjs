@@ -162,7 +162,6 @@ function stripAllowedCalls(source) {
 
 const RADIUS_PROP_RE =
   /\bborder(?:-(?:top|bottom|start|end)-(?:left|right|start|end))?-radius\s*:\s*([^;}]+)/gi;
-const VAL_RE = /(?<![\d.\-])(\d+(?:px)?%?|\d+px)/gi;
 
 function findViolations(file, source) {
   let text = file.endsWith('.svelte') ? extractStyleBlocks(source) : source;
