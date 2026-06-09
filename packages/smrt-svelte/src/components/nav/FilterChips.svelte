@@ -94,7 +94,7 @@ function handleClick(value: string) {
     height: 32px;
     padding: 0 var(--smrt-spacing-4, 16px);
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
     background-color: transparent;
     border: 1px solid var(--smrt-color-outline);

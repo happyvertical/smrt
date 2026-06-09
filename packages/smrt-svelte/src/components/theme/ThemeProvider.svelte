@@ -66,6 +66,6 @@ const cssVariables = $derived.by(() => {
     /* Base typography and other global resets can go here later */
     color: var(--md-sys-color-on-background);
     background-color: var(--md-sys-color-background);
-    font-family: Roboto, sans-serif;
+    font-family: var(--smrt-font-family, Roboto, sans-serif);
   }
 </style>

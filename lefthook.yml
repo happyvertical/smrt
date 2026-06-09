@@ -161,6 +161,19 @@ pre-push:
         Map to the depth scale: box-shadow: var(--smrt-elevation-<n>, <value>).
         Run: node scripts/check-elevation.mjs
 
+    typography:
+      # Bans raw font-size/weight/family in component CSS. Strict for smrt-svelte,
+      # report-only elsewhere until later phases of #1373. Node-only, no deps.
+      run: node scripts/check-typography.mjs
+      fail_text: |
+        ❌ Raw typography found in a strict UI package!
+
+        Map each text element to its M3 role: font-size →
+        var(--smrt-typography-<role>-<size>-size, <value>); font-weight →
+        var(--smrt-typography-weight-<name>, <value>); font-family →
+        var(--smrt-font-family[-mono], <value>).
+        Run: node scripts/check-typography.mjs
+
     validate-all-workflows:
       run: |
         echo "🔍 Validating ALL workflow files before push..."

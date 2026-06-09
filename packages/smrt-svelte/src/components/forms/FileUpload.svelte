@@ -282,7 +282,7 @@ function formatFileSize(bytes: number): string {
   .drop-zone__hint {
     margin: 0;
     font: var(--smrt-typography-body-small-font);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #49454f);
   }
 
@@ -292,7 +292,7 @@ function formatFileSize(bytes: number): string {
     background: var(--smrt-color-error-container, #f9dedc);
     color: var(--smrt-color-on-error-container, #410e0b);
     border-radius: var(--smrt-radius-sm, 0.25rem);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   .file-list {
@@ -318,7 +318,7 @@ function formatFileSize(bytes: number): string {
 
   .file-list__name {
     flex: 1;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface, #1d1b20);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -326,7 +326,7 @@ function formatFileSize(bytes: number): string {
   }
 
   .file-list__size {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #49454f);
     white-space: nowrap;
   }

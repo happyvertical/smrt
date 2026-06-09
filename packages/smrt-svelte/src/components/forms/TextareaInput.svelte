@@ -287,9 +287,9 @@ function handleInput(e: Event) {
   }
 
   .label {
-    font-size: 1rem;
-    line-height: 1.5;
-    letter-spacing: 0.5px;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.5);
+    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
     color: var(--field-color);
     pointer-events: none;
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
@@ -305,9 +305,9 @@ function handleInput(e: Event) {
   .input {
     border: none;
     background: transparent;
-    font-size: 1rem;
-    line-height: 1.5;
-    letter-spacing: 0.5px;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.5);
+    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
     color: var(--smrt-color-on-surface);
     width: 100%;
     padding: 0;
@@ -358,7 +358,7 @@ function handleInput(e: Event) {
 
   .supporting-text {
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-4, 16px) 0;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     min-height: 16px;
   }
 

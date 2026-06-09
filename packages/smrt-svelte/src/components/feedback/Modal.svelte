@@ -275,9 +275,9 @@ const sizeClasses = {
   .modal__title {
     margin: 0;
     font-size: var(--smrt-typography-headline-small-size, 1.125rem);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1b1b1f);
-    line-height: 1.4;
+    line-height: var(--smrt-typography-headline-small-line-height, 1.4);
   }
 
   .modal__close {

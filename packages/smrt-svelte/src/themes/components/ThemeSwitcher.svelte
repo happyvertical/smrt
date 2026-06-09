@@ -183,6 +183,6 @@ const themeIcons: Record<ThemePreset, string> = {
   }
 
   .smrt-theme-switcher__icon {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 </style>

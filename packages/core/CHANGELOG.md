@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.25
+
+### Patch Changes
+
+- ### Features
+
+  - typography design-token ratchet + smrt-svelte migration (#1373) (#1462) (tooling)
+  - @happyvertical/smrt-scanner@0.27.25
+  - @happyvertical/smrt-config@0.27.25
+  - @happyvertical/smrt-types@0.27.25
+
 ## 0.27.24
 
 ### Patch Changes
