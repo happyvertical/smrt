@@ -289,15 +289,15 @@ async function handleAIEdit() {
   
   .header h3 {
     margin: 0;
-    font-size: 1.15rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-title-medium-size, 1.15rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .close-btn {
     background: transparent;
     border: none;
     color: inherit;
-    font-size: 1.5rem;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     cursor: pointer;
   }
 
@@ -349,7 +349,7 @@ async function handleAIEdit() {
     padding: 0.6rem 1rem;
     color: var(--smrt-color-outline, #666);
     cursor: pointer;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-full, 9999px);
     transition: all 0.2s;
   }
@@ -362,8 +362,8 @@ async function handleAIEdit() {
 
   .tool-section h4 {
     margin: 0 0 1rem 0;
-    font-size: 0.95rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-title-medium-size, 0.95rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant, #ccc);
   }
 
@@ -378,8 +378,8 @@ async function handleAIEdit() {
   .row label {
     display: flex;
     flex-direction: column;
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-outline, #888);
     gap: 0.25rem;
   }
@@ -416,7 +416,7 @@ async function handleAIEdit() {
     border: 1px solid var(--smrt-color-outline-variant, #444);
     padding: 0.6rem 1.2rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background 0.2s;
     margin-top: 1.25rem;
@@ -443,7 +443,7 @@ async function handleAIEdit() {
     border: none;
     padding: 0.6rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background 0.2s, opacity 0.2s;
   }
@@ -458,7 +458,7 @@ async function handleAIEdit() {
   }
 
   .hint {
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
     color: var(--smrt-color-outline, #888);
     margin: 0 0 0.5rem 0;
   }
@@ -468,7 +468,7 @@ async function handleAIEdit() {
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 0.5rem;
     border-radius: var(--smrt-radius-sm, 4px);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .success-msg {
@@ -476,6 +476,6 @@ async function handleAIEdit() {
     background: color-mix(in srgb, var(--smrt-color-success) 10%, transparent);
     padding: 0.5rem;
     border-radius: var(--smrt-radius-sm, 4px);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 </style>

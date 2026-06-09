@@ -241,7 +241,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   .list-table__head th {
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-3, 0.75rem);
     text-align: left;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     white-space: nowrap;
     color: var(--smrt-color-on-surface, #111827);
   }
@@ -296,8 +296,8 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     height: 40px;
     background: var(--smrt-color-surface-container, #f3f4f6);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    font-size: 0.6rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-small-size, 0.6rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
@@ -307,7 +307,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .row-name {
     display: block;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -316,7 +316,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .row-desc {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     white-space: nowrap;
     overflow: hidden;
@@ -327,13 +327,13 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   .type-badge {
     display: inline-block;
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    font-size: 0.65rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-small-size, 0.65rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: uppercase;
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
 
   .col-date {
@@ -369,7 +369,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     border: none;
     background: transparent;
     font: inherit;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: inherit;
     cursor: pointer;
   }
@@ -379,7 +379,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   }
 
   .sort-indicator {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     opacity: 0.5;
   }
 

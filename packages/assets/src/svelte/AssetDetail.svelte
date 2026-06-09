@@ -398,8 +398,8 @@ function formatDate(date: Date | string | undefined): string {
 
   .detail__title {
     margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
     white-space: nowrap;
     overflow: hidden;
@@ -443,12 +443,11 @@ function formatDate(date: Date | string | undefined): string {
 
   .section-heading {
     margin: 0 0 var(--smrt-spacing-3, 0.75rem);
-    font-size: var(--smrt-typography-title-small-size, 0.875rem);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.75rem;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
   /* Preview */
@@ -486,12 +485,12 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .preview-document__icon, .preview-generic__icon {
-    font-size: 2.5rem;
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
   }
 
   .preview-document__link {
     color: var(--smrt-color-primary, #005ac1);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     text-decoration: none;
   }
 
@@ -500,7 +499,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .preview-generic__mime {
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
@@ -518,14 +517,14 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .form-label {
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #111827);
   }
 
   .label-warning {
-    font-weight: 400;
-    font-size: 0.7rem;
+    font-weight: var(--smrt-typography-weight-normal, 400);
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
     color: var(--smrt-color-error, #dc2626);
     margin-left: var(--smrt-spacing-1, 4px);
   }
@@ -567,10 +566,10 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .metadata-label {
-    font-size: 0.7rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
@@ -594,8 +593,8 @@ function formatDate(date: Date | string | undefined): string {
     height: 32px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #111827);
@@ -616,9 +615,9 @@ function formatDate(date: Date | string | undefined): string {
 
   .copy-feedback {
     margin-top: var(--smrt-spacing-2, 0.5rem);
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     color: var(--smrt-color-success, #22c55e);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     animation: fadeIn 150ms ease;
   }
 
@@ -647,7 +646,7 @@ function formatDate(date: Date | string | undefined): string {
     padding: 0 var(--smrt-spacing-4, 1rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
     border: none;

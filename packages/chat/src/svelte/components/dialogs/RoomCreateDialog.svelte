@@ -339,7 +339,7 @@ $effect(() => {
   .type-option__label {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
     color: var(--smrt-color-on-surface, #1a1c1e);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .type-option__description {

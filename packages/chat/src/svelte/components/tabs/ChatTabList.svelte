@@ -109,8 +109,8 @@ const { tabs, onselect, onclose }: Props = $props();
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-error, #ba1a1a);
     color: var(--smrt-color-on-error, #ffffff);
-    font-size: 0.625rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
     border: 2px solid var(--smrt-color-surface, #fefbff);
   }
