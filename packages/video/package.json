@@ -36,17 +36,17 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-content": "workspace:*",
-    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-voice": "workspace:*",
     "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
-    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@types/node": "25.0.9",

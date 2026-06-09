@@ -17,11 +17,11 @@ vi.mock('@happyvertical/files', () => ({
   ensureDirectoryExists: vi.fn(),
 }));
 
-vi.mock('@happyvertical/logger', () => ({
-  createLogger: () => ({
-    error: vi.fn(),
-  }),
+// Stable handle so tests can assert on the logger (S14 console→logger).
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
 }));
+vi.mock('@happyvertical/logger', () => ({ createLogger: () => mockLogger }));
 
 describe('Contents collection helpers', () => {
   afterEach(() => {
@@ -135,7 +135,7 @@ describe('Contents collection helpers', () => {
     await expect(contents.mirror({ url: 'not a url' })).rejects.toThrow(
       'Invalid URL provided',
     );
-    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(mockLogger.error).toHaveBeenCalled();
   });
 
   it('writes content files, normalizes plain text, and syncs article directories', async () => {

@@ -4,6 +4,7 @@
  * Represents a comment on an issue or pull request.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import {
   foreignKey,
   SmrtObject,
@@ -11,6 +12,8 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+
+const logger = createLogger({ level: 'info' });
 
 export interface CommentOptions extends SmrtObjectOptions {
   issueId?: string;
@@ -130,7 +133,7 @@ export class Comment extends SmrtObject {
     try {
       return JSON.parse(result);
     } catch (error) {
-      console.warn('Failed to parse action items JSON:', {
+      logger.warn('Failed to parse action items JSON', {
         error: error instanceof Error ? error.message : error,
         response: result,
       });

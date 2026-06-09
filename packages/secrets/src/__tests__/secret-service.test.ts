@@ -17,6 +17,18 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+// SecretService logs via @happyvertical/logger (S14); mock it to assert on the
+// logger instead of a console spy.
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+// Partial mock — keep real exports (LoggerAdapter etc.), override only createLogger.
+vi.mock('@happyvertical/logger', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@happyvertical/logger')>()),
+  createLogger: () => mockLogger,
+}));
+
 import { SecretCollection } from '../collections/SecretCollection.js';
 import { TenantKeyCollection } from '../collections/TenantKeyCollection.js';
 import { createAuditEntry } from '../models/SecretAuditLog.js';
@@ -105,9 +117,9 @@ describe('SecretService', () => {
           expect(retrieved.lastAccessedAt?.getTime()).toBe(
             firstAccess.lastAccessedAt?.getTime(),
           );
-          expect(consoleError).toHaveBeenCalledWith(
-            'Failed to update secret access tracking:',
-            expect.any(Error),
+          expect(mockLogger.error).toHaveBeenCalledWith(
+            'Failed to update secret access tracking',
+            { error: expect.any(Error) },
           );
         } finally {
           findByName.mockRestore();

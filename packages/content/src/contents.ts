@@ -289,7 +289,7 @@ export class Contents extends SmrtCollection<Content> {
       //   .oO`SELECT * FROM contents WHERE url = ${options.url}`;
       url = new URL(options.url); // validate url
     } catch (error) {
-      console.error(error);
+      logger.error('Invalid URL provided', { error, url: options.url });
       throw new Error(`Invalid URL provided: ${options.url}`);
     }
     const existing = await this.get({ url: options.url });

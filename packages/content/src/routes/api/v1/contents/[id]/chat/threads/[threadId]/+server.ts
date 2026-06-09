@@ -1,3 +1,4 @@
+import { createLogger } from '@happyvertical/logger';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection, getSmrtConfig } from '$lib/server/smrt';
 import {
@@ -12,6 +13,8 @@ import {
   requestHasTrustedOrigin,
   resolveContentChatProfileId,
 } from '../../../../../../../../content-chat-route-helpers.js';
+
+const logger = createLogger({ level: 'info' });
 
 export const GET: RequestHandler = async ({ params, locals }) => {
   const smrtLocals = locals as ContentChatRouteLocals;
@@ -53,7 +56,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
     ) {
       return json({ error: error.message }, { status: 404 });
     }
-    console.error(`Error fetching messages for thread ${threadId}:`, error);
+    logger.error(`Error fetching messages for thread ${threadId}`, { error });
     return json({ error: 'Failed to find thread messages' }, { status: 500 });
   }
 };
@@ -138,7 +141,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     if (error?.message === 'AI model is not allowed for content chat') {
       return json({ error: error.message }, { status: 400 });
     }
-    console.error(`Error processing message for thread ${threadId}:`, error);
+    logger.error(`Error processing message for thread ${threadId}`, { error });
     return json(
       { error: error.message || 'Failed to process message' },
       { status: 500 },

@@ -315,6 +315,13 @@ genuinely operational milestones).
   `store.ts`) is shipped library code and uses the logger;
 - test files and `*.config.*` (already exempt).
 
+**Browser / Svelte code keeps `console`.** `@happyvertical/logger` is a
+Node/server logger; it has no place in code that runs in the browser. So `.svelte`
+components and browser-only modules (e.g. `smrt-svelte`, `browser-ai/` adapters,
+client-side state) use `console` — that's the browser's diagnostic channel.
+Migrate to the logger only on the Node/server side (collections, services, server
+routes/hooks, ORM/runtime libraries).
+
 **Never touch** `console.*` inside comments or JSDoc `@example` blocks — that is
 documentation, not code.
 
