@@ -1,5 +1,15 @@
 # @happyvertical/smrt-profiles
 
+## 0.27.34
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.34
+  - @happyvertical/smrt-assets@0.27.34
+  - @happyvertical/smrt-prompts@0.27.34
+  - @happyvertical/smrt-tenancy@0.27.34
+
 ## 0.27.33
 
 ### Patch Changes
