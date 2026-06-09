@@ -96,6 +96,7 @@ export class TaskRunner extends EventEmitter {
   private heartbeatTimer: NodeJS.Timeout | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private db: DatabaseInterface | null = null;
+  private logger = createLogger(true);
 
   constructor(config: TaskRunnerConfig = {}) {
     super();
@@ -641,6 +642,9 @@ export class TaskRunner extends EventEmitter {
 
       const timeout = setTimeout(() => {
         clearInterval(checkInterval);
+        this.logger.warn(
+          `Shutdown timeout: ${this.activeJobs.size} jobs still active`,
+        );
         resolve();
       }, this.config.shutdownTimeout);
     });
