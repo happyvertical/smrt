@@ -517,7 +517,7 @@ function getProviderLabel(type: string): string {
   .dismiss-btn {
     background: transparent;
     border: none;
-    font-size: var(--smrt-typography-label-large-size, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     cursor: pointer;
     color: inherit;
     padding: 0 0.25rem;
@@ -660,7 +660,7 @@ function getProviderLabel(type: string): string {
   }
 
   .delete-btn {
-    font-size: var(--smrt-typography-label-large-size, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
     padding: 0.125rem 0.5rem;
     border-radius: var(--smrt-radius-full, 9999px);

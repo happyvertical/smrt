@@ -312,7 +312,7 @@ const _slackMeta = $derived.by(() => {
     border: none;
     background: none;
     cursor: pointer;
-    font-size: var(--smrt-typography-label-large-size, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
     opacity: 0.5;
     transition: opacity var(--smrt-duration-short2, 150ms);
