@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.24
+
+### Patch Changes
+
+- ### Features
+
+  - elevation design-token ratchet (#1373) (#1461) (tooling)
+  - @happyvertical/smrt-scanner@0.27.24
+  - @happyvertical/smrt-config@0.27.24
+  - @happyvertical/smrt-types@0.27.24
+
 ## 0.27.23
 
 ### Patch Changes
