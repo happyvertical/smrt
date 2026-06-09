@@ -64,13 +64,13 @@ function listFiles(dir, exts) {
   return out;
 }
 
-/** Every `packages/<pkg>/src` directory that exists. */
+/** Every `packages/<pkg>/src` that exists, as `{ pkg, dir }`. */
 function allPackageSrcDirs() {
   const out = [];
   for (const entry of readdirSync(PACKAGES, { withFileTypes: true })) {
     if (!entry.isDirectory()) continue;
-    const src = join(PACKAGES, entry.name, 'src');
-    if (existsSync(src)) out.push(src);
+    const dir = join(PACKAGES, entry.name, 'src');
+    if (existsSync(dir)) out.push({ pkg: entry.name, dir });
   }
   return out;
 }
@@ -81,9 +81,8 @@ const VAR_RE = /var\(\s*(--smrt-[a-z0-9_-]+)/gi;
 function collectConsumed() {
   const consumed = new Map(); // token -> count
   const byPackage = new Map(); // token -> Set(pkg)
-  for (const srcDir of allPackageSrcDirs()) {
-    for (const file of listFiles(srcDir, ['.svelte', '.ts', '.css'])) {
-      const pkg = file.slice(PACKAGES.length + 1).split('/')[0];
+  for (const { pkg, dir } of allPackageSrcDirs()) {
+    for (const file of listFiles(dir, ['.svelte', '.ts', '.css'])) {
       const text = readFileSync(file, 'utf8');
       for (const m of text.matchAll(VAR_RE)) {
         consumed.set(m[1], (consumed.get(m[1]) ?? 0) + 1);
@@ -273,7 +272,12 @@ function collectStaticPresetMissing() {
   return missingByPreset;
 }
 
-/** Collect every emitted token across all delivery paths. */
+/**
+ * Theme-delivery tokens — the GLOBAL vocabulary every package may consume
+ * (static preset CSS + the JS generator surface). Component-local inline defs
+ * are intentionally NOT pooled here; they're tracked per-package instead so a
+ * token defined in one package can't mask a dangling ref in another.
+ */
 function collectEmitted() {
   const emitted = new Set();
 
@@ -286,27 +290,47 @@ function collectEmitted() {
     }
   }
 
-  // Tokens any package defines inline in component CSS (e.g. --smrt-ws-*,
-  // --smrt-role-color) — a legit component-scoped pattern, not a dangling ref.
-  for (const srcDir of allPackageSrcDirs()) {
-    for (const file of listFiles(srcDir, ['.svelte', '.css'])) {
-      collectDefinedInCss(readFileSync(file, 'utf8'), emitted);
-    }
-  }
-
   // JS-generated tokens.
   collectGeneratorEmitted(emitted);
 
   return emitted;
 }
 
+/**
+ * Per-package inline token definitions (`--smrt-x: value` in a package's own
+ * component CSS, e.g. --smrt-ws-* / --smrt-role-color). These satisfy consumers
+ * only WITHIN the same package — a component-scoped custom property, not a theme
+ * token (codex review on #1467).
+ */
+function collectInlineByPackage() {
+  const byPkg = new Map(); // pkg -> Set(token)
+  for (const { pkg, dir } of allPackageSrcDirs()) {
+    const defined = new Set();
+    for (const file of listFiles(dir, ['.svelte', '.css'])) {
+      collectDefinedInCss(readFileSync(file, 'utf8'), defined);
+    }
+    byPkg.set(pkg, defined);
+  }
+  return byPkg;
+}
+
 const { consumed, byPackage } = collectConsumed();
 const emitted = collectEmitted();
+const inlineByPackage = collectInlineByPackage();
 const staticMissingByPreset = collectStaticPresetMissing();
 
-const undefinedTokens = [...consumed.keys()]
-  .filter((t) => !emitted.has(t))
-  .sort();
+// A consumed token is satisfied in package P iff it's a global theme token OR
+// defined inline within P itself. Collect each (token -> unsatisfied packages).
+const undefinedByToken = new Map();
+for (const [token, pkgs] of byPackage) {
+  if (emitted.has(token)) continue;
+  for (const pkg of pkgs) {
+    if (inlineByPackage.get(pkg)?.has(token)) continue;
+    if (!undefinedByToken.has(token)) undefinedByToken.set(token, new Set());
+    undefinedByToken.get(token).add(pkg);
+  }
+}
+const undefinedTokens = [...undefinedByToken.keys()].sort();
 
 if (undefinedTokens.length === 0 && staticMissingByPreset.length === 0) {
   console.log(
@@ -320,14 +344,15 @@ if (undefinedTokens.length > 0) {
     `✗ svelte-token-check: ${undefinedTokens.length} consumed --smrt-* token(s) are never emitted\n`,
   );
   for (const t of undefinedTokens) {
-    const pkgs = [...(byPackage.get(t) ?? [])].sort().join(', ');
+    const pkgs = [...undefinedByToken.get(t)].sort().join(', ');
     console.error(`    - ${t} (consumed ${consumed.get(t)}× in: ${pkgs})`);
   }
   console.error(
     '\nThese tokens are frozen at their var(..., fallback) values and cannot be\n' +
-      'themed. Either emit them (extend src/themes/css-generator.ts + the static\n' +
-      'preset CSS in src/themes/styles/*.css) or change the consumers to a token\n' +
-      'that is emitted. See issue #1431.',
+      'themed (or render nothing without a fallback). Either emit them (extend\n' +
+      'src/themes/css-generator.ts + the static preset CSS in\n' +
+      'src/themes/styles/*.css), define them inline in the consuming package, or\n' +
+      'change the consumers to an emitted token. See issue #1431.',
   );
 }
 

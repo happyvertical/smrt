@@ -216,7 +216,7 @@ function stripComments(source) {
  * the role scale; check-svelte-tokens.mjs is the source of truth for emitted.
  */
 const VALID_TOKEN_VAR_RE =
-  /^var\(\s*--smrt-(?:typography-(?:(?:display|headline|title|body|label)-(?:large|medium|small)-(?:size|line-height|weight|tracking|font-family|font)|weight-(?:normal|medium|semibold|bold))|font-family(?:-mono)?)(?![a-z-])/;
+  /^var\(\s*--smrt-(?:typography-(?:(?:display|headline|title|body|label)-(?:large|medium|small)-(?:size|line-height|weight|tracking|font-family|font)|weight-(?:normal|medium|semibold|bold))|font-family(?:-mono)?)(?![\w-])/;
 
 /** Blank valid typography / font-family token vars so they pass the check. */
 function stripTokenVars(source) {
