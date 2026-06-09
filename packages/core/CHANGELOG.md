@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.28
+
+### Patch Changes
+
+- ### Features
+
+  - migrate typography to M3 role tokens, flip strict (#1373) (#1465) (assets,chat,images)
+  - @happyvertical/smrt-scanner@0.27.28
+  - @happyvertical/smrt-config@0.27.28
+  - @happyvertical/smrt-types@0.27.28
+
 ## 0.27.27
 
 ### Patch Changes
