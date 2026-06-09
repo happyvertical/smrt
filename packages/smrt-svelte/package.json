@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.27.25",
+  "version": "0.27.26",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",
