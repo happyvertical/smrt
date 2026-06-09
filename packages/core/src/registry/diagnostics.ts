@@ -121,10 +121,12 @@ export function flushRegistryDiagnostics(): void {
 
   for (const diag of diagnostics) {
     const line = `[smrt:${diag.code}] ${diag.message}`;
+    // diag.context is already a structured object; pass it through directly
+    // rather than nesting it under a redundant `context` key.
     if (diag.severity === 'error') {
-      logger.error(line, { context: diag.context });
+      logger.error(line, diag.context);
     } else {
-      logger.warn(line, { context: diag.context });
+      logger.warn(line, diag.context);
     }
   }
 }

@@ -18,8 +18,6 @@ import {
 import { LRUCache } from '../utils/lru-cache';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
 
-const logger = createLogger({ level: 'info' });
-
 // Re-export the globalThis augmentation so it's visible everywhere
 declare global {
   // eslint-disable-next-line no-var
@@ -67,6 +65,10 @@ declare global {
 export const VERBOSE_ENABLED =
   process.env.SMRT_VERBOSE === 'true' ||
   (process.env.DEBUG?.includes('smrt') ?? false);
+
+// verboseLog() is gated by VERBOSE_ENABLED, so the level must allow debug when
+// it's set (a fixed 'info' would filter the trace out and break SMRT_VERBOSE).
+const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
 
 /**
  * Log a message only when verbose mode is enabled.
