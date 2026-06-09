@@ -3,6 +3,47 @@ import { describe, expect, it } from 'vitest';
 import { SmrtJobCollection } from '../smrt-job.js';
 
 describe('SmrtJobCollection claimReady', () => {
+  it('returns claimed jobs in scheduler order for multi-slot claims', async () => {
+    const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    const jobs = await SmrtJobCollection.create({ db });
+    const now = new Date('2026-06-08T22:00:00.000Z');
+
+    await jobs.create({
+      queue: 'ordered',
+      objectType: 'LowPriorityProbe',
+      method: 'run',
+      runAt: new Date('2026-06-08T21:55:00.000Z'),
+      priority: 1,
+    });
+    await jobs.create({
+      queue: 'ordered',
+      objectType: 'HighPriorityProbe',
+      method: 'run',
+      runAt: new Date('2026-06-08T21:58:00.000Z'),
+      priority: 99,
+    });
+    await jobs.create({
+      queue: 'ordered',
+      objectType: 'MiddlePriorityProbe',
+      method: 'run',
+      runAt: new Date('2026-06-08T21:57:00.000Z'),
+      priority: 50,
+    });
+
+    const claimed = await jobs.claimReady({
+      workerId: 'worker-order',
+      queues: ['ordered'],
+      limit: 3,
+      now,
+    });
+
+    expect(claimed.map((job) => job.objectType)).toEqual([
+      'HighPriorityProbe',
+      'MiddlePriorityProbe',
+      'LowPriorityProbe',
+    ]);
+  });
+
   it('does not return the same ready job to concurrent claim calls', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const jobs = await SmrtJobCollection.create({ db });

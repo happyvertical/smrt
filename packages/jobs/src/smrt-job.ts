@@ -321,7 +321,7 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
        LIMIT ?${lockClause}
     `;
 
-    return this.query(
+    const claimed = await this.query(
       `UPDATE _smrt_jobs
           SET status = 'running',
               worker_id = ?,
@@ -334,6 +334,8 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
         RETURNING *`,
       [options.workerId, nowIso, nowIso, nowIso, ...whereParams, limit],
     );
+
+    return claimed.toSorted(compareClaimOrder);
   }
 
   /**
@@ -423,6 +425,23 @@ function getDatabaseEngine(
     db.url || dbWithConfig.config?.url || '',
     dbWithConfig.type || dbWithConfig.config?.type,
   );
+}
+
+function compareClaimOrder(left: SmrtJob, right: SmrtJob): number {
+  const priority = right.priority - left.priority;
+  if (priority !== 0) return priority;
+
+  const runAt = left.runAt.getTime() - right.runAt.getTime();
+  if (runAt !== 0) return runAt;
+
+  const createdAt = timestamp(left.created_at) - timestamp(right.created_at);
+  if (createdAt !== 0) return createdAt;
+
+  return (left.id ?? '').localeCompare(right.id ?? '');
+}
+
+function timestamp(value: Date | null | undefined): number {
+  return value?.getTime() ?? 0;
 }
 
 export default SmrtJob;
