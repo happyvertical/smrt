@@ -37,6 +37,8 @@ const PACKAGES = join(ROOT, 'packages');
 const STRICT_PACKAGES = new Set([
   'smrt-svelte',
   'content',
+  'messages',
+  'products',
 ]);
 
 /** Dev/playground hosts skipped entirely (matches the other token ratchets). */

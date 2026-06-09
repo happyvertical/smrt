@@ -57,18 +57,18 @@
   
   .page-header h1 {
     margin: 0 0 0.5rem 0;
-    font-size: 2.25rem;
-    font-weight: 800;
+    font-size: var(--smrt-typography-display-small-size, 2.25rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
     color: var(--smrt-color-on-surface, #1f2937);
   }
 
   .page-description {
     margin: 0;
-    font-size: 1.125rem;
+    font-size: var(--smrt-typography-body-large-size, 1.125rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     max-width: 600px;
     margin: 0 auto;
-    line-height: 1.6;
+    line-height: var(--smrt-typography-body-large-line-height, 1.6);
   }
 
   .page-content {
@@ -97,15 +97,15 @@
 
   .info-card h3 {
     margin: 0 0 0.5rem 0;
-    font-size: 1.125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1f2937);
   }
 
   .info-card p {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    line-height: 1.5;
+    line-height: var(--smrt-typography-body-medium-line-height, 1.5);
   }
 </style>

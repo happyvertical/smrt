@@ -88,13 +88,13 @@ export interface Props {
     border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-md, 12px);
     background: var(--smrt-color-surface, #fffbfe);
-    font-family: var(--smrt-typography-body, system-ui);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .forward-header {
-    font-size: 13px;
+    font-size: var(--smrt-typography-title-small-size, 13px);
     color: var(--smrt-color-on-surface-variant, #49454f);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .forward-body {
@@ -102,8 +102,8 @@ export interface Props {
     border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-sm, 8px);
     padding: var(--smrt-spacing-2, 8px);
-    font-family: var(--smrt-typography-body, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 14px);
     resize: vertical;
     box-sizing: border-box;
   }
@@ -123,10 +123,10 @@ export interface Props {
 
   .forwarded-text {
     margin: 0;
-    font-size: 12px;
+    font-size: var(--smrt-typography-body-small-size, 12px);
     color: var(--smrt-color-on-surface-variant, #49454f);
     white-space: pre-wrap;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .actions {
@@ -140,8 +140,8 @@ export interface Props {
     border: none;
     background: var(--smrt-color-primary, #6750a4);
     color: var(--smrt-color-on-primary, #fff);
-    font-family: var(--smrt-typography-label, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     cursor: pointer;
   }
 
@@ -155,8 +155,8 @@ export interface Props {
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #49454f);
-    font-family: var(--smrt-typography-label, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     cursor: pointer;
   }
 </style>

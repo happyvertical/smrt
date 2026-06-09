@@ -90,8 +90,8 @@ export interface Props {
   }
 
   .label {
-    font-family: var(--smrt-typography-label, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     color: var(--smrt-color-on-surface-variant, #49454f);
     padding-top: var(--smrt-spacing-2, 8px);
     min-width: 32px;
@@ -113,8 +113,8 @@ export interface Props {
     border-radius: var(--smrt-radius-sm, 8px);
     background: var(--smrt-color-secondary-container, #e8def8);
     color: var(--smrt-color-on-secondary-container, #1d192b);
-    font-size: 13px;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 13px);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .chip.invalid {
@@ -127,7 +127,7 @@ export interface Props {
     border: none;
     cursor: pointer;
     padding: 0 var(--smrt-spacing-1, 4px);
-    font-size: 14px;
+    font-size: var(--smrt-typography-label-large-size, 14px);
     color: inherit;
     opacity: 0.7;
   }
@@ -141,8 +141,8 @@ export interface Props {
     min-width: 120px;
     border: none;
     outline: none;
-    font-family: var(--smrt-typography-body, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 14px);
     padding: var(--smrt-spacing-1, 4px) 0;
     background: transparent;
     color: var(--smrt-color-on-surface, #1c1b1f);

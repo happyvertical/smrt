@@ -225,7 +225,7 @@ const _sanitizedHtml = $derived.by(() => {
     flex-shrink: 0;
     width: 4rem;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .meta-value {

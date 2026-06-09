@@ -239,7 +239,7 @@ const _slackMeta = $derived.by(() => {
   }
 
   .sender-name--unread {
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .account-label {
@@ -280,7 +280,7 @@ const _slackMeta = $derived.by(() => {
   }
 
   .subject--unread {
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .preview-row {
@@ -312,7 +312,7 @@ const _slackMeta = $derived.by(() => {
     border: none;
     background: none;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
     opacity: 0.5;
     transition: opacity var(--smrt-duration-short2, 150ms);

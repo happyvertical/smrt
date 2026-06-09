@@ -156,14 +156,14 @@ function _getFieldType(
   }
 
   .form-title {
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1f2937);
     margin: 0 0 0.5rem 0;
   }
 
   .form-subtitle {
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     font-style: italic;
   }
@@ -188,7 +188,7 @@ function _getFieldType(
     border: none;
     padding: 0.75rem 1.5rem;
     border-radius: 0.375rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background-color 0.2s;
   }
@@ -203,7 +203,7 @@ function _getFieldType(
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     padding: 0.75rem 1.5rem;
     border-radius: 0.375rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background-color 0.2s;
   }
@@ -222,13 +222,13 @@ function _getFieldType(
 
   .form-debug summary {
     cursor: pointer;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #374151);
   }
 
   .form-debug pre {
     margin-top: 0.5rem;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     white-space: pre-wrap;
     word-break: break-word;

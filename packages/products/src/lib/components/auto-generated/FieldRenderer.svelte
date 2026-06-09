@@ -151,9 +151,9 @@ function _handleObjectInput(event: Event) {
   }
 
   .field-label {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #374151);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .required {
@@ -165,7 +165,7 @@ function _handleObjectInput(event: Event) {
     padding: 0.5rem 0.75rem;
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: 0.375rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     transition: border-color 0.2s, box-shadow 0.2s;
   }
 
@@ -187,7 +187,7 @@ function _handleObjectInput(event: Event) {
   }
 
   .field-hint {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     font-style: italic;
   }
