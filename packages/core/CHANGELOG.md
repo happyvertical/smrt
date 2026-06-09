@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - hide internal resources from HTTP discovery (#1456) (jobs)
+  - @happyvertical/smrt-scanner@0.27.30
+  - @happyvertical/smrt-config@0.27.30
+  - @happyvertical/smrt-types@0.27.30
+
 ## 0.27.29
 
 ### Patch Changes
