@@ -219,10 +219,10 @@ $effect(() => {
   .agent-chat__messages {
     flex: 1;
     overflow-y: auto;
-    padding: 8px 10px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     display: flex;
     flex-direction: column-reverse;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .agent-chat__msg {
@@ -245,15 +245,15 @@ $effect(() => {
 
   .agent-chat__tool-row {
     width: 100%;
-    padding: 2px 0;
+    padding: var(--smrt-spacing-1, 4px) 0;
   }
 
   .agent-chat__bubble {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px 12px;
-    border-radius: 10px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-lg, 12px);
     word-break: break-word;
     font-size: 0.8125rem;
     line-height: 1.45;
@@ -262,13 +262,13 @@ $effect(() => {
   .agent-chat__bubble--user {
     background: var(--smrt-color-primary-container, #d6e3ff);
     color: var(--smrt-color-on-primary-container, #001a41);
-    border-bottom-right-radius: 3px;
+    border-bottom-right-radius: var(--smrt-radius-sm, 4px);
   }
 
   .agent-chat__bubble--agent {
     background: var(--smrt-color-surface-container-high, #e6e6ea);
     color: var(--smrt-color-on-surface, #1a1c1e);
-    border-bottom-left-radius: 3px;
+    border-bottom-left-radius: var(--smrt-radius-sm, 4px);
   }
 
   .agent-chat__msg--system .agent-chat__bubble {
@@ -305,8 +305,8 @@ $effect(() => {
   .agent-chat__input-bar {
     display: flex;
     align-items: flex-end;
-    gap: 6px;
-    padding: 8px 10px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: var(--smrt-color-surface, #fefbff);
     flex-shrink: 0;
   }
@@ -314,7 +314,7 @@ $effect(() => {
   .agent-chat__inactive-notice {
     flex: 1;
     text-align: center;
-    padding: 6px;
+    padding: var(--smrt-spacing-2, 8px);
     font-size: 0.75rem;
     color: var(--smrt-color-outline, #74777f);
     font-style: italic;
@@ -323,8 +323,8 @@ $effect(() => {
   .agent-chat__input {
     flex: 1;
     border: none;
-    border-radius: 8px;
-    padding: 7px 10px;
+    border-radius: var(--smrt-radius-md, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     font-size: 0.8125rem;
     line-height: 1.4;
     color: var(--smrt-color-on-surface, #1a1c1e);
@@ -353,7 +353,7 @@ $effect(() => {
     border: none;
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     cursor: pointer;
     flex-shrink: 0;
     transition: opacity 150ms;
@@ -371,33 +371,33 @@ $effect(() => {
   .applied-badge {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: 0.6875rem;
     font-weight: 600;
     color: var(--smrt-color-on-success-container, #16a34a);
     background: var(--smrt-color-success-container, #f0fdf4);
     border: 1px solid var(--smrt-color-success, #bbf7d0);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .field-update-block {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 0;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1, 4px) 0;
   }
 
   .markdown-block {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 4px 0;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1, 4px) 0;
   }
 
   .markdown-block__content {
     margin: 0;
-    padding: 12px;
-    border-radius: 10px;
+    padding: var(--smrt-spacing-3, 12px);
+    border-radius: var(--smrt-radius-lg, 12px);
     background: color-mix(in srgb, var(--smrt-color-surface-container-low, #f4f2f6) 85%, white);
     overflow-x: auto;
     white-space: pre-wrap;
@@ -407,11 +407,11 @@ $effect(() => {
   }
 
   .diff-btn {
-    padding: 2px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: 0.625rem;
     font-weight: 600;
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: none;
     color: var(--smrt-color-on-surface-variant, #43474e);
     cursor: pointer;
@@ -425,11 +425,11 @@ $effect(() => {
 
   .diff-dialog {
     border: none;
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     padding: 0;
     width: min(420px, 90vw);
     max-height: 60vh;
-    box-shadow: 0 8px 32px color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
+    box-shadow: var(--smrt-elevation-5, 0 8px 32px color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
   }
@@ -442,7 +442,7 @@ $effect(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 16px;
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
   }
 
@@ -458,8 +458,8 @@ $effect(() => {
     font-size: 1rem;
     cursor: pointer;
     color: var(--smrt-color-outline, #74777f);
-    padding: 2px 6px;
-    border-radius: 4px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
+    border-radius: var(--smrt-radius-sm, 4px);
   }
 
   .diff-dialog__close:hover {
@@ -467,13 +467,13 @@ $effect(() => {
   }
 
   .diff-dialog__body {
-    padding: 12px 16px;
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
     overflow-y: auto;
     max-height: calc(60vh - 60px);
   }
 
   .diff-field {
-    margin-bottom: 10px;
+    margin-bottom: var(--smrt-spacing-3, 12px);
   }
 
   .diff-field:last-child {
@@ -487,16 +487,16 @@ $effect(() => {
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--smrt-color-outline, #74777f);
-    margin-bottom: 4px;
+    margin-bottom: var(--smrt-spacing-1, 4px);
   }
 
   .diff-field__value {
     margin: 0;
-    padding: 6px 10px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     font-size: 0.75rem;
     line-height: 1.5;
     background: var(--smrt-color-surface-container-low, #f7f7fb);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     white-space: pre-wrap;
     word-break: break-word;
     font-family: inherit;
@@ -505,19 +505,19 @@ $effect(() => {
   }
 
   .agent-chat__thinking {
-    padding: 10px 14px;
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
   }
 
   .thinking-dots {
     display: inline-flex;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     align-items: center;
   }
 
   .thinking-dots span {
     width: 6px;
     height: 6px;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-outline, #74777f);
     animation: thinking-bounce 1.2s ease-in-out infinite;
   }

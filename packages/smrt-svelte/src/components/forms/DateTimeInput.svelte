@@ -456,7 +456,7 @@ function handleNativeChange(e: Event) {
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);

@@ -157,7 +157,7 @@ function clearMessages() {
 
   .demo-section {
     background: var(--smrt-color-surface-container);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 20px;
     margin-bottom: 24px;
   }
@@ -217,7 +217,7 @@ function clearMessages() {
   .check {
     background: var(--smrt-color-surface);
     padding: 8px 16px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     border: 1px solid var(--smrt-color-outline-variant);
   }
 
@@ -235,7 +235,7 @@ function clearMessages() {
 
   button {
     padding: 8px 16px;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: var(--smrt-color-surface);
     cursor: pointer;
@@ -256,7 +256,7 @@ function clearMessages() {
   .message-log {
     margin-top: 20px;
     background: var(--smrt-color-surface-container);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 16px;
     color: var(--smrt-color-on-surface-variant);
     font-family: monospace;
@@ -288,7 +288,7 @@ function clearMessages() {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface-variant);
     padding: 16px;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     overflow-x: auto;
     font-size: 0.875rem;
   }
@@ -300,7 +300,7 @@ function clearMessages() {
   p code {
     background: var(--smrt-color-surface-container-high);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface);
   }
 </style>

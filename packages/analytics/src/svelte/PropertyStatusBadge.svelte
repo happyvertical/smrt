@@ -25,7 +25,7 @@ const label = $derived(
 		align-items: center;
 		gap: 0.375rem;
 		padding: 0.25rem 0.625rem;
-		border-radius: 9999px;
+		border-radius: var(--smrt-radius-full, 9999px);
 		font-size: 0.75rem;
 		font-weight: 500;
 	}
@@ -33,7 +33,7 @@ const label = $derived(
 	.status-dot {
 		width: 0.5rem;
 		height: 0.5rem;
-		border-radius: 50%;
+		border-radius: var(--smrt-radius-full, 9999px);
 	}
 
 	.connected {

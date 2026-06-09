@@ -50,7 +50,7 @@ let {
     align-items: flex-start;
     background: var(--smrt-surface, #fff);
     border: 1px solid var(--smrt-border, #d8dde6);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     color: inherit;
     cursor: pointer;
     display: grid;

@@ -277,7 +277,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     padding: 0.75rem 1.25rem;
     background: var(--smrt-color-surface-container-highest, #333);
     border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     color: inherit;
     font-size: 0.95rem;
     transition: box-shadow 0.2s, border-color 0.2s;
@@ -318,7 +318,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     color: var(--smrt-color-error, #ef4444);
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 1rem;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .gallery-grid {
@@ -337,7 +337,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     background: var(--smrt-color-surface-container, #1a1a1a);
     border-radius: var(--smrt-radius-lg, 8px);
     border: 1px solid var(--smrt-color-surface-container-high, #2a2a2a);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent));
     overflow: hidden;
     color: inherit;
     text-align: left;
@@ -351,7 +351,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   .gallery-item.selectable:hover, .gallery-item.selectable:focus {
     transform: translateY(-2px);
     border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 16%, transparent), 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 23%, transparent);
+    box-shadow: var(--smrt-elevation-2, 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 16%, transparent), 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 23%, transparent));
     outline: none;
   }
 
@@ -415,7 +415,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     background: var(--smrt-color-surface-container-high, #242424);
     color: var(--smrt-color-primary, #3b82f6);
     border: 1px solid var(--smrt-color-outline-variant, #444);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     cursor: pointer;
     transition: background 0.2s;

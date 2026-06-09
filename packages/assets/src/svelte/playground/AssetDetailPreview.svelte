@@ -96,7 +96,7 @@ function handleEdit() {
     border-radius: 1rem;
     background: color-mix(in srgb, var(--smrt-color-surface) 92%, transparent);
     border: 1px solid var(--smrt-color-outline-variant, rgba(15, 23, 34, 0.08));
-    box-shadow: 0 18px 38px color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent);
+    box-shadow: var(--smrt-elevation-5, 0 18px 38px color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent));
   }
 
   .preview-card h4,
@@ -114,7 +114,7 @@ function handleEdit() {
   button {
     justify-self: start;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.75rem 1rem;
     font: inherit;
     font-weight: 600;

@@ -1,5 +1,64 @@
 # @happyvertical/smrt-core
 
+## 0.27.26
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 2) (#1463) (content)
+
+  ### Merged Changes
+
+  - [codex] Atomically claim ready jobs
+  - @happyvertical/smrt-scanner@0.27.26
+  - @happyvertical/smrt-config@0.27.26
+  - @happyvertical/smrt-types@0.27.26
+
+## 0.27.25
+
+### Patch Changes
+
+- ### Features
+
+  - typography design-token ratchet + smrt-svelte migration (#1373) (#1462) (tooling)
+  - @happyvertical/smrt-scanner@0.27.25
+  - @happyvertical/smrt-config@0.27.25
+  - @happyvertical/smrt-types@0.27.25
+
+## 0.27.24
+
+### Patch Changes
+
+- ### Features
+
+  - elevation design-token ratchet (#1373) (#1461) (tooling)
+  - @happyvertical/smrt-scanner@0.27.24
+  - @happyvertical/smrt-config@0.27.24
+  - @happyvertical/smrt-types@0.27.24
+
+## 0.27.23
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap border-radius to --smrt-radius-\* across UI packages (S1 #1373) (#1459)
+  - @happyvertical/smrt-scanner@0.27.23
+  - @happyvertical/smrt-config@0.27.23
+  - @happyvertical/smrt-types@0.27.23
+
+## 0.27.22
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap spacing px to --smrt-spacing-\* across UI packages (S1 #1373 phase 2) (#1457)
+  - @happyvertical/smrt-scanner@0.27.22
+  - @happyvertical/smrt-config@0.27.22
+  - @happyvertical/smrt-types@0.27.22
+
 ## 0.27.21
 
 ### Patch Changes

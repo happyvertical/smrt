@@ -58,15 +58,15 @@ const { product, onEdit, onDelete }: Props = $props();
 <style>
   .product-card {
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
     background: white;
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
     transition: box-shadow 0.2s;
   }
 
   .product-card:hover {
-    box-shadow: 0 4px 6px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
   }
   
   .product-header {
@@ -78,30 +78,30 @@ const { product, onEdit, onDelete }: Props = $props();
   
   .product-name {
     margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1f2937);
   }
 
   .product-manufacturer {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .product-model {
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     margin-bottom: 0.5rem;
   }
 
   .product-category {
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #374151);
     background: var(--smrt-color-surface-container, #f3f4f6);
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     display: inline-block;
     margin-bottom: 0.5rem;
   }
@@ -109,8 +109,8 @@ const { product, onEdit, onDelete }: Props = $props();
   .product-description {
     margin: 0.5rem 0;
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    font-size: 0.875rem;
-    line-height: 1.4;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
   }
   
   .product-meta {
@@ -129,8 +129,8 @@ const { product, onEdit, onDelete }: Props = $props();
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-on-surface, #374151);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
+    border-radius: var(--smrt-radius-full, 9999px);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
   .product-actions {
@@ -143,9 +143,9 @@ const { product, onEdit, onDelete }: Props = $props();
   
   .edit-btn, .delete-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    font-weight: 500;
+    border-radius: var(--smrt-radius-sm, 4px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid;
     cursor: pointer;
     transition: all 0.2s;

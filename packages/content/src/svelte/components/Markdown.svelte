@@ -88,7 +88,7 @@ const rendered = $derived(renderMarkdownToHtml(content));
   }
 
   .markdown-content :global(code) {
-    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-family: var(--smrt-font-family-mono, ui-monospace, monospace);
     font-size: 0.875em;
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface-variant);

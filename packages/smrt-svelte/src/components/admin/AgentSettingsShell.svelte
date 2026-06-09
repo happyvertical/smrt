@@ -142,10 +142,10 @@ async function handleSave(slotId: string, config: unknown) {
 	.sidebar-title {
 		margin: 0 0 0.75rem 0;
 		padding: 0 0.5rem 0.75rem;
-		font-size: 0.75rem;
-		font-weight: 600;
+		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
 		color: var(--smrt-color-on-surface-variant, #64748b);
 		border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
 	}
@@ -164,7 +164,7 @@ async function handleSave(slotId: string, config: unknown) {
 		padding: 0.625rem 0.75rem;
 		border: none;
 		background: transparent;
-		border-radius: 6px;
+		border-radius: var(--smrt-radius-md, 8px);
 		cursor: pointer;
 		text-align: left;
 		width: 100%;
@@ -187,13 +187,13 @@ async function handleSave(slotId: string, config: unknown) {
 	}
 
 	.agent-class {
-		font-size: 0.875rem;
-		font-weight: 600;
+		font-size: var(--smrt-typography-title-small-size, 0.875rem);
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 		color: var(--smrt-color-on-surface, #1e293b);
 	}
 
 	.agent-name {
-		font-size: 0.75rem;
+		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		color: var(--smrt-color-on-surface-variant, #64748b);
 	}
 
@@ -210,7 +210,7 @@ async function handleSave(slotId: string, config: unknown) {
 	.agent-title {
 		margin: 0;
 		font-size: var(--smrt-typography-headline-medium-size, 1.5rem);
-		font-weight: 600;
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 		color: var(--smrt-color-on-surface);
 	}
 
@@ -229,25 +229,25 @@ async function handleSave(slotId: string, config: unknown) {
 		text-align: center;
 		background: var(--smrt-color-surface-variant);
 		border: 1px dashed var(--smrt-color-outline-variant);
-		border-radius: 8px;
+		border-radius: var(--smrt-radius-md, 8px);
 		min-height: 300px;
 	}
 
 	.no-agents-icon {
-		font-size: 3rem;
+		font-size: var(--smrt-typography-display-medium-size, 3rem);
 		margin-bottom: 1rem;
 		opacity: 0.5;
 	}
 
 	.no-agents-message {
 		margin: 0 0 0.5rem 0;
-		font-size: 1rem;
+		font-size: var(--smrt-typography-body-large-size, 1rem);
 		color: var(--smrt-color-on-surface-variant, #64748b);
 	}
 
 	.no-agents-hint {
 		margin: 0;
-		font-size: 0.875rem;
+		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		color: var(--smrt-color-on-surface-variant, #94a3b8);
 		max-width: 400px;
 	}

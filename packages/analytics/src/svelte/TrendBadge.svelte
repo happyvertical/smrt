@@ -22,7 +22,7 @@ const arrow = $derived(
 		align-items: center;
 		gap: 0.25rem;
 		padding: 0.125rem 0.5rem;
-		border-radius: 9999px;
+		border-radius: var(--smrt-radius-full, 9999px);
 		font-size: 0.75rem;
 		font-weight: 600;
 		line-height: 1;

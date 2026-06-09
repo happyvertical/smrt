@@ -124,7 +124,7 @@ let {
     bottom: 0.35rem;
     width: 0.45rem;
     height: 0.45rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-outline);
   }
 

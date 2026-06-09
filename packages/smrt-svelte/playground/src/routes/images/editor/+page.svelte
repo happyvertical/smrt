@@ -14,7 +14,6 @@ let testImage = {
 let savedImage: any = null;
 
 function handleSave(image: any) {
-  console.log('Saved derivative image:', image);
   savedImage = image;
 }
 </script>
@@ -86,7 +85,7 @@ function handleSave(image: any) {
   .success-panel pre {
     background: #000;
     padding: 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-family: monospace;
     font-size: 0.85rem;
     overflow-x: auto;

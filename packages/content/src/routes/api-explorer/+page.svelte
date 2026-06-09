@@ -530,14 +530,14 @@ function closeTry() {
 
   .page-header h1 {
     margin: 0 0 0.5rem 0;
-    font-size: 2rem;
-    font-weight: 800;
+    font-size: var(--smrt-typography-headline-large-size, 2rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
   }
 
   .page-header p {
     margin: 0 auto;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 1.05rem;
+    font-size: var(--smrt-typography-body-large-size, 1.05rem);
     max-width: 600px;
   }
 
@@ -566,7 +566,7 @@ function closeTry() {
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     text-align: left;
     transition: background 0.15s;
   }
@@ -578,19 +578,19 @@ function closeTry() {
   .group-btn.active {
     background: var(--smrt-color-primary-container, #d8e2ff);
     color: var(--smrt-color-on-primary-container, #001a41);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
-  .group-icon { font-size: 1rem; }
+  .group-icon { font-size: var(--smrt-typography-title-medium-size, 1rem); }
 
   .group-label { flex: 1; }
 
   .group-count {
     background: var(--smrt-color-surface-variant, #e1e2ec);
     padding: 0.1rem 0.4rem;
-    border-radius: 999px;
-    font-size: 0.7rem;
-    font-weight: 600;
+    border-radius: var(--smrt-radius-full, 9999px);
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .group-btn.active .group-count {
@@ -602,12 +602,12 @@ function closeTry() {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: 1rem;
     padding: 1.5rem;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent);
+    box-shadow: var(--smrt-elevation-3, 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent));
   }
 
   .endpoints-panel h2 {
     margin: 0 0 1rem 0;
-    font-size: 1.25rem;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
   }
 
   .endpoint-list {
@@ -623,7 +623,7 @@ function closeTry() {
     padding: 0.5rem 0.75rem;
     border-radius: 0.5rem;
     background: var(--smrt-color-surface-container-low, #f7f7fb);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     flex-wrap: wrap;
   }
 
@@ -633,15 +633,15 @@ function closeTry() {
     padding: 0.15rem 0.45rem;
     border-radius: 0.25rem;
     color: white;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    font-family: monospace;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    font-family: var(--smrt-font-family-mono, monospace);
     min-width: 3rem;
     justify-content: center;
   }
 
   .endpoint-path {
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     color: var(--smrt-color-on-surface, #1a1c1e);
     word-break: break-all;
   }
@@ -649,7 +649,7 @@ function closeTry() {
   .endpoint-desc {
     flex: 1;
     color: var(--smrt-color-on-surface-variant, #74777f);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     text-align: right;
   }
 
@@ -659,8 +659,8 @@ function closeTry() {
     border-radius: 0.25rem;
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
     transition: all 0.15s;
   }
@@ -688,14 +688,14 @@ function closeTry() {
 
   .try-header code {
     flex: 1;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
   .close-btn {
     border: none;
     background: none;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
     color: var(--smrt-color-on-surface-variant, #74777f);
     padding: 0.2rem 0.4rem;
     border-radius: 0.25rem;
@@ -715,8 +715,8 @@ function closeTry() {
   .try-result, .try-error {
     margin: 0;
     padding: 1rem;
-    font-size: 0.75rem;
-    line-height: 1.5;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    line-height: var(--smrt-typography-body-small-line-height, 1.5);
     max-height: 400px;
     overflow: auto;
     white-space: pre-wrap;

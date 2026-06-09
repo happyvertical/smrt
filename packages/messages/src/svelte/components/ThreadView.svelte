@@ -183,7 +183,7 @@ const _sortedMessages = $derived(
     border: none;
     background: none;
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
     z-index: 1;
     padding: 0.25rem;
@@ -215,7 +215,7 @@ const _sortedMessages = $derived(
 
   .collapsed-sender {
     font: var(--smrt-typography-body-medium-font, 0.875rem / 1.25 sans-serif);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     flex-shrink: 0;
   }
 

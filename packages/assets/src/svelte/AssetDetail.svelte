@@ -417,7 +417,7 @@ function formatDate(date: Date | string | undefined): string {
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 
@@ -527,7 +527,7 @@ function formatDate(date: Date | string | undefined): string {
     font-weight: 400;
     font-size: 0.7rem;
     color: var(--smrt-color-error, #dc2626);
-    margin-left: 4px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .form-input, .form-textarea {
@@ -563,7 +563,7 @@ function formatDate(date: Date | string | undefined): string {
   .metadata-item {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .metadata-label {
@@ -590,7 +590,7 @@ function formatDate(date: Date | string | undefined): string {
   .quick-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     height: 32px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;

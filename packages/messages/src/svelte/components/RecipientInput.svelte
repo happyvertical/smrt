@@ -84,23 +84,23 @@ export interface Props {
   .recipient-input {
     display: flex;
     align-items: flex-start;
-    gap: 8px;
-    padding: 4px 0;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1, 4px) 0;
     border-bottom: 1px solid var(--smrt-color-outline-variant, #cac4d0);
   }
 
   .label {
-    font-family: var(--smrt-typography-label, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     color: var(--smrt-color-on-surface-variant, #49454f);
-    padding-top: 6px;
+    padding-top: var(--smrt-spacing-2, 8px);
     min-width: 32px;
   }
 
   .chips-container {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     flex: 1;
     align-items: center;
   }
@@ -108,13 +108,13 @@ export interface Props {
   .chip {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 4px 2px 8px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-1, 4px) var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-sm, 8px);
     background: var(--smrt-color-secondary-container, #e8def8);
     color: var(--smrt-color-on-secondary-container, #1d192b);
-    font-size: 13px;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 13px);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .chip.invalid {
@@ -126,8 +126,8 @@ export interface Props {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0 4px;
-    font-size: 14px;
+    padding: 0 var(--smrt-spacing-1, 4px);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     color: inherit;
     opacity: 0.7;
   }
@@ -141,9 +141,9 @@ export interface Props {
     min-width: 120px;
     border: none;
     outline: none;
-    font-family: var(--smrt-typography-body, system-ui);
-    font-size: 14px;
-    padding: 4px 0;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 14px);
+    padding: var(--smrt-spacing-1, 4px) 0;
     background: transparent;
     color: var(--smrt-color-on-surface, #1c1b1f);
   }

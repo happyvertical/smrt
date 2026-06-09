@@ -172,7 +172,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     padding: 0 var(--smrt-spacing-4, 16px);
     height: 48px;
     font: var(--smrt-typography-title-small-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
     background: transparent;
     border: none;
@@ -229,7 +229,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     bottom: 0;
     height: 3px;
     background-color: var(--smrt-color-primary);
-    border-radius: 3px 3px 0 0;
+    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
     transition: width 200ms, opacity 200ms;
     width: 0;
     opacity: 0;

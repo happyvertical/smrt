@@ -48,24 +48,20 @@ async function _handleDeleteProduct(id: string) {
   if (confirm('Are you sure you want to delete this product?')) {
     try {
       await productStore.deleteProduct(id);
-    } catch (error) {
-      console.error('Failed to delete product:', error);
-    }
+    } catch (error) {}
   }
 }
 
 async function _handleSubmitProduct(productData: Partial<ProductData>) {
   try {
-    if (editingProduct && editingProduct.id) {
+    if (editingProduct?.id) {
       await productStore.updateProduct(editingProduct.id, productData);
     } else {
       await productStore.createProduct(productData);
     }
     _showForm = false;
     editingProduct = null;
-  } catch (error) {
-    console.error('Failed to save product:', error);
-  }
+  } catch (error) {}
 }
 
 function _handleCancelForm() {
@@ -189,14 +185,14 @@ function _handleCancelForm() {
   .catalog-header h2 {
     margin: 0;
     color: var(--smrt-color-on-surface, #1f2937);
-    font-size: 1.875rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-headline-large-size, 1.875rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .catalog-stats {
     display: flex;
     gap: 1.5rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
   
@@ -217,8 +213,8 @@ function _handleCancelForm() {
   .search-input, .category-filter {
     padding: 0.5rem;
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-    border-radius: 4px;
-    font-size: 0.875rem;
+    border-radius: var(--smrt-radius-sm, 4px);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
   
   .search-input {
@@ -235,8 +231,8 @@ function _handleCancelForm() {
     color: var(--smrt-color-on-primary, white);
     border: none;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
-    font-weight: 500;
+    border-radius: var(--smrt-radius-sm, 4px);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background-color 0.2s;
   }
@@ -263,7 +259,7 @@ function _handleCancelForm() {
     color: var(--smrt-color-on-error, white);
     border: none;
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     cursor: pointer;
   }
 
@@ -282,7 +278,7 @@ function _handleCancelForm() {
   
   .form-container {
     background: white;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     max-width: 500px;
     width: 90vw;
     max-height: 90vh;
@@ -293,7 +289,7 @@ function _handleCancelForm() {
     margin: 0 0 1rem 0;
     padding: 1.5rem 1.5rem 0 1.5rem;
     color: var(--smrt-color-on-surface, #1f2937);
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 </style>

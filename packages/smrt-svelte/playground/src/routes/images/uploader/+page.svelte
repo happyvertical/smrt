@@ -4,7 +4,6 @@ import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 let selectedResult: any = null;
 
 function handleSelect(result: any) {
-  console.log('Selected image:', result);
   if (result instanceof File) {
     const url = URL.createObjectURL(result);
     selectedResult = {
@@ -114,7 +113,7 @@ function handleSelect(result: any) {
   .json-state {
     background: #000;
     padding: 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-family: monospace;
     font-size: 0.85rem;
     overflow-x: auto;
@@ -133,7 +132,7 @@ function handleSelect(result: any) {
     background: rgba(34, 197, 94, 0.1);
     color: var(--smrt-color-success, #22c55e);
     padding: 0.75rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-weight: 500;
     text-align: center;
     border: 1px solid rgba(34, 197, 94, 0.2);
@@ -141,7 +140,7 @@ function handleSelect(result: any) {
 
   .image-preview {
     margin-top: 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     overflow: hidden;
     border: 1px dashed var(--smrt-color-outline-variant, #444);
     background: #000;

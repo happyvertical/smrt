@@ -118,7 +118,6 @@ async function handleEditContent(content: ContentData) {
     });
     editorMode = governance.data.isGoverned ? 'governed' : 'generic';
   } catch (err) {
-    console.error('Failed to fetch full content record:', err);
     editingContent = content;
     editorMode = 'generic';
   }
@@ -294,9 +293,9 @@ function closeForms() {
   .eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .workspace-header h1 {
@@ -324,7 +323,7 @@ function closeForms() {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -333,7 +332,7 @@ function closeForms() {
     );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .workspace-nav a[aria-current='page'] {
@@ -380,7 +379,7 @@ function closeForms() {
   }
 
   .callout-card strong {
-    font-size: 1.8rem;
+    font-size: var(--smrt-typography-headline-medium-size, 1.8rem);
   }
 
   .callout-card span {
@@ -412,15 +411,15 @@ function closeForms() {
     background: transparent;
     color: var(--smrt-color-primary);
     padding: 0.65rem 0.95rem;
-    border-radius: 999px;
-    font-weight: 600;
+    border-radius: var(--smrt-radius-full, 9999px);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
   }
 
   .inline-link {
     color: var(--smrt-color-primary);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .inline-link:hover,

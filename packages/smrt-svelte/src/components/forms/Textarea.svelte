@@ -41,8 +41,8 @@ let {
 		display: block;
 		width: 100%;
 		padding: 0.5rem 0.75rem;
-		font-size: 0.875rem;
-		line-height: 1.5;
+		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
 		color: var(--smrt-color-on-surface, #1f2937);
 		background-color: var(--smrt-color-surface, #fff);
 		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);

@@ -493,23 +493,23 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .brand :global(h1),
   .brand h1 {
     margin: 0;
-    font-size: 1.25rem;
-    line-height: 1.1;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    line-height: var(--smrt-typography-title-large-line-height, 1.1);
     color: var(--smrt-color-on-surface, #111827);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .brand .subtitle {
     margin: 0;
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    line-height: 1.4;
-    font-size: 0.9rem;
+    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   .eyebrow {
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.12em;
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.12em);
     text-transform: uppercase;
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
@@ -542,7 +542,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   }
 
   .shell-toggle-glyph {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
   }
 
@@ -628,8 +628,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   }
 
   .mode-title {
-    font-size: 0.9rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-small-size, 0.9rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
   }
 
@@ -637,7 +637,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     max-width: 18rem;
     text-align: right;
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .mode-badge {
@@ -649,8 +649,8 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-on-surface, #111827);
-    font-size: 0.78rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
     white-space: nowrap;
   }
@@ -658,7 +658,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .mode-dot {
     width: 0.55rem;
     height: 0.55rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-on-surface-variant, #9ca3af);
     flex-shrink: 0;
   }
@@ -688,7 +688,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    font-size: 1.1rem;
+    font-size: var(--smrt-typography-body-large-size, 1.1rem);
     line-height: 1;
   }
 
@@ -734,9 +734,9 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   }
 
   .inspector-title {
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-title-medium-size, 0.95rem);
   }
 
   .inspector-close {
@@ -750,7 +750,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.25rem;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
     line-height: 1;
     cursor: pointer;
     transition:

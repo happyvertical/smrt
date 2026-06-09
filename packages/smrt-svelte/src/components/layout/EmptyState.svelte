@@ -116,7 +116,7 @@ const icons = {
     margin-bottom: 2rem;
     background-color: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
-    border-radius: 28px; /* M3 extra large shape */
+    border-radius: var(--smrt-radius-3xl, 32px); /* M3 extra large shape */
     padding: var(--smrt-spacing-6, 24px);
   }
 
@@ -124,7 +124,7 @@ const icons = {
     width: 64px;
     height: 64px;
     margin-bottom: 1.5rem;
-    border-radius: 16px;
+    border-radius: var(--smrt-radius-xl, 16px);
     padding: var(--smrt-spacing-4, 16px);
   }
 
@@ -132,7 +132,7 @@ const icons = {
     width: 120px;
     height: 120px;
     margin-bottom: 2.5rem;
-    border-radius: 32px;
+    border-radius: var(--smrt-radius-3xl, 32px);
     padding: var(--smrt-spacing-8, 32px);
   }
 
@@ -140,7 +140,7 @@ const icons = {
     font: var(--smrt-typography-title-large-font);
     color: var(--smrt-color-on-surface);
     margin: 0 0 0.75rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .sm .empty-title {
@@ -156,7 +156,7 @@ const icons = {
     color: var(--smrt-color-on-surface-variant);
     margin: 0 0 2rem;
     max-width: 440px;
-    line-height: 1.5;
+    line-height: var(--smrt-typography-body-medium-line-height, 1.5);
   }
 
   .action-button {
@@ -167,11 +167,11 @@ const icons = {
     padding: 0 var(--smrt-spacing-6, 24px);
     height: 40px;
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary);
     background-color: var(--smrt-color-primary);
     border: none;
-    border-radius: 20px;
+    border-radius: var(--smrt-radius-2xl, 24px);
     text-decoration: none;
     cursor: pointer;
     transition: box-shadow 200ms, background-color 200ms;

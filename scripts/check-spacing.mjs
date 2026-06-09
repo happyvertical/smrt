@@ -37,7 +37,16 @@ const ROOT = resolve(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');
 
 /** Packages held to ERROR. Everything else is report-only for now (#1373). */
-const STRICT_PACKAGES = new Set(['smrt-svelte']);
+const STRICT_PACKAGES = new Set([
+  'smrt-svelte',
+  'chat',
+  'messages',
+  'assets',
+  'users',
+  'content',
+  'events',
+  'tenancy',
+]);
 
 /** Dev/playground hosts skipped entirely (matches the color/z-index ratchets). */
 const SCOPE_EXCLUDED_PACKAGES = new Set(['smrt-playground']);

@@ -131,7 +131,7 @@ function handleInput() {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: var(--smrt-spacing-1, 4px);
     min-width: 0;
     border-left: 2px solid var(--smrt-color-primary, #005ac1);
     padding-left: var(--smrt-spacing-2, 0.375rem);

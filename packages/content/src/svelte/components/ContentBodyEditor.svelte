@@ -1225,7 +1225,7 @@ function handleEditorDragEnd() {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.78rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -1243,8 +1243,8 @@ function handleEditorDragEnd() {
     padding: clamp(1rem, 2vw, 1.5rem);
     outline: none;
     color: var(--smrt-color-on-surface);
-    font-size: 1.05rem;
-    line-height: 1.65;
+    font-size: var(--smrt-typography-body-large-size, 1.05rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.65);
     overflow: auto;
     overflow-wrap: anywhere;
   }
@@ -1387,10 +1387,10 @@ function handleEditorDragEnd() {
     gap: 0.1rem;
     padding: 0.25rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(in srgb, var(--smrt-color-surface) 96%, transparent);
     color: var(--smrt-color-on-surface);
-    box-shadow: 0 0.75rem 1.75rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
+    box-shadow: var(--smrt-elevation-5, 0 0.75rem 1.75rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
     transform: translateX(-50%);
     backdrop-filter: blur(10px);
   }
@@ -1408,7 +1408,7 @@ function handleEditorDragEnd() {
   .image-control-popover button {
     width: 1.85rem;
     height: 1.85rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .image-control-popover button:hover,
@@ -1430,9 +1430,9 @@ function handleEditorDragEnd() {
     width: 1.45rem;
     height: 1.45rem;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface);
-    box-shadow: 0 0.45rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
+    box-shadow: var(--smrt-elevation-4, 0 0.45rem 1rem color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
     cursor: nwse-resize;
   }
 

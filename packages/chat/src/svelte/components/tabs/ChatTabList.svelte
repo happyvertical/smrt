@@ -60,7 +60,7 @@ const { tabs, onselect, onclose }: Props = $props();
   .tab-list {
     display: flex;
     align-items: flex-end;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     pointer-events: auto;
   }
 
@@ -76,7 +76,7 @@ const { tabs, onselect, onclose }: Props = $props();
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 6px;
+    padding: var(--smrt-spacing-2, 8px);
     border: none;
     background: var(--smrt-color-surface-container, #f0f0f4);
     border-radius: var(--smrt-radius-full, 9999px);
@@ -105,7 +105,7 @@ const { tabs, onselect, onclose }: Props = $props();
     justify-content: center;
     min-width: 16px;
     height: 16px;
-    padding: 0 4px;
+    padding: 0 var(--smrt-spacing-1, 4px);
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-error, #ba1a1a);
     color: var(--smrt-color-on-error, #ffffff);

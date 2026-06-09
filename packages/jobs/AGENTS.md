@@ -19,8 +19,8 @@ Status: `pending → running → completed/failed/cancelled`.
 
 Polling-based execution engine. Config: `concurrency` (5), `pollInterval` (1s), `heartbeatInterval` (30s), `shutdownTimeout` (30s).
 
-1. Polls `listReady()` for pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC`)
-2. Claims atomically: `status='running', workerId=this.id`
+1. Polls `claimReady()` to atomically claim pending jobs (`runAt <= NOW`, ordered by `priority DESC, runAt ASC, created_at ASC, id ASC`)
+2. Claim sets `status='running'`, `workerId=this.id`, heartbeat/start timestamps, and increments `attempts`
 3. Resolves class via `ObjectRegistry.getClass(objectType)`, creates instance, calls method
 4. **Internal args**: `_agentConfig` and `_scheduleId` stripped from args before calling method
 5. Retry: uses strategy from `@happyvertical/jobs`, schedules future `runAt` on failure

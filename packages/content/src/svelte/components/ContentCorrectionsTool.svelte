@@ -250,8 +250,8 @@ async function issueCorrection() {
 
   .workflow-field {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .workflow-field input,
@@ -274,7 +274,7 @@ async function issueCorrection() {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   button:disabled {
@@ -303,7 +303,7 @@ async function issueCorrection() {
   .empty-copy,
   .section-caption {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .tool-card p {
@@ -318,10 +318,10 @@ async function issueCorrection() {
   }
 
   .pill {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
@@ -342,7 +342,7 @@ async function issueCorrection() {
     margin: 0;
     border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   .tool-error {

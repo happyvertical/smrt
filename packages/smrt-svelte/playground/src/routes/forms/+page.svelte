@@ -77,7 +77,6 @@ const llmOptions: { value: LLMModelId; label: string; size: string }[] = [
 
 function handleSubmit(data: Record<string, unknown>) {
   submittedData = data;
-  console.log('Form submitted:', data);
 }
 
 function clearForm() {
@@ -456,14 +455,14 @@ function handleSearch(value: string) {
     color: var(--smrt-color-on-surface-variant);
     background: var(--smrt-color-surface-container);
     padding: 12px 16px;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     margin-bottom: 24px;
   }
 
   .control-panel {
     background: linear-gradient(135deg, var(--smrt-color-primary) 0%, var(--smrt-color-tertiary, #764ba2) 100%);
     color: var(--smrt-color-on-primary);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     padding: 24px;
     margin-bottom: 24px;
   }
@@ -502,7 +501,7 @@ function handleSearch(value: string) {
   .control-group select {
     padding: 10px 12px;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     background: rgba(255, 255, 255, 0.9);
     color: var(--smrt-color-on-surface);
@@ -530,7 +529,7 @@ function handleSearch(value: string) {
     background: rgba(255, 255, 255, 0.2);
     color: var(--smrt-color-on-primary);
     border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     cursor: pointer;
     transition: background 0.2s;
@@ -543,7 +542,7 @@ function handleSearch(value: string) {
   .demo-section {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     padding: 24px;
     margin-bottom: 24px;
   }
@@ -559,7 +558,7 @@ function handleSearch(value: string) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
@@ -575,7 +574,7 @@ function handleSearch(value: string) {
     padding: 16px;
     background: var(--smrt-color-success-container, #f0fdf4);
     border: 1px solid var(--smrt-color-success, #bbf7d0);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .submitted-data h3 {
@@ -586,7 +585,7 @@ function handleSearch(value: string) {
   .submitted-data pre {
     background: var(--smrt-color-surface);
     padding: 12px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.875rem;
     overflow-x: auto;
   }
@@ -633,7 +632,7 @@ function handleSearch(value: string) {
   .feature {
     padding: 16px;
     background: var(--smrt-color-surface-container);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .feature ul {
@@ -662,7 +661,7 @@ function handleSearch(value: string) {
     font-family: monospace;
     background: var(--smrt-color-surface-container);
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     display: inline-block;
     margin-right: 8px;
     margin-bottom: 8px;
@@ -671,7 +670,7 @@ function handleSearch(value: string) {
   .append-toggle {
     padding: 12px;
     background: var(--smrt-color-surface-container);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
   }
 
@@ -723,7 +722,7 @@ function handleSearch(value: string) {
     margin-top: 12px;
     padding: 12px;
     background: var(--smrt-color-surface-container);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     list-style: none;
   }
 

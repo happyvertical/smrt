@@ -79,8 +79,8 @@ function updateTags(value: string) {
     display: grid;
     gap: 0.45rem;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   input,

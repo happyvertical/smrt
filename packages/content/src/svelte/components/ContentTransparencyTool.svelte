@@ -268,7 +268,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
   .empty-copy,
   .section-caption {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .transparency-card-prompt,
@@ -282,10 +282,10 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
   }
 
   .pill {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
@@ -305,6 +305,6 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
     padding: 0.75rem 0.9rem;
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     color: var(--smrt-color-on-error-container);
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 </style>

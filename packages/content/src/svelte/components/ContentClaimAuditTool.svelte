@@ -331,7 +331,7 @@ async function recheckFactClaims(claimIds: string[]) {
   .section-caption,
   .tool-card span {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .tool-card {
@@ -380,7 +380,7 @@ async function recheckFactClaims(claimIds: string[]) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .secondary-button:disabled {
@@ -389,10 +389,10 @@ async function recheckFactClaims(claimIds: string[]) {
   }
 
   .pill {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
@@ -417,7 +417,7 @@ async function recheckFactClaims(claimIds: string[]) {
     margin: 0;
     border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   .tool-error {

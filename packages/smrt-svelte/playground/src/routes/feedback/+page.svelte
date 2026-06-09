@@ -332,7 +332,7 @@ async function handleLoadingConfirm() {
   .demo-box {
     background: var(--smrt-color-surface-container);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 16px;
     margin-bottom: 16px;
   }
@@ -365,7 +365,7 @@ async function handleLoadingConfirm() {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -380,7 +380,7 @@ async function handleLoadingConfirm() {
     background: var(--smrt-color-error);
     color: var(--smrt-color-on-error);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -395,7 +395,7 @@ async function handleLoadingConfirm() {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -434,7 +434,7 @@ async function handleLoadingConfirm() {
   code {
     background: var(--smrt-color-surface-container);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.8rem;
   }
 </style>

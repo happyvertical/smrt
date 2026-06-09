@@ -45,7 +45,6 @@ let sttAdapter = $state<STTAdapterType>('whisper-wasm');
 
 function handleSubmit(data: Record<string, unknown>) {
   submittedData = data;
-  console.log('Form submitted:', data);
 }
 
 function clearForm() {
@@ -285,7 +284,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   .control-panel {
     background: linear-gradient(135deg, var(--smrt-color-success) 0%, var(--smrt-color-success) 100%);
     color: var(--smrt-color-on-success);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     padding: 24px;
     margin-bottom: 24px;
   }
@@ -308,7 +307,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
     background: rgba(255, 255, 255, 0.2);
     color: var(--smrt-color-on-success);
     border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     cursor: pointer;
     transition: background 0.2s;
@@ -321,7 +320,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   .demo-section {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     padding: 24px;
     margin-bottom: 24px;
   }
@@ -357,7 +356,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
     margin-top: 16px;
     padding: 12px 16px;
     background: var(--smrt-color-success-container, #f0fdf4);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .total-label {
@@ -382,7 +381,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
     background: var(--smrt-color-success);
     color: var(--smrt-color-on-success);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
@@ -398,7 +397,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
     padding: 16px;
     background: var(--smrt-color-success-container, #f0fdf4);
     border: 1px solid var(--smrt-color-success, #bbf7d0);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .submitted-data h3 {
@@ -411,7 +410,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
   .submitted-data pre {
     background: var(--smrt-color-surface);
     padding: 12px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.875rem;
     overflow-x: auto;
   }
@@ -431,7 +430,7 @@ const totalCost = $derived((laborCost ?? 0) + (materialCost ?? 0));
     font-family: monospace;
     background: var(--smrt-color-surface-container);
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     display: inline-block;
     margin-right: 8px;
     margin-bottom: 4px;
