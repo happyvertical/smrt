@@ -1,4 +1,19 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// schema-manager.ts emits debug traces via @happyvertical/logger; mock it so the
+// tests can assert on the logger (S14 console→logger migration).
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+vi.mock('@happyvertical/logger', () => ({
+  createLogger: () => mockLogger,
+}));
+
 import { SchemaManager } from './schema-manager';
 import type { SchemaDefinition } from './types';
 
@@ -18,6 +33,10 @@ function createSchema(tableName: string): SchemaDefinition {
 }
 
 describe('SchemaManager', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('uses parameterized postgres introspection queries', async () => {
     const query = vi
       .fn()
@@ -77,11 +96,9 @@ describe('SchemaManager', () => {
       url: 'sqlite::memory:',
     } as any;
 
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
     const quietManager = new SchemaManager(db, { engine: 'sqlite' });
     await quietManager.ensureTable(createSchema('users'));
-    expect(logSpy).not.toHaveBeenCalled();
+    expect(mockLogger.debug).not.toHaveBeenCalled();
 
     query.mockReset();
     query.mockResolvedValueOnce([{ name: 'id' }]).mockResolvedValueOnce([]);
@@ -92,7 +109,7 @@ describe('SchemaManager', () => {
     });
     await verboseManager.ensureTable(createSchema('users'));
 
-    expect(logSpy).toHaveBeenCalledWith(
+    expect(mockLogger.debug).toHaveBeenCalledWith(
       '[SchemaManager] Added 1 missing column(s) to "users"',
     );
   });

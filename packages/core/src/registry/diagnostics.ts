@@ -23,6 +23,10 @@
  * @see https://github.com/happyvertical/smrt/issues/1134
  */
 
+import { createLogger } from '@happyvertical/logger';
+
+const logger = createLogger({ level: 'info' });
+
 export type RegistryDiagnosticSeverity = 'warn' | 'error';
 
 export interface RegistryDiagnostic {
@@ -118,9 +122,9 @@ export function flushRegistryDiagnostics(): void {
   for (const diag of diagnostics) {
     const line = `[smrt:${diag.code}] ${diag.message}`;
     if (diag.severity === 'error') {
-      console.error(line, diag.context ?? '');
+      logger.error(line, { context: diag.context });
     } else {
-      console.warn(line, diag.context ?? '');
+      logger.warn(line, { context: diag.context });
     }
   }
 }

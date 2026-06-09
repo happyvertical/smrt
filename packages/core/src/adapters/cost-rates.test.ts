@@ -3,10 +3,26 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// cost-rates.ts logs missing-rate warnings via @happyvertical/logger; mock it so
+// the tests can assert on the logger (S14 console→logger migration).
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+vi.mock('@happyvertical/logger', () => ({
+  createLogger: () => mockLogger,
+}));
+
 import { estimateAiUsageCost } from './cost-rates.js';
 
 describe('estimateAiUsageCost', () => {
   afterEach(() => {
+    vi.clearAllMocks();
     vi.restoreAllMocks();
   });
 
@@ -41,8 +57,6 @@ describe('estimateAiUsageCost', () => {
   });
 
   it('should return undefined for unknown models', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
     const cost = estimateAiUsageCost('openai', 'unknown-model', {
       promptTokens: 100,
       completionTokens: 100,
@@ -50,15 +64,13 @@ describe('estimateAiUsageCost', () => {
     });
 
     expect(cost).toBeUndefined();
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(mockLogger.warn).toHaveBeenCalledWith(
       '[smrt] No AI usage cost rate configured for openai:unknown-model. ' +
         'Cost estimation will be skipped for this model.',
     );
   });
 
   it('should warn only once per unknown model', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
     estimateAiUsageCost('openai', 'warn-once-model', {
       promptTokens: 100,
       completionTokens: 100,
@@ -70,6 +82,6 @@ describe('estimateAiUsageCost', () => {
       totalTokens: 200,
     });
 
-    expect(warnSpy).toHaveBeenCalledTimes(1);
+    expect(mockLogger.warn).toHaveBeenCalledTimes(1);
   });
 });

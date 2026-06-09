@@ -6,9 +6,12 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface, VectorCapabilities } from '@happyvertical/sql';
 import { CosineSimilarity } from './similarity';
 import type { StoredEmbedding } from './types';
+
+const logger = createLogger({ level: 'info' });
 
 /** Column name for native vector storage */
 const VECTOR_COLUMN = 'embedding_vector';
@@ -75,7 +78,7 @@ export class EmbeddingStorage {
         );
       } catch (error) {
         // Log but don't fail — JSON fallback is always available
-        console.warn(
+        logger.warn(
           `[embeddings] Failed to store native vector: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
@@ -150,7 +153,7 @@ export class EmbeddingStorage {
           .filter((r) => r.similarity >= minSimilarity);
       } catch (error) {
         // Fall back to in-memory search on vector search failure
-        console.warn(
+        logger.warn(
           `[embeddings] Native vector search failed, falling back to in-memory: ${error instanceof Error ? error.message : String(error)}`,
         );
       }

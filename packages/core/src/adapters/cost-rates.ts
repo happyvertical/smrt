@@ -1,4 +1,7 @@
+import { createLogger } from '@happyvertical/logger';
 import type { AiTokenUsage } from '@happyvertical/smrt-types';
+
+const logger = createLogger({ level: 'info' });
 
 const missingRateWarnings = new Set<string>();
 
@@ -46,7 +49,7 @@ export function estimateAiUsageCost(
     const warningKey = exactKey;
     if (!missingRateWarnings.has(warningKey)) {
       missingRateWarnings.add(warningKey);
-      console.warn(
+      logger.warn(
         `[smrt] No AI usage cost rate configured for ${warningKey}. ` +
           `Cost estimation will be skipped for this model.`,
       );

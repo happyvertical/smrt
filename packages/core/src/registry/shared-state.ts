@@ -9,6 +9,7 @@
  * @see https://github.com/happyvertical/smrt/issues/543
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtCollection } from '../collection';
 import {
   getSmrtModuleConfig,
@@ -16,6 +17,8 @@ import {
 } from '../config/global-config.js';
 import { LRUCache } from '../utils/lru-cache';
 import type { RegisteredClass, SmrtObjectConstructor } from './types';
+
+const logger = createLogger({ level: 'info' });
 
 // Re-export the globalThis augmentation so it's visible everywhere
 declare global {
@@ -72,7 +75,11 @@ export const VERBOSE_ENABLED =
  */
 export function verboseLog(...args: unknown[]): void {
   if (VERBOSE_ENABLED) {
-    console.log(...args);
+    const [message, ...rest] = args;
+    logger.debug(
+      typeof message === 'string' ? message : String(message),
+      rest.length > 0 ? { args: rest } : undefined,
+    );
   }
 }
 

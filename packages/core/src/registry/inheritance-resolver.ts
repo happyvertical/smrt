@@ -4,6 +4,7 @@
  * Extracted from registry.ts as part of issue #1006.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { ConfigurationError } from '../errors';
 import type { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
@@ -14,6 +15,8 @@ import {
   getInheritanceConfig,
   verboseLog,
 } from './shared-state';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Build inheritance chain by walking prototype chain
@@ -85,7 +88,7 @@ export function getInheritanceChain(className: string): string[] {
       // extends a parent with the same className and only one is installed.
       // Longer cycles indicate misconfigured manifests.
       if (chain.length > 1) {
-        console.warn(
+        logger.warn(
           `[ObjectRegistry] Circular inheritance detected in chain: ${chain.join(' -> ')} -> ${current.name}. ` +
             `Check that '${current.extends ?? current.name}' resolves to the correct package class.`,
         );
@@ -215,7 +218,7 @@ export async function getAllFields(
             `  - Or set smrt.inheritance.onMissingAncestor='warn' in config`,
         );
       } else if (onMissingAncestor === 'warn') {
-        console.warn(`[ObjectRegistry] ${message}`);
+        logger.warn(`[ObjectRegistry] ${message}`);
       }
 
       continue;
@@ -291,7 +294,7 @@ export function mergeFieldConfigs(
       parentField.__tenancy?.isTenantIdField ||
       parentField._meta?.__tenancy?.isTenantIdField;
     if (!(isTenantField && fieldName === 'tenantId')) {
-      console.warn(
+      logger.warn(
         `Field type mismatch: "${fieldName}" is ${parentField.type} in parent but ${childField.type} in child. Using child type.`,
       );
     }

@@ -5,10 +5,13 @@
  * to registered adapters (logging, metrics, pub/sub, etc.).
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { Signal, SignalAdapter } from '@happyvertical/smrt-types';
 import { makeId } from '@happyvertical/utils';
 import type { SanitizationConfig } from './sanitizer.js';
 import { SignalSanitizer } from './sanitizer.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Central signal distribution bus
@@ -92,7 +95,7 @@ export class SignalBus {
             ? adapter.constructor.name
             : `Adapter[${index}]`;
 
-        console.error(`SignalBus: ${adapterName} failed to handle signal`, {
+        logger.error(`SignalBus: ${adapterName} failed to handle signal`, {
           signalId: signal.id,
           signalType: signal.type,
           className: signal.className,

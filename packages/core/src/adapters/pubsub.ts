@@ -5,7 +5,10 @@
  * Supports multiple subscriber types (callbacks, WebSocket, SSE).
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { Signal, SignalAdapter } from '@happyvertical/smrt-types';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Signal filter function
@@ -83,10 +86,9 @@ export class PubSubAdapter implements SignalAdapter {
         try {
           await subscription.callback(signal);
         } catch (error) {
-          console.error(
-            `PubSubAdapter: Subscriber ${subscription.id} error:`,
+          logger.error(`PubSubAdapter: Subscriber ${subscription.id} error`, {
             error,
-          );
+          });
         }
       })();
 
