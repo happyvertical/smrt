@@ -153,7 +153,7 @@ function highlightMatch(
   .mention-autocomplete__highlight {
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   @media (prefers-reduced-motion: reduce) {

@@ -147,7 +147,7 @@ const count = $derived(selectedAssets.length);
 
   .action-bar__count {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-primary-container, #002d6c);
   }
 
@@ -180,7 +180,7 @@ const count = $derived(selectedAssets.length);
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #111827);
@@ -232,8 +232,8 @@ const count = $derived(selectedAssets.length);
 
   .confirm-title {
     margin: 0 0 var(--smrt-spacing-4, 16px);
-    font-size: 1.125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
   }
 
@@ -258,7 +258,7 @@ const count = $derived(selectedAssets.length);
     padding: 0 var(--smrt-spacing-6, 24px);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
     border: none;

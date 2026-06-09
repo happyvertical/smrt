@@ -233,7 +233,7 @@ function getAltText(asset: PersistedAsset): string {
   }
 
   .asset-card__type-icon {
-    font-size: 2.5rem;
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
   }
 
   /* Info */
@@ -244,7 +244,7 @@ function getAltText(asset: PersistedAsset): string {
   .asset-card__name {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #111827);
     white-space: nowrap;
     overflow: hidden;
@@ -259,11 +259,11 @@ function getAltText(asset: PersistedAsset): string {
   }
 
   .asset-card__type {
-    font-size: 0.7rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
 
   /* Badge */
@@ -272,8 +272,8 @@ function getAltText(asset: PersistedAsset): string {
     top: var(--smrt-spacing-2, 0.5rem);
     right: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    font-size: 0.65rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.65rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-small, 0.25rem);
     z-index: 2;
   }

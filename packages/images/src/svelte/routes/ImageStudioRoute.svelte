@@ -115,9 +115,9 @@ function handleEditorSave(image: StudioImage) {
   .images-route__eyebrow {
     margin: 0 0 0.5rem;
     color: var(--smrt-color-primary, #7dd3fc);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
     text-transform: uppercase;
   }
 

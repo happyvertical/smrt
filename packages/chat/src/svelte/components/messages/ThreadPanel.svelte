@@ -97,7 +97,7 @@ const replyCount = $derived(
   .thread-panel__title {
     margin: 0;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1b1b1f);
     white-space: nowrap;
     overflow: hidden;
@@ -112,7 +112,7 @@ const replyCount = $derived(
   .thread-panel__resolved {
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-success-container, #2e7d32);
     background: var(--smrt-color-success-container, #e8f5e9);
     border-radius: var(--smrt-radius-full, 9999px);

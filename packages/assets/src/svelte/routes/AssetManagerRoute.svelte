@@ -112,9 +112,9 @@ const customActions = [
   .assets-route__eyebrow {
     margin: 0 0 0.5rem;
     color: var(--smrt-color-primary, #0f766e);
-    font-size: 0.75rem;
-    font-weight: 700;
-    letter-spacing: 0.08em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
     text-transform: uppercase;
   }
 
@@ -157,7 +157,7 @@ const customActions = [
 
   .assets-route__panel h2 {
     margin: 0 0 0.75rem;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
 
   .assets-route__empty {
@@ -192,7 +192,7 @@ const customActions = [
   }
 
   .assets-route__selection-list code {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-primary-container, #155e75);
   }
 
