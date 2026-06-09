@@ -172,7 +172,7 @@ function handleKeydown(event: KeyboardEvent, tabId: string) {
     padding: 0 var(--smrt-spacing-4, 16px);
     height: 48px;
     font: var(--smrt-typography-title-small-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant);
     background: transparent;
     border: none;

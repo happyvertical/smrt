@@ -183,7 +183,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
 
   .card-value {
     font: var(--smrt-typography-headline-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .color-default { color: var(--smrt-color-on-surface); }

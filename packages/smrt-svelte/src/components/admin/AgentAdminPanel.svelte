@@ -80,14 +80,14 @@ async function handleSave(newConfig: unknown) {
 	}
 
 	.no-panel-icon {
-		font-size: 2.5rem;
+		font-size: var(--smrt-typography-display-medium-size, 2.5rem);
 		margin-bottom: 1rem;
 		opacity: 0.5;
 	}
 
 	.no-panel-message {
 		margin: 0 0 0.5rem 0;
-		font-size: 0.9375rem;
+		font-size: var(--smrt-typography-body-large-size, 0.9375rem);
 		color: var(--smrt-color-on-surface-variant, #64748b);
 	}
 
@@ -95,13 +95,13 @@ async function handleSave(newConfig: unknown) {
 		background: var(--smrt-color-surface-container-high, #e2e8f0);
 		padding: var(--smrt-spacing-1, 0.125rem) var(--smrt-spacing-2, 0.375rem);
 		border-radius: var(--smrt-radius-small, 4px);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
-		font-size: 0.875rem;
+		font-family: var(--smrt-font-family-mono, 'SF Mono', Monaco, Consolas, monospace);
+		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 	}
 
 	.no-panel-hint {
 		margin: 0;
-		font-size: 0.8125rem;
+		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
 		color: var(--smrt-color-on-surface-variant, #94a3b8);
 	}
 </style>

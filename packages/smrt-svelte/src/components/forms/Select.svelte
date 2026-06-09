@@ -38,8 +38,8 @@ let {
 		display: block;
 		width: 100%;
 		padding: 0.5rem 2rem 0.5rem 0.75rem;
-		font-size: 0.875rem;
-		line-height: 1.5;
+		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+		line-height: var(--smrt-typography-body-medium-line-height, 1.5);
 		color: var(--smrt-color-on-surface, #1f2937);
 		background-color: var(--smrt-color-surface, #fff);
 		background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%2379747e' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");

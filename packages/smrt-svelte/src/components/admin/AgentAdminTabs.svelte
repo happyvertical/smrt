@@ -189,7 +189,7 @@ async function handleSave(config: unknown) {
 		background: transparent;
 		color: var(--smrt-color-on-surface-variant, #64748b);
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
-		font-weight: 500;
+		font-weight: var(--smrt-typography-weight-medium, 500);
 		cursor: pointer;
 		border-bottom: 2px solid transparent;
 		margin-bottom: -1px;
@@ -218,7 +218,7 @@ async function handleSave(config: unknown) {
 	}
 
 	.tab-icon {
-		font-size: 1rem;
+		font-size: var(--smrt-typography-title-medium-size, 1rem);
 		opacity: 0.8;
 	}
 

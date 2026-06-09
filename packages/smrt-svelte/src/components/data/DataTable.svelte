@@ -337,7 +337,7 @@ const sizeClasses = {
 
   .data-table__caption {
     padding: var(--smrt-spacing-3, 0.75rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     text-align: left;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     caption-side: top;
@@ -360,7 +360,7 @@ const sizeClasses = {
 
   .data-table__cell--header {
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     text-align: left;
     white-space: nowrap;
     color: var(--smrt-color-on-surface, #111827);
@@ -379,7 +379,7 @@ const sizeClasses = {
     border: none;
     background: none;
     font: inherit;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: inherit;
     cursor: pointer;
   }
@@ -389,7 +389,7 @@ const sizeClasses = {
   }
 
   .data-table__sort-icon {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     opacity: 0.5;
   }
 

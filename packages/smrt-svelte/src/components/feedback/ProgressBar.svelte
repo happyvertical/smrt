@@ -118,7 +118,7 @@ const displayLabel = $derived.by(() => {
 
   .over-badge {
     font: var(--smrt-typography-label-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-error, #ba1a1a);
   }
 

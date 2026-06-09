@@ -657,8 +657,8 @@ function getFormData(): Record<string, unknown> {
     color: var(--smrt-color-on-surface-variant, #6b7280);
     border-radius: var(--smrt-radius-md, 8px);
     cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
@@ -682,8 +682,8 @@ function getFormData(): Record<string, unknown> {
     color: var(--smrt-color-primary);
     border-radius: var(--smrt-radius-md, 8px);
     cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
@@ -744,7 +744,7 @@ function getFormData(): Record<string, unknown> {
        emitted `--smrt-color-primary` token instead. */
     background: color-mix(in srgb, var(--smrt-color-primary, #166534) 90%, transparent);
     color: white;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     box-shadow: 0 -2px 12px color-mix(in srgb, var(--smrt-color-shadow) 15%, transparent);
     z-index: var(--smrt-z-index-toast, 1500);
     text-align: center;
@@ -772,7 +772,7 @@ function getFormData(): Record<string, unknown> {
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
     border-radius: var(--smrt-radius-md, 8px);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-error);
   }
 
