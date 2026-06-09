@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.33
+
+### Patch Changes
+
+- ### Features
+
+  - migrate runtime logging to @happyvertical/logger (S14) (#1469) (core)
+  - @happyvertical/smrt-scanner@0.27.33
+  - @happyvertical/smrt-config@0.27.33
+  - @happyvertical/smrt-types@0.27.33
+
 ## 0.27.32
 
 ### Patch Changes
