@@ -34,11 +34,11 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 	}
 
 	.stat-label {
-		font-size: 0.75rem;
-		font-weight: 500;
+		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+		font-weight: var(--smrt-typography-weight-medium, 500);
 		color: var(--color-text-secondary, #6b7280);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
 		margin-bottom: 0.25rem;
 	}
 
@@ -49,14 +49,14 @@ const { label, value, trend, trendPercent, subtitle }: Props = $props();
 	}
 
 	.stat-value {
-		font-size: 1.5rem;
-		font-weight: 700;
+		font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+		font-weight: var(--smrt-typography-weight-bold, 700);
 		color: var(--color-text-primary, #111827);
-		line-height: 1.2;
+		line-height: var(--smrt-typography-headline-small-line-height, 1.2);
 	}
 
 	.stat-subtitle {
-		font-size: 0.75rem;
+		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		color: var(--color-text-tertiary, #9ca3af);
 		margin-top: 0.25rem;
 	}

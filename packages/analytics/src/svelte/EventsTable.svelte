@@ -70,18 +70,18 @@ function statusClass(status: string): string {
 	.events-table {
 		width: 100%;
 		border-collapse: collapse;
-		font-size: 0.8125rem;
+		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
 	}
 
 	.events-table th {
 		text-align: left;
 		padding: 0.5rem 0.75rem;
-		font-weight: 600;
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 		color: var(--color-text-secondary, #6b7280);
 		border-bottom: 2px solid var(--color-border, #e5e7eb);
-		font-size: 0.75rem;
+		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
 		text-transform: uppercase;
-		letter-spacing: 0.05em;
+		letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
 	}
 
 	.events-table td {
@@ -95,7 +95,7 @@ function statusClass(status: string): string {
 	}
 
 	.event-name {
-		font-weight: 500;
+		font-weight: var(--smrt-typography-weight-medium, 500);
 	}
 
 	.event-page {
@@ -107,23 +107,23 @@ function statusClass(status: string): string {
 	}
 
 	.event-client {
-		font-family: var(--font-mono, monospace);
-		font-size: 0.75rem;
+		font-family: var(--smrt-font-family-mono, monospace);
+		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		color: var(--color-text-secondary, #6b7280);
 	}
 
 	.event-time {
 		white-space: nowrap;
 		color: var(--color-text-secondary, #6b7280);
-		font-size: 0.75rem;
+		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
 	}
 
 	.status-pill {
 		display: inline-block;
 		padding: 0.125rem 0.5rem;
 		border-radius: var(--smrt-radius-full, 9999px);
-		font-size: 0.6875rem;
-		font-weight: 500;
+		font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+		font-weight: var(--smrt-typography-weight-medium, 500);
 	}
 
 	.status-sent {
@@ -151,6 +151,6 @@ function statusClass(status: string): string {
 		text-align: center;
 		padding: 0.5rem;
 		color: var(--color-text-tertiary, #9ca3af);
-		font-size: 0.75rem;
+		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 	}
 </style>

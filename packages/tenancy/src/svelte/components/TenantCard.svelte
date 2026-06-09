@@ -166,7 +166,7 @@ function getColor(name: string): string {
     border-radius: var(--smrt-radius-lg, 12px);
     color: white;
     font: var(--smrt-typography-title-medium-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     flex-shrink: 0;
   }
 
@@ -183,7 +183,7 @@ function getColor(name: string): string {
 
   .name {
     font: var(--smrt-typography-title-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -197,7 +197,7 @@ function getColor(name: string): string {
     align-items: center;
     border-radius: var(--smrt-radius-md, 8px);
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     flex-shrink: 0;
   }
 

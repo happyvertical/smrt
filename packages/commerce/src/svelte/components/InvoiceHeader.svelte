@@ -186,7 +186,7 @@ const isOverdue = $derived.by(() => {
 
   .invoice-number {
     font: var(--smrt-typography-title-large-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1c1b1f);
     margin: 0;
   }
@@ -196,7 +196,7 @@ const isOverdue = $derived.by(() => {
     align-items: center;
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
     font: var(--smrt-typography-label-small-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-full, 9999px);
     text-transform: capitalize;
   }
@@ -240,7 +240,7 @@ const isOverdue = $derived.by(() => {
 
   .meta-value {
     font: var(--smrt-typography-body-medium-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
 

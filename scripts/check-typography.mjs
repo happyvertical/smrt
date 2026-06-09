@@ -42,6 +42,15 @@ const STRICT_PACKAGES = new Set([
   'assets',
   'chat',
   'images',
+  'analytics',
+  'commerce',
+  'events',
+  'subscriptions',
+  'agents',
+  'social',
+  'tenancy',
+  'jobs',
+  'users',
 ]);
 
 /** Dev/playground hosts skipped entirely (matches the other token ratchets). */
