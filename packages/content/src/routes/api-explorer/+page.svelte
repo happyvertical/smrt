@@ -588,7 +588,7 @@ function closeTry() {
   .group-count {
     background: var(--smrt-color-surface-variant, #e1e2ec);
     padding: 0.1rem 0.4rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-size: 0.7rem;
     font-weight: 600;
   }
@@ -602,7 +602,7 @@ function closeTry() {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: 1rem;
     padding: 1.5rem;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent);
+    box-shadow: var(--smrt-elevation-3, 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent));
   }
 
   .endpoints-panel h2 {

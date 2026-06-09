@@ -417,7 +417,7 @@ $effect(() => {
   .result-item__content :global(.highlight) {
     background: var(--smrt-color-tertiary-container, #c2f0dd);
     color: var(--smrt-color-on-tertiary-container, #002114);
-    border-radius: 2px;
+    border-radius: var(--smrt-radius-sm, 4px);
     padding: 0 0.125rem;
   }
 

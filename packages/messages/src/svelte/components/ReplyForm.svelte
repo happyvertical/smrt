@@ -74,8 +74,8 @@ export interface Props {
   .reply-form {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    padding: 12px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-3, 12px);
     border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-md, 12px);
     background: var(--smrt-color-surface, #fffbfe);
@@ -92,7 +92,7 @@ export interface Props {
     width: 100%;
     border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-sm, 8px);
-    padding: 8px;
+    padding: var(--smrt-spacing-2, 8px);
     font-family: var(--smrt-typography-body, system-ui);
     font-size: 14px;
     resize: vertical;
@@ -105,7 +105,7 @@ export interface Props {
   }
 
   .quoted-original {
-    padding: 8px;
+    padding: var(--smrt-spacing-2, 8px);
     border-left: 3px solid var(--smrt-color-outline-variant, #cac4d0);
     background: var(--smrt-color-surface-variant, #e7e0ec);
     border-radius: 0 var(--smrt-radius-sm, 8px) var(--smrt-radius-sm, 8px) 0;
@@ -123,11 +123,11 @@ export interface Props {
 
   .actions {
     display: flex;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .btn-primary {
-    padding: 8px 24px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-6, 24px);
     border-radius: var(--smrt-radius-full, 20px);
     border: none;
     background: var(--smrt-color-primary, #6750a4);
@@ -143,7 +143,7 @@ export interface Props {
   }
 
   .btn-text {
-    padding: 8px 16px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-4, 16px);
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #49454f);

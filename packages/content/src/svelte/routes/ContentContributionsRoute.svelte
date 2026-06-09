@@ -584,7 +584,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -666,7 +666,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     align-items: center;
     min-height: 2rem;
     padding: 0 0.8rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface-container-low) 90%,
@@ -725,7 +725,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
   .inline-form button,
   .secondary {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid color-mix(
       in srgb,
       var(--smrt-color-primary) 35%,
@@ -744,7 +744,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     justify-content: center;
     min-width: 2rem;
     min-height: 2rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(
       in srgb,
       var(--smrt-color-primary) 14%,

@@ -270,7 +270,7 @@ function handleRowClick(row: User) {
   .demo-box {
     background: var(--smrt-color-surface-container);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 16px;
     margin-bottom: 16px;
     overflow-x: auto;
@@ -293,7 +293,7 @@ function handleRowClick(row: User) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border: none;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     font-weight: 500;
     cursor: pointer;
@@ -325,7 +325,7 @@ function handleRowClick(row: User) {
   code {
     background: var(--smrt-color-surface-container);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.8rem;
   }
 </style>

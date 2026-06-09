@@ -146,7 +146,7 @@ function handleClick() {
     border-radius: 0.375rem;
     white-space: nowrap;
     z-index: var(--smrt-z-index-tooltip, 1600);
-    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
 
   .tooltip::before {

@@ -187,14 +187,14 @@ async function loadVoices() {
     padding: 24px;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
   }
 
   textarea {
     width: 100%;
     padding: 12px;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-family: inherit;
     font-size: 1rem;
     resize: vertical;
@@ -218,7 +218,7 @@ async function loadVoices() {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 1rem;
     font-weight: 500;
     cursor: pointer;
@@ -242,7 +242,7 @@ async function loadVoices() {
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface);
     border: none;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 1rem;
     cursor: pointer;
     transition: all 0.2s;
@@ -259,7 +259,7 @@ async function loadVoices() {
     padding: 24px;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
   }
 
   .setting {
@@ -277,7 +277,7 @@ async function loadVoices() {
   .setting select {
     padding: 8px 12px;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
   }
 
@@ -290,7 +290,7 @@ async function loadVoices() {
     padding: 8px 16px;
     background: var(--smrt-color-surface-container);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     font-size: 0.875rem;
     cursor: pointer;
     align-self: flex-start;
@@ -305,7 +305,7 @@ async function loadVoices() {
     text-align: center;
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     color: var(--smrt-color-on-error-container);
   }
 

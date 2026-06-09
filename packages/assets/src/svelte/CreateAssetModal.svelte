@@ -317,7 +317,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .create-modal__close:hover {
@@ -423,7 +423,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     display: block;
     font-size: 0.75rem;
     color: var(--smrt-color-error, #dc2626);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .file-preview__remove {
@@ -438,7 +438,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .file-preview__remove:hover {
@@ -469,7 +469,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     font-weight: 400;
     font-size: 0.75rem;
     color: var(--smrt-color-error, #dc2626);
-    margin-left: 4px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .form-input, .form-textarea {

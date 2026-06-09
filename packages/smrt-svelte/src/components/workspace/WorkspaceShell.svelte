@@ -658,7 +658,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   .mode-dot {
     width: 0.55rem;
     height: 0.55rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-on-surface-variant, #9ca3af);
     flex-shrink: 0;
   }

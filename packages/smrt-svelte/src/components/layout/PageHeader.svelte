@@ -95,7 +95,7 @@ const {
     text-decoration: none;
     margin-bottom: 0.75rem;
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px) var(--smrt-spacing-1, 4px) var(--smrt-spacing-1, 4px);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     margin-left: -4px; /* Align icon with text below */
     transition: background-color 200ms;
   }

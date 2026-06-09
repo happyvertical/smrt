@@ -165,7 +165,7 @@ function handleEditorSave(image: StudioImage) {
     border-radius: 1rem;
     border: 1px solid color-mix(in srgb, var(--smrt-color-outline-variant) 18%, transparent);
     background: color-mix(in srgb, var(--smrt-color-surface-container) 72%, transparent);
-    box-shadow: 0 24px 60px color-mix(in srgb, var(--smrt-color-shadow) 35%, transparent);
+    box-shadow: var(--smrt-elevation-5, 0 24px 60px color-mix(in srgb, var(--smrt-color-shadow) 35%, transparent));
     overflow: hidden;
   }
 

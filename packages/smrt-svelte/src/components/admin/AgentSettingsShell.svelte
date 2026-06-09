@@ -164,7 +164,7 @@ async function handleSave(slotId: string, config: unknown) {
 		padding: 0.625rem 0.75rem;
 		border: none;
 		background: transparent;
-		border-radius: 6px;
+		border-radius: var(--smrt-radius-md, 8px);
 		cursor: pointer;
 		text-align: left;
 		width: 100%;
@@ -229,7 +229,7 @@ async function handleSave(slotId: string, config: unknown) {
 		text-align: center;
 		background: var(--smrt-color-surface-variant);
 		border: 1px dashed var(--smrt-color-outline-variant);
-		border-radius: 8px;
+		border-radius: var(--smrt-radius-md, 8px);
 		min-height: 300px;
 	}
 

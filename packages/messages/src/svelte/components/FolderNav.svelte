@@ -152,7 +152,7 @@ function getFolderIcon(specialUse?: string): string {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 99px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #fff);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);

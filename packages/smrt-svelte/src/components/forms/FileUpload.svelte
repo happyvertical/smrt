@@ -339,7 +339,7 @@ function formatFileSize(bytes: number): string {
     height: 28px;
     padding: 0;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #49454f);
     cursor: pointer;

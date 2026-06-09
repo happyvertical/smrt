@@ -152,7 +152,7 @@ const count = $derived(selectedAssets.length);
   }
 
   .action-bar__clear {
-    padding: 2px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: none;
     background: transparent;
     font-family: inherit;
@@ -175,7 +175,7 @@ const count = $derived(selectedAssets.length);
   .action-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     height: 32px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;
@@ -217,8 +217,8 @@ const count = $derived(selectedAssets.length);
 
   .confirm-card {
     background: var(--smrt-color-surface-container-high, #ffffff);
-    border-radius: 28px;
-    padding: 24px;
+    border-radius: var(--smrt-radius-3xl, 32px);
+    padding: var(--smrt-spacing-6, 24px);
     max-width: 400px;
     width: 100%;
     box-shadow: var(--smrt-elevation-level3);
@@ -231,14 +231,14 @@ const count = $derived(selectedAssets.length);
   }
 
   .confirm-title {
-    margin: 0 0 16px;
+    margin: 0 0 var(--smrt-spacing-4, 16px);
     font-size: 1.125rem;
     font-weight: 600;
     color: var(--smrt-color-on-surface, #111827);
   }
 
   .confirm-message {
-    margin: 0 0 24px;
+    margin: 0 0 var(--smrt-spacing-6, 24px);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     line-height: 1.5;
@@ -247,19 +247,19 @@ const count = $derived(selectedAssets.length);
   .confirm-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .confirm-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     height: 40px;
-    padding: 0 24px;
+    padding: 0 var(--smrt-spacing-6, 24px);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-weight: 500;
-    border-radius: 20px;
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
     border: none;
     transition: all 200ms ease;
@@ -294,7 +294,7 @@ const count = $derived(selectedAssets.length);
     height: 16px;
     border: 2px solid transparent;
     border-top-color: currentColor;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

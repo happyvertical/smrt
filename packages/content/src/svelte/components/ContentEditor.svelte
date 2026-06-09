@@ -1616,7 +1616,7 @@ function removeAsset(id: string) {
     align-items: center;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.25rem 0.25rem 0.25rem 0.75rem;
     font-size: 0.875rem;
     color: var(--smrt-color-on-surface);
@@ -1784,7 +1784,7 @@ function removeAsset(id: string) {
   .evidence-status {
     align-items: center;
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     display: inline-flex;
     font-size: 0.75rem;
     font-weight: 800;
@@ -1959,7 +1959,7 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     margin-top: 1rem;
     border-radius: 0.75rem;
-    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent));
     /* Svelte built-in slide animations will be handled if implemented */
   }
 

@@ -574,7 +574,7 @@ onDestroy(() => {
     color: white;
     border: none;
     padding: 0.5rem 1.5rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     pointer-events: none; /* Let parent handle clicks */
   }
@@ -628,7 +628,7 @@ onDestroy(() => {
     color: white;
     border: none;
     padding: 1rem 3rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
@@ -657,7 +657,7 @@ onDestroy(() => {
     color: white;
     border: 1px solid var(--smrt-color-outline-variant, #444);
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     cursor: pointer;
   }
 
@@ -794,7 +794,7 @@ onDestroy(() => {
     color: white;
     border: none;
     padding: 0.65rem 1.5rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     cursor: pointer;
     transition: filter 0.15s;
@@ -812,7 +812,7 @@ onDestroy(() => {
     color: var(--smrt-color-on-surface-variant, #ccc);
     border: 1px solid var(--smrt-color-outline-variant, #444);
     padding: 0.65rem 1.25rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
@@ -887,7 +887,7 @@ onDestroy(() => {
     color: white;
     border: none;
     padding: 0.65rem 1.5rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 500;
     cursor: pointer;
     transition: filter 0.15s, opacity 0.15s;
@@ -912,7 +912,7 @@ onDestroy(() => {
     height: 14px;
     border: 2px solid color-mix(in srgb, var(--smrt-color-on-primary) 30%, transparent);
     border-top-color: white;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.6s linear infinite;
   }
 </style>

@@ -112,7 +112,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     gap: 1rem;
     padding: 1rem 1.25rem;
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     text-decoration: none;
     color: var(--smrt-color-on-surface);
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
@@ -138,7 +138,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     width: 3rem;
     height: 3rem;
     background-color: var(--smrt-color-surface-container-high);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     color: var(--smrt-color-primary);
     flex-shrink: 0;
   }
@@ -178,7 +178,7 @@ const isSvg = $derived(icon?.startsWith('<svg'));
     font: var(--smrt-typography-label-small-font);
     background-color: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .card-value {

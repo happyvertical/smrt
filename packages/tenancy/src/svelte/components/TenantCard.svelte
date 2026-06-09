@@ -132,10 +132,10 @@ function getColor(name: string): string {
   .tenant-card {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 16px;
+    gap: var(--smrt-spacing-4, 16px);
+    padding: var(--smrt-spacing-4, 16px);
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     color: var(--smrt-color-on-surface);
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
     position: relative;
@@ -163,7 +163,7 @@ function getColor(name: string): string {
     justify-content: center;
     width: 48px;
     height: 48px;
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     color: white;
     font: var(--smrt-typography-title-medium-font);
     font-weight: 600;
@@ -178,7 +178,7 @@ function getColor(name: string): string {
   .header {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .name {
@@ -191,11 +191,11 @@ function getColor(name: string): string {
 
   .status {
     font: var(--smrt-typography-label-small-font);
-    padding: 0 6px;
+    padding: 0 var(--smrt-spacing-2, 8px);
     height: 18px;
     display: inline-flex;
     align-items: center;
-    border-radius: 9px;
+    border-radius: var(--smrt-radius-md, 8px);
     text-transform: uppercase;
     font-weight: 600;
     flex-shrink: 0;
@@ -219,7 +219,7 @@ function getColor(name: string): string {
   .slug {
     font: var(--smrt-typography-body-small-font);
     color: var(--smrt-color-on-surface-variant);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .selected .slug {
@@ -228,7 +228,7 @@ function getColor(name: string): string {
   }
 
   .meta {
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .members {
@@ -238,7 +238,7 @@ function getColor(name: string): string {
 
   .actions {
     display: flex;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     flex-shrink: 0;
   }
 
@@ -250,7 +250,7 @@ function getColor(name: string): string {
     height: 32px;
     background: transparent;
     border: none;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     cursor: pointer;
     color: var(--smrt-color-on-surface-variant);
     position: relative;

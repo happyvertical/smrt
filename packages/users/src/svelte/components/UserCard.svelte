@@ -72,10 +72,10 @@ const statusClass = $derived.by(() => {
   .user-card {
     display: flex;
     align-items: center;
-    gap: 16px;
-    padding: 12px 16px;
+    gap: var(--smrt-spacing-4, 16px);
+    padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-4, 16px);
     background-color: var(--smrt-color-surface-container-low);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     width: 100%;
     text-align: left;
     cursor: default;
@@ -130,29 +130,29 @@ const statusClass = $derived.by(() => {
   .meta {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     flex-shrink: 0;
   }
 
   .role {
     font: var(--smrt-typography-label-small-font);
-    padding: 0 8px;
+    padding: 0 var(--smrt-spacing-2, 8px);
     height: 20px;
     display: inline-flex;
     align-items: center;
     background-color: var(--smrt-color-surface-container-highest);
     color: var(--smrt-color-on-surface-variant);
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     text-transform: capitalize;
   }
 
   .status {
     font: var(--smrt-typography-label-small-font);
-    padding: 0 8px;
+    padding: 0 var(--smrt-spacing-2, 8px);
     height: 20px;
     display: inline-flex;
     align-items: center;
-    border-radius: 10px;
+    border-radius: var(--smrt-radius-lg, 12px);
     text-transform: capitalize;
     font-weight: 600;
   }

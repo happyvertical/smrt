@@ -326,7 +326,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .type-badge {
     display: inline-block;
-    padding: 2px 6px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: 0.65rem;
     font-weight: 700;
     text-transform: uppercase;
@@ -350,9 +350,9 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     display: inline-block;
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-outline, #9ca3af);
-    margin-right: 4px;
+    margin-right: var(--smrt-spacing-1, 4px);
     vertical-align: middle;
   }
 
@@ -364,7 +364,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
   .sort-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     padding: 0;
     border: none;
     background: transparent;
@@ -398,7 +398,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     height: 20px;
     border: 2px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

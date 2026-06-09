@@ -242,7 +242,7 @@ function getFactLabel(fact: {
 
   .badge,
   .pill-list span {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface-container-high);
     color: var(--smrt-color-on-surface);
     padding: 0.25rem 0.65rem;

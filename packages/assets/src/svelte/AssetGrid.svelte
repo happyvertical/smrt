@@ -255,7 +255,7 @@ function getAltText(asset: PersistedAsset): string {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .asset-card__type {
@@ -271,7 +271,7 @@ function getAltText(asset: PersistedAsset): string {
     position: absolute;
     top: var(--smrt-spacing-2, 0.5rem);
     right: var(--smrt-spacing-2, 0.5rem);
-    padding: 2px 6px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: 0.65rem;
     font-weight: 600;
     border-radius: var(--smrt-radius-small, 0.25rem);
@@ -298,7 +298,7 @@ function getAltText(asset: PersistedAsset): string {
     height: 20px;
     border: 2px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

@@ -324,7 +324,7 @@ function closeForms() {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -412,7 +412,7 @@ function closeForms() {
     background: transparent;
     color: var(--smrt-color-primary);
     padding: 0.65rem 0.95rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     font-weight: 600;
     cursor: pointer;
   }

@@ -40,7 +40,7 @@ export interface Props {
   .send-status-badge {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     border-radius: var(--smrt-radius-sm, 8px);
     border: 1px solid var(--badge-color);
     color: var(--badge-color);
@@ -49,12 +49,12 @@ export interface Props {
   }
 
   .sm {
-    padding: 2px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     font-size: 11px;
   }
 
   .md {
-    padding: 4px 12px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-3, 12px);
     font-size: 13px;
   }
 

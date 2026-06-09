@@ -296,7 +296,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
   .demo-box {
     background: var(--smrt-color-surface-container);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 20px;
     margin-bottom: 16px;
   }
@@ -316,7 +316,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
     font-size: 0.75rem;
     background: var(--smrt-color-surface-container);
     padding: 12px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     overflow-x: auto;
   }
 
@@ -349,7 +349,7 @@ let measureUnit = $state<MeasurementUnit>('ft');
   code {
     background: var(--smrt-color-surface-container);
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.8rem;
   }
 </style>

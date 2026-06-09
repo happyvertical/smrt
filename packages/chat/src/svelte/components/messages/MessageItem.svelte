@@ -245,7 +245,7 @@ function toggleReactionPicker() {
   .message-item__reply-preview {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
     border-left: 2px solid var(--smrt-color-primary, #005ac1);
     border-radius: var(--smrt-radius-small, 0.25rem);
@@ -284,7 +284,7 @@ function toggleReactionPicker() {
   }
 
   .message-item__tool-status {
-    padding: 1px 6px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: 0.625rem;
     text-transform: uppercase;
@@ -328,8 +328,8 @@ function toggleReactionPicker() {
   .message-item__reaction {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 6px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface, #ffffff);
@@ -378,14 +378,14 @@ function toggleReactionPicker() {
   .message-item__actions {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     position: absolute;
     top: 0;
     right: var(--smrt-spacing-4, 1rem);
     background: var(--smrt-color-surface, #ffffff);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    padding: 2px;
+    padding: var(--smrt-spacing-1, 4px);
     box-shadow: var(--smrt-elevation-level1, 0 1px 3px rgba(0, 0, 0, 0.12));
   }
 

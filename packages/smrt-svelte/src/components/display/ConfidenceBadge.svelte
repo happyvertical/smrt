@@ -104,7 +104,7 @@ const valueText = $derived(
     padding: 0.25rem 0.5rem;
     font-size: 0.75rem;
     font-weight: 500;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     background-color: var(--badge-bg);
     color: var(--badge-text);
     position: relative;
