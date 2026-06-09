@@ -22,8 +22,11 @@ import https from 'node:https';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createLogger } from '@happyvertical/logger';
 import { extract } from 'tar';
 import type { TemplateConfig } from './template-loader.js';
+
+const logger = createLogger({ level: 'info' });
 
 // Track temp directories for cleanup on process exit
 const tempDirectories = new Set<string>();
@@ -350,7 +353,7 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
   try {
     // Download and extract tarball
     const tarballUrl = getTarballUrl(repo);
-    console.log(
+    logger.info(
       `Downloading template from ${repo.host}:${repo.user}/${repo.repo}...`,
     );
     await downloadTarball(tarballUrl, tempDir);

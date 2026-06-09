@@ -5,6 +5,7 @@
  * enabling CLI commands to work with objects from installed packages.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { SmartObjectDefinition } from '@happyvertical/smrt-core/scanner';
 
 export interface LoadedClasses {
@@ -19,9 +20,13 @@ export class DynamicClassLoader {
   private loadedModules = new Map<string, any>();
   private classCache = new Map<string, LoadedClasses>();
   private verbose: boolean;
+  // verbose traces are debug-level; the logger level follows the flag so they
+  // actually emit when verbose is on (a fixed 'info' would filter them).
+  private logger: ReturnType<typeof createLogger>;
 
   constructor(options: { verbose?: boolean } = {}) {
     this.verbose = options.verbose || false;
+    this.logger = createLogger({ level: this.verbose ? 'debug' : 'info' });
   }
 
   /**
@@ -33,7 +38,7 @@ export class DynamicClassLoader {
     // Return cached if available
     if (this.classCache.has(cacheKey)) {
       if (this.verbose) {
-        console.log(`[ClassLoader] Using cached ${cacheKey}`);
+        this.logger.debug(`[ClassLoader] Using cached ${cacheKey}`);
       }
       return this.classCache.get(cacheKey)!;
     }
@@ -43,7 +48,9 @@ export class DynamicClassLoader {
       const importPath = this.resolveImportPath(objectDef);
 
       if (this.verbose) {
-        console.log(`[ClassLoader] Loading ${cacheKey} from ${importPath}`);
+        this.logger.debug(
+          `[ClassLoader] Loading ${cacheKey} from ${importPath}`,
+        );
       }
 
       // Dynamic import
@@ -53,7 +60,7 @@ export class DynamicClassLoader {
         this.loadedModules.set(importPath, module);
 
         if (this.verbose) {
-          console.log(`[ClassLoader] Imported module ${importPath}`);
+          this.logger.debug(`[ClassLoader] Imported module ${importPath}`);
         }
       }
 
@@ -74,7 +81,7 @@ export class DynamicClassLoader {
       this.classCache.set(cacheKey, result);
 
       if (this.verbose) {
-        console.log(
+        this.logger.debug(
           `[ClassLoader] Loaded ${cacheKey} (Collection: ${CollectionClass ? 'yes' : 'no'})`,
         );
       }
@@ -124,10 +131,9 @@ export class DynamicClassLoader {
         loaded.set(objectName, classes);
       } catch (error) {
         if (this.verbose) {
-          console.warn(
-            `[ClassLoader] Skipping ${objectName}:`,
-            error instanceof Error ? error.message : 'Unknown error',
-          );
+          this.logger.warn(`[ClassLoader] Skipping ${objectName}`, {
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
         }
       }
     }
