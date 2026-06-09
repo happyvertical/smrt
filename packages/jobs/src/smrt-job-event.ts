@@ -60,7 +60,7 @@ const JOB_EVENT_STORAGE_COLUMNS = [
 @smrt({
   tableName: '_smrt_job_events',
   api: { include: ['list', 'get'] },
-  cli: { include: ['list', 'get'] },
+  cli: { include: ['list', 'get'], http: false },
   mcp: { include: ['list', 'get'] },
 })
 export class SmrtJobEvent extends SmrtObject {

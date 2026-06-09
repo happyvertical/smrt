@@ -112,6 +112,8 @@ interface SmartObjectConfig {
     | {
         include?: string[];
         exclude?: string[];
+        skipApiCheck?: boolean;
+        http?: boolean;
       };
   mcp?: {
     include?: string[];
