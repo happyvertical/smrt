@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.27.26
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 2) (#1463) (content)
+
+  ### Merged Changes
+
+  - [codex] Atomically claim ready jobs
+  - @happyvertical/smrt-scanner@0.27.26
+  - @happyvertical/smrt-config@0.27.26
+  - @happyvertical/smrt-types@0.27.26
+
 ## 0.27.25
 
 ### Patch Changes
