@@ -56,7 +56,7 @@ const hostname = $derived.by(() => {
   }
 
   .link-preview:hover {
-    box-shadow: var(--smrt-elevation-level1, 0 1px 3px rgba(0, 0, 0, 0.12));
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
   }
 
   .link-preview__image {

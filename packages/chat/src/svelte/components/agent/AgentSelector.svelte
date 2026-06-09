@@ -98,7 +98,7 @@ const { agents, onselect }: Props = $props();
   .agent-selector__card:hover:not(:disabled) {
     background: var(--smrt-color-surface-container, #f0f0f4);
     border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: var(--smrt-elevation-level1, 0 1px 3px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.1));
   }
 
   .agent-selector__card:focus-visible {

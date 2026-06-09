@@ -355,7 +355,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
   }
 
   .upload-btn:hover {
-    box-shadow: var(--smrt-elevation-level2, 0 1px 3px rgba(0,0,0,0.1));
+    box-shadow: var(--smrt-elevation-2, 0 1px 3px rgba(0,0,0,0.1));
   }
 
   .upload-btn:focus-visible {

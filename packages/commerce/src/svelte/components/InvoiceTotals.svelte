@@ -111,7 +111,7 @@ function formatMoney(cents: number): string {
 
   .invoice-totals.sm {
     max-width: 220px;
-    gap: var(--smrt-spacing-1-5, 0.375rem);
+    gap: var(--smrt-spacing-1_5, 0.375rem);
   }
 
   .invoice-totals.lg {

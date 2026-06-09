@@ -1,22 +1,29 @@
 #!/usr/bin/env node
 /**
- * smrt-svelte design-token contract check.
+ * SMRT design-token contract check (repo-wide).
  *
- * Diffs the `--smrt-*` CSS custom properties that smrt-svelte components
+ * Diffs the `--smrt-*` CSS custom properties that components across ALL packages
  * CONSUME (via `var(--smrt-...)`) against the ones the theme-delivery paths
- * actually EMIT. Fails CI on any token that is consumed but never emitted —
- * those tokens are frozen at their `var(..., fallback)` values and cannot be
- * themed across the material/glass/studio presets (see issue #1431).
+ * actually EMIT (plus any token a package defines inline for its own use). Fails
+ * CI on any token that is consumed but never emitted/defined anywhere — those
+ * are dangling refs frozen at their `var(..., fallback)` value (or rendering
+ * nothing when they have no fallback), and cannot be themed across the
+ * material/glass/studio presets (see issue #1431).
+ *
+ * Originally scoped to smrt-svelte only, which let malformed/dangling refs hide
+ * in domain packages (e.g. `--smrt-elevation-level1`, `--smrt-typography-body`,
+ * `--smrt-primary`). It now scans every `packages/<pkg>/src`.
  *
  * Emitted tokens are collected from every runtime delivery path:
  *   - static preset CSS: packages/smrt-svelte/src/themes/styles/*.css
  *   - JS theme generator: packages/smrt-svelte/src/themes/css-generator.ts
  *     (resolved structurally against the theme token scales)
  *   - simple ThemeProvider tokens: packages/smrt-svelte/src/theme/tokens.ts
- *   - workspace-shell tokens defined inline in component CSS (--smrt-ws-*)
+ *   - tokens any package defines inline in component CSS (e.g. --smrt-ws-*,
+ *     --smrt-role-color) — a legit component-scoped pattern, not a dangling ref
  *
  * Consumed tokens are scraped from `var(--smrt-...)` references in any
- * .svelte / .ts / .css file under packages/smrt-svelte/src.
+ * .svelte / .ts / .css file under any package's src.
  *
  * Exit code: 0 if every consumed token is emitted, 1 otherwise.
  * Also verifies that each static preset stylesheet contains the token names
@@ -29,16 +36,26 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
-const PKG = join(ROOT, 'packages', 'smrt-svelte');
+const PACKAGES = join(ROOT, 'packages');
+const PKG = join(PACKAGES, 'smrt-svelte');
 const SRC = join(PKG, 'src');
+
+/** Generated/build output that mirrors src — never the source of truth. */
+const SKIP_DIRS = new Set(['node_modules', 'dist', '.svelte-kit', 'build', '.turbo']);
 
 /** Recursively list files under `dir` whose name ends in one of `exts`. */
 function listFiles(dir, exts) {
   const out = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+  let entries;
+  try {
+    entries = readdirSync(dir, { withFileTypes: true });
+  } catch {
+    return out;
+  }
+  for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+      if (SKIP_DIRS.has(entry.name)) continue;
       out.push(...listFiles(full, exts));
     } else if (exts.some((e) => entry.name.endsWith(e))) {
       out.push(full);
@@ -47,18 +64,35 @@ function listFiles(dir, exts) {
   return out;
 }
 
+/** Every `packages/<pkg>/src` directory that exists. */
+function allPackageSrcDirs() {
+  const out = [];
+  for (const entry of readdirSync(PACKAGES, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    const src = join(PACKAGES, entry.name, 'src');
+    if (existsSync(src)) out.push(src);
+  }
+  return out;
+}
+
 const VAR_RE = /var\(\s*(--smrt-[a-z0-9_-]+)/gi;
 
-/** Collect every `--smrt-*` token referenced via var() under SRC. */
+/** Collect every `--smrt-*` token referenced via var() across all packages. */
 function collectConsumed() {
   const consumed = new Map(); // token -> count
-  for (const file of listFiles(SRC, ['.svelte', '.ts', '.css'])) {
-    const text = readFileSync(file, 'utf8');
-    for (const m of text.matchAll(VAR_RE)) {
-      consumed.set(m[1], (consumed.get(m[1]) ?? 0) + 1);
+  const byPackage = new Map(); // token -> Set(pkg)
+  for (const srcDir of allPackageSrcDirs()) {
+    for (const file of listFiles(srcDir, ['.svelte', '.ts', '.css'])) {
+      const pkg = file.slice(PACKAGES.length + 1).split('/')[0];
+      const text = readFileSync(file, 'utf8');
+      for (const m of text.matchAll(VAR_RE)) {
+        consumed.set(m[1], (consumed.get(m[1]) ?? 0) + 1);
+        if (!byPackage.has(m[1])) byPackage.set(m[1], new Set());
+        byPackage.get(m[1]).add(pkg);
+      }
     }
   }
-  return consumed;
+  return { consumed, byPackage };
 }
 
 const DEFINE_RE = /(--smrt-[a-z0-9_-]+)\s*:/gi;
@@ -252,9 +286,12 @@ function collectEmitted() {
     }
   }
 
-  // Workspace-shell tokens defined inline in component CSS (e.g. --smrt-ws-*).
-  for (const file of listFiles(SRC, ['.svelte', '.css'])) {
-    collectDefinedInCss(readFileSync(file, 'utf8'), emitted);
+  // Tokens any package defines inline in component CSS (e.g. --smrt-ws-*,
+  // --smrt-role-color) — a legit component-scoped pattern, not a dangling ref.
+  for (const srcDir of allPackageSrcDirs()) {
+    for (const file of listFiles(srcDir, ['.svelte', '.css'])) {
+      collectDefinedInCss(readFileSync(file, 'utf8'), emitted);
+    }
   }
 
   // JS-generated tokens.
@@ -263,7 +300,7 @@ function collectEmitted() {
   return emitted;
 }
 
-const consumed = collectConsumed();
+const { consumed, byPackage } = collectConsumed();
 const emitted = collectEmitted();
 const staticMissingByPreset = collectStaticPresetMissing();
 
@@ -283,7 +320,8 @@ if (undefinedTokens.length > 0) {
     `✗ svelte-token-check: ${undefinedTokens.length} consumed --smrt-* token(s) are never emitted\n`,
   );
   for (const t of undefinedTokens) {
-    console.error(`    - ${t} (consumed ${consumed.get(t)}×)`);
+    const pkgs = [...(byPackage.get(t) ?? [])].sort().join(', ');
+    console.error(`    - ${t} (consumed ${consumed.get(t)}× in: ${pkgs})`);
   }
   console.error(
     '\nThese tokens are frozen at their var(..., fallback) values and cannot be\n' +

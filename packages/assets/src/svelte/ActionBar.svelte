@@ -190,7 +190,7 @@ const count = $derived(selectedAssets.length);
   }
 
   .action-btn:hover {
-    box-shadow: var(--smrt-elevation-level1, 0 1px 2px rgba(0,0,0,0.05));
+    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0,0,0,0.05));
   }
 
   .action-btn--destructive {
@@ -221,7 +221,7 @@ const count = $derived(selectedAssets.length);
     padding: var(--smrt-spacing-6, 24px);
     max-width: 400px;
     width: 100%;
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
   }
 
@@ -282,11 +282,11 @@ const count = $derived(selectedAssets.length);
   .confirm-btn--delete {
     background: var(--smrt-color-error, #dc2626);
     color: var(--smrt-color-on-error, #ffffff);
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .confirm-btn--delete:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .spinner {

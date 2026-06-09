@@ -114,7 +114,7 @@ const {
     width: 328px;
     background: var(--smrt-color-surface, #fefbff);
     border-radius: var(--smrt-radius-large, 12px) var(--smrt-radius-large, 12px) 0 0;
-    box-shadow: var(--smrt-elevation-level3, 0 4px 8px rgba(0, 0, 0, 0.15));
+    box-shadow: var(--smrt-elevation-3, 0 4px 8px rgba(0, 0, 0, 0.15));
     overflow: hidden;
   }
 
@@ -197,7 +197,7 @@ const {
     border: none;
     border-radius: var(--smrt-radius-large, 12px) var(--smrt-radius-large, 12px) 0 0;
     cursor: pointer;
-    box-shadow: var(--smrt-elevation-level2, 0 2px 6px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.1));
     color: var(--smrt-color-on-surface, #1a1c1e);
     transition: background var(--smrt-duration-short2, 150ms);
     white-space: nowrap;

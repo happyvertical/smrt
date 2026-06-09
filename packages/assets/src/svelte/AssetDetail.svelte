@@ -376,7 +376,7 @@ function formatDate(date: Date | string | undefined): string {
     margin-right: 1rem;
     background: var(--smrt-color-surface, #ffffff);
     border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     overflow: hidden;
     animation: slideIn 300ms cubic-bezier(0.2, 0, 0, 1);
   }
@@ -605,7 +605,7 @@ function formatDate(date: Date | string | undefined): string {
 
   .quick-btn:hover:not(:disabled) {
     background: var(--smrt-color-surface-container-low, #f9fafb);
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .quick-btn:disabled {
@@ -664,7 +664,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .footer-btn--primary:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .footer-btn--ghost {

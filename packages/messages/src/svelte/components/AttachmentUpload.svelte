@@ -131,7 +131,7 @@ export interface Props {
     border-radius: var(--smrt-radius-md, 12px);
     padding: var(--smrt-spacing-3, 12px);
     text-align: center;
-    transition: border-color var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, ease);
+    transition: border-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .drop-zone.drag-over {
