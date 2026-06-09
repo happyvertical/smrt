@@ -669,7 +669,7 @@ function getFormData(): Record<string, unknown> {
   .mode-btn.active {
     background: var(--smrt-color-surface, #fff);
     color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
 
   .form-listen-btn {
