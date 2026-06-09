@@ -1,5 +1,64 @@
 # @happyvertical/smrt-core
 
+## 0.27.29
+
+### Patch Changes
+
+- ### Features
+
+  - migrate final 9 packages, flip all strict — closes #1373 (#1466) (typography)
+  - @happyvertical/smrt-scanner@0.27.29
+  - @happyvertical/smrt-config@0.27.29
+  - @happyvertical/smrt-types@0.27.29
+
+## 0.27.28
+
+### Patch Changes
+
+- ### Features
+
+  - migrate typography to M3 role tokens, flip strict (#1373) (#1465) (assets,chat,images)
+  - @happyvertical/smrt-scanner@0.27.28
+  - @happyvertical/smrt-config@0.27.28
+  - @happyvertical/smrt-types@0.27.28
+
+## 0.27.27
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 3) (#1464) (messages,products)
+  - @happyvertical/smrt-scanner@0.27.27
+  - @happyvertical/smrt-config@0.27.27
+  - @happyvertical/smrt-types@0.27.27
+
+## 0.27.26
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 2) (#1463) (content)
+
+  ### Merged Changes
+
+  - [codex] Atomically claim ready jobs
+  - @happyvertical/smrt-scanner@0.27.26
+  - @happyvertical/smrt-config@0.27.26
+  - @happyvertical/smrt-types@0.27.26
+
+## 0.27.25
+
+### Patch Changes
+
+- ### Features
+
+  - typography design-token ratchet + smrt-svelte migration (#1373) (#1462) (tooling)
+  - @happyvertical/smrt-scanner@0.27.25
+  - @happyvertical/smrt-config@0.27.25
+  - @happyvertical/smrt-types@0.27.25
+
 ## 0.27.24
 
 ### Patch Changes

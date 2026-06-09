@@ -149,8 +149,8 @@ $effect(() => {
   }
 
   .mini-chat__sender {
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-primary, #005ac1);
     line-height: 1;
   }
@@ -160,7 +160,7 @@ $effect(() => {
   }
 
   .mini-chat__time {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     color: var(--smrt-color-outline, #74777f);
     align-self: flex-end;
     line-height: 1;

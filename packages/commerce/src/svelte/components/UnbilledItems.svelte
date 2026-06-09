@@ -193,7 +193,7 @@ const someSelected = $derived(
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-body-medium-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1c1b1f);
     cursor: pointer;
   }
@@ -257,7 +257,7 @@ const someSelected = $derived(
     display: inline-flex;
     padding: var(--smrt-spacing-0-5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-label-small-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     border-radius: var(--smrt-radius-full, 9999px);
@@ -294,7 +294,7 @@ const someSelected = $derived(
 
   .item-amount {
     font: var(--smrt-typography-body-medium-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1c1b1f);
     font-variant-numeric: tabular-nums;
   }
@@ -321,7 +321,7 @@ const someSelected = $derived(
 
   .summary-value {
     font: var(--smrt-typography-title-large-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
@@ -330,7 +330,7 @@ const someSelected = $derived(
     align-items: center;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary, #ffffff);
     background: var(--smrt-color-primary, #005ac1);
     border: none;

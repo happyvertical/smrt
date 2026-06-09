@@ -201,14 +201,14 @@ function _handleCustomSubmit(data: ProductData) {
   }
 
   .demo-header h1 {
-    font-size: 2.5rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface, #1f2937);
     margin: 0 0 0.5rem 0;
   }
 
   .demo-subtitle {
-    font-size: 1.125rem;
+    font-size: var(--smrt-typography-body-large-size, 1.125rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     margin: 0;
   }
@@ -226,7 +226,7 @@ function _handleCustomSubmit(data: ProductData) {
     background: color-mix(in srgb, var(--smrt-color-surface, #fff) 90%, transparent);
     border: 2px solid transparent;
     border-radius: 0.5rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: all 0.2s;
   }
@@ -256,7 +256,7 @@ function _handleCustomSubmit(data: ProductData) {
   }
 
   .section-description {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     margin-bottom: 2rem;
     text-align: center;
@@ -290,7 +290,7 @@ function _handleCustomSubmit(data: ProductData) {
   .comparison-column h3 {
     text-align: center;
     margin-bottom: 1rem;
-    font-size: 1.25rem;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
   }
 
   .feature-list {
@@ -301,7 +301,7 @@ function _handleCustomSubmit(data: ProductData) {
   }
 
   .feature {
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface, #374151);
   }
 
@@ -318,8 +318,8 @@ function _handleCustomSubmit(data: ProductData) {
   }
 
   .framework-info h4 {
-    font-size: 1.25rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     margin-bottom: 1rem;
     color: var(--smrt-color-on-surface, #1f2937);
   }
@@ -336,7 +336,7 @@ function _handleCustomSubmit(data: ProductData) {
     padding: 0.75rem;
     background: var(--smrt-color-surface-container, #f3f4f6);
     border-radius: 0.375rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   @media (max-width: 768px) {
@@ -351,7 +351,7 @@ function _handleCustomSubmit(data: ProductData) {
     }
 
     .demo-header h1 {
-      font-size: 2rem;
+      font-size: var(--smrt-typography-headline-large-size, 2rem);
     }
   }
 </style>

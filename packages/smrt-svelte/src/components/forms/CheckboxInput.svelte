@@ -175,7 +175,7 @@ function handleChange(e: Event) {
   }
 
   .label {
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface);
     cursor: inherit;
   }

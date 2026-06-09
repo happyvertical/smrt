@@ -140,7 +140,7 @@ const icons = {
     font: var(--smrt-typography-title-large-font);
     color: var(--smrt-color-on-surface);
     margin: 0 0 0.75rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .sm .empty-title {
@@ -156,7 +156,7 @@ const icons = {
     color: var(--smrt-color-on-surface-variant);
     margin: 0 0 2rem;
     max-width: 440px;
-    line-height: 1.5;
+    line-height: var(--smrt-typography-body-medium-line-height, 1.5);
   }
 
   .action-button {
@@ -167,7 +167,7 @@ const icons = {
     padding: 0 var(--smrt-spacing-6, 24px);
     height: 40px;
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary);
     background-color: var(--smrt-color-primary);
     border: none;

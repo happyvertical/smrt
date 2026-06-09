@@ -246,7 +246,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .agent-type {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .agent-id {
@@ -269,7 +269,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 
   .cron-human {
     display: block;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .cron-raw {
@@ -297,7 +297,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
   }
 
   .success-rate {
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .success-rate.good {
@@ -314,12 +314,12 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
 
   .schedule-list__cell--runs {
     text-align: center;
-    font-family: var(--font-family-mono, monospace);
+    font-family: var(--smrt-font-family-mono, monospace);
   }
 
   .running-indicator {
     color: var(--color-primary, #3b82f6);
-    font-size: var(--font-size-xs, 0.75rem);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
   .schedule-list__cell--actions {

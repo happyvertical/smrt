@@ -108,7 +108,7 @@ const statusClass = $derived.by(() => {
 
   .name {
     font: var(--smrt-typography-title-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -154,7 +154,7 @@ const statusClass = $derived.by(() => {
     align-items: center;
     border-radius: var(--smrt-radius-lg, 12px);
     text-transform: capitalize;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .status-active {

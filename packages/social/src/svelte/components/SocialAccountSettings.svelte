@@ -124,18 +124,18 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   }
 
   h2 {
-    font-size: 1.1rem;
+    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     color: var(--smrt-color-on-surface, #111827);
   }
 
   h3 {
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-title-medium-size, 0.95rem);
     color: var(--smrt-color-on-surface, #111827);
   }
 
   p {
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .connect-row {
@@ -167,7 +167,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-on-surface-variant, #4b5563);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     padding: 0.15rem 0.5rem;
     text-transform: capitalize;
   }
@@ -193,7 +193,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
     color: var(--smrt-color-on-surface, #111827);
     cursor: pointer;
     font: inherit;
-    font-size: 0.82rem;
+    font-size: var(--smrt-typography-label-large-size, 0.82rem);
     line-height: 1;
     padding: 0.55rem 0.7rem;
     text-decoration: none;

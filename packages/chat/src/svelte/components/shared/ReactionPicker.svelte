@@ -82,7 +82,7 @@ function handleKeydown(event: KeyboardEvent, emoji: string) {
     border-radius: var(--smrt-radius-small, 0.25rem);
     background: transparent;
     cursor: pointer;
-    font-size: 1.125rem;
+    font-size: var(--smrt-typography-body-large-size, 1.125rem);
     line-height: 1;
     padding: 0;
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);

@@ -88,8 +88,8 @@ const lastSyncFormatted = $derived.by(() => {
 
 	.property-header h3 {
 		margin: 0;
-		font-size: 1rem;
-		font-weight: 600;
+		font-size: var(--smrt-typography-title-medium-size, 1rem);
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 	}
 
 	.property-details {
@@ -108,20 +108,20 @@ const lastSyncFormatted = $derived.by(() => {
 	}
 
 	dt {
-		font-size: 0.8125rem;
+		font-size: var(--smrt-typography-label-large-size, 0.8125rem);
 		color: var(--color-text-secondary, #6b7280);
 	}
 
 	dd {
 		margin: 0;
-		font-size: 0.8125rem;
-		font-weight: 500;
+		font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+		font-weight: var(--smrt-typography-weight-medium, 500);
 		color: var(--color-text-primary, #111827);
 	}
 
 	code {
-		font-family: var(--font-mono, monospace);
-		font-size: 0.75rem;
+		font-family: var(--smrt-font-family-mono, monospace);
+		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		padding: 0.125rem 0.25rem;
 		background: var(--color-neutral-bg, #f3f4f6);
 		border-radius: 0.25rem;
@@ -130,6 +130,6 @@ const lastSyncFormatted = $derived.by(() => {
 	.no-property {
 		margin: 0;
 		color: var(--color-text-secondary, #6b7280);
-		font-size: 0.875rem;
+		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 	}
 </style>

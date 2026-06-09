@@ -470,7 +470,7 @@ const yearOptions = $derived(() => {
     gap: var(--smrt-spacing-1, 4px);
     justify-content: center;
     margin-top: auto;
-    font-size: 12px;
+    font-size: var(--smrt-typography-label-medium-size, 12px);
   }
 
   .event-icon {
@@ -478,7 +478,7 @@ const yearOptions = $derived(() => {
   }
 
   .event-more {
-    font-size: 10px;
+    font-size: var(--smrt-typography-label-small-size, 10px);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
@@ -510,7 +510,7 @@ const yearOptions = $derived(() => {
     }
 
     .event-indicators {
-      font-size: 10px;
+      font-size: var(--smrt-typography-label-small-size, 10px);
     }
   }
 </style>

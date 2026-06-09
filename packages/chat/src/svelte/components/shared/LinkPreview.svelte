@@ -84,7 +84,7 @@ const hostname = $derived.by(() => {
 
   .link-preview__title {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1b1b1f);
     white-space: nowrap;
     overflow: hidden;
@@ -102,7 +102,7 @@ const hostname = $derived.by(() => {
   }
 
   .link-preview__domain {
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-outline, #74777f);
   }
 </style>

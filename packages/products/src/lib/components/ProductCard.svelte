@@ -78,26 +78,26 @@ const { product, onEdit, onDelete }: Props = $props();
   
   .product-name {
     margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1f2937);
   }
 
   .product-manufacturer {
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .product-model {
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     margin-bottom: 0.5rem;
   }
 
   .product-category {
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #374151);
     background: var(--smrt-color-surface-container, #f3f4f6);
     padding: 0.25rem 0.5rem;
@@ -109,8 +109,8 @@ const { product, onEdit, onDelete }: Props = $props();
   .product-description {
     margin: 0.5rem 0;
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    font-size: 0.875rem;
-    line-height: 1.4;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
   }
   
   .product-meta {
@@ -130,7 +130,7 @@ const { product, onEdit, onDelete }: Props = $props();
     color: var(--smrt-color-on-surface, #374151);
     padding: 0.125rem 0.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
   .product-actions {
@@ -144,8 +144,8 @@ const { product, onEdit, onDelete }: Props = $props();
   .edit-btn, .delete-btn {
     padding: 0.375rem 0.75rem;
     border-radius: var(--smrt-radius-sm, 4px);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid;
     cursor: pointer;
     transition: all 0.2s;

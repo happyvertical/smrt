@@ -116,8 +116,8 @@ function cycle(delta: number) {
     align-items: center;
     gap: 0.45rem;
     padding: 0.25rem 0.65rem 0.25rem 0.3rem;
-    font-size: 0.82rem;
-    font-weight: 650;
+    font-size: var(--smrt-typography-label-large-size, 0.82rem);
+    font-weight: var(--smrt-typography-weight-bold, 650);
   }
 
   .chooser-preview img {

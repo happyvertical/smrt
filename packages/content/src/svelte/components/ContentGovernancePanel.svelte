@@ -1780,8 +1780,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     justify-content: space-between;
     align-items: center;
     padding: 0 0 1.25rem 0;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface);
     cursor: pointer;
     list-style: none; /* Hide default triangle */
@@ -1865,7 +1865,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .fact-result span,
   .fact-chip span {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .fact-search,
@@ -1884,7 +1884,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     justify-content: space-between;
     flex-wrap: wrap;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .fact-search input,
@@ -1906,8 +1906,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     flex-direction: column;
     gap: 0.4rem;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .fact-search button,
@@ -1918,7 +1918,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .fact-search button:disabled,
@@ -2185,8 +2185,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .pill {
     border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
@@ -2225,7 +2225,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     margin: 0;
     border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   .workflow-error {

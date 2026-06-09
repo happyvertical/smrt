@@ -173,7 +173,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 
   .line-items-table th {
     text-align: left;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant, #49454f);
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-2, 0.5rem);
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
@@ -226,7 +226,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     display: inline-block;
     padding: var(--smrt-spacing-0-5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-label-small-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-full, 9999px);
   }
 
@@ -248,7 +248,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
   .total-row td {
     border-top: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-bottom: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     padding-top: var(--smrt-spacing-4, 1rem);
   }
 
@@ -293,7 +293,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary, #005ac1);
     background: transparent;
     border: 1px dashed var(--smrt-color-primary, #005ac1);

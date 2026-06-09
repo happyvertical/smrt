@@ -129,7 +129,7 @@ function formatDuration(ms: number | undefined): string {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-medium, 8px);
     overflow: hidden;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .tool-call--pending {
@@ -198,7 +198,7 @@ function formatDuration(ms: number | undefined): string {
 
   .tool-call__name {
     font: var(--smrt-typography-label-large-font, 500 0.875rem/1.25 sans-serif);
-    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-family: var(--smrt-font-family-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace);
     flex: 1;
     min-width: 0;
     white-space: nowrap;
@@ -251,7 +251,7 @@ function formatDuration(ms: number | undefined): string {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.5px);
   }
 
   .tool-call__json {
@@ -260,9 +260,9 @@ function formatDuration(ms: number | undefined): string {
     border-radius: var(--smrt-radius-small, 4px);
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     color: var(--smrt-color-on-surface, #1a1c1e);
-    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
-    font-size: 0.75rem;
-    line-height: 1.5;
+    font-family: var(--smrt-font-family-mono, 'SF Mono', 'Fira Code', 'Cascadia Code', monospace);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    line-height: var(--smrt-typography-body-small-line-height, 1.5);
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-all;

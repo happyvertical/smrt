@@ -366,11 +366,11 @@ function handleManagerDrop(event: DragEvent) {
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     color: var(--smrt-color-primary, #005ac1);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .drag-overlay__content p {
     margin: 0;
-    font-size: 1.1rem;
+    font-size: var(--smrt-typography-body-large-size, 1.1rem);
   }
 </style>

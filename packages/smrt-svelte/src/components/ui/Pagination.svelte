@@ -216,7 +216,7 @@ const isLastPage = $derived(currentPage === totalPages);
     padding: 0 var(--smrt-spacing-2, 0.5rem);
     border-radius: var(--smrt-radius-small, 0.25rem);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     text-decoration: none;
     transition: background-color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease), color var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
@@ -279,7 +279,7 @@ const isLastPage = $derived(currentPage === totalPages);
     .page-link {
       min-width: 2rem;
       height: 2rem;
-      font-size: 0.8125rem;
+      font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     }
 
     .nav-link {

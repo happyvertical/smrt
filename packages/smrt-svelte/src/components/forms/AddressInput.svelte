@@ -473,7 +473,7 @@ function handleCountryChange(e: Event) {
   }
 
   .validation-error {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #ba1a1a);
     margin-top: var(--smrt-spacing-1, 4px);
   }

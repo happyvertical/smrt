@@ -256,7 +256,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 
   .gallery-header h3 {
     margin: 0;
-    font-size: 1.25rem;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
   }
 
   .toolbar {
@@ -279,7 +279,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     border: 1px solid var(--smrt-color-outline-variant, #444);
     border-radius: var(--smrt-radius-full, 9999px);
     color: inherit;
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
     transition: box-shadow 0.2s, border-color 0.2s;
   }
 
@@ -381,16 +381,16 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   }
 
   .item-name {
-    font-weight: 500;
-    font-size: 1rem;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    letter-spacing: 0.1px;
+    letter-spacing: var(--smrt-typography-title-medium-tracking, 0.1px);
   }
 
   .item-meta {
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-label-large-size, 0.85rem);
     color: var(--smrt-color-outline, #888);
   }
 
@@ -416,7 +416,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     color: var(--smrt-color-primary, #3b82f6);
     border: 1px solid var(--smrt-color-outline-variant, #444);
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background 0.2s;
   }

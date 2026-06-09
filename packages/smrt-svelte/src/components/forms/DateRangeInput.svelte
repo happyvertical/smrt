@@ -462,7 +462,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-2, 8px);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .date-value {
@@ -471,7 +471,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
 
   .range-separator {
     color: var(--smrt-color-on-surface-variant, #9ca3af);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .placeholder {

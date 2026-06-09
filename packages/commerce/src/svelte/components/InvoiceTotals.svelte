@@ -141,14 +141,14 @@ function formatMoney(cents: number): string {
 
   .totals-value {
     font-variant-numeric: tabular-nums;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
   .totals-row.total {
     padding-top: var(--smrt-spacing-2, 0.5rem);
     border-top: 2px solid var(--smrt-color-outline-variant, #c4c6d0);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .totals-row.total .totals-label,
@@ -173,7 +173,7 @@ function formatMoney(cents: number): string {
   .totals-row.balance {
     padding-top: var(--smrt-spacing-2, 0.5rem);
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .totals-row.balance.due .totals-label,

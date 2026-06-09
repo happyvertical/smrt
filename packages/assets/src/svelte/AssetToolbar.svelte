@@ -345,7 +345,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary, #ffffff);
     background: var(--smrt-color-primary, #005ac1);
     border: none;

@@ -139,7 +139,7 @@ function handleInput() {
 
   .message-input__reply-name {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary, #005ac1);
   }
 

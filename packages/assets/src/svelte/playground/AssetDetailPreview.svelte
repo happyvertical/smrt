@@ -105,8 +105,8 @@ function handleEdit() {
   }
 
   .eyebrow {
-    font-size: 0.75rem;
-    letter-spacing: 0.12em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.12em);
     text-transform: uppercase;
     color: var(--smrt-color-primary, #0f766e);
   }
@@ -117,7 +117,7 @@ function handleEdit() {
     border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.75rem 1rem;
     font: inherit;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     background: var(--smrt-color-primary, #0f766e);
     color: var(--smrt-color-on-primary, white);
     cursor: pointer;
@@ -125,6 +125,6 @@ function handleEdit() {
 
   .status {
     color: var(--smrt-color-primary, #0f766e);
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
 </style>

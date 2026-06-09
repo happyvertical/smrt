@@ -460,14 +460,14 @@ onDestroy(() => {
   
   .header h3 {
     margin: 0;
-    font-size: 1.15rem;
+    font-size: var(--smrt-typography-title-medium-size, 1.15rem);
   }
 
   .close-btn {
     background: transparent;
     border: none;
     color: var(--smrt-color-outline, #888);
-    font-size: 1.5rem;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     line-height: 1;
     cursor: pointer;
   }
@@ -489,12 +489,12 @@ onDestroy(() => {
     border-bottom: 2px solid var(--smrt-color-outline-variant, #333);
     padding: 1rem;
     color: var(--smrt-color-outline, #888);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: all 0.2s;
     text-transform: uppercase;
-    font-size: 0.85rem;
-    letter-spacing: 0.5px;
+    font-size: var(--smrt-typography-label-large-size, 0.85rem);
+    letter-spacing: var(--smrt-typography-label-large-tracking, 0.5px);
   }
 
   .tabs button:hover {
@@ -559,12 +559,12 @@ onDestroy(() => {
   }
 
   .upload-area p {
-    font-size: 1.1rem;
+    font-size: var(--smrt-typography-body-large-size, 1.1rem);
     margin: 0 0 0.5rem 0;
   }
 
   .divider {
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-label-large-size, 0.85rem);
     color: var(--smrt-color-outline, #666);
     margin-bottom: 1rem;
   }
@@ -575,14 +575,14 @@ onDestroy(() => {
     border: none;
     padding: 0.5rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     pointer-events: none; /* Let parent handle clicks */
   }
 
   .error {
     margin-top: 1rem;
     color: var(--smrt-color-error, #ef4444);
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   /* Camera Tab */
@@ -629,8 +629,8 @@ onDestroy(() => {
     border: none;
     padding: 1rem 3rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-size: 1.1rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-body-large-size, 1.1rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
   }
 
@@ -690,7 +690,7 @@ onDestroy(() => {
     border: 1px solid var(--smrt-color-outline-variant, #444);
     border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface, #fff);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     transition: border-color 0.2s, box-shadow 0.2s;
   }
 
@@ -706,7 +706,7 @@ onDestroy(() => {
     border: none;
     padding: 0 1.5rem;
     border-radius: var(--smrt-radius-md, 6px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
   }
 
@@ -724,7 +724,7 @@ onDestroy(() => {
     background: transparent;
     border: none;
     color: var(--smrt-color-primary, #3b82f6);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     padding: 0.25rem 0.5rem;
     border-radius: var(--smrt-radius-sm, 4px);
@@ -771,12 +771,12 @@ onDestroy(() => {
   }
 
   .confirm-name {
-    font-weight: 500;
-    font-size: 1.05rem;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-title-medium-size, 1.05rem);
   }
 
   .confirm-meta {
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-label-large-size, 0.85rem);
     color: var(--smrt-color-outline, #888);
   }
 
@@ -795,7 +795,7 @@ onDestroy(() => {
     border: none;
     padding: 0.65rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: filter 0.15s;
   }
@@ -813,7 +813,7 @@ onDestroy(() => {
     border: 1px solid var(--smrt-color-outline-variant, #444);
     padding: 0.65rem 1.25rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: all 0.2s;
   }
@@ -841,7 +841,7 @@ onDestroy(() => {
   }
 
   .variation-hint {
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-outline, #888);
     margin: 0;
   }
@@ -854,7 +854,7 @@ onDestroy(() => {
     border-radius: var(--smrt-radius-sm, 4px);
     color: inherit;
     font-family: inherit;
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
     resize: vertical;
     transition: border-color 0.2s, box-shadow 0.2s;
   }
@@ -874,7 +874,7 @@ onDestroy(() => {
     background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
     padding: 0.5rem 0.75rem;
     border-radius: var(--smrt-radius-sm, 4px);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .generate-btn {
@@ -888,7 +888,7 @@ onDestroy(() => {
     border: none;
     padding: 0.65rem 1.5rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: filter 0.15s, opacity 0.15s;
   }

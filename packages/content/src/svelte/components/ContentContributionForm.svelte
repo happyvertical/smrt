@@ -210,7 +210,7 @@ function handleSubmit(event: SubmitEvent) {
     display: flex;
     gap: 0.5rem;
     flex-wrap: wrap;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
     color: var(--smrt-color-on-surface-variant);
   }
 

@@ -1,5 +1,6 @@
 import type { RetryStrategyConfig } from '@happyvertical/jobs';
 import {
+  detectEngine,
   ensureJobsSystemTableCompatibility,
   field,
   SmrtCollection,
@@ -7,6 +8,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { getTenantId, tenantId } from '@happyvertical/smrt-tenancy';
+import type { DatabaseInterface } from '@happyvertical/sql';
 
 /**
  * Job status type
@@ -216,6 +218,22 @@ export interface ListReadyOptions {
 }
 
 /**
+ * Options for atomically claiming ready jobs.
+ */
+export interface ClaimReadyOptions extends ListReadyOptions {
+  workerId: string;
+  now?: Date;
+}
+
+type DatabaseWithConfig = DatabaseInterface & {
+  config?: {
+    type?: string;
+    url?: string;
+  };
+  type?: string;
+};
+
+/**
  * Collection for managing SmrtJob objects
  */
 export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
@@ -271,6 +289,57 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
       `SELECT * FROM _smrt_jobs WHERE ${whereConditions.join(' AND ')} ORDER BY priority DESC, run_at ASC LIMIT ?`,
       params,
     );
+  }
+
+  /**
+   * Atomically claim pending jobs ready to run for a worker.
+   *
+   * The claim is performed as one conditional UPDATE so concurrent workers
+   * cannot receive the same pending row. PostgreSQL additionally skips rows
+   * locked by other workers instead of waiting behind them.
+   */
+  async claimReady(options: ClaimReadyOptions): Promise<SmrtJob[]> {
+    const limit = options.limit ?? 100;
+    if (limit <= 0) return [];
+
+    const now = options.now ?? new Date();
+    const nowIso = now.toISOString();
+    const whereConditions: string[] = ["status = 'pending'", 'run_at <= ?'];
+    const whereParams: unknown[] = [nowIso];
+
+    if (options.queues?.length) {
+      const placeholders = options.queues.map(() => '?').join(', ');
+      whereConditions.push(`queue IN (${placeholders})`);
+      whereParams.push(...options.queues);
+    }
+
+    const lockClause =
+      getDatabaseEngine(this.db) === 'postgres'
+        ? ' FOR UPDATE SKIP LOCKED'
+        : '';
+    const candidateSelect = `
+      SELECT id
+        FROM _smrt_jobs
+       WHERE ${whereConditions.join(' AND ')}
+       ORDER BY priority DESC, run_at ASC, created_at ASC, id ASC
+       LIMIT ?${lockClause}
+    `;
+
+    const claimed = await this.query(
+      `UPDATE _smrt_jobs
+          SET status = 'running',
+              worker_id = ?,
+              worker_heartbeat = ?,
+              started_at = ?,
+              attempts = attempts + 1,
+              updated_at = ?
+        WHERE id IN (${candidateSelect})
+          AND status = 'pending'
+        RETURNING *`,
+      [options.workerId, nowIso, nowIso, nowIso, ...whereParams, limit],
+    );
+
+    return claimed.toSorted(compareClaimOrder);
   }
 
   /**
@@ -350,6 +419,33 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
     const result = await this._db.query(query, ...params);
     return result.rowCount ?? 0;
   }
+}
+
+function getDatabaseEngine(
+  db: DatabaseInterface,
+): ReturnType<typeof detectEngine> {
+  const dbWithConfig = db as DatabaseWithConfig;
+  return detectEngine(
+    db.url || dbWithConfig.config?.url || '',
+    dbWithConfig.type || dbWithConfig.config?.type,
+  );
+}
+
+function compareClaimOrder(left: SmrtJob, right: SmrtJob): number {
+  const priority = right.priority - left.priority;
+  if (priority !== 0) return priority;
+
+  const runAt = left.runAt.getTime() - right.runAt.getTime();
+  if (runAt !== 0) return runAt;
+
+  const createdAt = timestamp(left.created_at) - timestamp(right.created_at);
+  if (createdAt !== 0) return createdAt;
+
+  return (left.id ?? '').localeCompare(right.id ?? '');
+}
+
+function timestamp(value: Date | null | undefined): number {
+  return value?.getTime() ?? 0;
 }
 
 export default SmrtJob;

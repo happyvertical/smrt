@@ -61,7 +61,7 @@ let {
 
   .smrt-usage-thresholds p {
     color: var(--smrt-muted, #64748b);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     margin: 0;
   }
 

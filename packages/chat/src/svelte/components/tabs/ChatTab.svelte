@@ -222,8 +222,8 @@ const {
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-error, #ba1a1a);
     color: var(--smrt-color-on-error, #ffffff);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
   }
 
