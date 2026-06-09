@@ -75,26 +75,22 @@ const SIZE_REMS = [...SIZE_TO_ROLES.keys()].map((k) => ({
   key: k,
 }));
 
-/** Parse a font-size token to rem (px ÷ 16); null if not an absolute length. */
-function fontSizeToRem(token) {
-  const t = token.trim();
-  let m = t.match(/^(\d*\.?\d+)rem$/i);
-  if (m) return Number(m[1]);
-  m = t.match(/^(\d*\.?\d+)px$/i);
-  if (m) return Number(m[1]) / ROOT_PX;
-  return null; // em/%/keyword/0 → not on the absolute rem scale
+/**
+ * The first hard-coded absolute length (px/rem) anywhere in a value, in rem;
+ * null if none. Matches even when wrapped — `var(--x, 16px)`, `calc(1rem + 2px)`
+ * — so non-token wrappers with a raw fallback can't bypass the check. (Approved
+ * `--smrt-typography-*` vars are already blanked before this runs.)
+ */
+function firstAbsoluteRem(value) {
+  const m = value.match(/(?<![\w.#-])(\d*\.?\d+)(px|rem)\b/i);
+  if (!m) return null;
+  return m[2].toLowerCase() === 'px' ? Number(m[1]) / ROOT_PX : Number(m[1]);
 }
 
-/** Suggest role tokens for a raw font-size. */
-function suggestSize(token) {
-  const rem = fontSizeToRem(token);
-  if (rem === null) return null;
+/** Candidate role-size names for a rem value: exact match, else nearest. */
+function rolesForRem(rem) {
   const key = `${rem}rem`;
-  if (SIZE_TO_ROLES.has(key)) {
-    const roles = SIZE_TO_ROLES.get(key);
-    return `${roles.map((r) => `--smrt-typography-${r}-size`).join(' | ')}`;
-  }
-  // Off-scale: nearest canonical size, flag as approximate.
+  if (SIZE_TO_ROLES.has(key)) return { roles: SIZE_TO_ROLES.get(key), exact: true };
   let best = SIZE_REMS[0];
   let bestDist = Number.POSITIVE_INFINITY;
   for (const s of SIZE_REMS) {
@@ -104,8 +100,25 @@ function suggestSize(token) {
       bestDist = d;
     }
   }
-  const roles = SIZE_TO_ROLES.get(best.key);
-  return `~${roles.map((r) => `--smrt-typography-${r}-size`).join(' | ')} (nearest ${best.key})`;
+  return { roles: SIZE_TO_ROLES.get(best.key), exact: false, nearest: best.key };
+}
+
+/** Suggest `-size` role tokens for a raw font-size value. */
+function suggestSize(value) {
+  const rem = firstAbsoluteRem(value);
+  if (rem === null) return null;
+  const { roles, exact, nearest } = rolesForRem(rem);
+  const names = roles.map((r) => `--smrt-typography-${r}-size`).join(' | ');
+  return exact ? names : `~${names} (nearest ${nearest})`;
+}
+
+/** Suggest `-font` shorthand role tokens for a raw `font:` shorthand value. */
+function suggestFontShorthand(value) {
+  const rem = firstAbsoluteRem(value);
+  if (rem === null) return 'var(--smrt-typography-<role>-<size>-font, <orig>)';
+  const { roles, exact, nearest } = rolesForRem(rem);
+  const names = roles.map((r) => `--smrt-typography-${r}-font`).join(' | ');
+  return exact ? names : `~${names} (nearest ${nearest})`;
 }
 
 /** font-weight number/keyword → named weight token. */
@@ -214,23 +227,34 @@ function stripTokenVars(source) {
 
 const KEYWORD_VALUES = new Set(['inherit', 'unset', 'initial', 'revert']);
 
+// Longhands. `font:` shorthand is matched separately (FONT_SHORTHAND_RE).
 const PROP_RE = /\b(font-size|font-weight|font-family)\s*:\s*([^;}{]+)/gi;
+// `font:` shorthand only — lookbehind rejects `font-*` longhands and custom
+// props like `--card-font:`; the shorthand packs size+weight+family at once.
+const FONT_SHORTHAND_RE = /(?<![\w-])font\s*:\s*([^;}{]+)/gi;
 
 function findViolations(file, source) {
   let text = file.endsWith('.svelte') ? extractStyleBlocks(source) : source;
   text = stripComments(text);
   text = stripTokenVars(text);
   const hits = [];
+  const push = (index, prop, value, suggestion) =>
+    hits.push({
+      line: text.slice(0, index).split('\n').length,
+      prop,
+      value: value.slice(0, 40),
+      suggestion,
+    });
   for (const m of text.matchAll(PROP_RE)) {
     const prop = m[1].toLowerCase();
     const value = m[2].replace(/\s+/g, ' ').trim();
     if (!value || KEYWORD_VALUES.has(value.toLowerCase())) continue;
-    // Anything still containing a token var() was a multi-part value we keep.
-    if (/var\(\s*--smrt-(typography|font-family)/.test(value)) continue;
     let suggestion = null;
     if (prop === 'font-size') {
-      // skip relative/zero/keyword sizes (em/%/0/larger/smaller)
-      if (fontSizeToRem(value) === null) continue;
+      // Flag iff a hard-coded absolute length remains (after token-stripping):
+      // catches bare `0.875rem`, wrapped `var(--x, 16px)`, and `calc(... + 2px)`.
+      // Pure relative/keyword sizes (em/%/0/inherit) are allowed.
+      if (firstAbsoluteRem(value) === null) continue;
       suggestion = suggestSize(value);
     } else if (prop === 'font-weight') {
       suggestion = suggestWeight(value);
@@ -238,13 +262,15 @@ function findViolations(file, source) {
     } else if (prop === 'font-family') {
       suggestion = suggestFamily(value);
     }
-    const line = text.slice(0, m.index).split('\n').length;
-    hits.push({
-      line,
-      prop,
-      value: value.slice(0, 40),
-      suggestion,
-    });
+    push(m.index, prop, value, suggestion);
+  }
+  // `font:` shorthand — a raw shorthand hard-codes size/weight/family at once.
+  for (const m of text.matchAll(FONT_SHORTHAND_RE)) {
+    const value = m[1].replace(/\s+/g, ' ').trim();
+    if (!value || KEYWORD_VALUES.has(value.toLowerCase())) continue;
+    // Allow when fully tokenized (the -font var was blanked → no raw length).
+    if (firstAbsoluteRem(value) === null) continue;
+    push(m.index, 'font', value, suggestFontShorthand(value));
   }
   return hits;
 }
