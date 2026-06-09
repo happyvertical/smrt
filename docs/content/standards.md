@@ -307,9 +307,12 @@ genuinely operational milestones).
   help) — its *internal* diagnostics still use the logger;
 - standalone / dev / demo entrypoints — `server.ts`, `*-server.ts`, `bin/`,
   `scripts/`, `lib/server/seed-*`, `demo*`;
-- build-time & codegen tooling — vite / consumer plugins, scanners, and the
-  manifest / REST / CLI / MCP generators (`vite-plugin/`, `consumer-plugin/`,
-  `manifest/`, `scanner/`, `generators/`, `prebuild/`);
+- build-time & codegen tooling — vite / consumer plugins, scanners, prebuild,
+  and the REST / CLI / MCP / manifest **generators** (`vite-plugin/`,
+  `consumer-plugin/`, `prebuild/`, `scanner/`, `generators/`,
+  `manifest/generator*`, `manifest/discover-*`). Note this is the *generation*
+  side only — runtime manifest loading (`manifest/manifest-loader.ts`,
+  `store.ts`) is shipped library code and uses the logger;
 - test files and `*.config.*` (already exempt).
 
 **Never touch** `console.*` inside comments or JSDoc `@example` blocks — that is
