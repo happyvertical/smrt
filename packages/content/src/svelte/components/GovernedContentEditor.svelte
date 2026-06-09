@@ -390,10 +390,10 @@ function handleSave(data: ContentData) {
   }
 
   .publish-readiness-card__profile {
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.04em);
   }
 
   .publish-readiness-card p {

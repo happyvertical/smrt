@@ -36,6 +36,7 @@ const PACKAGES = join(ROOT, 'packages');
 /** Packages held to ERROR. Everything else is report-only for now (#1373). */
 const STRICT_PACKAGES = new Set([
   'smrt-svelte',
+  'content',
 ]);
 
 /** Dev/playground hosts skipped entirely (matches the other token ratchets). */
@@ -251,9 +252,13 @@ function findViolations(file, source) {
     if (!value || KEYWORD_VALUES.has(value.toLowerCase())) continue;
     let suggestion = null;
     if (prop === 'font-size') {
+      // Fluid sizes (clamp/min/max) are intentionally responsive — they don't
+      // map to a fixed role token, so tokenizing them would freeze the scaling.
+      // Leave them raw (same spirit as directional shadows in the elevation check).
+      if (/\b(?:clamp|min|max)\(/i.test(value)) continue;
       // Flag iff a hard-coded absolute length remains (after token-stripping):
       // catches bare `0.875rem`, wrapped `var(--x, 16px)`, and `calc(... + 2px)`.
-      // Pure relative/keyword sizes (em/%/0/inherit) are allowed.
+      // Pure relative/keyword/viewport sizes (em/%/0/vw/inherit) are allowed.
       if (firstAbsoluteRem(value) === null) continue;
       suggestion = suggestSize(value);
     } else if (prop === 'font-weight') {

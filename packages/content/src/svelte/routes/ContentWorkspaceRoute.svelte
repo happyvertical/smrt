@@ -294,9 +294,9 @@ function closeForms() {
   .eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .workspace-header h1 {
@@ -333,7 +333,7 @@ function closeForms() {
     );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .workspace-nav a[aria-current='page'] {
@@ -380,7 +380,7 @@ function closeForms() {
   }
 
   .callout-card strong {
-    font-size: 1.8rem;
+    font-size: var(--smrt-typography-headline-medium-size, 1.8rem);
   }
 
   .callout-card span {
@@ -413,14 +413,14 @@ function closeForms() {
     color: var(--smrt-color-primary);
     padding: 0.65rem 0.95rem;
     border-radius: var(--smrt-radius-full, 9999px);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
   }
 
   .inline-link {
     color: var(--smrt-color-primary);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .inline-link:hover,

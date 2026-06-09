@@ -1225,7 +1225,7 @@ function handleEditorDragEnd() {
     display: inline-flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.78rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -1243,8 +1243,8 @@ function handleEditorDragEnd() {
     padding: clamp(1rem, 2vw, 1.5rem);
     outline: none;
     color: var(--smrt-color-on-surface);
-    font-size: 1.05rem;
-    line-height: 1.65;
+    font-size: var(--smrt-typography-body-large-size, 1.05rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.65);
     overflow: auto;
     overflow-wrap: anywhere;
   }
