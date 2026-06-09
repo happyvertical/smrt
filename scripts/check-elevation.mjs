@@ -51,10 +51,34 @@ const STRICT_PACKAGES = new Set([
 /** Dev/playground hosts skipped entirely (matches the other token ratchets). */
 const SCOPE_EXCLUDED_PACKAGES = new Set(['smrt-playground']);
 
+/** Assumed root font size, to compare rem/em depths against the px scale. */
+const ROOT_PX = 16;
+/** A single CSS length: unitless `0`, or a px/rem/em number (decimals/sign ok). */
+const LEN = String.raw`(?:0|[+-]?\d*\.?\d+(?:px|rem|em))`;
+
+/** Parse a CSS length token to px (rem/em × ROOT_PX); NaN if unrecognized. */
+function lengthToPx(token) {
+  if (/^[+-]?0(?:px|rem|em)?$/i.test(token)) return 0;
+  const m = token.match(/^([+-]?\d*\.?\d+)(px|rem|em)$/i);
+  if (!m) return Number.NaN;
+  const n = Number(m[1]);
+  return m[2].toLowerCase() === 'px' ? n : n * ROOT_PX;
+}
+
+/** All lengths in a value, in px (rem/em converted), by absolute magnitude. */
+function allLengthsPx(value) {
+  const out = [];
+  for (const m of value.matchAll(/([+-]?\d*\.?\d+)(px|rem|em)\b/gi)) {
+    const n = Number(m[1]);
+    out.push(Math.abs(m[2].toLowerCase() === 'px' ? n : n * ROOT_PX));
+  }
+  return out;
+}
+
 /** Map a drop-shadow value to var(--smrt-elevation-<n>, <original>) by depth. */
 function snap(value) {
   const v = value.trim();
-  const pxs = [...v.matchAll(/(\d+)px/g)].map((m) => Number(m[1]));
+  const pxs = allLengthsPx(v);
   const max = pxs.length ? Math.max(...pxs) : 0;
   let lvl;
   if (max <= 3) lvl = 1;
@@ -65,16 +89,12 @@ function snap(value) {
   return `var(--smrt-elevation-${lvl}, ${v})`;
 }
 
-/** Parse a CSS length token (`0`, `12px`, `-2px`) to a number; NaN if unknown. */
-function lengthToPx(token) {
-  if (/^0(?:px)?$/.test(token)) return 0;
-  const m = token.match(/^(-?\d+)px$/);
-  return m ? Number(m[1]) : Number.NaN;
-}
-
 /** Accent/brand color roles — a tinted glow, not neutral depth. */
 const ACCENT_COLOR_RE =
   /--smrt-color-(?:primary|secondary|tertiary|accent|error|danger|success|warning|info)\b/;
+
+/** First shadow layer: offsetX offsetY blur, each a px/rem/em/0 length. */
+const FIRST_LAYER_RE = new RegExp(`^(${LEN})\\s+(${LEN})\\s+(${LEN})`, 'i');
 
 /**
  * True iff `value` is a standard downward, neutral elevation drop-shadow that
@@ -88,7 +108,7 @@ function isDropShadow(value) {
   if (/var\(\s*--smrt-elevation-/.test(v)) return false;
   if (ACCENT_COLOR_RE.test(v)) return false; // brand-tinted glow, not depth
   // First layer: offsetX offsetY blur [spread] color.
-  const m = v.match(/^(0|-?\d+px)\s+(0|-?\d+px)\s+(0|\d+px)/);
+  const m = v.match(FIRST_LAYER_RE);
   if (!m) return false; // not a plain shadow (e.g. a bare var()/keyword)
   const x = lengthToPx(m[1]);
   const y = lengthToPx(m[2]);
