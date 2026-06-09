@@ -194,11 +194,11 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
 
   .job-detail__section h3 {
     margin: 0 0 var(--spacing-sm, 0.5rem) 0;
-    font-size: var(--font-size-sm, 0.875rem);
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--color-text-secondary, #6b7280);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-title-small-tracking, 0.05em);
   }
 
   .job-detail__section--full {

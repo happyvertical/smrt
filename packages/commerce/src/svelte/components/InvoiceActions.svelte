@@ -121,7 +121,7 @@ const canDelete = $derived(status === 'draft');
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: none;
     border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;

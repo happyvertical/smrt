@@ -65,18 +65,18 @@ let {
   }
 
   .smrt-plan-picker__name {
-    font-weight: 650;
+    font-weight: var(--smrt-typography-weight-bold, 650);
   }
 
   .smrt-plan-picker__price {
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .smrt-plan-picker__price small,
   .smrt-plan-picker__description,
   .smrt-plan-picker__features {
     color: var(--smrt-muted, #64748b);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 </style>
