@@ -134,8 +134,8 @@ function formatTimestamp(value: string | null | undefined) {
 
   .article-hero h1 {
     margin: 0;
-    font-size: var(--smrt-typography-display-small-size, clamp(2.2rem, 5vw, 4rem));
-    line-height: var(--smrt-typography-display-small-line-height, 1.05);
+    font-size: clamp(2.2rem, 5vw, 4rem);
+    line-height: 1.05;
     color: var(--smrt-color-on-surface);
   }
 

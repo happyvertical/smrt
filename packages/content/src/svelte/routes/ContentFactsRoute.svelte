@@ -290,8 +290,8 @@ onMount(() => {
 
   .page-header h1 {
     margin: 0.35rem 0 0.65rem;
-    font-size: var(--smrt-typography-headline-large-size, clamp(2rem, 5vw, 3rem));
-    line-height: var(--smrt-typography-headline-large-line-height, 1.05);
+    font-size: clamp(2rem, 5vw, 3rem);
+    line-height: 1.05;
   }
 
   .page-header p {

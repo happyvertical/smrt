@@ -560,8 +560,8 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
   .page-header h1 {
     margin: 0.35rem 0 0.65rem;
-    font-size: var(--smrt-typography-headline-large-size, clamp(2rem, 5vw, 3rem));
-    line-height: var(--smrt-typography-headline-large-line-height, 1.05);
+    font-size: clamp(2rem, 5vw, 3rem);
+    line-height: 1.05;
   }
 
   .page-header p {
@@ -774,7 +774,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
     .page-header h1 {
       margin-top: 0.25rem;
-      font-size: var(--smrt-typography-headline-small-size, clamp(1.6rem, 9vw, 2.2rem));
+      font-size: clamp(1.6rem, 9vw, 2.2rem);
     }
 
     .callout,
