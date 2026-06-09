@@ -203,6 +203,7 @@
         "packages/*/src/**/scanner/**",
         "packages/*/src/**/generators/**",
         "packages/*/src/**/testing/**",
+        "packages/cli/src/commands/**",
         "packages/*/src/server.ts",
         "packages/*/src/**/*-server.ts",
         "packages/*/src/**/seed-*.ts",
