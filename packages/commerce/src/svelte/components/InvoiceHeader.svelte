@@ -210,7 +210,7 @@ const isOverdue = $derived.by(() => {
   .context-item {
     display: inline-flex;
     align-items: center;
-    gap: var(--smrt-spacing-1-5, 0.375rem);
+    gap: var(--smrt-spacing-1_5, 0.375rem);
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface-variant, #49454f);
   }
@@ -228,7 +228,7 @@ const isOverdue = $derived.by(() => {
   .meta-item {
     display: flex;
     flex-direction: column;
-    gap: var(--smrt-spacing-0-5, 0.125rem);
+    gap: var(--smrt-spacing-0_5, 0.125rem);
   }
 
   .meta-label {

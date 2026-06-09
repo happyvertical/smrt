@@ -68,7 +68,7 @@ function handleKeydown(event: KeyboardEvent, emoji: string) {
     background: var(--smrt-color-surface, #ffffff);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-medium, 0.5rem);
-    box-shadow: var(--smrt-elevation-level2, 0 2px 6px rgba(0, 0, 0, 0.15));
+    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
     width: max-content;
   }
 

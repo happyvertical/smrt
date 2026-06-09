@@ -38,7 +38,7 @@ let {
   }
 
   .smrt-usage-thresholds__row {
-    border: 1px solid var(--smrt-border, #d8dde6);
+    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
     border-radius: var(--smrt-radius-md, 8px);
     display: grid;
     gap: 0.45rem;
@@ -60,7 +60,7 @@ let {
   }
 
   .smrt-usage-thresholds p {
-    color: var(--smrt-muted, #64748b);
+    color: var(--smrt-color-on-surface-variant, #64748b);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     margin: 0;
   }

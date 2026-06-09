@@ -386,7 +386,7 @@ function toggleReactionPicker() {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-small, 0.25rem);
     padding: var(--smrt-spacing-1, 4px);
-    box-shadow: var(--smrt-elevation-level1, 0 1px 3px rgba(0, 0, 0, 0.12));
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
   }
 
   .message-item--own .message-item__actions {

@@ -224,7 +224,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
 
   .source-badge {
     display: inline-block;
-    padding: var(--smrt-spacing-0-5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-0_5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-label-small-font);
     font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-full, 9999px);
@@ -268,7 +268,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     border-radius: var(--smrt-radius-extra-small, 0.25rem);
     cursor: pointer;
     color: var(--smrt-color-on-surface-variant, #49454f);
-    transition: all var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -299,7 +299,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
     border: 1px dashed var(--smrt-color-primary, #005ac1);
     border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;
-    transition: all var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {

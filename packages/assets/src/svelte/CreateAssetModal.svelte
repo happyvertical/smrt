@@ -281,7 +281,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     max-height: calc(100vh - 2rem);
     background: var(--smrt-color-surface, #ffffff);
     border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     overflow: hidden;
     animation: modalEnter 300ms cubic-bezier(0.2, 0, 0, 1);
   }
@@ -536,7 +536,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
   }
 
   .footer-btn--create:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   @media (prefers-reduced-motion: reduce) {

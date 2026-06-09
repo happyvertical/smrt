@@ -149,7 +149,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   }
 
   .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .btn-filled-tonal {
@@ -158,7 +158,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   }
 
   .btn-filled-tonal:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .btn-error {
@@ -167,7 +167,7 @@ const canDelete = $derived(status === 'draft' && ondelete);
   }
 
   .btn-error:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .btn-error-outlined {

@@ -48,8 +48,8 @@ let {
 
   .smrt-plan-picker__plan {
     align-items: flex-start;
-    background: var(--smrt-surface, #fff);
-    border: 1px solid var(--smrt-border, #d8dde6);
+    background: var(--smrt-color-surface, #fff);
+    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
     border-radius: var(--smrt-radius-md, 8px);
     color: inherit;
     cursor: pointer;
@@ -60,8 +60,8 @@ let {
   }
 
   .smrt-plan-picker__plan.selected {
-    border-color: var(--smrt-primary, #2563eb);
-    box-shadow: 0 0 0 1px var(--smrt-primary, #2563eb);
+    border-color: var(--smrt-color-primary, #2563eb);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary, #2563eb);
   }
 
   .smrt-plan-picker__name {
@@ -76,7 +76,7 @@ let {
   .smrt-plan-picker__price small,
   .smrt-plan-picker__description,
   .smrt-plan-picker__features {
-    color: var(--smrt-muted, #64748b);
+    color: var(--smrt-color-on-surface-variant, #64748b);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 </style>

@@ -210,7 +210,7 @@ const _sortedMessages = $derived(
   }
 
   .collapsed-header:hover {
-    background: var(--smrt-color-surface-variant-hover, #d1d3dd);
+    background: color-mix(in srgb, var(--smrt-color-surface-variant, #e1e2ec) 92%, var(--smrt-color-shadow, #000));
   }
 
   .collapsed-sender {

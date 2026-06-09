@@ -178,7 +178,7 @@ function handleKeydown(e: KeyboardEvent) {
     position: relative;
     background: var(--smrt-color-surface, white);
     border-radius: var(--smrt-radius-large, 0.5rem);
-    box-shadow: var(--smrt-elevation-level3, 0 20px 25px -5px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-3, 0 20px 25px -5px rgba(0, 0, 0, 0.1));
     width: 100%;
     max-width: 28rem;
     max-height: 90vh;
@@ -283,7 +283,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .checkbox-field label {
-    font-weight: var(--smrt-typography-weight-regular, 400);
+    font-weight: var(--smrt-typography-weight-normal, 400);
   }
 
   .hint {

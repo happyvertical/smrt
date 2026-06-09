@@ -145,7 +145,7 @@ $effect(() => {
     position: relative;
     background: var(--smrt-color-surface);
     border-radius: var(--smrt-radius-extra-large, 28px);
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     width: 100%;
     max-width: 28rem;
     padding: 1.5rem;
@@ -240,6 +240,6 @@ $effect(() => {
   }
 
   .btn-error:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 </style>

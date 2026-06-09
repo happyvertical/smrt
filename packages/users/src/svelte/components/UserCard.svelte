@@ -84,7 +84,7 @@ const statusClass = $derived.by(() => {
     position: relative;
     overflow: hidden;
     color: var(--smrt-color-on-surface);
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .user-card.clickable {
@@ -93,7 +93,7 @@ const statusClass = $derived.by(() => {
 
   .user-card.clickable:hover {
     background-color: var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .user-card.selected {

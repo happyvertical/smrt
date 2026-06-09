@@ -218,7 +218,7 @@ $effect(() => {
   .dialog {
     background: var(--smrt-color-surface, #fefbff);
     border-radius: var(--smrt-radius-extra-large, 28px);
-    box-shadow: var(--smrt-elevation-level3, 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3));
+    box-shadow: var(--smrt-elevation-3, 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3));
     width: 100%;
     max-width: 32rem;
     padding: 1.5rem;
@@ -378,7 +378,7 @@ $effect(() => {
   }
 
   .btn--primary:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level1, 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15));
+    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px 1px rgba(0, 0, 0, 0.15));
   }
 
   .btn--secondary {

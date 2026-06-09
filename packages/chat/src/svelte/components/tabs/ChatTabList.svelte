@@ -83,12 +83,12 @@ const { tabs, onselect, onclose }: Props = $props();
     cursor: pointer;
     transition: background var(--smrt-duration-short2, 150ms),
       box-shadow var(--smrt-duration-short2, 150ms);
-    box-shadow: var(--smrt-elevation-level1, 0 1px 3px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.1));
   }
 
   .tab-list__btn:hover {
     background: var(--smrt-color-surface-container-high, #e6e6ea);
-    box-shadow: var(--smrt-elevation-level2, 0 2px 6px rgba(0, 0, 0, 0.15));
+    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.15));
   }
 
   .tab-list__btn:focus-visible {

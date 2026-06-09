@@ -240,7 +240,7 @@ function getInitials(name: string): string {
     min-width: 200px;
     background-color: var(--smrt-color-surface-container);
     border-radius: var(--smrt-radius-medium, 4px);
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
     z-index: var(--smrt-z-index-dropdown, 1000);
     padding: var(--smrt-spacing-1, 4px) 0;
     overflow: hidden;

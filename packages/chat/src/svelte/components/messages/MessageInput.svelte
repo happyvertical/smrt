@@ -217,7 +217,7 @@ function handleInput() {
   }
 
   .message-input__send:hover:not(:disabled) {
-    background: var(--smrt-color-primary-hover, #004a9e);
+    background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
   }
 
   .message-input__send:disabled {

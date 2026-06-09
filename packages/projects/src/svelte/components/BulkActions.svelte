@@ -168,7 +168,7 @@ const visible = $derived(selectedCount > 0);
   }
 
   .btn-filled:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .btn-error {
@@ -177,7 +177,7 @@ const visible = $derived(selectedCount > 0);
   }
 
   .btn-error:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .btn-error-outlined {
