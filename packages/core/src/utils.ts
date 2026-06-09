@@ -6,7 +6,11 @@ import {
   toSnakeCase,
 } from './utils/naming.js';
 
-const logger = createLogger({ level: 'info' });
+// formatDataJs' debug traces are gated by DEBUG_STI, so the level must allow
+// debug when it's set (a fixed 'info' would filter them out and break the flag).
+const logger = createLogger({
+  level: process.env.DEBUG_STI ? 'debug' : 'info',
+});
 
 export { classnameToTablename, pluralize, toSnakeCase };
 

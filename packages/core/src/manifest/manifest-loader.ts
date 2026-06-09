@@ -168,8 +168,6 @@ function getSTISiblingCache(): Map<
 // Create require function once for reuse
 const require = createRequire(import.meta.url);
 
-const logger = createLogger({ level: 'info' });
-
 /**
  * Cached debug flag evaluated once at module load time.
  * Environment variables don't change at runtime, so this is safe.
@@ -180,6 +178,13 @@ const DEBUG_ENABLED =
   process.env.DEBUG_MANIFEST === '1' ||
   process.env.DEBUG?.includes('manifest') ||
   false;
+
+// The debug traces below are gated by DEBUG_MANIFEST / DEBUG_TEST_ENV, so the
+// logger level must allow debug when either is set (a fixed 'info' would filter
+// them out and silently break those debug switches).
+const logger = createLogger({
+  level: DEBUG_ENABLED || process.env.DEBUG_TEST_ENV ? 'debug' : 'info',
+});
 
 /**
  * Log a debug message only if DEBUG_MANIFEST is enabled.

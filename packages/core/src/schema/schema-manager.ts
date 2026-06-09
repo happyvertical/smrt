@@ -18,8 +18,6 @@ import {
 } from './ddl/index.js';
 import type { SchemaDefinition } from './types.js';
 
-const logger = createLogger({ level: 'info' });
-
 /**
  * Schema Manager Options
  */
@@ -42,10 +40,14 @@ export class SchemaManager {
   private db: DatabaseInterface;
   private engine: DatabaseEngine;
   private options: SchemaManagerOptions;
+  // Per-instance logger: the `debug` option must actually emit debug traces, so
+  // the level follows it (a fixed level: 'info' would filter every debug call).
+  private logger: ReturnType<typeof createLogger>;
 
   constructor(db: DatabaseInterface, options: SchemaManagerOptions = {}) {
     this.db = db;
     this.options = options;
+    this.logger = createLogger({ level: options.debug ? 'debug' : 'info' });
 
     // Detect or use provided engine
     if (options.engine) {
@@ -80,7 +82,7 @@ export class SchemaManager {
       await this.addMissingColumns(tableName, schema);
 
       if (this.options.debug) {
-        logger.debug(
+        this.logger.debug(
           `[SchemaManager] Table "${tableName}" already exists, checked for missing columns`,
         );
       }
@@ -107,7 +109,7 @@ export class SchemaManager {
       ].join(';\n');
 
       if (this.options.debug) {
-        logger.debug(
+        this.logger.debug(
           `[SchemaManager] Using adapter syncSchema for "${tableName}"`,
           { fullSchema },
         );
@@ -122,7 +124,7 @@ export class SchemaManager {
         const createdSuccessfully = await this.db.tableExists(tableName);
         if (createdSuccessfully) {
           if (this.options.debug) {
-            logger.debug(
+            this.logger.debug(
               `[SchemaManager] Table "${tableName}" created via adapter syncSchema`,
             );
           }
@@ -130,12 +132,12 @@ export class SchemaManager {
         }
 
         // Table wasn't created - fall through to direct DDL execution
-        logger.warn(
+        this.logger.warn(
           `[SchemaManager] syncSchema returned but table "${tableName}" doesn't exist, falling back to direct DDL`,
         );
       } catch (syncError) {
         // syncSchema failed - fall through to direct DDL execution
-        logger.warn(
+        this.logger.warn(
           `[SchemaManager] syncSchema failed for "${tableName}", falling back to direct DDL`,
           { error: syncError },
         );
@@ -144,7 +146,7 @@ export class SchemaManager {
 
     // Fallback: Execute DDL directly (for adapters without syncSchema)
     if (this.options.debug) {
-      logger.debug(
+      this.logger.debug(
         `[SchemaManager] Creating table "${tableName}" for ${this.engine} (direct DDL)`,
         { createTable: ddl.createTable },
       );
@@ -155,7 +157,7 @@ export class SchemaManager {
     // Execute indexes
     for (const indexSQL of ddl.indexes) {
       if (this.options.debug) {
-        logger.debug(`[SchemaManager] Creating index`, { indexSQL });
+        this.logger.debug(`[SchemaManager] Creating index`, { indexSQL });
       }
       await this.db.query(indexSQL);
     }
@@ -164,14 +166,16 @@ export class SchemaManager {
     if (!this.options.skipTriggers) {
       for (const triggerSQL of ddl.triggers) {
         if (this.options.debug) {
-          logger.debug(`[SchemaManager] Creating trigger`, { triggerSQL });
+          this.logger.debug(`[SchemaManager] Creating trigger`, { triggerSQL });
         }
         await this.db.query(triggerSQL);
       }
     }
 
     if (this.options.debug) {
-      logger.debug(`[SchemaManager] Table "${tableName}" created successfully`);
+      this.logger.debug(
+        `[SchemaManager] Table "${tableName}" created successfully`,
+      );
     }
   }
 
@@ -215,7 +219,7 @@ export class SchemaManager {
     } catch (error) {
       // If introspection fails, return empty set (no columns will be added)
       if (this.options.debug) {
-        logger.warn(
+        this.logger.warn(
           `[SchemaManager] Failed to introspect columns for "${tableName}"`,
           { error },
         );
@@ -285,7 +289,7 @@ export class SchemaManager {
         addedCount++;
 
         if (this.options.debug) {
-          logger.debug(
+          this.logger.debug(
             `[SchemaManager] Added column "${colName}" to "${tableName}"`,
           );
         }
@@ -293,7 +297,7 @@ export class SchemaManager {
         // Column might already exist (race condition) or other issue
         // Log and continue — don't fail the entire operation
         if (this.options.debug) {
-          logger.warn(
+          this.logger.warn(
             `[SchemaManager] Failed to add column "${colName}" to "${tableName}"`,
             { error },
           );
@@ -302,7 +306,7 @@ export class SchemaManager {
     }
 
     if (addedCount > 0 && this.options.debug) {
-      logger.debug(
+      this.logger.debug(
         `[SchemaManager] Added ${addedCount} missing column(s) to "${tableName}"`,
       );
     }
@@ -369,7 +373,7 @@ export class SchemaManager {
       if (visited.has(tableName)) return;
       if (visiting.has(tableName)) {
         // Circular dependency - continue anyway (FK might be nullable)
-        logger.warn(
+        this.logger.warn(
           `[SchemaManager] Circular dependency detected involving ${tableName}`,
         );
         return;
