@@ -40,7 +40,11 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
   api: { include: ['list', 'get'] },
   // retry/cancel are operator commands invoked in-process via the CLI;
   // they intentionally aren't exposed over HTTP.
-  cli: { include: ['list', 'get', 'retry', 'cancel'], skipApiCheck: true },
+  cli: {
+    include: ['list', 'get', 'retry', 'cancel'],
+    skipApiCheck: true,
+    http: false,
+  },
   mcp: { include: ['list', 'get'] },
 })
 export class SmrtJob extends SmrtObject {

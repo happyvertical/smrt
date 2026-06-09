@@ -731,6 +731,28 @@ describe('createResourceListHandler', () => {
     expect(res.body.resources).toEqual([]);
   });
 
+  it('returns no resources for classes opted out of HTTP CLI discovery', async () => {
+    mockRegistry({
+      SmrtJob: makeRegistered('SmrtJob', {
+        api: { include: ['list', 'get'] },
+        cli: { include: ['list', 'get', 'retry', 'cancel'], http: false },
+      }),
+      SmrtJobEvent: makeRegistered('SmrtJobEvent', {
+        api: { include: ['list', 'get'] },
+        cli: { include: ['list', 'get'], http: false },
+      }),
+    });
+
+    const res = await call(
+      { ensureRegistry: noopRegistry },
+      { locals: authedLocals },
+    );
+
+    expect(res.status).toBe(200);
+    expect(res.body.resources).toEqual([]);
+    expect(res.body.warnings).toEqual([]);
+  });
+
   it('runs async commandPolicy in parallel, not serially — #1311 round-4 P1', async () => {
     // 5 classes × 5 CRUD = 25 commands. With sequential awaits at 30ms
     // each that's 750ms; with Promise.all it's ~30ms. Use 30ms each and
