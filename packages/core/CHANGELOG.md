@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.27
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 3) (#1464) (messages,products)
+  - @happyvertical/smrt-scanner@0.27.27
+  - @happyvertical/smrt-config@0.27.27
+  - @happyvertical/smrt-types@0.27.27
+
 ## 0.27.26
 
 ### Patch Changes
