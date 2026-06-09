@@ -152,7 +152,7 @@ const customActions = [
     border: 1px solid var(--smrt-color-outline-variant, #dbe3ef);
     border-radius: 1rem;
     padding: 1.25rem;
-    box-shadow: 0 10px 30px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent);
+    box-shadow: var(--smrt-elevation-5, 0 10px 30px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent));
   }
 
   .assets-route__panel h2 {

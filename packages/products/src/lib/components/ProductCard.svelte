@@ -61,12 +61,12 @@ const { product, onEdit, onDelete }: Props = $props();
     border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
     background: white;
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
     transition: box-shadow 0.2s;
   }
 
   .product-card:hover {
-    box-shadow: 0 4px 6px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
   }
   
   .product-header {

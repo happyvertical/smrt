@@ -602,7 +602,7 @@ function closeTry() {
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: 1rem;
     padding: 1.5rem;
-    box-shadow: 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent);
+    box-shadow: var(--smrt-elevation-3, 0 2px 8px color-mix(in srgb, var(--smrt-color-shadow) 4%, transparent));
   }
 
   .endpoints-panel h2 {

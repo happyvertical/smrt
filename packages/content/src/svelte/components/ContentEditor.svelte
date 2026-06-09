@@ -1959,7 +1959,7 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     margin-top: 1rem;
     border-radius: 0.75rem;
-    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent), 0 2px 4px -1px color-mix(in srgb, var(--smrt-color-shadow) 3%, transparent));
     /* Svelte built-in slide animations will be handled if implemented */
   }
 

@@ -337,7 +337,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     background: var(--smrt-color-surface-container, #1a1a1a);
     border-radius: var(--smrt-radius-lg, 8px);
     border: 1px solid var(--smrt-color-surface-container-high, #2a2a2a);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 12%, transparent), 0 1px 2px color-mix(in srgb, var(--smrt-color-shadow) 24%, transparent));
     overflow: hidden;
     color: inherit;
     text-align: left;
@@ -351,7 +351,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
   .gallery-item.selectable:hover, .gallery-item.selectable:focus {
     transform: translateY(-2px);
     border-color: var(--smrt-color-primary, #3b82f6);
-    box-shadow: 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 16%, transparent), 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 23%, transparent);
+    box-shadow: var(--smrt-elevation-2, 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 16%, transparent), 0 3px 6px color-mix(in srgb, var(--smrt-color-shadow) 23%, transparent));
     outline: none;
   }
 
