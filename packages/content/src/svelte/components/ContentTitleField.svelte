@@ -32,9 +32,9 @@ let {
     background: transparent;
     color: var(--smrt-color-on-surface);
     font: inherit;
-    font-size: clamp(1.45rem, 1.1rem + 1vw, 2rem);
-    font-weight: 720;
-    line-height: 1.12;
+    font-size: var(--smrt-typography-headline-small-size, clamp(1.45rem, 1.1rem + 1vw, 2rem));
+    font-weight: var(--smrt-typography-weight-bold, 720);
+    line-height: var(--smrt-typography-headline-small-line-height, 1.12);
     letter-spacing: 0;
     padding: 0;
   }

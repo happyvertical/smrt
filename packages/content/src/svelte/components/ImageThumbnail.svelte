@@ -147,9 +147,9 @@ $effect(() => {
   }
 
   .smrt-thumbnail-missing span {
-    font-size: 0.75rem;
-    font-weight: 600;
-    letter-spacing: 0.04em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.04em);
     text-transform: uppercase;
   }
 </style>

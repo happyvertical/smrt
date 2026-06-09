@@ -36,6 +36,7 @@ const PACKAGES = join(ROOT, 'packages');
 /** Packages held to ERROR. Everything else is report-only for now (#1373). */
 const STRICT_PACKAGES = new Set([
   'smrt-svelte',
+  'content',
 ]);
 
 /** Dev/playground hosts skipped entirely (matches the other token ratchets). */

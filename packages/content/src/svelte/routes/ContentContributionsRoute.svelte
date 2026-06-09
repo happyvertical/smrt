@@ -553,21 +553,21 @@ async function handleDeleteContributor(data: Record<string, any>) {
   .eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .page-header h1 {
     margin: 0.35rem 0 0.65rem;
-    font-size: clamp(2rem, 5vw, 3rem);
-    line-height: 1.05;
+    font-size: var(--smrt-typography-headline-large-size, clamp(2rem, 5vw, 3rem));
+    line-height: var(--smrt-typography-headline-large-line-height, 1.05);
   }
 
   .page-header p {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     max-width: 52rem;
   }
 
@@ -593,7 +593,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .page-nav a[aria-current='page'] {
@@ -673,14 +673,16 @@ async function handleDeleteContributor(data: Record<string, any>) {
       transparent
     );
     color: var(--smrt-color-on-surface);
-    font-size: 0.83rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-large-size, 0.83rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .callout code {
-    font-family:
+    font-family: var(
+      --smrt-font-family-mono,
       'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      'Liberation Mono', 'Courier New', monospace;
+      'Liberation Mono', 'Courier New', monospace
+    );
     font-size: 0.9em;
   }
 
@@ -733,7 +735,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     );
     background: transparent;
     color: var(--smrt-color-primary);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.65rem 0.95rem;
     cursor: pointer;
   }
@@ -751,7 +753,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
       transparent
     );
     color: var(--smrt-color-primary);
-    font-weight: 700;
+    font-weight: var(--smrt-typography-weight-bold, 700);
     padding: 0 0.8rem;
   }
 
@@ -772,7 +774,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
     .page-header h1 {
       margin-top: 0.25rem;
-      font-size: clamp(1.6rem, 9vw, 2.2rem);
+      font-size: var(--smrt-typography-headline-small-size, clamp(1.6rem, 9vw, 2.2rem));
     }
 
     .callout,
@@ -792,15 +794,15 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
     .callout__header p,
     .callout__note {
-      font-size: 0.82rem;
-      line-height: 1.5;
+      font-size: var(--smrt-typography-body-medium-size, 0.82rem);
+      line-height: var(--smrt-typography-body-medium-line-height, 1.5);
     }
 
     .pill {
       min-height: 1.7rem;
       min-width: 0;
       padding: 0 0.65rem;
-      font-size: 0.78rem;
+      font-size: var(--smrt-typography-label-medium-size, 0.78rem);
     }
 
     .section-heading {

@@ -121,21 +121,21 @@ const workspaceHref = $derived(
   .eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .page-header h1 {
     margin: 0.35rem 0 0.65rem;
-    font-size: clamp(2rem, 5vw, 3rem);
-    line-height: 1.05;
+    font-size: var(--smrt-typography-headline-large-size, clamp(2rem, 5vw, 3rem));
+    line-height: var(--smrt-typography-headline-large-line-height, 1.05);
   }
 
   .page-header p {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     max-width: 42rem;
   }
 
@@ -161,7 +161,7 @@ const workspaceHref = $derived(
     );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .page-nav a[aria-current='page'] {

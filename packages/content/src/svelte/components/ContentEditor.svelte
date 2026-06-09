@@ -1373,9 +1373,9 @@ function removeAsset(id: string) {
 
   .document-title-input {
     width: 100%;
-    font-size: 2.5rem;
-    font-weight: 800;
-    line-height: 1.2;
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
+    line-height: var(--smrt-typography-display-medium-line-height, 1.2);
     padding: 0;
     margin-bottom: 2rem;
     border: none;
@@ -1436,12 +1436,12 @@ function removeAsset(id: string) {
     left: 0.5rem;
     background: var(--smrt-color-surface); /* Matches main surface background */
     padding: 0 0.25rem;
-    font-size: 0.65rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.65rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-outline);
     pointer-events: none;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
     z-index: 1;
   }
 
@@ -1451,8 +1451,8 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline-variant);
     background: transparent;
     color: var(--smrt-color-on-surface);
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     width: auto;
     font-family: inherit;
     box-sizing: border-box;
@@ -1488,8 +1488,8 @@ function removeAsset(id: string) {
     justify-content: space-between;
     align-items: center;
     padding: 0 0 1.25rem 0;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface);
     cursor: pointer;
     list-style: none; /* Hide default triangle */
@@ -1550,7 +1550,7 @@ function removeAsset(id: string) {
   .form-container h3 {
     margin: 0;
     color: var(--smrt-color-on-surface);
-    font-size: 1.5rem;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
   }
 
   .form-container form {
@@ -1563,8 +1563,8 @@ function removeAsset(id: string) {
     flex-direction: column;
     gap: 0.5rem;
     color: var(--smrt-color-on-surface-variant);
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .form-container input,
@@ -1573,7 +1573,7 @@ function removeAsset(id: string) {
     padding: 0.75rem;
     border: 1px solid var(--smrt-color-outline);
     border-radius: 0.5rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     transition: border-color 0.2s, box-shadow 0.2s;
     font-family: inherit;
     box-sizing: border-box;
@@ -1618,7 +1618,7 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline);
     border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.25rem 0.25rem 0.25rem 0.75rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
     color: var(--smrt-color-on-surface);
   }
 
@@ -1627,7 +1627,7 @@ function removeAsset(id: string) {
     border: none;
     color: var(--smrt-color-outline);
     cursor: pointer;
-    font-size: 1.125rem;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
     line-height: 1;
     padding: 0 0.25rem;
     margin-left: 0.25rem;
@@ -1639,7 +1639,7 @@ function removeAsset(id: string) {
 
   .no-refs {
     color: var(--smrt-color-outline);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-style: italic;
   }
 
@@ -1691,8 +1691,8 @@ function removeAsset(id: string) {
     border-radius: 0.375rem;
     color: var(--smrt-color-on-surface);
     cursor: pointer;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.25rem 0.5rem;
   }
 
@@ -1717,7 +1717,7 @@ function removeAsset(id: string) {
   .evidence-bulk-toolbar span,
   .evidence-message {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
   .evidence-bulk-toolbar select {
@@ -1743,7 +1743,7 @@ function removeAsset(id: string) {
   .resource-claim-body,
   .resource-claim-more {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
   .resource-claim-more {
@@ -1752,7 +1752,7 @@ function removeAsset(id: string) {
     background: transparent;
     padding: 0;
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .resource-claim-list {
@@ -1786,8 +1786,8 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-full, 9999px);
     display: inline-flex;
-    font-size: 0.75rem;
-    font-weight: 800;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
     height: 1.35rem;
     justify-content: center;
     line-height: 1;
@@ -1838,8 +1838,8 @@ function removeAsset(id: string) {
 
   .resource-claim-body dt {
     color: var(--smrt-color-outline);
-    font-size: 0.7rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: uppercase;
   }
 
@@ -1855,8 +1855,8 @@ function removeAsset(id: string) {
 
   .evidence-detail span {
     color: var(--smrt-color-outline);
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .resource-claim-actions {
@@ -1882,7 +1882,7 @@ function removeAsset(id: string) {
     padding: 0 1rem;
     border-radius: 0.5rem;
     cursor: pointer;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .add-reference-row button:hover {
@@ -1898,7 +1898,7 @@ function removeAsset(id: string) {
     padding: 0.75rem 1.25rem;
     border-radius: var(--smrt-radius-md, 0.5rem);
     color: var(--smrt-color-on-surface-variant, #475569);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: all 0.2s;
   }
@@ -1919,7 +1919,7 @@ function removeAsset(id: string) {
     border: none;
     padding: 0.75rem 1.5rem;
     border-radius: 0.5rem;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
   }
@@ -1941,12 +1941,12 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline-variant);
     padding: 0.75rem 1.25rem;
     border-radius: 0.5rem;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
   }
 
   .save-notice {
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-primary, #3b82f6);
   }
 
@@ -1992,8 +1992,8 @@ function removeAsset(id: string) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary);
   }
 
@@ -2007,8 +2007,8 @@ function removeAsset(id: string) {
     border: 1px solid var(--smrt-color-outline);
     padding: 0.375rem 0.875rem;
     border-radius: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
     white-space: nowrap;
     transition: all 0.15s ease;
@@ -2100,12 +2100,12 @@ function removeAsset(id: string) {
     left: 0.25rem;
     background: var(--smrt-color-primary, #3b82f6);
     color: white;
-    font-size: 0.65rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.65rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.15rem 0.4rem;
     border-radius: 0.25rem;
     text-transform: uppercase;
-    letter-spacing: 0.03em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.03em);
   }
 
   /* ── Drag & Drop Zones ── */

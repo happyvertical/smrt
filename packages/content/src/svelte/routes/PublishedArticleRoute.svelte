@@ -116,7 +116,7 @@ function formatTimestamp(value: string | null | undefined) {
   .back-link {
     color: var(--smrt-color-primary);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     width: fit-content;
   }
 
@@ -127,21 +127,21 @@ function formatTimestamp(value: string | null | undefined) {
   .eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.8rem;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .article-hero h1 {
     margin: 0;
-    font-size: clamp(2.2rem, 5vw, 4rem);
-    line-height: 1.05;
+    font-size: var(--smrt-typography-display-small-size, clamp(2.2rem, 5vw, 4rem));
+    line-height: var(--smrt-typography-display-small-line-height, 1.05);
     color: var(--smrt-color-on-surface);
   }
 
   .article-dek {
     margin: 0;
-    font-size: 1.15rem;
+    font-size: var(--smrt-typography-body-large-size, 1.15rem);
     color: var(--smrt-color-on-surface-variant);
     max-width: 55rem;
   }
@@ -151,7 +151,7 @@ function formatTimestamp(value: string | null | undefined) {
     flex-wrap: wrap;
     gap: 0.85rem;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.92rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.92rem);
   }
 
   .article-layout {

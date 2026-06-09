@@ -152,8 +152,8 @@ function handleSelect(selected: ImageLike | File | string) {
     border-radius: 0.375rem;
     background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface-variant);
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .asset-preview img {
@@ -171,7 +171,7 @@ function handleSelect(selected: ImageLike | File | string) {
   .asset-meta strong {
     overflow: hidden;
     color: var(--smrt-color-on-surface);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -179,7 +179,7 @@ function handleSelect(selected: ImageLike | File | string) {
   .asset-meta span,
   .empty-state {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   .empty-state {
@@ -205,8 +205,8 @@ function handleSelect(selected: ImageLike | File | string) {
     color: var(--smrt-color-on-surface);
     cursor: pointer;
     font: inherit;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.5rem 0.875rem;
   }
 

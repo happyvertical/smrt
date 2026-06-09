@@ -558,7 +558,7 @@ async function handleSendMessage(content: string) {
     border: none;
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     color: var(--smrt-color-on-surface, #1a1c1e);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     outline: none;
     cursor: pointer;
   }
@@ -612,7 +612,7 @@ async function handleSendMessage(content: string) {
     border-radius: var(--smrt-radius-sm, 4px);
     background: none;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     cursor: pointer;
     white-space: nowrap;
     transition: background 0.15s;
@@ -641,7 +641,7 @@ async function handleSendMessage(content: string) {
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-sm, 4px);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     outline: none;
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #1a1c1e);

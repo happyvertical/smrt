@@ -139,7 +139,7 @@ function removeReference(id: string) {
   .empty-state {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     font-style: italic;
   }
 
@@ -174,12 +174,12 @@ function removeReference(id: string) {
 
   .reference-copy strong {
     color: var(--smrt-color-on-surface);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
   }
 
   .reference-copy a {
     color: var(--smrt-color-primary);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     text-decoration: none;
   }
 
@@ -208,7 +208,7 @@ function removeReference(id: string) {
   button {
     background: var(--smrt-color-surface-container);
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   button:hover {
