@@ -1,3 +1,4 @@
+import { createLogger } from '@happyvertical/logger';
 import { json, type RequestHandler } from '@sveltejs/kit';
 import { getCollection } from '$lib/server/smrt';
 import {
@@ -9,6 +10,8 @@ import {
   requestHasTrustedOrigin,
   resolveContentChatProfileId,
 } from '../../../../../../content-chat-route-helpers.js';
+
+const logger = createLogger({ level: 'info' });
 
 export const GET: RequestHandler = async ({ params, locals }) => {
   const smrtLocals = locals as ContentChatRouteLocals;
@@ -52,7 +55,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
           'Chat tables not yet provisioned. Run smrt db:migrate to enable.',
       });
     }
-    console.error(`Error fetching chat for content ${id}:`, error);
+    logger.error(`Error fetching chat for content ${id}`, { error });
     return json(
       { error: error.message || 'Failed to find or create chat session' },
       { status: 500 },
@@ -134,7 +137,7 @@ export const POST: RequestHandler = async ({ params, request, locals }) => {
     if (error?.message === 'Active session is missing a chat room') {
       return json({ error: error.message }, { status: 500 });
     }
-    console.error(`Error sending message for content ${id}:`, error);
+    logger.error(`Error sending message for content ${id}`, { error });
     return json({ error: 'Failed to process message' }, { status: 500 });
   }
 };

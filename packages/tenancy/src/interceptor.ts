@@ -9,6 +9,7 @@
  * @see https://github.com/happyvertical/smrt/issues/675
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtObject } from '@happyvertical/smrt-core';
 import {
   type CollectionInterceptor,
@@ -27,6 +28,8 @@ import {
   TenantIsolationError,
 } from './context.js';
 import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Policy controlling what happens when raw SQL is executed against a
@@ -387,7 +390,7 @@ export function createTenantInterceptor(
           throw new TenantIsolationError(message);
 
         case 'warn':
-          console.warn(`[smrt-tenancy] WARNING: ${message}`);
+          logger.warn(`[smrt-tenancy] WARNING: ${message}`);
           return;
         default:
           return;
@@ -607,7 +610,7 @@ let registeredInterceptor: CollectionInterceptor | null = null;
  */
 export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   if (isEnabled) {
-    console.warn(
+    logger.warn(
       '[smrt-tenancy] Tenancy is already enabled. Call disableTenancy() first to reconfigure.',
     );
     return;

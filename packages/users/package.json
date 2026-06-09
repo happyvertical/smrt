@@ -53,6 +53,7 @@
     }
   },
   "dependencies": {
+    "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",

@@ -15,6 +15,7 @@
  * @packageDocumentation
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type {
   DatabaseConfig,
   DispatchBus,
@@ -23,6 +24,8 @@ import type {
 } from '@happyvertical/smrt-core';
 import type { StockMutationOptions } from './StockService.js';
 import { createStockService, type StockService } from './StockService.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Shape of a single reserved line in a `contract:created` payload. The
@@ -353,8 +356,7 @@ function warnMalformedPayload(
   metadata: DispatchMetadata,
   reason: string,
 ): void {
-  // eslint-disable-next-line no-console
-  console.warn(
+  logger.warn(
     `[@happyvertical/smrt-inventory] dispatch handler ignored a ${signal} ` +
       `event with a malformed payload (${reason}). ` +
       `Source: ${metadata.source ?? '<unknown>'}; payload keys: ` +

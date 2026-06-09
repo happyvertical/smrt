@@ -20,6 +20,7 @@
  * @packageDocumentation
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type {
   DatabaseConfig,
   DispatchBus,
@@ -31,6 +32,8 @@ import {
   createProductionService,
   type ProductionService,
 } from './ProductionService.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Shape of a `production_order:posted` payload this handler expects.
@@ -373,8 +376,7 @@ function warnMalformedPayload(
   metadata: DispatchMetadata,
   reason: string,
 ): void {
-  // eslint-disable-next-line no-console
-  console.warn(
+  logger.warn(
     `[@happyvertical/smrt-manufacturing] dispatch handler ignored a ${signal} ` +
       `event with a malformed payload (${reason}). ` +
       `Source: ${metadata.source ?? '<unknown>'}; payload keys: ` +
