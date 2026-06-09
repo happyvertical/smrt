@@ -302,7 +302,7 @@ function handleNavigate(): void {
   .smrt-role-shell-icon {
     display: inline-block;
     margin-right: 0.4rem;
-    font-size: 1.1rem;
+    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     line-height: 1;
     color: var(--smrt-role-color, var(--smrt-color-on-surface, #111827));
   }

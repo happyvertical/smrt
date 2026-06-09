@@ -103,8 +103,8 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
 
   .module-panel-placeholder__title {
     margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1e293b);
   }
 
@@ -119,13 +119,13 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
 
   .module-panel-placeholder__hint {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #64748b);
   }
 
   .module-panel-placeholder__meta {
     margin: 0;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #94a3b8);
   }
 </style>

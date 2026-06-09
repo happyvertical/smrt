@@ -85,16 +85,16 @@ function formatDate(date: Date | string | null | undefined): string {
   }
 
   .tenant-name {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
   }
 
   .status {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     padding: 0.125rem 0.375rem;
     border-radius: var(--smrt-radius-full, 9999px);
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .status-active {
@@ -126,7 +126,7 @@ function formatDate(date: Date | string | null | undefined): string {
   }
 
   .date {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -140,7 +140,7 @@ function formatDate(date: Date | string | null | undefined): string {
     background: none;
     border: 1px solid var(--smrt-color-outline);
     border-radius: 0.25rem;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
   }

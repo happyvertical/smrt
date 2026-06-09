@@ -102,8 +102,8 @@ const valueText = $derived(
     align-items: center;
     gap: 0.5rem;
     padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-sm, 4px);
     background-color: var(--badge-bg);
     color: var(--badge-text);
@@ -114,13 +114,13 @@ const valueText = $derived(
 
   .confidence-badge.sm {
     padding: 0.125rem 0.375rem;
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     min-width: 48px;
   }
 
   .confidence-badge.lg {
     padding: 0.375rem 0.75rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
     min-width: 80px;
   }
 

@@ -350,7 +350,7 @@ function handleBlur() {
     position: absolute;
     left: 12px;
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     pointer-events: none;
   }
 
@@ -358,7 +358,7 @@ function handleBlur() {
     position: absolute;
     right: 12px;
     color: var(--smrt-color-on-surface-variant, #9ca3af);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     text-transform: uppercase;
     pointer-events: none;
   }

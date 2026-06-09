@@ -228,7 +228,7 @@ function getTypeLabel(type: string): string {
   }
 
   .weather-icon {
-    font-size: 24px;
+    font-size: var(--smrt-typography-headline-small-size, 24px);
   }
 
   .weather-temps {
@@ -256,7 +256,7 @@ function getTypeLabel(type: string): string {
   }
 
   .empty-icon {
-    font-size: 48px;
+    font-size: var(--smrt-typography-display-medium-size, 48px);
     display: block;
     margin-bottom: var(--smrt-spacing-4, 1rem);
     opacity: 0.5;
@@ -286,7 +286,7 @@ function getTypeLabel(type: string): string {
   }
 
   .group-icon {
-    font-size: 20px;
+    font-size: var(--smrt-typography-title-large-size, 20px);
   }
 
   .group-count {

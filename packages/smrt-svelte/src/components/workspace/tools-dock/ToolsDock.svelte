@@ -329,8 +329,8 @@
   }
 
   .tools-dock__rail-glyph {
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     line-height: 1;
   }
 
@@ -347,8 +347,8 @@
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #7dd3fc);
     color: var(--smrt-color-on-primary, #061014);
-    font-size: 0.58rem;
-    font-weight: 750;
+    font-size: var(--smrt-typography-label-small-size, 0.58rem);
+    font-weight: var(--smrt-typography-weight-bold, 750);
     line-height: 1;
   }
 
@@ -397,8 +397,8 @@
 
   .tools-dock__panel-header h3 {
     margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.15;
+    font-size: var(--smrt-typography-title-medium-size, 1.05rem);
+    line-height: var(--smrt-typography-title-medium-line-height, 1.15);
   }
 
   .tools-dock__panel-body {
@@ -417,7 +417,7 @@
     background: var(--smrt-color-surface-container-high, #1d2228);
     color: inherit;
     cursor: pointer;
-    font-size: 1.2rem;
+    font-size: var(--smrt-typography-title-large-size, 1.2rem);
     line-height: 1;
   }
 
@@ -467,8 +467,8 @@
     border-radius: 0.6rem;
     padding: 0.45rem 0.7rem;
     cursor: pointer;
-    font-size: 0.84rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-large-size, 0.84rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .tools-dock__topbar-button.active,
@@ -485,7 +485,7 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
 
   .tools-dock--topbar .tools-dock__panel {

@@ -27,6 +27,7 @@
     "check:spacing": "node scripts/check-spacing.mjs",
     "check:radius": "node scripts/check-radius.mjs",
     "check:elevation": "node scripts/check-elevation.mjs",
+    "check:typography": "node scripts/check-typography.mjs",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "changeset": "changeset",
     "changeset:auto": "npx tsx scripts/auto-changeset.ts",

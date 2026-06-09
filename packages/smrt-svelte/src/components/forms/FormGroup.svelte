@@ -36,8 +36,8 @@ const { label, id, error, hint, required = false, children }: Props = $props();
 
 	.form-label {
 		display: block;
-		font-size: 0.875rem;
-		font-weight: 500;
+		font-size: var(--smrt-typography-label-large-size, 0.875rem);
+		font-weight: var(--smrt-typography-weight-medium, 500);
 		color: var(--smrt-color-on-surface, #374151);
 		margin-bottom: 0.375rem;
 	}
@@ -49,13 +49,13 @@ const { label, id, error, hint, required = false, children }: Props = $props();
 
 	.form-hint {
 		margin: 0.25rem 0 0;
-		font-size: 0.75rem;
+		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		color: var(--smrt-color-on-surface-variant, #6b7280);
 	}
 
 	.form-error {
 		margin: 0.25rem 0 0;
-		font-size: 0.75rem;
+		font-size: var(--smrt-typography-body-small-size, 0.75rem);
 		color: var(--smrt-color-error, #ba1a1a);
 	}
 </style>

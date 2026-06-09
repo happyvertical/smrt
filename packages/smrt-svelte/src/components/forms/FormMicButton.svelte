@@ -141,8 +141,8 @@ function handleClick() {
     padding: 0.5rem 0.75rem;
     background: var(--smrt-color-on-surface, #1f2937);
     color: white;
-    font-size: 0.75rem;
-    font-weight: 400;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-normal, 400);
     border-radius: 0.375rem;
     white-space: nowrap;
     z-index: var(--smrt-z-index-tooltip, 1600);
