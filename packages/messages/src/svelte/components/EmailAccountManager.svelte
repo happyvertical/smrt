@@ -342,7 +342,7 @@ function getProviderLabel(type: string): string {
   }
 
   .section-description {
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
@@ -353,9 +353,9 @@ function getProviderLabel(type: string): string {
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-family: inherit;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 150ms ease;
     flex-shrink: 0;
   }
@@ -376,17 +376,17 @@ function getProviderLabel(type: string): string {
   }
 
   .form-title {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-primary, #005ac1);
   }
 
   .form-section-label {
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface-variant, #43474e);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
     padding-top: 0.25rem;
   }
 
@@ -403,8 +403,8 @@ function getProviderLabel(type: string): string {
   }
 
   .form-label {
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
@@ -415,7 +415,7 @@ function getProviderLabel(type: string): string {
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     font-family: inherit;
     transition: border-color 150ms ease;
   }
@@ -441,7 +441,7 @@ function getProviderLabel(type: string): string {
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     color: var(--smrt-color-on-surface, #1a1c1e);
     white-space: nowrap;
   }
@@ -464,7 +464,7 @@ function getProviderLabel(type: string): string {
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-family: inherit;
     transition: all 150ms ease;
   }
@@ -480,9 +480,9 @@ function getProviderLabel(type: string): string {
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #fff);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-family: inherit;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 150ms ease;
   }
 
@@ -498,7 +498,7 @@ function getProviderLabel(type: string): string {
   .test-result {
     padding: 0.5rem 0.75rem;
     border-radius: var(--smrt-radius-md, 8px);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -517,7 +517,7 @@ function getProviderLabel(type: string): string {
   .dismiss-btn {
     background: transparent;
     border: none;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-label-large-size, 1rem);
     cursor: pointer;
     color: inherit;
     padding: 0 0.25rem;
@@ -574,9 +574,9 @@ function getProviderLabel(type: string): string {
   }
 
   .type-badge {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    font-family: monospace;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    font-family: var(--smrt-font-family-mono, monospace);
     background: var(--smrt-color-surface, #fefbff);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     padding: 0.25rem 0.5rem;
@@ -588,9 +588,9 @@ function getProviderLabel(type: string): string {
 
   .type-badge.provider {
     font-family: inherit;
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
     background: var(--smrt-color-primary-container, #d8e2ff);
     color: var(--smrt-color-primary, #005ac1);
     border-color: transparent;
@@ -606,21 +606,21 @@ function getProviderLabel(type: string): string {
   }
 
   .entry-pattern {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .entry-description {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .host-tag {
-    font-size: 0.6875rem;
-    font-family: monospace;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-family: var(--smrt-font-family-mono, monospace);
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface, #fefbff);
     padding: 0.125rem 0.5rem;
@@ -629,7 +629,7 @@ function getProviderLabel(type: string): string {
   }
 
   .inactive-tag {
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface-container-high, #e6e7ef);
     padding: 0.125rem 0.5rem;
@@ -644,7 +644,7 @@ function getProviderLabel(type: string): string {
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
     cursor: pointer;
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     font-family: inherit;
     transition: all 150ms ease;
   }
@@ -660,7 +660,7 @@ function getProviderLabel(type: string): string {
   }
 
   .delete-btn {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-label-large-size, 1rem);
     line-height: 1;
     padding: 0.125rem 0.5rem;
     border-radius: var(--smrt-radius-full, 9999px);

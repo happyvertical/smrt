@@ -45,8 +45,8 @@ const _loading = $state(false);
   .manager-header h2 {
     margin: 0 0 0.5rem 0;
     color: var(--smrt-color-on-surface, #1f2937);
-    font-size: 1.5rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .manager-header p {

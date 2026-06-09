@@ -104,8 +104,8 @@ export interface Props {
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-sm, 8px);
     background: var(--smrt-color-surface-variant, #e7e0ec);
-    font-size: 13px;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 13px);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .filename {
@@ -114,7 +114,7 @@ export interface Props {
 
   .size {
     color: var(--smrt-color-outline, #79747e);
-    font-size: 11px;
+    font-size: var(--smrt-typography-label-small-size, 11px);
   }
 
   .remove {
@@ -123,7 +123,7 @@ export interface Props {
     cursor: pointer;
     padding: 0 var(--smrt-spacing-1, 4px);
     color: var(--smrt-color-error, #ba1a1a);
-    font-size: 14px;
+    font-size: var(--smrt-typography-label-large-size, 14px);
   }
 
   .drop-zone {
@@ -149,7 +149,7 @@ export interface Props {
 
   .upload-text {
     color: var(--smrt-color-outline, #79747e);
-    font-size: 13px;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 13px);
+    font-family: var(--smrt-font-family, system-ui);
   }
 </style>

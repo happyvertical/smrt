@@ -260,7 +260,7 @@ export interface Props {
     flex-direction: column;
     gap: var(--smrt-spacing-2, 8px);
     padding: var(--smrt-spacing-4, 16px);
-    font-family: var(--smrt-typography-body, system-ui);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .field {
@@ -272,7 +272,7 @@ export interface Props {
   }
 
   .field-label {
-    font-size: 14px;
+    font-size: var(--smrt-typography-label-large-size, 14px);
     color: var(--smrt-color-on-surface-variant, #49454f);
     min-width: 56px;
   }
@@ -283,7 +283,7 @@ export interface Props {
     border: none;
     outline: none;
     font-family: inherit;
-    font-size: 14px;
+    font-size: var(--smrt-typography-body-medium-size, 14px);
     padding: var(--smrt-spacing-2, 8px) 0;
     background: transparent;
     color: var(--smrt-color-on-surface, #1c1b1f);
@@ -300,7 +300,7 @@ export interface Props {
     border: none;
     cursor: pointer;
     color: var(--smrt-color-primary, #6750a4);
-    font-size: 13px;
+    font-size: var(--smrt-typography-label-large-size, 13px);
     text-decoration: underline;
   }
 
@@ -313,8 +313,8 @@ export interface Props {
     border: 1px solid var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-md, 12px);
     padding: var(--smrt-spacing-3, 12px);
-    font-family: var(--smrt-typography-body, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 14px);
     resize: vertical;
     background: var(--smrt-color-surface, #fffbfe);
     color: var(--smrt-color-on-surface, #1c1b1f);
@@ -328,14 +328,14 @@ export interface Props {
 
   .char-count {
     text-align: right;
-    font-size: 12px;
+    font-size: var(--smrt-typography-label-medium-size, 12px);
     color: var(--smrt-color-outline, #79747e);
     padding-top: var(--smrt-spacing-1, 4px);
   }
 
   .char-count.over-limit {
     color: var(--smrt-color-error, #ba1a1a);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .actions {
@@ -350,8 +350,8 @@ export interface Props {
     border: none;
     background: var(--smrt-color-primary, #6750a4);
     color: var(--smrt-color-on-primary, #fff);
-    font-family: var(--smrt-typography-label, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     cursor: pointer;
   }
 
@@ -366,8 +366,8 @@ export interface Props {
     border: 1px solid var(--smrt-color-outline, #79747e);
     background: transparent;
     color: var(--smrt-color-primary, #6750a4);
-    font-family: var(--smrt-typography-label, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     cursor: pointer;
   }
 
@@ -376,8 +376,8 @@ export interface Props {
     border: none;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #49454f);
-    font-family: var(--smrt-typography-label, system-ui);
-    font-size: 14px;
+    font-family: var(--smrt-font-family, system-ui);
+    font-size: var(--smrt-typography-label-large-size, 14px);
     cursor: pointer;
   }
 </style>

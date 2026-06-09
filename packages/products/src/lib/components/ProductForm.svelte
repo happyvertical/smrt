@@ -186,9 +186,9 @@ function _handleSubmit(event: Event) {
   label {
     display: block;
     margin-bottom: 0.25rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #374151);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .form-input, .form-textarea {
@@ -196,7 +196,7 @@ function _handleSubmit(event: Event) {
     padding: 0.5rem;
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: var(--smrt-radius-sm, 4px);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     transition: border-color 0.2s;
   }
 
@@ -228,13 +228,13 @@ function _handleSubmit(event: Event) {
   
   .form-hint {
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     margin-top: 0.25rem;
   }
 
   .error-message {
     color: var(--smrt-color-error, #dc2626);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     margin-top: 0.25rem;
     display: block;
   }
@@ -251,8 +251,8 @@ function _handleSubmit(event: Event) {
   .cancel-btn, .submit-btn {
     padding: 0.5rem 1rem;
     border-radius: var(--smrt-radius-sm, 4px);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     border: 1px solid;
     transition: all 0.2s;

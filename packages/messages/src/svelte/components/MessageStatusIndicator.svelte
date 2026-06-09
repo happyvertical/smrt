@@ -45,7 +45,7 @@ const {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .indicator {

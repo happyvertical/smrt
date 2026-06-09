@@ -125,7 +125,7 @@ function getFolderIcon(specialUse?: string): string {
 
   .folder-item--active {
     background: var(--smrt-color-secondary-container, #d7e3f7);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .folder-item:focus-visible {
@@ -135,7 +135,7 @@ function getFolderIcon(specialUse?: string): string {
 
   .folder-icon {
     flex-shrink: 0;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .folder-name {
