@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.29
+
+### Patch Changes
+
+- ### Features
+
+  - migrate final 9 packages, flip all strict — closes #1373 (#1466) (typography)
+  - @happyvertical/smrt-scanner@0.27.29
+  - @happyvertical/smrt-config@0.27.29
+  - @happyvertical/smrt-types@0.27.29
+
 ## 0.27.28
 
 ### Patch Changes
