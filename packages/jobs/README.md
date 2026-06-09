@@ -115,12 +115,15 @@ taskRunner.on('job:failed', (job, error) => {
 | Export | Description |
 |--------|------------|
 | `SmrtJob` | Persistent job record stored in `_smrt_jobs` |
-| `SmrtJobCollection` | Collection with `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
+| `SmrtJobCollection` | Collection with `claimReady()`, `listReady()`, `listByStatus()`, `stats()`, `cleanup()` |
 | `JobBuilder` | Fluent API: `.delay()`, `.priority()`, `.retries()`, `.queue()`, `.timeout()`, `.enqueue()` |
 | `JobHandle` | Track, wait, cancel, or retry an enqueued job |
 | `JobContextLogger` | Logger that auto-injects job context (jobId, attempt, queue) |
 | `TaskRunner` | Polling-based execution engine with concurrency control and heartbeats |
 | `ScheduleRunner` | Polls for due cron schedules and creates SmrtJob entries |
+
+`TaskRunner` uses `SmrtJobCollection.claimReady()` so multiple workers can poll
+the same queue without duplicate-claiming a pending row.
 
 ### Functions
 
