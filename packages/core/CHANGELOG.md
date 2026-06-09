@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve 16 dangling --smrt-\* refs + harden token validation (#1467) (tokens)
+  - @happyvertical/smrt-scanner@0.27.31
+  - @happyvertical/smrt-config@0.27.31
+  - @happyvertical/smrt-types@0.27.31
+
 ## 0.27.30
 
 ### Patch Changes
