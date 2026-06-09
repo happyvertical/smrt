@@ -18,6 +18,7 @@
  * @see https://github.com/happyvertical/smrt/issues/1133
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { recordRegistryDiagnostic } from '../registry/diagnostics.js';
 import type {
   SmartObjectDefinition,
@@ -29,6 +30,8 @@ import {
   isQualifiedName,
   parseQualifiedName,
 } from '../utils/qualified-names.js';
+
+const logger = createLogger({ level: 'info' });
 
 export type ManifestLoadOptions = {
   warn?: boolean;
@@ -493,7 +496,7 @@ export function resolveManifestExportPathSync(
         { packageName, exportKey },
       );
       if (shouldWarn) {
-        console.warn(
+        logger.warn(
           `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
         );
       }
@@ -508,7 +511,7 @@ export function resolveManifestExportPathSync(
         { packageName, exportKey, manifestRelativePath },
       );
       if (shouldWarn) {
-        console.warn(
+        logger.warn(
           `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
         );
       }
@@ -533,7 +536,7 @@ export function resolveManifestExportPathSync(
       { packageName, exportKey, manifestRelativePath },
     );
     if (shouldWarn) {
-      console.warn(
+      logger.warn(
         `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
       );
     }
@@ -636,7 +639,7 @@ export function loadExternalManifestSyncWithNode(
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
       if (options.warn ?? true) {
-        console.warn(`Invalid manifest structure for package ${packageName}`);
+        logger.warn(`Invalid manifest structure for package ${packageName}`);
       }
       return null;
     }
@@ -650,7 +653,7 @@ export function loadExternalManifestSyncWithNode(
     return cachedManifest;
   } catch (error) {
     if (options.warn ?? true) {
-      console.warn(
+      logger.warn(
         `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,
       );
     }
@@ -678,7 +681,7 @@ export function loadManifestFromPathSyncWithNode(
     ) as SmartObjectManifest;
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
-      console.warn(`Invalid manifest structure at ${manifestPath}`);
+      logger.warn(`Invalid manifest structure at ${manifestPath}`);
       return null;
     }
 
@@ -686,7 +689,7 @@ export function loadManifestFromPathSyncWithNode(
 
     return manifest;
   } catch (error) {
-    console.warn(
+    logger.warn(
       `Failed to load manifest from path ${manifestPath}: ${error instanceof Error ? error.message : error}`,
     );
     return null;

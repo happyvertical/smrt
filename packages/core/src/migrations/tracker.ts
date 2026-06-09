@@ -7,6 +7,7 @@
 
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
+import { createLogger } from '@happyvertical/logger';
 import { detectEngine } from '../schema/ddl/index.js';
 // DatabaseEngine comes from the DDL layer (the json-inclusive type that
 // `detectEngine` actually returns), matching `SchemaComparer` in differ.ts.
@@ -29,6 +30,8 @@ import type {
   MigrationTrackerOptions,
   RollbackOptions,
 } from './types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Row type for _smrt_schema_migrations table
@@ -485,7 +488,7 @@ export class MigrationTracker {
           persistError instanceof Error
             ? persistError.message
             : String(persistError);
-        console.error(
+        logger.error(
           `Failed to persist failed status for migration ${definition.id}: ${persistMessage}`,
         );
       }

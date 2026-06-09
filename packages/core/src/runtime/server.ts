@@ -3,7 +3,10 @@
  */
 
 import http from 'node:http';
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtRequest, SmrtServerOptions } from './types';
+
+const logger = createLogger({ level: 'info' });
 
 export class SmrtServer {
   private options: Required<SmrtServerOptions>;
@@ -148,7 +151,7 @@ export class SmrtServer {
     server.listen(this.options.port, this.options.hostname);
 
     const url = `http://${this.options.hostname}:${this.options.port}`;
-    console.log(`[smrt] Server started at ${url}`);
+    logger.info(`[smrt] Server started at ${url}`);
 
     return { server, url };
   }
@@ -258,7 +261,7 @@ export class SmrtServer {
 
       return response;
     } catch (error) {
-      console.error('[smrt] Request error:', error);
+      logger.error('[smrt] Request error', { error });
       return new Response('Internal Server Error', { status: 500 });
     }
   }

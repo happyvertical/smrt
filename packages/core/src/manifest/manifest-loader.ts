@@ -24,6 +24,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
+import { createLogger } from '@happyvertical/logger';
 import { ObjectRegistry } from '../registry.js';
 import type {
   FieldDefinition,
@@ -178,13 +179,20 @@ const DEBUG_ENABLED =
   process.env.DEBUG?.includes('manifest') ||
   false;
 
+// The debug traces below are gated by DEBUG_MANIFEST / DEBUG_TEST_ENV, so the
+// logger level must allow debug when either is set (a fixed 'info' would filter
+// them out and silently break those debug switches).
+const logger = createLogger({
+  level: DEBUG_ENABLED || process.env.DEBUG_TEST_ENV ? 'debug' : 'info',
+});
+
 /**
  * Log a debug message only if DEBUG_MANIFEST is enabled.
  * Uses cached boolean check instead of repeated env var access.
  */
 function debugLog(message: string): void {
   if (DEBUG_ENABLED) {
-    console.log(message);
+    logger.debug(message);
   }
 }
 
@@ -260,7 +268,7 @@ function isTestEnvironment(): boolean {
   const result = isTestEnvFromStore();
 
   if (process.env.DEBUG_TEST_ENV) {
-    console.log('[manifest-loader] isTestEnvironment check:', {
+    logger.debug('[manifest-loader] isTestEnvironment check', {
       NODE_ENV: process.env.NODE_ENV,
       VITEST: process.env.VITEST,
       JEST_WORKER_ID: process.env.JEST_WORKER_ID,
@@ -303,7 +311,7 @@ function getTestManifest(): SmartObjectManifest | null {
     // CRITICAL: Scope the core test manifest to smrt-core's own test suite.
     if (!shouldLoadCoreTestManifest()) {
       if (process.env.DEBUG_TEST_ENV) {
-        console.log(
+        logger.debug(
           '[manifest-loader] ⚠️  Skipping core test manifest load (not smrt-core test environment)',
         );
       }
@@ -317,13 +325,13 @@ function getTestManifest(): SmartObjectManifest | null {
       const manifest = imported.testManifest || imported.default;
       setTestManifestCache(manifest);
       if (process.env.DEBUG_TEST_ENV) {
-        console.log(
+        logger.debug(
           `[manifest-loader] ✅ Loaded test manifest (${Object.keys(manifest?.objects || {}).length} objects)`,
         );
       }
     } catch (error) {
       if (process.env.DEBUG_TEST_ENV) {
-        console.log(
+        logger.debug(
           '[manifest-loader] ⚠️  Test manifest not found (this is normal in production)',
         );
       }
@@ -700,7 +708,7 @@ function resolveManifestExportPath(
 
     if (!manifestRelativePath) {
       if (shouldWarn) {
-        console.warn(
+        logger.warn(
           `Package ${packageName} has invalid manifest export configuration for ${exportKey}`,
         );
       }
@@ -709,7 +717,7 @@ function resolveManifestExportPath(
 
     if (!manifestRelativePath.endsWith('.json')) {
       if (shouldWarn) {
-        console.warn(
+        logger.warn(
           `Package ${packageName} must export a JSON manifest for ${exportKey}, received ${manifestRelativePath}`,
         );
       }
@@ -728,7 +736,7 @@ function resolveManifestExportPath(
     }
 
     if (shouldWarn) {
-      console.warn(
+      logger.warn(
         `Package ${packageName} declares manifest export ${manifestRelativePath}, but no manifest file was found.`,
       );
     }
@@ -797,7 +805,7 @@ export function loadExternalManifestSync(
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
       if (options.warn ?? true) {
-        console.warn(`Invalid manifest structure for package ${packageName}`);
+        logger.warn(`Invalid manifest structure for package ${packageName}`);
       }
       return null;
     }
@@ -814,7 +822,7 @@ export function loadExternalManifestSync(
     return cachedManifest;
   } catch (error) {
     if (options.warn ?? true) {
-      console.warn(
+      logger.warn(
         `Failed to load manifest for package ${packageName}: ${error instanceof Error ? error.message : error}`,
       );
     }
@@ -845,7 +853,7 @@ export function loadManifestFromPathSync(
     const manifest: Manifest = parse(manifestJson);
 
     if (!manifest.objects || typeof manifest.objects !== 'object') {
-      console.warn(`Invalid manifest structure at ${manifestPath}`);
+      logger.warn(`Invalid manifest structure at ${manifestPath}`);
       return null;
     }
 
@@ -857,7 +865,7 @@ export function loadManifestFromPathSync(
 
     return manifest;
   } catch (error) {
-    console.warn(
+    logger.warn(
       `Failed to load manifest from path ${manifestPath}: ${error instanceof Error ? error.message : error}`,
     );
     return null;

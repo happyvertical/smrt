@@ -1,4 +1,22 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// schema-manager.ts emits debug traces via @happyvertical/logger; mock it so the
+// tests can assert on the logger (S14 console→logger migration). createLogger is
+// a spy too, so we can verify the per-instance level follows the `debug` option
+// (a fixed level: 'info' would filter debug output — see PR #1469 review).
+const { mockLogger, createLoggerMock } = vi.hoisted(() => {
+  const mockLogger = {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  };
+  return { mockLogger, createLoggerMock: vi.fn(() => mockLogger) };
+});
+vi.mock('@happyvertical/logger', () => ({
+  createLogger: createLoggerMock,
+}));
+
 import { SchemaManager } from './schema-manager';
 import type { SchemaDefinition } from './types';
 
@@ -18,6 +36,10 @@ function createSchema(tableName: string): SchemaDefinition {
 }
 
 describe('SchemaManager', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it('uses parameterized postgres introspection queries', async () => {
     const query = vi
       .fn()
@@ -77,11 +99,11 @@ describe('SchemaManager', () => {
       url: 'sqlite::memory:',
     } as any;
 
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
     const quietManager = new SchemaManager(db, { engine: 'sqlite' });
     await quietManager.ensureTable(createSchema('users'));
-    expect(logSpy).not.toHaveBeenCalled();
+    expect(mockLogger.debug).not.toHaveBeenCalled();
+    // Without debug, the logger is created at 'info' so debug output is filtered.
+    expect(createLoggerMock).toHaveBeenCalledWith({ level: 'info' });
 
     query.mockReset();
     query.mockResolvedValueOnce([{ name: 'id' }]).mockResolvedValueOnce([]);
@@ -92,8 +114,10 @@ describe('SchemaManager', () => {
     });
     await verboseManager.ensureTable(createSchema('users'));
 
-    expect(logSpy).toHaveBeenCalledWith(
+    expect(mockLogger.debug).toHaveBeenCalledWith(
       '[SchemaManager] Added 1 missing column(s) to "users"',
     );
+    // The debug option must raise the logger level so the trace actually emits.
+    expect(createLoggerMock).toHaveBeenCalledWith({ level: 'debug' });
   });
 });

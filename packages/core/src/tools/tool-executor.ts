@@ -4,9 +4,12 @@
  * This module handles runtime execution of AI tool calls on SMRT object instances.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { Signal } from '@happyvertical/smrt-types';
 import { RuntimeError, ValidationError } from '../errors.js';
 import type { SignalBus } from '../signals/bus.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Tool call structure from AI response
@@ -264,9 +267,7 @@ export async function executeToolCalls(
 
     // Stop on first error if needed
     if (!result.success) {
-      console.warn(
-        `Tool call failed for ${result.methodName}: ${result.error}`,
-      );
+      logger.warn(`Tool call failed for ${result.methodName}: ${result.error}`);
       // Continue executing other tools (don't break)
     }
   }

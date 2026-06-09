@@ -5,6 +5,7 @@
  * can override for their particular requirements.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type {
   ColumnDefinition,
   IndexDefinition,
@@ -13,6 +14,8 @@ import type {
   TriggerDefinition,
 } from '../types.js';
 import type { DatabaseEngine, DDLStrategy } from './types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Abstract base class for DDL strategies
@@ -146,9 +149,7 @@ export abstract class BaseDDLStrategy implements DDLStrategy {
             !Array.isArray(index.columns) ||
             index.columns.length === 0))
       ) {
-        console.warn(
-          `[DDL] Skipping malformed index: ${JSON.stringify(index)}`,
-        );
+        logger.warn(`[DDL] Skipping malformed index: ${JSON.stringify(index)}`);
         continue;
       }
 
