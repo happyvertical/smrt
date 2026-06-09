@@ -147,7 +147,7 @@ function _getFieldType(
     padding: 1.5rem;
     background: white;
     border-radius: var(--smrt-radius-md, 8px);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
   }
 
   .form-header {

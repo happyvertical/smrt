@@ -357,7 +357,7 @@ async function handleAIEdit() {
   .mode-selector button.active {
     background: var(--smrt-color-surface-container, #1a1a1a);
     color: var(--smrt-color-on-surface, #fff);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
   }
 
   .tool-section h4 {

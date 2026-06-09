@@ -56,7 +56,7 @@ const { children }: Props = $props();
   .app-header {
     background: white;
     border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
-    box-shadow: 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
     position: sticky;
     top: 0;
     z-index: var(--smrt-z-index-sticky, 1100);

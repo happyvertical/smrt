@@ -429,7 +429,7 @@ $effect(() => {
     padding: 0;
     width: min(420px, 90vw);
     max-height: 60vh;
-    box-shadow: 0 8px 32px color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
+    box-shadow: var(--smrt-elevation-5, 0 8px 32px color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent));
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
   }

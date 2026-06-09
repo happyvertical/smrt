@@ -193,6 +193,12 @@ jobs:
       - name: Check raw border-radius
         run: node scripts/check-radius.mjs
 
+      # Bans raw downward neutral box-shadows in component CSS. Strict (fails)
+      # for UI packages; report-only elsewhere until later phases of the
+      # design-token sweep (issue #1373). Node-only, no deps.
+      - name: Check raw drop-shadows (elevation)
+        run: node scripts/check-elevation.mjs
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

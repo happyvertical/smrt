@@ -136,8 +136,7 @@ const sizeClasses = {
     position: absolute;
     background: var(--smrt-color-surface, #ffffff);
     border-radius: var(--smrt-radius-full, 9999px);
-    box-shadow: 0 1px 3px
-      color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 20%, transparent));
     transition: transform var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
