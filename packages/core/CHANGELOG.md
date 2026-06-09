@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.34
+
+### Patch Changes
+
+- ### Features
+
+  - migrate Node-side runtime logging to logger + finish console classification (#1470) (s14)
+  - @happyvertical/smrt-scanner@0.27.34
+  - @happyvertical/smrt-config@0.27.34
+  - @happyvertical/smrt-types@0.27.34
+
 ## 0.27.33
 
 ### Patch Changes
