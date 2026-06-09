@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.32
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: define S14 logging policy + classify keep-console contexts (#1468) (standards)
+  - @happyvertical/smrt-scanner@0.27.32
+  - @happyvertical/smrt-config@0.27.32
+  - @happyvertical/smrt-types@0.27.32
+
 ## 0.27.31
 
 ### Patch Changes
