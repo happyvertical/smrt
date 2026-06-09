@@ -196,6 +196,30 @@
     },
     {
       "includes": [
+        "packages/*/src/**/vite-plugin/**",
+        "packages/*/src/**/consumer-plugin/**",
+        "packages/*/src/**/prebuild/**",
+        "packages/*/src/**/scanner/**",
+        "packages/*/src/**/generators/**",
+        "packages/*/src/**/manifest/generator*",
+        "packages/*/src/**/manifest/discover-*",
+        "packages/*/src/**/testing/**",
+        "packages/cli/src/commands/**",
+        "packages/*/src/server.ts",
+        "packages/*/src/**/*-server.ts",
+        "packages/*/src/**/seed-*.ts",
+        "packages/*/src/**/demo*.ts"
+      ],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": [
         "packages/core/src/object.ts",
         "packages/core/src/collection.ts",
         "packages/core/src/registry.ts",

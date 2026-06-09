@@ -279,6 +279,52 @@ These are already documented in the root `AGENTS.md`. They are reproduced here f
 - System tables prefixed `_smrt_`
 - JSON fields stored as strings with `getX()`/`setX()` helpers wrapped in `try/catch`
 
+### Logging (S14 / dim 9)
+
+Shipped library code logs through `@happyvertical/logger`, never `console.*`.
+`console` is reserved for contexts where stdout/stderr **is** the product, not a
+diagnostic side-channel.
+
+**Use the logger** — runtime diagnostics emitted by shipped library code (caught
+errors, recoverable warnings, operational traces):
+
+```ts
+import { createLogger } from '@happyvertical/logger';
+const logger = createLogger({ level: 'info' });
+
+logger.error('Failed to load schema', { error });  // was console.error(error)
+logger.warn('Falling back to default', { id });     // was console.warn(...)
+logger.debug('resolved relationship', { target });  // was a diagnostic console.log
+```
+
+Map by intent: a caught/operational error → `logger.error`; a recoverable
+problem → `logger.warn`; developer diagnostics → `logger.debug` (or `info` for
+genuinely operational milestones).
+
+**Keep `console` (Biome `noConsole: off`)** where the output IS the contract:
+
+- the `cli` package's user-facing command output (results, tables, prompts,
+  help) — its *internal* diagnostics still use the logger;
+- standalone / dev / demo entrypoints — `server.ts`, `*-server.ts`, `bin/`,
+  `scripts/`, `lib/server/seed-*`, `demo*`;
+- build-time & codegen tooling — vite / consumer plugins, scanners, prebuild,
+  and the REST / CLI / MCP / manifest **generators** (`vite-plugin/`,
+  `consumer-plugin/`, `prebuild/`, `scanner/`, `generators/`,
+  `manifest/generator*`, `manifest/discover-*`). Note this is the *generation*
+  side only — runtime manifest loading (`manifest/manifest-loader.ts`,
+  `store.ts`) is shipped library code and uses the logger;
+- test files and `*.config.*` (already exempt).
+
+**Never touch** `console.*` inside comments or JSDoc `@example` blocks — that is
+documentation, not code.
+
+**Enforcement (ratchet).** Global `noConsole: "warn"` in `biome.json`.
+Keep-console contexts above get `"off"` overrides; a runtime module flips to
+`"error"` once migrated — per package/file, the same incremental ratchet used by
+the design-token sweeps (S1). The raw `console.*` count overstates the work:
+most of it is the keep-console contexts above; the real target is runtime
+library logging, concentrated in `core`.
+
 ---
 
 ## 8. UI packaging (Svelte)
