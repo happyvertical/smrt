@@ -97,15 +97,25 @@ export function createWorkerKey(baseId: string): string {
   return `${baseId}~${createId().slice(0, 8)}`;
 }
 
+/**
+ * The connection URL, honoring adapters that leave `db.url` empty and carry the
+ * real URL on `db.config.url`. Used consistently for engine detection, the
+ * in-memory check, and the URL handed to the off-loop thread so they never
+ * disagree.
+ */
+export function resolveUrl(db: DatabaseInterface): string {
+  const withConfig = db as DatabaseInterface & { config?: { url?: string } };
+  return db.url || withConfig.config?.url || '';
+}
+
 /** Resolve the database engine for a connection. */
 export function resolveEngine(db: DatabaseInterface): DatabaseEngine {
   const withConfig = db as DatabaseInterface & {
-    config?: { type?: string; url?: string };
+    config?: { type?: string };
     type?: string;
   };
-  const url = db.url || withConfig.config?.url || '';
   const type = withConfig.type || withConfig.config?.type;
-  return detectEngine(url, type);
+  return detectEngine(resolveUrl(db), type);
 }
 
 /**
@@ -115,7 +125,7 @@ export function resolveEngine(db: DatabaseInterface): DatabaseEngine {
  * skipped for them.
  */
 export function isInMemory(db: DatabaseInterface): boolean {
-  const url = (db.url || '').toLowerCase();
+  const url = resolveUrl(db).toLowerCase();
   return (
     url === ':memory:' ||
     url.includes('mode=memory') ||

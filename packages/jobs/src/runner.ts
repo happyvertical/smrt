@@ -36,6 +36,7 @@ import {
   offLoopEligible,
   registerLiveWorker,
   resolveEngine,
+  resolveUrl,
   unregisterLiveWorker,
 } from './worker-liveness.js';
 
@@ -836,11 +837,10 @@ export class TaskRunner extends EventEmitter {
   }
 
   /**
-   * Spawn the off-loop liveness thread. It opens its own connection, renews
-   * this worker's lease on its own thread (unstarvable by handler CPU), and on
-   * Postgres holds a session advisory lock for instant cross-process death
-   * detection. Returns false if the thread can't be resolved or fails to start,
-   * so the caller can fall back to main-loop renewal.
+   * Spawn the off-loop liveness thread. It opens its own connection and renews
+   * this worker's lease on its own thread (unstarvable by handler CPU). Returns
+   * false if the thread can't be resolved or fails to start, so the caller can
+   * fall back to main-loop renewal.
    */
   private async startLivenessThread(): Promise<boolean> {
     if (!this.db) return false;
@@ -859,7 +859,7 @@ export class TaskRunner extends EventEmitter {
     try {
       worker = new Worker(new URL(entry), {
         workerData: {
-          url: this.db.url,
+          url: resolveUrl(this.db),
           type: resolveEngine(this.db),
           workerKey: this.workerKey,
           leaseTtlMs: this.effectiveLeaseTtlMs,
@@ -937,6 +937,7 @@ export class TaskRunner extends EventEmitter {
 
     const stopped = new Promise<void>((resolve) => {
       const done = () => {
+        clearTimeout(timer);
         worker.off('message', onMessage);
         resolve();
       };
@@ -948,7 +949,13 @@ export class TaskRunner extends EventEmitter {
       const timer = setTimeout(done, 2000);
       if (typeof timer.unref === 'function') timer.unref();
     });
-    worker.postMessage('stop');
+    try {
+      // The worker may have already exited (it's unref'd and best-effort);
+      // postMessage to a dead worker throws ERR_WORKER_NOT_RUNNING.
+      worker.postMessage('stop');
+    } catch {
+      // Nothing to ask it to do; fall through to terminate.
+    }
     await stopped;
     await worker.terminate().catch(() => {});
   }
