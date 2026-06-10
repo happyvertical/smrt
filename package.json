@@ -103,7 +103,34 @@
       "@happyvertical/secrets": "^0.74.4",
       "@happyvertical/spider": "^0.60.16",
       "@happyvertical/sql": "^0.74.4",
-      "@happyvertical/utils": "^0.74.4"
+      "@happyvertical/utils": "^0.74.4",
+      "minimatch@>=10.0.0 <10.2.3": "10.2.3",
+      "undici@>=7.0.0 <7.24.0": "7.24.0",
+      "tar@>=7.0.0 <7.5.11": "7.5.11",
+      "protobufjs@>=7.0.0 <7.5.6": "7.5.6",
+      "picomatch@>=2.0.0 <2.3.2": "2.3.2",
+      "picomatch@>=4.0.0 <4.0.4": "4.0.4",
+      "vite@>=7.0.0 <7.3.2": "7.3.2",
+      "devalue@>=5.6.3 <5.8.1": "5.8.1",
+      "vitest@>=4.0.0 <4.1.0": "4.1.0",
+      "shell-quote@>=1.1.0 <1.8.4": "1.8.4",
+      "hono@>=4.0.0 <4.12.4": "4.12.4",
+      "@hono/node-server@>=1.0.0 <1.19.10": "1.19.10",
+      "express-rate-limit@>=8.2.0 <8.2.2": "8.2.2",
+      "@sveltejs/kit@>=2.0.0 <2.57.1": "2.57.1",
+      "lodash@>=4.0.0 <4.18.0": "4.18.1",
+      "path-to-regexp@>=8.0.0 <8.4.0": "8.4.0",
+      "fast-uri@>=3.0.0 <3.1.2": "3.1.2",
+      "fast-xml-builder@>=1.0.0 <1.1.7": "1.1.7"
+    },
+    "auditConfig": {
+      "ignoreGhsas": [
+        "GHSA-xq3m-2v4x-88gg",
+        "GHSA-66ff-xgx4-vchm",
+        "GHSA-75px-5xx7-5xc7",
+        "GHSA-jvwf-75h9-cwgg",
+        "GHSA-685m-2w69-288q"
+      ]
     }
   }
 }

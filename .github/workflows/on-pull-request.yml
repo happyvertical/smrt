@@ -205,6 +205,32 @@ jobs:
       - name: Check raw typography
         run: node scripts/check-typography.mjs
 
+  dependency-audit:
+    name: Dependency Vulnerability Audit
+    runs-on: arc-happyvertical
+    timeout-minutes: 10
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+
+      # pnpm audit reads the dependency tree from pnpm-lock.yaml — no
+      # node_modules needed, so install-deps is false. Registry auth lets the
+      # @happyvertical/* scoped queries (GitHub Packages) succeed.
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'false'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Sweep S8 (#1413): fail the PR on any high/critical advisory. Accepted
+      # advisories are baselined — with justification — in package.json under
+      # pnpm.auditConfig.ignoreGhsas. Moderate/low are reported but non-blocking.
+      - name: Audit dependencies (fail on high+)
+        run: pnpm audit --audit-level=high
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

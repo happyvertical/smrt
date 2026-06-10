@@ -332,6 +332,25 @@ the design-token sweeps (S1). The raw `console.*` count overstates the work:
 most of it is the keep-console contexts above; the real target is runtime
 library logging, concentrated in `core`.
 
+### Dependency audit (S8)
+
+`pnpm audit` runs as a CI gate on every PR (`on-pull-request` →
+`Dependency Vulnerability Audit`), reading the dependency tree from
+`pnpm-lock.yaml` (no install needed).
+
+- **Blocking threshold: high.** The gate runs `pnpm audit --audit-level=high`, so
+  any **high or critical** advisory fails the PR. Moderate/low are reported but
+  non-blocking.
+- **Remediation first.** Prefer fixing over ignoring: most advisories are stale
+  transitive deps with a published patch, fixable by a version-range-scoped entry
+  in `pnpm.overrides` (e.g. `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
+  to the vulnerable range so unrelated majors aren't force-bumped.
+- **Accept-with-justification.** Only when an advisory can't be remediated without
+  breaking a pinned API (e.g. `protobufjs` 6.x held by `onnx-proto` under the
+  deprecated `@xenova/transformers` v2 fallback) add its GHSA to
+  `pnpm.auditConfig.ignoreGhsas` — with a justification recorded in the PR.
+  Revisit baselined advisories when their blocker is removed.
+
 ---
 
 ## 8. UI packaging (Svelte)
