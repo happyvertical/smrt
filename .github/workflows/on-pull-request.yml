@@ -144,6 +144,39 @@ jobs:
       - name: Verify SDK packages use same version
         run: bash scripts/check-sdk-versions.sh
 
+  secret-scan:
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 gives us the base branch history needed for merge-base.
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          # Pin for deterministic results; bump deliberately.
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          url="https://github.com/gitleaks/gitleaks/releases/download"
+          url="$url/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL "$url" | tar -xz gitleaks
+          sudo mv gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # Scan only the commits introduced by this PR. --redact keeps any matched
+      # secret out of the workflow logs. Allowlist: .gitleaks.toml.
+      - name: Scan PR commits for secrets
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch origin "$BASE_REF" --depth=200
+          FROM_SHA=$(git merge-base "origin/$BASE_REF" HEAD)
+          echo "Scanning commits $FROM_SHA..HEAD for secrets"
+          gitleaks git --redact --no-banner -c .gitleaks.toml \
+            --log-opts="$FROM_SHA..HEAD"
+
   check-standards:
     name: Check Monorepo Standards
     runs-on: ubuntu-latest

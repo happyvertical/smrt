@@ -332,6 +332,28 @@ the design-token sweeps (S1). The raw `console.*` count overstates the work:
 most of it is the keep-console contexts above; the real target is runtime
 library logging, concentrated in `core`.
 
+### Secret scanning (S7)
+
+Committed credentials are blocked by [gitleaks](https://github.com/gitleaks/gitleaks),
+run deterministically (tool-only, no model-assisted checks) in two places:
+
+- **lefthook pre-commit** — `gitleaks git --staged` scans the staged diff before
+  the commit lands. Local-only and best-effort: if gitleaks isn't installed it
+  warns and skips (CI is the hard gate). Install with `brew install gitleaks`.
+- **CI (`on-pull-request`)** — the `Secret Scan (gitleaks)` job installs a pinned
+  gitleaks and scans the PR commit range (`merge-base..HEAD`). A finding fails
+  the PR.
+
+Both runs pass `--redact`, so a matched secret is never printed to logs (org
+secret-handling policy). Real secrets belong in Warden, never in the repo.
+
+**Config + allowlist.** `.gitleaks.toml` at the repo root is the single source of
+truth: it extends gitleaks' default rules (`useDefault = true`) and allowlists
+justified false positives (build artifacts under `dist/`, the lockfile, `*.test.`
+/`*.spec.` fixtures that embed deliberate dummy keys, and the legacy
+initial-import commit). Add new exclusions there with a justification comment —
+never disable the scan.
+
 ---
 
 ## 8. UI packaging (Svelte)
