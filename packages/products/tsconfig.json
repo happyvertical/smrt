@@ -11,6 +11,10 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true
   },
-  "include": ["src/**/*", "src/lib/types/smrt-generated/**/*.d.ts"],
+  "include": [
+    "src/**/*",
+    "ambient.d.ts",
+    "src/lib/types/smrt-generated/**/*.d.ts"
+  ],
   "exclude": ["**/*.test.ts", "**/*.spec.ts"]
 }

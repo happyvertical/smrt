@@ -35,7 +35,7 @@ const server = Bun.serve({
         exclude: [],
       });
       const { resolved } = await scanner.scanAndResolve();
-      const manifest = ManifestAdapter.toManifest(resolved);
+      const manifest = new ManifestAdapter().toManifest(resolved);
       const generator = new ManifestGenerator();
 
       // Root - show discovered objects

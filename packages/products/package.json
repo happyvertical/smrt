@@ -52,9 +52,12 @@
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-scanner": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@happyvertical/utils": "catalog:"
+    "@happyvertical/utils": "catalog:",
+    "cors": "^2.8.5",
+    "express": "^5.2.1"
   },
   "peerDependencies": {
     "svelte": "^5.46.4"
@@ -69,6 +72,7 @@
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@types/cors": "2.8.19",
+    "@types/express": "^5.0.0",
     "@types/node": "25.0.9",
     "@happyvertical/smrt-vitest": "workspace:*",
     "concurrently": "^9.2.1",
@@ -85,6 +89,7 @@
     "dev:federation": "vite dev --mode federation --port 3002",
     "dev:library": "vite build --mode library --watch",
     "generate": "node scripts/generate-smrt-types.js",
+    "typecheck": "npm run generate && tsc --noEmit -p tsconfig.json",
     "build": "npm run build:lib",
     "build:all": "npm run clean && npm run generate && npm run build:lib && npm run build:app && npm run build:federation",
     "build:lib": "vite build --mode library && svelte-package -i src/lib/components -o dist/lib/lib/components --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/features -o dist/lib/lib/features --tsconfig tsconfig.svelte.json && svelte-package -i src/lib/stores -o dist/lib/lib/stores --tsconfig tsconfig.svelte.json",
