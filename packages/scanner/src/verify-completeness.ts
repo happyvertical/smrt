@@ -29,16 +29,21 @@ import { ManifestAdapter } from './manifest-adapter.js';
 import { OxcScanner } from './scanner.js';
 
 /**
- * Source globs that mirror what `vite.config.base.ts` passes to `smrtPlugin`
- * (`include: ['src/**\/*.ts']`, test/spec excluded) plus the scanner's own
- * exclusions. Test probe classes (`*.test.ts` / `*.spec.ts`) carry `@smrt()`
- * for fixtures and are intentionally absent from the published manifest, so
- * they must be excluded here to avoid false positives.
+ * Source globs for the completeness scan. The build (`vite.config.base.ts`)
+ * passes `include: ['src/**\/*.ts']` and excludes `*.test.ts` / `*.spec.ts` (the
+ * plugin also drops `*.svelte`); we reproduce that so the expected object set
+ * matches what the build would publish. We additionally exclude
+ * `**\/__tests__\/**` so any `@smrt()` fixtures in non-test helper modules under
+ * `src/__tests__/` (e.g. `src/__tests__/helpers/*.ts`) are never required in the
+ * published manifest. These extra exclusions can only shrink `expected` relative
+ * to the build, so they can never cause a false failure — the check is
+ * `expected ⊆ dist`.
  */
 const DEFAULT_INCLUDE = ['src/**/*.ts'];
 const DEFAULT_EXCLUDE = [
   '**/*.test.ts',
   '**/*.spec.ts',
+  '**/__tests__/**',
   '**/*.svelte',
   '**/node_modules/**',
   '**/dist/**',

@@ -112,6 +112,60 @@ export class Widget extends SmrtObject {
     expect(result.reason).toMatch(/does not publish a \.\/manifest/);
   });
 
+  it('skips when there is no package.json', async () => {
+    const result = await verifyManifestCompleteness({
+      packageDir: join(pkgDir, 'does-not-exist'),
+    });
+    expect(result.status).toBe('skipped');
+    expect(result.reason).toMatch(/no package.json/);
+  });
+
+  it('skips a manifest-publishing package with no @smrt objects in source', async () => {
+    // package.json declares ./manifest, but src has no @smrt() classes.
+    writeFileSync(
+      join(pkgDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-fixture',
+        version: '0.0.0',
+        exports: { './manifest': './dist/manifest.json' },
+      }),
+    );
+    mkdirSync(join(pkgDir, 'src'), { recursive: true });
+    writeFileSync(join(pkgDir, 'src', 'plain.ts'), 'export const x = 1;\n');
+
+    const result = await verifyManifestCompleteness({ packageDir: pkgDir });
+    expect(result.status).toBe('skipped');
+    expect(result.reason).toMatch(/no @smrt\(\) objects/);
+  });
+
+  it('resolves a conditional ./manifest export object', async () => {
+    writeFileSync(
+      join(pkgDir, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-fixture',
+        version: '0.0.0',
+        exports: { './manifest': { default: './dist/manifest.json' } },
+      }),
+    );
+    mkdirSync(join(pkgDir, 'src'), { recursive: true });
+    writeFileSync(join(pkgDir, 'src', 'widget.ts'), WIDGET_SOURCE);
+    // No dist manifest → must still resolve the conditional export and report it missing.
+
+    const result = await verifyManifestCompleteness({ packageDir: pkgDir });
+    expect(result.status).toBe('missing-manifest');
+    expect(result.manifestPath).toMatch(/dist\/manifest\.json$/);
+  });
+
+  it('treats an unparseable manifest as missing', async () => {
+    writePackage({ withManifestExport: true });
+    mkdirSync(join(pkgDir, 'dist'), { recursive: true });
+    writeFileSync(join(pkgDir, 'dist', 'manifest.json'), '{ not valid json');
+
+    const result = await verifyManifestCompleteness({ packageDir: pkgDir });
+    expect(result.status).toBe('missing-manifest');
+    expect(result.reason).toMatch(/not valid JSON/);
+  });
+
   it('skips framework-infrastructure packages by basename', async () => {
     const skipDir = join(pkgDir, 'core');
     mkdirSync(skipDir, { recursive: true });
