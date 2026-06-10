@@ -166,6 +166,44 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  coverage-gate:
+    name: Coverage Gate
+    needs: build
+    runs-on: arc-happyvertical
+    timeout-minutes: 25
+
+    steps:
+      # fetch-depth: 0 so the gate can diff against the PR base to find the
+      # packages this PR touches.
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Sweep S6 (#1411): per-tier line-coverage floors (T1 80 / T2 70 / T3 50)
+      # on the packages this PR touches. Blocks regressions below the floor
+      # without forcing repo-wide uplift (that uplift is Wave 3). Floors + tier
+      # assignments mirror docs/content/PRODUCTION_READINESS.md.
+      - name: Per-tier coverage gate (touched packages)
+        run: node scripts/check-coverage.mjs
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   test-core:
     name: Test Core (${{ matrix.shard }})
     needs: build
