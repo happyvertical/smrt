@@ -1,0 +1,224 @@
+#!/usr/bin/env node
+/**
+ * Per-tier test coverage gate (Sweep S6, #1411).
+ *
+ * Enforces the Production Readiness Rubric's per-tier line-coverage floors on the
+ * packages a PR *touches* — so it blocks regressions below the floor without
+ * forcing a repo-wide uplift (that uplift is Wave 3, off each package audit's
+ * dim-4 finding). The floor is a HARD floor: a touched package must measure at or
+ * above its tier floor to pass, no grandfathering.
+ *
+ * Floors + tier assignments are the machine-readable mirror of
+ * docs/content/PRODUCTION_READINESS.md §Tiers — keep the two in sync.
+ *
+ * Usage:
+ *   node scripts/check-coverage.mjs                 # touched packages vs BASE_REF (CI)
+ *   node scripts/check-coverage.mjs --packages a,b  # explicit list (local / manual)
+ *   BASE_REF=main node scripts/check-coverage.mjs   # override the diff base
+ *
+ * Measurement: per-package `vitest run --coverage` (v8) with the json-summary
+ * reporter; the gate reads total line coverage from coverage/coverage-summary.json.
+ *
+ * All subprocess calls use execFileSync with array args (no shell) so the
+ * branch-name base ref can't be interpreted as a shell command.
+ */
+
+import { execFileSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const PKGS = join(ROOT, 'packages');
+
+const FLOORS = { T1: 80, T2: 70, T3: 50 };
+
+// Tier assignments — mirror of docs/content/PRODUCTION_READINESS.md §Tiers.
+// Package directory name → tier. `types` is coverage-waived (zero-runtime).
+// Packages absent from this map are "untiered": skipped with a warning until a
+// tier is ratified for them (gnode/subscriptions/templates/etc.).
+const TIERS = {
+  // T1 Foundation (80%)
+  cli: 'T1',
+  config: 'T1',
+  core: 'T1',
+  scanner: 'T1',
+  tenancy: 'T1',
+  vitest: 'T1',
+  // T2 Mature domain (70%)
+  agents: 'T2',
+  assets: 'T2',
+  chat: 'T2',
+  commerce: 'T2',
+  content: 'T2',
+  jobs: 'T2',
+  ledgers: 'T2',
+  messages: 'T2',
+  profiles: 'T2',
+  secrets: 'T2',
+  'smrt-svelte': 'T2',
+  users: 'T2',
+  // T3 Light domain (50%)
+  ads: 'T3',
+  affiliates: 'T3',
+  analytics: 'T3',
+  'app-cli': 'T3',
+  'assets-ergot': 'T3',
+  'assets-local': 'T3',
+  events: 'T3',
+  facts: 'T3',
+  features: 'T3',
+  images: 'T3',
+  inventory: 'T3',
+  languages: 'T3',
+  manufacturing: 'T3',
+  places: 'T3',
+  products: 'T3',
+  projects: 'T3',
+  prompts: 'T3',
+  properties: 'T3',
+  sites: 'T3',
+  'smrt-dev-mcp': 'T3',
+  social: 'T3',
+  tags: 'T3',
+  video: 'T3',
+  voice: 'T3',
+};
+// Coverage-waived packages (zero-runtime). See rubric footnote †.
+const WAIVED = new Set(['types']);
+
+function flagValue(name) {
+  const i = process.argv.indexOf(name);
+  return i !== -1 ? process.argv[i + 1] : undefined;
+}
+
+function git(args, opts = {}) {
+  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', ...opts });
+}
+
+/** Packages whose files changed vs the PR base, via `git diff`. */
+function touchedPackagesFromGit() {
+  const baseRef = process.env.BASE_REF || 'main';
+  let range;
+  try {
+    // Ensure the base is present (CI checkouts can be shallow), then diff.
+    try {
+      git(['fetch', 'origin', baseRef, '--depth=200'], { stdio: 'ignore' });
+    } catch {
+      // best-effort; the ref may already be local
+    }
+    const base = git(['merge-base', `origin/${baseRef}`, 'HEAD']).trim();
+    range = `${base}...HEAD`;
+  } catch {
+    range = `origin/${baseRef}...HEAD`;
+  }
+  const out = git(['diff', '--name-only', range]);
+  const pkgs = new Set();
+  for (const line of out.split('\n')) {
+    const m = line.match(/^packages\/([^/]+)\//);
+    if (m) pkgs.add(m[1]);
+  }
+  return [...pkgs];
+}
+
+/** Run vitest coverage for one package and return total line coverage %, or null. */
+function measureLineCoverage(pkg) {
+  const cwd = join(PKGS, pkg);
+  try {
+    execFileSync(
+      'pnpm',
+      [
+        'exec',
+        'vitest',
+        'run',
+        '--coverage',
+        '--coverage.reporter=json-summary',
+        '--coverage.reporter=text',
+      ],
+      { cwd, stdio: 'inherit', env: { ...process.env, NODE_ENV: 'test' } },
+    );
+  } catch {
+    // Non-zero exit (failing/zero tests). Fall through to read any summary; if
+    // none exists the package is treated as uncovered (gate fails).
+  }
+  const summaryPath = join(cwd, 'coverage', 'coverage-summary.json');
+  if (!existsSync(summaryPath)) return null;
+  try {
+    const summary = JSON.parse(readFileSync(summaryPath, 'utf8'));
+    return summary.total?.lines?.pct ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function main() {
+  const explicit = flagValue('--packages');
+  const touched = explicit
+    ? explicit
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : touchedPackagesFromGit();
+
+  if (touched.length === 0) {
+    console.log('✓ coverage-gate: no packages touched — nothing to check.');
+    return;
+  }
+
+  const checked = [];
+  const skipped = [];
+  for (const pkg of touched.sort()) {
+    if (!existsSync(join(PKGS, pkg))) continue; // deleted dir
+    if (WAIVED.has(pkg)) {
+      skipped.push(`${pkg} (coverage waived)`);
+      continue;
+    }
+    const tier = TIERS[pkg];
+    if (!tier) {
+      skipped.push(`${pkg} (untiered — no ratified floor)`);
+      continue;
+    }
+    checked.push({ pkg, tier, floor: FLOORS[tier] });
+  }
+
+  for (const line of skipped) console.log(`• skipped: ${line}`);
+  if (checked.length === 0) {
+    console.log('✓ coverage-gate: no tiered packages to check.');
+    return;
+  }
+
+  const failures = [];
+  const results = [];
+  for (const { pkg, tier, floor } of checked) {
+    console.log(`\n── measuring coverage: ${pkg} (${tier}, floor ${floor}%) ──`);
+    const pct = measureLineCoverage(pkg);
+    if (pct === null) {
+      failures.push({ pkg, tier, floor, pct: 'no coverage summary' });
+      results.push(`✗ ${pkg} (${tier}): no coverage produced (floor ${floor}%)`);
+      continue;
+    }
+    const ok = pct >= floor;
+    results.push(
+      `${ok ? '✓' : '✗'} ${pkg} (${tier}): ${pct.toFixed(2)}% (floor ${floor}%)`,
+    );
+    if (!ok) failures.push({ pkg, tier, floor, pct });
+  }
+
+  console.log('\n=== Per-tier coverage gate ===');
+  for (const r of results) console.log(`  ${r}`);
+
+  if (failures.length > 0) {
+    console.error(
+      `\n✗ coverage-gate: ${failures.length} package(s) below tier floor.\n` +
+        'A PR that touches a package must bring it to >= its tier floor\n' +
+        '(T1 80% / T2 70% / T3 50%). Add tests to the touched package(s).\n' +
+        'See docs/content/PRODUCTION_READINESS.md §Tiers.',
+    );
+    process.exit(1);
+  }
+  console.log(
+    `\n✓ coverage-gate: ${checked.length} package(s) at or above tier floor.`,
+  );
+}
+
+main();
