@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-assets-local",
-  "version": "0.27.34",
+  "version": "0.27.35",
   "description": "Local image metadata and variant processor for SMRT assets",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.35
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - conflict on id when saving a persisted object (#1472) (#1473) (core)
+  - @happyvertical/smrt-scanner@0.27.35
+  - @happyvertical/smrt-config@0.27.35
+  - @happyvertical/smrt-types@0.27.35
+
 ## 0.27.34
 
 ### Patch Changes
