@@ -23,3 +23,9 @@ export { ManifestAdapter } from './manifest-adapter.js';
 export { extractSmrtImports, parseFile, parseSource } from './oxc-parser.js';
 export { OxcScanner } from './scanner.js';
 export * from './types.js';
+export {
+  type VerifyManifestCompletenessOptions,
+  type VerifyManifestCompletenessResult,
+  type VerifyManifestStatus,
+  verifyManifestCompleteness,
+} from './verify-completeness.js';
