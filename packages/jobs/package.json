@@ -30,6 +30,10 @@
       "types": "./dist/playground.d.ts",
       "import": "./dist/playground.js"
     },
+    "./worker-liveness-thread": {
+      "types": "./dist/worker-liveness-thread.d.ts",
+      "import": "./dist/worker-liveness-thread.js"
+    },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",
       "svelte": "./dist/svelte/index.js",

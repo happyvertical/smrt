@@ -3,6 +3,7 @@
 import './__smrt-register__.js';
 
 import { EventEmitter } from 'node:events';
+import { Worker } from 'node:worker_threads';
 import { fromConfig, type RetryDecision } from '@happyvertical/jobs';
 import { createLogger } from '@happyvertical/logger';
 import {
@@ -22,10 +23,22 @@ import {
 } from './logger-extension.js';
 import { type SmrtJob, SmrtJobCollection } from './smrt-job.js';
 import { type SmrtJobEvent, SmrtJobEventCollection } from './smrt-job-event.js';
+import { SmrtWorkerCollection } from './smrt-worker.js';
 import {
+  DEFAULT_LEASE_TICK_MS,
+  DEFAULT_LEASE_TTL_MS,
   DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
-  getEffectiveStaleJobThresholdMs,
+  getEffectiveLeaseTtlMs,
 } from './stale-recovery.js';
+import {
+  createWorkerKey,
+  isWorkerAlive,
+  offLoopEligible,
+  registerLiveWorker,
+  resolveEngine,
+  resolveUrl,
+  unregisterLiveWorker,
+} from './worker-liveness.js';
 
 /**
  * TaskRunner configuration
@@ -43,8 +56,15 @@ export interface TaskRunnerConfig {
   heartbeatInterval?: number;
   /** Maximum time to wait for jobs to complete on shutdown */
   shutdownTimeout?: number;
-  /** Mark running jobs stale after this many milliseconds without a heartbeat */
+  /**
+   * @deprecated No longer used. Recovery keys on worker liveness, not per-job
+   * heartbeat staleness (#1474). Use {@link leaseTtlMs} / {@link leaseTickMs}.
+   */
   staleJobThresholdMs?: number;
+  /** Worker liveness lease time-to-live in milliseconds */
+  leaseTtlMs?: number;
+  /** How often to renew the worker liveness lease, in milliseconds */
+  leaseTickMs?: number;
 }
 
 /**
@@ -63,6 +83,12 @@ export interface TaskRunnerEvents {
 }
 
 /**
+ * Max time to wait for the liveness thread to report ready before giving up and
+ * falling back to main-loop renewal (guards against a hung connect in-thread).
+ */
+const LIVENESS_THREAD_START_TIMEOUT_MS = 10000;
+
+/**
  * Default configuration
  */
 const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
@@ -73,6 +99,8 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
   heartbeatInterval: DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
   shutdownTimeout: 30000,
   staleJobThresholdMs: 90000,
+  leaseTtlMs: DEFAULT_LEASE_TTL_MS,
+  leaseTickMs: DEFAULT_LEASE_TICK_MS,
 };
 
 /**
@@ -87,13 +115,27 @@ const DEFAULT_CONFIG: Required<TaskRunnerConfig> = {
  */
 export class TaskRunner extends EventEmitter {
   readonly id: string;
+  /**
+   * Per-incarnation-unique worker key. Stored as the `worker_id` on claimed
+   * jobs and in `_smrt_workers`, so a restart of a runner sharing the same
+   * configured `id` does not look like it still owns the previous
+   * incarnation's orphaned jobs. The human-facing {@link id} stays stable for
+   * events/logs.
+   */
+  private readonly workerKey: string;
   private readonly config: Required<TaskRunnerConfig>;
+  private readonly effectiveLeaseTtlMs: number;
   private collection: SmrtJobCollection | null = null;
   private eventCollection: SmrtJobEventCollection | null = null;
+  private workerCollection: SmrtWorkerCollection | null = null;
+  private workersTableVerified = false;
+  private lastRecoverySweepAt = 0;
   private running = false;
   private activeJobs = new Map<string, SmrtJob>();
   private pollTimer: NodeJS.Timeout | null = null;
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private leaseTimer: NodeJS.Timeout | null = null;
+  private livenessWorker: Worker | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private db: DatabaseInterface | null = null;
   private logger = createLogger(true);
@@ -106,6 +148,11 @@ export class TaskRunner extends EventEmitter {
       id: config.id || `runner_${createId().slice(0, 8)}`,
     };
     this.id = this.config.id;
+    this.workerKey = createWorkerKey(this.id);
+    this.effectiveLeaseTtlMs = getEffectiveLeaseTtlMs(
+      this.config.leaseTtlMs,
+      this.config.leaseTickMs,
+    );
   }
 
   /**
@@ -115,6 +162,7 @@ export class TaskRunner extends EventEmitter {
     this.db = db;
     this.collection = await SmrtJobCollection.create({ db });
     this.eventCollection = await SmrtJobEventCollection.create({ db });
+    this.workerCollection = await SmrtWorkerCollection.create({ db });
   }
 
   /**
@@ -122,16 +170,43 @@ export class TaskRunner extends EventEmitter {
    */
   async start(): Promise<void> {
     if (this.running) return;
-    if (!this.collection) {
+    if (!this.collection || !this.workerCollection) {
       throw new Error('TaskRunner not initialized. Call initialize() first.');
     }
 
+    // Fail fast if the job-system tables were never migrated, with an
+    // actionable error rather than a confusing recovery failure later.
+    await this.workerCollection.assertReady();
+
+    // Register this worker incarnation with a seeded lease BEFORE polling, so
+    // the first claimReady() cannot leave just-claimed jobs looking orphaned to
+    // a concurrent recoverer.
+    await this.workerCollection.registerWorker({
+      workerKey: this.workerKey,
+      pid: typeof process !== 'undefined' ? process.pid : null,
+      hostname:
+        typeof process !== 'undefined' ? (process.env.HOSTNAME ?? null) : null,
+      leaseTtlMs: this.effectiveLeaseTtlMs,
+    });
+    registerLiveWorker(this.workerKey);
+
     this.running = true;
+
+    // Renew the worker lease. Prefer an off-loop worker thread so a CPU-bound
+    // synchronous handler can never starve renewal (#1474); fall back to
+    // main-loop renewal for engines a second connection can't reach
+    // (in-memory SQLite, DuckDB) or if the thread fails to start.
+    if (offLoopEligible(this.db as DatabaseInterface)) {
+      const threadStarted = await this.startLivenessThread();
+      if (!threadStarted) this.startLeaseRenewal();
+    } else {
+      this.startLeaseRenewal();
+    }
 
     // Start polling loop
     this.startPolling();
 
-    // Start heartbeat loop
+    // Start heartbeat loop (per-job telemetry only; no longer gates recovery)
     this.startHeartbeat();
 
     this.emit('runner:started');
@@ -146,7 +221,7 @@ export class TaskRunner extends EventEmitter {
 
     this.running = false;
 
-    // Stop timers
+    // Stop polling and the telemetry heartbeat immediately; no new jobs claim.
     if (this.pollTimer) {
       clearTimeout(this.pollTimer);
       this.pollTimer = null;
@@ -155,6 +230,9 @@ export class TaskRunner extends EventEmitter {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
     }
+    // NOTE: leave lease renewal (the leaseTimer or the off-loop thread) running
+    // through the drain so a still-executing handler keeps its lease fresh and
+    // isn't recovered by a peer; both are torn down after the drain below.
 
     // Wait for active jobs to complete (with timeout)
     this.shutdownPromise = this.waitForActiveJobs();
@@ -163,6 +241,27 @@ export class TaskRunner extends EventEmitter {
       await this.shutdownPromise;
     } finally {
       this.shutdownPromise = null;
+      // Stop off-loop lease renewal (thread) and main-loop renewal (timer) only
+      // AFTER the drain, so a still-running handler kept its lease fresh.
+      await this.stopLivenessThread();
+      if (this.leaseTimer) {
+        clearInterval(this.leaseTimer);
+        this.leaseTimer = null;
+      }
+      // Release liveness only AFTER the drain: doing it earlier would make
+      // still-draining jobs look orphaned to other recoverers.
+      unregisterLiveWorker(this.workerKey);
+      // Only delete the lease row if the drain finished cleanly. If jobs are
+      // still executing past the shutdown timeout, leave the row to lapse
+      // naturally (≤ TTL) so a nearly-finished handler keeps its chance to land
+      // its own completion before peers can recover it.
+      if (this.activeJobs.size === 0) {
+        try {
+          await this.workerCollection?.expireWorker(this.workerKey);
+        } catch {
+          // Best-effort: a left-over row simply expires via its lease.
+        }
+      }
       this.emit('runner:stopped');
     }
   }
@@ -219,7 +318,7 @@ export class TaskRunner extends EventEmitter {
     // Atomically claim ready jobs before processing so multiple workers cannot
     // receive the same pending row.
     const jobs = await this.collection.claimReady({
-      workerId: this.id,
+      workerId: this.workerKey,
       queues: this.config.queues,
       limit: available,
     });
@@ -264,25 +363,66 @@ export class TaskRunner extends EventEmitter {
       // Execute the job with timeout
       const result = await Promise.race([this.executeJob(job), timeoutPromise]);
 
-      // Job completed successfully
-      job.status = 'completed';
-      job.completedAt = new Date();
-      job.resultPointer = result?.resultPointer ?? null;
-      await job.save();
-
-      await this.appendJobEvent(job, {
-        type: 'progress',
-        level: 'info',
-        stage: 'completed',
-        progress: 100,
-        message: `Completed job: ${job.getDescription()}`,
+      // Job completed successfully. Write the terminal state conditionally so a
+      // recovered/reclaimed row (worker died, recovery ran, the work finished
+      // anyway) is never stomped back to 'completed'.
+      const completedAt = new Date();
+      const applied = await this.writeOwnedJob(jobId, {
+        status: 'completed',
+        completed_at: completedAt.toISOString(),
+        result_pointer: result?.resultPointer ?? null,
+        updated_at: completedAt.toISOString(),
       });
-      this.emit('job:completed', job, result);
+
+      if (applied) {
+        job.status = 'completed';
+        job.completedAt = completedAt;
+        job.resultPointer = result?.resultPointer ?? null;
+        await this.appendJobEvent(job, {
+          type: 'progress',
+          level: 'info',
+          stage: 'completed',
+          progress: 100,
+          message: `Completed job: ${job.getDescription()}`,
+        });
+        this.emit('job:completed', job, result);
+      }
     } catch (error) {
       await this.handleJobError(job, error as Error);
     } finally {
       this.activeJobs.delete(jobId);
     }
+  }
+
+  /**
+   * Apply a terminal/retry state transition to a job only if this worker still
+   * owns it and it is still `running`. Returns whether the write applied.
+   *
+   * This closes the completion-vs-recovery race: if recovery already failed a
+   * job out from under a finishing handler (a genuine zombie), the handler's
+   * outcome is dropped rather than resurrecting the row.
+   */
+  private async writeOwnedJob(
+    jobId: string,
+    assignments: Record<string, unknown>,
+  ): Promise<boolean> {
+    if (!this.db) return false;
+    const columns = Object.keys(assignments);
+    const setSql = columns.map((column) => `${column} = ?`).join(', ');
+    const values = columns.map((column) => assignments[column]);
+    // RETURNING id (not rowCount): the DuckDB/JSON adapters report rowCount as
+    // the number of result rows, so an UPDATE that matched nothing still
+    // reports 1 — only the returned-row set is a reliable "did it apply".
+    const result = await this.db.query(
+      `UPDATE _smrt_jobs
+          SET ${setSql}
+        WHERE id = ? AND worker_id = ? AND status = 'running'
+        RETURNING id`,
+      ...values,
+      jobId,
+      this.workerKey,
+    );
+    return (result.rows?.length ?? 0) > 0;
   }
 
   /**
@@ -404,16 +544,29 @@ export class TaskRunner extends EventEmitter {
     const strategy = fromConfig(job.retryStrategy);
     const decision: RetryDecision = strategy.shouldRetry(job.attempts, error);
 
+    const jobId = job.id;
+    if (!jobId) return;
+
     if (decision.shouldRetry && job.attempts < job.maxAttempts) {
       // Schedule retry
       const nextRunAt = new Date(Date.now() + decision.delay);
+
+      // Conditional: don't resurrect a row that recovery already failed.
+      const applied = await this.writeOwnedJob(jobId, {
+        status: 'pending',
+        last_error: error.message,
+        run_at: nextRunAt.toISOString(),
+        worker_id: null,
+        worker_heartbeat: null,
+        updated_at: new Date().toISOString(),
+      });
+      if (!applied) return;
 
       job.status = 'pending';
       job.lastError = error.message;
       job.runAt = nextRunAt;
       job.workerId = null;
       job.workerHeartbeat = null;
-      await job.save();
 
       await this.appendJobEvent(job, {
         type: 'status',
@@ -425,10 +578,18 @@ export class TaskRunner extends EventEmitter {
       this.emit('job:retrying', job, error, decision.delay);
     } else {
       // Job failed permanently
+      const completedAt = new Date();
+      const applied = await this.writeOwnedJob(jobId, {
+        status: 'failed',
+        completed_at: completedAt.toISOString(),
+        last_error: error.message,
+        updated_at: completedAt.toISOString(),
+      });
+      if (!applied) return;
+
       job.status = 'failed';
-      job.completedAt = new Date();
+      job.completedAt = completedAt;
       job.lastError = error.message;
-      await job.save();
 
       await this.appendJobEvent(job, {
         type: 'error',
@@ -537,48 +698,84 @@ export class TaskRunner extends EventEmitter {
   }
 
   /**
-   * Recover jobs abandoned by dead workers.
+   * Whether the `_smrt_workers` table exists. Cached once positive — the table
+   * never disappears mid-run, so this avoids a probe query on every poll.
+   */
+  private async workersTableReady(): Promise<boolean> {
+    if (this.workersTableVerified) return true;
+    const ready = (await this.workerCollection?.tableReady()) ?? false;
+    if (ready) this.workersTableVerified = true;
+    return ready;
+  }
+
+  /**
+   * Recover jobs orphaned by dead/restarted workers.
    *
-   * Jobs should heartbeat every {@link TaskRunnerConfig.heartbeatInterval}. If
-   * a running job stops heartbeating beyond the stale threshold, we fail it so
-   * other schedulers and operators are not left with permanently stuck work.
-   * The effective threshold is never allowed to fall below three heartbeat
-   * intervals, which avoids marking healthy slow-heartbeat workers stale.
+   * A `running` job is recovered only when its owning worker is *not alive*
+   * (issue #1474): not live in this process and holding no fresh lease in
+   * `_smrt_workers`. This is independent of the handler event loop, so a worker
+   * whose handler holds the loop synchronously keeps a fresh lease (renewed off
+   * the loop by the liveness thread) or stays in this process's live set, and is
+   * never false-recovered. The live set takes precedence over a stale lease, and
+   * a runner never recovers its own active jobs.
+   *
+   * Recovery is swept at most once per lease tick (not every poll), since
+   * detection is TTL-bound anyway — this bounds the per-poll database load.
    */
   private async recoverStaleJobs(): Promise<void> {
-    if (!this.db || !this.collection) return;
+    if (!this.db || !this.collection || !this.workerCollection) return;
 
-    const effectiveStaleThresholdMs = getEffectiveStaleJobThresholdMs(
-      this.config.staleJobThresholdMs,
-      this.config.heartbeatInterval,
-    );
-    const cutoff = new Date(
-      Date.now() - effectiveStaleThresholdMs,
-    ).toISOString();
-    const staleJobs = await this.collection.query(
-      `SELECT *
-         FROM _smrt_jobs
-        WHERE status = 'running'
-          AND (
-            (worker_heartbeat IS NOT NULL AND worker_heartbeat < ?)
-            OR (worker_heartbeat IS NULL AND started_at IS NOT NULL AND started_at < ?)
-          )`,
-      [cutoff, cutoff],
-    );
-    if (staleJobs.length === 0) return;
+    // Without the workers table we cannot reason about liveness; skip rather
+    // than treat every worker as unknown and mass-recover live jobs.
+    if (!(await this.workersTableReady())) return;
 
-    const staleJobIds = staleJobs
+    // Throttle: at most one sweep per lease tick. Detection latency is bounded
+    // by the lease TTL (>= 3x tick), so a faster cadence only adds DB load.
+    const now = Date.now();
+    if (now - this.lastRecoverySweepAt < this.config.leaseTickMs) return;
+    this.lastRecoverySweepAt = now;
+
+    // Drop long-dead worker rows so the table stays small, regardless of
+    // whether any orphan is found this sweep.
+    try {
+      await this.workerCollection.pruneExpired(this.effectiveLeaseTtlMs * 10);
+    } catch {
+      // Pruning is best-effort and must not affect recovery outcomes.
+    }
+
+    const freshLeaseKeys = await this.workerCollection.freshLeaseWorkerKeys();
+    const running = await this.collection.query(
+      `SELECT * FROM _smrt_jobs WHERE status = 'running'`,
+      [],
+    );
+    if (running.length === 0) return;
+
+    // A job is orphaned iff its owning worker is not alive: not live in this
+    // process AND no fresh database lease. The live set takes precedence over a
+    // stale lease (a worker whose lease lapsed while its loop was blocked is
+    // still alive here); a runner also never recovers its own active jobs.
+    const orphans = running.filter((job) => {
+      const jobId = job.id;
+      if (jobId && this.activeJobs.has(jobId)) return false;
+      return !isWorkerAlive(job.workerId, freshLeaseKeys);
+    });
+    if (orphans.length === 0) return;
+
+    const orphanIds = orphans
       .map((job) => job.id)
       .filter((jobId): jobId is string => typeof jobId === 'string');
-    if (staleJobIds.length === 0) return;
+    if (orphanIds.length === 0) return;
 
-    const placeholders = staleJobIds.map(() => '?').join(', ');
+    const placeholders = orphanIds.map(() => '?').join(', ');
     const recoveredAt = new Date();
     const errorMessage =
-      `Recovered stale running job after ${effectiveStaleThresholdMs}ms without a heartbeat. ` +
-      `Long synchronous work can block heartbeats; prefer async subprocess APIs or raise the stale threshold for intentionally long jobs.`;
+      'Recovered orphaned running job: its owning worker is no longer alive ' +
+      '(no fresh liveness lease in _smrt_workers and not running in this process).';
 
-    await this.db.query(
+    // RETURNING id so we only emit failures for jobs this pass actually
+    // transitioned — a concurrent recoverer or a late completion may have
+    // already moved some of the candidates out of 'running'.
+    const updated = await this.db.query(
       `UPDATE _smrt_jobs
           SET status = 'failed',
               completed_at = ?,
@@ -586,13 +783,21 @@ export class TaskRunner extends EventEmitter {
               worker_id = NULL,
               worker_heartbeat = NULL
         WHERE status = 'running'
-          AND id IN (${placeholders})`,
+          AND id IN (${placeholders})
+        RETURNING id`,
       recoveredAt.toISOString(),
       errorMessage,
-      ...staleJobIds,
+      ...orphanIds,
     );
+    const recoveredIds = new Set(
+      (updated.rows as Array<{ id?: unknown }>)
+        .map((row) => row.id)
+        .filter((id): id is string => typeof id === 'string'),
+    );
+    if (recoveredIds.size === 0) return;
 
-    for (const job of staleJobs) {
+    for (const job of orphans) {
+      if (!job.id || !recoveredIds.has(job.id)) continue;
       job.status = 'failed';
       job.completedAt = recoveredAt;
       job.lastError = errorMessage;
@@ -610,17 +815,173 @@ export class TaskRunner extends EventEmitter {
   }
 
   /**
-   * Start heartbeat loop to keep jobs alive
+   * Renew this worker's liveness lease.
+   *
+   * In Stage 1 this runs on the main event loop, so it provides cross-process
+   * detection no weaker than the old per-job heartbeat. Stage 2 moves the
+   * renewal to an off-loop worker thread so a synchronous handler can no longer
+   * starve it. Same-process correctness never depends on this timer — the
+   * in-memory live set covers it.
+   */
+  private startLeaseRenewal(): void {
+    this.leaseTimer = setInterval(async () => {
+      try {
+        await this.workerCollection?.renewLease(
+          this.workerKey,
+          this.effectiveLeaseTtlMs,
+        );
+      } catch {
+        // Ignore transient lease-renewal errors; the next tick retries.
+      }
+    }, this.config.leaseTickMs);
+  }
+
+  /**
+   * Spawn the off-loop liveness thread. It opens its own connection and renews
+   * this worker's lease on its own thread (unstarvable by handler CPU). Returns
+   * false if the thread can't be resolved or fails to start, so the caller can
+   * fall back to main-loop renewal.
+   */
+  private async startLivenessThread(): Promise<boolean> {
+    if (!this.db) return false;
+    let entry: string;
+    try {
+      // Resolve by package subpath, not as a sibling of this module: the bundle
+      // hoists `runner` into dist/chunks/, so a relative URL would miss.
+      entry = (
+        import.meta as unknown as { resolve(s: string): string }
+      ).resolve('@happyvertical/smrt-jobs/worker-liveness-thread');
+    } catch {
+      return false;
+    }
+
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL(entry), {
+        workerData: {
+          url: resolveUrl(this.db),
+          type: resolveEngine(this.db),
+          workerKey: this.workerKey,
+          leaseTtlMs: this.effectiveLeaseTtlMs,
+          leaseTickMs: this.config.leaseTickMs,
+        },
+      });
+    } catch {
+      return false;
+    }
+
+    // Bound the handshake so a hung connect inside the thread (slow/unreachable
+    // database) can't stall start() forever — fall back to main-loop renewal.
+    const ready = await new Promise<boolean>((resolve) => {
+      const onMessage = (message: unknown) => {
+        if (message === 'ready') {
+          cleanup();
+          resolve(true);
+        } else if (
+          message &&
+          typeof message === 'object' &&
+          (message as { type?: string }).type === 'error'
+        ) {
+          cleanup();
+          resolve(false);
+        }
+      };
+      const onFail = () => {
+        cleanup();
+        resolve(false);
+      };
+      const cleanup = () => {
+        clearTimeout(timer);
+        worker.off('message', onMessage);
+        worker.off('error', onFail);
+        worker.off('exit', onFail);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, LIVENESS_THREAD_START_TIMEOUT_MS);
+      if (typeof timer.unref === 'function') timer.unref();
+      worker.on('message', onMessage);
+      worker.once('error', onFail);
+      worker.once('exit', onFail);
+    });
+
+    if (!ready) {
+      await worker.terminate().catch(() => {});
+      return false;
+    }
+
+    this.livenessWorker = worker;
+    // Don't keep the process alive on the liveness thread alone.
+    worker.unref();
+    // If the thread dies while we're still running, fall back to main-loop
+    // renewal so the lease keeps being renewed.
+    worker.once('error', () => this.handleLivenessThreadLoss(worker));
+    worker.once('exit', () => this.handleLivenessThreadLoss(worker));
+    return true;
+  }
+
+  private handleLivenessThreadLoss(worker: Worker): void {
+    if (this.livenessWorker !== worker) return;
+    this.livenessWorker = null;
+    if (this.running && !this.leaseTimer) {
+      this.startLeaseRenewal();
+    }
+  }
+
+  /** Stop the liveness thread (graceful, with a short bound), if running. */
+  private async stopLivenessThread(): Promise<void> {
+    const worker = this.livenessWorker;
+    if (!worker) return;
+    this.livenessWorker = null;
+
+    const stopped = new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer);
+        worker.off('message', onMessage);
+        resolve();
+      };
+      const onMessage = (message: unknown) => {
+        if (message === 'stopped') done();
+      };
+      worker.on('message', onMessage);
+      worker.once('exit', done);
+      const timer = setTimeout(done, 2000);
+      if (typeof timer.unref === 'function') timer.unref();
+    });
+    try {
+      // The worker may have already exited (it's unref'd and best-effort);
+      // postMessage to a dead worker throws ERR_WORKER_NOT_RUNNING.
+      worker.postMessage('stop');
+    } catch {
+      // Nothing to ask it to do; fall through to terminate.
+    }
+    await stopped;
+    await worker.terminate().catch(() => {});
+  }
+
+  /**
+   * Per-job heartbeat loop — telemetry only ("last activity" for the UI). It no
+   * longer gates recovery (that is the worker lease), so a blocked loop missing
+   * a heartbeat is harmless.
    */
   private startHeartbeat(): void {
     this.heartbeatTimer = setInterval(async () => {
-      for (const [, job] of this.activeJobs) {
-        try {
-          job.workerHeartbeat = new Date();
-          await job.save();
-        } catch {
-          // Ignore heartbeat errors
-        }
+      if (!this.db) return;
+      const jobIds = [...this.activeJobs.keys()];
+      if (jobIds.length === 0) return;
+      const placeholders = jobIds.map(() => '?').join(', ');
+      try {
+        await this.db.query(
+          `UPDATE _smrt_jobs
+              SET worker_heartbeat = ?
+            WHERE status = 'running'
+              AND id IN (${placeholders})`,
+          new Date().toISOString(),
+          ...jobIds,
+        );
+      } catch {
+        // Telemetry is best-effort.
       }
     }, this.config.heartbeatInterval);
   }
