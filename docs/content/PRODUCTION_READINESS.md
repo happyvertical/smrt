@@ -204,7 +204,18 @@ checks in hooks/CI — see AGENTS.md):
 - **Coverage** → HARD floor: any package touched by a PR must be ≥ its tier floor (T1 80 / T2 70 / T3 50) to merge — no grandfathering. Enforced by the `Coverage Gate` CI job (`scripts/check-coverage.mjs`, S6 #1411).
 - **Secret scanning** → gitleaks in lefthook pre-commit + CI; blocks committed credentials.
 - **Dependency risk** → `pnpm audit` / osv-scanner as a CI check for known-vuln deps.
-- **Security/correctness lint** → promote Biome security rules to errors (ban `eval`, unsafe patterns) within the strictness ratchet.
+- **Security/correctness lint** → the Biome `security` group (`noGlobalEval`,
+  `noDangerouslySetInnerHtml`/`noDangerouslySetInnerHtmlWithChildren`,
+  `noBlankTarget`) plus `suspicious.noDocumentCookie` are pinned to **error** in
+  the root `biome.json` and enforced repo-wide by `biome ci` (S9, #1414). These
+  are explicit (not just inherited from `recommended`) so they survive a future
+  `recommended` change or a new package-scoped override.
+  **Per-package rollout plan:** the heavier strictness rules — `noExplicitAny`
+  (~3.1k sites), `noUnusedVariables`, `noUnusedImports` — remain relaxed by the
+  `packages/*/src/**` override and are flipped off → warn → error *package by
+  package* under the strictness ratchet (S4, two bullets up), not in one giant
+  breakage. S9 ships only the security/correctness rules that are already
+  repo-clean and can be enforced globally today.
 - **Logging (dim 9)** → enable Biome `suspicious.noConsole`
   (`lint/suspicious/noConsole`) as an error in the root config for
   `packages/*/src/**` library code, with scoped overrides for tests, scripts,

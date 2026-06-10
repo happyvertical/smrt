@@ -32,10 +32,17 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "security": {
+        "noDangerouslySetInnerHtml": "error",
+        "noDangerouslySetInnerHtmlWithChildren": "error",
+        "noGlobalEval": "error",
+        "noBlankTarget": "error"
+      },
       "suspicious": {
         "noExplicitAny": "info",
         "noArrayIndexKey": "warn",
-        "noConsole": "error"
+        "noConsole": "error",
+        "noDocumentCookie": "error"
       },
       "correctness": {
         "noUnusedVariables": "warn",
