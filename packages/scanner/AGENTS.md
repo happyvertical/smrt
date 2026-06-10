@@ -7,6 +7,7 @@ AST-based scanner for discovering SMRT objects in TypeScript source. Uses oxc-pa
 - `ManifestBuilder` — scans source files, builds `SmartObjectManifest` (`.generate()`)
 - `discoverBaseClasses({ cwd })` — finds SMRT base classes in node_modules
 - `SmartObjectDefinition`, `FieldDefinition` — scanned class metadata types
+- `verifyManifestCompleteness({ packageDir })` — publish guard: re-scans `src/` and asserts every `@smrt()` object reached `dist/manifest.json` (issue #1483). Driven by `scripts/verify-manifest-completeness.mjs` from `prepack`.
 
 ## How It Works
 
