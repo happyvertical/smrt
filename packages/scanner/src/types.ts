@@ -80,6 +80,8 @@ export interface RawDecoratorConfig {
     | {
         include?: string[];
         exclude?: string[];
+        skipApiCheck?: boolean;
+        http?: boolean;
       };
 
   /** MCP configuration */

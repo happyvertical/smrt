@@ -40,6 +40,7 @@
  * @packageDocumentation
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { type DatabaseConfig, resolveDatabase } from '@happyvertical/smrt-core';
 import {
   InventoryLocationCollection,
@@ -48,6 +49,8 @@ import {
 } from '../collections/index.js';
 import type { StockLevel } from '../models/StockLevel.js';
 import type { StockMovementReason, StockState } from '../types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Thrown by {@link StockService.reserve} (and {@link StockService.fulfill},
@@ -707,8 +710,7 @@ let warnedNonTransactional = false;
 function warnNonTransactional(): void {
   if (warnedNonTransactional) return;
   warnedNonTransactional = true;
-  // eslint-disable-next-line no-console
-  console.warn(
+  logger.warn(
     '[@happyvertical/smrt-inventory] StockService: underlying SQL adapter ' +
       'does not expose `transaction()`. Stock mutations are degrading to ' +
       'non-atomic serial writes — partial failures may leave the materialized ' +

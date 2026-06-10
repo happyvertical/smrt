@@ -4,9 +4,12 @@
  * Provides querying and discovery operations for Repository entities.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Repository } from '../models/Repository';
 import type { RepositoryProviderType } from '../types';
+
+const logger = createLogger({ level: 'info' });
 
 export class RepositoryCollection extends SmrtCollection<Repository> {
   static readonly _itemClass = Repository;
@@ -124,9 +127,9 @@ export class RepositoryCollection extends SmrtCollection<Repository> {
         }
       } catch (error) {
         // Log error and skip repos we can't access
-        console.warn(
-          `Error accessing issues for repository ${repo.owner}/${repo.name}:`,
-          error instanceof Error ? error.message : error,
+        logger.warn(
+          `Error accessing issues for repository ${repo.owner}/${repo.name}`,
+          { error: error instanceof Error ? error.message : error },
         );
       }
     }

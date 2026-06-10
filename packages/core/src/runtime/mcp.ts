@@ -2,6 +2,10 @@
  * Runtime MCP server implementation for SMRT auto-generated services
  */
 
+import { createLogger } from '@happyvertical/logger';
+
+const logger = createLogger({ level: 'info' });
+
 export interface MCPTool {
   name: string;
   description: string;
@@ -76,10 +80,10 @@ export class SmrtMCPServer {
    * Start the MCP server (basic implementation)
    */
   async start(): Promise<void> {
-    console.log(
+    logger.info(
       `[smrt-mcp] Server '${this.options.name}' started with ${this.options.tools.length} tools`,
     );
-    console.log(
+    logger.debug(
       `[smrt-mcp] Available tools: ${this.options.tools.map((t) => t.name).join(', ')}`,
     );
   }

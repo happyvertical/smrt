@@ -1,5 +1,113 @@
 # @happyvertical/smrt-ads
 
+## 0.27.35
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.35
+  - @happyvertical/smrt-assets@0.27.35
+  - @happyvertical/smrt-commerce@0.27.35
+  - @happyvertical/smrt-properties@0.27.35
+  - @happyvertical/smrt-tags@0.27.35
+  - @happyvertical/smrt-tenancy@0.27.35
+
+## 0.27.34
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.34
+  - @happyvertical/smrt-assets@0.27.34
+  - @happyvertical/smrt-commerce@0.27.34
+  - @happyvertical/smrt-properties@0.27.34
+  - @happyvertical/smrt-tags@0.27.34
+  - @happyvertical/smrt-tenancy@0.27.34
+
+## 0.27.33
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.33
+  - @happyvertical/smrt-assets@0.27.33
+  - @happyvertical/smrt-commerce@0.27.33
+  - @happyvertical/smrt-properties@0.27.33
+  - @happyvertical/smrt-tags@0.27.33
+  - @happyvertical/smrt-tenancy@0.27.33
+
+## 0.27.32
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.32
+  - @happyvertical/smrt-assets@0.27.32
+  - @happyvertical/smrt-commerce@0.27.32
+  - @happyvertical/smrt-properties@0.27.32
+  - @happyvertical/smrt-tags@0.27.32
+  - @happyvertical/smrt-tenancy@0.27.32
+
+## 0.27.31
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.31
+  - @happyvertical/smrt-assets@0.27.31
+  - @happyvertical/smrt-commerce@0.27.31
+  - @happyvertical/smrt-properties@0.27.31
+  - @happyvertical/smrt-tags@0.27.31
+  - @happyvertical/smrt-tenancy@0.27.31
+
+## 0.27.30
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.30
+  - @happyvertical/smrt-assets@0.27.30
+  - @happyvertical/smrt-commerce@0.27.30
+  - @happyvertical/smrt-properties@0.27.30
+  - @happyvertical/smrt-tags@0.27.30
+  - @happyvertical/smrt-tenancy@0.27.30
+
+## 0.27.29
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.29
+  - @happyvertical/smrt-assets@0.27.29
+  - @happyvertical/smrt-commerce@0.27.29
+  - @happyvertical/smrt-properties@0.27.29
+  - @happyvertical/smrt-tags@0.27.29
+  - @happyvertical/smrt-tenancy@0.27.29
+
+## 0.27.28
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.28
+  - @happyvertical/smrt-assets@0.27.28
+  - @happyvertical/smrt-commerce@0.27.28
+  - @happyvertical/smrt-properties@0.27.28
+  - @happyvertical/smrt-tags@0.27.28
+  - @happyvertical/smrt-tenancy@0.27.28
+
+## 0.27.27
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.27
+  - @happyvertical/smrt-assets@0.27.27
+  - @happyvertical/smrt-commerce@0.27.27
+  - @happyvertical/smrt-properties@0.27.27
+  - @happyvertical/smrt-tags@0.27.27
+  - @happyvertical/smrt-tenancy@0.27.27
+
 ## 0.27.26
 
 ### Patch Changes

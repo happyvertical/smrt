@@ -136,8 +136,8 @@ const roomTypeLabel = $derived.by(() => {
 
   .room-header__icon {
     flex-shrink: 0;
-    font-size: 1.125rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 

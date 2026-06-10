@@ -260,6 +260,7 @@ export function createResourceListHandler(
       );
       const cliConfig = def.decoratorConfig.cli;
       if (!cliConfig) continue;
+      if (!isHttpCliConfig(cliConfig)) continue;
 
       // Skip SmrtCollection subclasses. The generator routes these through
       // a different code path that only emits collection-scoped custom
@@ -612,6 +613,14 @@ function resolveCliIncludedMethods(
     candidates = candidates.filter((m) => !excludeSet.has(m));
   }
   return candidates;
+}
+
+function isHttpCliConfig(
+  cliConfig: NonNullable<SmartObjectConfig['cli']>,
+): boolean {
+  if (typeof cliConfig !== 'object' || cliConfig === null) return true;
+  if (Array.isArray(cliConfig)) return true;
+  return (cliConfig as { http?: unknown }).http !== false;
 }
 
 interface BuildSuccess {

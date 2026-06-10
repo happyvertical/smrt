@@ -9,6 +9,7 @@
  * @see https://github.com/happyvertical/smrt/issues/543
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtCollection } from '../collection';
 import {
   getSmrtModuleConfig,
@@ -65,6 +66,10 @@ export const VERBOSE_ENABLED =
   process.env.SMRT_VERBOSE === 'true' ||
   (process.env.DEBUG?.includes('smrt') ?? false);
 
+// verboseLog() is gated by VERBOSE_ENABLED, so the level must allow debug when
+// it's set (a fixed 'info' would filter the trace out and break SMRT_VERBOSE).
+const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
+
 /**
  * Log a message only when verbose mode is enabled.
  * Used throughout registry modules to reduce noise during normal operation.
@@ -72,7 +77,11 @@ export const VERBOSE_ENABLED =
  */
 export function verboseLog(...args: unknown[]): void {
   if (VERBOSE_ENABLED) {
-    console.log(...args);
+    const [message, ...rest] = args;
+    logger.debug(
+      typeof message === 'string' ? message : String(message),
+      rest.length > 0 ? { args: rest } : undefined,
+    );
   }
 }
 

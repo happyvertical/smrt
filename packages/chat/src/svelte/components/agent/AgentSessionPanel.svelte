@@ -282,8 +282,8 @@ const statusLabel: Record<string, string> = {
   }
 
   .session-panel__tool-chip {
-    font-size: 0.625rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-small, 4px);
     background: var(--smrt-color-surface-container-highest, #dddde1);

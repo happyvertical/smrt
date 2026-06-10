@@ -111,7 +111,7 @@ function highlightMatch(
     background: var(--smrt-color-surface, #fefbff);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-medium, 8px);
-    box-shadow: var(--smrt-elevation-level2, 0 2px 8px rgba(0, 0, 0, 0.15));
+    box-shadow: var(--smrt-elevation-2, 0 2px 8px rgba(0, 0, 0, 0.15));
     z-index: var(--smrt-z-index-dropdown, 1000);
     padding: var(--smrt-spacing-1, 4px);
     display: flex;
@@ -153,7 +153,7 @@ function highlightMatch(
   .mention-autocomplete__highlight {
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   @media (prefers-reduced-motion: reduce) {

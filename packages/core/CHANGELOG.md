@@ -1,5 +1,104 @@
 # @happyvertical/smrt-core
 
+## 0.27.35
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - conflict on id when saving a persisted object (#1472) (#1473) (core)
+  - @happyvertical/smrt-scanner@0.27.35
+  - @happyvertical/smrt-config@0.27.35
+  - @happyvertical/smrt-types@0.27.35
+
+## 0.27.34
+
+### Patch Changes
+
+- ### Features
+
+  - migrate Node-side runtime logging to logger + finish console classification (#1470) (s14)
+  - @happyvertical/smrt-scanner@0.27.34
+  - @happyvertical/smrt-config@0.27.34
+  - @happyvertical/smrt-types@0.27.34
+
+## 0.27.33
+
+### Patch Changes
+
+- ### Features
+
+  - migrate runtime logging to @happyvertical/logger (S14) (#1469) (core)
+  - @happyvertical/smrt-scanner@0.27.33
+  - @happyvertical/smrt-config@0.27.33
+  - @happyvertical/smrt-types@0.27.33
+
+## 0.27.32
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: define S14 logging policy + classify keep-console contexts (#1468) (standards)
+  - @happyvertical/smrt-scanner@0.27.32
+  - @happyvertical/smrt-config@0.27.32
+  - @happyvertical/smrt-types@0.27.32
+
+## 0.27.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve 16 dangling --smrt-\* refs + harden token validation (#1467) (tokens)
+  - @happyvertical/smrt-scanner@0.27.31
+  - @happyvertical/smrt-config@0.27.31
+  - @happyvertical/smrt-types@0.27.31
+
+## 0.27.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - hide internal resources from HTTP discovery (#1456) (jobs)
+  - @happyvertical/smrt-scanner@0.27.30
+  - @happyvertical/smrt-config@0.27.30
+  - @happyvertical/smrt-types@0.27.30
+
+## 0.27.29
+
+### Patch Changes
+
+- ### Features
+
+  - migrate final 9 packages, flip all strict — closes #1373 (#1466) (typography)
+  - @happyvertical/smrt-scanner@0.27.29
+  - @happyvertical/smrt-config@0.27.29
+  - @happyvertical/smrt-types@0.27.29
+
+## 0.27.28
+
+### Patch Changes
+
+- ### Features
+
+  - migrate typography to M3 role tokens, flip strict (#1373) (#1465) (assets,chat,images)
+  - @happyvertical/smrt-scanner@0.27.28
+  - @happyvertical/smrt-config@0.27.28
+  - @happyvertical/smrt-types@0.27.28
+
+## 0.27.27
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 3) (#1464) (messages,products)
+  - @happyvertical/smrt-scanner@0.27.27
+  - @happyvertical/smrt-config@0.27.27
+  - @happyvertical/smrt-types@0.27.27
+
 ## 0.27.26
 
 ### Patch Changes

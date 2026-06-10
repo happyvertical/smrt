@@ -255,8 +255,8 @@ $effect(() => {
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border-radius: var(--smrt-radius-lg, 12px);
     word-break: break-word;
-    font-size: 0.8125rem;
-    line-height: 1.45;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.45);
   }
 
   .agent-chat__bubble--user {
@@ -283,7 +283,7 @@ $effect(() => {
   }
 
   .agent-chat__msg-time {
-    font-size: 0.5625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.5625rem);
     color: var(--smrt-color-outline, #74777f);
     align-self: flex-end;
     line-height: 1;
@@ -298,7 +298,7 @@ $effect(() => {
   }
 
   .agent-chat__empty-text {
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     color: var(--smrt-color-outline, #74777f);
   }
 
@@ -315,7 +315,7 @@ $effect(() => {
     flex: 1;
     text-align: center;
     padding: var(--smrt-spacing-2, 8px);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-outline, #74777f);
     font-style: italic;
   }
@@ -325,8 +325,8 @@ $effect(() => {
     border: none;
     border-radius: var(--smrt-radius-md, 8px);
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    font-size: 0.8125rem;
-    line-height: 1.4;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
     color: var(--smrt-color-on-surface, #1a1c1e);
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     resize: none;
@@ -372,8 +372,8 @@ $effect(() => {
     display: inline-flex;
     align-items: center;
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-success-container, #16a34a);
     background: var(--smrt-color-success-container, #f0fdf4);
     border: 1px solid var(--smrt-color-success, #bbf7d0);
@@ -402,14 +402,14 @@ $effect(() => {
     overflow-x: auto;
     white-space: pre-wrap;
     word-break: break-word;
-    font-size: 0.875rem;
-    line-height: 1.45;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.45);
   }
 
   .diff-btn {
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
-    font-size: 0.625rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-full, 9999px);
     background: none;
@@ -448,14 +448,14 @@ $effect(() => {
 
   .diff-dialog__header h4 {
     margin: 0;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .diff-dialog__close {
     background: none;
     border: none;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     cursor: pointer;
     color: var(--smrt-color-outline, #74777f);
     padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
@@ -482,10 +482,10 @@ $effect(() => {
 
   .diff-field__name {
     display: block;
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.04em);
     color: var(--smrt-color-outline, #74777f);
     margin-bottom: var(--smrt-spacing-1, 4px);
   }
@@ -493,8 +493,8 @@ $effect(() => {
   .diff-field__value {
     margin: 0;
     padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
-    font-size: 0.75rem;
-    line-height: 1.5;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    line-height: var(--smrt-typography-body-small-line-height, 1.5);
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     border-radius: var(--smrt-radius-md, 8px);
     white-space: pre-wrap;

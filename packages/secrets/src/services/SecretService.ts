@@ -7,6 +7,7 @@
 // subpath without the main entry. See src/__smrt-register__.ts (issue #1132).
 import '../__smrt-register__.js';
 
+import { createLogger } from '@happyvertical/logger';
 import {
   AMKUnavailableError,
   DecryptionError,
@@ -33,6 +34,8 @@ import {
   type SecretAuditLog,
 } from '../models/SecretAuditLog.js';
 import type { TenantKey } from '../models/TenantKey.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Options for creating a SecretService
@@ -470,10 +473,9 @@ export class SecretService {
       } catch (trackingError) {
         secret.lastAccessedAt = previousLastAccessedAt;
         secret.accessCount = previousAccessCount;
-        console.error(
-          'Failed to update secret access tracking:',
-          trackingError,
-        );
+        logger.error('Failed to update secret access tracking', {
+          error: trackingError,
+        });
       }
 
       await this.audit(secret.id ?? null, name, userId, 'read', 'success');
@@ -1340,7 +1342,7 @@ export class SecretService {
       await log.save();
     } catch (error) {
       // Don't throw on audit failure - log and continue
-      console.error('Failed to write audit log:', error);
+      logger.error('Failed to write audit log', { error });
     }
   }
 

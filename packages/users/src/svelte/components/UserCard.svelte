@@ -84,7 +84,7 @@ const statusClass = $derived.by(() => {
     position: relative;
     overflow: hidden;
     color: var(--smrt-color-on-surface);
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .user-card.clickable {
@@ -93,7 +93,7 @@ const statusClass = $derived.by(() => {
 
   .user-card.clickable:hover {
     background-color: var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .user-card.selected {
@@ -108,7 +108,7 @@ const statusClass = $derived.by(() => {
 
   .name {
     font: var(--smrt-typography-title-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -154,7 +154,7 @@ const statusClass = $derived.by(() => {
     align-items: center;
     border-radius: var(--smrt-radius-lg, 12px);
     text-transform: capitalize;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .status-active {

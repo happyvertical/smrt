@@ -103,8 +103,8 @@ function handleCreate(data: {
   }
 
   .eyebrow {
-    font-size: 0.75rem;
-    letter-spacing: 0.12em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.12em);
     text-transform: uppercase;
     color: var(--smrt-color-primary, #0f766e);
   }
@@ -115,7 +115,7 @@ function handleCreate(data: {
     border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.75rem 1rem;
     font: inherit;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     background: var(--smrt-color-primary, #0f766e);
     color: var(--smrt-color-on-primary, white);
     cursor: pointer;
@@ -123,7 +123,7 @@ function handleCreate(data: {
 
   .status {
     color: var(--smrt-color-primary, #0f766e);
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
 
   .summary {
@@ -138,8 +138,8 @@ function handleCreate(data: {
   }
 
   .summary dt {
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
     text-transform: uppercase;
     color: var(--smrt-color-on-surface-variant, #5b6574);
   }

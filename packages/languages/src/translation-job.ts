@@ -1,4 +1,5 @@
 import { getAI } from '@happyvertical/ai';
+import { createLogger } from '@happyvertical/logger';
 import { getPackageConfig } from '@happyvertical/smrt-config';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { FeatureResolver } from '@happyvertical/smrt-features';
@@ -14,6 +15,8 @@ import {
   computeSourceHash,
   normalizeLocale,
 } from './utils.js';
+
+const logger = createLogger({ level: 'info' });
 
 /** Feature flag key honored as the kill-switch for AI auto-translation. */
 export const AUTO_TRANSLATE_FEATURE_KEY = 'smrt-languages.auto_translate';
@@ -352,7 +355,7 @@ async function findPendingTranslationJob(
     // Don't crash; the handler's source-hash gate is the durable safeguard.
     // But surface a warning so operators notice when the queue depth has
     // outgrown the in-memory match window.
-    console.warn(
+    logger.warn(
       `[smrt-languages] translation-job dedup scan hit its limit (${scanLimit}); raise packages.languages.dedupScanLimit if duplicate jobs appear`,
     );
   }

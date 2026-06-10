@@ -39,6 +39,18 @@ const STRICT_PACKAGES = new Set([
   'content',
   'messages',
   'products',
+  'assets',
+  'chat',
+  'images',
+  'analytics',
+  'commerce',
+  'events',
+  'subscriptions',
+  'agents',
+  'social',
+  'tenancy',
+  'jobs',
+  'users',
 ]);
 
 /** Dev/playground hosts skipped entirely (matches the other token ratchets). */
@@ -195,14 +207,23 @@ function stripComments(source) {
     );
 }
 
-/** Blank `var(--smrt-typography-*)` / `var(--smrt-font-family*)` so they pass. */
+/**
+ * A `var(...)` referencing a VALID emitted typography/font token. Only these
+ * are exempted — a malformed name like `var(--smrt-typography-bogus-size, 14px)`
+ * is NOT stripped, so its raw fallback still gets flagged (the bare
+ * `--smrt-typography-*` prefix used to be a blind spot; the repo-wide
+ * scripts/check-svelte-tokens.mjs also flags the bad name). Kept in sync with
+ * the role scale; check-svelte-tokens.mjs is the source of truth for emitted.
+ */
+const VALID_TOKEN_VAR_RE =
+  /^var\(\s*--smrt-(?:typography-(?:(?:display|headline|title|body|label)-(?:large|medium|small)-(?:size|line-height|weight|tracking|font-family|font)|weight-(?:normal|medium|semibold|bold))|font-family(?:-mono)?)(?![\w-])/;
+
+/** Blank valid typography / font-family token vars so they pass the check. */
 function stripTokenVars(source) {
   let out = '';
   let i = 0;
   while (i < source.length) {
-    const isTokenVar = /^var\(\s*--smrt-(typography|font-family)/.test(
-      source.slice(i, i + 30),
-    );
+    const isTokenVar = VALID_TOKEN_VAR_RE.test(source.slice(i, i + 64));
     if (isTokenVar) {
       const start = source.indexOf('(', i);
       let depth = 0;

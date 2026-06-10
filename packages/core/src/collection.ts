@@ -2020,11 +2020,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
 
     if (isSTI && formattedData._meta_type) {
-      return await this.createPolymorphic(
+      const polymorphicInstance = await this.createPolymorphic(
         formattedData._meta_type,
         formattedData,
         { hydrateOnly: true },
       );
+      // Hydrated from an existing row — save() must update by primary key
+      // even if natural-key fields change (issue #1472).
+      polymorphicInstance.markAsPersisted();
+      return polymorphicInstance;
     }
 
     const instanceParams = {
@@ -2045,6 +2049,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         registeredClass?.qualifiedName || this._itemClass.name;
     }
 
+    // Hydrated from an existing row — save() must update by primary key
+    // even if natural-key fields change (issue #1472).
+    instance.markAsPersisted();
     return instance;
   }
 

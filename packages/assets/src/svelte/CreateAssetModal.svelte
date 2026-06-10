@@ -281,7 +281,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     max-height: calc(100vh - 2rem);
     background: var(--smrt-color-surface, #ffffff);
     border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     overflow: hidden;
     animation: modalEnter 300ms cubic-bezier(0.2, 0, 0, 1);
   }
@@ -301,8 +301,8 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 
   .create-modal__title {
     margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
   }
 
@@ -356,13 +356,13 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 
   .dropzone__text {
     margin: 0;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #111827);
   }
 
   .dropzone__hint {
     margin: var(--smrt-spacing-1, 0.25rem) 0 0;
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
     color: var(--smrt-color-on-surface-variant, #9ca3af);
   }
 
@@ -394,7 +394,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
     background: var(--smrt-color-surface-container, #f3f4f6);
     border-radius: var(--smrt-radius-small, 0.25rem);
   }
@@ -406,7 +406,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 
   .file-preview__filename {
     display: block;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     white-space: nowrap;
     overflow: hidden;
@@ -415,13 +415,13 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 
   .file-preview__size {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .file-preview__warning {
     display: block;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #dc2626);
     margin-top: var(--smrt-spacing-1, 4px);
   }
@@ -461,13 +461,13 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 
   .form-label {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #111827);
   }
 
   .form-label__warning {
-    font-weight: 400;
-    font-size: 0.75rem;
+    font-weight: var(--smrt-typography-weight-normal, 400);
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #dc2626);
     margin-left: var(--smrt-spacing-1, 4px);
   }
@@ -509,7 +509,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     padding: 0 var(--smrt-spacing-4, 1rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
     border: none;
@@ -536,7 +536,7 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
   }
 
   .footer-btn--create:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   @media (prefers-reduced-motion: reduce) {

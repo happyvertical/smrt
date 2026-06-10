@@ -168,7 +168,7 @@ function handleKeydown(event: KeyboardEvent) {
   }
 
   .time-entry-card.clickable:hover {
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .checkbox-wrapper {

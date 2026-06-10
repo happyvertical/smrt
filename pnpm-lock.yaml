@@ -1106,6 +1106,9 @@ importers:
 
   packages/inventory:
     dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.74.4
+        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1207,6 +1210,9 @@ importers:
       '@happyvertical/ai':
         specifier: ^0.74.4
         version: 0.74.4(@modelcontextprotocol/sdk@1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6))(ws@8.20.0)(zod@4.3.6)
+      '@happyvertical/logger':
+        specifier: ^0.74.4
+        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -1281,6 +1287,9 @@ importers:
 
   packages/manufacturing:
     dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.74.4
+        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -1734,6 +1743,9 @@ importers:
 
   packages/secrets:
     dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.74.4
+        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/secrets':
         specifier: ^0.74.4
         version: 0.74.4(@russellthehippo/honker-node@0.3.3)(@sqliteai/sqlite-vector@1.0.0)
@@ -2128,6 +2140,9 @@ importers:
 
   packages/tenancy:
     dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.74.4
+        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
@@ -2192,6 +2207,9 @@ importers:
 
   packages/users:
     dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.74.4
+        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/smrt-config':
         specifier: workspace:*
         version: link:../config
@@ -2250,6 +2268,9 @@ importers:
 
   packages/video:
     dependencies:
+      '@happyvertical/logger':
+        specifier: ^0.74.4
+        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/smrt-assets':
         specifier: workspace:*
         version: link:../assets
@@ -2278,9 +2299,6 @@ importers:
         specifier: ^5.0.0
         version: 5.53.5
     devDependencies:
-      '@happyvertical/logger':
-        specifier: ^0.74.4
-        version: 0.74.4(@sentry/node@10.51.0)
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

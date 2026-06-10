@@ -4,10 +4,13 @@
  * Provides querying and discovery operations for PullRequest entities.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { PullRequest } from '../models/PullRequest';
 import type { Repository } from '../models/Repository';
 import type { SDKPullRequest, SearchFilters } from '../types';
+
+const logger = createLogger({ level: 'info' });
 
 export class PullRequestCollection extends SmrtCollection<PullRequest> {
   static readonly _itemClass = PullRequest;
@@ -46,9 +49,9 @@ export class PullRequestCollection extends SmrtCollection<PullRequest> {
         prData = await repoClient.getPullRequest(remote.number);
       } catch (error) {
         // Log error and skip PR - could be rate limiting, auth, or access issues
-        console.warn(
-          `Failed to fetch PR #${remote.number} from ${repository.owner}/${repository.name}:`,
-          error instanceof Error ? error.message : error,
+        logger.warn(
+          `Failed to fetch PR #${remote.number} from ${repository.owner}/${repository.name}`,
+          { error: error instanceof Error ? error.message : error },
         );
         continue;
       }

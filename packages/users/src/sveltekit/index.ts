@@ -25,6 +25,7 @@
 // shim here makes this subpath self-sufficient.
 import '../__smrt-register__.js';
 
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
 import {
@@ -63,6 +64,8 @@ export {
   type ResourceListResponseBody,
 } from './resource-list-handler.js';
 export { defaultSessionLocals, type SessionLocals } from './types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Options for session handler
@@ -274,7 +277,9 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
         },
       );
     } catch (error) {
-      console.error('Session or request context initialization error:', error);
+      logger.error('Session or request context initialization error', {
+        error,
+      });
 
       if (options.postgresRls) {
         return new Response('Internal Server Error', { status: 500 });
@@ -425,7 +430,7 @@ export async function destroySessionCookie(
       await service.destroySession(sessionId);
     } catch (error) {
       // Log but don't fail - cookie will be deleted regardless
-      console.error('Session destruction error:', error);
+      logger.error('Session destruction error', { error });
     }
   }
 
@@ -983,7 +988,7 @@ export function createBearerSessionDeleteHandler(
         const service = await getOrCreateTerminalAuthService(options);
         await service.destroyBearerSession(token);
       } catch (error) {
-        console.error('Terminal bearer session revocation error:', error);
+        logger.error('Terminal bearer session revocation error', { error });
       }
     }
     return jsonResponse({ authenticated: false });

@@ -30,6 +30,11 @@
  * }
  * ```
  */
+
+import { createLogger } from '@happyvertical/logger';
+
+const logger = createLogger({ level: 'info' });
+
 export abstract class SmrtError extends Error {
   public readonly code: string;
   public readonly category:
@@ -818,7 +823,7 @@ export class ErrorUtils {
           });
         } catch (timerError) {
           // Log timer error but don't fail the retry
-          console.error('Timer error during retry:', timerError);
+          logger.error('Timer error during retry', { error: timerError });
         }
       }
     }
