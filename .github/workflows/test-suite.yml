@@ -90,15 +90,12 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Blocking gate. Every package ships a `typecheck` script and the whole
-      # repo is green EXCEPT smrt-products, which has pre-existing type errors
-      # in its standalone/federation app-mode entry files (Vite virtual
-      # modules, Bun globals, untyped store callbacks). It still ships a
-      # `typecheck` script so the standards check passes; it is filtered out of
-      # the blocking gate until remediated. TODO(#1370): drop this filter once
-      # smrt-products typechecks clean.
+      # Blocking gate (Sweep S3, #1375). Every package ships a `typecheck` script
+      # and the whole repo — products included — typechecks clean under root
+      # `strict: true`. No package is filtered out; a type error anywhere fails
+      # the PR.
       - name: Run typecheck
-        run: pnpm turbo run typecheck --filter='!@happyvertical/smrt-products'
+        run: pnpm turbo run typecheck
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
