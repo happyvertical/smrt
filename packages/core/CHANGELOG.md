@@ -1,5 +1,30 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - guard publish against manifests missing @smrt objects (#1483) (#1484) (scanner)
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@1.0.0
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
+## 0.27.42
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: add per-tier coverage gate on touched packages (S6, #1411) (#1482)
+  - @happyvertical/smrt-scanner@0.27.42
+  - @happyvertical/smrt-config@0.27.42
+  - @happyvertical/smrt-types@0.27.42
+
 ## 0.27.41
 
 ### Patch Changes
