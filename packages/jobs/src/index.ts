@@ -102,3 +102,16 @@ export {
   type SmrtJobEventLevel,
   type SmrtJobEventType,
 } from './smrt-job-event.js';
+
+// Worker liveness lease model
+export {
+  type RegisterWorkerInput,
+  SmrtWorker,
+  SmrtWorkerCollection,
+} from './smrt-worker.js';
+export {
+  createWorkerKey,
+  isWorkerAlive,
+  registerLiveWorker,
+  unregisterLiveWorker,
+} from './worker-liveness.js';

@@ -12,6 +12,7 @@ import { withBackgroundJobs } from '../object-extension.js';
 import { createTaskRunner } from '../runner.js';
 import { createScheduleRunner } from '../schedule-runner.js';
 import { SmrtJobCollection } from '../smrt-job.js';
+import { SmrtWorkerCollection } from '../smrt-worker.js';
 
 @smrt()
 class JobTenantProbe extends SmrtObject {
@@ -281,7 +282,7 @@ describe('job tenancy propagation', () => {
     expect(recovered?.status).toBe('failed');
     expect(recovered?.workerId).toBeNull();
     expect(recovered?.workerHeartbeat).toBeNull();
-    expect(recovered?.lastError).toContain('Recovered stale running job');
+    expect(recovered?.lastError).toContain('owning worker is no longer alive');
   });
 
   it('reconciles stale scheduled jobs and frees stuck running slots', async () => {
@@ -392,15 +393,22 @@ describe('job tenancy propagation', () => {
     ).toBe('failed');
     expect(
       (schedules.rows[0] as { last_error: string | null }).last_error,
-    ).toContain('Recovered 1 stale scheduled job');
+    ).toContain('Recovered 1 orphaned scheduled job');
     expect((schedules.rows[0] as { failure_count: number }).failure_count).toBe(
       1,
     );
   });
 
-  it('does not recover healthy jobs before the heartbeat grace window elapses', async () => {
+  it('does not recover a job whose owning worker holds a fresh lease', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const collection = await SmrtJobCollection.create({ db });
+    const workers = await SmrtWorkerCollection.create({ db });
+
+    // A live worker keeps a fresh lease in _smrt_workers.
+    await workers.registerWorker({
+      workerKey: 'runner-live',
+      leaseTtlMs: 60_000,
+    });
 
     const job = await collection.create({
       tenantId: 'tenant-healthy-job',
@@ -417,8 +425,6 @@ describe('job tenancy propagation', () => {
     const runner = createTaskRunner({
       concurrency: 1,
       pollInterval: 10,
-      heartbeatInterval: 60_000,
-      staleJobThresholdMs: 1,
     });
     await runner.initialize(db);
     await (runner as unknown as { poll(): Promise<void> }).poll();
@@ -519,9 +525,14 @@ describe('job tenancy propagation', () => {
     );
   });
 
-  it('does not free healthy scheduled jobs before the heartbeat grace window elapses', async () => {
+  it('does not free scheduled jobs whose owning worker holds a fresh lease', async () => {
     const db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
     const collection = await SmrtJobCollection.create({ db });
+    const workers = await SmrtWorkerCollection.create({ db });
+    await workers.registerWorker({
+      workerKey: 'runner-live',
+      leaseTtlMs: 60_000,
+    });
 
     await db.query(`
       CREATE TABLE _smrt_agent_schedules (

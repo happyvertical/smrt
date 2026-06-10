@@ -4,10 +4,9 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
 import { SmrtJobCollection } from './smrt-job.js';
-import {
-  DEFAULT_TASK_HEARTBEAT_INTERVAL_MS,
-  getEffectiveStaleJobThresholdMs,
-} from './stale-recovery.js';
+import { SmrtWorkerCollection } from './smrt-worker.js';
+import { DEFAULT_TASK_HEARTBEAT_INTERVAL_MS } from './stale-recovery.js';
+import { isWorkerAlive } from './worker-liveness.js';
 
 /**
  * ScheduleRunner configuration
@@ -19,9 +18,14 @@ export interface ScheduleRunnerConfig {
   pollInterval?: number;
   /** Maximum schedules to process per poll */
   batchSize?: number;
-  /** Reconcile running schedule slots after this many milliseconds without a worker heartbeat */
+  /**
+   * @deprecated No longer used. Slot reconciliation keys on worker liveness
+   * (the `_smrt_workers` lease), not per-job heartbeat staleness (#1474).
+   */
   staleJobThresholdMs?: number;
-  /** Expected TaskRunner heartbeat interval for scheduled jobs */
+  /**
+   * @deprecated No longer used. See {@link staleJobThresholdMs}.
+   */
   taskHeartbeatInterval?: number;
 }
 
@@ -92,6 +96,7 @@ export class ScheduleRunner extends EventEmitter {
   readonly id: string;
   private readonly config: Required<ScheduleRunnerConfig>;
   private jobCollection: SmrtJobCollection | null = null;
+  private workerCollection: SmrtWorkerCollection | null = null;
   private running = false;
   private pollTimer: NodeJS.Timeout | null = null;
   private db: DatabaseInterface | null = null;
@@ -112,11 +117,8 @@ export class ScheduleRunner extends EventEmitter {
    */
   async initialize(db: DatabaseInterface): Promise<void> {
     this.db = db;
-    this.jobCollection = await SmrtJobCollection.create({
-      db: { type: 'sqlite', url: ':memory:' }, // Placeholder, overridden
-    });
-    // Override the internal db reference
-    (this.jobCollection as unknown as { _db: DatabaseInterface })._db = db;
+    this.jobCollection = await SmrtJobCollection.create({ db });
+    this.workerCollection = await SmrtWorkerCollection.create({ db });
   }
 
   /**
@@ -275,15 +277,17 @@ export class ScheduleRunner extends EventEmitter {
    * Reconcile stuck schedule slots against running jobs.
    *
    * This handles two failure modes:
-   * - a running job is still marked `running` but its heartbeat is stale
+   * - a running job's owning worker is no longer alive (dead/restarted)
    * - a schedule slot remains occupied even though no running job still exists
    *
-   * The effective stale cutoff is floored by the task-runner heartbeat cadence,
-   * so schedules do not recover work from healthy runners that simply heartbeat
-   * more slowly than the raw stale threshold.
+   * Staleness keys on worker *liveness* (issue #1474), not per-job heartbeat
+   * freshness: a job whose `worker_id` is live in this process or holds a fresh
+   * lease in `_smrt_workers` is healthy even if its handler is holding the loop
+   * synchronously. ScheduleRunner has no in-process active-job set, so this is
+   * its entire correctness mechanism.
    */
   private async recoverStaleScheduleState(): Promise<void> {
-    if (!this.db) return;
+    if (!this.db || !this.workerCollection) return;
 
     const schedulesResult = await this.db.query(
       `SELECT id, running_count
@@ -296,15 +300,15 @@ export class ScheduleRunner extends EventEmitter {
     }>;
     if (schedules.length === 0) return;
 
-    const effectiveStaleThresholdMs = getEffectiveStaleJobThresholdMs(
-      this.config.staleJobThresholdMs,
-      this.config.taskHeartbeatInterval,
-    );
-    const cutoff = new Date(
-      Date.now() - effectiveStaleThresholdMs,
-    ).toISOString();
+    // Without the workers table we cannot reason about liveness; treat every
+    // running job as alive (reconcile slot drift only, never fail jobs).
+    const workersReady = await this.workerCollection.tableReady();
+    const freshLeaseKeys = workersReady
+      ? await this.workerCollection.freshLeaseWorkerKeys()
+      : new Set<string>();
+
     const jobsResult = await this.db.query(
-      `SELECT id, args, worker_heartbeat, started_at
+      `SELECT id, args, worker_id
          FROM _smrt_jobs
         WHERE status = 'running'`,
     );
@@ -318,8 +322,7 @@ export class ScheduleRunner extends EventEmitter {
     for (const row of jobsResult.rows as Array<{
       id: string;
       args: unknown;
-      worker_heartbeat: string | null;
-      started_at: string | null;
+      worker_id: string | null;
     }>) {
       const scheduleId = this.getScheduleIdFromJobArgs(row.args);
       if (!scheduleId) continue;
@@ -327,13 +330,11 @@ export class ScheduleRunner extends EventEmitter {
       const state = stateBySchedule.get(scheduleId);
       if (!state) continue;
 
-      const heartbeat = row.worker_heartbeat;
-      const startedAt = row.started_at;
-      const isStale =
-        (heartbeat !== null && heartbeat < cutoff) ||
-        (heartbeat === null && startedAt !== null && startedAt < cutoff);
+      const alive = workersReady
+        ? isWorkerAlive(row.worker_id, freshLeaseKeys)
+        : true;
 
-      if (isStale) {
+      if (!alive) {
         state.staleJobIds.push(row.id);
       } else {
         state.live += 1;
@@ -346,9 +347,14 @@ export class ScheduleRunner extends EventEmitter {
       return state?.staleJobIds ?? [];
     });
 
+    // Only the jobs this pass actually transitioned to 'failed' — RETURNING id
+    // (not rowCount, which DuckDB/JSON always report as ≥1) so a job another
+    // recoverer already failed isn't double-counted into the schedule's
+    // run_count/failure_count.
+    const recoveredJobIds = new Set<string>();
     if (staleJobIds.length > 0) {
       const placeholders = staleJobIds.map(() => '?').join(', ');
-      await this.db.query(
+      const result = await this.db.query(
         `UPDATE _smrt_jobs
             SET status = 'failed',
                 completed_at = ?,
@@ -356,12 +362,17 @@ export class ScheduleRunner extends EventEmitter {
                 worker_id = NULL,
                 worker_heartbeat = NULL
           WHERE status = 'running'
-            AND id IN (${placeholders})`,
+            AND id IN (${placeholders})
+          RETURNING id`,
         now,
-        `Recovered stale scheduled job after ${effectiveStaleThresholdMs}ms without a heartbeat. ` +
-          `Long synchronous work can block heartbeats; prefer async subprocess APIs or raise the stale threshold for intentionally long jobs.`,
+        'Recovered orphaned scheduled job: its owning worker is no longer ' +
+          'alive (no fresh liveness lease in _smrt_workers and not running in ' +
+          'this process).',
         ...staleJobIds,
       );
+      for (const row of result.rows as Array<{ id?: unknown }>) {
+        if (typeof row.id === 'string') recoveredJobIds.add(row.id);
+      }
     }
 
     for (const schedule of schedules) {
@@ -369,7 +380,9 @@ export class ScheduleRunner extends EventEmitter {
       if (!state) continue;
 
       const desiredRunningCount = state.live;
-      const recoveredCount = state.staleJobIds.length;
+      const recoveredCount = state.staleJobIds.filter((id) =>
+        recoveredJobIds.has(id),
+      ).length;
 
       if (
         Number(schedule.running_count) === desiredRunningCount &&
@@ -390,7 +403,7 @@ export class ScheduleRunner extends EventEmitter {
             WHERE id = ?`,
           desiredRunningCount,
           now,
-          `Recovered ${recoveredCount} stale scheduled job(s) after missing heartbeats`,
+          `Recovered ${recoveredCount} orphaned scheduled job(s) from dead worker(s)`,
           recoveredCount,
           recoveredCount,
           schedule.id,
@@ -398,7 +411,7 @@ export class ScheduleRunner extends EventEmitter {
         this.emit(
           'schedule:failed',
           schedule.id,
-          `Recovered ${recoveredCount} stale scheduled job(s)`,
+          `Recovered ${recoveredCount} orphaned scheduled job(s)`,
         );
       } else {
         await this.db.query(
