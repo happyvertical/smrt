@@ -63,8 +63,10 @@ one tier; the dimension table states what each tier must satisfy.
 A PR that touches a package must bring that package to **at or above its tier floor**
 to merge — existing debt is not grandfathered. This is intentionally strict: the
 point of the stabilize phase is that you cannot add to a package without leaving it at
-standard. Enforcement lands with the coverage gate (sweep S6, #1411); until S6 ships,
-under-floor packages get a remediation runway via Wave 3.
+standard. Enforced by the coverage gate (sweep S6, #1411): the `Coverage Gate` CI job
+runs `scripts/check-coverage.mjs`, which measures per-package line coverage for the
+packages a PR touches and fails any below its tier floor. Under-floor packages a PR
+does not touch are not blocked; bringing them to floor is Wave 3 remediation.
 
 ## Dimensions
 
@@ -199,7 +201,7 @@ checks in hooks/CI — see AGENTS.md):
   off → warn → error, package by package, until the blanket override is deleted.
 - **Design tokens** → add a Biome (root) lint rule banning raw color literals in
   `.svelte`/`.css`, wired into root Biome + lefthook + CI (#1373).
-- **Coverage** → HARD floor: any package touched by a PR must be ≥ its tier floor (T1 80 / T2 70 / T3 50) to merge — no grandfathering. Enforced once the coverage gate (S6) lands.
+- **Coverage** → HARD floor: any package touched by a PR must be ≥ its tier floor (T1 80 / T2 70 / T3 50) to merge — no grandfathering. Enforced by the `Coverage Gate` CI job (`scripts/check-coverage.mjs`, S6 #1411).
 - **Secret scanning** → gitleaks in lefthook pre-commit + CI; blocks committed credentials.
 - **Dependency risk** → `pnpm audit` / osv-scanner as a CI check for known-vuln deps.
 - **Security/correctness lint** → promote Biome security rules to errors (ban `eval`, unsafe patterns) within the strictness ratchet.
