@@ -123,7 +123,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - `@types/node` always `catalog:`
   - `vite`, `vitest`, `vite-plugin-dts`, `typescript` come from root devDependencies — do not redeclare per-package unless overriding
   - Pinning style: prefer caret (`^X.Y.Z`) for third-party deps; exact pins (`X.Y.Z`) only for tools where minor bumps cause breakage (document why)
-- **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. No `lint` or `format` scripts — those are root-level via Biome. The presence of `typecheck` is enforced by `scripts/check-standards.mjs`; the only carve-outs are the plain-JS template wrappers (`template-sveltekit`, `template-site-static-json`), whose typecheck obligation lives in their scaffolded `template/package.json` (see §10).
+- **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. **No `lint` or `format` scripts** — those are root-level Biome tasks only (`turbo lint` / `biome ci` / `npm run format-check`), which already gate every package on PRs; `scripts/check-standards.mjs` **forbids** per-package `lint`/`lint:fix`/`format`/`format-check` scripts so drift back to them is caught (S2, #1374). The presence of `typecheck` is likewise enforced by `scripts/check-standards.mjs`; the only carve-outs are the plain-JS template wrappers (`template-sveltekit`, `template-site-static-json`), whose typecheck obligation lives in their scaffolded `template/package.json` (see §10).
 - **`peerDependencies`**:
   - Svelte peer always `svelte: ^5.18.0` for packages shipping UI
   - Optional peers explicitly marked in `peerDependenciesMeta`
