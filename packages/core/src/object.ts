@@ -239,6 +239,18 @@ export class SmrtObject extends SmrtClass {
   private _loadedRelationships: Map<string, any> = new Map();
 
   /**
+   * Whether this object is backed by an existing database row.
+   *
+   * Set when the object is hydrated from the database (collection
+   * get/list/query, `loadFromId()`, `loadFromSlug()`) and after a successful
+   * `save()`. `save()` uses it to target the primary key on upsert instead
+   * of the natural-key conflict columns, so natural-key edits (e.g. renaming
+   * a slug) update the existing row rather than colliding on `*_pkey`
+   * (issue #1472).
+   */
+  private _persisted = false;
+
+  /**
    * Override options with SmrtObjectOptions type for proper type narrowing.
    * Initialized by parent constructor via super() call.
    */
@@ -441,6 +453,26 @@ export class SmrtObject extends SmrtClass {
    */
   protected setId(id: string): void {
     this._id = id;
+  }
+
+  /**
+   * Whether this object is backed by an existing database row.
+   *
+   * True after hydration from the database (collection get/list/query,
+   * `loadFromId()`, `loadFromSlug()`) or after a successful `save()`.
+   */
+  public get isPersisted(): boolean {
+    return this._persisted;
+  }
+
+  /**
+   * Marks this object as backed by an existing database row, so `save()`
+   * targets the primary key instead of the natural-key conflict columns.
+   * Called by framework hydration paths (issue #1472).
+   * @internal
+   */
+  public markAsPersisted(): void {
+    this._persisted = true;
   }
 
   protected async verifyStorageReady(): Promise<void> {
@@ -819,6 +851,10 @@ export class SmrtObject extends SmrtClass {
         totalFields: Object.keys(fields).length,
       });
     }
+
+    // The data came from an existing row, so subsequent saves must update
+    // that row by primary key even if natural-key fields change (issue #1472).
+    this._persisted = true;
   }
 
   /**
@@ -1523,6 +1559,17 @@ export class SmrtObject extends SmrtClass {
         conflictColumns,
       );
 
+      // Issue #1472: objects backed by an existing row must conflict on the
+      // primary key. With natural-key conflict columns, editing a natural-key
+      // field (e.g. slug) makes the conflict target match no row, so the
+      // upsert takes the INSERT path with the existing id and violates
+      // `*_pkey`. New objects keep natural-key conflict so ingestion-style
+      // dedup (create/getOrUpsert against a known slug) still updates in
+      // place. planPersistenceWrite() intentionally still receives the
+      // natural-key columns — its legacy-STI probe semantics are unchanged.
+      const upsertConflictColumns =
+        this._persisted && data.id ? ['id'] : conflictColumns;
+
       await ErrorUtils.withRetry(
         async () => {
           try {
@@ -1531,11 +1578,7 @@ export class SmrtObject extends SmrtClass {
               await this.db.update(this.tableName, { id: data.id }, updateData);
               this.setMetaType(writePlan.qualifiedMetaType);
             } else {
-              await this.db.upsert(
-                this.tableName,
-                writePlan.conflictColumns,
-                data,
-              );
+              await this.db.upsert(this.tableName, upsertConflictColumns, data);
             }
           } catch (error) {
             // Detect specific database error types
@@ -1563,6 +1606,10 @@ export class SmrtObject extends SmrtClass {
         3,
         500,
       );
+
+      // The row now exists, so any further save() must update it by primary
+      // key even if natural-key fields change afterwards (issue #1472).
+      this._persisted = true;
 
       // Execute afterSave interceptors (e.g., tenant audit logging)
       await GlobalInterceptors.executeAfterSave(this, interceptorContext);
@@ -2061,6 +2108,10 @@ export class SmrtObject extends SmrtClass {
 
     await this.verifyStorageReady();
     await this.db.delete(this.tableName, { id: this.id });
+
+    // The backing row is gone — a later save() should go through the
+    // natural-key insert path again rather than targeting a deleted id.
+    this._persisted = false;
 
     await this.runHook('afterDelete');
 
