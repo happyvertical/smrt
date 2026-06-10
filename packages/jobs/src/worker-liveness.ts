@@ -1,4 +1,8 @@
+import { detectEngine } from '@happyvertical/smrt-core';
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
+
+type DatabaseEngine = ReturnType<typeof detectEngine>;
 
 /**
  * Worker liveness primitives shared by {@link ../runner.js} and
@@ -20,11 +24,12 @@ import { createId } from '@happyvertical/utils';
  * The live set takes precedence: a worker live in this process is alive even
  * if its database lease looks stale.
  *
- * Stage 1 compares the lease against the recovering host's clock (the same
- * approach the previous heartbeat recovery used), so it is no more sensitive to
- * clock skew than the code it replaces. Stage 2 moves lease renewal to an
- * off-loop worker thread and switches the comparison to database-side time for
- * multi-machine deployments.
+ * The lease is compared against the recovering host's clock (the same approach
+ * the previous heartbeat recovery used), so it is no more sensitive to clock
+ * skew than the code it replaces. For eligible engines the lease is renewed off
+ * the main loop by a worker thread (see worker-liveness-ticker.ts) so a blocked
+ * handler can't starve it; otherwise it is renewed on the main loop and the
+ * live set covers same-process correctness.
  */
 
 const LIVE_WORKERS_KEY = '__smrtLiveWorkers';
@@ -66,8 +71,9 @@ export function liveWorkerKeys(): Set<string> {
 }
 
 /**
- * A worker is alive if it is live in *this* process or holds a fresh database
- * lease in some process. `null`/unknown worker keys are never alive.
+ * Whether a worker is alive: live in *this* process (synchronous truth, never
+ * starved), or holding a fresh database lease in some process. `null`/unknown
+ * worker keys are never alive.
  */
 export function isWorkerAlive(
   workerKey: string | null | undefined,
@@ -89,4 +95,45 @@ export function isWorkerAlive(
  */
 export function createWorkerKey(baseId: string): string {
   return `${baseId}~${createId().slice(0, 8)}`;
+}
+
+/** Resolve the database engine for a connection. */
+export function resolveEngine(db: DatabaseInterface): DatabaseEngine {
+  const withConfig = db as DatabaseInterface & {
+    config?: { type?: string; url?: string };
+    type?: string;
+  };
+  const url = db.url || withConfig.config?.url || '';
+  const type = withConfig.type || withConfig.config?.type;
+  return detectEngine(url, type);
+}
+
+/**
+ * Whether a connection points at an in-memory SQLite database. In-memory
+ * databases are single-process (nothing to recover cross-process) and a second
+ * connection cannot see the same data, so the off-loop liveness thread is
+ * skipped for them.
+ */
+export function isInMemory(db: DatabaseInterface): boolean {
+  const url = (db.url || '').toLowerCase();
+  return (
+    url === ':memory:' ||
+    url.includes('mode=memory') ||
+    url.includes('file::memory:')
+  );
+}
+
+/**
+ * Whether the off-loop liveness thread can run against this connection.
+ *
+ * Requires a second independent connection to the same data: true for Postgres
+ * and file-backed SQLite. In-memory SQLite cannot be reached from another
+ * connection, and DuckDB is single-writer per file — both fall back to
+ * main-loop lease renewal + the in-process live set.
+ */
+export function offLoopEligible(db: DatabaseInterface): boolean {
+  const engine = resolveEngine(db);
+  if (engine === 'postgres') return true;
+  if (engine === 'sqlite') return !isInMemory(db);
+  return false;
 }

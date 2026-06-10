@@ -312,6 +312,11 @@ export class ScheduleRunner extends EventEmitter {
          FROM _smrt_jobs
         WHERE status = 'running'`,
     );
+    const jobRows = jobsResult.rows as Array<{
+      id: string;
+      args: unknown;
+      worker_id: string | null;
+    }>;
 
     type ScheduleState = { live: number; staleJobIds: string[] };
     const stateBySchedule = new Map<string, ScheduleState>();
@@ -319,11 +324,7 @@ export class ScheduleRunner extends EventEmitter {
       stateBySchedule.set(schedule.id, { live: 0, staleJobIds: [] });
     }
 
-    for (const row of jobsResult.rows as Array<{
-      id: string;
-      args: unknown;
-      worker_id: string | null;
-    }>) {
+    for (const row of jobRows) {
       const scheduleId = this.getScheduleIdFromJobArgs(row.args);
       if (!scheduleId) continue;
 
