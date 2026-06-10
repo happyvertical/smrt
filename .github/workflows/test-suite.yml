@@ -131,6 +131,41 @@ jobs:
       - name: Format check
         run: pnpm run format-check
 
+  knowledge:
+    name: Knowledge Freshness
+    needs: build
+    runs-on: arc-happyvertical
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup environment
+        uses: ./.github/actions/setup-environment
+        with:
+          node-version: '24'
+          install-deps: 'true'
+          setup-playwright: 'false'
+          registry-url: 'https://npm.pkg.github.com'
+          auth-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build first so the per-package domain-knowledge artifacts
+      # (.smrt/ or dist/smrt-knowledge.json) exist with source hashes matching
+      # this commit; the freshness check compares those hashes against the
+      # current package.json / AGENTS.md / manifest.
+      - name: Restore build from cache
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Sweep S5 (#1376): blocking gate. Fails on stale agent docs, dangling
+      # references, missing package docs, or drifted domain-knowledge artifacts.
+      - name: Check SMRT knowledge freshness
+        run: pnpm knowledge:check --strict --format markdown
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   test-core:
     name: Test Core (${{ matrix.shard }})
     needs: build
