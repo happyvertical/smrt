@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.27.38
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: add dependency-vuln audit gate + remediate high/critical advisories (S8, #1413) (#1476)
+  - ci: add gitleaks secret scanning — pre-commit hook + PR gate (S7, #1412) (#1475)
+  - @happyvertical/smrt-scanner@0.27.38
+  - @happyvertical/smrt-config@0.27.38
+  - @happyvertical/smrt-types@0.27.38
+
 ## 0.27.37
 
 ### Patch Changes
