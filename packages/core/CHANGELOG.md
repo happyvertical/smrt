@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.37
+
+### Patch Changes
+
+- ### Features
+
+  - finish S14 — migrate cli diagnostics + flip noConsole to global error (#1471) (cli)
+  - @happyvertical/smrt-scanner@0.27.37
+  - @happyvertical/smrt-config@0.27.37
+  - @happyvertical/smrt-types@0.27.37
+
 ## 0.27.36
 
 ### Patch Changes
