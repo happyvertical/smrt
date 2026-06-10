@@ -74,7 +74,6 @@ async function saveWhitelistEntry() {
     });
     resetWhitelistForm();
   } catch (e) {
-    console.error('Failed to add whitelist entry:', e);
   } finally {
     savingWhitelist = false;
   }
@@ -84,9 +83,7 @@ async function removeWhitelistEntry(entry: WhitelistEntry) {
   if (isReadonly || !onremovewhitelist) return;
   try {
     await onremovewhitelist(entry);
-  } catch (e) {
-    console.error('Failed to remove whitelist entry:', e);
-  }
+  } catch (e) {}
 }
 
 async function saveBlacklistEntry() {
@@ -101,7 +98,6 @@ async function saveBlacklistEntry() {
     });
     resetBlacklistForm();
   } catch (e) {
-    console.error('Failed to add blacklist entry:', e);
   } finally {
     savingBlacklist = false;
   }
@@ -111,9 +107,7 @@ async function removeBlacklistEntry(entry: BlacklistEntry) {
   if (isReadonly || !onremoveblacklist) return;
   try {
     await onremoveblacklist(entry);
-  } catch (e) {
-    console.error('Failed to remove blacklist entry:', e);
-  }
+  } catch (e) {}
 }
 
 function getTypeIcon(type: string): string {

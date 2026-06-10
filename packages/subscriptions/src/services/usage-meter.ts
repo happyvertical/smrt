@@ -7,6 +7,7 @@ import type {
   SummarizeUsageOptions,
   UsageSummary,
 } from '../types.js';
+import { normalizeSubscriber } from '../utils.js';
 
 export class TenantUsageMeter {
   constructor(
@@ -21,11 +22,38 @@ export class TenantUsageMeter {
     return new TenantUsageMeter(metrics, classOptions);
   }
 
+  /**
+   * Record one usage row.
+   *
+   * Accepts the polymorphic subscriber fields directly on the options object
+   * (`subscriberKind`/`subscriberExternalId`); when omitted defaults to a
+   * `'tenant'`-kind row keyed off `tenantId`. The collection layer enforces
+   * the XOR invariant — passing `subscriberKind: 'external'` without a
+   * non-empty `subscriberExternalId` throws.
+   */
   async record(options: RecordUsageOptions): Promise<void> {
     await this.metrics.recordUsage(options);
   }
 
+  /**
+   * Summarize usage over a window for a given subscriber.
+   *
+   * The `ai.*` short-circuit only fires for `'tenant'`-kind subscribers since
+   * the `_smrt_ai_usage` system table is tenant-scoped; external subscribers
+   * fall through to the normal `_smrt_tenant_usage_metrics` aggregation.
+   */
   async summarize(options: SummarizeUsageOptions): Promise<UsageSummary> {
+    // Normalize at the boundary so the `ai.*` short-circuit and the standard
+    // `summarizeUsage` path both refuse the same XOR violations (e.g. caller
+    // passes subscriberExternalId without subscriberKind: 'external'). Without
+    // this, the AI short-circuit would silently re-scope to tenant-wide
+    // _smrt_ai_usage totals.
+    normalizeSubscriber({
+      tenantId: options.tenantId,
+      subscriberKind: options.subscriberKind,
+      subscriberExternalId: options.subscriberExternalId,
+    });
+
     const aiSummary = await this.trySummarizeAiMetric(options);
     if (aiSummary) {
       return aiSummary;
@@ -48,6 +76,13 @@ export class TenantUsageMeter {
     options: SummarizeUsageOptions,
   ): Promise<UsageSummary | null> {
     if (!options.metricKey.startsWith('ai.')) {
+      return null;
+    }
+    // _smrt_ai_usage is tenant-scoped only; external subscribers must use the
+    // standard usage path. Skip the short-circuit so the caller's recorded
+    // usage rows are summed instead.
+    const kind = options.subscriberKind ?? 'tenant';
+    if (kind !== 'tenant') {
       return null;
     }
 

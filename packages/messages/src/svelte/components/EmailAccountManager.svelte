@@ -105,7 +105,6 @@ async function save() {
     await onsave(data, editingId ?? undefined);
     resetForm();
   } catch (e) {
-    console.error('Failed to save email account:', e);
   } finally {
     saving = false;
   }
@@ -116,9 +115,7 @@ async function remove(acct: EmailAccountData) {
   try {
     await ondelete(acct);
     if (editingId === acct.id) resetForm();
-  } catch (e) {
-    console.error('Failed to delete email account:', e);
-  }
+  } catch (e) {}
 }
 
 async function testConnection(acct: EmailAccountData) {

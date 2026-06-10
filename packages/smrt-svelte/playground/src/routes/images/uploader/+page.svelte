@@ -4,7 +4,6 @@ import { ImageUploader } from '@happyvertical/smrt-images/svelte';
 let selectedResult: any = null;
 
 function handleSelect(result: any) {
-  console.log('Selected image:', result);
   if (result instanceof File) {
     const url = URL.createObjectURL(result);
     selectedResult = {

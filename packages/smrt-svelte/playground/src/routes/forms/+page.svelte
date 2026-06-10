@@ -77,7 +77,6 @@ const llmOptions: { value: LLMModelId; label: string; size: string }[] = [
 
 function handleSubmit(data: Record<string, unknown>) {
   submittedData = data;
-  console.log('Form submitted:', data);
 }
 
 function clearForm() {

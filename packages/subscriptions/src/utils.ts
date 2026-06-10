@@ -2,6 +2,8 @@ import type {
   JsonObject,
   PlanFeatureGrant,
   PlanThreshold,
+  Subscriber,
+  SubscriberKind,
   ThresholdEnforcement,
   ThresholdWindow,
   UsageWindow,
@@ -61,6 +63,156 @@ export function normalizeFeatureGrants(
   return grants.map((grant) =>
     typeof grant === 'string' ? { featureKey: grant, enabled: true } : grant,
   );
+}
+
+/**
+ * Coerce inputs from the legacy tenant-only API into a {@link Subscriber}.
+ *
+ * Existing callers that pass only `tenantId` (with optional `subscriberKind` /
+ * `subscriberExternalId` fields, e.g. on `RecordUsageOptions`) get normalized
+ * into the discriminated union exactly once at the boundary. This is the only
+ * place that contains "if kind is omitted, default to tenant" logic — every
+ * other site works with a typed `Subscriber`.
+ *
+ * Throws when:
+ * - `subscriberKind === 'external'` is requested without a non-empty
+ *   `subscriberExternalId` (the XOR invariant is the whole point), or
+ * - the input carries a non-empty `subscriberExternalId` but the kind resolves
+ *   to `'tenant'` (silent re-scoping would write buyer-scoped usage as tenant
+ *   usage, which then disappears from external summaries).
+ */
+export function normalizeSubscriber(input: {
+  tenantId: string;
+  subscriberKind?: SubscriberKind | null;
+  subscriberExternalId?: string | null;
+}): Subscriber {
+  // Treat null/undefined external ids as "absent" — but only after the
+  // discriminator-derived branch decides what to do. We never coerce null
+  // into the persisted column because the invariant on the model is
+  // re-checked at save time via assertSubscriberInvariant.
+  const rawExternalId = input.subscriberExternalId;
+  const externalIdAbsent =
+    rawExternalId === null || rawExternalId === undefined;
+  const externalId = externalIdAbsent ? '' : String(rawExternalId);
+
+  const rawKind = input.subscriberKind;
+  const kind: SubscriberKind =
+    rawKind === null || rawKind === undefined ? 'tenant' : rawKind;
+
+  if (kind !== 'tenant' && kind !== 'external') {
+    throw new Error(
+      `subscriberKind must be "tenant" or "external" (got ${JSON.stringify(rawKind)})`,
+    );
+  }
+
+  if (kind === 'tenant') {
+    if (externalId !== '') {
+      throw new Error(
+        'subscriberExternalId is set but subscriberKind is "tenant"; ' +
+          'set subscriberKind="external" explicitly or omit subscriberExternalId',
+      );
+    }
+    return { kind: 'tenant', tenantId: input.tenantId };
+  }
+  if (externalId === '') {
+    throw new Error(
+      'subscriberKind="external" requires a non-empty subscriberExternalId',
+    );
+  }
+  return {
+    kind: 'external',
+    tenantId: input.tenantId,
+    externalId,
+  };
+}
+
+/**
+ * Project a {@link Subscriber} back onto column values for persistence or query
+ * filters. Counterpart to {@link normalizeSubscriber}.
+ */
+export function subscriberToColumns(subscriber: Subscriber): {
+  tenantId: string;
+  subscriberKind: SubscriberKind;
+  subscriberExternalId: string;
+} {
+  if (subscriber.kind === 'tenant') {
+    return {
+      tenantId: subscriber.tenantId,
+      subscriberKind: 'tenant',
+      subscriberExternalId: '',
+    };
+  }
+  return {
+    tenantId: subscriber.tenantId,
+    subscriberKind: 'external',
+    subscriberExternalId: subscriber.externalId,
+  };
+}
+
+/**
+ * Enforce the subscriber XOR invariant on a row's columns. Used by both the
+ * model constructors (catches construction-time mistakes) and the
+ * `validateBeforeSave` override (catches mutations applied via the
+ * generated PUT/PATCH update path that bypass the constructor).
+ *
+ * Defensive about types because both call sites can receive JSON or untyped
+ * fixture data via the generated REST/CLI surface — `null` arriving in place
+ * of `''` would otherwise slip past an `=== ''` check, land in the
+ * `(tenant_id, subscriber_kind, subscriber_external_id)` conflict key, and
+ * (on Postgres) not collide with other NULLs while `findCurrentForSubscriber`
+ * keeps querying by a string external id.
+ *
+ * @param modelName - Prepended to error messages so callers can tell whether
+ *   the failure originated in `TenantSubscription` or `TenantUsageMetric`.
+ */
+export function assertSubscriberInvariant(
+  modelName: string,
+  fields: {
+    subscriberKind: unknown;
+    subscriberExternalId: unknown;
+  },
+): void {
+  if (
+    fields.subscriberKind !== 'tenant' &&
+    fields.subscriberKind !== 'external'
+  ) {
+    throw new Error(
+      `${modelName}: subscriberKind must be "tenant" or "external" (got ${describe(
+        fields.subscriberKind,
+      )})`,
+    );
+  }
+  if (typeof fields.subscriberExternalId !== 'string') {
+    throw new Error(
+      `${modelName}: subscriberExternalId must be a string (got ${describe(
+        fields.subscriberExternalId,
+      )})`,
+    );
+  }
+
+  if (
+    fields.subscriberKind === 'tenant' &&
+    fields.subscriberExternalId !== ''
+  ) {
+    throw new Error(
+      `${modelName}: subscriberExternalId must be empty when subscriberKind is "tenant"`,
+    );
+  }
+  if (
+    fields.subscriberKind === 'external' &&
+    fields.subscriberExternalId === ''
+  ) {
+    throw new Error(
+      `${modelName}: subscriberKind="external" requires a non-empty subscriberExternalId`,
+    );
+  }
+}
+
+function describe(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return `"${value}"`;
+  return String(value);
 }
 
 export function getWindowForThreshold(

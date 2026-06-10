@@ -274,7 +274,6 @@ async function loadSession() {
 
 async function loadThread(threadId: string) {
   if (!threadId) {
-    console.warn('[loadThread] Aborted: threadId is empty');
     return;
   }
 
@@ -302,7 +301,6 @@ async function loadThread(threadId: string) {
     // Check if there is a saved model preference on the session context
     applySessionModelPreference(session);
   } catch (err: any) {
-    console.error(`[loadThread] Failed for thread ${threadId}:`, err);
     error = err.message;
   } finally {
     loadingMessages = false;
@@ -404,14 +402,11 @@ async function handleSendMessage(content: string) {
           if (Object.keys(fields).length > 0) {
             onapplyfields(fields);
           }
-        } catch (e) {
-          console.warn('Failed to parse AI field update JSON:', e);
-        }
+        } catch (e) {}
         match = jsonBlockRegex.exec(data.agentMessage.content);
       }
     }
   } catch (err: any) {
-    console.error(err);
     messages = messages.filter((m) => m.id !== tempId);
     error = 'Failed to send message.';
   } finally {

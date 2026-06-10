@@ -37,6 +37,8 @@ export type {
   PlanFeatureGrant,
   PlanThreshold,
   RecordUsageOptions,
+  Subscriber,
+  SubscriberKind,
   SubscriptionPlanStatus,
   SubscriptionResolverOptions,
   SubscriptionStatus,
@@ -51,8 +53,11 @@ export type {
   UsageWindow,
 } from './types.js';
 export {
+  assertSubscriberInvariant,
   getWindowForThreshold,
   getWindowKey,
   isValidThreshold,
   normalizeFeatureGrants,
+  normalizeSubscriber,
+  subscriberToColumns,
 } from './utils.js';

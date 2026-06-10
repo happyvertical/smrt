@@ -118,7 +118,6 @@ async function handleEditContent(content: ContentData) {
     });
     editorMode = governance.data.isGoverned ? 'governed' : 'generic';
   } catch (err) {
-    console.error('Failed to fetch full content record:', err);
     editingContent = content;
     editorMode = 'generic';
   }

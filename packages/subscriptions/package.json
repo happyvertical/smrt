@@ -7,6 +7,7 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
+    "scripts",
     "CLAUDE.md",
     "AGENTS.md"
   ],
@@ -37,7 +38,8 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
-    "@happyvertical/smrt-tenancy": "workspace:*"
+    "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/sql": "catalog:"
   },
   "peerDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
