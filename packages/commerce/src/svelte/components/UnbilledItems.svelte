@@ -193,7 +193,7 @@ const someSelected = $derived(
     align-items: center;
     gap: var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-body-medium-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1c1b1f);
     cursor: pointer;
   }
@@ -218,7 +218,7 @@ const someSelected = $derived(
     padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-4, 1rem);
     border-bottom: 1px solid var(--smrt-color-surface-variant, #e7e0ec);
     cursor: pointer;
-    transition: background var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: background var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -255,9 +255,9 @@ const someSelected = $derived(
 
   .item-type {
     display: inline-flex;
-    padding: var(--smrt-spacing-0-5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
+    padding: var(--smrt-spacing-0_5, 0.125rem) var(--smrt-spacing-2, 0.5rem);
     font: var(--smrt-typography-label-small-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     text-transform: uppercase;
     letter-spacing: 0.025em;
     border-radius: var(--smrt-radius-full, 9999px);
@@ -294,7 +294,7 @@ const someSelected = $derived(
 
   .item-amount {
     font: var(--smrt-typography-body-medium-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1c1b1f);
     font-variant-numeric: tabular-nums;
   }
@@ -321,7 +321,7 @@ const someSelected = $derived(
 
   .summary-value {
     font: var(--smrt-typography-title-large-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #1c1b1f);
   }
 
@@ -330,13 +330,13 @@ const someSelected = $derived(
     align-items: center;
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary, #ffffff);
     background: var(--smrt-color-primary, #005ac1);
     border: none;
     border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;
-    transition: background var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: background var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -346,6 +346,6 @@ const someSelected = $derived(
   }
 
   .create-btn:hover {
-    background: var(--smrt-color-primary-hover, #004493);
+    background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
   }
 </style>

@@ -130,7 +130,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.loading-overlay {
 		position: fixed;
 		inset: 0;
-		z-index: 9999;
+		z-index: var(--smrt-z-index-loading, 1700);
 		display: flex;
 		align-items: center;
 		justify-content: center;
@@ -146,8 +146,8 @@ function handleKeydown(e: KeyboardEvent) {
 	.overlay-content {
 		position: relative;
 		background: var(--smrt-color-surface-container-high, white);
-		border-radius: 16px;
-		padding: 32px 40px;
+		border-radius: var(--smrt-radius-xl, 16px);
+		padding: var(--smrt-spacing-8, 32px) var(--smrt-spacing-10, 40px);
 		max-width: 400px;
 		width: 90%;
 		text-align: center;
@@ -157,7 +157,7 @@ function handleKeydown(e: KeyboardEvent) {
 	.loading-icon {
 		width: 48px;
 		height: 48px;
-		margin: 0 auto 16px;
+		margin: 0 auto var(--smrt-spacing-4, 16px);
 	}
 
 	.icon {
@@ -184,37 +184,41 @@ function handleKeydown(e: KeyboardEvent) {
 	}
 
 	.title {
-		font-size: 1.25rem;
-		font-weight: 600;
+		font-size: var(--smrt-typography-title-large-size, 1.25rem);
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 		color: var(--smrt-color-on-surface, #1f2937);
-		margin: 0 0 16px;
+		margin: 0 0 var(--smrt-spacing-4, 16px);
 	}
 
 	.progress-container {
 		display: flex;
 		align-items: center;
-		gap: 12px;
-		margin: 16px 0;
+		gap: var(--smrt-spacing-3, 12px);
+		margin: var(--smrt-spacing-4, 16px) 0;
 	}
 
 	.progress-bar {
 		flex: 1;
 		height: 8px;
 		background: var(--smrt-color-surface-container-highest, #e5e7eb);
-		border-radius: 4px;
+		border-radius: var(--smrt-radius-sm, 4px);
 		overflow: hidden;
 	}
 
 	.progress-fill {
 		height: 100%;
-		background: linear-gradient(90deg, #3b82f6, #60a5fa);
-		border-radius: 4px;
+		background: linear-gradient(
+			90deg,
+			var(--smrt-color-primary),
+			color-mix(in srgb, var(--smrt-color-primary) 70%, white)
+		);
+		border-radius: var(--smrt-radius-sm, 4px);
 		transition: width var(--smrt-duration-short4, 300ms) var(--smrt-easing-standard, ease);
 	}
 
 	.progress-text {
-		font-size: 0.875rem;
-		font-weight: 600;
+		font-size: var(--smrt-typography-label-large-size, 0.875rem);
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 		color: var(--smrt-color-primary, #3b82f6);
 		min-width: 40px;
 	}
@@ -222,36 +226,36 @@ function handleKeydown(e: KeyboardEvent) {
 	.items-container {
 		display: flex;
 		flex-wrap: wrap;
-		gap: 8px;
+		gap: var(--smrt-spacing-2, 8px);
 		justify-content: center;
-		margin-top: 16px;
+		margin-top: var(--smrt-spacing-4, 16px);
 	}
 
 	.item-badge {
-		font-size: 0.75rem;
-		padding: 4px 10px;
-		border-radius: 9999px;
+		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+		padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-3, 12px);
+		border-radius: var(--smrt-radius-full, 9999px);
 		background: var(--smrt-color-primary-container, #dcfce7);
 		color: var(--smrt-color-on-primary-container, #166534);
 	}
 
 	.error-message {
-		font-size: 0.875rem;
+		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		color: var(--smrt-color-error, #ef4444);
-		margin: 16px 0 0;
-		padding: 12px;
+		margin: var(--smrt-spacing-4, 16px) 0 0;
+		padding: var(--smrt-spacing-3, 12px);
 		background: var(--smrt-color-error-container, #fef2f2);
-		border-radius: 8px;
+		border-radius: var(--smrt-radius-md, 8px);
 	}
 
 	.dismiss-btn {
-		margin-top: 20px;
-		padding: 10px 20px;
-		font-size: 0.875rem;
+		margin-top: var(--smrt-spacing-5, 20px);
+		padding: var(--smrt-spacing-3, 12px) var(--smrt-spacing-5, 20px);
+		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 		color: var(--smrt-color-on-surface-variant, #6b7280);
 		background: transparent;
 		border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
-		border-radius: 8px;
+		border-radius: var(--smrt-radius-md, 8px);
 		cursor: pointer;
 		transition: all var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
 	}

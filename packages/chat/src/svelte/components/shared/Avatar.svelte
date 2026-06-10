@@ -62,7 +62,7 @@ function handleImgError() {
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary-container, #d6e3ff);
     color: var(--smrt-color-on-primary-container, #001a41);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     flex-shrink: 0;
     overflow: hidden;
   }
@@ -70,19 +70,19 @@ function handleImgError() {
   .sm {
     width: 28px;
     height: 28px;
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
 
   .md {
     width: 36px;
     height: 36px;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
   }
 
   .lg {
     width: 48px;
     height: 48px;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .avatar__img {
@@ -121,15 +121,15 @@ function handleImgError() {
   }
 
   .avatar__presence.online {
-    background: #4caf50;
+    background: var(--smrt-color-success, #4caf50);
   }
 
   .avatar__presence.away {
-    background: #ff9800;
+    background: var(--smrt-color-warning, #ff9800);
   }
 
   .avatar__presence.dnd {
-    background: #f44336;
+    background: var(--smrt-color-error, #f44336);
   }
 
   .avatar__presence.offline {

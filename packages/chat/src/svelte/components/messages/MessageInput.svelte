@@ -131,7 +131,7 @@ function handleInput() {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 1px;
+    gap: var(--smrt-spacing-1, 4px);
     min-width: 0;
     border-left: 2px solid var(--smrt-color-primary, #005ac1);
     padding-left: var(--smrt-spacing-2, 0.375rem);
@@ -139,7 +139,7 @@ function handleInput() {
 
   .message-input__reply-name {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary, #005ac1);
   }
 
@@ -217,7 +217,7 @@ function handleInput() {
   }
 
   .message-input__send:hover:not(:disabled) {
-    background: var(--smrt-color-primary-hover, #004a9e);
+    background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
   }
 
   .message-input__send:disabled {

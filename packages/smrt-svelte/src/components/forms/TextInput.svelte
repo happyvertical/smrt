@@ -305,9 +305,9 @@ function handleInput(e: Event) {
     display: flex;
     align-items: center;
     background-color: var(--field-bg);
-    border-radius: 4px 4px 0 0;
+    border-radius: var(--smrt-radius-sm, 4px) var(--smrt-radius-sm, 4px) 0 0;
     min-height: 56px;
-    padding: 0 16px;
+    padding: 0 var(--smrt-spacing-4, 16px);
     transition: background-color var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
   }
 
@@ -321,13 +321,13 @@ function handleInput(e: Event) {
     flex-direction: column;
     justify-content: center;
     height: 100%;
-    padding-top: 8px;
+    padding-top: var(--smrt-spacing-2, 8px);
   }
 
   .label {
-    font-size: 1rem;
-    line-height: 1.5;
-    letter-spacing: 0.5px;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.5);
+    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
     color: var(--field-color);
     pointer-events: none;
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
@@ -343,9 +343,9 @@ function handleInput(e: Event) {
   .input {
     border: none;
     background: transparent;
-    font-size: 1rem;
-    line-height: 1.5;
-    letter-spacing: 0.5px;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
+    line-height: var(--smrt-typography-body-large-line-height, 1.5);
+    letter-spacing: var(--smrt-typography-body-large-tracking, 0.5px);
     color: var(--smrt-color-on-surface);
     width: 100%;
     padding: 0;
@@ -381,7 +381,7 @@ function handleInput(e: Event) {
     border: none;
     background: transparent;
     color: var(--field-color);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     cursor: pointer;
     margin-right: -8px;
     transition: all 200ms;
@@ -393,8 +393,8 @@ function handleInput(e: Event) {
   }
 
   .supporting-text {
-    padding: 4px 16px 0;
-    font-size: 0.75rem;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-4, 16px) 0;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     min-height: 16px;
   }
 

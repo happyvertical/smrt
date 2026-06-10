@@ -1,9 +1,16 @@
+import { createLogger } from '@happyvertical/logger';
 import { ObjectRegistry } from './registry';
 import {
   classnameToTablename,
   pluralize,
   toSnakeCase,
 } from './utils/naming.js';
+
+// formatDataJs' debug traces are gated by DEBUG_STI, so the level must allow
+// debug when it's set (a fixed 'info' would filter them out and break the flag).
+const logger = createLogger({
+  level: process.env.DEBUG_STI ? 'debug' : 'info',
+});
 
 export { classnameToTablename, pluralize, toSnakeCase };
 
@@ -281,7 +288,7 @@ export function formatDataJs(
   const normalizedData: Record<string, any> = {};
 
   if (process.env.DEBUG_STI) {
-    console.log('[formatDataJs] Input data:', {
+    logger.debug('[formatDataJs] Input data', {
       hasMetaData: !!data._meta_data,
       metaType: data._meta_type,
       keys: Object.keys(data),
@@ -297,7 +304,7 @@ export function formatDataJs(
         : data._meta_data;
 
     if (process.env.DEBUG_STI) {
-      console.log('[formatDataJs] Merging _meta_data:', {
+      logger.debug('[formatDataJs] Merging _meta_data', {
         metaDataKeys: Object.keys(metaData),
         metaData,
       });
@@ -307,7 +314,9 @@ export function formatDataJs(
     Object.assign(data, metaData);
 
     if (process.env.DEBUG_STI) {
-      console.log('[formatDataJs] After merge, data keys:', Object.keys(data));
+      logger.debug('[formatDataJs] After merge, data keys', {
+        keys: Object.keys(data),
+      });
     }
   }
 
@@ -377,7 +386,7 @@ export function formatDataJs(
   }
 
   if (process.env.DEBUG_STI) {
-    console.log('[formatDataJs] Output normalizedData:', {
+    logger.debug('[formatDataJs] Output normalizedData', {
       keys: Object.keys(normalizedData),
       metaType: normalizedData._meta_type,
     });

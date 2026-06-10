@@ -553,9 +553,9 @@ async function handleDeleteContributor(data: Record<string, any>) {
   .eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .page-header h1 {
@@ -567,7 +567,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
   .page-header p {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     max-width: 52rem;
   }
 
@@ -584,7 +584,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -593,7 +593,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .page-nav a[aria-current='page'] {
@@ -666,21 +666,23 @@ async function handleDeleteContributor(data: Record<string, any>) {
     align-items: center;
     min-height: 2rem;
     padding: 0 0.8rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(
       in srgb,
       var(--smrt-color-surface-container-low) 90%,
       transparent
     );
     color: var(--smrt-color-on-surface);
-    font-size: 0.83rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-large-size, 0.83rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .callout code {
-    font-family:
+    font-family: var(
+      --smrt-font-family-mono,
       'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      'Liberation Mono', 'Courier New', monospace;
+      'Liberation Mono', 'Courier New', monospace
+    );
     font-size: 0.9em;
   }
 
@@ -725,7 +727,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
   .inline-form button,
   .secondary {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid color-mix(
       in srgb,
       var(--smrt-color-primary) 35%,
@@ -733,7 +735,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
     );
     background: transparent;
     color: var(--smrt-color-primary);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     padding: 0.65rem 0.95rem;
     cursor: pointer;
   }
@@ -744,14 +746,14 @@ async function handleDeleteContributor(data: Record<string, any>) {
     justify-content: center;
     min-width: 2rem;
     min-height: 2rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(
       in srgb,
       var(--smrt-color-primary) 14%,
       transparent
     );
     color: var(--smrt-color-primary);
-    font-weight: 700;
+    font-weight: var(--smrt-typography-weight-bold, 700);
     padding: 0 0.8rem;
   }
 
@@ -792,15 +794,15 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
     .callout__header p,
     .callout__note {
-      font-size: 0.82rem;
-      line-height: 1.5;
+      font-size: var(--smrt-typography-body-medium-size, 0.82rem);
+      line-height: var(--smrt-typography-body-medium-line-height, 1.5);
     }
 
     .pill {
       min-height: 1.7rem;
       min-width: 0;
       padding: 0 0.65rem;
-      font-size: 0.78rem;
+      font-size: var(--smrt-typography-label-medium-size, 0.78rem);
     }
 
     .section-heading {

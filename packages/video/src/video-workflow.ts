@@ -4,9 +4,12 @@
  * Manages ComfyUI workflow templates for video generation.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type { SmrtObjectOptions } from '@happyvertical/smrt-core';
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Node mapping for dynamic parameter injection
@@ -289,7 +292,7 @@ export class VideoWorkflow extends SmrtObject {
 
     // Log warnings if any (in development)
     if (warnings.length > 0 && process.env.NODE_ENV !== 'production') {
-      console.warn(
+      logger.warn(
         `[VideoWorkflow] Parameter injection warnings:\n${warnings.join('\n')}`,
       );
     }

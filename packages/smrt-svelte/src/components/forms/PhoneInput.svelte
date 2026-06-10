@@ -326,7 +326,7 @@ function handleInput(e: Event) {
   .smrt-phone {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     position: relative;
   }
 
@@ -338,7 +338,7 @@ function handleInput(e: Event) {
 
   .smrt-label .required {
     color: var(--smrt-color-error, #ba1a1a);
-    margin-left: 2px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {
@@ -363,7 +363,7 @@ function handleInput(e: Event) {
   }
 
   .smrt-input.smrt-mode {
-    padding-right: 44px;
+    padding-right: var(--smrt-spacing-11, 44px);
     cursor: pointer;
   }
 
@@ -405,14 +405,14 @@ function handleInput(e: Event) {
     justify-content: center;
     background: transparent;
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
     transition: all 0.2s;
   }
 
   .mic-btn:hover {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container);
     color: var(--smrt-color-on-surface, #374151);
   }
 
@@ -442,17 +442,17 @@ function handleInput(e: Event) {
   .listening-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: #22c55e;
-    margin-top: 4px;
+    color: var(--smrt-color-success);
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .listening-dot {
     width: 8px;
     height: 8px;
-    background: #22c55e;
-    border-radius: 50%;
+    background: var(--smrt-color-success);
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: pulse-dot 1s ease-in-out infinite;
   }
 
@@ -476,27 +476,27 @@ function handleInput(e: Event) {
   .processing-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .downloading-indicator {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    color: #8b5cf6;
-    margin-top: 4px;
+    color: var(--smrt-color-tertiary);
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .processing-spinner {
     width: 12px;
     height: 12px;
-    border: 2px solid #e5e7eb;
-    border-top-color: #3b82f6;
-    border-radius: 50%;
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 
@@ -509,12 +509,12 @@ function handleInput(e: Event) {
   .error-message {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #f97316);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #ba1a1a);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 </style>

@@ -236,7 +236,7 @@ async function restoreVersion(versionNumber: number) {
   .tool-card span,
   .empty-copy {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .secondary-button {
@@ -246,7 +246,7 @@ async function restoreVersion(versionNumber: number) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .secondary-button:disabled {
@@ -255,16 +255,16 @@ async function restoreVersion(versionNumber: number) {
   }
 
   .pill {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
   .pill--neutral {
-    background: rgba(59, 130, 246, 0.14);
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .tool-error,
@@ -272,16 +272,16 @@ async function restoreVersion(versionNumber: number) {
     margin: 0;
     border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   .tool-error {
-    background: rgba(220, 38, 38, 0.1);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
   }
 
   .tool-notice {
-    background: rgba(37, 99, 235, 0.1);
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+    color: var(--smrt-color-on-primary-container);
   }
 </style>

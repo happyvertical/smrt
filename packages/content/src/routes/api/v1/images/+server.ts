@@ -1,9 +1,12 @@
+import { createLogger } from '@happyvertical/logger';
 import { json } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { seedImages } from '$lib/server/seed-images';
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
+
+const logger = createLogger({ level: 'info' });
 
 async function ensureImageBaseTables() {
   await getCollection<any>('@happyvertical/smrt-assets:Asset');
@@ -27,7 +30,7 @@ export const GET: RequestHandler = async () => {
       meta: { total: items.length },
     });
   } catch (err: any) {
-    console.error('GET Images Error:', err);
+    logger.error('GET Images Error', { error: err });
     return json(
       {
         error: 'Internal server error',

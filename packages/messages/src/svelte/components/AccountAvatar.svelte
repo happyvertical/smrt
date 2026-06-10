@@ -56,29 +56,29 @@ const _icon = $derived.by(() => {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-secondary-container, #d7e3f7);
     color: var(--smrt-color-on-secondary-container, #101c2b);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     flex-shrink: 0;
   }
 
   .avatar--sm {
     width: 1.5rem;
     height: 1.5rem;
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
   }
 
   .avatar--md {
     width: 2rem;
     height: 2rem;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
   .avatar--lg {
     width: 2.5rem;
     height: 2.5rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .avatar--email {

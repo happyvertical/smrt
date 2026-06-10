@@ -267,6 +267,7 @@
   --smrt-z-index-popover: 1400;
   --smrt-z-index-toast: 1500;
   --smrt-z-index-tooltip: 1600;
+  --smrt-z-index-loading: 1700;
 
   /* Typography (issue #1431): full scale incl. `font` shorthand,
      so the static-CSS path matches the JS ThemeProvider output) */

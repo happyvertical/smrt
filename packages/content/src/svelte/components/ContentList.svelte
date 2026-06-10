@@ -402,7 +402,7 @@ function handleDeleteContent(content: any) {
     padding: 0.5rem 0.9rem;
     border: 1px solid var(--smrt-color-outline);
     border-radius: 0.5rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     height: 38px;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
@@ -412,7 +412,7 @@ function handleDeleteContent(content: any) {
   .search-filters select:focus {
     outline: none;
     border-color: var(--smrt-color-primary);
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--smrt-color-primary) 20%, transparent);
   }
 
   .actions-group {
@@ -444,7 +444,7 @@ function handleDeleteContent(content: any) {
 
   .view-toggles button:hover {
     color: var(--smrt-color-on-surface);
-    background: rgba(0,0,0,0.05);
+    background: color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
   }
 
   .view-toggles button.active {
@@ -457,20 +457,24 @@ function handleDeleteContent(content: any) {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
-    color: white;
+    background: linear-gradient(
+      135deg,
+      var(--smrt-color-primary) 0%,
+      color-mix(in srgb, var(--smrt-color-primary) 80%, black) 100%
+    );
+    color: var(--smrt-color-on-primary);
     border: none;
     padding: 0.5rem 1rem;
     height: 38px;
     border-radius: 0.5rem;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     cursor: pointer;
     transition: transform 0.2s, box-shadow 0.2s;
   }
 
   .add-button:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 6px -1px rgba(59,130,246,0.5);
+    box-shadow: 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-primary) 50%, transparent);
   }
 
   .content-header__eyebrow,
@@ -485,11 +489,11 @@ function handleDeleteContent(content: any) {
   .type-pill {
     display: inline-flex;
     align-items: center;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.65rem;
-    font-size: 0.72rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
+    font-size: var(--smrt-typography-label-medium-size, 0.72rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.06em);
     text-transform: uppercase;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface-variant);
@@ -542,13 +546,13 @@ function handleDeleteContent(content: any) {
   .content-header h3 {
     margin: 0 0 0.25rem 0;
     color: var(--smrt-color-on-surface);
-    font-size: 1.25rem;
-    line-height: 1.3;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    line-height: var(--smrt-typography-title-large-line-height, 1.3);
   }
 
   .author {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   .content-meta {
@@ -556,7 +560,7 @@ function handleDeleteContent(content: any) {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -568,20 +572,20 @@ function handleDeleteContent(content: any) {
 
   .badge {
     padding: 0.25rem 0.6rem;
-    border-radius: 999px;
-    font-size: 0.75rem;
-    font-weight: 600;
+    border-radius: var(--smrt-radius-full, 9999px);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
   }
 
-  .status-published { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-  .status-draft { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
-  .status-archived { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+  .status-published { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
+  .status-draft { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning); }
+  .status-archived { background: var(--smrt-color-surface-container); color: var(--smrt-color-on-surface-variant); border: 1px solid var(--smrt-color-outline-variant); }
 
-  .state-highlighted { background: #fef3c7; color: #92400e; border: 1px solid #fde68a;}
-  .state-active { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
-  .state-deprecated { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+  .state-highlighted { background: var(--smrt-color-warning-container); color: var(--smrt-color-on-warning-container); border: 1px solid var(--smrt-color-warning);}
+  .state-active { background: var(--smrt-color-success-container); color: var(--smrt-color-on-success-container); border: 1px solid var(--smrt-color-success); }
+  .state-deprecated { background: var(--smrt-color-error-container); color: var(--smrt-color-on-error-container); border: 1px solid var(--smrt-color-error); }
 
   .content-description {
     color: var(--smrt-color-on-surface-variant);
@@ -604,15 +608,15 @@ function handleDeleteContent(content: any) {
   }
 
   .source, .file {
-    font-size: 0.75rem;
-    color: #64748b;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
   .source a {
-    color: #3b82f6;
+    color: var(--smrt-color-primary);
     text-decoration: none;
   }
   
@@ -636,8 +640,8 @@ function handleDeleteContent(content: any) {
     border-radius: 0.375rem;
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: all 0.2s;
     text-align: center;
@@ -655,12 +659,12 @@ function handleDeleteContent(content: any) {
   }
 
   .delete-btn {
-    color: #dc2626 !important;
+    color: var(--smrt-color-error) !important;
   }
 
   .delete-btn:hover {
-    background: #fef2f2 !important;
-    border-color: #fecaca !important;
+    background: var(--smrt-color-error-container) !important;
+    border-color: var(--smrt-color-error) !important;
   }
 
   /* GRID View Specifics */
@@ -689,8 +693,8 @@ function handleDeleteContent(content: any) {
 
   .content-row h3 {
     margin: 0;
-    font-size: 1.1rem;
-    line-height: 1.3;
+    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
+    line-height: var(--smrt-typography-title-medium-line-height, 1.3);
   }
 
   .content-row__description {
@@ -708,10 +712,10 @@ function handleDeleteContent(content: any) {
   }
 
   .meta-label {
-    font-size: 0.72rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.72rem);
     text-transform: uppercase;
-    letter-spacing: 0.06em;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.06em);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -728,11 +732,11 @@ function handleDeleteContent(content: any) {
     justify-content: center;
     min-height: 2.4rem;
     padding: 0 0.85rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: transparent;
     color: var(--smrt-color-on-surface);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     text-decoration: none;
     cursor: pointer;
   }
@@ -742,7 +746,7 @@ function handleDeleteContent(content: any) {
   }
 
   .quiet-action--danger {
-    color: #b91c1c;
+    color: var(--smrt-color-error);
   }
 
   .content-row__links {
@@ -750,7 +754,7 @@ function handleDeleteContent(content: any) {
     gap: 0.9rem;
     flex-wrap: wrap;
     margin-top: 0.8rem;
-    font-size: 0.82rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.82rem);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -760,7 +764,7 @@ function handleDeleteContent(content: any) {
   }
 
   .content-row__author {
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -782,8 +786,8 @@ function handleDeleteContent(content: any) {
   .content-table th {
     background: var(--smrt-color-surface-container-low);
     padding: 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface-variant);
     border-bottom: 1px solid var(--smrt-color-outline-variant);
   }
@@ -792,7 +796,7 @@ function handleDeleteContent(content: any) {
     padding: 1rem;
     border-bottom: 1px solid var(--smrt-color-outline-variant);
     color: var(--smrt-color-on-surface);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     vertical-align: middle;
   }
 
@@ -810,7 +814,7 @@ function handleDeleteContent(content: any) {
 
   .title-cell strong {
     color: var(--smrt-color-on-surface);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .actions-col {
@@ -827,7 +831,7 @@ function handleDeleteContent(content: any) {
     background: transparent;
     border: none;
     cursor: pointer;
-    font-size: 1.1rem;
+    font-size: var(--smrt-typography-title-medium-size, 1.1rem);
     padding: 0.25rem;
     border-radius: 0.25rem;
     transition: background 0.2s;
@@ -850,7 +854,7 @@ function handleDeleteContent(content: any) {
     border-radius: 0.75rem;
     border: 1px dashed var(--smrt-color-outline);
     color: var(--smrt-color-on-surface-variant);
-    font-size: 1.1rem;
+    font-size: var(--smrt-typography-body-large-size, 1.1rem);
   }
 
   .source, .file {

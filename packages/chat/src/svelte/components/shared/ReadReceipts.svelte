@@ -78,7 +78,7 @@ function getInitial(name: string): string {
   }
 
   .read-receipts__count {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
@@ -107,8 +107,8 @@ function getInitial(name: string): string {
     justify-content: center;
     background: var(--smrt-color-surface-container-high, #e1e3e8);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 0.5rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-small-size, 0.5rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .read-receipts__mini-avatar--more {
@@ -117,7 +117,7 @@ function getInitial(name: string): string {
     justify-content: center;
     background: var(--smrt-color-surface-container, #f3f4f6);
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 0.5rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-small-size, 0.5rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 </style>

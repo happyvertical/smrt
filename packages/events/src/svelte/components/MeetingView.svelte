@@ -147,7 +147,7 @@ const hasDocuments = $derived(
     gap: var(--spacing-xs, 0.25rem);
     color: var(--color-primary-main, #1976d2);
     text-decoration: none;
-    font-size: var(--font-size-sm, 0.875rem);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
     margin-bottom: var(--spacing-md, 1rem);
     transition: color var(--transition-fast, 150ms);
   }
@@ -163,22 +163,22 @@ const hasDocuments = $derived(
     padding: var(--spacing-xs, 0.25rem) var(--spacing-sm, 0.5rem);
     background: var(--view-bg);
     border: 1px solid var(--view-border);
-    border-radius: var(--radius-full, 9999px);
-    font-size: var(--font-size-sm, 0.875rem);
+    border-radius: var(--smrt-radius-full, 9999px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
     color: var(--color-text-secondary, #666);
     margin-bottom: var(--spacing-sm, 0.5rem);
   }
 
   .council-icon {
-    font-size: 14px;
+    font-size: var(--smrt-typography-label-large-size, 14px);
   }
 
   .meeting-title {
     margin: 0;
-    font-size: var(--font-size-2xl, 1.5rem);
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--color-text-primary, #333);
-    line-height: 1.3;
+    line-height: var(--smrt-typography-headline-small-line-height, 1.3);
   }
 
   .meeting-meta {
@@ -187,11 +187,11 @@ const hasDocuments = $derived(
     gap: var(--spacing-md, 1rem);
     margin-top: var(--spacing-sm, 0.5rem);
     color: var(--color-text-secondary, #666);
-    font-size: var(--font-size-md, 1rem);
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .meeting-date {
-    font-weight: var(--font-weight-medium, 500);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .meeting-time::before {
@@ -205,8 +205,8 @@ const hasDocuments = $derived(
 
   .section-title {
     margin: 0 0 var(--spacing-md, 1rem) 0;
-    font-size: var(--font-size-lg, 1.125rem);
-    font-weight: var(--font-weight-semibold, 600);
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--color-text-primary, #333);
   }
 
@@ -223,7 +223,7 @@ const hasDocuments = $derived(
     padding: var(--spacing-md, 1rem);
     background: var(--view-bg);
     border: 1px solid var(--view-border);
-    border-radius: var(--radius-md, 8px);
+    border-radius: var(--smrt-radius-md, 8px);
     text-decoration: none;
     color: var(--color-text-primary, #333);
     transition: all var(--transition-fast, 150ms);
@@ -240,7 +240,7 @@ const hasDocuments = $derived(
   }
 
   .document-icon {
-    font-size: 24px;
+    font-size: var(--smrt-typography-headline-small-size, 24px);
     flex-shrink: 0;
   }
 
@@ -251,20 +251,20 @@ const hasDocuments = $derived(
 
   .document-name {
     display: block;
-    font-weight: var(--font-weight-medium, 500);
-    font-size: var(--font-size-md, 1rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
 
   .document-desc {
     display: block;
-    font-size: var(--font-size-sm, 0.875rem);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--color-text-secondary, #666);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .document-arrow {
     flex-shrink: 0;
-    font-size: 16px;
+    font-size: var(--smrt-typography-body-large-size, 16px);
     color: var(--color-text-secondary, #666);
     transition: transform var(--transition-fast, 150ms);
   }
@@ -276,7 +276,7 @@ const hasDocuments = $derived(
   }
 
   .empty-icon {
-    font-size: 48px;
+    font-size: var(--smrt-typography-display-medium-size, 48px);
     display: block;
     margin-bottom: var(--spacing-md, 1rem);
     opacity: 0.5;
@@ -284,7 +284,7 @@ const hasDocuments = $derived(
 
   .empty-text {
     margin: 0;
-    font-size: var(--font-size-lg, 1.125rem);
+    font-size: var(--smrt-typography-body-large-size, 1.125rem);
   }
 
   @media (max-width: 640px) {
@@ -293,7 +293,7 @@ const hasDocuments = $derived(
     }
 
     .meeting-title {
-      font-size: var(--font-size-xl, 1.25rem);
+      font-size: var(--smrt-typography-title-large-size, 1.25rem);
     }
 
     .meeting-meta {

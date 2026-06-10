@@ -77,8 +77,8 @@ const navItems = [
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     position: sticky;
     top: 0;
-    z-index: 100;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    z-index: var(--smrt-z-index-sticky, 1100);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow) 6%, transparent));
   }
 
   .header-inner {
@@ -92,8 +92,8 @@ const navItems = [
   }
 
   .brand {
-    font-size: 1.25rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-title-large-size, 1.25rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface, #1a1c1e);
     text-decoration: none;
     display: flex;
@@ -117,8 +117,8 @@ const navItems = [
     border-radius: 0.5rem;
     text-decoration: none;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 0.15s ease;
     white-space: nowrap;
   }
@@ -131,11 +131,11 @@ const navItems = [
   .nav-tab.active {
     background: var(--smrt-color-primary-container, #d8e2ff);
     color: var(--smrt-color-on-primary-container, #001a41);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .nav-icon {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-title-medium-size, 1rem);
   }
 
   .header-status {
@@ -143,8 +143,8 @@ const navItems = [
     color: white;
     padding: 0.2rem 0.6rem;
     border-radius: 1rem;
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     white-space: nowrap;
   }
 
@@ -160,7 +160,7 @@ const navItems = [
     text-align: center;
     padding: 1.25rem 0;
     color: var(--smrt-color-on-surface-variant, #74777f);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     opacity: 0.7;
   }
 </style>

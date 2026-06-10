@@ -237,7 +237,7 @@ function toggleReactionPicker() {
 
   .message-item__sender {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant, #43474e);
     padding-left: var(--smrt-spacing-1, 0.25rem);
   }
@@ -245,7 +245,7 @@ function toggleReactionPicker() {
   .message-item__reply-preview {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     padding: var(--smrt-spacing-1, 0.25rem) var(--smrt-spacing-3, 0.75rem);
     border-left: 2px solid var(--smrt-color-primary, #005ac1);
     border-radius: var(--smrt-radius-small, 0.25rem);
@@ -256,7 +256,7 @@ function toggleReactionPicker() {
   }
 
   .message-item__reply-name {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary, #005ac1);
   }
 
@@ -279,16 +279,16 @@ function toggleReactionPicker() {
   }
 
   .message-item__tool-name {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #1b1b1f);
   }
 
   .message-item__tool-status {
-    padding: 1px 6px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .message-item__tool-status.pending {
@@ -297,18 +297,18 @@ function toggleReactionPicker() {
   }
 
   .message-item__tool-status.running {
-    background: #e3f2fd;
-    color: #1565c0;
+    background: var(--smrt-color-primary-container, #e3f2fd);
+    color: var(--smrt-color-on-primary-container, #1565c0);
   }
 
   .message-item__tool-status.success {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: var(--smrt-color-success-container, #e8f5e9);
+    color: var(--smrt-color-on-success-container, #2e7d32);
   }
 
   .message-item__tool-status.error {
-    background: #ffebee;
-    color: #c62828;
+    background: var(--smrt-color-error-container, #ffebee);
+    color: var(--smrt-color-on-error-container, #c62828);
   }
 
   .message-item__tool-duration {
@@ -316,7 +316,7 @@ function toggleReactionPicker() {
   }
 
   .message-item__tool-error {
-    color: #c62828;
+    color: var(--smrt-color-on-error-container, #c62828);
   }
 
   .message-item__reactions {
@@ -328,13 +328,13 @@ function toggleReactionPicker() {
   .message-item__reaction {
     display: inline-flex;
     align-items: center;
-    gap: 3px;
-    padding: 2px 6px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface, #ffffff);
     cursor: pointer;
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
     transition: background var(--smrt-duration-short2, 150ms) var(--smrt-easing-standard, ease);
   }
 
@@ -348,12 +348,12 @@ function toggleReactionPicker() {
   }
 
   .message-item__reaction-emoji {
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     line-height: 1;
   }
 
   .message-item__reaction-count {
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
@@ -365,12 +365,12 @@ function toggleReactionPicker() {
   }
 
   .message-item__time {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     color: var(--smrt-color-outline, #74777f);
   }
 
   .message-item__edited {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     color: var(--smrt-color-outline, #74777f);
     font-style: italic;
   }
@@ -378,15 +378,15 @@ function toggleReactionPicker() {
   .message-item__actions {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     position: absolute;
     top: 0;
     right: var(--smrt-spacing-4, 1rem);
     background: var(--smrt-color-surface, #ffffff);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6cf);
     border-radius: var(--smrt-radius-small, 0.25rem);
-    padding: 2px;
-    box-shadow: var(--smrt-elevation-level1, 0 1px 3px rgba(0, 0, 0, 0.12));
+    padding: var(--smrt-spacing-1, 4px);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.12));
   }
 
   .message-item--own .message-item__actions {

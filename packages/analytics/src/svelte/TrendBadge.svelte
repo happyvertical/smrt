@@ -22,9 +22,9 @@ const arrow = $derived(
 		align-items: center;
 		gap: 0.25rem;
 		padding: 0.125rem 0.5rem;
-		border-radius: 9999px;
-		font-size: 0.75rem;
-		font-weight: 600;
+		border-radius: var(--smrt-radius-full, 9999px);
+		font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+		font-weight: var(--smrt-typography-weight-semibold, 600);
 		line-height: 1;
 	}
 
@@ -44,6 +44,6 @@ const arrow = $derived(
 	}
 
 	.trend-arrow {
-		font-size: 0.875rem;
+		font-size: var(--smrt-typography-label-large-size, 0.875rem);
 	}
 </style>

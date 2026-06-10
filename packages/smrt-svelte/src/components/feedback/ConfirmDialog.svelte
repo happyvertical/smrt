@@ -113,8 +113,8 @@ function handleKeydown(e: KeyboardEvent) {
 
   .dialog-content {
     background-color: var(--smrt-color-surface-container-high);
-    border-radius: 28px;
-    padding: 24px;
+    border-radius: var(--smrt-radius-3xl, 32px);
+    padding: var(--smrt-spacing-6, 24px);
     max-width: 400px;
     width: 100%;
     box-shadow: var(--smrt-elevation-3);
@@ -137,32 +137,32 @@ function handleKeydown(e: KeyboardEvent) {
   .dialog-title {
     font: var(--smrt-typography-headline-small-font);
     color: var(--smrt-color-on-surface);
-    margin: 0 0 16px;
+    margin: 0 0 var(--smrt-spacing-4, 16px);
   }
 
   .dialog-message {
     font: var(--smrt-typography-body-medium-font);
     color: var(--smrt-color-on-surface-variant);
-    margin: 0 0 24px;
+    margin: 0 0 var(--smrt-spacing-6, 24px);
     line-height: 1.5;
   }
 
   .dialog-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     height: 40px;
-    padding: 0 24px;
+    padding: 0 var(--smrt-spacing-6, 24px);
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
-    border-radius: 20px;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
     transition: all var(--smrt-duration-short3, 200ms) var(--smrt-easing-standard, ease);
     border: none;
@@ -178,7 +178,7 @@ function handleKeydown(e: KeyboardEvent) {
   .btn-text {
     background: transparent;
     color: var(--smrt-color-primary);
-    padding: 0 12px;
+    padding: 0 var(--smrt-spacing-3, 12px);
   }
 
   .btn-text:hover:not(:disabled) {
@@ -205,7 +205,7 @@ function handleKeydown(e: KeyboardEvent) {
     height: 18px;
     border: 2px solid transparent;
     border-top-color: currentColor;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

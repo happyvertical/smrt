@@ -1,3 +1,4 @@
+import { createLogger } from '@happyvertical/logger';
 import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
@@ -19,6 +20,8 @@ import {
   toSnakeCase,
 } from './utils';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Resolve _meta_type in WHERE clause from simple class name to qualified name (Issue #713)
@@ -472,7 +475,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       typeof SmrtCollection._itemClass.prototype?.create === 'function';
 
     if (!hasCreateMethod) {
-      console.warn(
+      logger.warn(
         `Collection "${SmrtCollection.name}"._itemClass should have a create() method for optimal functionality`,
       );
     }
@@ -1038,7 +1041,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       );
 
       if (!relationship) {
-        console.warn(
+        logger.warn(
           `Relationship ${fieldName} not found on ${this._itemClass.name}, skipping eager load`,
         );
         continue;
@@ -1096,10 +1099,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         this.options,
       );
     } catch (error) {
-      console.warn(
-        `Could not get collection for ${relationship.targetClass}:`,
+      logger.warn(`Could not get collection for ${relationship.targetClass}`, {
         error,
-      );
+      });
       return;
     }
 
@@ -1182,7 +1184,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       inverseCandidates[0];
 
     if (!inverseForeignKey) {
-      console.warn(
+      logger.warn(
         `Could not find inverse foreignKey for oneToMany ${fieldName}`,
       );
       return;
@@ -1203,10 +1205,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         this.options,
       );
     } catch (error) {
-      console.warn(
-        `Could not get collection for ${relationship.targetClass}:`,
+      logger.warn(`Could not get collection for ${relationship.targetClass}`, {
         error,
-      );
+      });
       return;
     }
 
@@ -1275,9 +1276,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       targetColumn = join.targetColumn;
       targetClassName = join.targetClassName;
     } catch (error) {
-      console.warn(
-        `Could not resolve manyToMany join for ${fieldName} on ${this._itemClass.name}:`,
-        error,
+      logger.warn(
+        `Could not resolve manyToMany join for ${fieldName} on ${this._itemClass.name}`,
+        { error },
       );
       return;
     }
@@ -1328,9 +1329,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         this.options,
       );
     } catch (error) {
-      console.warn(
-        `Could not get collection for manyToMany target ${targetClassName}:`,
-        error,
+      logger.warn(
+        `Could not get collection for manyToMany target ${targetClassName}`,
+        { error },
       );
       return;
     }
@@ -2019,11 +2020,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     );
 
     if (isSTI && formattedData._meta_type) {
-      return await this.createPolymorphic(
+      const polymorphicInstance = await this.createPolymorphic(
         formattedData._meta_type,
         formattedData,
         { hydrateOnly: true },
       );
+      // Hydrated from an existing row — save() must update by primary key
+      // even if natural-key fields change (issue #1472).
+      polymorphicInstance.markAsPersisted();
+      return polymorphicInstance;
     }
 
     const instanceParams = {
@@ -2044,6 +2049,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         registeredClass?.qualifiedName || this._itemClass.name;
     }
 
+    // Hydrated from an existing row — save() must update by primary key
+    // even if natural-key fields change (issue #1472).
+    instance.markAsPersisted();
     return instance;
   }
 
@@ -2689,10 +2697,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
             skipped++;
           }
         } catch (error) {
-          console.warn(
-            `Failed to generate embeddings for ${obj.id}:`,
-            error instanceof Error ? error.message : error,
-          );
+          logger.warn(`Failed to generate embeddings for ${obj.id}`, {
+            error: error instanceof Error ? error.message : error,
+          });
           skipped++;
         }
 

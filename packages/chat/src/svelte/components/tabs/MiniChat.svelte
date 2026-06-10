@@ -113,17 +113,17 @@ $effect(() => {
   .mini-chat__messages {
     flex: 1;
     overflow-y: auto;
-    padding: 8px;
+    padding: var(--smrt-spacing-2, 8px);
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     scroll-behavior: smooth;
   }
 
   .mini-chat__msg {
     display: flex;
     align-items: flex-end;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     max-width: 85%;
   }
 
@@ -135,8 +135,8 @@ $effect(() => {
   .mini-chat__bubble {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 6px 10px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     border-radius: var(--smrt-radius-medium, 8px);
     background: var(--smrt-color-surface-container, #f0f0f4);
     color: var(--smrt-color-on-surface, #1a1c1e);
@@ -149,8 +149,8 @@ $effect(() => {
   }
 
   .mini-chat__sender {
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-primary, #005ac1);
     line-height: 1;
   }
@@ -160,7 +160,7 @@ $effect(() => {
   }
 
   .mini-chat__time {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     color: var(--smrt-color-outline, #74777f);
     align-self: flex-end;
     line-height: 1;
@@ -182,8 +182,8 @@ $effect(() => {
   .mini-chat__input-bar {
     display: flex;
     align-items: center;
-    gap: 4px;
-    padding: 8px;
+    gap: var(--smrt-spacing-1, 4px);
+    padding: var(--smrt-spacing-2, 8px);
     border-top: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     background: var(--smrt-color-surface, #fefbff);
   }
@@ -192,7 +192,7 @@ $effect(() => {
     flex: 1;
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-full, 9999px);
-    padding: 6px 12px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     font: var(--smrt-typography-body-small-font, 0.8125rem/1.4 sans-serif);
     color: var(--smrt-color-on-surface, #1a1c1e);
     background: var(--smrt-color-surface-container-low, #f7f7fb);

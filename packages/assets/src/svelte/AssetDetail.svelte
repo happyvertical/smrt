@@ -359,7 +359,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .detail-modal::backdrop {
-    background: rgba(0, 0, 0, 0.5);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
     backdrop-filter: blur(2px);
   }
 
@@ -376,7 +376,7 @@ function formatDate(date: Date | string | undefined): string {
     margin-right: 1rem;
     background: var(--smrt-color-surface, #ffffff);
     border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     overflow: hidden;
     animation: slideIn 300ms cubic-bezier(0.2, 0, 0, 1);
   }
@@ -398,8 +398,8 @@ function formatDate(date: Date | string | undefined): string {
 
   .detail__title {
     margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
     white-space: nowrap;
     overflow: hidden;
@@ -417,7 +417,7 @@ function formatDate(date: Date | string | undefined): string {
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #6b7280);
     cursor: pointer;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 
@@ -443,12 +443,11 @@ function formatDate(date: Date | string | undefined): string {
 
   .section-heading {
     margin: 0 0 var(--smrt-spacing-3, 0.75rem);
-    font-size: var(--smrt-typography-title-small-size, 0.875rem);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
-    font-size: 0.75rem;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
   /* Preview */
@@ -486,12 +485,12 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .preview-document__icon, .preview-generic__icon {
-    font-size: 2.5rem;
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
   }
 
   .preview-document__link {
     color: var(--smrt-color-primary, #005ac1);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     text-decoration: none;
   }
 
@@ -500,7 +499,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .preview-generic__mime {
-    font-size: 0.8rem;
+    font-size: var(--smrt-typography-body-small-size, 0.8rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
@@ -518,16 +517,16 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .form-label {
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #111827);
   }
 
   .label-warning {
-    font-weight: 400;
-    font-size: 0.7rem;
+    font-weight: var(--smrt-typography-weight-normal, 400);
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
     color: var(--smrt-color-error, #dc2626);
-    margin-left: 4px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .form-input, .form-textarea {
@@ -563,14 +562,14 @@ function formatDate(date: Date | string | undefined): string {
   .metadata-item {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .metadata-label {
-    font-size: 0.7rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
@@ -590,12 +589,12 @@ function formatDate(date: Date | string | undefined): string {
   .quick-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     height: 32px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;
-    font-size: 0.8rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #111827);
@@ -606,7 +605,7 @@ function formatDate(date: Date | string | undefined): string {
 
   .quick-btn:hover:not(:disabled) {
     background: var(--smrt-color-surface-container-low, #f9fafb);
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .quick-btn:disabled {
@@ -616,9 +615,9 @@ function formatDate(date: Date | string | undefined): string {
 
   .copy-feedback {
     margin-top: var(--smrt-spacing-2, 0.5rem);
-    font-size: 0.8rem;
-    color: #22c55e;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
+    color: var(--smrt-color-success, #22c55e);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     animation: fadeIn 150ms ease;
   }
 
@@ -647,7 +646,7 @@ function formatDate(date: Date | string | undefined): string {
     padding: 0 var(--smrt-spacing-4, 1rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border-radius: var(--smrt-radius-medium, 0.5rem);
     cursor: pointer;
     border: none;
@@ -665,7 +664,7 @@ function formatDate(date: Date | string | undefined): string {
   }
 
   .footer-btn--primary:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .footer-btn--ghost {

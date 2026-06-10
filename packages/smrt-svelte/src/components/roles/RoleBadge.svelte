@@ -38,27 +38,27 @@ const variantClass = $derived.by(() => {
   .role-badge {
     display: inline-flex;
     align-items: center;
-    padding: 0 12px;
+    padding: 0 var(--smrt-spacing-3, 12px);
     height: 24px;
     font: var(--smrt-typography-label-large-font);
-    font-weight: 600;
-    border-radius: 6px;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    border-radius: var(--smrt-radius-md, 8px);
     white-space: nowrap;
     transition: all 200ms cubic-bezier(0.2, 0, 0, 1);
   }
 
   .role-badge.sm {
-    padding: 0 8px;
+    padding: 0 var(--smrt-spacing-2, 8px);
     height: 20px;
     font: var(--smrt-typography-label-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .role-badge.lg {
-    padding: 0 16px;
+    padding: 0 var(--smrt-spacing-4, 16px);
     height: 32px;
     font: var(--smrt-typography-title-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   /* Variant Colors using M3 roles */

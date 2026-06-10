@@ -57,28 +57,28 @@
   
   .page-header h1 {
     margin: 0 0 0.5rem 0;
-    font-size: 2.25rem;
-    font-weight: 800;
-    color: #1f2937;
+    font-size: var(--smrt-typography-display-small-size, 2.25rem);
+    font-weight: var(--smrt-typography-weight-bold, 800);
+    color: var(--smrt-color-on-surface, #1f2937);
   }
-  
+
   .page-description {
     margin: 0;
-    font-size: 1.125rem;
-    color: #6b7280;
+    font-size: var(--smrt-typography-body-large-size, 1.125rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     max-width: 600px;
     margin: 0 auto;
-    line-height: 1.6;
+    line-height: var(--smrt-typography-body-large-line-height, 1.6);
   }
-  
+
   .page-content {
     margin-bottom: 3rem;
   }
-  
+
   .integration-info {
     margin-top: 3rem;
     padding-top: 2rem;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
   }
   
   .info-cards {
@@ -90,22 +90,22 @@
   .info-card {
     background: white;
     padding: 1.5rem;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
+    border-radius: var(--smrt-radius-md, 8px);
+    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     text-align: center;
   }
-  
+
   .info-card h3 {
     margin: 0 0 0.5rem 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #1f2937;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface, #1f2937);
   }
-  
+
   .info-card p {
     margin: 0;
-    font-size: 0.875rem;
-    color: #6b7280;
-    line-height: 1.5;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.5);
   }
 </style>

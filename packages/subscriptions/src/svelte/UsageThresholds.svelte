@@ -38,19 +38,19 @@ let {
   }
 
   .smrt-usage-thresholds__row {
-    border: 1px solid var(--smrt-border, #d8dde6);
-    border-radius: 8px;
+    border: 1px solid var(--smrt-color-outline-variant, #d8dde6);
+    border-radius: var(--smrt-radius-md, 8px);
     display: grid;
     gap: 0.45rem;
     padding: 0.875rem;
   }
 
   .smrt-usage-thresholds__row.warn {
-    border-color: #d97706;
+    border-color: var(--smrt-color-warning, #d97706);
   }
 
   .smrt-usage-thresholds__row.blocked {
-    border-color: #dc2626;
+    border-color: var(--smrt-color-error, #dc2626);
   }
 
   .smrt-usage-thresholds__header {
@@ -60,8 +60,8 @@ let {
   }
 
   .smrt-usage-thresholds p {
-    color: var(--smrt-muted, #64748b);
-    font-size: 0.875rem;
+    color: var(--smrt-color-on-surface-variant, #64748b);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     margin: 0;
   }
 

@@ -61,8 +61,8 @@ const { agents, onselect }: Props = $props();
   .agent-selector {
     display: flex;
     flex-direction: column;
-    gap: 16px;
-    padding: 16px;
+    gap: var(--smrt-spacing-4, 16px);
+    padding: var(--smrt-spacing-4, 16px);
   }
 
   .agent-selector__title {
@@ -74,14 +74,14 @@ const { agents, onselect }: Props = $props();
   .agent-selector__grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-    gap: 12px;
+    gap: var(--smrt-spacing-3, 12px);
   }
 
   .agent-selector__card {
     display: flex;
     align-items: flex-start;
-    gap: 12px;
-    padding: 16px;
+    gap: var(--smrt-spacing-3, 12px);
+    padding: var(--smrt-spacing-4, 16px);
     background: var(--smrt-color-surface-container-low, #f7f7fb);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-large, 12px);
@@ -98,7 +98,7 @@ const { agents, onselect }: Props = $props();
   .agent-selector__card:hover:not(:disabled) {
     background: var(--smrt-color-surface-container, #f0f0f4);
     border-color: var(--smrt-color-primary, #005ac1);
-    box-shadow: var(--smrt-elevation-level1, 0 1px 3px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px rgba(0, 0, 0, 0.1));
   }
 
   .agent-selector__card:focus-visible {
@@ -115,7 +115,7 @@ const { agents, onselect }: Props = $props();
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     min-width: 0;
   }
 
@@ -141,7 +141,7 @@ const { agents, onselect }: Props = $props();
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
     color: var(--smrt-color-outline, #74777f);
     background: var(--smrt-color-surface-variant, #e1e2ec);
-    padding: 2px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-full, 9999px);
   }
 
@@ -149,7 +149,7 @@ const { agents, onselect }: Props = $props();
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 40px;
+    padding: var(--smrt-spacing-10, 40px);
   }
 
   .agent-selector__empty-text {

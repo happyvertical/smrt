@@ -280,7 +280,7 @@ function formatTimestamp(date?: string | Date | null): string {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);
     color: var(--smrt-color-on-surface-variant, #43474e);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
 
   .room-group__header:hover {
@@ -288,7 +288,7 @@ function formatTimestamp(date?: string | Date | null): string {
   }
 
   .room-group__chevron {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     transition: transform var(--smrt-duration-short2, 150ms);
   }
 
@@ -303,7 +303,7 @@ function formatTimestamp(date?: string | Date | null): string {
 
   .room-group__count {
     color: var(--smrt-color-outline, #74777f);
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
   }
 
   .room-group__list {
@@ -334,7 +334,7 @@ function formatTimestamp(date?: string | Date | null): string {
 
   .room-item--active {
     background: var(--smrt-color-secondary-container, #d7e3f7);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .room-item--muted {
@@ -351,14 +351,14 @@ function formatTimestamp(date?: string | Date | null): string {
     width: 1.25rem;
     text-align: center;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .room-item__agent-icon {
     flex-shrink: 0;
     width: 1.25rem;
     text-align: center;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .room-item__avatar {
@@ -425,7 +425,7 @@ function formatTimestamp(date?: string | Date | null): string {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 99px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #fff);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);

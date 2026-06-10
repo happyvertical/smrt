@@ -180,7 +180,7 @@ function getAltText(asset: PersistedAsset): string {
   }
 
   .asset-card:hover {
-    box-shadow: var(--smrt-elevation-level2, 0 1px 3px rgba(0,0,0,0.1));
+    box-shadow: var(--smrt-elevation-2, 0 1px 3px rgba(0,0,0,0.1));
     transform: translateY(-1px);
   }
 
@@ -233,7 +233,7 @@ function getAltText(asset: PersistedAsset): string {
   }
 
   .asset-card__type-icon {
-    font-size: 2.5rem;
+    font-size: var(--smrt-typography-display-medium-size, 2.5rem);
   }
 
   /* Info */
@@ -244,7 +244,7 @@ function getAltText(asset: PersistedAsset): string {
   .asset-card__name {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #111827);
     white-space: nowrap;
     overflow: hidden;
@@ -255,15 +255,15 @@ function getAltText(asset: PersistedAsset): string {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-1, 0.25rem);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .asset-card__type {
-    font-size: 0.7rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-small-tracking, 0.05em);
   }
 
   /* Badge */
@@ -271,9 +271,9 @@ function getAltText(asset: PersistedAsset): string {
     position: absolute;
     top: var(--smrt-spacing-2, 0.5rem);
     right: var(--smrt-spacing-2, 0.5rem);
-    padding: 2px 6px;
-    font-size: 0.65rem;
-    font-weight: 600;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
+    font-size: var(--smrt-typography-label-small-size, 0.65rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-small, 0.25rem);
     z-index: 2;
   }
@@ -298,7 +298,7 @@ function getAltText(asset: PersistedAsset): string {
     height: 20px;
     border: 2px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-top-color: var(--smrt-color-primary, #005ac1);
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

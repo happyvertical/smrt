@@ -120,10 +120,10 @@ function canWithdraw(contribution: ContentContributionData) {
 
   .portal__list button,
   .portal__detail {
-    border: 1px solid #d9d9d9;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.75rem;
     padding: 0.85rem;
-    background: #fff;
+    background: var(--smrt-color-surface);
   }
 
   .portal__list button {
@@ -133,8 +133,8 @@ function canWithdraw(contribution: ContentContributionData) {
   }
 
   .portal__list button.selected {
-    border-color: #0b5fff;
-    box-shadow: 0 0 0 1px #0b5fff;
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
   }
 
   .portal__detail {
@@ -160,14 +160,14 @@ function canWithdraw(contribution: ContentContributionData) {
     justify-content: center;
     min-width: 1.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: 999px;
-    background: #eef3ff;
+    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-primary-container);
   }
 
   .callout {
     padding: 0.75rem;
     border-radius: 0.75rem;
-    background: #f7f7f7;
+    background: var(--smrt-color-surface-container);
   }
 
   @media (max-width: 720px) {

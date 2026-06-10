@@ -61,8 +61,8 @@ function updateField(key: string, value: unknown) {
     gap: 0.35rem;
     min-width: 8.5rem;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.75rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   select,
@@ -73,8 +73,8 @@ function updateField(key: string, value: unknown) {
     background: var(--smrt-color-surface-container-low);
     color: var(--smrt-color-on-surface);
     font: inherit;
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     padding: 0.55rem 0.75rem;
   }
 </style>

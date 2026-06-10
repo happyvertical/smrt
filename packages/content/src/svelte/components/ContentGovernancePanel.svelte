@@ -1780,8 +1780,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     justify-content: space-between;
     align-items: center;
     padding: 0 0 1.25rem 0;
-    font-size: 1.5rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface);
     cursor: pointer;
     list-style: none; /* Hide default triangle */
@@ -1865,7 +1865,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   .fact-result span,
   .fact-chip span {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .fact-search,
@@ -1884,7 +1884,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     justify-content: space-between;
     flex-wrap: wrap;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .fact-search input,
@@ -1906,8 +1906,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     flex-direction: column;
     gap: 0.4rem;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.875rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .fact-search button,
@@ -1918,7 +1918,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary, white);
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .fact-search button:disabled,
@@ -1957,8 +1957,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
   .claim-audit-warnings {
     border-radius: 0.6rem;
-    background: rgba(245, 158, 11, 0.12);
-    color: #92400e;
+    background: color-mix(in srgb, var(--smrt-color-warning) 12%, transparent);
+    color: var(--smrt-color-on-warning-container);
     padding: 0.75rem 0.9rem;
   }
 
@@ -2075,8 +2075,8 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     flex-direction: column;
     gap: 0.3rem;
     border-radius: 0.65rem;
-    border: 1px solid rgba(245, 158, 11, 0.28);
-    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid color-mix(in srgb, var(--smrt-color-warning) 28%, transparent);
+    background: color-mix(in srgb, var(--smrt-color-warning) 10%, transparent);
     padding: 0.75rem;
   }
 
@@ -2183,34 +2183,34 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
   }
 
   .pill {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
   .pill--passed {
-    background: rgba(22, 163, 74, 0.14);
-    color: #166534;
+    background: color-mix(in srgb, var(--smrt-color-success) 14%, transparent);
+    color: var(--smrt-color-on-success-container);
   }
 
   .pill--flagged {
-    background: rgba(245, 158, 11, 0.16);
-    color: #92400e;
+    background: color-mix(in srgb, var(--smrt-color-warning) 16%, transparent);
+    color: var(--smrt-color-on-warning-container);
   }
 
   .pill--failed,
   .pill--draft,
   .pill--retracted {
-    background: rgba(220, 38, 38, 0.14);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 14%, transparent);
+    color: var(--smrt-color-on-error-container);
   }
 
   .pill--published,
   .pill--neutral {
-    background: rgba(59, 130, 246, 0.14);
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--smrt-color-primary) 14%, transparent);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .checkbox-row {
@@ -2225,16 +2225,16 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     margin: 0;
     border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   .workflow-error {
-    background: rgba(220, 38, 38, 0.1);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
   }
 
   .workflow-notice {
-    background: rgba(37, 99, 235, 0.1);
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+    color: var(--smrt-color-on-primary-container);
   }
 </style>

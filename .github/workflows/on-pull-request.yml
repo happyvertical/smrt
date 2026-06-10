@@ -169,6 +169,42 @@ jobs:
       - name: Check smrt-svelte design tokens
         run: node scripts/check-svelte-tokens.mjs
 
+      # Bans raw color literals in component CSS. Strict (fails) for
+      # smrt-svelte; report-only for other UI packages until later phases of
+      # the design-token sweep (issue #1373). Node-only, no deps.
+      - name: Check raw color literals
+        run: node scripts/check-color-literals.mjs
+
+      # Bans raw global-layer z-index in component CSS. Strict (fails) for
+      # smrt-svelte; report-only for other UI packages until later phases of
+      # the design-token sweep (issue #1373). Node-only, no deps.
+      - name: Check raw z-index
+        run: node scripts/check-z-index.mjs
+
+      # Bans raw spacing px (padding/margin/gap) in component CSS. Strict (fails)
+      # for smrt-svelte; report-only for other UI packages until later phases of
+      # the design-token sweep (issue #1373). Node-only, no deps.
+      - name: Check raw spacing px
+        run: node scripts/check-spacing.mjs
+
+      # Bans raw border-radius px/% in component CSS. Strict (fails) for UI
+      # packages; report-only elsewhere until later phases of the design-token
+      # sweep (issue #1373). Node-only, no deps.
+      - name: Check raw border-radius
+        run: node scripts/check-radius.mjs
+
+      # Bans raw downward neutral box-shadows in component CSS. Strict (fails)
+      # for UI packages; report-only elsewhere until later phases of the
+      # design-token sweep (issue #1373). Node-only, no deps.
+      - name: Check raw drop-shadows (elevation)
+        run: node scripts/check-elevation.mjs
+
+      # Bans raw font-size/weight/family in component CSS. Strict (fails) for
+      # smrt-svelte; report-only elsewhere until later phases of the
+      # design-token sweep (issue #1373). Node-only, no deps.
+      - name: Check raw typography
+        run: node scripts/check-typography.mjs
+
   test:
     name: Validate Changes
     uses: ./.github/workflows/test-suite.yml

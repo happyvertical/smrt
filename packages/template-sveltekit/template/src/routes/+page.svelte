@@ -75,7 +75,7 @@
     margin: 2rem 0;
     padding: 1rem;
     background: #f5f5f5;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .error {
@@ -86,14 +86,14 @@
     font-size: 0.8em;
     background: #e0e0e0;
     padding: 2px 8px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     margin-left: 8px;
   }
 
   code {
     background: #e0e0e0;
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     font-size: 0.9em;
   }
 

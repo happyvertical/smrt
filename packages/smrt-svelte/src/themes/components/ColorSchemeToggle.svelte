@@ -195,7 +195,7 @@ const labels = {
   }
 
   .smrt-color-scheme-toggle__icon {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
   }
 

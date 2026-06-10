@@ -5,6 +5,7 @@
  * a SchemaDiff with the differences.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { detectEngine, getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import type {
@@ -17,6 +18,8 @@ import type {
 } from '../schema/types.js';
 import { isJsonPathIndex, renderIndexTarget } from '../schema/utils.js';
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Valid SQLDataType values for validation
@@ -234,7 +237,7 @@ export class SchemaComparer {
         const manifestType = colDef.type;
         if (!isValidSQLDataType(manifestType)) {
           // Invalid manifest type - treat as TEXT (safest fallback)
-          console.warn(
+          logger.warn(
             `[SchemaComparer] Invalid manifest type "${manifestType}" for ${tableName}.${colName}, treating as TEXT`,
           );
         }
@@ -910,7 +913,7 @@ export class SchemaComparer {
       ? colDef.type
       : 'TEXT';
     if (!isValidSQLDataType(colDef.type)) {
-      console.warn(
+      logger.warn(
         `[SchemaComparer] Invalid manifest type "${colDef.type}" for ${tableName}.${colName}, treating as TEXT`,
       );
     }

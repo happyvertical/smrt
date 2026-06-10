@@ -29,12 +29,6 @@ $effect(() => {
       const newExtracting = formContext.isExtracting;
       // Only log on change to reduce noise
       if (newListening !== isListening || newExtracting !== isExtracting) {
-        console.log(
-          '[FormMicButton] State change: listening:',
-          newListening,
-          'extracting:',
-          newExtracting,
-        );
       }
       isListening = newListening;
       isExtracting = newExtracting;
@@ -51,12 +45,6 @@ $effect(() => {
 });
 
 function handleClick() {
-  console.log(
-    '[FormMicButton] Click! isListening:',
-    isListening,
-    'isExtracting:',
-    isExtracting,
-  );
   formContext?.toggleListening();
 }
 </script>
@@ -141,12 +129,12 @@ function handleClick() {
     padding: 0.5rem 0.75rem;
     background: var(--smrt-color-on-surface, #1f2937);
     color: white;
-    font-size: 0.75rem;
-    font-weight: 400;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-normal, 400);
     border-radius: 0.375rem;
     white-space: nowrap;
-    z-index: 9999;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    z-index: var(--smrt-z-index-tooltip, 1600);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px color-mix(in srgb, var(--smrt-color-shadow) 10%, transparent));
   }
 
   .tooltip::before {
@@ -156,7 +144,7 @@ function handleClick() {
     left: 50%;
     transform: translateX(-50%);
     border: 6px solid transparent;
-    border-bottom-color: #1f2937;
+    border-bottom-color: var(--smrt-color-on-surface);
   }
 
   @keyframes pulse {

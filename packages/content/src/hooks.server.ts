@@ -8,6 +8,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createLogger } from '@happyvertical/logger';
 import {
   ObjectRegistry,
   SmrtCollection,
@@ -22,6 +23,8 @@ import type { Handle } from '@sveltejs/kit';
 import { seedContents } from '$lib/server/seed-contents';
 import { getSmrtConfig } from '$lib/server/smrt';
 import { workspacePackageRoots } from '../workspace-aliases.js';
+
+const logger = createLogger({ level: 'info' });
 
 let schemaReady = false;
 let bootstrapPromise: Promise<void> | null = null;
@@ -170,11 +173,9 @@ async function bootstrapSchema() {
           await generateSchema(cls);
           schemaReadyClassNames.add(cls.name);
         } catch (error) {
-          console.warn(
-            `[hooks] Skipped schema generation for ${cls.name}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+          logger.warn(`[hooks] Skipped schema generation for ${cls.name}`, {
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
 
@@ -184,21 +185,19 @@ async function bootstrapSchema() {
           await ensureSchema(db, className);
           created++;
         } catch (error) {
-          console.warn(
-            `[hooks] Skipped schema ensure for ${className}: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
+          logger.warn(`[hooks] Skipped schema ensure for ${className}`, {
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
 
-      console.log(
+      logger.info(
         `[hooks] Database schema bootstrap complete (${created} tables ensured)`,
       );
       await seedContents();
       schemaReady = true;
-    } catch (err: any) {
-      console.error('[hooks] Failed to bootstrap schema:', err.message);
+    } catch (err) {
+      logger.error('[hooks] Failed to bootstrap schema', { error: err });
     } finally {
       if (!schemaReady) {
         bootstrapPromise = null;

@@ -283,9 +283,9 @@ onMount(() => {
   .eyebrow {
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.08em;
-    font-size: 0.78rem;
-    font-weight: 700;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.08em);
+    font-size: var(--smrt-typography-label-medium-size, 0.78rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
   }
 
   .page-header h1 {
@@ -297,7 +297,7 @@ onMount(() => {
   .page-header p {
     margin: 0;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     max-width: 44rem;
   }
 
@@ -316,7 +316,7 @@ onMount(() => {
     justify-content: center;
     min-height: 2.5rem;
     padding: 0 1rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid var(--smrt-color-outline-variant);
     background: color-mix(
       in srgb,
@@ -325,7 +325,7 @@ onMount(() => {
     );
     color: var(--smrt-color-on-surface);
     text-decoration: none;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .page-nav a[aria-current='page'] {
@@ -390,8 +390,8 @@ onMount(() => {
   }
 
   .search-field span {
-    font-size: 0.82rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-large-size, 0.82rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface-variant);
   }
 
@@ -422,7 +422,7 @@ onMount(() => {
     background: var(--smrt-color-primary);
     color: var(--smrt-color-on-primary);
     padding: 0 1rem;
-    font-weight: 700;
+    font-weight: var(--smrt-typography-weight-bold, 700);
     cursor: pointer;
   }
 
@@ -442,7 +442,7 @@ onMount(() => {
   }
 
   .results-meta strong {
-    font-size: 1.2rem;
+    font-size: var(--smrt-typography-title-large-size, 1.2rem);
     margin-right: 0.5rem;
   }
 
@@ -461,9 +461,9 @@ onMount(() => {
     align-items: center;
     min-height: 1.9rem;
     padding: 0 0.7rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface-container-low);
-    font-size: 0.82rem;
+    font-size: var(--smrt-typography-label-large-size, 0.82rem);
   }
 
   .facts-list {
@@ -504,14 +504,14 @@ onMount(() => {
 
   .fact-row h2 {
     margin: 0;
-    font-size: 1.08rem;
-    line-height: 1.45;
+    font-size: var(--smrt-typography-title-medium-size, 1.08rem);
+    line-height: var(--smrt-typography-title-medium-line-height, 1.45);
     color: var(--smrt-color-on-surface);
   }
 
   .fact-row__stats span {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.84rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.84rem);
   }
 
   .badge {
@@ -519,15 +519,15 @@ onMount(() => {
     align-items: center;
     min-height: 1.65rem;
     padding: 0 0.6rem;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: color-mix(
       in srgb,
       var(--smrt-color-primary) 12%,
       transparent
     );
     color: var(--smrt-color-primary);
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
@@ -543,7 +543,7 @@ onMount(() => {
 
   details summary {
     cursor: pointer;
-    font-weight: 700;
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface);
   }
 
@@ -568,11 +568,11 @@ onMount(() => {
   }
 
   .metadata-list dt {
-    font-size: 0.72rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.72rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     color: var(--smrt-color-on-surface-variant);
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.05em);
   }
 
   .metadata-list dd {

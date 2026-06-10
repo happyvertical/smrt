@@ -88,24 +88,24 @@ export interface Props {
   .attachment-upload {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .attachment-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .attachment-item {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 4px 8px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-sm, 8px);
     background: var(--smrt-color-surface-variant, #e7e0ec);
-    font-size: 13px;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 13px);
+    font-family: var(--smrt-font-family, system-ui);
   }
 
   .filename {
@@ -114,24 +114,24 @@ export interface Props {
 
   .size {
     color: var(--smrt-color-outline, #79747e);
-    font-size: 11px;
+    font-size: var(--smrt-typography-label-small-size, 11px);
   }
 
   .remove {
     background: none;
     border: none;
     cursor: pointer;
-    padding: 0 2px;
+    padding: 0 var(--smrt-spacing-1, 4px);
     color: var(--smrt-color-error, #ba1a1a);
-    font-size: 14px;
+    font-size: var(--smrt-typography-label-large-size, 14px);
   }
 
   .drop-zone {
     border: 2px dashed var(--smrt-color-outline-variant, #cac4d0);
     border-radius: var(--smrt-radius-md, 12px);
-    padding: 12px;
+    padding: var(--smrt-spacing-3, 12px);
     text-align: center;
-    transition: border-color var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, ease);
+    transition: border-color var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, ease);
   }
 
   .drop-zone.drag-over {
@@ -149,7 +149,7 @@ export interface Props {
 
   .upload-text {
     color: var(--smrt-color-outline, #79747e);
-    font-size: 13px;
-    font-family: var(--smrt-typography-body, system-ui);
+    font-size: var(--smrt-typography-body-medium-size, 13px);
+    font-family: var(--smrt-font-family, system-ui);
   }
 </style>

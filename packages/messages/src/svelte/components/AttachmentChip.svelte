@@ -72,7 +72,7 @@ const _formattedSize = $derived.by(() => {
   }
 
   button.chip:hover {
-    background: var(--smrt-color-surface-variant-hover, #d1d3dd);
+    background: color-mix(in srgb, var(--smrt-color-surface-variant, #e1e2ec) 92%, var(--smrt-color-shadow, #000));
   }
 
   button.chip:focus-visible {
@@ -82,7 +82,7 @@ const _formattedSize = $derived.by(() => {
 
   .icon {
     flex-shrink: 0;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .name {
@@ -94,6 +94,6 @@ const _formattedSize = $derived.by(() => {
   .size {
     flex-shrink: 0;
     opacity: 0.7;
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
   }
 </style>

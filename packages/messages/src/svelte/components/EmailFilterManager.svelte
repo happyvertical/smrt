@@ -74,7 +74,6 @@ async function saveWhitelistEntry() {
     });
     resetWhitelistForm();
   } catch (e) {
-    console.error('Failed to add whitelist entry:', e);
   } finally {
     savingWhitelist = false;
   }
@@ -84,9 +83,7 @@ async function removeWhitelistEntry(entry: WhitelistEntry) {
   if (isReadonly || !onremovewhitelist) return;
   try {
     await onremovewhitelist(entry);
-  } catch (e) {
-    console.error('Failed to remove whitelist entry:', e);
-  }
+  } catch (e) {}
 }
 
 async function saveBlacklistEntry() {
@@ -101,7 +98,6 @@ async function saveBlacklistEntry() {
     });
     resetBlacklistForm();
   } catch (e) {
-    console.error('Failed to add blacklist entry:', e);
   } finally {
     savingBlacklist = false;
   }
@@ -111,9 +107,7 @@ async function removeBlacklistEntry(entry: BlacklistEntry) {
   if (isReadonly || !onremoveblacklist) return;
   try {
     await onremoveblacklist(entry);
-  } catch (e) {
-    console.error('Failed to remove blacklist entry:', e);
-  }
+  } catch (e) {}
 }
 
 function getTypeIcon(type: string): string {
@@ -373,7 +367,7 @@ function getPatternPlaceholder(type: string): string {
     gap: 0.25rem;
     background: var(--smrt-color-surface-container, #f0f1f9);
     padding: 0.25rem;
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 
   .section-btn {
@@ -382,10 +376,10 @@ function getPatternPlaceholder(type: string): string {
     gap: 0.375rem;
     padding: 0.375rem 0.75rem;
     border: none;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-family: inherit;
     cursor: pointer;
     transition: all 150ms ease;
@@ -401,10 +395,10 @@ function getPatternPlaceholder(type: string): string {
   }
 
   .count {
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     background: var(--smrt-color-outline-variant, #c2c7cf);
     padding: 0.0625rem 0.375rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
 
   .section-content {
@@ -421,20 +415,20 @@ function getPatternPlaceholder(type: string): string {
   }
 
   .section-description {
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .add-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-primary, #005ac1);
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-family: inherit;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 150ms ease;
     flex-shrink: 0;
   }
@@ -447,7 +441,7 @@ function getPatternPlaceholder(type: string): string {
   .entry-form {
     background: var(--smrt-color-surface-container, #f0f1f9);
     border: 1px solid var(--smrt-color-primary, #005ac1);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
     display: flex;
     flex-direction: column;
@@ -455,8 +449,8 @@ function getPatternPlaceholder(type: string): string {
   }
 
   .form-title {
-    font-size: 0.875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-primary, #005ac1);
   }
 
@@ -473,24 +467,24 @@ function getPatternPlaceholder(type: string): string {
   }
 
   .form-label {
-    font-size: 0.75rem;
-    font-weight: 500;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .optional {
-    font-weight: 400;
+    font-weight: var(--smrt-typography-weight-normal, 400);
     opacity: 0.7;
   }
 
   .form-input,
   .form-select {
     padding: 0.5rem 0.625rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: var(--smrt-color-surface, #fefbff);
     color: var(--smrt-color-on-surface, #1a1c1e);
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     font-family: inherit;
     transition: border-color 150ms ease;
   }
@@ -516,7 +510,7 @@ function getPatternPlaceholder(type: string): string {
     align-items: center;
     gap: 0.5rem;
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     color: var(--smrt-color-on-surface, #1a1c1e);
     white-space: nowrap;
   }
@@ -534,12 +528,12 @@ function getPatternPlaceholder(type: string): string {
 
   .cancel-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-family: inherit;
     transition: all 150ms ease;
   }
@@ -550,14 +544,14 @@ function getPatternPlaceholder(type: string): string {
 
   .save-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 6px;
+    border-radius: var(--smrt-radius-md, 8px);
     border: 1px solid var(--smrt-color-primary, #005ac1);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #fff);
     cursor: pointer;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-label-large-size, 0.8125rem);
     font-family: inherit;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     transition: all 150ms ease;
   }
 
@@ -582,7 +576,7 @@ function getPatternPlaceholder(type: string): string {
     justify-content: space-between;
     background: var(--smrt-color-surface-container, #f0f1f9);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 0.75rem 1rem;
     transition: background 150ms ease, border-color 150ms ease;
   }
@@ -608,13 +602,13 @@ function getPatternPlaceholder(type: string): string {
   }
 
   .type-badge {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    font-family: monospace;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    font-family: var(--smrt-font-family-mono, monospace);
     background: var(--smrt-color-surface, #fefbff);
     border: 1px solid var(--smrt-color-outline-variant, #c2c7cf);
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     flex-shrink: 0;
     min-width: 2rem;
     text-align: center;
@@ -629,41 +623,41 @@ function getPatternPlaceholder(type: string): string {
   }
 
   .entry-pattern {
-    font-weight: 500;
-    font-size: 0.875rem;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   .entry-description {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .category-tag {
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-tertiary, #6b5778);
     background: var(--smrt-color-tertiary-container, #f2daff);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 
   .auto-archive-tag {
-    font-size: 0.6875rem;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
     color: var(--smrt-color-warning, #ca8a04);
     background: var(--smrt-color-warning-container, #fef9c3);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     flex-shrink: 0;
   }
 
   .delete-btn {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     border: 1px solid transparent;
     background: transparent;
     color: var(--smrt-color-on-surface-variant, #43474e);
@@ -684,6 +678,6 @@ function getPatternPlaceholder(type: string): string {
     text-align: center;
     color: var(--smrt-color-on-surface-variant, #43474e);
     background: var(--smrt-color-surface-container, #f0f1f9);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
 </style>

@@ -318,13 +318,13 @@ const yearOptions = $derived(() => {
 
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .calendar {
-      --calendar-bg: #242424;
-      --calendar-border: #3a3a3a;
-      --calendar-header-bg: #2e2e2e;
-      --day-hover: #3a3a3a;
-      --today-bg: #1e3a5f;
-      --today-border: #64b5f6;
-      --other-month: #666666;
+      --calendar-bg: var(--smrt-color-surface, #242424);
+      --calendar-border: var(--smrt-color-outline-variant, #3a3a3a);
+      --calendar-header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+      --day-hover: var(--smrt-color-surface-container-high, #3a3a3a);
+      --today-bg: var(--smrt-color-primary-container, #1e3a5f);
+      --today-border: var(--smrt-color-primary, #64b5f6);
+      --other-month: var(--smrt-color-on-surface-variant, #666666);
     }
   }
 
@@ -407,7 +407,7 @@ const yearOptions = $derived(() => {
   .day-headers {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     margin-bottom: var(--smrt-spacing-1, 0.25rem);
   }
 
@@ -422,7 +422,7 @@ const yearOptions = $derived(() => {
   .days {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .day-cell {
@@ -467,10 +467,10 @@ const yearOptions = $derived(() => {
   .event-indicators {
     display: flex;
     flex-wrap: wrap;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
     justify-content: center;
     margin-top: auto;
-    font-size: 12px;
+    font-size: var(--smrt-typography-label-medium-size, 12px);
   }
 
   .event-icon {
@@ -478,7 +478,7 @@ const yearOptions = $derived(() => {
   }
 
   .event-more {
-    font-size: 10px;
+    font-size: var(--smrt-typography-label-small-size, 10px);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
@@ -510,7 +510,7 @@ const yearOptions = $derived(() => {
     }
 
     .event-indicators {
-      font-size: 10px;
+      font-size: var(--smrt-typography-label-small-size, 10px);
     }
   }
 </style>

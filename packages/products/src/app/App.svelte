@@ -55,13 +55,13 @@ onMount(() => {
   
   .placeholder-page h2 {
     margin: 0 0 1rem 0;
-    font-size: 2rem;
-    color: #1f2937;
+    font-size: var(--smrt-typography-headline-large-size, 2rem);
+    color: var(--smrt-color-on-surface, #1f2937);
   }
-  
+
   .placeholder-page p {
     margin: 0;
-    color: #6b7280;
-    font-size: 1.125rem;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+    font-size: var(--smrt-typography-body-large-size, 1.125rem);
   }
 </style>

@@ -47,7 +47,7 @@ const label = $derived.by(() => {
   .typing__dots {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .typing__dot {

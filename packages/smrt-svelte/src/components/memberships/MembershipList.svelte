@@ -66,15 +66,15 @@ const {
     justify-content: center;
     gap: 0.75rem;
     padding: 2rem;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant);
   }
 
   .spinner {
     width: 1.25rem;
     height: 1.25rem;
-    border: 2px solid #e5e7eb;
-    border-top-color: #3b82f6;
-    border-radius: 50%;
+    border: 2px solid var(--smrt-color-outline-variant);
+    border-top-color: var(--smrt-color-primary);
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.6s linear infinite;
   }
 
@@ -87,9 +87,9 @@ const {
   .empty {
     padding: 2rem;
     text-align: center;
-    color: #6b7280;
-    background: #f9fafb;
-    border: 1px dashed #d1d5db;
+    color: var(--smrt-color-on-surface-variant);
+    background: var(--smrt-color-surface-variant);
+    border: 1px dashed var(--smrt-color-outline);
     border-radius: 0.5rem;
   }
 </style>

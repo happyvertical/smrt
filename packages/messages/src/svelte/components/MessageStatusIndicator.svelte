@@ -45,7 +45,7 @@ const {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
   }
 
   .indicator {
@@ -56,7 +56,7 @@ const {
   .unread .dot {
     width: 0.5rem;
     height: 0.5rem;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #005ac1);
   }
 

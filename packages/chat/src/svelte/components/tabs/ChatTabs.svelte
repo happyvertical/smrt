@@ -69,16 +69,16 @@ const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
     right: 0;
     display: flex;
     align-items: flex-end;
-    gap: 8px;
-    padding: 0 16px;
-    z-index: 1000;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: 0 var(--smrt-spacing-4, 16px);
+    z-index: var(--smrt-z-index-sticky, 1100);
     pointer-events: none;
   }
 
   .chat-tabs__expanded {
     display: flex;
     align-items: flex-end;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     pointer-events: auto;
   }
 </style>

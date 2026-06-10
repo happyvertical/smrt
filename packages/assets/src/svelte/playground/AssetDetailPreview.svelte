@@ -94,9 +94,9 @@ function handleEdit() {
     max-width: 32rem;
     padding: 1.25rem;
     border-radius: 1rem;
-    background: rgba(255, 255, 255, 0.92);
-    border: 1px solid rgba(15, 23, 34, 0.08);
-    box-shadow: 0 18px 38px rgba(15, 23, 34, 0.08);
+    background: color-mix(in srgb, var(--smrt-color-surface) 92%, transparent);
+    border: 1px solid var(--smrt-color-outline-variant, rgba(15, 23, 34, 0.08));
+    box-shadow: var(--smrt-elevation-5, 0 18px 38px color-mix(in srgb, var(--smrt-color-shadow) 8%, transparent));
   }
 
   .preview-card h4,
@@ -105,26 +105,26 @@ function handleEdit() {
   }
 
   .eyebrow {
-    font-size: 0.75rem;
-    letter-spacing: 0.12em;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    letter-spacing: var(--smrt-typography-label-medium-tracking, 0.12em);
     text-transform: uppercase;
-    color: #0f766e;
+    color: var(--smrt-color-primary, #0f766e);
   }
 
   button {
     justify-self: start;
     border: 0;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.75rem 1rem;
     font: inherit;
-    font-weight: 600;
-    background: #0f766e;
-    color: white;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    background: var(--smrt-color-primary, #0f766e);
+    color: var(--smrt-color-on-primary, white);
     cursor: pointer;
   }
 
   .status {
-    color: #0f766e;
-    font-size: 0.95rem;
+    color: var(--smrt-color-primary, #0f766e);
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
 </style>

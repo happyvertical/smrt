@@ -114,7 +114,7 @@ const {
     width: 328px;
     background: var(--smrt-color-surface, #fefbff);
     border-radius: var(--smrt-radius-large, 12px) var(--smrt-radius-large, 12px) 0 0;
-    box-shadow: var(--smrt-elevation-level3, 0 4px 8px rgba(0, 0, 0, 0.15));
+    box-shadow: var(--smrt-elevation-3, 0 4px 8px rgba(0, 0, 0, 0.15));
     overflow: hidden;
   }
 
@@ -122,7 +122,7 @@ const {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 8px 12px;
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #ffffff);
     min-height: 44px;
@@ -131,7 +131,7 @@ const {
   .chat-tab__header-btn {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     background: none;
     border: none;
     color: inherit;
@@ -156,7 +156,7 @@ const {
   .chat-tab__actions {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     flex-shrink: 0;
   }
 
@@ -175,7 +175,7 @@ const {
   }
 
   .chat-tab__icon-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: color-mix(in srgb, var(--smrt-color-on-primary) 15%, transparent);
   }
 
   .chat-tab__icon-btn:focus-visible {
@@ -191,13 +191,13 @@ const {
   .chat-tab--collapsed {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
+    gap: var(--smrt-spacing-2, 8px);
+    padding: var(--smrt-spacing-2, 8px) var(--smrt-spacing-3, 12px);
     background: var(--smrt-color-surface-container, #f0f0f4);
     border: none;
     border-radius: var(--smrt-radius-large, 12px) var(--smrt-radius-large, 12px) 0 0;
     cursor: pointer;
-    box-shadow: var(--smrt-elevation-level2, 0 2px 6px rgba(0, 0, 0, 0.1));
+    box-shadow: var(--smrt-elevation-2, 0 2px 6px rgba(0, 0, 0, 0.1));
     color: var(--smrt-color-on-surface, #1a1c1e);
     transition: background var(--smrt-duration-short2, 150ms);
     white-space: nowrap;
@@ -218,12 +218,12 @@ const {
     justify-content: center;
     min-width: 18px;
     height: 18px;
-    padding: 0 5px;
+    padding: 0 var(--smrt-spacing-1, 4px);
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-error, #ba1a1a);
     color: var(--smrt-color-on-error, #ffffff);
-    font-size: 0.6875rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-small-size, 0.6875rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     line-height: 1;
   }
 

@@ -1,5 +1,254 @@
 # @happyvertical/smrt-core
 
+## 0.27.35
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - conflict on id when saving a persisted object (#1472) (#1473) (core)
+  - @happyvertical/smrt-scanner@0.27.35
+  - @happyvertical/smrt-config@0.27.35
+  - @happyvertical/smrt-types@0.27.35
+
+## 0.27.34
+
+### Patch Changes
+
+- ### Features
+
+  - migrate Node-side runtime logging to logger + finish console classification (#1470) (s14)
+  - @happyvertical/smrt-scanner@0.27.34
+  - @happyvertical/smrt-config@0.27.34
+  - @happyvertical/smrt-types@0.27.34
+
+## 0.27.33
+
+### Patch Changes
+
+- ### Features
+
+  - migrate runtime logging to @happyvertical/logger (S14) (#1469) (core)
+  - @happyvertical/smrt-scanner@0.27.33
+  - @happyvertical/smrt-config@0.27.33
+  - @happyvertical/smrt-types@0.27.33
+
+## 0.27.32
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: define S14 logging policy + classify keep-console contexts (#1468) (standards)
+  - @happyvertical/smrt-scanner@0.27.32
+  - @happyvertical/smrt-config@0.27.32
+  - @happyvertical/smrt-types@0.27.32
+
+## 0.27.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - resolve 16 dangling --smrt-\* refs + harden token validation (#1467) (tokens)
+  - @happyvertical/smrt-scanner@0.27.31
+  - @happyvertical/smrt-config@0.27.31
+  - @happyvertical/smrt-types@0.27.31
+
+## 0.27.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - hide internal resources from HTTP discovery (#1456) (jobs)
+  - @happyvertical/smrt-scanner@0.27.30
+  - @happyvertical/smrt-config@0.27.30
+  - @happyvertical/smrt-types@0.27.30
+
+## 0.27.29
+
+### Patch Changes
+
+- ### Features
+
+  - migrate final 9 packages, flip all strict — closes #1373 (#1466) (typography)
+  - @happyvertical/smrt-scanner@0.27.29
+  - @happyvertical/smrt-config@0.27.29
+  - @happyvertical/smrt-types@0.27.29
+
+## 0.27.28
+
+### Patch Changes
+
+- ### Features
+
+  - migrate typography to M3 role tokens, flip strict (#1373) (#1465) (assets,chat,images)
+  - @happyvertical/smrt-scanner@0.27.28
+  - @happyvertical/smrt-config@0.27.28
+  - @happyvertical/smrt-types@0.27.28
+
+## 0.27.27
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 3) (#1464) (messages,products)
+  - @happyvertical/smrt-scanner@0.27.27
+  - @happyvertical/smrt-config@0.27.27
+  - @happyvertical/smrt-types@0.27.27
+
+## 0.27.26
+
+### Patch Changes
+
+- ### Features
+
+  - typography → M3 role tokens (#1373 Phase 2) (#1463) (content)
+
+  ### Merged Changes
+
+  - [codex] Atomically claim ready jobs
+  - @happyvertical/smrt-scanner@0.27.26
+  - @happyvertical/smrt-config@0.27.26
+  - @happyvertical/smrt-types@0.27.26
+
+## 0.27.25
+
+### Patch Changes
+
+- ### Features
+
+  - typography design-token ratchet + smrt-svelte migration (#1373) (#1462) (tooling)
+  - @happyvertical/smrt-scanner@0.27.25
+  - @happyvertical/smrt-config@0.27.25
+  - @happyvertical/smrt-types@0.27.25
+
+## 0.27.24
+
+### Patch Changes
+
+- ### Features
+
+  - elevation design-token ratchet (#1373) (#1461) (tooling)
+  - @happyvertical/smrt-scanner@0.27.24
+  - @happyvertical/smrt-config@0.27.24
+  - @happyvertical/smrt-types@0.27.24
+
+## 0.27.23
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap border-radius to --smrt-radius-\* across UI packages (S1 #1373) (#1459)
+  - @happyvertical/smrt-scanner@0.27.23
+  - @happyvertical/smrt-config@0.27.23
+  - @happyvertical/smrt-types@0.27.23
+
+## 0.27.22
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap spacing px to --smrt-spacing-\* across UI packages (S1 #1373 phase 2) (#1457)
+  - @happyvertical/smrt-scanner@0.27.22
+  - @happyvertical/smrt-config@0.27.22
+  - @happyvertical/smrt-types@0.27.22
+
+## 0.27.21
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: snap spacing px to --smrt-spacing-\* + ratchet (S1 #1373 phase 1) (#1451) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.21
+  - @happyvertical/smrt-config@0.27.21
+  - @happyvertical/smrt-types@0.27.21
+
+## 0.27.20
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: adopt --smrt-z-index-\* scale across UI packages (S1 #1373 phase 2) (#1450)
+  - @happyvertical/smrt-scanner@0.27.20
+  - @happyvertical/smrt-config@0.27.20
+  - @happyvertical/smrt-types@0.27.20
+
+## 0.27.19
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: adopt --smrt-z-index-\* scale + add z-index ratchet (#1373) (#1449) (smrt-svelte)
+  - refactor: close out S1 — tokenize tail + scope the ratchet (#1373) (#1448)
+  - @happyvertical/smrt-scanner@0.27.19
+  - @happyvertical/smrt-config@0.27.19
+  - @happyvertical/smrt-types@0.27.19
+
+## 0.27.18
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals in assets/chat/images (S1 #1373 phase 3) (#1447)
+  - chore: sync sdk packages to v0.74.4 (#1436) (deps)
+  - @happyvertical/smrt-scanner@0.27.18
+  - @happyvertical/smrt-config@0.27.18
+  - @happyvertical/smrt-types@0.27.18
+
+## 0.27.17
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals (S1 #1373 phase 2) (#1445) (products)
+  - refactor: tokenize color literals + flip to strict (S1 #1373 phase 2) (#1446) (content)
+  - @happyvertical/smrt-scanner@0.27.17
+  - @happyvertical/smrt-config@0.27.17
+  - @happyvertical/smrt-types@0.27.17
+
+## 0.27.16
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: tokenize color literals + color-literal ratchet (S1 #1373 phase 1) (#1443) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.27.16
+  - @happyvertical/smrt-config@0.27.16
+  - @happyvertical/smrt-types@0.27.16
+
+## 0.27.15
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - stop SSG export leaking camelCase/snake_case secrets (#1441) (config)
+  - @happyvertical/smrt-scanner@0.27.15
+  - @happyvertical/smrt-config@0.27.15
+  - @happyvertical/smrt-types@0.27.15
+
+## 0.27.14
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: logging ratchet scaffolding + core runtime migration (S14 #1432 phase 1) (#1438) (core)
+  - @happyvertical/smrt-scanner@0.27.14
+  - @happyvertical/smrt-config@0.27.14
+  - @happyvertical/smrt-types@0.27.14
+
 ## 0.27.13
 
 ### Patch Changes

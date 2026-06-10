@@ -110,7 +110,7 @@ function handleKeydown(e: KeyboardEvent) {
     background: var(--smrt-color-surface, white);
     border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     border-radius: var(--smrt-radius-small, 0.375rem);
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
     text-align: left;
   }
@@ -161,7 +161,7 @@ function handleKeydown(e: KeyboardEvent) {
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     border-radius: var(--smrt-radius-small, 0.375rem);
     box-shadow: var(--smrt-elevation-2, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
-    z-index: 50;
+    z-index: var(--smrt-z-index-dropdown, 1000);
     max-height: 15rem;
     overflow-y: auto;
   }
@@ -174,7 +174,7 @@ function handleKeydown(e: KeyboardEvent) {
     padding: 0.5rem 0.75rem;
     background: none;
     border: none;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     cursor: pointer;
     text-align: left;
   }
@@ -194,23 +194,23 @@ function handleKeydown(e: KeyboardEvent) {
   }
 
   .role-name {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface, #111827);
     text-transform: capitalize;
   }
 
   .system-badge {
-    font-size: 0.625rem;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
     padding: 0.125rem 0.375rem;
     background: var(--smrt-color-primary-container, #dbeafe);
     color: var(--smrt-color-on-primary-container, #1e40af);
-    border-radius: 9999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     text-transform: uppercase;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .description {
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 </style>

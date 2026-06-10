@@ -331,7 +331,7 @@ async function recheckFactClaims(claimIds: string[]) {
   .section-caption,
   .tool-card span {
     color: var(--smrt-color-on-surface-variant);
-    font-size: 0.85rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.85rem);
   }
 
   .tool-card {
@@ -380,7 +380,7 @@ async function recheckFactClaims(claimIds: string[]) {
     background: var(--smrt-color-surface);
     color: var(--smrt-color-on-surface);
     cursor: pointer;
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .secondary-button:disabled {
@@ -389,26 +389,26 @@ async function recheckFactClaims(claimIds: string[]) {
   }
 
   .pill {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     padding: 0.2rem 0.55rem;
-    font-size: 0.75rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     text-transform: capitalize;
   }
 
   .pill--passed {
-    background: rgba(22, 163, 74, 0.14);
-    color: #166534;
+    background: color-mix(in srgb, var(--smrt-color-success) 14%, transparent);
+    color: var(--smrt-color-on-success-container);
   }
 
   .pill--flagged {
-    background: rgba(245, 158, 11, 0.16);
-    color: #92400e;
+    background: color-mix(in srgb, var(--smrt-color-warning) 16%, transparent);
+    color: var(--smrt-color-on-warning-container);
   }
 
   .pill--failed {
-    background: rgba(220, 38, 38, 0.14);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 14%, transparent);
+    color: var(--smrt-color-on-error-container);
   }
 
   .tool-error,
@@ -417,21 +417,21 @@ async function recheckFactClaims(claimIds: string[]) {
     margin: 0;
     border-radius: 0.6rem;
     padding: 0.75rem 0.9rem;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.9rem);
   }
 
   .tool-error {
-    background: rgba(220, 38, 38, 0.1);
-    color: #991b1b;
+    background: color-mix(in srgb, var(--smrt-color-error) 10%, transparent);
+    color: var(--smrt-color-on-error-container);
   }
 
   .tool-notice {
-    background: rgba(37, 99, 235, 0.1);
-    color: #1d4ed8;
+    background: color-mix(in srgb, var(--smrt-color-primary) 10%, transparent);
+    color: var(--smrt-color-on-primary-container);
   }
 
   .tool-warning {
-    background: rgba(245, 158, 11, 0.12);
-    color: #92400e;
+    background: color-mix(in srgb, var(--smrt-color-warning) 12%, transparent);
+    color: var(--smrt-color-on-warning-container);
   }
 </style>

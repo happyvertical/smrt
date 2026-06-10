@@ -146,8 +146,8 @@ function _getFieldType(
     margin: 0 auto;
     padding: 1.5rem;
     background: white;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-radius: var(--smrt-radius-md, 8px);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
   }
 
   .form-header {
@@ -156,15 +156,15 @@ function _getFieldType(
   }
 
   .form-title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: #1f2937;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface, #1f2937);
     margin: 0 0 0.5rem 0;
   }
 
   .form-subtitle {
-    font-size: 0.875rem;
-    color: #6b7280;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     font-style: italic;
   }
 
@@ -179,57 +179,57 @@ function _getFieldType(
     gap: 0.75rem;
     margin-top: 1.5rem;
     padding-top: 1.5rem;
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
   }
 
   .submit-btn {
-    background: #3b82f6;
-    color: white;
+    background: var(--smrt-color-primary, #3b82f6);
+    color: var(--smrt-color-on-primary, white);
     border: none;
     padding: 0.75rem 1.5rem;
     border-radius: 0.375rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background-color 0.2s;
   }
 
   .submit-btn:hover {
-    background: #2563eb;
+    background: var(--smrt-color-primary, #2563eb);
   }
 
   .reset-btn {
-    background: #f3f4f6;
-    color: #374151;
-    border: 1px solid #d1d5db;
+    background: var(--smrt-color-surface-container, #f3f4f6);
+    color: var(--smrt-color-on-surface, #374151);
+    border: 1px solid var(--smrt-color-outline-variant, #d1d5db);
     padding: 0.75rem 1.5rem;
     border-radius: 0.375rem;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     cursor: pointer;
     transition: background-color 0.2s;
   }
 
   .reset-btn:hover {
-    background: #e5e7eb;
+    background: var(--smrt-color-surface-container-high, #e5e7eb);
   }
 
   .form-debug {
     margin-top: 2rem;
     padding: 1rem;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container-low, #f9fafb);
     border-radius: 0.375rem;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
   }
 
   .form-debug summary {
     cursor: pointer;
-    font-weight: 500;
-    color: #374151;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface, #374151);
   }
 
   .form-debug pre {
     margin-top: 0.5rem;
-    font-size: 0.75rem;
-    color: #6b7280;
+    font-size: var(--smrt-typography-body-small-size, 0.75rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     white-space: pre-wrap;
     word-break: break-word;
   }

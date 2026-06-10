@@ -43,7 +43,7 @@ import { Icon, ripple } from '@happyvertical/smrt-svelte';
     color: var(--md-sys-color-on-primary);
     border: none;
     padding: 10px 20px;
-    border-radius: 20px;
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
   }
   .btn-secondary {
@@ -51,7 +51,7 @@ import { Icon, ripple } from '@happyvertical/smrt-svelte';
     color: var(--md-sys-color-on-secondary-container);
     border: none;
     padding: 10px 20px;
-    border-radius: 20px;
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
   }
   .surface {
@@ -61,7 +61,7 @@ import { Icon, ripple } from '@happyvertical/smrt-svelte';
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     cursor: pointer;
   }
   .icon-grid {
@@ -76,7 +76,7 @@ import { Icon, ripple } from '@happyvertical/smrt-svelte';
     gap: 8px;
     padding: 16px;
     background: var(--md-sys-color-surface-container-low);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
   }
   .icon-item span {
     font-size: 0.75rem;

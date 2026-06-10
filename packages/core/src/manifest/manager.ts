@@ -1,7 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createLogger } from '@happyvertical/logger';
 import { ManifestGenerator } from '../scanner/manifest-generator.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Reads, writes, and generates SMRT manifests for a project.
@@ -66,10 +69,9 @@ export class ManifestManager {
           const content = readFileSync(path, 'utf-8');
           return JSON.parse(content);
         } catch (error) {
-          console.error(
-            `[ManifestManager] Failed to read manifest at ${path}:`,
+          logger.error(`[ManifestManager] Failed to read manifest at ${path}`, {
             error,
-          );
+          });
         }
       }
     }

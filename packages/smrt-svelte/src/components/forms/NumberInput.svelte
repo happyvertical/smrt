@@ -234,7 +234,7 @@ function handleInput(e: Event) {
   .smrt-number {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .smrt-label {
@@ -245,7 +245,7 @@ function handleInput(e: Event) {
 
   .smrt-label .required {
     color: var(--smrt-color-error, #ba1a1a);
-    margin-left: 2px;
+    margin-left: var(--smrt-spacing-1, 4px);
   }
 
   .input-wrapper {
@@ -283,7 +283,7 @@ function handleInput(e: Event) {
   }
 
   .smrt-input.invalid:focus {
-    border-color: #ef4444;
+    border-color: var(--smrt-color-error);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--smrt-color-error, #ba1a1a) 10%, transparent);
   }
 
@@ -302,6 +302,6 @@ function handleInput(e: Event) {
   .validation-error {
     font-size: var(--smrt-typography-body-small-size, 0.75rem);
     color: var(--smrt-color-error, #ba1a1a);
-    margin-top: 4px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 </style>

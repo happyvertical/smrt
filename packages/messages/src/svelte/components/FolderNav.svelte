@@ -125,7 +125,7 @@ function getFolderIcon(specialUse?: string): string {
 
   .folder-item--active {
     background: var(--smrt-color-secondary-container, #d7e3f7);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .folder-item:focus-visible {
@@ -135,7 +135,7 @@ function getFolderIcon(specialUse?: string): string {
 
   .folder-icon {
     flex-shrink: 0;
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
   }
 
   .folder-name {
@@ -152,7 +152,7 @@ function getFolderIcon(specialUse?: string): string {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 99px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #005ac1);
     color: var(--smrt-color-on-primary, #fff);
     font: var(--smrt-typography-label-small-font, 500 0.6875rem / 1 sans-serif);

@@ -44,8 +44,8 @@ let {
 
   .smrt-subscription-summary__label,
   .smrt-subscription-summary dt {
-    color: var(--smrt-muted, #64748b);
-    font-size: 0.8rem;
+    color: var(--smrt-color-on-surface-variant, #64748b);
+    font-size: var(--smrt-typography-label-medium-size, 0.8rem);
   }
 
   .smrt-subscription-summary dl {
@@ -55,7 +55,7 @@ let {
   }
 
   .smrt-subscription-summary dd {
-    font-weight: 650;
+    font-weight: var(--smrt-typography-weight-bold, 650);
     margin: 0;
   }
 </style>

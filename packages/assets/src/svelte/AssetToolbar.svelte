@@ -345,7 +345,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-primary, #ffffff);
     background: var(--smrt-color-primary, #005ac1);
     border: none;
@@ -355,7 +355,7 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
   }
 
   .upload-btn:hover {
-    box-shadow: var(--smrt-elevation-level2, 0 1px 3px rgba(0,0,0,0.1));
+    box-shadow: var(--smrt-elevation-2, 0 1px 3px rgba(0,0,0,0.1));
   }
 
   .upload-btn:focus-visible {

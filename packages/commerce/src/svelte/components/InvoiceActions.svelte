@@ -121,11 +121,11 @@ const canDelete = $derived(status === 'draft');
     gap: var(--smrt-spacing-2, 0.5rem);
     padding: var(--smrt-spacing-2, 0.5rem) var(--smrt-spacing-4, 1rem);
     font: var(--smrt-typography-label-large-font);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: none;
     border-radius: var(--smrt-radius-small, 0.375rem);
     cursor: pointer;
-    transition: all var(--smrt-duration-short, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+    transition: all var(--smrt-duration-fast, 150ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     white-space: nowrap;
   }
 
@@ -136,12 +136,12 @@ const canDelete = $derived(status === 'draft');
   }
 
   .sm .btn {
-    padding: var(--smrt-spacing-1-5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
+    padding: var(--smrt-spacing-1_5, 0.375rem) var(--smrt-spacing-3, 0.75rem);
     font: var(--smrt-typography-label-medium-font);
   }
 
   .btn:disabled {
-    opacity: var(--smrt-state-disabled-opacity, 0.38);
+    opacity: 0.38;
     cursor: not-allowed;
   }
 
@@ -151,7 +151,7 @@ const canDelete = $derived(status === 'draft');
   }
 
   .btn-primary:hover:not(:disabled) {
-    background: var(--smrt-color-primary-hover, #004493);
+    background: color-mix(in srgb, var(--smrt-color-primary, #005ac1) 85%, var(--smrt-color-shadow, #000));
   }
 
   .btn-success {
@@ -160,7 +160,7 @@ const canDelete = $derived(status === 'draft');
   }
 
   .btn-success:hover:not(:disabled) {
-    background: var(--smrt-color-tertiary-hover, #005138);
+    background: color-mix(in srgb, var(--smrt-color-tertiary, #006c4c) 85%, var(--smrt-color-shadow, #000));
   }
 
   .btn-secondary {

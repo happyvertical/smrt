@@ -50,16 +50,16 @@ const { children }: Props = $props();
     min-height: 100vh;
     display: flex;
     flex-direction: column;
-    background: #f9fafb;
+    background: var(--smrt-color-surface-container-low, #f9fafb);
   }
-  
+
   .app-header {
     background: white;
-    border-bottom: 1px solid #e2e8f0;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border-bottom: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
     position: sticky;
     top: 0;
-    z-index: 100;
+    z-index: var(--smrt-z-index-sticky, 1100);
   }
   
   .header-content {
@@ -76,13 +76,13 @@ const { children }: Props = $props();
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #1f2937;
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
+    color: var(--smrt-color-on-surface, #1f2937);
   }
   
   .logo {
-    font-size: 1.75rem;
+    font-size: var(--smrt-typography-headline-medium-size, 1.75rem);
   }
   
   .main-nav {
@@ -91,17 +91,17 @@ const { children }: Props = $props();
   }
   
   .nav-link {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     padding: 0.5rem 1rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     transition: all 0.2s;
   }
-  
+
   .nav-link:hover {
-    color: #3b82f6;
-    background: #f3f4f6;
+    color: var(--smrt-color-primary, #3b82f6);
+    background: var(--smrt-color-surface-container, #f3f4f6);
   }
   
   .header-actions {
@@ -114,18 +114,18 @@ const { children }: Props = $props();
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    font-size: 0.875rem;
-    color: #6b7280;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
   
   .status-dot {
     width: 8px;
     height: 8px;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
   }
   
   .status-dot.online {
-    background: #10b981;
+    background: var(--smrt-color-success, #10b981);
     animation: pulse 2s infinite;
   }
   
@@ -141,7 +141,7 @@ const { children }: Props = $props();
   
   .app-footer {
     background: white;
-    border-top: 1px solid #e2e8f0;
+    border-top: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
     margin-top: auto;
   }
   
@@ -156,8 +156,8 @@ const { children }: Props = $props();
   
   .footer-content p {
     margin: 0;
-    color: #6b7280;
-    font-size: 0.875rem;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
   
   .footer-links {
@@ -166,14 +166,14 @@ const { children }: Props = $props();
   }
   
   .footer-links a {
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     text-decoration: none;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
     transition: color 0.2s;
   }
-  
+
   .footer-links a:hover {
-    color: #3b82f6;
+    color: var(--smrt-color-primary, #3b82f6);
   }
   
   @media (max-width: 768px) {

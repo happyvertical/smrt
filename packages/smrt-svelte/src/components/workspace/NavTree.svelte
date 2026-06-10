@@ -243,7 +243,7 @@ function navChildrenId(href: string): string {
 
   .nav-item.parent-active {
     color: var(--smrt-color-on-surface);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .nav-icon-slot {
@@ -256,7 +256,7 @@ function navChildrenId(href: string): string {
   }
 
   .nav-icon-text {
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
   }
 
@@ -274,10 +274,10 @@ function navChildrenId(href: string): string {
     justify-content: center;
     min-width: 1.25rem;
     padding: 0 0.4rem;
-    font-size: 0.7rem;
-    font-weight: 600;
-    line-height: 1.2;
-    border-radius: 999px;
+    font-size: var(--smrt-typography-label-small-size, 0.7rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    line-height: var(--smrt-typography-label-small-line-height, 1.2);
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-secondary-container);
     color: var(--smrt-color-on-secondary-container);
   }
@@ -285,7 +285,7 @@ function navChildrenId(href: string): string {
   .nav-chevron {
     flex-shrink: 0;
     color: var(--smrt-color-on-surface-variant);
-    font-size: 1rem;
+    font-size: var(--smrt-typography-body-large-size, 1rem);
     line-height: 1;
     transform: rotate(0deg);
     transition:
@@ -301,31 +301,31 @@ function navChildrenId(href: string): string {
   /* Level 1 */
   .nav-item.level-1 {
     padding: 0.625rem 1rem;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   /* Level 2 */
   .nav-item.level-2 {
     padding: 0.5rem 1rem 0.5rem 2.75rem;
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
   .nav-item.level-2 .nav-icon-slot {
     width: 1rem;
   }
   .nav-item.level-2 .nav-icon-text {
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
   }
 
   /* Level 3 */
   .nav-item.level-3 {
     padding: 0.45rem 1rem 0.45rem 4rem;
-    font-size: 0.78rem;
+    font-size: var(--smrt-typography-body-small-size, 0.78rem);
   }
   .nav-item.level-3 .nav-icon-slot {
     width: 0.95rem;
   }
   .nav-item.level-3 .nav-icon-text {
-    font-size: 0.8125rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
   }
 
   /* Children containers — collapsed by default, shown when .expanded */

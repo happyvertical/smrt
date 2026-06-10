@@ -136,14 +136,14 @@ const isOverdue = $derived.by(() => {
     color: var(--smrt-color-on-surface);
     cursor: pointer;
     transition: 
-      background-color var(--smrt-duration-medium, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1)),
-      box-shadow var(--smrt-duration-medium, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
+      background-color var(--smrt-duration-normal, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1)),
+      box-shadow var(--smrt-duration-normal, 200ms) var(--smrt-easing-standard, cubic-bezier(0.2, 0, 0, 1));
     text-align: left;
     width: 100%;
     border: none;
     position: relative;
     overflow: hidden;
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -154,7 +154,7 @@ const isOverdue = $derived.by(() => {
 
   .invoice-card:hover {
     background-color: var(--smrt-color-surface-container-high);
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .card-header {
@@ -165,7 +165,7 @@ const isOverdue = $derived.by(() => {
 
   .invoice-number {
     font: var(--smrt-typography-label-large-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface);
   }
 
@@ -175,7 +175,7 @@ const isOverdue = $derived.by(() => {
     height: 20px;
     align-items: center;
     font: var(--smrt-typography-label-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-full, 10px);
     text-transform: uppercase;
     letter-spacing: 0.5px;
@@ -212,7 +212,7 @@ const isOverdue = $derived.by(() => {
 
   .invoice-amount {
     font: var(--smrt-typography-headline-small-font);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface);
     font-variant-numeric: tabular-nums;
   }
@@ -228,6 +228,6 @@ const isOverdue = $derived.by(() => {
 
   .due-date.overdue {
     color: var(--smrt-color-error);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 </style>

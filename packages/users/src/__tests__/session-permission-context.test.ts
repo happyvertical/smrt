@@ -1,4 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// The SvelteKit session handler logs via @happyvertical/logger (S14); mock it to
+// assert on the logger instead of a console spy.
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: { error: vi.fn(), warn: vi.fn(), info: vi.fn(), debug: vi.fn() },
+}));
+vi.mock('@happyvertical/logger', () => ({ createLogger: () => mockLogger }));
+
 import { getRequestScopedDatabase } from '../services/SessionPermissionContext.js';
 import { SessionService } from '../services/SessionService.js';
 import { createSessionHandler } from '../sveltekit/index.js';
@@ -148,9 +156,9 @@ describe('Session Permission Context', () => {
 
     expect(response.status).toBe(500);
     expect(resolve).not.toHaveBeenCalled();
-    expect(errorSpy).toHaveBeenCalledWith(
-      'Session or request context initialization error:',
-      expect.any(Error),
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      'Session or request context initialization error',
+      { error: expect.any(Error) },
     );
   });
 });

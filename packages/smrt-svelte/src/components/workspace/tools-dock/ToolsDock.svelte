@@ -329,8 +329,8 @@
   }
 
   .tools-dock__rail-glyph {
-    font-size: 0.95rem;
-    font-weight: 700;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
+    font-weight: var(--smrt-typography-weight-bold, 700);
     line-height: 1;
   }
 
@@ -344,11 +344,11 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-primary, #7dd3fc);
     color: var(--smrt-color-on-primary, #061014);
-    font-size: 0.58rem;
-    font-weight: 750;
+    font-size: var(--smrt-typography-label-small-size, 0.58rem);
+    font-weight: var(--smrt-typography-weight-bold, 750);
     line-height: 1;
   }
 
@@ -369,7 +369,8 @@
     overflow: hidden;
     border-left: 1px solid var(--smrt-color-outline-variant, #30343a);
     border-right: 1px solid var(--smrt-color-outline-variant, #30343a);
-    box-shadow: -24px 0 40px rgba(0, 0, 0, 0.18);
+    box-shadow: -24px 0 40px
+      color-mix(in srgb, var(--smrt-color-shadow) 18%, transparent);
     transform: translateX(calc(100% + var(--tools-dock-rail-width)));
     opacity: 0;
     pointer-events: none;
@@ -396,8 +397,8 @@
 
   .tools-dock__panel-header h3 {
     margin: 0;
-    font-size: 1.05rem;
-    line-height: 1.15;
+    font-size: var(--smrt-typography-title-medium-size, 1.05rem);
+    line-height: var(--smrt-typography-title-medium-line-height, 1.15);
   }
 
   .tools-dock__panel-body {
@@ -416,7 +417,7 @@
     background: var(--smrt-color-surface-container-high, #1d2228);
     color: inherit;
     cursor: pointer;
-    font-size: 1.2rem;
+    font-size: var(--smrt-typography-title-large-size, 1.2rem);
     line-height: 1;
   }
 
@@ -466,8 +467,8 @@
     border-radius: 0.6rem;
     padding: 0.45rem 0.7rem;
     cursor: pointer;
-    font-size: 0.84rem;
-    font-weight: 600;
+    font-size: var(--smrt-typography-label-large-size, 0.84rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   .tools-dock__topbar-button.active,
@@ -484,7 +485,7 @@
     align-items: center;
     justify-content: center;
     line-height: 1;
-    font-size: 0.95rem;
+    font-size: var(--smrt-typography-body-large-size, 0.95rem);
   }
 
   .tools-dock--topbar .tools-dock__panel {
@@ -516,10 +517,10 @@
       display: block;
       position: fixed;
       inset: 0;
-      z-index: 65;
+      z-index: var(--smrt-z-index-overlay, 1200);
       padding: 0;
       border: 0;
-      background: rgba(0, 0, 0, 0.34);
+      background: var(--smrt-color-scrim);
       cursor: default;
     }
 
@@ -531,7 +532,7 @@
       width: var(--tools-dock-rail-width);
       height: 100vh;
       height: 100dvh;
-      z-index: 70;
+      z-index: var(--smrt-z-index-modal, 1300);
       --tools-dock-panel-width: min(420px, calc(100vw - var(--tools-dock-rail-width)));
     }
 
@@ -540,11 +541,11 @@
        the panel (no z-index) and rail (z-index: 2) within the same stacking
        context — every tap hit the close button instead of the tool. */
     .tools-dock__panel {
-      z-index: 70;
+      z-index: var(--smrt-z-index-modal, 1300);
     }
 
     .tools-dock__rail {
-      z-index: 70;
+      z-index: var(--smrt-z-index-modal, 1300);
     }
   }
 

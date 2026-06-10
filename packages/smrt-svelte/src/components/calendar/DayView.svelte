@@ -185,10 +185,10 @@ function getTypeLabel(type: string): string {
 
   @media (prefers-color-scheme: dark) {
     :global(:root:not([data-theme="light"])) .day-view {
-      --view-bg: #242424;
-      --view-border: #3a3a3a;
-      --header-bg: #2e2e2e;
-      --card-hover: #3a3a3a;
+      --view-bg: var(--smrt-color-surface, #242424);
+      --view-border: var(--smrt-color-outline-variant, #3a3a3a);
+      --header-bg: var(--smrt-color-surface-container-low, #2e2e2e);
+      --card-hover: var(--smrt-color-surface-container-high, #3a3a3a);
     }
   }
 
@@ -228,7 +228,7 @@ function getTypeLabel(type: string): string {
   }
 
   .weather-icon {
-    font-size: 24px;
+    font-size: var(--smrt-typography-headline-small-size, 24px);
   }
 
   .weather-temps {
@@ -256,7 +256,7 @@ function getTypeLabel(type: string): string {
   }
 
   .empty-icon {
-    font-size: 48px;
+    font-size: var(--smrt-typography-display-medium-size, 48px);
     display: block;
     margin-bottom: var(--smrt-spacing-4, 1rem);
     opacity: 0.5;
@@ -286,7 +286,7 @@ function getTypeLabel(type: string): string {
   }
 
   .group-icon {
-    font-size: 20px;
+    font-size: var(--smrt-typography-title-large-size, 20px);
   }
 
   .group-count {
@@ -348,7 +348,7 @@ function getTypeLabel(type: string): string {
     display: block;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #666);
-    margin-top: 2px;
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .event-arrow {

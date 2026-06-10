@@ -262,10 +262,10 @@ $effect(() => {
 
   .inbox__list button,
   .inbox__detail {
-    border: 1px solid #d9d9d9;
+    border: 1px solid var(--smrt-color-outline-variant);
     border-radius: 0.75rem;
     padding: 0.85rem;
-    background: #fff;
+    background: var(--smrt-color-surface);
   }
 
   .inbox__list button {
@@ -275,14 +275,14 @@ $effect(() => {
   }
 
   .inbox__list button.selected {
-    border-color: #0b5fff;
-    box-shadow: 0 0 0 1px #0b5fff;
+    border-color: var(--smrt-color-primary);
+    box-shadow: 0 0 0 1px var(--smrt-color-primary);
   }
 
   .body-preview {
     padding: 0.85rem;
     border-radius: 0.75rem;
-    background: #f7f7f7;
+    background: var(--smrt-color-surface-container);
     white-space: pre-wrap;
   }
 
@@ -306,8 +306,8 @@ $effect(() => {
     justify-content: center;
     min-width: 1.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: 999px;
-    background: #eef3ff;
+    border-radius: var(--smrt-radius-full, 9999px);
+    background: var(--smrt-color-primary-container);
   }
 
   @media (max-width: 720px) {

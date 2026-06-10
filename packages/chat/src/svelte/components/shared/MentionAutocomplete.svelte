@@ -103,7 +103,7 @@ function highlightMatch(
     position: absolute;
     bottom: 100%;
     left: 0;
-    margin-bottom: 4px;
+    margin-bottom: var(--smrt-spacing-1, 4px);
     min-width: 200px;
     max-width: 320px;
     max-height: 240px;
@@ -111,9 +111,9 @@ function highlightMatch(
     background: var(--smrt-color-surface, #fefbff);
     border: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     border-radius: var(--smrt-radius-medium, 8px);
-    box-shadow: var(--smrt-elevation-level2, 0 2px 8px rgba(0, 0, 0, 0.15));
-    z-index: 100;
-    padding: 4px;
+    box-shadow: var(--smrt-elevation-2, 0 2px 8px rgba(0, 0, 0, 0.15));
+    z-index: var(--smrt-z-index-dropdown, 1000);
+    padding: var(--smrt-spacing-1, 4px);
     display: flex;
     flex-direction: column;
   }
@@ -121,9 +121,9 @@ function highlightMatch(
   .mention-autocomplete__item {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
     width: 100%;
-    padding: 8px;
+    padding: var(--smrt-spacing-2, 8px);
     border: none;
     background: transparent;
     cursor: pointer;
@@ -153,7 +153,7 @@ function highlightMatch(
   .mention-autocomplete__highlight {
     background: transparent;
     color: var(--smrt-color-primary, #005ac1);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
 
   @media (prefers-reduced-motion: reduce) {

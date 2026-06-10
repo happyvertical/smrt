@@ -125,7 +125,7 @@ const _lastSyncFormatted = $derived.by(() => {
   .status {
     padding: 0.125rem 0.375rem;
     border-radius: var(--smrt-radius-small, 0.25rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
   }
 
   .status--active {
@@ -143,7 +143,7 @@ const _lastSyncFormatted = $derived.by(() => {
   }
 
   .unread-count {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-primary, #005ac1);
   }
 

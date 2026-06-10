@@ -39,7 +39,6 @@ async function handleTranscription(text: string) {
     conversation = [...conversation, { role: 'assistant', content: response }];
     streamingResponse = '';
   } catch (error) {
-    console.error('Pipeline error:', error);
   } finally {
     isProcessing = false;
   }
@@ -212,7 +211,7 @@ function clearConversation() {
     padding: 40px;
     background: linear-gradient(135deg, var(--smrt-color-primary-container) 0%, var(--smrt-color-success-container, #f0fdf4) 100%);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 16px;
+    border-radius: var(--smrt-radius-xl, 16px);
   }
 
   .status {
@@ -252,7 +251,7 @@ function clearConversation() {
     padding: 4px 12px;
     background: var(--smrt-color-surface-container);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     font-size: 0.75rem;
@@ -261,7 +260,7 @@ function clearConversation() {
   .conversation {
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     min-height: 300px;
     padding: 16px;
   }
@@ -291,7 +290,7 @@ function clearConversation() {
   .message-content {
     flex: 1;
     padding: 12px 16px;
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
     background: var(--smrt-color-surface-container);
     line-height: 1.5;
     white-space: pre-wrap;
@@ -319,7 +318,7 @@ function clearConversation() {
     text-align: center;
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     color: var(--smrt-color-on-error-container);
   }
 
@@ -331,7 +330,7 @@ function clearConversation() {
     padding: 24px;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
   }
 
   .pipeline-step {
@@ -341,7 +340,7 @@ function clearConversation() {
     gap: 4px;
     padding: 16px 24px;
     background: var(--smrt-color-surface-container);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     transition: all 0.2s;
   }
 

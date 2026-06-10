@@ -157,6 +157,8 @@ export const zIndexTokens: Record<string, string> = {
   popover: '1400',
   toast: '1500',
   tooltip: '1600',
+  // Full-screen blocking loaders must sit above ALL other layers (#1373).
+  loading: '1700',
 };
 
 /**

@@ -98,18 +98,18 @@ const lastIndex = $derived(crumbs.length - 1);
   .crumb-item {
     display: inline-flex;
     align-items: center;
-    font-size: 0.875rem;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant);
   }
 
   .separator {
     margin: 0 0.5rem;
     color: var(--smrt-color-outline-variant);
-    font-size: 0.75rem;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
 
   .current {
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     color: var(--smrt-color-on-surface);
   }
 
@@ -127,12 +127,12 @@ const lastIndex = $derived(crumbs.length - 1);
   .crumb-link:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
-    border-radius: 2px;
+    border-radius: var(--smrt-radius-sm, 4px);
   }
 
   @media (max-width: 640px) {
     .crumb-item {
-      font-size: 0.8125rem;
+      font-size: var(--smrt-typography-body-medium-size, 0.8125rem);
     }
     .separator {
       margin: 0 0.35rem;

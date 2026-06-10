@@ -4,9 +4,12 @@
  * Provides querying and discovery operations for Project entities.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { SmrtCollection } from '@happyvertical/smrt-core';
 import { Project } from '../models/Project';
 import type { ProjectProviderType } from '../types';
+
+const logger = createLogger({ level: 'info' });
 
 export class ProjectCollection extends SmrtCollection<Project> {
   static readonly _itemClass = Project;
@@ -126,10 +129,9 @@ export class ProjectCollection extends SmrtCollection<Project> {
         }
       } catch (error) {
         // Log error and skip projects we can't access
-        console.warn(
-          `Error accessing items for project ${project.projectId}:`,
-          error instanceof Error ? error.message : error,
-        );
+        logger.warn(`Error accessing items for project ${project.projectId}`, {
+          error: error instanceof Error ? error.message : error,
+        });
       }
     }
 

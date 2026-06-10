@@ -133,7 +133,7 @@ function clearTranscriptions() {
     padding: 40px;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 12px;
+    border-radius: var(--smrt-radius-lg, 12px);
   }
 
   .status {
@@ -169,7 +169,7 @@ function clearTranscriptions() {
     padding: 4px 12px;
     background: var(--smrt-color-surface-container);
     border: none;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     color: var(--smrt-color-on-surface-variant);
     cursor: pointer;
     font-size: 0.75rem;
@@ -183,7 +183,7 @@ function clearTranscriptions() {
     list-style: none;
     background: var(--smrt-color-surface);
     border: 1px solid var(--smrt-color-outline-variant);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     overflow: hidden;
   }
 
@@ -206,7 +206,7 @@ function clearTranscriptions() {
     text-align: center;
     background: var(--smrt-color-error-container);
     border: 1px solid var(--smrt-color-error);
-    border-radius: 8px;
+    border-radius: var(--smrt-radius-md, 8px);
     color: var(--smrt-color-on-error-container);
   }
 

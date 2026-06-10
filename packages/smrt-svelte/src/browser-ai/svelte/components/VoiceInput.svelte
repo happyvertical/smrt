@@ -124,11 +124,12 @@ async function handleToggle() {
   @keyframes pulse {
     0%, 100% {
       transform: scale(1);
-      box-shadow: 0 0 0 0 rgba(186, 26, 26, 0.4);
+      box-shadow: 0 0 0 0
+        color-mix(in srgb, var(--smrt-color-error) 40%, transparent);
     }
     50% {
       transform: scale(1.05);
-      box-shadow: 0 0 0 10px rgba(186, 26, 26, 0);
+      box-shadow: 0 0 0 10px transparent;
     }
   }
 

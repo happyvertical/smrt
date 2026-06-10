@@ -84,7 +84,7 @@ function handleSubmit() {
   label {
     display: grid;
     gap: 0.35rem;
-    font-size: 0.9rem;
+    font-size: var(--smrt-typography-label-large-size, 0.9rem);
   }
 
   input,

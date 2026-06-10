@@ -137,7 +137,7 @@ const statusLabel: Record<string, string> = {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px;
+    padding: var(--smrt-spacing-4, 16px);
     border-bottom: 1px solid var(--smrt-color-outline-variant, #c4c6d0);
     flex-shrink: 0;
   }
@@ -174,18 +174,18 @@ const statusLabel: Record<string, string> = {
   .session-panel__list {
     flex: 1;
     overflow-y: auto;
-    padding: 8px;
+    padding: var(--smrt-spacing-2, 8px);
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
   }
 
   .session-panel__item {
     display: flex;
     align-items: flex-start;
-    gap: 10px;
+    gap: var(--smrt-spacing-3, 12px);
     width: 100%;
-    padding: 10px;
+    padding: var(--smrt-spacing-3, 12px);
     border: none;
     background: transparent;
     border-radius: var(--smrt-radius-medium, 8px);
@@ -216,7 +216,7 @@ const statusLabel: Record<string, string> = {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     min-width: 0;
   }
 
@@ -224,7 +224,7 @@ const statusLabel: Record<string, string> = {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .session-panel__item-name {
@@ -243,20 +243,20 @@ const statusLabel: Record<string, string> = {
   .session-panel__item-meta {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .session-panel__item-status {
     font: var(--smrt-typography-label-small-font, 500 0.6875rem/1 sans-serif);
-    padding: 2px 6px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-full, 9999px);
     background: var(--smrt-color-surface-variant, #e1e2ec);
     color: var(--smrt-color-on-surface-variant, #43474e);
   }
 
   .session-panel__item-status--active {
-    background: #e8f5e9;
-    color: #2e7d32;
+    background: var(--smrt-color-success-container, #e8f5e9);
+    color: var(--smrt-color-on-success-container, #2e7d32);
   }
 
   .session-panel__item-status--closed {
@@ -277,14 +277,14 @@ const statusLabel: Record<string, string> = {
   .session-panel__item-tools {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 2px;
+    gap: var(--smrt-spacing-1, 4px);
+    margin-top: var(--smrt-spacing-1, 4px);
   }
 
   .session-panel__tool-chip {
-    font-size: 0.625rem;
-    font-weight: 500;
-    padding: 1px 6px;
+    font-size: var(--smrt-typography-label-small-size, 0.625rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border-radius: var(--smrt-radius-small, 4px);
     background: var(--smrt-color-surface-container-highest, #dddde1);
     color: var(--smrt-color-on-surface-variant, #43474e);

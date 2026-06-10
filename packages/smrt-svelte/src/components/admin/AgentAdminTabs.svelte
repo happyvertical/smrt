@@ -189,7 +189,7 @@ async function handleSave(config: unknown) {
 		background: transparent;
 		color: var(--smrt-color-on-surface-variant, #64748b);
 		font-size: var(--smrt-typography-label-large-size, 0.875rem);
-		font-weight: 500;
+		font-weight: var(--smrt-typography-weight-medium, 500);
 		cursor: pointer;
 		border-bottom: 2px solid transparent;
 		margin-bottom: -1px;
@@ -218,7 +218,7 @@ async function handleSave(config: unknown) {
 	}
 
 	.tab-icon {
-		font-size: 1rem;
+		font-size: var(--smrt-typography-title-medium-size, 1rem);
 		opacity: 0.8;
 	}
 
@@ -256,7 +256,7 @@ async function handleSave(config: unknown) {
 		padding: 0.75rem 1rem;
 		background: var(--smrt-color-primary-container, #f0f9ff);
 		border-left: 3px solid var(--smrt-color-primary, #3b82f6);
-		border-radius: 0 6px 6px 0;
+		border-radius: 0 var(--smrt-radius-md, 8px) var(--smrt-radius-md, 8px) 0;
 		font-size: var(--smrt-typography-body-medium-size, 0.875rem);
 		color: var(--smrt-color-on-primary-container, #1e40af);
 	}

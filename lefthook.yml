@@ -111,6 +111,79 @@ pre-push:
 
         Your code has formatting issues. Run `npm run format` to fix them.
 
+    color-literals:
+      # Bans raw color literals in component CSS. Strict for smrt-svelte,
+      # report-only elsewhere until later phases of #1373. Node-only, no deps.
+      run: node scripts/check-color-literals.mjs
+      fail_text: |
+        ❌ Raw color literals found in a strict UI package!
+
+        Replace hardcoded colors with semantic --smrt-color-* tokens.
+        Run: node scripts/check-color-literals.mjs
+
+    z-index:
+      # Bans raw global-layer z-index in component CSS. Strict for smrt-svelte,
+      # report-only elsewhere until later phases of #1373. Node-only, no deps.
+      run: node scripts/check-z-index.mjs
+      fail_text: |
+        ❌ Raw global-layer z-index found in a strict UI package!
+
+        Use the centralized scale: z-index: var(--smrt-z-index-<layer>, <fallback>).
+        Run: node scripts/check-z-index.mjs
+
+    spacing:
+      # Bans raw spacing px (padding/margin/gap) in component CSS. Strict for
+      # smrt-svelte, report-only elsewhere until later phases of #1373. No deps.
+      run: node scripts/check-spacing.mjs
+      fail_text: |
+        ❌ Raw spacing px found in a strict UI package!
+
+        Snap to the 4px grid: padding/margin/gap: var(--smrt-spacing-<n>, <px>).
+        Run: node scripts/check-spacing.mjs
+
+    radius:
+      # Bans raw border-radius px/% in component CSS. Strict for UI packages,
+      # report-only elsewhere until later phases of #1373. Node-only, no deps.
+      run: node scripts/check-radius.mjs
+      fail_text: |
+        ❌ Raw border-radius found in a strict UI package!
+
+        Snap to the scale: border-radius: var(--smrt-radius-<name>, <value>).
+        Run: node scripts/check-radius.mjs
+
+    elevation:
+      # Bans raw downward neutral box-shadows in component CSS. Strict for UI
+      # packages, report-only elsewhere until later phases of #1373. No deps.
+      run: node scripts/check-elevation.mjs
+      fail_text: |
+        ❌ Raw drop-shadow found in a strict UI package!
+
+        Map to the depth scale: box-shadow: var(--smrt-elevation-<n>, <value>).
+        Run: node scripts/check-elevation.mjs
+
+    typography:
+      # Bans raw font-size/weight/family in component CSS. Strict for smrt-svelte,
+      # report-only elsewhere until later phases of #1373. Node-only, no deps.
+      run: node scripts/check-typography.mjs
+      fail_text: |
+        ❌ Raw typography found in a strict UI package!
+
+        Map each text element to its M3 role: font-size →
+        var(--smrt-typography-<role>-<size>-size, <value>); font-weight →
+        var(--smrt-typography-weight-<name>, <value>); font-family →
+        var(--smrt-font-family[-mono], <value>).
+        Run: node scripts/check-typography.mjs
+
+    svelte-tokens:
+      # Repo-wide: every consumed --smrt-* token must be emitted by a theme path
+      # (or defined inline). Catches dangling/malformed refs in any package.
+      run: node scripts/check-svelte-tokens.mjs
+      fail_text: |
+        ❌ A consumed --smrt-* token is never emitted (dangling/typo'd ref)!
+
+        Either use an emitted token or fix the name.
+        Run: node scripts/check-svelte-tokens.mjs
+
     validate-all-workflows:
       run: |
         echo "🔍 Validating ALL workflow files before push..."

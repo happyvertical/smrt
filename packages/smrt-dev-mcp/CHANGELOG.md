@@ -1,5 +1,203 @@
 # @happyvertical/smrt-dev-mcp
 
+## 0.27.35
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.35
+  - @happyvertical/smrt-scanner@0.27.35
+  - @happyvertical/smrt-types@0.27.35
+
+## 0.27.34
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.34
+  - @happyvertical/smrt-scanner@0.27.34
+  - @happyvertical/smrt-types@0.27.34
+
+## 0.27.33
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.33
+  - @happyvertical/smrt-scanner@0.27.33
+  - @happyvertical/smrt-types@0.27.33
+
+## 0.27.32
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.32
+  - @happyvertical/smrt-scanner@0.27.32
+  - @happyvertical/smrt-types@0.27.32
+
+## 0.27.31
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.31
+  - @happyvertical/smrt-scanner@0.27.31
+  - @happyvertical/smrt-types@0.27.31
+
+## 0.27.30
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.30
+  - @happyvertical/smrt-scanner@0.27.30
+  - @happyvertical/smrt-types@0.27.30
+
+## 0.27.29
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.29
+  - @happyvertical/smrt-scanner@0.27.29
+  - @happyvertical/smrt-types@0.27.29
+
+## 0.27.28
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.28
+  - @happyvertical/smrt-scanner@0.27.28
+  - @happyvertical/smrt-types@0.27.28
+
+## 0.27.27
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.27
+  - @happyvertical/smrt-scanner@0.27.27
+  - @happyvertical/smrt-types@0.27.27
+
+## 0.27.26
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.26
+  - @happyvertical/smrt-scanner@0.27.26
+  - @happyvertical/smrt-types@0.27.26
+
+## 0.27.25
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.25
+  - @happyvertical/smrt-scanner@0.27.25
+  - @happyvertical/smrt-types@0.27.25
+
+## 0.27.24
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.24
+  - @happyvertical/smrt-scanner@0.27.24
+  - @happyvertical/smrt-types@0.27.24
+
+## 0.27.23
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.23
+  - @happyvertical/smrt-scanner@0.27.23
+  - @happyvertical/smrt-types@0.27.23
+
+## 0.27.22
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.22
+  - @happyvertical/smrt-scanner@0.27.22
+  - @happyvertical/smrt-types@0.27.22
+
+## 0.27.21
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.21
+  - @happyvertical/smrt-scanner@0.27.21
+  - @happyvertical/smrt-types@0.27.21
+
+## 0.27.20
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.20
+  - @happyvertical/smrt-scanner@0.27.20
+  - @happyvertical/smrt-types@0.27.20
+
+## 0.27.19
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.19
+  - @happyvertical/smrt-scanner@0.27.19
+  - @happyvertical/smrt-types@0.27.19
+
+## 0.27.18
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.18
+  - @happyvertical/smrt-scanner@0.27.18
+  - @happyvertical/smrt-types@0.27.18
+
+## 0.27.17
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.17
+  - @happyvertical/smrt-scanner@0.27.17
+  - @happyvertical/smrt-types@0.27.17
+
+## 0.27.16
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.16
+  - @happyvertical/smrt-scanner@0.27.16
+  - @happyvertical/smrt-types@0.27.16
+
+## 0.27.15
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.15
+  - @happyvertical/smrt-scanner@0.27.15
+  - @happyvertical/smrt-types@0.27.15
+
+## 0.27.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.27.14
+  - @happyvertical/smrt-scanner@0.27.14
+  - @happyvertical/smrt-types@0.27.14
+
 ## 0.27.13
 
 ### Patch Changes

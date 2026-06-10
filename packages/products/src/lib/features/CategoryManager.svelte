@@ -44,33 +44,33 @@ const _loading = $state(false);
   
   .manager-header h2 {
     margin: 0 0 0.5rem 0;
-    color: #1f2937;
-    font-size: 1.5rem;
-    font-weight: 600;
+    color: var(--smrt-color-on-surface, #1f2937);
+    font-size: var(--smrt-typography-headline-small-size, 1.5rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
   }
-  
+
   .manager-header p {
     margin: 0;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
-  
+
   .placeholder-content {
-    background: #f9fafb;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 2rem;
     text-align: center;
   }
-  
+
   .placeholder-content p {
     margin: 0 0 1rem 0;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
-  
+
   .placeholder-content ul {
     margin: 1rem 0 0 0;
     text-align: left;
     display: inline-block;
-    color: #6b7280;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 </style>

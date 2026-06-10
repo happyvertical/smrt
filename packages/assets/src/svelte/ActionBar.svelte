@@ -147,12 +147,12 @@ const count = $derived(selectedAssets.length);
 
   .action-bar__count {
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 600;
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-primary-container, #002d6c);
   }
 
   .action-bar__clear {
-    padding: 2px 8px;
+    padding: var(--smrt-spacing-1, 4px) var(--smrt-spacing-2, 8px);
     border: none;
     background: transparent;
     font-family: inherit;
@@ -163,7 +163,7 @@ const count = $derived(selectedAssets.length);
   }
 
   .action-bar__clear:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: color-mix(in srgb, var(--smrt-color-shadow) 5%, transparent);
   }
 
   .action-bar__actions {
@@ -175,12 +175,12 @@ const count = $derived(selectedAssets.length);
   .action-btn {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--smrt-spacing-1, 4px);
     height: 32px;
     padding: 0 var(--smrt-spacing-3, 0.75rem);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
     background: var(--smrt-color-surface, #ffffff);
     color: var(--smrt-color-on-surface, #111827);
@@ -190,7 +190,7 @@ const count = $derived(selectedAssets.length);
   }
 
   .action-btn:hover {
-    box-shadow: var(--smrt-elevation-level1, 0 1px 2px rgba(0,0,0,0.05));
+    box-shadow: var(--smrt-elevation-1, 0 1px 2px rgba(0,0,0,0.05));
   }
 
   .action-btn--destructive {
@@ -209,7 +209,7 @@ const count = $derived(selectedAssets.length);
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
     backdrop-filter: blur(2px);
     z-index: var(--smrt-z-index-dialog, 1000);
     padding: 1rem;
@@ -217,11 +217,11 @@ const count = $derived(selectedAssets.length);
 
   .confirm-card {
     background: var(--smrt-color-surface-container-high, #ffffff);
-    border-radius: 28px;
-    padding: 24px;
+    border-radius: var(--smrt-radius-3xl, 32px);
+    padding: var(--smrt-spacing-6, 24px);
     max-width: 400px;
     width: 100%;
-    box-shadow: var(--smrt-elevation-level3);
+    box-shadow: var(--smrt-elevation-3);
     animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
   }
 
@@ -231,14 +231,14 @@ const count = $derived(selectedAssets.length);
   }
 
   .confirm-title {
-    margin: 0 0 16px;
-    font-size: 1.125rem;
-    font-weight: 600;
+    margin: 0 0 var(--smrt-spacing-4, 16px);
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
     color: var(--smrt-color-on-surface, #111827);
   }
 
   .confirm-message {
-    margin: 0 0 24px;
+    margin: 0 0 var(--smrt-spacing-6, 24px);
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
     color: var(--smrt-color-on-surface-variant, #6b7280);
     line-height: 1.5;
@@ -247,19 +247,19 @@ const count = $derived(selectedAssets.length);
   .confirm-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--smrt-spacing-2, 8px);
   }
 
   .confirm-btn {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--smrt-spacing-2, 8px);
     height: 40px;
-    padding: 0 24px;
+    padding: 0 var(--smrt-spacing-6, 24px);
     font-family: inherit;
     font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: 500;
-    border-radius: 20px;
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    border-radius: var(--smrt-radius-2xl, 24px);
     cursor: pointer;
     border: none;
     transition: all 200ms ease;
@@ -282,11 +282,11 @@ const count = $derived(selectedAssets.length);
   .confirm-btn--delete {
     background: var(--smrt-color-error, #dc2626);
     color: var(--smrt-color-on-error, #ffffff);
-    box-shadow: var(--smrt-elevation-level1);
+    box-shadow: var(--smrt-elevation-1);
   }
 
   .confirm-btn--delete:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-level2);
+    box-shadow: var(--smrt-elevation-2);
   }
 
   .spinner {
@@ -294,7 +294,7 @@ const count = $derived(selectedAssets.length);
     height: 16px;
     border: 2px solid transparent;
     border-top-color: currentColor;
-    border-radius: 50%;
+    border-radius: var(--smrt-radius-full, 9999px);
     animation: spin 0.8s linear infinite;
   }
 

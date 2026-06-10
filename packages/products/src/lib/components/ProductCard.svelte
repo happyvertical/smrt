@@ -57,16 +57,16 @@ const { product, onEdit, onDelete }: Props = $props();
 
 <style>
   .product-card {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
+    border: 1px solid var(--smrt-color-outline-variant, #e2e8f0);
+    border-radius: var(--smrt-radius-md, 8px);
     padding: 1rem;
     background: white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--smrt-elevation-1, 0 1px 3px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
     transition: box-shadow 0.2s;
   }
-  
+
   .product-card:hover {
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--smrt-elevation-2, 0 4px 6px color-mix(in srgb, var(--smrt-color-shadow, #000) 10%, transparent));
   }
   
   .product-header {
@@ -78,39 +78,39 @@ const { product, onEdit, onDelete }: Props = $props();
   
   .product-name {
     margin: 0;
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #1f2937;
+    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
+    font-weight: var(--smrt-typography-weight-semibold, 600);
+    color: var(--smrt-color-on-surface, #1f2937);
   }
-  
+
   .product-manufacturer {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #6b7280;
+    font-size: var(--smrt-typography-title-small-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
   }
 
   .product-model {
-    font-size: 0.875rem;
-    color: #6b7280;
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    color: var(--smrt-color-on-surface-variant, #6b7280);
     margin-bottom: 0.5rem;
   }
 
   .product-category {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #374151;
-    background: #f3f4f6;
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
+    color: var(--smrt-color-on-surface, #374151);
+    background: var(--smrt-color-surface-container, #f3f4f6);
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
+    border-radius: var(--smrt-radius-sm, 4px);
     display: inline-block;
     margin-bottom: 0.5rem;
   }
   
   .product-description {
     margin: 0.5rem 0;
-    color: #6b7280;
-    font-size: 0.875rem;
-    line-height: 1.4;
+    color: var(--smrt-color-on-surface-variant, #6b7280);
+    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
+    line-height: var(--smrt-typography-body-medium-line-height, 1.4);
   }
   
   .product-meta {
@@ -126,48 +126,48 @@ const { product, onEdit, onDelete }: Props = $props();
   }
   
   .tag {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--smrt-color-surface-container, #f3f4f6);
+    color: var(--smrt-color-on-surface, #374151);
     padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.75rem;
+    border-radius: var(--smrt-radius-full, 9999px);
+    font-size: var(--smrt-typography-label-medium-size, 0.75rem);
   }
-  
+
   .product-actions {
     display: flex;
     gap: 0.5rem;
     margin-top: 1rem;
     padding-top: 0.75rem;
-    border-top: 1px solid #f3f4f6;
+    border-top: 1px solid var(--smrt-color-outline-variant, #f3f4f6);
   }
   
   .edit-btn, .delete-btn {
     padding: 0.375rem 0.75rem;
-    border-radius: 4px;
-    font-size: 0.875rem;
-    font-weight: 500;
+    border-radius: var(--smrt-radius-sm, 4px);
+    font-size: var(--smrt-typography-label-large-size, 0.875rem);
+    font-weight: var(--smrt-typography-weight-medium, 500);
     border: 1px solid;
     cursor: pointer;
     transition: all 0.2s;
   }
   
   .edit-btn {
-    background: #f9fafb;
-    border-color: #d1d5db;
-    color: #374151;
+    background: var(--smrt-color-surface-container-low, #f9fafb);
+    border-color: var(--smrt-color-outline-variant, #d1d5db);
+    color: var(--smrt-color-on-surface, #374151);
   }
-  
+
   .edit-btn:hover {
-    background: #f3f4f6;
+    background: var(--smrt-color-surface-container, #f3f4f6);
   }
-  
+
   .delete-btn {
-    background: #fef2f2;
-    border-color: #fecaca;
-    color: #dc2626;
+    background: var(--smrt-color-error-container, #fef2f2);
+    border-color: var(--smrt-color-error, #fecaca);
+    color: var(--smrt-color-error, #dc2626);
   }
-  
+
   .delete-btn:hover {
-    background: #fee2e2;
+    background: var(--smrt-color-error-container, #fee2e2);
   }
 </style>
