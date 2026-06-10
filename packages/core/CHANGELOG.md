@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.39
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - typecheck clean + make repo typecheck gate unfiltered (S3, #1375) (#1478) (products)
+  - @happyvertical/smrt-scanner@0.27.39
+  - @happyvertical/smrt-config@0.27.39
+  - @happyvertical/smrt-types@0.27.39
+
 ## 0.27.38
 
 ### Patch Changes
