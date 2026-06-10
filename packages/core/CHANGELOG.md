@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.27.41
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - recover jobs by worker liveness, not heartbeat freshness (#1474) (#1480) (jobs)
+
+  ### Other Changes
+
+  - ci: add knowledge-freshness PR gate (S5, #1376) (#1481)
+  - @happyvertical/smrt-scanner@0.27.41
+  - @happyvertical/smrt-config@0.27.41
+  - @happyvertical/smrt-types@0.27.41
+
 ## 0.27.40
 
 ### Patch Changes
