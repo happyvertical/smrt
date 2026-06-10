@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.42
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: add per-tier coverage gate on touched packages (S6, #1411) (#1482)
+  - @happyvertical/smrt-scanner@0.27.42
+  - @happyvertical/smrt-config@0.27.42
+  - @happyvertical/smrt-types@0.27.42
+
 ## 0.27.41
 
 ### Patch Changes
