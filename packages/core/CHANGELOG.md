@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.27.36
+
+### Patch Changes
+
+- ### Features
+
+  - polymorphic subscriber (tenant XOR external) (#1454) (subscriptions)
+  - @happyvertical/smrt-scanner@0.27.36
+  - @happyvertical/smrt-config@0.27.36
+  - @happyvertical/smrt-types@0.27.36
+
 ## 0.27.35
 
 ### Patch Changes
