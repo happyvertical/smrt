@@ -122,7 +122,7 @@ From [@happyvertical/sdk](https://github.com/happyvertical/sdk): `@happyvertical
 - `smrt knowledge:review-context` and `smrt knowledge:architecture-context`
   build domain-scoped prompt bundles. Use `--scope project|local|package|sdk`
   and `--package <name>` to narrow context.
-- Lefthook runs deterministic knowledge freshness locally: changed-file strict checks on pre-commit and full strict checks on pre-push. Model-assisted audits are never required in hooks or CI.
+- Lefthook runs deterministic knowledge freshness locally: changed-file strict checks on pre-commit and full strict checks on pre-push. CI runs the full strict check as a blocking PR gate (the `Knowledge Freshness` job, sweep S5 #1376). Model-assisted audits are never required in hooks or CI.
 - `smrt-dev-mcp` exposes the same knowledge through `reflect-knowledge`, `reflect-domain-knowledge`, `check-knowledge-freshness`, `check-domain-knowledge`, `build-review-context`, `build-domain-review-context`, `smrt-review`, `build-architecture-context`, `build-domain-architecture-context`, and `smrt-architecture`.
 - `smrt-dev-mcp` also ships harness-agnostic skills. Downstream agents can call `get-agent-skill` with `name: "smrt-code-review"` to fetch the portable review procedure before using `smrt-review` on a project diff.
 
