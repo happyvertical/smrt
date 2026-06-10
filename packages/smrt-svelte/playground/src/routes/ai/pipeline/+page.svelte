@@ -39,7 +39,6 @@ async function handleTranscription(text: string) {
     conversation = [...conversation, { role: 'assistant', content: response }];
     streamingResponse = '';
   } catch (error) {
-    console.error('Pipeline error:', error);
   } finally {
     isProcessing = false;
   }

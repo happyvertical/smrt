@@ -29,12 +29,6 @@ $effect(() => {
       const newExtracting = formContext.isExtracting;
       // Only log on change to reduce noise
       if (newListening !== isListening || newExtracting !== isExtracting) {
-        console.log(
-          '[FormMicButton] State change: listening:',
-          newListening,
-          'extracting:',
-          newExtracting,
-        );
       }
       isListening = newListening;
       isExtracting = newExtracting;
@@ -51,12 +45,6 @@ $effect(() => {
 });
 
 function handleClick() {
-  console.log(
-    '[FormMicButton] Click! isListening:',
-    isListening,
-    'isExtracting:',
-    isExtracting,
-  );
   formContext?.toggleListening();
 }
 </script>

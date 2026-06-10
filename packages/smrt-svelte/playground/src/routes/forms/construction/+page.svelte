@@ -45,7 +45,6 @@ let sttAdapter = $state<STTAdapterType>('whisper-wasm');
 
 function handleSubmit(data: Record<string, unknown>) {
   submittedData = data;
-  console.log('Form submitted:', data);
 }
 
 function clearForm() {

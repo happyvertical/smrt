@@ -17,7 +17,7 @@ ORM, code generation, AI integration, and the DispatchBus. Everything else build
 `constructor(options)` → `initialize()` → ready for `save()`/`delete()`/`loadFromId()`
 
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
-- `save()`: upsert with STI validation, interceptor execution, auto-embeddings
+- `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
 - `is(criteria)` / `do(instructions)`: AI operations via function calling
 - `getSlug()`: auto-generates from name → title → label → id
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)

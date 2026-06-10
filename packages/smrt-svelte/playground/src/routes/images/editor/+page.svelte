@@ -14,7 +14,6 @@ let testImage = {
 let savedImage: any = null;
 
 function handleSave(image: any) {
-  console.log('Saved derivative image:', image);
   savedImage = image;
 }
 </script>

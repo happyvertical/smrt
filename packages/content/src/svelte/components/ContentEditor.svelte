@@ -702,14 +702,8 @@ async function handleRefDrop(e: DragEvent) {
           formData.referenceIds = [...formData.referenceIds, newId];
         }
       } else {
-        console.error(
-          '[ContentEditor] Failed to upload reference file:',
-          await resp.text(),
-        );
       }
-    } catch (err) {
-      console.error('[ContentEditor] Error uploading reference file:', err);
-    }
+    } catch (err) {}
   }
 
   // Handle dropped URL or plain text (add as reference ID)
@@ -832,7 +826,6 @@ function handleImageSelect(selected: ImageLike | File | string) {
     try {
       await resolveSelectedImage(selected);
     } catch (err) {
-      console.error('[ContentEditor] Failed to add image:', err);
     } finally {
       showImageUploader = false;
     }
@@ -873,7 +866,6 @@ async function handleInlineImageSelect(selected: ImageLike | File | string) {
       selectedBodyImageIndex = Math.max(bodyImages.length, 0);
     }
   } catch (err) {
-    console.error('[ContentEditor] Failed to insert inline image:', err);
   } finally {
     showInlineImageUploader = false;
   }
@@ -883,7 +875,6 @@ async function resolveBodyDropImage(selected: ImageLike | File | string) {
   try {
     return await resolveSelectedImage(selected);
   } catch (err) {
-    console.error('[ContentEditor] Failed to resolve dropped image:', err);
     return null;
   }
 }

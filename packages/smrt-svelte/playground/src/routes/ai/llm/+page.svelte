@@ -34,9 +34,7 @@ async function handleSubmit(e: Event) {
 
     messages = [...messages, { role: 'assistant', content: response }];
     streamingResponse = '';
-  } catch (error) {
-    console.error('Chat error:', error);
-  }
+  } catch (error) {}
 }
 
 function clearChat() {

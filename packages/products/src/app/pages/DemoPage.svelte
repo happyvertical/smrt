@@ -27,12 +27,10 @@ let _autoFormData = $state({ ...sampleProduct });
 let _customFormData = $state({ ...sampleProduct });
 
 function _handleAutoSubmit(data: ProductData) {
-  console.log('Auto form submitted:', data);
   _autoFormData = { ...data };
 }
 
 function _handleCustomSubmit(data: ProductData) {
-  console.log('Custom form submitted:', data);
   _customFormData = { ...data };
 }
 </script>

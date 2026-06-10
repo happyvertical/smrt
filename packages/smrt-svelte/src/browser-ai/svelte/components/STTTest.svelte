@@ -31,7 +31,6 @@ const downloadProgress = $derived(sttState.downloadProgress);
 function log(msg: string) {
   const timestamp = new Date().toLocaleTimeString();
   logs = [...logs, `[${timestamp}] ${msg}`];
-  console.log(`[STTTest] ${msg}`);
 }
 
 async function initializeAdapter() {
