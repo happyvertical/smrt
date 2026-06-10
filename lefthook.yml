@@ -93,6 +93,25 @@ pre-commit:
         Fix the issues above, or run:
           pnpm knowledge:check --changed --strict --format markdown
 
+    secret-scan:
+      # Block committed secrets (Sweep S7, #1412). Scans only the staged diff via
+      # gitleaks; --redact keeps any match out of the terminal. Best-effort
+      # locally: if gitleaks isn't installed we warn and continue (CI is the hard
+      # gate). Install: brew install gitleaks. Allowlist lives in .gitleaks.toml.
+      run: |
+        if command -v gitleaks >/dev/null 2>&1; then
+          gitleaks git --staged --redact --no-banner -c .gitleaks.toml
+        else
+          echo "⚠️  gitleaks not installed — skipping local secret scan (CI still enforces)."
+          echo "    Install: brew install gitleaks  (https://github.com/gitleaks/gitleaks)"
+        fi
+      fail_text: |
+        ❌ Potential secret detected in staged changes!
+
+        gitleaks flagged a possible credential. Remove it and store the value in
+        Warden instead. If it is a genuine false positive, add a justified
+        allowlist entry to .gitleaks.toml.
+
 # Check formatting before push
 pre-push:
   commands:
