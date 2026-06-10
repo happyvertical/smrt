@@ -9,8 +9,11 @@
 import { readFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createLogger } from '@happyvertical/logger';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import glob from 'fast-glob';
+
+const logger = createLogger({ level: 'info' });
 
 export interface DiscoveredManifest {
   path: string;
@@ -322,10 +325,9 @@ export async function autoDiscoverAndLoad(
       await loadManifest(manifest.path);
       totalObjects += manifest.objectCount;
     } catch (error) {
-      console.warn(
-        `Failed to load manifest ${manifest.path}:`,
-        error instanceof Error ? error.message : 'Unknown error',
-      );
+      logger.warn(`Failed to load manifest ${manifest.path}`, {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
     }
   }
 
