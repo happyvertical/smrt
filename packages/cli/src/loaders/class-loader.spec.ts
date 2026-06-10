@@ -1,5 +1,20 @@
 import type { SmartObjectDefinition } from '@happyvertical/smrt-core/scanner';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+// DynamicClassLoader logs verbose traces via @happyvertical/logger (S14); mock it
+// so the verbose test can assert on the logger (and that the level follows the
+// verbose flag — a fixed 'info' would filter the debug traces).
+const { mockLogger, createLoggerMock } = vi.hoisted(() => {
+  const mockLogger = {
+    error: vi.fn(),
+    warn: vi.fn(),
+    info: vi.fn(),
+    debug: vi.fn(),
+  };
+  return { mockLogger, createLoggerMock: vi.fn(() => mockLogger) };
+});
+vi.mock('@happyvertical/logger', () => ({ createLogger: createLoggerMock }));
+
 import { DynamicClassLoader } from './class-loader.js';
 
 describe('DynamicClassLoader', () => {
@@ -298,33 +313,27 @@ describe('DynamicClassLoader', () => {
     it('should log messages in verbose mode', async () => {
       const verboseLoader = new DynamicClassLoader({ verbose: true });
 
-      // Capture console.log
-      const logs: string[] = [];
-      const originalLog = console.log;
-      console.log = (...args: any[]) => {
-        logs.push(args.join(' '));
+      // verbose → the logger is created at 'debug' so the traces actually emit.
+      expect(createLoggerMock).toHaveBeenCalledWith({ level: 'debug' });
+
+      const objectDef: SmartObjectDefinition = {
+        name: 'SmrtObject',
+        className: 'SmrtObject',
+        collection: 'smrtobjects',
+        filePath: '',
+        packageName: '@happyvertical/smrt-core',
+        importPath: '@happyvertical/smrt-core',
+        exportName: 'SmrtObject',
+        fields: {},
+        methods: {},
+        decoratorConfig: {},
       };
 
-      try {
-        const objectDef: SmartObjectDefinition = {
-          name: 'SmrtObject',
-          className: 'SmrtObject',
-          collection: 'smrtobjects',
-          filePath: '',
-          packageName: '@happyvertical/smrt-core',
-          importPath: '@happyvertical/smrt-core',
-          exportName: 'SmrtObject',
-          fields: {},
-          methods: {},
-          decoratorConfig: {},
-        };
+      await verboseLoader.loadClass(objectDef);
 
-        await verboseLoader.loadClass(objectDef);
-
-        expect(logs.some((log) => log.includes('[ClassLoader]'))).toBe(true);
-      } finally {
-        console.log = originalLog;
-      }
+      expect(mockLogger.debug).toHaveBeenCalledWith(
+        expect.stringContaining('[ClassLoader]'),
+      );
     });
   });
 });

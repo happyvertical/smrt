@@ -35,7 +35,7 @@
       "suspicious": {
         "noExplicitAny": "info",
         "noArrayIndexKey": "warn",
-        "noConsole": "warn"
+        "noConsole": "error"
       },
       "correctness": {
         "noUnusedVariables": "warn",
@@ -217,6 +217,9 @@
         "packages/cli/src/commands/**",
         "packages/core/src/mcp-advisor/**",
         "packages/core/src/schema/schema-aggregator.ts",
+        "packages/cli/src/cli-generator.ts",
+        "packages/cli/src/utils/generator.ts",
+        "packages/cli/src/index.ts",
         "packages/assets/src/asset-serving.ts",
         "packages/products/src/index.ts",
         "packages/products/src/client.ts",
@@ -231,56 +234,6 @@
         "rules": {
           "suspicious": {
             "noConsole": "off"
-          }
-        }
-      }
-    },
-    {
-      "includes": [
-        "packages/core/src/object.ts",
-        "packages/core/src/collection.ts",
-        "packages/core/src/registry.ts",
-        "packages/core/src/class.ts",
-        "packages/core/src/dispatch/bus.ts",
-        "packages/core/src/schema/schema-manager.ts",
-        "packages/core/src/schema/ddl/base-strategy.ts",
-        "packages/core/src/manifest/manifest-loader.ts",
-        "packages/core/src/manifest/store.ts",
-        "packages/core/src/manifest/manager.ts",
-        "packages/core/src/utils.ts",
-        "packages/core/src/registry/inheritance-resolver.ts",
-        "packages/core/src/registry/diagnostics.ts",
-        "packages/core/src/registry/shared-state.ts",
-        "packages/core/src/runtime/server.ts",
-        "packages/core/src/runtime/mcp.ts",
-        "packages/core/src/migrations/differ.ts",
-        "packages/core/src/migrations/tracker.ts",
-        "packages/core/src/embeddings/storage.ts",
-        "packages/core/src/tools/tool-executor.ts",
-        "packages/core/src/signals/bus.ts",
-        "packages/core/src/errors.ts",
-        "packages/core/src/adapters/pubsub.ts",
-        "packages/core/src/adapters/cost-rates.ts",
-        "packages/content/src/contents.ts",
-        "packages/content/src/hooks.server.ts",
-        "packages/content/src/routes/**/+server.ts",
-        "packages/inventory/src/services/StockService.ts",
-        "packages/inventory/src/services/dispatch-handlers.ts",
-        "packages/languages/src/translation-job.ts",
-        "packages/manufacturing/src/services/dispatch-handlers.ts",
-        "packages/projects/src/collections/Projects.ts",
-        "packages/projects/src/collections/PullRequests.ts",
-        "packages/projects/src/collections/Repositories.ts",
-        "packages/projects/src/models/Comment.ts",
-        "packages/secrets/src/services/SecretService.ts",
-        "packages/tenancy/src/interceptor.ts",
-        "packages/users/src/sveltekit/index.ts",
-        "packages/video/src/video-workflow.ts"
-      ],
-      "linter": {
-        "rules": {
-          "suspicious": {
-            "noConsole": "error"
           }
         }
       }

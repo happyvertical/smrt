@@ -123,7 +123,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - `@types/node` always `catalog:`
   - `vite`, `vitest`, `vite-plugin-dts`, `typescript` come from root devDependencies — do not redeclare per-package unless overriding
   - Pinning style: prefer caret (`^X.Y.Z`) for third-party deps; exact pins (`X.Y.Z`) only for tools where minor bumps cause breakage (document why)
-- **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. No `lint` or `format` scripts — those are root-level via Biome. The presence of `typecheck` is enforced by `scripts/check-standards.mjs`; the only carve-outs are the plain-JS template wrappers (`template-sveltekit`, `template-site-static-json`), whose typecheck obligation lives in their scaffolded `template/package.json` (see §10).
+- **Scripts**: every package has `build`, `build:watch`, `dev`, `clean`, `test`, `test:watch`, `typecheck`, `prepack`, `verify:pack`. **No `lint` or `format` scripts** — those are root-level Biome tasks only (`turbo lint` / `biome ci` / `npm run format-check`), which already gate every package on PRs; `scripts/check-standards.mjs` **forbids** per-package `lint`/`lint:fix`/`format`/`format-check` scripts so drift back to them is caught (S2, #1374). The presence of `typecheck` is likewise enforced by `scripts/check-standards.mjs`; the only carve-outs are the plain-JS template wrappers (`template-sveltekit`, `template-site-static-json`), whose typecheck obligation lives in their scaffolded `template/package.json` (see §10).
 - **`peerDependencies`**:
   - Svelte peer always `svelte: ^5.18.0` for packages shipping UI
   - Optional peers explicitly marked in `peerDependenciesMeta`
@@ -331,6 +331,47 @@ Keep-console contexts above get `"off"` overrides; a runtime module flips to
 the design-token sweeps (S1). The raw `console.*` count overstates the work:
 most of it is the keep-console contexts above; the real target is runtime
 library logging, concentrated in `core`.
+
+### Secret scanning (S7)
+
+Committed credentials are blocked by [gitleaks](https://github.com/gitleaks/gitleaks),
+run deterministically (tool-only, no model-assisted checks) in two places:
+
+- **lefthook pre-commit** — `gitleaks git --staged` scans the staged diff before
+  the commit lands. Local-only and best-effort: if gitleaks isn't installed it
+  warns and skips (CI is the hard gate). Install with `brew install gitleaks`.
+- **CI (`on-pull-request`)** — the `Secret Scan (gitleaks)` job installs a pinned
+  gitleaks and scans the PR commit range (`merge-base..HEAD`). A finding fails
+  the PR.
+
+Both runs pass `--redact`, so a matched secret is never printed to logs (org
+secret-handling policy). Real secrets belong in Warden, never in the repo.
+
+**Config + allowlist.** `.gitleaks.toml` at the repo root is the single source of
+truth: it extends gitleaks' default rules (`useDefault = true`) and allowlists
+justified false positives (build artifacts under `dist/`, the lockfile, `*.test.`
+/`*.spec.` fixtures that embed deliberate dummy keys, and the legacy
+initial-import commit). Add new exclusions there with a justification comment —
+never disable the scan.
+
+### Dependency audit (S8)
+
+`pnpm audit` runs as a CI gate on every PR (`on-pull-request` →
+`Dependency Vulnerability Audit`), reading the dependency tree from
+`pnpm-lock.yaml` (no install needed).
+
+- **Blocking threshold: high.** The gate runs `pnpm audit --audit-level=high`, so
+  any **high or critical** advisory fails the PR. Moderate/low are reported but
+  non-blocking.
+- **Remediation first.** Prefer fixing over ignoring: most advisories are stale
+  transitive deps with a published patch, fixable by a version-range-scoped entry
+  in `pnpm.overrides` (e.g. `"undici@>=7.0.0 <7.24.0": "7.24.0"`). Scope the key
+  to the vulnerable range so unrelated majors aren't force-bumped.
+- **Accept-with-justification.** Only when an advisory can't be remediated without
+  breaking a pinned API (e.g. `protobufjs` 6.x held by `onnx-proto` under the
+  deprecated `@xenova/transformers` v2 fallback) add its GHSA to
+  `pnpm.auditConfig.ignoreGhsas` — with a justification recorded in the PR.
+  Revisit baselined advisories when their blocker is removed.
 
 ---
 

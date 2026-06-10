@@ -8,8 +8,11 @@
 import { access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createLogger } from '@happyvertical/logger';
 import glob from 'fast-glob';
 import type { TemplateConfig } from './template-loader.js';
+
+const logger = createLogger({ level: 'info' });
 
 /**
  * Resolve npm package path to template configuration
@@ -173,7 +176,9 @@ export async function discoverInstalledTemplates(): Promise<
         });
       } catch (error) {
         // Skip templates that fail to load
-        console.warn(`Failed to load template at ${configPath}:`, error);
+        logger.warn(`Failed to load template at ${configPath}`, {
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
       }
     }
   }

@@ -1,0 +1,46 @@
+# Gitleaks configuration — SMRT monorepo secret scanning (Sweep S7, #1412).
+#
+# Secret scanning runs in two deterministic, tool-only places (no model-assisted
+# checks per AGENTS.md):
+#   - lefthook pre-commit  → `gitleaks git --staged`        (blocks secrets before commit)
+#   - CI (on-pull-request) → `gitleaks git --log-opts=…`    (scans the PR commit range)
+# Both invoke gitleaks with `--redact` so any matched secret is never printed to
+# logs (org secret-handling policy).
+#
+# We extend gitleaks' built-in rule set and add repo-specific allowlisting for
+# known, justified false positives. Keep this file the single source of truth —
+# expand the allowlist (with a justification comment) as new patterns appear.
+
+title = "SMRT gitleaks config"
+
+[extend]
+# Start from gitleaks' maintained default rules, then layer the allowlist below.
+useDefault = true
+
+[allowlist]
+description = "SMRT repo-specific false-positive exclusions"
+# Treat allowlist regexes as a global OR: a finding is ignored if its file path
+# (paths) or owning commit (commits) matches any entry.
+paths = [
+  # Build artifacts are generated, never hand-authored. Example/placeholder keys
+  # baked into bundles are not real credentials, and dist is not committed in the
+  # live tree anyway.
+  '''(^|/)dist/''',
+  # Lockfile entries are integrity hashes that can trip entropy heuristics.
+  '''(^|/)pnpm-lock\.yaml$''',
+  # Test & spec fixtures intentionally embed FAKE api keys / tokens to exercise
+  # sanitizers and auth flows (e.g. the legacy signals/sanitizer.test.ts). Real
+  # secrets must never live in tests, so excluding fixtures keeps the gate
+  # signal-rich without flagging deliberate dummies.
+  '''\.(test|spec)\.(ts|tsx|js|jsx|mjs|cjs)$''',
+  # This config documents example patterns; don't scan it.
+  '''(^|/)\.gitleaks\.toml$''',
+]
+commits = [
+  # Initial monorepo import (feat: initialize SMRT framework monorepo). Contains
+  # 4 generic-api-key matches in the now-removed legacy packages/smrt/ tree
+  # (a dist chunk, sanitizer.test.ts fixtures, and a placeholder in utils.ts).
+  # All are example/test values in deleted files; baselined so a full-history
+  # `gitleaks git` stays clean. PR-range and staged scans never see these.
+  "4d8980588ff0952a60caa22ccf08465c4d3a7f0d",
+]
