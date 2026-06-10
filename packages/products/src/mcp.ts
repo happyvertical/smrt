@@ -30,7 +30,7 @@ async function generateMCPServer() {
   );
 
   // Generate tools to preview what will be available
-  const tools = generator.generateTools();
+  const tools = await generator.generateTools();
   console.log(`📝 Discovered ${tools.length} tools from SMRT objects:`);
   tools.forEach((tool) => {
     console.log(`   - ${tool.name}: ${tool.description}`);

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-jobs",
-  "version": "0.27.38",
+  "version": "0.27.40",
   "description": "Background job processing for SMRT objects with persistence and scheduling",
   "author": "HappyVertical",
   "type": "module",
@@ -29,6 +29,10 @@
     "./playground": {
       "types": "./dist/playground.d.ts",
       "import": "./dist/playground.js"
+    },
+    "./worker-liveness-thread": {
+      "types": "./dist/worker-liveness-thread.d.ts",
+      "import": "./dist/worker-liveness-thread.js"
     },
     "./svelte": {
       "types": "./dist/svelte/index.d.ts",

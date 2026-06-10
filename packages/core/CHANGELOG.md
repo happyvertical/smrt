@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.27.40
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: forbid per-package lint/format scripts in check-standards (S2, #1374) (#1479)
+  - @happyvertical/smrt-scanner@0.27.40
+  - @happyvertical/smrt-config@0.27.40
+  - @happyvertical/smrt-types@0.27.40
+
+## 0.27.39
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - typecheck clean + make repo typecheck gate unfiltered (S3, #1375) (#1478) (products)
+  - @happyvertical/smrt-scanner@0.27.39
+  - @happyvertical/smrt-config@0.27.39
+  - @happyvertical/smrt-types@0.27.39
+
 ## 0.27.38
 
 ### Patch Changes
