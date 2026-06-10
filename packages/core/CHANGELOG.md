@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 1.0.0
+
+### Minor Changes
+
+- ### Breaking Changes
+
+  - guard publish against manifests missing @smrt objects (#1483) (#1484) (scanner)
+
+### Patch Changes
+
+- @happyvertical/smrt-scanner@1.0.0
+- @happyvertical/smrt-config@1.0.0
+- @happyvertical/smrt-types@1.0.0
+
 ## 0.27.42
 
 ### Patch Changes
