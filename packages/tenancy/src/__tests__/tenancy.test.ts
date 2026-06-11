@@ -515,6 +515,209 @@ describe('TenantInterceptor', () => {
         ).toThrow(TenantIsolationError);
       });
     });
+
+    it('should pass through scalar filter matching context tenant', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        const result = interceptor.beforeList?.(
+          'Document',
+          { where: { tenantId: 'tenant-123' } },
+          {
+            className: 'Document',
+            operation: 'list',
+            timestamp: new Date(),
+          },
+        );
+
+        // Filter already correct - pass through unchanged
+        expect(result).toBeUndefined();
+      });
+    });
+
+    // Array (IN-style) tenant filters - issue #1495
+    it('should allow array filter containing only the context tenant (issue #1495)', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        const result = interceptor.beforeList?.(
+          'Document',
+          { where: { tenantId: ['tenant-123'] } },
+          {
+            className: 'Document',
+            operation: 'list',
+            timestamp: new Date(),
+          },
+        );
+
+        // Filter already correct - pass through unchanged
+        expect(result).toBeUndefined();
+      });
+    });
+
+    it('should throw on array filter containing only a foreign tenant', async () => {
+      registerTenantScopedClass('Document');
+      const onIsolationViolation = vi.fn();
+      const interceptor = createTenantInterceptor({ onIsolationViolation });
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        expect(() =>
+          interceptor.beforeList?.(
+            'Document',
+            { where: { tenantId: ['different-tenant'] } },
+            {
+              className: 'Document',
+              operation: 'list',
+              timestamp: new Date(),
+            },
+          ),
+        ).toThrow(TenantIsolationError);
+
+        // Violation callback reports the offending foreign tenant,
+        // not an Array.prototype.toString() of the whole filter
+        expect(onIsolationViolation).toHaveBeenCalledWith(
+          'Document',
+          'tenant-123',
+          'different-tenant',
+          expect.anything(),
+        );
+      });
+    });
+
+    it('should throw on array filter mixing context and foreign tenants', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        expect(() =>
+          interceptor.beforeList?.(
+            'Document',
+            { where: { tenantId: ['tenant-123', 'different-tenant'] } },
+            {
+              className: 'Document',
+              operation: 'list',
+              timestamp: new Date(),
+            },
+          ),
+        ).toThrow(TenantIsolationError);
+      });
+    });
+  });
+
+  describe('beforeGet', () => {
+    it('should convert string ID filter to object with tenant filter', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        const result = interceptor.beforeGet?.('Document', 'doc-1', {
+          className: 'Document',
+          operation: 'get',
+          timestamp: new Date(),
+        });
+
+        expect(result).toEqual({ id: 'doc-1', tenantId: 'tenant-123' });
+      });
+    });
+
+    it('should pass through scalar filter matching context tenant', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        const result = interceptor.beforeGet?.(
+          'Document',
+          { id: 'doc-1', tenantId: 'tenant-123' },
+          {
+            className: 'Document',
+            operation: 'get',
+            timestamp: new Date(),
+          },
+        );
+
+        expect(result).toBeUndefined();
+      });
+    });
+
+    it('should throw on scalar foreign tenant filter', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        expect(() =>
+          interceptor.beforeGet?.(
+            'Document',
+            { id: 'doc-1', tenantId: 'different-tenant' },
+            {
+              className: 'Document',
+              operation: 'get',
+              timestamp: new Date(),
+            },
+          ),
+        ).toThrow(TenantIsolationError);
+      });
+    });
+
+    // Array (IN-style) tenant filters - issue #1495
+    it('should allow array filter containing only the context tenant (issue #1495)', async () => {
+      registerTenantScopedClass('Document');
+      const interceptor = createTenantInterceptor();
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        const result = interceptor.beforeGet?.(
+          'Document',
+          { id: 'doc-1', tenantId: ['tenant-123'] },
+          {
+            className: 'Document',
+            operation: 'get',
+            timestamp: new Date(),
+          },
+        );
+
+        expect(result).toBeUndefined();
+      });
+    });
+
+    it('should throw on array filter containing a foreign tenant', async () => {
+      registerTenantScopedClass('Document');
+      const onIsolationViolation = vi.fn();
+      const interceptor = createTenantInterceptor({ onIsolationViolation });
+
+      await withTenant({ tenantId: 'tenant-123' }, async () => {
+        expect(() =>
+          interceptor.beforeGet?.(
+            'Document',
+            { id: 'doc-1', tenantId: ['different-tenant'] },
+            {
+              className: 'Document',
+              operation: 'get',
+              timestamp: new Date(),
+            },
+          ),
+        ).toThrow(TenantIsolationError);
+
+        expect(onIsolationViolation).toHaveBeenCalledWith(
+          'Document',
+          'tenant-123',
+          'different-tenant',
+          expect.anything(),
+        );
+
+        expect(() =>
+          interceptor.beforeGet?.(
+            'Document',
+            { id: 'doc-1', tenantId: ['tenant-123', 'different-tenant'] },
+            {
+              className: 'Document',
+              operation: 'get',
+              timestamp: new Date(),
+            },
+          ),
+        ).toThrow(TenantIsolationError);
+      });
+    });
   });
 
   describe('beforeSave', () => {
