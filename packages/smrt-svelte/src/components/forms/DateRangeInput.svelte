@@ -373,6 +373,8 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
             {disabled}
             required={required}
             class="smrt-input"
+            aria-invalid={showInvalid ? 'true' : undefined}
+            aria-describedby={showInvalid ? `${name}-error` : undefined}
             onchange={handleStartChange}
           />
         </div>
@@ -391,6 +393,8 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
             {disabled}
             required={required}
             class="smrt-input"
+            aria-invalid={showInvalid ? 'true' : undefined}
+            aria-describedby={showInvalid ? `${name}-error` : undefined}
             onchange={handleEndChange}
           />
         </div>
@@ -407,11 +411,13 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   {:else if isParsing}
     <div class="parsing-indicator">Parsing dates...</div>
   {:else if parseError}
-    <div class="error-indicator">{parseError}</div>
+    <div id={`${name}-error`} class="error-indicator" role="alert">{parseError}</div>
   {:else if error}
-    <div class="error-indicator">{error}</div>
+    <div id={`${name}-error`} class="error-indicator" role="alert">{error}</div>
   {:else if !isValidRange}
-    <div class="error-indicator">End date must be after start date</div>
+    <div id={`${name}-error`} class="error-indicator" role="alert">
+      End date must be after start date
+    </div>
   {/if}
 </div>
 

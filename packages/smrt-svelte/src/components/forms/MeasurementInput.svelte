@@ -349,6 +349,8 @@ function handleUnitChange(e: Event) {
       {required}
       class="smrt-input"
       class:invalid={showInvalid}
+      aria-invalid={showInvalid ? 'true' : undefined}
+      aria-describedby={showInvalid ? `${name}-error` : undefined}
       oninput={handleInput}
     />
 
@@ -358,6 +360,7 @@ function handleUnitChange(e: Event) {
       {disabled}
       class="unit-select"
       class:smrt-mode={isSmrt}
+      aria-label={label ? `${label} unit` : 'Unit'}
       onchange={handleUnitChange}
     >
       {#each units as u (u)}
@@ -370,9 +373,9 @@ function handleUnitChange(e: Event) {
   <input type="hidden" name="{name}_combined" value={value !== null ? `${value} ${unit}` : ''} />
 
   {#if error}
-    <div class="validation-error">{error}</div>
+    <div id={`${name}-error`} class="validation-error" role="alert">{error}</div>
   {:else if showInvalid && !isInRange}
-    <div class="validation-error">
+    <div id={`${name}-error`} class="validation-error" role="alert">
       {#if min !== undefined && value !== null && value < min}
         Value must be at least {min} {unitAbbreviations[unit]}
       {:else if max !== undefined && value !== null && value > max}

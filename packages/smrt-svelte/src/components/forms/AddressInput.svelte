@@ -288,6 +288,8 @@ function handleCountryChange(e: Event) {
           required={required && fields.includes('street')}
           class="smrt-input"
           class:invalid={!!error}
+          aria-invalid={error ? 'true' : undefined}
+          aria-describedby={error ? `${name}-error` : undefined}
           oninput={handleStreetInput}
         />
       </div>
@@ -307,6 +309,8 @@ function handleCountryChange(e: Event) {
             required={required && fields.includes('city')}
             class="smrt-input"
             class:invalid={!!error}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? `${name}-error` : undefined}
             oninput={handleCityInput}
           />
         </div>
@@ -323,6 +327,8 @@ function handleCountryChange(e: Event) {
             required={required && fields.includes('province')}
             class="smrt-input smrt-select"
             class:invalid={!!error}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? `${name}-error` : undefined}
             onchange={handleProvinceChange}
           >
             <option value="">Select...</option>
@@ -348,6 +354,8 @@ function handleCountryChange(e: Event) {
             required={required && fields.includes('postalCode')}
             class="smrt-input"
             class:invalid={!!error}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? `${name}-error` : undefined}
             oninput={handlePostalInput}
           />
         </div>
@@ -364,6 +372,8 @@ function handleCountryChange(e: Event) {
             required={required && fields.includes('country')}
             class="smrt-input smrt-select"
             class:invalid={!!error}
+            aria-invalid={error ? 'true' : undefined}
+            aria-describedby={error ? `${name}-error` : undefined}
             onchange={handleCountryChange}
           >
             {#each countries as c (c.value)}
@@ -376,7 +386,7 @@ function handleCountryChange(e: Event) {
   </div>
 
   {#if error}
-    <div class="validation-error">{error}</div>
+    <div id={`${name}-error`} class="validation-error" role="alert">{error}</div>
   {/if}
 </div>
 

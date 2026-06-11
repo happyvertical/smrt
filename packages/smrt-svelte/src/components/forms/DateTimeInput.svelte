@@ -299,6 +299,8 @@ function handleNativeChange(e: Event) {
         disabled={disabled || isParsing}
         {required}
         class="smrt-input smrt-mode"
+        aria-invalid={parseError ? 'true' : undefined}
+        aria-describedby={parseError ? `${name}-error` : undefined}
         readonly
         onmousedown={handleMouseDown}
         onmouseup={handleMouseUp}
@@ -360,6 +362,8 @@ function handleNativeChange(e: Event) {
         {disabled}
         {required}
         class="smrt-input"
+        aria-invalid={parseError ? 'true' : undefined}
+        aria-describedby={parseError ? `${name}-error` : undefined}
         onchange={handleNativeChange}
       />
     {/if}
@@ -370,7 +374,7 @@ function handleNativeChange(e: Event) {
   {:else if isParsing}
     <div class="parsing-indicator">Parsing date...</div>
   {:else if parseError}
-    <div class="error-indicator">{parseError}</div>
+    <div id={`${name}-error`} class="error-indicator" role="alert">{parseError}</div>
   {/if}
 </div>
 

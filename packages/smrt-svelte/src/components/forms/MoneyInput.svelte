@@ -299,6 +299,8 @@ function handleBlur() {
       class="smrt-input"
       class:smrt-mode={isSmrt}
       class:invalid={showInvalid}
+      aria-invalid={showInvalid ? 'true' : undefined}
+      aria-describedby={showInvalid ? `${name}-error` : undefined}
       oninput={handleInput}
       onfocus={handleFocus}
       onblur={handleBlur}
@@ -310,9 +312,9 @@ function handleBlur() {
   <input type="hidden" name="{name}_cents" value={value ?? ''} />
 
   {#if error}
-    <div class="validation-error">{error}</div>
+    <div id={`${name}-error`} class="validation-error" role="alert">{error}</div>
   {:else if showInvalid && !isInRange}
-    <div class="validation-error">
+    <div id={`${name}-error`} class="validation-error" role="alert">
       {#if min !== undefined && value !== null && value < min}
         Value must be at least ${(min / 100).toFixed(2)}
       {:else if max !== undefined && value !== null && value > max}
