@@ -205,6 +205,8 @@ function handleInput(e: Event) {
         disabled={disabled || isProcessing}
         {required}
         class="input"
+        aria-invalid={processError ? 'true' : undefined}
+        aria-describedby={`${name}-supporting`}
         oninput={handleInput}
         onfocus={() => isFocused = true}
         onblur={() => isFocused = false}
@@ -237,7 +239,7 @@ function handleInput(e: Event) {
     <div class="active-indicator"></div>
   </div>
 
-  <div class="supporting-text">
+  <div id={`${name}-supporting`} class="supporting-text" aria-live="polite">
     {#if isInitializing}
       <span class="info">Downloading Whisper model... {downloadProgress}%</span>
     {:else if isHolding}

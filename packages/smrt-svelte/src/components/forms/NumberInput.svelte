@@ -212,12 +212,14 @@ function handleInput(e: Event) {
       class="smrt-input"
       class:smrt-mode={isSmrt}
       class:invalid={showInvalid}
+      aria-invalid={showInvalid ? 'true' : undefined}
+      aria-describedby={showInvalid ? `${name}-error` : undefined}
       oninput={handleInput}
     />
   </div>
 
   {#if showInvalid}
-    <div class="validation-error">
+    <div id={`${name}-error`} class="validation-error" role="alert">
       {#if min !== undefined && value !== null && value < min}
         Value must be at least {min}
       {:else if max !== undefined && value !== null && value > max}
