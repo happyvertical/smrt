@@ -489,6 +489,20 @@ function getFormData(): Record<string, unknown> {
 </script>
 
 <form class="smrt-form" onsubmit={handleSubmit} {method} {action}>
+  <!--
+    Screen-reader status region (L1 #1420): announces async STT / field-
+    extraction state politely, since the visible cues live on a button whose
+    label change isn't reliably announced. Visually hidden — the button still
+    shows the same state to sighted users.
+  -->
+  <div class="smrt-form__status" role="status" aria-live="polite">
+    {#if isExtracting}
+      Extracting form fields…
+    {:else if isFormListening}
+      Listening. Say "done" to finish.
+    {/if}
+  </div>
+
   {#if showModeToggle || showFormListen}
     <div class="form-controls">
       {#if showModeToggle}
@@ -571,7 +585,7 @@ function getFormData(): Record<string, unknown> {
   {/if}
 
   {#if extractError}
-    <div class="extract-error">{extractError}</div>
+    <div class="extract-error" role="alert">{extractError}</div>
   {/if}
 
   <div class="form-fields">
@@ -590,6 +604,19 @@ function getFormData(): Record<string, unknown> {
     display: flex;
     flex-direction: column;
     gap: var(--smrt-spacing-4, 16px);
+  }
+
+  /* Visually-hidden live region (L1 #1420) — announced to screen readers only. */
+  .smrt-form__status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
   }
 
   .form-controls {

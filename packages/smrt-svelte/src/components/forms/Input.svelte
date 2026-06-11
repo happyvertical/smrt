@@ -1,13 +1,9 @@
 <script lang="ts">
-export interface Props {
-  id?: string;
-  type?: 'text' | 'email' | 'password' | 'number' | 'url' | 'tel' | 'search';
+import type { HTMLInputAttributes } from 'svelte/elements';
+import { tryGetFormGroupContext } from '../../state/form-group-context.js';
+
+export interface Props extends Omit<HTMLInputAttributes, 'class' | 'value'> {
   value?: string | number;
-  placeholder?: string;
-  disabled?: boolean;
-  readonly?: boolean;
-  required?: boolean;
-  name?: string;
   class?: string;
 }
 
@@ -21,19 +17,36 @@ let {
   required = false,
   name,
   class: className = '',
+  'aria-describedby': ariaDescribedby,
+  'aria-invalid': ariaInvalid,
+  ...rest
 }: Props = $props();
+
+// When wrapped in a <FormGroup>, inherit the id (so its <label for> resolves),
+// the hint/error association, and the error state — unless set explicitly.
+const formGroup = tryGetFormGroupContext();
+const resolvedId = $derived(id ?? formGroup?.().inputId);
+const resolvedDescribedBy = $derived(
+  ariaDescribedby ?? formGroup?.().describedBy,
+);
+const resolvedInvalid = $derived(
+  ariaInvalid ?? (formGroup?.().invalid ? 'true' : undefined),
+);
 </script>
 
 <input
-	{id}
+	id={resolvedId}
 	{type}
 	bind:value
 	{placeholder}
 	{disabled}
-	readonly={readonly}
+	{readonly}
 	{required}
 	{name}
+	aria-describedby={resolvedDescribedBy}
+	aria-invalid={resolvedInvalid}
 	class="input {className}"
+	{...rest}
 />
 
 <style>
