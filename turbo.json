@@ -47,7 +47,14 @@
     "build": {
       "dependsOn": ["^build", "generate"],
       "inputs": ["src/**", "package.json", "tsconfig*.json", "vite.config.ts", "vite.config.js"],
-      "outputs": ["dist/**", ".next/**", "docs/**", "tsconfig.*.tsbuildinfo"],
+      "outputs": [
+        "dist/**",
+        ".next/**",
+        "docs/**",
+        "tsconfig.*.tsbuildinfo",
+        "src/manifest/test-manifest.json",
+        "src/manifest/test-manifest-stub.ts"
+      ],
       "cache": true
     },
     "prebuild": {

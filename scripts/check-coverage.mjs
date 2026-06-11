@@ -159,6 +159,21 @@ function touchedPackagesFromGit() {
 /** Run vitest coverage for one package and return total line coverage %, or null. */
 function measureLineCoverage(pkg) {
   const cwd = join(PKGS, pkg);
+  // The turbo `test` task dependsOn `generate:test` because some packages
+  // (core) need a generated test manifest in src/ before vitest runs. This
+  // gate calls vitest directly, bypassing turbo, so it must honor the same
+  // dependency — otherwise a turbo build cache hit leaves the gitignored
+  // manifest stub missing and dozens of schema-dependent tests fail with
+  // "ON CONFLICT does not match any UNIQUE constraint" (#1499 runs 2-3).
+  try {
+    execFileSync('pnpm', ['run', '--if-present', 'generate:test'], {
+      cwd,
+      stdio: 'inherit',
+      env: { ...process.env, NODE_ENV: 'test' },
+    });
+  } catch {
+    // Non-fatal: the vitest run below surfaces any real breakage.
+  }
   try {
     execFileSync(
       'pnpm',
