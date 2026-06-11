@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.28.9
+
+### Patch Changes
+
+- ### Features
+
+  - interactive + chat gap primitives, close L3 (#1422) (#1492) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.28.9
+  - @happyvertical/smrt-config@0.28.9
+  - @happyvertical/smrt-types@0.28.9
+
 ## 0.28.8
 
 ### Patch Changes
