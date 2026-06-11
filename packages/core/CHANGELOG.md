@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.28.5
+
+### Patch Changes
+
+- ### Features
+
+  - aria on multi-field composite inputs (L1 #1420) (#1489) (smrt-svelte)
+
+  ### Other Changes
+
+  - ci: fix flaky Test Packages timeout + scope coverage gate to source changes (#1490)
+  - @happyvertical/smrt-scanner@0.28.5
+  - @happyvertical/smrt-config@0.28.5
+  - @happyvertical/smrt-types@0.28.5
+
 ## 0.28.4
 
 ### Patch Changes
