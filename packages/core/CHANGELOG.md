@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.28.2
+
+### Patch Changes
+
+- ### Other Changes
+
+  - test: component golden-test harness — testing-library + axe (L4, #1423) (#1486) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.28.2
+  - @happyvertical/smrt-config@0.28.2
+  - @happyvertical/smrt-types@0.28.2
+
 ## 0.28.1
 
 ### Patch Changes
