@@ -124,8 +124,19 @@ function touchedPackagesFromGit() {
   const out = git(['diff', '--name-only', range]);
   const pkgs = new Set();
   for (const line of out.split('\n')) {
-    const m = line.match(/^packages\/([^/]+)\//);
-    if (m) pkgs.add(m[1]);
+    // Only shipped SOURCE under src/ counts as "touching" a package for the
+    // coverage floor. Config (vitest.config/tsconfig/package.json), test files
+    // (*.test/*.spec, __tests__), and docs don't add testable surface, so they
+    // must not trigger the "bring it to floor" requirement — otherwise a vitest
+    // timeout tweak or a test-only PR is wrongly blocked by a package's
+    // pre-existing coverage debt.
+    const m = line.match(/^packages\/([^/]+)\/(.+)$/);
+    if (!m) continue;
+    const [, pkg, rest] = m;
+    if (!rest.startsWith('src/')) continue;
+    if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(rest)) continue;
+    if (/(^|\/)__tests__\//.test(rest)) continue;
+    pkgs.add(pkg);
   }
   return [...pkgs];
 }
