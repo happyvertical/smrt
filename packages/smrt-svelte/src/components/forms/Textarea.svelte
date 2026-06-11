@@ -1,12 +1,9 @@
 <script lang="ts">
-export interface Props {
-  id?: string;
+import type { HTMLTextareaAttributes } from 'svelte/elements';
+import { tryGetFormGroupContext } from '../../state/form-group-context.js';
+
+export interface Props extends Omit<HTMLTextareaAttributes, 'class' | 'value'> {
   value?: string;
-  placeholder?: string;
-  disabled?: boolean;
-  readonly?: boolean;
-  required?: boolean;
-  name?: string;
   rows?: number;
   class?: string;
 }
@@ -21,19 +18,35 @@ let {
   name,
   rows = 4,
   class: className = '',
+  'aria-describedby': ariaDescribedby,
+  'aria-invalid': ariaInvalid,
+  ...rest
 }: Props = $props();
+
+// Inherit id / hint+error association / error state from a wrapping FormGroup.
+const formGroup = tryGetFormGroupContext();
+const resolvedId = $derived(id ?? formGroup?.().inputId);
+const resolvedDescribedBy = $derived(
+  ariaDescribedby ?? formGroup?.().describedBy,
+);
+const resolvedInvalid = $derived(
+  ariaInvalid ?? (formGroup?.().invalid ? 'true' : undefined),
+);
 </script>
 
 <textarea
-	{id}
+	id={resolvedId}
 	bind:value
 	{placeholder}
 	{disabled}
-	readonly={readonly}
+	{readonly}
 	{required}
 	{name}
 	{rows}
+	aria-describedby={resolvedDescribedBy}
+	aria-invalid={resolvedInvalid}
 	class="textarea {className}"
+	{...rest}
 ></textarea>
 
 <style>

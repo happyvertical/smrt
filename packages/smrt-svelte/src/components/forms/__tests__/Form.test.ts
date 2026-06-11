@@ -52,6 +52,12 @@ describe('Form', () => {
     expect(onsubmit).toHaveBeenCalledTimes(1);
   });
 
+  it('exposes a polite aria-live status region for async state (L1)', () => {
+    render(Form, { props: { children: submitButton() } });
+    const status = screen.getByRole('status');
+    expect(status).toHaveAttribute('aria-live', 'polite');
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(Form, { props: { children: submitButton() } });
     await expectNoA11yViolations(container);

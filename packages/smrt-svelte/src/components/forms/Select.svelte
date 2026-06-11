@@ -1,12 +1,10 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import type { HTMLSelectAttributes } from 'svelte/elements';
+import { tryGetFormGroupContext } from '../../state/form-group-context.js';
 
-export interface Props {
-  id?: string;
+export interface Props extends Omit<HTMLSelectAttributes, 'class' | 'value'> {
   value?: string;
-  disabled?: boolean;
-  required?: boolean;
-  name?: string;
   class?: string;
   children: Snippet;
 }
@@ -19,16 +17,32 @@ let {
   name,
   class: className = '',
   children,
+  'aria-describedby': ariaDescribedby,
+  'aria-invalid': ariaInvalid,
+  ...rest
 }: Props = $props();
+
+// Inherit id / hint+error association / error state from a wrapping FormGroup.
+const formGroup = tryGetFormGroupContext();
+const resolvedId = $derived(id ?? formGroup?.().inputId);
+const resolvedDescribedBy = $derived(
+  ariaDescribedby ?? formGroup?.().describedBy,
+);
+const resolvedInvalid = $derived(
+  ariaInvalid ?? (formGroup?.().invalid ? 'true' : undefined),
+);
 </script>
 
 <select
-	{id}
+	id={resolvedId}
 	bind:value
 	{disabled}
 	{required}
 	{name}
+	aria-describedby={resolvedDescribedBy}
+	aria-invalid={resolvedInvalid}
 	class="select {className}"
+	{...rest}
 >
 	{@render children()}
 </select>

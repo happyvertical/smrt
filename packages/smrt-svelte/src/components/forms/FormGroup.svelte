@@ -1,5 +1,10 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import {
+  type FormGroupContextValue,
+  nextFieldId,
+  setFormGroupContext,
+} from '../../state/form-group-context.js';
 
 export interface Props {
   label: string;
@@ -11,21 +16,41 @@ export interface Props {
 }
 
 const { label, id, error, hint, required = false, children }: Props = $props();
+
+// Stable id so the label's `for` and the wrapped input's `id` agree even when
+// the consumer doesn't pass one.
+const fallbackId = nextFieldId();
+const fieldId = $derived(id ?? fallbackId);
+const hintId = $derived(hint && !error ? `${fieldId}-hint` : undefined);
+const errorId = $derived(error ? `${fieldId}-error` : undefined);
+const describedBy = $derived(
+  [hintId, errorId].filter(Boolean).join(' ') || undefined,
+);
+
+// Publish the wiring a base input auto-applies (getter stays reactive as
+// hint/error change).
+setFormGroupContext(
+  (): FormGroupContextValue => ({
+    inputId: fieldId,
+    describedBy,
+    invalid: !!error,
+  }),
+);
 </script>
 
 <div class="form-group">
-	<label for={id} class="form-label">
+	<label for={fieldId} class="form-label">
 		{label}
 		{#if required}
-			<span class="required">*</span>
+			<span class="required" aria-hidden="true">*</span>
 		{/if}
 	</label>
 	{@render children()}
-	{#if hint && !error}
-		<p class="form-hint">{hint}</p>
+	{#if hintId}
+		<p id={hintId} class="form-hint">{hint}</p>
 	{/if}
-	{#if error}
-		<p class="form-error">{error}</p>
+	{#if errorId}
+		<p id={errorId} class="form-error" role="alert">{error}</p>
 	{/if}
 </div>
 
