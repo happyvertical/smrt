@@ -4,6 +4,11 @@ import type { AITool } from '@happyvertical/ai';
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
+import {
+  broadcastCacheInvalidation,
+  invalidateCollectionCache,
+  resolveDbCacheKey,
+} from './collection-cache';
 import { ContentHasher } from './embeddings/hash';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
@@ -1611,6 +1616,11 @@ export class SmrtObject extends SmrtClass {
       // key even if natural-key fields change afterwards (issue #1472).
       this._persisted = true;
 
+      // Bust cached collection reads for this table (issue #1498). SMRT owns
+      // every mutation path, so this is the write-invalidation guarantee the
+      // opt-in read cache relies on.
+      this.invalidateCollectionReadCache();
+
       // Execute afterSave interceptors (e.g., tenant audit logging)
       await GlobalInterceptors.executeAfterSave(this, interceptorContext);
 
@@ -2113,10 +2123,42 @@ export class SmrtObject extends SmrtClass {
     // natural-key insert path again rather than targeting a deleted id.
     this._persisted = false;
 
+    // Bust cached collection reads for this table (issue #1498).
+    this.invalidateCollectionReadCache();
+
     await this.runHook('afterDelete');
 
     // Execute afterDelete interceptors (e.g., tenant audit logging)
     await GlobalInterceptors.executeAfterDelete(this, interceptorContext);
+  }
+
+  /**
+   * Invalidate cached collection reads after a successful mutation
+   * (issue #1498).
+   *
+   * Always drops this table's in-process entries — a no-op when nothing
+   * opted into caching. When the model's resolved `@smrt({ cache })` config
+   * sets `crossProcess`, the invalidation is also broadcast to peer
+   * replicas over the database adapter's notification capability,
+   * fire-and-forget. Cache maintenance must never fail the write that
+   * triggered it.
+   */
+  private invalidateCollectionReadCache(): void {
+    try {
+      invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
+
+      const cacheConfig = ObjectRegistry.resolveCollectionCacheConfig(
+        this.getResolvedQualifiedName(),
+      );
+      if (cacheConfig?.crossProcess) {
+        void broadcastCacheInvalidation(this.db, this.tableName);
+      }
+    } catch (error) {
+      logger.warn('Failed to invalidate collection read cache after write', {
+        table: this.tableName,
+        error: error instanceof Error ? error.message : error,
+      });
+    }
   }
 
   /**

@@ -26,6 +26,17 @@ export {
 // Core SMRT framework
 export * from './class';
 export * from './collection';
+// Opt-in collection read cache (issue #1498)
+export {
+  broadcastCacheInvalidation,
+  CACHE_INVALIDATION_CHANNEL,
+  type CollectionCacheConfig,
+  ensureCacheInvalidationListener,
+  invalidateCollectionCache,
+  resetCollectionCache,
+  resolveDbCacheKey,
+  stopCacheInvalidationListeners,
+} from './collection-cache';
 export type {
   AiUsageConfig,
   GlobalSignalConfig,

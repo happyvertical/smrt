@@ -2,6 +2,14 @@ import { createLogger } from '@happyvertical/logger';
 import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
+import {
+  buildQueryCacheKey,
+  type CollectionCacheConfig,
+  ensureCacheInvalidationListener,
+  getCachedRows,
+  resolveDbCacheKey,
+  setCachedRows,
+} from './collection-cache';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import {
@@ -730,6 +738,67 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Resolve the effective cache config for a read (issue #1498).
+   *
+   * Per-call options win: `false` forces a fresh read, `{ ttl }` enables
+   * caching for this call. Otherwise falls back to the model-level
+   * `@smrt({ cache })` config (inheritance-aware). Returns undefined when
+   * the read should go straight to the database — the default.
+   */
+  private resolveReadCacheConfig(
+    perCall?: CollectionCacheConfig | false,
+  ): CollectionCacheConfig | undefined {
+    if (perCall === false) return undefined;
+    if (perCall) return perCall.ttl > 0 ? perCall : undefined;
+    return ObjectRegistry.resolveCollectionCacheConfig(
+      this.getResolvedItemQualifiedName(),
+    );
+  }
+
+  /**
+   * Execute a SELECT, optionally through the collection read cache.
+   *
+   * The cache key is the final SQL + bound parameters — computed after
+   * interceptors (tenancy filters) and STI discriminators are applied, so
+   * differently-scoped queries can never share an entry. Cached values are
+   * raw rows; hydration and read interceptors still run on every call.
+   */
+  private async queryRowsWithCache(
+    sql: string,
+    params: unknown[],
+    cacheConfig: CollectionCacheConfig | undefined,
+  ): Promise<Record<string, any>[]> {
+    if (!cacheConfig) {
+      const result = await this.db.query(sql, ...params);
+      return result.rows;
+    }
+
+    const dbKey = resolveDbCacheKey(this.db);
+    const queryKey = buildQueryCacheKey(sql, params);
+
+    // Start consuming peer invalidations before the first cached read so
+    // a remote write can't go unseen for longer than necessary.
+    if (cacheConfig.crossProcess) {
+      ensureCacheInvalidationListener(this.db);
+    }
+
+    const cached = getCachedRows(dbKey, this.tableName, queryKey);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await this.db.query(sql, ...params);
+    setCachedRows(
+      dbKey,
+      this.tableName,
+      queryKey,
+      result.rows,
+      cacheConfig.ttl,
+    );
+    return result.rows;
+  }
+
+  /**
    * Retrieves a single object from the collection by ID, slug, or a custom filter.
    *
    * Filter resolution:
@@ -743,6 +812,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Runs `beforeGet` / `afterGet` interceptors (used by multi-tenancy, etc.).
    *
    * @param filter - UUID string, slug string, or a WHERE conditions object
+   * @param options.cache - Opt-in read-through cache for this call
+   *   (`{ ttl }` in milliseconds), or `false` to force a fresh read when the
+   *   model opted in via `@smrt({ cache })`. Defaults to the model config.
    * @returns The matching object instance, or `null` if not found
    *
    * @example
@@ -755,6 +827,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * // By custom filter
    * const product = await products.get({ sku: 'WID-001' });
+   *
+   * // Cached read (memoized for 60s, invalidated on writes)
+   * const product = await products.get('my-widget', { cache: { ttl: 60_000 } });
    * ```
    *
    * @see {@link list} for multiple results
@@ -762,6 +837,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async get(
     filter: string | Record<string, any>,
+    options: { cache?: CollectionCacheConfig | false } = {},
   ): Promise<ModelType | null> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
@@ -812,7 +888,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
     const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql}`;
-    const { rows } = await this.db.query(fullSQL, ...whereValues);
+    const rows = await this.queryRowsWithCache(
+      fullSQL,
+      whereValues,
+      this.resolveReadCacheConfig(options.cache),
+    );
 
     if (!rows?.[0]) {
       // Execute afterGet with null result
@@ -893,6 +973,24 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
        * ```
        */
       include?: string[];
+      /**
+       * Opt-in read-through cache for this call (issue #1498).
+       *
+       * Pass `{ ttl }` (milliseconds) to memoize the result rows keyed by
+       * the final query shape. Mutations through SMRT invalidate the
+       * table's entries automatically. Pass `false` to force a fresh read
+       * when the model opted in via `@smrt({ cache })`. Defaults to the
+       * model-level config; uncached when neither is set.
+       *
+       * @example
+       * ```typescript
+       * const published = await resumes.list({
+       *   where: { status: 'published' },
+       *   cache: { ttl: 60_000 },
+       * });
+       * ```
+       */
+      cache?: CollectionCacheConfig | false;
     } = {},
   ): Promise<ModelType[]> {
     await this.ensureStorageReady();
@@ -985,15 +1083,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const sql = `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
     const params = [...whereValues, ...limitOffsetValues];
 
-    const result = await this.db.query(sql, ...params);
+    const rows = await this.queryRowsWithCache(
+      sql,
+      params,
+      this.resolveReadCacheConfig(options.cache),
+    );
     const fields = this.getFieldsSync();
 
     // STI: Hydrate instances polymorphically based on _meta_type
     // Reuse tableStrategy and isSTI from earlier in the function
     const instances = await Promise.all(
-      result.rows.map((item: any) =>
-        this.hydrateResultRow(item, fields, isSTI),
-      ),
+      rows.map((item: any) => this.hydrateResultRow(item, fields, isSTI)),
     );
 
     // Eager load specified relationships
