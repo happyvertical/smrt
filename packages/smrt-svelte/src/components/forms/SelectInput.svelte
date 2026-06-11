@@ -115,6 +115,7 @@ function handleChange(e: Event) {
         {disabled}
         {required}
         class="input"
+        aria-describedby={`${name}-supporting`}
         onchange={handleChange}
         onfocus={() => isFocused = true}
         onblur={() => isFocused = false}
@@ -133,11 +134,11 @@ function handleChange(e: Event) {
     <div class="active-indicator"></div>
   </div>
 
-  {#if description && isFocused}
-    <div class="supporting-text">
+  <div id={`${name}-supporting`} class="supporting-text" aria-live="polite">
+    {#if description && isFocused}
       <span class="info">{description}</span>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <style>

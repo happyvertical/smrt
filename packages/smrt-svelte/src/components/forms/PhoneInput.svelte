@@ -257,6 +257,12 @@ function handleInput(e: Event) {
       class:smrt-mode={isSmrt}
       class:invalid={showInvalid}
       class:processing={isProcessing}
+      aria-invalid={showInvalid ? 'true' : undefined}
+      aria-describedby={showInvalid
+        ? `${name}-error`
+        : processError
+          ? `${name}-stt-error`
+          : undefined}
       oninput={handleInput}
       onmousedown={isSmrt ? handleMouseDown : undefined}
       onmouseup={isSmrt ? handleMouseUp : undefined}
@@ -314,11 +320,11 @@ function handleInput(e: Event) {
   {/if}
 
   {#if processError}
-    <div class="error-message">{processError}</div>
+    <div id={`${name}-stt-error`} class="error-message" role="alert">{processError}</div>
   {/if}
 
   {#if showInvalid}
-    <div class="validation-error">Invalid phone number</div>
+    <div id={`${name}-error`} class="validation-error" role="alert">Invalid phone number</div>
   {/if}
 </div>
 
