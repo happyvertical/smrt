@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.28.6
+
+### Patch Changes
+
+- ### Features
+
+  - Avatar, Chip, Skeleton gap primitives (L3 #1422) (#1491) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.28.6
+  - @happyvertical/smrt-config@0.28.6
+  - @happyvertical/smrt-types@0.28.6
+
 ## 0.28.5
 
 ### Patch Changes
