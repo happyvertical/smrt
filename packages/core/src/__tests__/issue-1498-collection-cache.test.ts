@@ -28,6 +28,7 @@ import {
   resetCollectionCache,
   resolveDbCacheKey,
 } from '../collection-cache';
+import { GlobalInterceptors } from '../interceptors';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -86,12 +87,30 @@ class CacheTestFeedItemCollection extends SmrtCollection<CacheTestFeedItem> {
   static readonly _itemClass = CacheTestFeedItem;
 }
 
+// STI hierarchy where the base caches the shared table cross-process while
+// a child explicitly opts out of caching for its own reads
+@smrt({ tableStrategy: 'sti', cache: { ttl: 60_000, crossProcess: true } })
+class CacheTestStream extends SmrtObject {
+  title: string = '';
+}
+
+@smrt({ cache: false })
+class CacheTestPrivateStream extends CacheTestStream {
+  secret: string = '';
+}
+
+class CacheTestPrivateStreamCollection extends SmrtCollection<CacheTestPrivateStream> {
+  static readonly _itemClass = CacheTestPrivateStream;
+}
+
 const TEST_CLASSES = [
   'CacheTestProduct',
   'CacheTestArticle',
   'CacheTestEvent',
   'CacheTestMeeting',
   'CacheTestFeedItem',
+  'CacheTestStream',
+  'CacheTestPrivateStream',
 ];
 
 // ============================================================================
@@ -336,6 +355,50 @@ describe('collection read cache (issue #1498)', () => {
       expect(
         ObjectRegistry.resolveCollectionCacheConfig('CacheTestProduct'),
       ).toBeUndefined();
+      // A child's `cache: false` opts out despite the base's opt-in
+      expect(
+        ObjectRegistry.resolveCollectionCacheConfig('CacheTestPrivateStream'),
+      ).toBeUndefined();
+    });
+  });
+
+  describe('interceptor-controlled cache option', () => {
+    afterEach(() => {
+      GlobalInterceptors.clear();
+    });
+
+    it('honors a cache option injected by a beforeList interceptor', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Widget', price: 9.99 });
+
+      GlobalInterceptors.register({
+        name: 'cache-test-enable',
+        beforeList(_className, options) {
+          return { ...options, cache: { ttl: 60_000 } };
+        },
+      });
+
+      const querySpy = vi.spyOn(db, 'query');
+      await products.list();
+      await products.list();
+      expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(1);
+    });
+
+    it('honors an interceptor clearing the cache option', async () => {
+      const articles = await CacheTestArticleCollection.create({ db });
+      await articles.create({ title: 'Hello' });
+
+      GlobalInterceptors.register({
+        name: 'cache-test-disable',
+        beforeList(_className, options) {
+          return { ...options, cache: false };
+        },
+      });
+
+      const querySpy = vi.spyOn(db, 'query');
+      await articles.list();
+      await articles.list();
+      expect(countSelectsAgainst(querySpy, 'cache_test_articles')).toBe(2);
     });
   });
 
@@ -431,6 +494,36 @@ describe('collection read cache (issue #1498)', () => {
       await articles.create({ title: 'local only' });
 
       expect(broadcasts).toHaveLength(0);
+    });
+
+    it('broadcasts on a child write when the STI base caches the shared table cross-process', async () => {
+      const { broadcasts } = stubNotifications(db);
+      const privateStreams = await CacheTestPrivateStreamCollection.create({
+        db,
+      });
+
+      // The child opted out with cache: false, but its writes hit the same
+      // table CacheTestStream peers are caching with crossProcess: true —
+      // invalidation is table-scoped, so the broadcast decision must be too.
+      await privateStreams.create({ title: 'Private', secret: 'shh' });
+
+      expect(broadcasts.length).toBeGreaterThan(0);
+      expect(broadcasts.at(-1)?.payload.table).toBe('cache_test_streams');
+    });
+
+    it('broadcasts writes after a per-call crossProcess cached read', async () => {
+      const { broadcasts } = stubNotifications(db);
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Widget', price: 9.99 });
+      expect(broadcasts).toHaveLength(0); // no opt-in seen yet
+
+      // Per-call opt-in registers table-scoped interest in this process
+      await products.list({ cache: { ttl: 60_000, crossProcess: true } });
+
+      await products.create({ name: 'Gadget', price: 19.99 });
+
+      expect(broadcasts.length).toBeGreaterThan(0);
+      expect(broadcasts.at(-1)?.payload.table).toBe('cache_test_products');
     });
 
     it('invalidates local cache when a peer broadcast arrives', async () => {

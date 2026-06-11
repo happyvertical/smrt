@@ -7,6 +7,7 @@ import {
   type CollectionCacheConfig,
   ensureCacheInvalidationListener,
   getCachedRows,
+  registerCrossProcessCacheInterest,
   resolveDbCacheKey,
   setCachedRows,
 } from './collection-cache';
@@ -777,9 +778,12 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const queryKey = buildQueryCacheKey(sql, params);
 
     // Start consuming peer invalidations before the first cached read so
-    // a remote write can't go unseen for longer than necessary.
+    // a remote write can't go unseen for longer than necessary, and record
+    // table-scoped interest so this process's own writes broadcast even
+    // when the crossProcess opt-in only exists at the call site.
     if (cacheConfig.crossProcess) {
       ensureCacheInvalidationListener(this.db);
+      registerCrossProcessCacheInterest(dbKey, this.tableName);
     }
 
     const cached = getCachedRows(dbKey, this.tableName, queryKey);
@@ -1083,10 +1087,15 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const sql = `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
     const params = [...whereValues, ...limitOffsetValues];
 
+    // Resolve the cache preference from the post-interceptor options —
+    // beforeList interceptors may legally set or clear `cache` (e.g. force
+    // read-through on admin paths, enable caching per tenant).
     const rows = await this.queryRowsWithCache(
       sql,
       params,
-      this.resolveReadCacheConfig(options.cache),
+      this.resolveReadCacheConfig(
+        (interceptedOptions as { cache?: CollectionCacheConfig | false }).cache,
+      ),
     );
     const fields = this.getFieldsSync();
 

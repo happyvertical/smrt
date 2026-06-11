@@ -87,6 +87,14 @@ entries immediately instead of waiting out the TTL:
 class Resume extends SmrtObject {}
 ```
 
+Model-level config is the reliable cross-process opt-in: every process
+writing the model knows to broadcast, and STI children writing the shared
+table broadcast even if they opted out of caching their own reads. As a
+per-call option (`list({ cache: { ttl, crossProcess: true } })`), writes
+broadcast only from processes that have already performed such a read —
+typical for homogeneous replicas running the same routes, but a
+write-only process never learns about a call-site opt-in.
+
 Writes that bypass SMRT (raw SQL, external processes without
 `crossProcess`) are only bounded by the TTL — pick one that matches how
 stale the data may be.

@@ -6,6 +6,7 @@ import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
   broadcastCacheInvalidation,
+  hasCrossProcessCacheInterest,
   invalidateCollectionCache,
   resolveDbCacheKey,
 } from './collection-cache';
@@ -2137,20 +2138,18 @@ export class SmrtObject extends SmrtClass {
    * (issue #1498).
    *
    * Always drops this table's in-process entries — a no-op when nothing
-   * opted into caching. When the model's resolved `@smrt({ cache })` config
-   * sets `crossProcess`, the invalidation is also broadcast to peer
-   * replicas over the database adapter's notification capability,
-   * fire-and-forget. Cache maintenance must never fail the write that
-   * triggered it.
+   * opted into caching. When the table is cached cross-process (see
+   * {@link shouldBroadcastCacheInvalidation}), the invalidation is also
+   * broadcast to peer replicas over the database adapter's notification
+   * capability, fire-and-forget. Cache maintenance must never fail the
+   * write that triggered it.
    */
   private invalidateCollectionReadCache(): void {
     try {
-      invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
+      const dbKey = resolveDbCacheKey(this.db);
+      invalidateCollectionCache(dbKey, this.tableName);
 
-      const cacheConfig = ObjectRegistry.resolveCollectionCacheConfig(
-        this.getResolvedQualifiedName(),
-      );
-      if (cacheConfig?.crossProcess) {
+      if (this.shouldBroadcastCacheInvalidation(dbKey)) {
         void broadcastCacheInvalidation(this.db, this.tableName);
       }
     } catch (error) {
@@ -2159,6 +2158,39 @@ export class SmrtObject extends SmrtClass {
         error: error instanceof Error ? error.message : error,
       });
     }
+  }
+
+  /**
+   * Decide whether a mutation should broadcast a cross-process cache
+   * invalidation. Invalidation is table-scoped, so the decision must be too:
+   *
+   * 1. A per-call `crossProcess` cached read in this process registered
+   *    interest in the table — broadcast even without model-level config.
+   * 2. This class's resolved `@smrt({ cache })` config sets `crossProcess`.
+   * 3. Any other STI hierarchy member sharing the table resolves to a
+   *    `crossProcess` config — a child that opted out with `cache: false`
+   *    still mutates the shared table its base/siblings are caching.
+   */
+  private shouldBroadcastCacheInvalidation(dbKey: string): boolean {
+    if (hasCrossProcessCacheInterest(dbKey, this.tableName)) {
+      return true;
+    }
+
+    const qualifiedName = this.getResolvedQualifiedName();
+    if (
+      ObjectRegistry.resolveCollectionCacheConfig(qualifiedName)?.crossProcess
+    ) {
+      return true;
+    }
+
+    for (const member of getSTIHierarchyMembers(qualifiedName)) {
+      if (member === qualifiedName) continue;
+      if (ObjectRegistry.resolveCollectionCacheConfig(member)?.crossProcess) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /**
