@@ -242,21 +242,34 @@ export function createTenantInterceptor(
 
       // Check if tenant filter is already present
       if (tenantField in where) {
-        // Validate it matches context
+        // Validate it matches context. The filter may be a scalar
+        // (`tenantId: 'x'`) or an IN-style array (`tenantId: ['x']`) —
+        // smrt-core auto-converts array values to SQL IN clauses, so an
+        // array containing only the context tenant is a valid filter.
+        // See https://github.com/happyvertical/smrt/issues/1495
         const existingFilter = where[tenantField];
-        if (existingFilter !== tenantContext.tenantId) {
+        const filterValues = Array.isArray(existingFilter)
+          ? existingFilter
+          : [existingFilter];
+        // findIndex (not find) so a literal null/undefined filter value is
+        // still flagged as a violation rather than mistaken for "not found"
+        const offendingIndex = filterValues.findIndex(
+          (value) => value !== tenantContext.tenantId,
+        );
+        if (offendingIndex !== -1) {
+          const offending = filterValues[offendingIndex];
           opts.onIsolationViolation?.(
             className,
             tenantContext.tenantId,
-            String(existingFilter),
+            String(offending),
             context,
           );
           throw new TenantIsolationError(
             `Tenant isolation violation in ${className} query: ` +
-              `context tenant is '${tenantContext.tenantId}' but query filters by '${existingFilter}'`,
+              `context tenant is '${tenantContext.tenantId}' but query filters by '${String(offending)}'`,
             {
               tenantId: tenantContext.tenantId,
-              attemptedTenantId: String(existingFilter),
+              attemptedTenantId: String(offending),
             },
           );
         }
@@ -326,20 +339,32 @@ export function createTenantInterceptor(
         };
       }
 
-      // Validate existing filter
-      if (filter[tenantField] !== tenantContext.tenantId) {
+      // Validate existing filter. Like beforeList, accept scalar or
+      // IN-style array filters (smrt-core auto-converts arrays to SQL IN).
+      // See https://github.com/happyvertical/smrt/issues/1495
+      const existingFilter = filter[tenantField];
+      const filterValues = Array.isArray(existingFilter)
+        ? existingFilter
+        : [existingFilter];
+      // findIndex (not find) so a literal null/undefined filter value is
+      // still flagged as a violation rather than mistaken for "not found"
+      const offendingIndex = filterValues.findIndex(
+        (value) => value !== tenantContext.tenantId,
+      );
+      if (offendingIndex !== -1) {
+        const offending = filterValues[offendingIndex];
         opts.onIsolationViolation?.(
           className,
           tenantContext.tenantId,
-          String(filter[tenantField]),
+          String(offending),
           context,
         );
         throw new TenantIsolationError(
           `Tenant isolation violation in ${className} get: ` +
-            `context tenant is '${tenantContext.tenantId}' but query filters by '${filter[tenantField]}'`,
+            `context tenant is '${tenantContext.tenantId}' but query filters by '${String(offending)}'`,
           {
             tenantId: tenantContext.tenantId,
-            attemptedTenantId: String(filter[tenantField]),
+            attemptedTenantId: String(offending),
           },
         );
       }
