@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.28.3
+
+### Patch Changes
+
+- ### Features
+
+  - form a11y foundation — FormGroup wiring + Form live region (L1 #1420) (#1487) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.28.3
+  - @happyvertical/smrt-config@0.28.3
+  - @happyvertical/smrt-types@0.28.3
+
 ## 0.28.2
 
 ### Patch Changes
