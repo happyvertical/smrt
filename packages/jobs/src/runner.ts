@@ -37,6 +37,7 @@ import {
   registerLiveWorker,
   resolveEngine,
   resolveUrl,
+  tuneSqliteForConcurrency,
   unregisterLiveWorker,
 } from './worker-liveness.js';
 
@@ -177,6 +178,13 @@ export class TaskRunner extends EventEmitter {
     // Fail fast if the job-system tables were never migrated, with an
     // actionable error rather than a confusing recovery failure later.
     await this.workerCollection.assertReady();
+
+    // On SQLite, the runner's writes will race the off-loop ticker's writes to
+    // the same file; enable WAL + a busy timeout up front so neither loses a
+    // lock race under load (#1474 flake). Best-effort, file-level.
+    if (this.db && resolveEngine(this.db) === 'sqlite') {
+      await tuneSqliteForConcurrency(this.db);
+    }
 
     // Register this worker incarnation with a seeded lease BEFORE polling, so
     // the first claimReady() cannot leave just-claimed jobs looking orphaned to

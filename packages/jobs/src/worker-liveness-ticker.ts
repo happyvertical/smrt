@@ -1,4 +1,5 @@
 import { getDatabase } from '@happyvertical/sql';
+import { tuneSqliteForConcurrency } from './worker-liveness.js';
 
 /**
  * Configuration for an off-loop liveness ticker (passed via `workerData`).
@@ -37,6 +38,13 @@ export async function runLivenessTicker(
     url: options.url,
     type: options.type as 'sqlite' | 'postgres' | 'duckdb' | undefined,
   });
+
+  // The ticker's connection shares the SQLite file with the runner's main
+  // connection; enable WAL + a busy timeout so renewals don't lose a lock race.
+  const looksSqlite =
+    (options.type ?? '').toLowerCase() === 'sqlite' ||
+    (!options.type && /^file:|\.(db|sqlite)\b|:memory:/i.test(options.url));
+  if (looksSqlite) await tuneSqliteForConcurrency(db);
 
   const renew = async (): Promise<void> => {
     const now = new Date();
