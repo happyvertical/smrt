@@ -68,6 +68,12 @@ runs `scripts/check-coverage.mjs`, which measures per-package line coverage for 
 packages a PR touches and fails any below its tier floor. Under-floor packages a PR
 does not touch are not blocked; bringing them to floor is Wave 3 remediation.
 
+"Touches" means changing a package's **shipped source** (`src/**`, excluding
+`*.test`/`*.spec`/`__tests__`). Config-only (`vitest.config`/`tsconfig`/
+`package.json`), test-only, and docs changes do **not** trigger the floor — they
+add no testable surface, so a vitest-timeout tweak or a test-only PR isn't
+blocked by a package's pre-existing coverage debt.
+
 **Gate exemption — `smrt-svelte`.** The v8 line-coverage gate can't instrument
 `.svelte` files, so for a Svelte-heavy package the `.ts`-only measure is both
 unrepresentative and unstable (rendering a component in a test pulls its untested
