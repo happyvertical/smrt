@@ -24,6 +24,10 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    // Component golden-test harness (L4 #1423): jest-dom matchers + Testing
+    // Library auto-cleanup. The smrt-vitest plugin appends its own setup file
+    // to this list (it merges rather than overrides).
+    setupFiles: ['./src/test-support/setup.ts'],
     include: ['src/**/*.{test,spec}.ts'],
     testTimeout: 30000,
     // Match testTimeout. The smrt-vitest setup file
