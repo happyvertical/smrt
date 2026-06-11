@@ -25,6 +25,12 @@
       "import": "./dist/components/calendar/index.js",
       "default": "./dist/components/calendar/index.js"
     },
+    "./chat": {
+      "types": "./dist/components/chat/index.d.ts",
+      "svelte": "./dist/components/chat/index.js",
+      "import": "./dist/components/chat/index.js",
+      "default": "./dist/components/chat/index.js"
+    },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",
       "svelte": "./dist/components/forms/index.js",

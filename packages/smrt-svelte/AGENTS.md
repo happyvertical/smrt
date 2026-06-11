@@ -43,13 +43,34 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
 | AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
 | Forms | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more |
 | Layout | `Container`, `Grid`, `Header`, `Footer`, `Masthead`, `PageHeader`, `EmptyState`, `SummaryCard` |
-| UI | `Button`, `Card`, `Badge`, `Pagination` |
+| UI | `Button`, `Card`, `Badge`, `Pagination`, `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`, `Tree` |
 | Display | `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge` |
 | Feedback | `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar` |
 | Nav | `FilterChips`, `Tabs` |
+| Chat (`/chat` subpath) | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
 | Permission | `PermissionCheck`, `RoleBadge`, `RoleSelector` |
 | Admin | `AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell` |
 | Other | `Calendar`, `DayView`, `MembershipCard`, `MembershipList`, `ModulePanel`, `DataTable` |
+
+### Gap primitives & S10 consolidation (L3 #1422)
+
+L3 added the generic primitives domain packages were re-rolling, so S10 (#1415)
+has a consolidation target: `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`
+(menu-button), and `Tree` (flat-DOM ARIA tree, generalizes `NavTree`) under
+`./ui`; plus `MessageBubble`, `ReactionPicker`, `TypingIndicator` under the
+`./chat` subpath. Each ships with design tokens, keyboard + ARIA a11y, JSDoc'd
+props, a golden test, and a playground page (`playground/.../primitives`).
+
+**Adoption-only for S10** — these already meet the library bar; S10 should
+migrate domain re-rolls *onto* them rather than build new primitives:
+
+- **`FileUpload`** (`./forms`) — the canonical upload input; replace ad-hoc
+  drop zones.
+- **`Modal` + forms** (`./feedback` + `./forms`) — compose for dialogs; no
+  bespoke modal shells.
+- **`ConfirmDialog`** (`./feedback`) — the standard confirm/destructive-action
+  flow.
+- **`Card`** (`./ui`) — the standard surface/container; retire local card CSS.
 
 ## Permission Action
 
