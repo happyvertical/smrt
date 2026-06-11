@@ -14,6 +14,14 @@ import {
  * Options for listing audit logs
  */
 export interface ListAuditLogsOptions {
+  /**
+   * Scope results to a single tenant's audit trail. Tenant-facing callers
+   * (e.g. SecretService.getAuditLogs) must always set this — audit rows
+   * reference secret names and must not leak across tenants (issue #1501).
+   * Omit only for cross-tenant compliance tooling running under
+   * withSuperAdminBypass().
+   */
+  tenantId?: string;
   /** Filter by secret name */
   secretName?: string;
   /** Filter by user ID */
@@ -45,6 +53,10 @@ export class SecretAuditLogCollection extends SmrtCollection<SecretAuditLog> {
     options: ListAuditLogsOptions = {},
   ): Promise<SecretAuditLog[]> {
     const where: Record<string, unknown> = {};
+
+    if (options.tenantId) {
+      where.tenantId = options.tenantId;
+    }
 
     if (options.secretName) {
       where.secretName = options.secretName;
