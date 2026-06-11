@@ -87,6 +87,15 @@ const TIERS = {
 // Coverage-waived packages (zero-runtime). See rubric footnote †.
 const WAIVED = new Set(['types']);
 
+// Packages temporarily exempt from the line-coverage gate (distinct from WAIVED:
+// these DO ship runtime code, but v8 line coverage isn't a meaningful gate for
+// them yet). smrt-svelte is Svelte-heavy and v8 cannot instrument `.svelte`, so
+// the `.ts`-only measure both understates and destabilizes (importing a
+// component pulls its untested transitive `.ts` into the denominator). Real
+// component coverage is the explicit deliverable of S11 (#1416 — UI test
+// harness); the floor is enforced there. Remove this once S11 lands.
+const GATE_EXEMPT = new Set(['smrt-svelte']);
+
 function flagValue(name) {
   const i = process.argv.indexOf(name);
   return i !== -1 ? process.argv[i + 1] : undefined;
@@ -171,6 +180,10 @@ function main() {
     if (!existsSync(join(PKGS, pkg))) continue; // deleted dir
     if (WAIVED.has(pkg)) {
       skipped.push(`${pkg} (coverage waived)`);
+      continue;
+    }
+    if (GATE_EXEMPT.has(pkg)) {
+      skipped.push(`${pkg} (gate exempt — coverage owned by S11 #1416)`);
       continue;
     }
     const tier = TIERS[pkg];

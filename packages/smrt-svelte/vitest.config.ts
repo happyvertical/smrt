@@ -29,6 +29,19 @@ export default defineConfig({
     // to this list (it merges rather than overrides).
     setupFiles: ['./src/test-support/setup.ts'],
     include: ['src/**/*.{test,spec}.ts'],
+    // Coverage scope for the per-tier gate (S6 #1411): measure shipped source
+    // only. Test infrastructure (fixtures, the test-support harness, *.test.ts)
+    // is not product code and must not count toward the floor. v8 can't
+    // instrument `.svelte`, so the measured surface is the package's `.ts`.
+    coverage: {
+      provider: 'v8',
+      exclude: [
+        '**/__tests__/**',
+        '**/*.{test,spec}.ts',
+        'src/test-support/**',
+        '**/*.d.ts',
+      ],
+    },
     testTimeout: 30000,
     // Match testTimeout. The smrt-vitest setup file
     // (`@happyvertical/smrt-vitest/setup`) registers an async `afterAll` that

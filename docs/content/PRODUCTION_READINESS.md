@@ -68,6 +68,15 @@ runs `scripts/check-coverage.mjs`, which measures per-package line coverage for 
 packages a PR touches and fails any below its tier floor. Under-floor packages a PR
 does not touch are not blocked; bringing them to floor is Wave 3 remediation.
 
+**Gate exemption — `smrt-svelte`.** The v8 line-coverage gate can't instrument
+`.svelte` files, so for a Svelte-heavy package the `.ts`-only measure is both
+unrepresentative and unstable (rendering a component in a test pulls its untested
+transitive `.ts` into the denominator, so adding tests can *lower* the number).
+`smrt-svelte` is therefore exempt from the line-coverage gate
+(`GATE_EXEMPT` in `check-coverage.mjs`); its real component-coverage bar is the
+deliverable of sweep S11 (#1416, UI test harness + axe). Remove the exemption
+when S11 lands.
+
 ## Dimensions
 
 Legend: ✅ required · ➖ waived for tier · ⚠️ best-effort (not blocking).
