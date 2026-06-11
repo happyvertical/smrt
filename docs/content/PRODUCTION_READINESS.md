@@ -123,6 +123,12 @@ never run); every fixed bug has a regression test; clean `afterEach`/`afterAll`.
 > Tier floors **refine** `TESTING_STANDARD.md`'s blanket 80% line-coverage minimum:
 > T1 retains 80%; T2/T3 are interim stabilization floors, ratcheted toward 80% as
 > packages are uplifted (Wave 3).
+>
+> A package that measured below its tier floor when the CI gate (S6, #1411)
+> landed gets an **interim ratchet floor** at its measured baseline in
+> `scripts/check-coverage.mjs` (`INTERIM_FLOORS`), so regressions stay blocked
+> without freezing development; the uplift to the tier floor is tracked as its
+> own Wave 3 issue (core: #1500).
 
 ### 5. SMRT pattern compliance
 **PASS when:** `@smrt()` usage is correct; same-package FKs use `@foreignKey`,
