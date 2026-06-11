@@ -43,7 +43,7 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
 | AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
 | Forms | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more |
 | Layout | `Container`, `Grid`, `Header`, `Footer`, `Masthead`, `PageHeader`, `EmptyState`, `SummaryCard` |
-| UI | `Button`, `Card`, `Badge`, `Pagination` |
+| UI | `Button`, `Card`, `Badge`, `Pagination`, `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`, `Tree` |
 | Display | `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge` |
 | Feedback | `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar` |
 | Nav | `FilterChips`, `Tabs` |

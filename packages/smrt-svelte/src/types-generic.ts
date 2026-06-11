@@ -46,6 +46,40 @@ export interface CardProps
   footer?: Snippet;
 }
 
+// Gap primitive types (L3 #1422)
+export type AvatarSize = 'sm' | 'md' | 'lg' | 'xl';
+export type AvatarStatus = 'online' | 'offline' | 'away' | 'busy';
+export type ChipSize = 'sm' | 'md';
+export type SkeletonVariant = 'text' | 'circle' | 'rect';
+export type TooltipPlacement = 'top' | 'bottom' | 'left' | 'right';
+export type DropdownPlacement =
+  | 'bottom-start'
+  | 'bottom-end'
+  | 'top-start'
+  | 'top-end';
+
+/** An item in a `Dropdown`/`Menu`. */
+export interface MenuItem {
+  /** Stable id, returned by `onselect`. */
+  id: string;
+  /** Visible item label. */
+  label: string;
+  /** Disable this item. */
+  disabled?: boolean;
+  /** Per-item activation handler. */
+  onselect?: () => void;
+}
+
+/** A node in a `Tree`. */
+export interface TreeNode {
+  /** Stable id, returned by `onselect`. */
+  id: string;
+  /** Visible node label. */
+  label: string;
+  /** Child nodes; presence makes the node expandable. */
+  children?: TreeNode[];
+}
+
 // Calendar types
 export interface DayEventDetail {
   type: string;
