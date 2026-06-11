@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.28.4
+
+### Patch Changes
+
+- ### Features
+
+  - aria-describedby + aria-invalid on rich form inputs (L1 #1420) (#1488) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.28.4
+  - @happyvertical/smrt-config@0.28.4
+  - @happyvertical/smrt-types@0.28.4
+
 ## 0.28.3
 
 ### Patch Changes
