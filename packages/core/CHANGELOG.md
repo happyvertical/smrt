@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.28.8
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - handle array tenant filters in beforeList/beforeGet (#1496) (tenancy)
+  - @happyvertical/smrt-scanner@0.28.8
+  - @happyvertical/smrt-config@0.28.8
+  - @happyvertical/smrt-types@0.28.8
+
 ## 0.28.7
 
 ### Patch Changes
