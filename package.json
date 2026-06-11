@@ -105,6 +105,7 @@
       "@happyvertical/spider": "^1.0.0",
       "@happyvertical/sql": "^0.74.5",
       "@happyvertical/utils": "^0.74.5",
+      "@grpc/grpc-js@>=1.14.0 <1.14.4": "1.14.4",
       "minimatch@>=10.0.0 <10.2.3": "10.2.3",
       "undici@>=7.0.0 <7.24.0": "7.24.0",
       "tar@>=7.0.0 <7.5.11": "7.5.11",
