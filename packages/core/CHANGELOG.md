@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.28.1
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: pin Biome security group + noDocumentCookie to error (S9, #1414) (#1485)
+  - @happyvertical/smrt-scanner@0.28.1
+  - @happyvertical/smrt-config@0.28.1
+  - @happyvertical/smrt-types@0.28.1
+
 ## 1.0.0
 
 ### Minor Changes
