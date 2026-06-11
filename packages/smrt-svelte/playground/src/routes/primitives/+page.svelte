@@ -1,8 +1,22 @@
 <script lang="ts">
-import { Avatar, Chip, Skeleton } from '@happyvertical/smrt-svelte';
+import {
+  Avatar,
+  Chip,
+  Dropdown,
+  Skeleton,
+  Tooltip,
+  Tree,
+} from '@happyvertical/smrt-svelte';
+import {
+  MessageBubble,
+  ReactionPicker,
+  TypingIndicator,
+} from '@happyvertical/smrt-svelte/chat';
 
 let selected = $state<Record<string, boolean>>({ ts: true, svelte: false });
 let chips = $state(['Design', 'A11y', 'Tokens']);
+let lastAction = $state('—');
+let selectedNode = $state('a');
 
 function toggle(key: string) {
   selected[key] = !selected[key];
@@ -10,11 +24,34 @@ function toggle(key: string) {
 function removeChip(name: string) {
   chips = chips.filter((c) => c !== name);
 }
+
+const menuItems = [
+  { id: 'edit', label: 'Edit' },
+  { id: 'dup', label: 'Duplicate' },
+  { id: 'del', label: 'Delete', disabled: true },
+];
+
+const treeNodes = [
+  {
+    id: 'src',
+    label: 'src',
+    children: [
+      { id: 'a', label: 'app.ts' },
+      {
+        id: 'components',
+        label: 'components',
+        children: [{ id: 'btn', label: 'Button.svelte' }],
+      },
+    ],
+  },
+  { id: 'readme', label: 'README.md' },
+];
 </script>
 
 <h1>Gap Primitives</h1>
 <p class="description">
-  Generic library primitives (L3 #1422) — Avatar, Chip, Skeleton.
+  Generic library primitives (L3 #1422) — Avatar, Chip, Skeleton, Tooltip,
+  Dropdown, Tree.
 </p>
 
 <section>
@@ -63,6 +100,66 @@ function removeChip(name: string) {
   </div>
   <div class="demo-row">
     <Skeleton variant="rect" width="240px" height="120px" />
+  </div>
+</section>
+
+<section>
+  <h2>Tooltip</h2>
+  <p class="section-desc">Anchored, delayed, placement-aware.</p>
+  <div class="demo-row" style="gap: 24px;">
+    <Tooltip text="Top tooltip" placement="top">
+      <button type="button">Hover me (top)</button>
+    </Tooltip>
+    <Tooltip text="Right tooltip" placement="right">
+      <button type="button">Hover me (right)</button>
+    </Tooltip>
+  </div>
+</section>
+
+<section>
+  <h2>Dropdown / Menu</h2>
+  <p class="section-desc">Trigger + positioned, keyboard-navigable menu.</p>
+  <div class="demo-row">
+    <Dropdown
+      label="Actions ▾"
+      items={menuItems}
+      onselect={(id) => (lastAction = id)}
+    />
+    <span class="section-desc">Last action: <code>{lastAction}</code></span>
+  </div>
+</section>
+
+<section>
+  <h2>Tree</h2>
+  <p class="section-desc">Recursive, selectable, full keyboard nav.</p>
+  <div class="demo-row" style="max-width: 320px;">
+    <div style="flex: 1;">
+      <Tree
+        nodes={treeNodes}
+        expanded={['src']}
+        selectedId={selectedNode}
+        aria-label="Project files"
+        onselect={(id) => (selectedNode = id)}
+      />
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>Chat (<code>/chat</code> subpath)</h2>
+  <p class="section-desc">MessageBubble, ReactionPicker, TypingIndicator.</p>
+  <div
+    class="demo-row"
+    style="flex-direction: column; align-items: stretch; max-width: 480px; gap: 8px;"
+  >
+    <MessageBubble role="agent" author="Assistant" timestamp={new Date()}>
+      How can I help you today?
+    </MessageBubble>
+    <MessageBubble role="user" author="You" timestamp={new Date()}>
+      Show me the gap primitives.
+    </MessageBubble>
+    <TypingIndicator name="Assistant" />
+    <ReactionPicker onpick={(e) => (lastAction = e)} />
   </div>
 </section>
 
