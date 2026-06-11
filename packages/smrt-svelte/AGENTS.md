@@ -47,6 +47,7 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
 | Display | `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge` |
 | Feedback | `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar` |
 | Nav | `FilterChips`, `Tabs` |
+| Chat (`/chat` subpath) | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
 | Permission | `PermissionCheck`, `RoleBadge`, `RoleSelector` |
 | Admin | `AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell` |
 | Other | `Calendar`, `DayView`, `MembershipCard`, `MembershipList`, `ModulePanel`, `DataTable` |

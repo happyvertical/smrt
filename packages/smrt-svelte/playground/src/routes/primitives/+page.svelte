@@ -7,6 +7,11 @@ import {
   Tooltip,
   Tree,
 } from '@happyvertical/smrt-svelte';
+import {
+  MessageBubble,
+  ReactionPicker,
+  TypingIndicator,
+} from '@happyvertical/smrt-svelte/chat';
 
 let selected = $state<Record<string, boolean>>({ ts: true, svelte: false });
 let chips = $state(['Design', 'A11y', 'Tokens']);
@@ -137,6 +142,24 @@ const treeNodes = [
         onselect={(id) => (selectedNode = id)}
       />
     </div>
+  </div>
+</section>
+
+<section>
+  <h2>Chat (<code>/chat</code> subpath)</h2>
+  <p class="section-desc">MessageBubble, ReactionPicker, TypingIndicator.</p>
+  <div
+    class="demo-row"
+    style="flex-direction: column; align-items: stretch; max-width: 480px; gap: 8px;"
+  >
+    <MessageBubble role="agent" author="Assistant" timestamp={new Date()}>
+      How can I help you today?
+    </MessageBubble>
+    <MessageBubble role="user" author="You" timestamp={new Date()}>
+      Show me the gap primitives.
+    </MessageBubble>
+    <TypingIndicator name="Assistant" />
+    <ReactionPicker onpick={(e) => (lastAction = e)} />
   </div>
 </section>
 

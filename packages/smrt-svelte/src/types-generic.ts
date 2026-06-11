@@ -80,6 +80,9 @@ export interface TreeNode {
   children?: TreeNode[];
 }
 
+// Chat primitive types (L3 #1422, `./chat` subpath)
+export type ChatMessageRole = 'user' | 'agent' | 'system';
+
 // Calendar types
 export interface DayEventDetail {
   type: string;
