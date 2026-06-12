@@ -108,6 +108,32 @@ export function resolveUrl(db: DatabaseInterface): string {
   return db.url || withConfig.config?.url || '';
 }
 
+/**
+ * Tune a SQLite connection for the off-loop liveness topology.
+ *
+ * The runner's main connection and the off-loop ticker's connection both touch
+ * the same file. Stock libsql/SQLite opens in rollback-journal mode with no busy
+ * timeout, so the instant two connections contend it returns `SQLITE_BUSY` —
+ * surfacing as a flaky "Failed to execute raw query" under CI load. WAL lets
+ * readers run concurrently with the single writer, and `busy_timeout` makes a
+ * contended writer wait for the lock instead of failing immediately. Both are
+ * idempotent and file-level (WAL persists for every connection to the file).
+ *
+ * Best-effort: a PRAGMA failure must never break startup — the in-process live
+ * set keeps same-process recovery correct regardless. Callers gate this on a
+ * SQLite engine so it is never issued to Postgres.
+ */
+export async function tuneSqliteForConcurrency(
+  db: DatabaseInterface,
+): Promise<void> {
+  try {
+    await db.query('PRAGMA busy_timeout = 5000');
+    await db.query('PRAGMA journal_mode = WAL');
+  } catch {
+    // Best-effort connection tuning.
+  }
+}
+
 /** Resolve the database engine for a connection. */
 export function resolveEngine(db: DatabaseInterface): DatabaseEngine {
   const withConfig = db as DatabaseInterface & {
