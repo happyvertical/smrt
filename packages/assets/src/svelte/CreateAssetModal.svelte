@@ -7,7 +7,7 @@
  * opens with the file pre-loaded.
  */
 
-import type { Snippet } from 'svelte';
+import { Button, Modal } from '@happyvertical/smrt-svelte';
 
 export interface CreateAssetModalProps {
   /** Whether the modal is open */
@@ -32,23 +32,12 @@ let {
   onclose,
 }: CreateAssetModalProps = $props();
 
-let dialogEl: HTMLDialogElement | null = $state(null);
 let file = $state<File | null>(null);
 let name = $state('');
 let description = $state('');
 let altText = $state('');
 let dragOver = $state(false);
 let previewUrl: string | null = $state(null);
-
-// Sync open state with dialog
-$effect(() => {
-  if (!dialogEl) return;
-  if (open && !dialogEl.open) {
-    dialogEl.showModal();
-  } else if (!open && dialogEl.open) {
-    dialogEl.close();
-  }
-});
 
 // Sync initial file
 $effect(() => {
@@ -120,18 +109,6 @@ function resetForm() {
   altText = '';
 }
 
-function handleCancel(e: Event) {
-  e.preventDefault();
-  handleClose();
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    handleClose();
-  }
-}
-
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -142,33 +119,7 @@ const isImage = $derived(file?.type?.startsWith('image/') ?? false);
 const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<dialog
-  bind:this={dialogEl}
-  class="create-modal"
-  oncancel={handleCancel}
-  onkeydown={handleKeydown}
-  onclick={(e) => { if (e.target === dialogEl) handleClose(); }}
-  aria-label="Upload asset"
->
-  <div
-    class="create-modal__container"
-    role="presentation"
-    tabindex="-1"
-    onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.stopPropagation()}
-  >
-    <header class="create-modal__header">
-      <h2 class="create-modal__title">Upload Asset</h2>
-      <button type="button" class="create-modal__close" onclick={handleClose} aria-label="Close">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </header>
-
-    <div class="create-modal__body">
+<Modal open={open} title="Upload Asset" onClose={handleClose} size="md">
       {#if !file}
         <!-- Dropzone -->
         <div
@@ -235,101 +186,16 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
           {/if}
         </div>
       {/if}
-    </div>
 
-    <footer class="create-modal__footer">
-      <button type="button" class="footer-btn footer-btn--cancel" onclick={handleClose}>Cancel</button>
-      <button type="button" class="footer-btn footer-btn--create" onclick={handleSubmit} disabled={!file}>
-        Upload
-      </button>
-    </footer>
-  </div>
-</dialog>
+  {#snippet footer()}
+    <Button variant="ghost" size="sm" onclick={handleClose}>Cancel</Button>
+    <Button variant="primary" size="sm" onclick={handleSubmit} disabled={!file}>
+      Upload
+    </Button>
+  {/snippet}
+</Modal>
 
 <style>
-  .create-modal {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .create-modal::backdrop {
-    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
-    backdrop-filter: blur(2px);
-  }
-
-  .create-modal:not([open]) {
-    display: none;
-  }
-
-  .create-modal__container {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    max-width: 32rem;
-    max-height: calc(100vh - 2rem);
-    background: var(--smrt-color-surface, #ffffff);
-    border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-3);
-    overflow: hidden;
-    animation: modalEnter 300ms cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  @keyframes modalEnter {
-    from { opacity: 0; transform: scale(0.9) translateY(-16px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-  }
-
-  .create-modal__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-  }
-
-  .create-modal__title {
-    margin: 0;
-    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #111827);
-  }
-
-  .create-modal__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    cursor: pointer;
-    border-radius: var(--smrt-radius-full, 9999px);
-  }
-
-  .create-modal__close:hover {
-    background: var(--smrt-color-surface-container-highest, #e0e2ec);
-  }
-
-  .create-modal__body {
-    flex: 1;
-    padding: var(--smrt-spacing-5, 1.25rem);
-    overflow-y: auto;
-  }
-
   /* Dropzone */
   .dropzone {
     display: flex;
@@ -495,53 +361,4 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     min-height: 60px;
   }
 
-  /* Footer */
-  .create-modal__footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-  }
-
-  .footer-btn {
-    height: 36px;
-    padding: 0 var(--smrt-spacing-4, 1rem);
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    cursor: pointer;
-    border: none;
-    transition: all 150ms ease;
-  }
-
-  .footer-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .footer-btn--cancel {
-    background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .footer-btn--cancel:hover {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-  }
-
-  .footer-btn--create {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-  }
-
-  .footer-btn--create:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-2);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .create-modal__container {
-      animation: none;
-    }
-  }
 </style>
