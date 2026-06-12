@@ -72,6 +72,41 @@ migrate domain re-rolls *onto* them rather than build new primitives:
   flow.
 - **`Card`** (`./ui`) — the standard surface/container; retire local card CSS.
 
+### Import convention (S10 #1415)
+
+Domain packages **consume** these primitives; they do not re-roll them. The
+duplication of Modal/Form/Button/Avatar across packages is the root cause of
+inconsistent a11y, tokens, and states downstream — fix it by importing from the
+library. Which barrel for what:
+
+| Need | Import from |
+|------|-------------|
+| Buttons, cards, badges, avatars, chips, skeletons, tooltips, dropdowns, trees, pagination | `@happyvertical/smrt-svelte/ui` (or the package root) |
+| Text/select/number/date/money/address inputs, toggles, file upload, `Form`, `FormGroup` | `@happyvertical/smrt-svelte/forms` |
+| `Modal`, `ConfirmDialog`, `LoadingOverlay`, `ProgressBar` | `@happyvertical/smrt-svelte/feedback` |
+| `Container`, `Grid`, `Header`, `Footer`, `PageHeader`, `EmptyState` | `@happyvertical/smrt-svelte/layout` |
+| Chat message bubble, reaction picker, typing indicator | `@happyvertical/smrt-svelte/chat` |
+| Admin shell, nav tree, breadcrumbs, tools dock | `@happyvertical/smrt-svelte/workspace` |
+
+The package root re-exports `./ui`, `./forms`, etc., so `from
+'@happyvertical/smrt-svelte'` also works; prefer the specific subpath in domain
+code for tree-shaking and clarity.
+
+**Consolidating an existing re-roll** — two patterns:
+
+1. **Direct use** (preferred for new code and when the local API already matches):
+   delete the local component, import the library primitive at each call site.
+2. **Thin adapter** (when a package has an established, differing prop vocabulary
+   or a `ModuleUIRegistry` registration to preserve): keep the local file but
+   reduce it to a wrapper that maps the package's props onto the library
+   component — no duplicated markup/styles/logic. Example:
+   `chat/.../shared/Avatar.svelte` maps `avatarUrl`→`src` and `onlineStatus`'s
+   `dnd`→the library's `busy`, delegating everything else.
+
+**Missing a primitive or prop?** Add it upstream in `smrt-svelte`, don't re-roll
+downstream (e.g. the library `Avatar` gained an image-error→initials fallback
+while consolidating chat's avatar).
+
 ## Permission Action
 
 ```svelte
