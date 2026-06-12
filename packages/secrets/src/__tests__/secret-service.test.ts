@@ -96,8 +96,8 @@ describe('SecretService', () => {
         const originalFindByName = SecretCollection.prototype.findByName;
         const findByName = vi
           .spyOn(SecretCollection.prototype, 'findByName')
-          .mockImplementation(async function (name: string) {
-            const secret = await originalFindByName.call(this, name);
+          .mockImplementation(async function (tenantId: string, name: string) {
+            const secret = await originalFindByName.call(this, tenantId, name);
             if (name === 'api-key' && secret) {
               secret.save = vi.fn(async () => {
                 throw new Error('tracking write failed');
@@ -278,6 +278,125 @@ describe('SecretService', () => {
     });
 
     it('should not list secrets from other tenants', async () => {
+      await withTenant({ tenantId: 'tenant-1' }, async () => {
+        await service.store('tenant-1-secret', 'value');
+      });
+
+      await withTenant({ tenantId: 'tenant-2' }, async () => {
+        await service.store('tenant-2-secret', 'value');
+      });
+
+      // Tenant-1 should only see its secrets
+      await withTenant({ tenantId: 'tenant-1' }, async () => {
+        const secrets = await service.list();
+        expect(secrets.length).toBe(1);
+        expect(secrets[0].name).toBe('tenant-1-secret');
+      });
+    });
+  });
+
+  // Regression tests for issue #1501: SecretService relied on the tenancy
+  // interceptor for lookup scoping. With the interceptor disabled (as in the
+  // production incident), unscoped findByName() returned ANOTHER tenant's row
+  // and store() clobbered it with an envelope encrypted under the caller's
+  // TDEK, destroying the other tenant's secret. SecretService must enforce
+  // tenant scoping itself, without the interceptor.
+  describe('Tenant isolation without the tenancy interceptor (issue #1501)', () => {
+    beforeEach(() => {
+      disableTenancy();
+    });
+
+    it('keeps same-named secrets isolated per tenant (prod clobber regression)', async () => {
+      await service.storeForTenant('tenant-a', 'shared-name', 'value-a');
+      // On unpatched code this found tenant-a's row and overwrote it with an
+      // envelope encrypted under tenant-b's key, destroying tenant-a's secret.
+      await service.storeForTenant('tenant-b', 'shared-name', 'value-b');
+
+      const { rows } = await db.query(
+        'SELECT id, tenant_id FROM secrets WHERE name = ?',
+        'shared-name',
+      );
+      expect(rows).toHaveLength(2);
+      expect(new Set(rows.map((row: any) => row.tenant_id))).toEqual(
+        new Set(['tenant-a', 'tenant-b']),
+      );
+
+      const retrievedA = await service.retrieveForTenant(
+        'tenant-a',
+        'shared-name',
+      );
+      expect(retrievedA.value).toBe('value-a');
+
+      const retrievedB = await service.retrieveForTenant(
+        'tenant-b',
+        'shared-name',
+      );
+      expect(retrievedB.value).toBe('value-b');
+    });
+
+    it("treats another tenant's secret as not found on retrieve", async () => {
+      await service.storeForTenant('tenant-a', 'a-only', 'value-a');
+
+      // Must be a clean not-found, not a cross-tenant decrypt failure.
+      await expect(
+        service.retrieveForTenant('tenant-b', 'a-only'),
+      ).rejects.toThrow("Secret 'a-only' not found");
+    });
+
+    it("cannot delete another tenant's secret", async () => {
+      await service.storeForTenant('tenant-a', 'a-only', 'value-a');
+
+      const deleted = await withTenant({ tenantId: 'tenant-b' }, () =>
+        service.delete('a-only'),
+      );
+      expect(deleted).toBe(false);
+
+      // Tenant-a's secret is intact and still decryptable
+      const retrieved = await service.retrieveForTenant('tenant-a', 'a-only');
+      expect(retrieved.value).toBe('value-a');
+    });
+
+    it("does not report another tenant's secret as existing", async () => {
+      await service.storeForTenant('tenant-a', 'a-only', 'value-a');
+
+      await withTenant({ tenantId: 'tenant-b' }, async () => {
+        expect(await service.exists('a-only')).toBe(false);
+      });
+    });
+
+    it("cannot disable or enable another tenant's secret", async () => {
+      await service.storeForTenant('tenant-a', 'a-only', 'value-a');
+
+      await withTenant({ tenantId: 'tenant-b' }, async () => {
+        expect(await service.disable('a-only')).toBe(false);
+        expect(await service.enable('a-only')).toBe(false);
+      });
+
+      const retrieved = await service.retrieveForTenant('tenant-a', 'a-only');
+      expect(retrieved.value).toBe('value-a');
+    });
+
+    it("does not list or categorize another tenant's secrets", async () => {
+      await service.storeForTenant('tenant-a', 'a-only', 'value-a', {
+        category: 'api',
+      });
+
+      await withTenant({ tenantId: 'tenant-b' }, async () => {
+        expect(await service.list()).toHaveLength(0);
+        expect(await service.getCategories()).toEqual([]);
+      });
+    });
+
+    it("does not expose another tenant's audit logs", async () => {
+      await service.storeForTenant('tenant-a', 'a-only', 'value-a');
+
+      const logs = await withTenant({ tenantId: 'tenant-b' }, () =>
+        service.getAuditLogs({ secretName: 'a-only' }),
+      );
+      expect(logs).toHaveLength(0);
+    });
+
+    it('original isolation test still holds with the interceptor disabled', async () => {
       await withTenant({ tenantId: 'tenant-1' }, async () => {
         await service.store('tenant-1-secret', 'value');
       });

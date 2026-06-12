@@ -344,8 +344,16 @@ export class SecretService {
     let isUpdate = false;
 
     try {
-      // Check if secret already exists
-      const existing = await this.secrets.findByName(name);
+      // Check if secret already exists for THIS tenant (issue #1501: an
+      // unscoped lookup here used to find another tenant's same-named row and
+      // clobber it with an envelope encrypted under the caller's TDEK).
+      let existing = await this.secrets.findByName(tenantId, name);
+      // Defense-in-depth: even if a lookup regression ever returns a foreign
+      // row again, never save over it — fall through to the create path,
+      // which is tenant-scoped via the (slug, context=tenantId) upsert key.
+      if (existing && existing.tenantId !== tenantId) {
+        existing = null;
+      }
       isUpdate = existing !== null;
 
       // Encrypt the value
@@ -439,8 +447,11 @@ export class SecretService {
     let audited = false;
 
     try {
-      const secret = await this.secrets.findByName(name);
-      if (!secret) {
+      const secret = await this.secrets.findByName(tenantId, name);
+      // Ownership check before any decrypt attempt (issue #1501): a row owned
+      // by another tenant must behave exactly like "not found", never surface
+      // as a cross-tenant decrypt failure.
+      if (!secret || secret.tenantId !== tenantId) {
         await this.audit(null, name, userId, 'read', 'failure', {
           error: 'Secret not found',
         });
@@ -890,7 +901,7 @@ export class SecretService {
    * List secrets for the current tenant (names only, not values)
    */
   async list(options: { category?: string } = {}): Promise<Secret[]> {
-    return this.secrets.listSecrets({
+    return this.secrets.listSecrets(requireTenantId(), {
       category: options.category,
       status: 'active',
     });
@@ -900,10 +911,12 @@ export class SecretService {
    * Delete a secret
    */
   async delete(name: string): Promise<boolean> {
+    const tenantId = requireTenantId();
     const userId = this.getCurrentUserId();
 
-    const secret = await this.secrets.findByName(name);
-    if (!secret) {
+    const secret = await this.secrets.findByName(tenantId, name);
+    // Ownership check (issue #1501): never delete another tenant's row
+    if (!secret || secret.tenantId !== tenantId) {
       return false;
     }
 
@@ -923,10 +936,12 @@ export class SecretService {
    * Disable a secret (soft delete)
    */
   async disable(name: string): Promise<boolean> {
+    const tenantId = requireTenantId();
     const userId = this.getCurrentUserId();
 
-    const secret = await this.secrets.findByName(name);
-    if (!secret) {
+    const secret = await this.secrets.findByName(tenantId, name);
+    // Ownership check (issue #1501): never mutate another tenant's row
+    if (!secret || secret.tenantId !== tenantId) {
       return false;
     }
 
@@ -940,10 +955,12 @@ export class SecretService {
    * Enable a disabled secret
    */
   async enable(name: string): Promise<boolean> {
+    const tenantId = requireTenantId();
     const userId = this.getCurrentUserId();
 
-    const secret = await this.secrets.findByName(name);
-    if (!secret) {
+    const secret = await this.secrets.findByName(tenantId, name);
+    // Ownership check (issue #1501): never mutate another tenant's row
+    if (!secret || secret.tenantId !== tenantId) {
       return false;
     }
 
@@ -990,7 +1007,9 @@ export class SecretService {
     const tenantId = requireTenantId();
     const userId = this.getCurrentUserId();
 
-    const secrets = await this.secrets.list({});
+    // Scope to the current tenant (issue #1501): re-encryption must never
+    // touch (or attempt to decrypt) other tenants' rows.
+    const secrets = await this.secrets.list({ where: { tenantId } });
     let success = 0;
     let failed = 0;
 
@@ -1037,6 +1056,9 @@ export class SecretService {
     options: { secretName?: string; limit?: number } = {},
   ): Promise<SecretAuditLog[]> {
     return this.auditLogs.listLogs({
+      // Scope to the current tenant (issue #1501): audit logs reference
+      // secret names and must not leak across tenants.
+      tenantId: requireTenantId(),
       secretName: options.secretName,
       limit: options.limit ?? 100,
     });
@@ -1046,15 +1068,16 @@ export class SecretService {
    * Get secret categories for the current tenant
    */
   async getCategories(): Promise<string[]> {
-    return this.secrets.getCategories();
+    return this.secrets.getCategories(requireTenantId());
   }
 
   /**
-   * Check if a secret exists
+   * Check if a secret exists for the current tenant
    */
   async exists(name: string): Promise<boolean> {
-    const secret = await this.secrets.findByName(name);
-    return secret !== null;
+    const tenantId = requireTenantId();
+    const secret = await this.secrets.findByName(tenantId, name);
+    return secret !== null && secret.tenantId === tenantId;
   }
 
   // Private methods
