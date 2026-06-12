@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.2
+
+### Patch Changes
+
+- ### Features
+
+  - S10 kickoff — import convention + first Avatar consolidation (#1415) (#1508) (smrt-svelte,chat)
+  - @happyvertical/smrt-scanner@0.29.2
+  - @happyvertical/smrt-config@0.29.2
+  - @happyvertical/smrt-types@0.29.2
+
 ## 0.29.1
 
 ### Patch Changes
