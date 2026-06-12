@@ -33,6 +33,14 @@ const {
   ...rest
 }: Props = $props();
 
+// Fall back to initials if the image fails to load (e.g. a dead avatar URL).
+let imgFailed = $state(false);
+// Reset the failure flag whenever the source changes.
+$effect(() => {
+  src;
+  imgFailed = false;
+});
+
 /** First+last initial (or first two letters of a single word). */
 function initialsOf(value: string): string {
   const parts = value.trim().split(/\s+/).filter(Boolean);
@@ -50,8 +58,15 @@ const statusLabels: Record<AvatarStatus, string> = {
 </script>
 
 <span class="avatar {size} {className}" {...rest}>
-  {#if src}
-    <img class="avatar__img" {src} alt={name} />
+  {#if src && !imgFailed}
+    <img
+      class="avatar__img"
+      {src}
+      alt={name}
+      onerror={() => {
+        imgFailed = true;
+      }}
+    />
   {:else}
     <span class="avatar__initials" role="img" aria-label={name}>
       {initialsOf(name)}
