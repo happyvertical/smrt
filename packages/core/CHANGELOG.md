@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.1
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - enable SQLite WAL + busy_timeout for off-loop liveness to fix CI flake (#1504) (jobs)
+  - @happyvertical/smrt-scanner@0.29.1
+  - @happyvertical/smrt-config@0.29.1
+  - @happyvertical/smrt-types@0.29.1
+
 ## 1.0.0
 
 ### Minor Changes
