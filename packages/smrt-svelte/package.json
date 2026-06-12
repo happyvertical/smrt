@@ -31,6 +31,12 @@
       "import": "./dist/components/chat/index.js",
       "default": "./dist/components/chat/index.js"
     },
+    "./feedback": {
+      "types": "./dist/components/feedback/index.d.ts",
+      "svelte": "./dist/components/feedback/index.js",
+      "import": "./dist/components/feedback/index.js",
+      "default": "./dist/components/feedback/index.js"
+    },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",
       "svelte": "./dist/components/forms/index.js",
