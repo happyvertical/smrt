@@ -83,9 +83,10 @@ export class AssetCollection extends SmrtCollection<Asset> {
    */
   async getByTag(tagSlug: string): Promise<Asset[]> {
     const db = this.db;
-    const rows = await db.list('asset_tags', {
-      where: { tag_slug: tagSlug },
-    });
+    // db.list(table, where) takes the WHERE object directly — not a
+    // `{ where }` wrapper (which would filter on a column literally named
+    // "where" and throw).
+    const rows = await db.list('asset_tags', { tag_slug: tagSlug });
 
     const assets: Asset[] = [];
     for (const row of rows as { asset_id: string }[]) {
@@ -150,13 +151,25 @@ export class AssetCollection extends SmrtCollection<Asset> {
     // Sort by version number to find the latest
     versions.sort((a, b) => b.version - a.version);
     const latestVersion = versions[0];
+    const newVersionNumber = latestVersion.version + 1;
+
+    // Give the new version a distinct slug. The assets table is unique on
+    // (slug, context, meta_type), so carrying the previous version's slug would
+    // upsert-overwrite the prior row instead of appending a version. Derive a
+    // `<base>-v<n>` slug from the primary version's slug (stripping any existing
+    // `-vN` suffix) so the chain — tracked by `primaryVersionId` — stays intact.
+    const primary =
+      versions.find((v) => v.id === primaryVersionId) ??
+      versions[versions.length - 1];
+    const baseSlug = String(primary?.slug ?? '').replace(/-v\d+$/, '');
 
     // Create new version
     return (await this.create({
       ...latestVersion,
       id: undefined, // Generate new ID
+      slug: baseSlug ? `${baseSlug}-v${newVersionNumber}` : undefined,
       sourceUri: newSourceUri,
-      version: latestVersion.version + 1,
+      version: newVersionNumber,
       primaryVersionId,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -186,33 +199,23 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @returns Array of all asset versions, ordered by version number
    */
   async listVersions(primaryVersionId: string): Promise<Asset[]> {
-    const db = this.db;
-
-    // Query for all assets with this primary version ID or ID matching primary version ID
-    // Split OR logic into two queries since semantic adapters don't support OR directly
-    const [versionsRows, primaryRow] = await Promise.all([
-      db.list('assets', {
-        where: { primary_version_id: primaryVersionId },
-        orderBy: 'version ASC',
-      }),
-      db.get('assets', { id: primaryVersionId }),
+    // Use the collection's `list`/`get` (not raw `db.list`) so rows are properly
+    // hydrated into `Asset` instances — `Object.assign(new Asset(), rawRow)`
+    // would leave snake_case columns (`source_uri`, `primary_version_id`) on the
+    // instance and never populate the camelCase fields. The chain is the rows
+    // pointing at this primary plus the primary itself; the adapter has no OR, so
+    // fetch both and dedupe by id.
+    const [chained, primary] = await Promise.all([
+      this.list({ where: { primaryVersionId } }) as Promise<Asset[]>,
+      this.get({ id: primaryVersionId }) as Promise<Asset | null>,
     ]);
 
-    // Combine results and deduplicate by ID
-    const allRows = primaryRow ? [primaryRow, ...versionsRows] : versionsRows;
-    const uniqueAssets = new Map<string, any>();
-    for (const row of allRows) {
-      uniqueAssets.set((row as any).id, row);
+    const byId = new Map<string, Asset>();
+    for (const asset of [...(primary ? [primary] : []), ...chained]) {
+      if (asset?.id) byId.set(asset.id, asset);
     }
 
-    // Convert to Asset instances and sort by version
-    const assets = Array.from(uniqueAssets.values()).map((row) => {
-      const asset = new Asset();
-      Object.assign(asset, row);
-      return asset;
-    });
-
-    // Sort by version number
+    const assets = Array.from(byId.values());
     assets.sort((a, b) => a.version - b.version);
     return assets;
   }
@@ -238,18 +241,12 @@ export class AssetCollection extends SmrtCollection<Asset> {
    * @returns Array of matching assets
    */
   async getByMimeType(mimePattern: string): Promise<Asset[]> {
-    const db = this.db;
     const pattern = mimePattern.replace('*', '%');
-
-    const rows = await db.list('assets', {
-      where: { 'mime_type like': pattern },
-    });
-
-    return (rows as any[]).map((row) => {
-      const asset = new Asset();
-      Object.assign(asset, row);
-      return asset;
-    });
+    // Collection `list` (not raw `db.list`) so the rows hydrate into proper
+    // `Asset` instances; the `<field> like` operator key is mapped to the column.
+    return (await this.list({
+      where: { 'mimeType like': pattern },
+    })) as Asset[];
   }
 
   /**
