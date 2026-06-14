@@ -74,6 +74,16 @@ does not touch are not blocked; bringing them to floor is Wave 3 remediation.
 add no testable surface, so a vitest-timeout tweak or a test-only PR isn't
 blocked by a package's pre-existing coverage debt.
 
+A below-floor package is also **not blocked when the PR cannot have changed its
+covered surface** — specifically when every touched file is an in-place
+*modification* (no add/delete/rename) **and** none of those files appear in the
+coverage report. That covers a `.svelte`-only refactor in a package without
+component tests (a UI consolidation, S10 #1415): the change can't move the
+measured number, so the shortfall is pre-existing debt the PR didn't cause
+(Wave 3), not a regression to block on. Anything that *can* shift coverage still
+gates: a modified file that **is** measured (e.g. `content`'s component-tested
+`.svelte`), or any **added/deleted/renamed** source in a below-floor package.
+
 **Gate exemption — `smrt-svelte`.** The v8 line-coverage gate can't instrument
 `.svelte` files, so for a Svelte-heavy package the `.ts`-only measure is both
 unrepresentative and unstable (rendering a component in a test pulls its untested

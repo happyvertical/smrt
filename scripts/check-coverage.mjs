@@ -105,8 +105,16 @@ function git(args, opts = {}) {
   return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', ...opts });
 }
 
-/** Packages whose files changed vs the PR base, via `git diff`. */
-function touchedPackagesFromGit() {
+/**
+ * Source files (under `src/`) changed vs the PR base, grouped by package.
+ * Returns `Map<pkg, { files: Set<relPath>, onlyModified: boolean }>` where
+ * relPath is package-relative (e.g. `src/svelte/Foo.svelte`) and `onlyModified`
+ * is true only when EVERY touched file is an in-place modification (`M`) — not
+ * an add/delete/rename/copy. Config, test files, and docs are excluded — they
+ * add no testable surface, so a vitest-timeout tweak or a test-only PR isn't
+ * wrongly blocked by a package's pre-existing coverage debt.
+ */
+function touchedSourceByPackage() {
   const baseRef = process.env.BASE_REF || 'main';
   let range;
   try {
@@ -121,28 +129,40 @@ function touchedPackagesFromGit() {
   } catch {
     range = `origin/${baseRef}...HEAD`;
   }
-  const out = git(['diff', '--name-only', range]);
-  const pkgs = new Set();
+  // `--name-status` so we can tell a pure modification (which can't change the
+  // covered surface) from an add/delete/rename (which can).
+  const out = git(['diff', '--name-status', range]);
+  const byPkg = new Map();
   for (const line of out.split('\n')) {
-    // Only shipped SOURCE under src/ counts as "touching" a package for the
-    // coverage floor. Config (vitest.config/tsconfig/package.json), test files
-    // (*.test/*.spec, __tests__), and docs don't add testable surface, so they
-    // must not trigger the "bring it to floor" requirement — otherwise a vitest
-    // timeout tweak or a test-only PR is wrongly blocked by a package's
-    // pre-existing coverage debt.
-    const m = line.match(/^packages\/([^/]+)\/(.+)$/);
-    if (!m) continue;
-    const [, pkg, rest] = m;
-    if (!rest.startsWith('src/')) continue;
-    if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(rest)) continue;
-    if (/(^|\/)__tests__\//.test(rest)) continue;
-    pkgs.add(pkg);
+    if (!line.trim()) continue;
+    const fields = line.split('\t');
+    const status = fields[0][0]; // M | A | D | R | C
+    // For rename/copy the destination is the last field; both source and dest
+    // are surface changes, so consider every path on the line.
+    for (const p of fields.slice(1)) {
+      const m = p.match(/^packages\/([^/]+)\/(.+)$/);
+      if (!m) continue;
+      const [, pkg, rest] = m;
+      if (!rest.startsWith('src/')) continue;
+      if (/\.(test|spec)\.[cm]?[jt]sx?$/.test(rest)) continue;
+      if (/(^|\/)__tests__\//.test(rest)) continue;
+      if (!byPkg.has(pkg)) {
+        byPkg.set(pkg, { files: new Set(), onlyModified: true });
+      }
+      const entry = byPkg.get(pkg);
+      entry.files.add(rest);
+      if (status !== 'M') entry.onlyModified = false;
+    }
   }
-  return [...pkgs];
+  return byPkg;
 }
 
-/** Run vitest coverage for one package and return total line coverage %, or null. */
-function measureLineCoverage(pkg) {
+/**
+ * Run vitest coverage for one package. Returns `{ pct, files }` where `pct` is
+ * total line coverage % and `files` is the set of per-file keys v8 actually
+ * measured (absolute paths), or null if no summary was produced.
+ */
+function measureCoverage(pkg) {
   const cwd = join(PKGS, pkg);
   try {
     execFileSync(
@@ -165,20 +185,46 @@ function measureLineCoverage(pkg) {
   if (!existsSync(summaryPath)) return null;
   try {
     const summary = JSON.parse(readFileSync(summaryPath, 'utf8'));
-    return summary.total?.lines?.pct ?? null;
+    const pct = summary.total?.lines?.pct ?? null;
+    const files = Object.keys(summary).filter((k) => k !== 'total');
+    return { pct, files };
   } catch {
     return null;
   }
 }
 
+/**
+ * Did the PR touch any source file v8 actually measured in this package?
+ *
+ * A touched file that doesn't appear in the coverage report (a `.svelte` file
+ * in a package without component tests, or any source not imported by a test)
+ * cannot have moved the measured number — so a below-floor result for such a PR
+ * is pre-existing debt, not this PR's regression, and must not block. This is
+ * the surgical version of the smrt-svelte gate exemption: it keeps `.svelte`
+ * that IS measured (e.g. `content`'s component-tested files) under the gate.
+ */
+function touchesMeasuredSource(touchedRel, coverageFiles) {
+  const norm = (p) => p.replace(/\\/g, '/');
+  const measured = coverageFiles.map(norm);
+  for (const rel of touchedRel) {
+    const r = norm(rel);
+    if (measured.some((f) => f === r || f.endsWith(`/${r}`))) return true;
+  }
+  return false;
+}
+
 function main() {
   const explicit = flagValue('--packages');
+  // In CI we have the git diff, so we know WHICH files were touched — that lets
+  // us tell a pre-existing shortfall apart from one this PR could have caused.
+  // Explicit `--packages` mode has no diff, so it always enforces the floor.
+  const touchedMap = explicit ? null : touchedSourceByPackage();
   const touched = explicit
     ? explicit
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean)
-    : touchedPackagesFromGit();
+    : [...touchedMap.keys()];
 
   if (touched.length === 0) {
     console.log('✓ coverage-gate: no packages touched — nothing to check.');
@@ -215,17 +261,37 @@ function main() {
   const results = [];
   for (const { pkg, tier, floor } of checked) {
     console.log(`\n── measuring coverage: ${pkg} (${tier}, floor ${floor}%) ──`);
-    const pct = measureLineCoverage(pkg);
-    if (pct === null) {
+    const cov = measureCoverage(pkg);
+    if (cov === null || cov.pct === null) {
       failures.push({ pkg, tier, floor, pct: 'no coverage summary' });
       results.push(`✗ ${pkg} (${tier}): no coverage produced (floor ${floor}%)`);
       continue;
     }
-    const ok = pct >= floor;
-    results.push(
-      `${ok ? '✓' : '✗'} ${pkg} (${tier}): ${pct.toFixed(2)}% (floor ${floor}%)`,
-    );
-    if (!ok) failures.push({ pkg, tier, floor, pct });
+    const { pct, files } = cov;
+    if (pct >= floor) {
+      results.push(`✓ ${pkg} (${tier}): ${pct.toFixed(2)}% (floor ${floor}%)`);
+      continue;
+    }
+    // Below floor. The shortfall is only treated as pre-existing debt (report,
+    // don't block) when the PR *cannot* have changed this package's covered
+    // surface: every touched file is an in-place modification (no add/delete/
+    // rename) AND none of them are files v8 actually measured. That covers a
+    // `.svelte`-only refactor in a package without component tests. A new/removed
+    // file, or a modified file that IS measured, still blocks. Explicit
+    // `--packages` mode has no diff, so it always enforces.
+    const touchedEntry = touchedMap?.get(pkg);
+    if (
+      touchedEntry?.onlyModified &&
+      !touchesMeasuredSource(touchedEntry.files, files)
+    ) {
+      results.push(
+        `• ${pkg} (${tier}): ${pct.toFixed(2)}% < floor ${floor}% — PR only ` +
+          'modifies source v8 does not measure here; pre-existing debt, not blocked',
+      );
+      continue;
+    }
+    results.push(`✗ ${pkg} (${tier}): ${pct.toFixed(2)}% (floor ${floor}%)`);
+    failures.push({ pkg, tier, floor, pct });
   }
 
   console.log('\n=== Per-tier coverage gate ===');
