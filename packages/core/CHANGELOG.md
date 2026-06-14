@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.3
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - coverage gate skips unmeasurable .svelte-only modifications + esbuild advisory (#1511) (ci)
+  - @happyvertical/smrt-scanner@0.29.3
+  - @happyvertical/smrt-config@0.29.3
+  - @happyvertical/smrt-types@0.29.3
+
 ## 0.29.2
 
 ### Patch Changes
