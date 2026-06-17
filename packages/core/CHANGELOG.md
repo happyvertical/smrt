@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.12
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - repair UserMenu duplicate id + ReactionPicker grid role (S12 #1417) (#1521) (a11y)
+  - @happyvertical/smrt-scanner@0.29.12
+  - @happyvertical/smrt-config@0.29.12
+  - @happyvertical/smrt-types@0.29.12
+
 ## 0.29.11
 
 ### Patch Changes
