@@ -45,7 +45,7 @@ function handleKeydown(event: KeyboardEvent, emoji: string) {
 </script>
 
 {#if isOpen}
-  <div class="reaction-picker" role="grid" aria-label="Emoji reactions">
+  <div class="reaction-picker" role="group" aria-label="Emoji reactions">
     {#each emojis as emoji}
       <button
         class="reaction-picker__item"
