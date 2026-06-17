@@ -156,13 +156,15 @@ function formatDate(date: Date | string | undefined): string {
 
 {#if asset}
   <!-- Shell consolidated onto the library Modal (S10 #1415): title + close X,
-       backdrop, Esc, and showModal lifecycle come from Modal; this file owns the
-       asset-detail body + action footer. -->
+       backdrop, Esc, and showModal lifecycle come from Modal. `placement="end"`
+       preserves the original right-anchored detail-drawer presentation; this
+       file owns only the asset-detail body + action footer. -->
   <Modal
     open={open}
     title={asset.name || 'Untitled Asset'}
     onClose={handleClose}
-    size="lg"
+    size="md"
+    placement="end"
   >
       <div class="detail__body">
         <!-- Preview Section -->

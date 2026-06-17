@@ -24,6 +24,8 @@ export interface Props {
   title?: string;
   /** Modal size variant */
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  /** Placement: center (default) or end for a right-anchored full-height drawer */
+  placement?: 'center' | 'end';
   /** Whether clicking backdrop closes modal */
   closeOnBackdrop?: boolean;
   /** Whether pressing Escape closes modal */
@@ -47,6 +49,7 @@ let {
   onClose,
   title,
   size = 'md',
+  placement = 'center',
   closeOnBackdrop = true,
   closeOnEscape = true,
   showClose = true,
@@ -106,12 +109,16 @@ const sizeClasses = {
   xl: 'modal--xl',
   full: 'modal--full',
 };
+
+const placementClass = $derived(
+  placement === 'end' ? 'modal--end' : 'modal--center',
+);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <dialog
   bind:this={dialogEl}
-  class="modal {sizeClasses[size]}"
+  class="modal {sizeClasses[size]} {placementClass}"
   onclick={handleBackdropClick}
   onkeydown={handleKeydown}
   oncancel={handleCancel}
@@ -254,6 +261,38 @@ const sizeClasses = {
     max-width: none;
     max-height: none;
     border-radius: var(--smrt-radius-medium, 0.5rem);
+  }
+
+  /* Placement: end = right-anchored, full-height drawer (e.g. detail panels).
+     The size variant still sets the panel width. */
+  .modal--end {
+    justify-content: flex-end;
+    align-items: stretch;
+  }
+
+  .modal--end .modal__container {
+    height: 100%;
+    max-height: 100%;
+    border-radius: var(--smrt-radius-none, 0);
+    animation: modal-slide-end var(--smrt-duration-medium2, 300ms)
+      var(--smrt-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
+  }
+
+  @keyframes modal-slide-end {
+    from {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal--end .modal__container {
+      animation: none;
+    }
   }
 
   /* Header */
