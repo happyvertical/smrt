@@ -37,8 +37,10 @@ describe('AssetDetail', () => {
   it('closes via the close button', async () => {
     const onClose = vi.fn();
     render(AssetDetail, { props: baseProps({ onClose }) });
+    // The library Modal (S10) provides the dialog's close affordance, labelled
+    // "Close modal".
     await userEvent.click(
-      screen.getByRole('button', { name: 'Close', hidden: true }),
+      screen.getByRole('button', { name: 'Close modal', hidden: true }),
     );
     expect(onClose).toHaveBeenCalled();
   });
