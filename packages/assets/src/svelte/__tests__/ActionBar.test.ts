@@ -10,6 +10,7 @@ import {
   render,
   screen,
   userEvent,
+  within,
 } from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import ActionBar from '../ActionBar.svelte';
@@ -39,6 +40,36 @@ describe('ActionBar', () => {
       },
     });
     expect(container.querySelector('.action-bar')).toBeNull();
+  });
+
+  it('confirms deletion through the inline dialog', async () => {
+    const onDelete = vi.fn();
+    render(ActionBar, {
+      props: { selectedAssets: selected, onClearSelection: vi.fn(), onDelete },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    const dialog = screen.getByLabelText('Confirm delete');
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Delete' }),
+    );
+    expect(onDelete).toHaveBeenCalledWith(selected);
+  });
+
+  it('cancels deletion and dismisses the dialog', async () => {
+    render(ActionBar, {
+      props: {
+        selectedAssets: selected,
+        onClearSelection: vi.fn(),
+        onDelete: vi.fn(),
+      },
+    });
+    await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    await userEvent.click(
+      within(screen.getByLabelText('Confirm delete')).getByRole('button', {
+        name: 'Cancel',
+      }),
+    );
+    expect(screen.queryByLabelText('Confirm delete')).not.toBeInTheDocument();
   });
 
   it('is axe-clean', async () => {
