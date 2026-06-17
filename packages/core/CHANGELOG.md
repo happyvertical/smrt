@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.8
+
+### Patch Changes
+
+- ### Features
+
+  - Modal placement='end' drawer + assets AssetDetail consolidation (S10 #1415) (#1515) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.29.8
+  - @happyvertical/smrt-config@0.29.8
+  - @happyvertical/smrt-types@0.29.8
+
 ## 0.29.7
 
 ### Patch Changes
