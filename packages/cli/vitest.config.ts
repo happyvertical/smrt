@@ -14,6 +14,18 @@ export default defineConfig({
     // CI-safe timeouts. hookTimeout too, since beforeEach/afterAll can be slow.
     testTimeout: 30000,
     hookTimeout: 30000,
+    // Re-run a failed test in CI before failing the run (same policy as
+    // smrt-vitest's resolveCiRetry). cli does not use smrtVitestPlugin, so the
+    // retry is set inline here. Some cli tests (e.g. db:migrate atomic rollback)
+    // have rare CI-only timing flakes that pass on re-run; retry keeps the
+    // shared "Test Packages" job reliable without masking real failures (a
+    // deterministic failure still fails all attempts). Local runs keep retry at
+    // 0 so flakes stay visible; override with SMRT_VITEST_RETRY=<n>.
+    retry: process.env.SMRT_VITEST_RETRY
+      ? Number.parseInt(process.env.SMRT_VITEST_RETRY, 10)
+      : process.env.CI
+        ? 2
+        : 0,
   },
   resolve: {
     alias: [

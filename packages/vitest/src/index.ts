@@ -851,6 +851,25 @@ async function generateLocalManifest(
  * });
  * ```
  */
+/**
+ * Resolve the per-test retry count injected into the vitest config.
+ *
+ * `SMRT_VITEST_RETRY` (when set to a non-negative integer) wins; otherwise the
+ * default is 2 retries in CI (`process.env.CI`) and 0 everywhere else, so local
+ * runs surface flaky tests immediately while the shared cross-package CI job
+ * tolerates rare transient timing flakes.
+ */
+function resolveCiRetry(): number {
+  const override = process.env.SMRT_VITEST_RETRY;
+  if (override != null && override !== '') {
+    const parsed = Number.parseInt(override, 10);
+    if (Number.isInteger(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return process.env.CI ? 2 : 0;
+}
+
 export function smrtVitestPlugin(
   options: SmrtVitestPluginOptions = {},
 ): Plugin {
@@ -911,6 +930,16 @@ export function smrtVitestPlugin(
         },
         test: {
           setupFiles,
+          // Re-run a failed test before failing the run, in CI only. Several
+          // packages have rare, CI-environment-specific timing flakes that pass
+          // on re-run (observed: every flaky "Test Packages" failure went green
+          // on rerun, on a different package each time, none reproducible
+          // locally). Retry keeps the shared cross-package CI job reliable
+          // WITHOUT masking real failures — a deterministic failure still fails
+          // all attempts, and vitest reports retried tests as "flaky" so they
+          // stay visible. Local runs keep retry at 0 so flakes surface during
+          // development. Override with SMRT_VITEST_RETRY=<n>.
+          retry: resolveCiRetry(),
         },
       };
     },

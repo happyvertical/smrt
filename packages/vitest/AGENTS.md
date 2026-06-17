@@ -24,6 +24,19 @@ Without the plugin → "unregistered class" / "No field metadata found" errors.
 4. Registers all classes in ObjectRegistry
 5. Watch mode caveat: manifest only generated at startup — restart vitest after adding new classes/fields
 
+## CI retry (flaky-test resilience)
+
+The plugin injects `test.retry` into every consuming package's config: **2 in CI
+(`process.env.CI`), 0 locally** (`resolveCiRetry`). Several packages have rare,
+CI-environment-specific timing flakes that pass on re-run (none reproducible
+locally); retry keeps the shared cross-package "Test Packages" job reliable
+without masking real failures — a deterministic failure still fails all attempts,
+and vitest flags retried tests as `flaky`. Local runs keep retry at 0 so flakes
+surface during development. Override with `SMRT_VITEST_RETRY=<n>`.
+
+Packages that don't use `smrtVitestPlugin` (notably `cli`, plus `core`) set the
+same `retry` policy inline in their own `vitest.config.ts`.
+
 ## Test Database Utilities
 
 | Function | Use Case |
