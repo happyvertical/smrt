@@ -6,6 +6,8 @@
  * metadata, content references ("Used In"), copy utilities, and actions.
  */
 
+import { Modal } from '@happyvertical/smrt-svelte/feedback';
+import { Button } from '@happyvertical/smrt-svelte/ui';
 import type { Snippet } from 'svelte';
 import type { PersistedAsset } from './types';
 
@@ -58,7 +60,6 @@ let {
   contentReferences,
 }: AssetDetailProps = $props();
 
-let dialogEl: HTMLDialogElement | null = $state(null);
 let saving = $state(false);
 let copyFeedback = $state('');
 
@@ -73,16 +74,6 @@ $effect(() => {
     editName = asset.name || '';
     editDescription = asset.description || '';
     editAlt = (asset as any).alt || '';
-  }
-});
-
-// Sync open state with dialog
-$effect(() => {
-  if (!dialogEl) return;
-  if (open && !dialogEl.open) {
-    dialogEl.showModal();
-  } else if (!open && dialogEl.open) {
-    dialogEl.close();
   }
 });
 
@@ -142,18 +133,6 @@ function copyMarkdown() {
   }
 }
 
-function handleCancel(e: Event) {
-  e.preventDefault();
-  handleClose();
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    handleClose();
-  }
-}
-
 const isImage = $derived(asset?.mimeType?.startsWith('image/') ?? false);
 const isVideo = $derived(asset?.mimeType?.startsWith('video/') ?? false);
 const isAudio = $derived(asset?.mimeType?.startsWith('audio/') ?? false);
@@ -175,34 +154,18 @@ function formatDate(date: Date | string | undefined): string {
 }
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<dialog
-  bind:this={dialogEl}
-  class="detail-modal"
-  oncancel={handleCancel}
-  onkeydown={handleKeydown}
-  onclick={(e) => { if (e.target === dialogEl) handleClose(); }}
-  aria-label="Asset details"
->
-  {#if asset}
-    <div
-      class="detail-modal__container"
-      role="presentation"
-      tabindex="-1"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
-    >
-      <!-- Header -->
-      <header class="detail__header">
-        <h2 class="detail__title">{asset.name || 'Untitled Asset'}</h2>
-        <button type="button" class="detail__close" onclick={handleClose} aria-label="Close">
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
-      </header>
-
+{#if asset}
+  <!-- Shell consolidated onto the library Modal (S10 #1415): title + close X,
+       backdrop, Esc, and showModal lifecycle come from Modal. `placement="end"`
+       preserves the original right-anchored detail-drawer presentation; this
+       file owns only the asset-detail body + action footer. -->
+  <Modal
+    open={open}
+    title={asset.name || 'Untitled Asset'}
+    onClose={handleClose}
+    size="md"
+    placement="end"
+  >
       <div class="detail__body">
         <!-- Preview Section -->
         <section class="detail__section">
@@ -322,114 +285,25 @@ function formatDate(date: Date | string | undefined): string {
         {/if}
       </div>
 
-      <!-- Footer -->
-      <footer class="detail__footer">
-        <button type="button" class="footer-btn footer-btn--danger" onclick={handleDelete}>
-          Delete
-        </button>
-        <div class="footer-right">
-          <button type="button" class="footer-btn footer-btn--ghost" onclick={handleClose}>
-            Cancel
-          </button>
-          <button type="button" class="footer-btn footer-btn--primary" onclick={handleSave} disabled={saving}>
+    {#snippet footer()}
+      <div class="detail-footer">
+        <Button variant="danger" onclick={handleDelete}>Delete</Button>
+        <div class="detail-footer__right">
+          <Button variant="ghost" onclick={handleClose}>Cancel</Button>
+          <Button variant="primary" onclick={handleSave} disabled={saving}>
             {#if saving}Saving...{:else}Save{/if}
-          </button>
+          </Button>
         </div>
-      </footer>
-    </div>
-  {/if}
-</dialog>
+      </div>
+    {/snippet}
+  </Modal>
+{/if}
 
 <style>
-  .detail-modal {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-  }
-
-  .detail-modal::backdrop {
-    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
-    backdrop-filter: blur(2px);
-  }
-
-  .detail-modal:not([open]) {
-    display: none;
-  }
-
-  .detail-modal__container {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    max-width: 520px;
-    height: calc(100vh - 2rem);
-    margin-right: 1rem;
-    background: var(--smrt-color-surface, #ffffff);
-    border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-3);
-    overflow: hidden;
-    animation: slideIn 300ms cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  @keyframes slideIn {
-    from { transform: translateX(100%); opacity: 0; }
-    to { transform: translateX(0); opacity: 1; }
-  }
-
-  /* Header */
-  .detail__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    flex-shrink: 0;
-  }
-
-  .detail__title {
-    margin: 0;
-    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #111827);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .detail__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    cursor: pointer;
-    border-radius: var(--smrt-radius-full, 9999px);
-    flex-shrink: 0;
-  }
-
-  .detail__close:hover {
-    background: var(--smrt-color-surface-container-highest, #e0e2ec);
-  }
-
-  /* Body */
+  /* Body — negative margin cancels Modal's .modal__body padding so the section
+     dividers stay full-bleed (Modal owns the dialog shell + scroll container). */
   .detail__body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0;
+    margin: calc(-1 * var(--smrt-spacing-5, 1.25rem));
   }
 
   .detail__section {
@@ -626,77 +500,18 @@ function formatDate(date: Date | string | undefined): string {
     to { opacity: 1; }
   }
 
-  /* Footer */
-  .detail__footer {
+  /* Footer — split layout: destructive Delete on the left, Cancel/Save on the
+     right. The buttons are library <Button>s; only the split layout is local. */
+  .detail-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: var(--smrt-spacing-3, 0.75rem) var(--smrt-spacing-5, 1.25rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    flex-shrink: 0;
-  }
-
-  .footer-right {
-    display: flex;
+    width: 100%;
     gap: var(--smrt-spacing-2, 0.5rem);
   }
 
-  .footer-btn {
-    height: 36px;
-    padding: 0 var(--smrt-spacing-4, 1rem);
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    cursor: pointer;
-    border: none;
-    transition: all 150ms ease;
-  }
-
-  .footer-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .footer-btn--primary {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-  }
-
-  .footer-btn--primary:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-2);
-  }
-
-  .footer-btn--ghost {
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-  }
-
-  .footer-btn--ghost:hover {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-  }
-
-  .footer-btn--danger {
-    background: transparent;
-    color: var(--smrt-color-error, #dc2626);
-  }
-
-  .footer-btn--danger:hover {
-    background: var(--smrt-color-error-container, #fef2f2);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .detail-modal__container {
-      animation: none;
-    }
-  }
-
-  @media (max-width: 640px) {
-    .detail-modal__container {
-      max-width: 100%;
-      margin-right: 0;
-      height: 100vh;
-      border-radius: 0;
-    }
+  .detail-footer__right {
+    display: flex;
+    gap: var(--smrt-spacing-2, 0.5rem);
   }
 </style>
