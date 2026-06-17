@@ -98,15 +98,16 @@ function getInitials(name: string): string {
 <svelte:window onclick={handleClickOutside} onkeydown={handleKeydown} />
 
 <div class="user-menu" id={menuId}>
-  <button 
+  <button
     bind:this={triggerButton}
-    class="user-menu-trigger" 
-    onclick={toggle} 
+    id="{menuId}-trigger"
+    class="user-menu-trigger"
+    onclick={toggle}
     type="button"
     use:ripple
     aria-haspopup="menu"
     aria-expanded={open}
-    aria-controls={open ? menuId : undefined}
+    aria-controls={open ? `${menuId}-dropdown` : undefined}
     aria-label={ariaLabel}
   >
     <span class="avatar" aria-hidden="true">
@@ -119,8 +120,8 @@ function getInitials(name: string): string {
   </button>
 
   {#if open}
-    <div 
-      id={menuId}
+    <div
+      id="{menuId}-dropdown"
       class="dropdown"
       role="menu"
       aria-orientation="vertical"

@@ -1,10 +1,9 @@
 // @vitest-environment jsdom
 /**
- * Component coverage for UserMenu via the shared S11 harness (#1416).
- *
- * NOTE: axe is asserted on the closed state only. When open, the dropdown reuses
- * the wrapper's `id` (duplicate id) and points `aria-labelledby` at a
- * non-existent trigger id — pre-existing a11y bugs to fix under S12 (#1417).
+ * Component coverage for UserMenu via the shared S11 harness (#1416), plus the
+ * S12 a11y remediation (#1417): the open dropdown now has its own id (no longer
+ * duplicating the wrapper) and `aria-labelledby` resolves to the trigger, so axe
+ * is asserted on both the collapsed and open states.
  */
 import {
   expectNoA11yViolations,
@@ -41,10 +40,13 @@ describe('UserMenu', () => {
     ).toBeInTheDocument();
   });
 
-  it('is axe-clean while collapsed', async () => {
+  it('is axe-clean while collapsed and when open', async () => {
     const { container } = render(UserMenu, {
-      props: { user: { name: 'Ada Lovelace' } },
+      props: { user: { name: 'Ada Lovelace', email: 'ada@example.com' } },
     });
+    await expectNoA11yViolations(container);
+    await userEvent.click(screen.getByRole('button', { name: 'User menu' }));
+    expect(screen.getByRole('menu')).toBeInTheDocument();
     await expectNoA11yViolations(container);
   });
 });
