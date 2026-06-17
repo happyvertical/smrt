@@ -1,5 +1,18 @@
 # @happyvertical/smrt-core
 
+## 0.29.9
+
+### Patch Changes
+
+- ### Other Changes
+
+  - test: roll in S11 component-test harness + cover shared leaf components (#1518) (chat)
+  - test: roll in S11 component-test harness + cover all 6 components (#1516) (users)
+  - test: roll in S11 component-test harness + cover all 7 components (#1517) (projects)
+  - @happyvertical/smrt-scanner@0.29.9
+  - @happyvertical/smrt-config@0.29.9
+  - @happyvertical/smrt-types@0.29.9
+
 ## 0.29.8
 
 ### Patch Changes
