@@ -23,9 +23,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const shardArg = process.argv[2] ?? '';
-const [iRaw, nRaw] = shardArg.split('/');
-const i = Number.parseInt(iRaw, 10);
-const n = Number.parseInt(nRaw, 10);
+// Require exactly "<i>/<n>" — reject empties, extra segments ("1/3/4"), etc.
+const match = shardArg.match(/^(\d+)\/(\d+)$/);
+const i = match ? Number.parseInt(match[1], 10) : Number.NaN;
+const n = match ? Number.parseInt(match[2], 10) : Number.NaN;
 if (!Number.isInteger(i) || !Number.isInteger(n) || i < 1 || n < 1 || i > n) {
   console.error(`Invalid shard "${shardArg}"; expected "<i>/<n>" (e.g. "2/3")`);
   process.exit(1);
