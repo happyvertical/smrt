@@ -30,10 +30,15 @@ jobs:
       # Build BEFORE the version-bump preview so the populated turbo cache reflects
       # the committed tree that dependent jobs check out (the preview rewrites
       # package.json versions, which would otherwise change turbo's task hashes).
+      # TURBO_FORCE: the SEED build never trusts a restored cache, so it always
+      # exercises the current commit even for inputs Turbo doesn't hash (e.g.
+      # per-package build helper scripts). It then saves a correct cache that the
+      # dependent jobs restore — they get the speed-up without the staleness risk.
       - name: Build packages
         run: pnpm run build
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TURBO_FORCE: 'true'
 
       # Only the build job saves the turbo cache (setup-environment restores only),
       # under the same per-SHA key, computed from the still-committed package.json.
