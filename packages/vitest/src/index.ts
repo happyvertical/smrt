@@ -413,6 +413,11 @@ export function getWorkspaceViteAliases(
       );
       addAliasIfPresent(
         aliases,
+        '@happyvertical/smrt-svelte/feedback',
+        join(packageRoot, 'src/components/feedback/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
         '@happyvertical/smrt-svelte/themes',
         join(packageRoot, 'src/themes/index.ts'),
       );
