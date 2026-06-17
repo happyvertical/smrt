@@ -285,10 +285,12 @@ jobs:
     name: Test Packages (${{ matrix.shard }})
     needs: build
     runs-on: arc-happyvertical
-    timeout-minutes: 15
+    # Each shard does a full build + ~1/3 of the package tests; 15m was too tight
+    # under self-hosted runner-pool contention (shards timed out at ~15m20s).
+    timeout-minutes: 25
     strategy:
       fail-fast: false
-      max-parallel: 3
+      max-parallel: 2
       matrix:
         shard: ['1/3', '2/3', '3/3']
 
