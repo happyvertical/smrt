@@ -2,7 +2,11 @@
   "$schema": "https://turbo.build/schema.json",
   "cacheDir": ".turbo/cache",
   "globalDependencies": [
-    "pnpm-lock.yaml"
+    "pnpm-lock.yaml",
+    "tsconfig*.json",
+    "vite.config.base.ts",
+    "vitest.workspace.ts",
+    "biome.json"
   ],
   "tasks": {
     "generate": {
