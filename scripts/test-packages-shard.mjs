@@ -14,8 +14,9 @@
  * prints this shard's `--filter=<name>` flags for `turbo run test`.
  *
  * Usage: node scripts/test-packages-shard.mjs <i>/<n>   (e.g. "2/3")
- * Prints a turbo filter that matches nothing when a shard is empty, so an empty
- * shard runs zero packages instead of accidentally running all of them.
+ * Prints nothing for an empty shard (more shards than packages); the CI step
+ * pipes the output through `xargs -r`, so an empty shard runs zero packages
+ * instead of erroring on an unmatched filter or running everything.
  */
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -52,11 +53,7 @@ for (const dir of readdirSync(packagesDir)) {
 names.sort();
 const shard = names.filter((_, index) => index % n === i - 1);
 
-// An empty shard must match nothing — a bare `turbo run test` (no --filter) would
-// run EVERY package, defeating the sharding.
-const filters =
-  shard.length > 0
-    ? shard.map((name) => `--filter=${name}`)
-    : ['--filter=__smrt_no_such_package__'];
-
-process.stdout.write(filters.join(' '));
+// Empty shard → print nothing; the CI step's `xargs -r` then runs zero packages.
+// (A turbo --filter that matches nothing errors out, and a bare `turbo run test`
+// with no filter would run EVERY package — both defeat the sharding.)
+process.stdout.write(shard.map((name) => `--filter=${name}`).join(' '));

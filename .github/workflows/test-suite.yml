@@ -314,7 +314,7 @@ jobs:
       # round-robins by name), keeping per-runner load low so transient
       # resource-pressure timing flakes stay rare.
       - name: Run package tests (shard ${{ matrix.shard }}, excluding core)
-        run: node scripts/test-packages-shard.mjs '${{ matrix.shard }}' | xargs pnpm turbo run test
+        run: node scripts/test-packages-shard.mjs '${{ matrix.shard }}' | xargs -r pnpm turbo run test
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
