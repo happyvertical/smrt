@@ -7,7 +7,12 @@
  * opens with the file pre-loaded.
  */
 
-import { Button, Modal } from '@happyvertical/smrt-svelte';
+// Import primitives from subpaths (not the root barrel) so downstream
+// consumers of `@happyvertical/smrt-assets/svelte` don't have to resolve the
+// entire smrt-svelte surface — including optional peers like smrt-agents /
+// smrt-users — just to compile this modal.
+import { Modal } from '@happyvertical/smrt-svelte/feedback';
+import { Button } from '@happyvertical/smrt-svelte/ui';
 
 export interface CreateAssetModalProps {
   /** Whether the modal is open */
