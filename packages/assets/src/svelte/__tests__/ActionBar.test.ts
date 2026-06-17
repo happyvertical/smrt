@@ -48,7 +48,8 @@ describe('ActionBar', () => {
       props: { selectedAssets: selected, onClearSelection: vi.fn(), onDelete },
     });
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    const dialog = screen.getByLabelText('Confirm delete');
+    // The library ConfirmDialog (S10) labels its dialog by the title heading.
+    const dialog = screen.getByRole('dialog', { name: /Delete 2 assets/ });
     await userEvent.click(
       within(dialog).getByRole('button', { name: 'Delete' }),
     );
@@ -65,11 +66,11 @@ describe('ActionBar', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(
-      within(screen.getByLabelText('Confirm delete')).getByRole('button', {
+      within(screen.getByRole('dialog')).getByRole('button', {
         name: 'Cancel',
       }),
     );
-    expect(screen.queryByLabelText('Confirm delete')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('is axe-clean', async () => {
