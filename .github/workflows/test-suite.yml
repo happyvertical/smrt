@@ -282,10 +282,15 @@ jobs:
           NODE_ENV: test
 
   test-packages:
-    name: Test Packages
+    name: Test Packages (${{ matrix.shard }})
     needs: build
     runs-on: arc-happyvertical
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        shard: ['1/3', '2/3', '3/3']
 
     steps:
       - name: Checkout repository
@@ -305,8 +310,11 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Run package tests (excluding core)
-        run: pnpm turbo run test --filter='!@happyvertical/smrt-core'
+      # Each shard runs ~1/3 of the non-core packages (scripts/test-packages-shard.mjs
+      # round-robins by name), keeping per-runner load low so transient
+      # resource-pressure timing flakes stay rare.
+      - name: Run package tests (shard ${{ matrix.shard }}, excluding core)
+        run: node scripts/test-packages-shard.mjs '${{ matrix.shard }}' | xargs -r pnpm turbo run test
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
@@ -315,8 +323,25 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-${{ strategy.job-index }}
           path: |
             coverage/
             test-results/
           retention-days: 7
+
+  # Aggregator: keeps the required "Test Packages" status check present after
+  # sharding (the matrix produces "Test Packages (i/3)" checks). Succeeds only if
+  # every shard succeeded.
+  test-packages-result:
+    name: Test Packages
+    needs: test-packages
+    runs-on: arc-happyvertical
+    if: always()
+    steps:
+      - name: Verify all Test Packages shards passed
+        run: |
+          if [ "${{ needs.test-packages.result }}" != "success" ]; then
+            echo "One or more Test Packages shards failed: ${{ needs.test-packages.result }}"
+            exit 1
+          fi
+          echo "All Test Packages shards passed."
