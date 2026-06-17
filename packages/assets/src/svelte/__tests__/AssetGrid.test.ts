@@ -1,13 +1,16 @@
 // @vitest-environment jsdom
 /**
- * Component coverage for AssetGrid via the shared S11 harness (#1416).
- *
- * Note: axe is intentionally not asserted here — the clickable `.asset-card`
- * (role="button") nests a selection checkbox, which trips axe's
- * `nested-interactive` rule. That's a pre-existing a11y issue tracked for the
- * S12 a11y sweep, not something this coverage test should mask or fix.
+ * Component coverage for AssetGrid via the shared S11 harness (#1416), plus the
+ * S12 a11y remediation (#1417): the whole-card open action is now a stretched
+ * "Open <name>" button instead of a role="button" card wrapping the checkbox
+ * (which tripped axe's nested-interactive rule), so axe is asserted here.
  */
-import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
+import {
+  expectNoA11yViolations,
+  render,
+  screen,
+  userEvent,
+} from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssetGrid from '../AssetGrid.svelte';
 
@@ -45,10 +48,12 @@ describe('AssetGrid', () => {
     expect(screen.getByText('clip.mp4')).toBeInTheDocument();
   });
 
-  it('opens an asset when its card is activated', async () => {
+  it('opens an asset via its stretched open button', async () => {
     const onAssetClick = vi.fn();
     render(AssetGrid, { props: baseProps({ onAssetClick }) });
-    await userEvent.click(screen.getByText('photo.png'));
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Open photo.png' }),
+    );
     expect(onAssetClick).toHaveBeenCalledWith(
       expect.objectContaining({ id: '1' }),
     );
@@ -66,5 +71,10 @@ describe('AssetGrid', () => {
       props: baseProps({ assets: [] }),
     });
     expect(container.querySelector('*')).toBeTruthy();
+  });
+
+  it('is axe-clean', async () => {
+    const { container } = render(AssetGrid, { props: baseProps() });
+    await expectNoA11yViolations(container);
   });
 });

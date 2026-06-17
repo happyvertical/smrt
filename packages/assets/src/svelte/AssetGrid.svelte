@@ -36,13 +36,6 @@ function handleDblClick(asset: PersistedAsset) {
   onAssetDblClick?.(asset);
 }
 
-function handleKeydown(asset: PersistedAsset, event: KeyboardEvent) {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    onAssetClick(asset);
-  }
-}
-
 function isImage(asset: PersistedAsset): boolean {
   return asset.mimeType?.startsWith('image/') ?? false;
 }
@@ -95,15 +88,20 @@ function getAltText(asset: PersistedAsset): string {
     <div class="grid">
       {#each assets as asset (asset.id)}
         {@const selected = selectedIds.has(asset.id)}
-        <div
-          class="asset-card"
-          class:asset-card--selected={selected}
-          role="button"
-          tabindex="0"
-          onclick={() => handleClick(asset)}
-          ondblclick={() => handleDblClick(asset)}
-          onkeydown={(e) => handleKeydown(asset, e)}
-        >
+        <div class="asset-card" class:asset-card--selected={selected}>
+          <!-- Whole-card "open" action. A stretched, transparent button (vs. a
+               role="button" on the card) avoids nesting the interactive checkbox
+               inside an interactive control (axe nested-interactive). It sits
+               above the non-interactive content but below the checkbox (z-index),
+               and is keyboard-activatable natively (Enter/Space). -->
+          <button
+            type="button"
+            class="asset-card__open"
+            aria-label="Open {asset.name || 'Untitled'}"
+            onclick={() => handleClick(asset)}
+            ondblclick={() => handleDblClick(asset)}
+          ></button>
+
           <!-- Selection checkbox -->
           <div class="asset-card__checkbox">
             <input
@@ -184,7 +182,23 @@ function getAltText(asset: PersistedAsset): string {
     transform: translateY(-1px);
   }
 
-  .asset-card:focus-visible {
+  /* Stretched whole-card open action. Transparent, covers the card, sits above
+     the non-interactive content (z-index 1) but below the checkbox (z-index 2). */
+  .asset-card__open {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    z-index: 1;
+    border-radius: inherit;
+  }
+
+  .asset-card__open:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #005ac1);
     outline-offset: 2px;
   }

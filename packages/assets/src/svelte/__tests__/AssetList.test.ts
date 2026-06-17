@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 /**
- * Component coverage for AssetList via the shared S11 harness (#1416).
- * (axe omitted: rows nest interactive controls — pre-existing, S12 a11y sweep.)
+ * Component coverage for AssetList via the shared S11 harness (#1416), plus the
+ * S12 a11y remediation (#1417): the row's open action is now a name button in
+ * its cell instead of a role="button" <tr> nesting the checkbox (axe
+ * nested-interactive), so axe is asserted here.
  */
-import { render, screen, userEvent } from '@happyvertical/smrt-vitest/svelte';
+import {
+  expectNoA11yViolations,
+  render,
+  screen,
+  userEvent,
+} from '@happyvertical/smrt-vitest/svelte';
 import { describe, expect, it, vi } from 'vitest';
 import AssetList from '../AssetList.svelte';
 
@@ -57,10 +64,24 @@ describe('AssetList', () => {
     expect(onSortChange).toHaveBeenCalledTimes(1);
   });
 
+  it('opens an asset via its name button', async () => {
+    const onAssetClick = vi.fn();
+    render(AssetList, { props: baseProps({ onAssetClick }) });
+    await userEvent.click(screen.getByRole('button', { name: 'photo.png' }));
+    expect(onAssetClick).toHaveBeenCalledWith(
+      expect.objectContaining({ id: '1' }),
+    );
+  });
+
   it('renders without assets', () => {
     const { container } = render(AssetList, {
       props: baseProps({ assets: [] }),
     });
     expect(container.querySelector('*')).toBeTruthy();
+  });
+
+  it('is axe-clean', async () => {
+    const { container } = render(AssetList, { props: baseProps() });
+    await expectNoA11yViolations(container);
   });
 });
