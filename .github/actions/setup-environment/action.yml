@@ -157,17 +157,21 @@ runs:
           ${{ runner.os }}-pnpm-store-
 
     # Turbo build/test/typecheck cache shared across CI jobs. turbo.json pins the
-    # cache to .turbo/cache; the build job populates it and every dependent job
-    # restores it, so their `pnpm run build` is a turbo cache hit instead of a
-    # cold full rebuild (was ~11 redundant builds per run). Key is per-commit with
-    # progressively looser restore-keys (same manifests, then any) for warm starts.
+    # cache to .turbo/cache. This RESTORES only — the build job alone saves the
+    # populated cache (a dedicated actions/cache/save step) so that parallel jobs
+    # which don't run a build (e.g. dependency-audit, install-deps:false) can't
+    # claim the immutable per-SHA key with an empty cache. Dependent jobs restore
+    # the build job's cache, so their `pnpm run build` is a turbo cache hit instead
+    # of a cold full rebuild (was ~11 redundant builds per run). Key is per-commit
+    # with progressively looser restore-keys (same manifests, then any) for warm
+    # starts across runs.
     - name: Ensure Turbo cache directory exists
       shell: bash
       run: mkdir -p .turbo/cache
 
-    - name: Setup Turbo cache
+    - name: Restore Turbo cache
       id: turbo-cache
-      uses: actions/cache@v4
+      uses: actions/cache/restore@v4
       with:
         path: .turbo/cache
         key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}

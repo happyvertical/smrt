@@ -27,6 +27,22 @@ jobs:
           registry-url: 'https://npm.pkg.github.com'
           auth-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Build BEFORE the version-bump preview so the populated turbo cache reflects
+      # the committed tree that dependent jobs check out (the preview rewrites
+      # package.json versions, which would otherwise change turbo's task hashes).
+      - name: Build packages
+        run: pnpm run build
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only the build job saves the turbo cache (setup-environment restores only),
+      # under the same per-SHA key, computed from the still-committed package.json.
+      - name: Save Turbo cache
+        uses: actions/cache/save@v4
+        with:
+          path: .turbo/cache
+          key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
+
       - name: Preview changeset version bump
         run: |
           echo "🔍 Simulating changeset version bump..."
@@ -60,11 +76,6 @@ jobs:
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build packages
-        run: pnpm run build
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   typecheck:
     name: Typecheck
