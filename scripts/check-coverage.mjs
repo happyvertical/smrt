@@ -89,12 +89,17 @@ const WAIVED = new Set(['types']);
 
 // Packages temporarily exempt from the line-coverage gate (distinct from WAIVED:
 // these DO ship runtime code, but v8 line coverage isn't a meaningful gate for
-// them yet). smrt-svelte is Svelte-heavy and v8 cannot instrument `.svelte`, so
-// the `.ts`-only measure both understates and destabilizes (importing a
-// component pulls its untested transitive `.ts` into the denominator). Real
-// component coverage is the explicit deliverable of S11 (#1416 — UI test
-// harness); the floor is enforced there. Remove this once S11 lands.
-const GATE_EXEMPT = new Set(['smrt-svelte']);
+// them yet).
+//   - smrt-svelte: Svelte-heavy and v8 cannot instrument `.svelte`, so the
+//     `.ts`-only measure both understates and destabilizes (importing a
+//     component pulls its untested transitive `.ts` into the denominator). Real
+//     component coverage is the deliverable of S11 (#1416 — UI test harness).
+//   - vitest (`@happyvertical/smrt-vitest`): the shared test/build plugin. Its
+//     uncovered surface is the Vite plugin lifecycle (config/transform/manifest
+//     hooks, workspace fs scanning) — exercised through every package's test run
+//     rather than unit line-coverage; its "product" is test infrastructure.
+// Revisit both as their respective coverage stories mature.
+const GATE_EXEMPT = new Set(['smrt-svelte', 'vitest']);
 
 function flagValue(name) {
   const i = process.argv.indexOf(name);

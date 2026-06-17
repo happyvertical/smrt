@@ -13,6 +13,21 @@
     "./setup": {
       "types": "./dist/setup.d.ts",
       "import": "./dist/setup.js"
+    },
+    "./svelte-setup": {
+      "types": "./dist/svelte-setup.d.ts",
+      "import": "./dist/svelte-setup.js",
+      "default": "./dist/svelte-setup.js"
+    },
+    "./svelte": {
+      "types": "./dist/svelte.d.ts",
+      "import": "./dist/svelte.js",
+      "default": "./dist/svelte.js"
+    },
+    "./a11y": {
+      "types": "./dist/a11y.d.ts",
+      "import": "./dist/a11y.js",
+      "default": "./dist/a11y.js"
     }
   },
   "files": [
@@ -47,13 +62,25 @@
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/sql": "catalog:",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/svelte": "^5.3.1",
+    "@testing-library/user-event": "^14.6.1",
+    "axe-core": "^4.12.1",
+    "jsdom": "^26.1.0",
     "tsx": "^4.21.0"
   },
   "peerDependencies": {
+    "svelte": ">=5.18.2",
     "vitest": ">=2.0.0"
+  },
+  "peerDependenciesMeta": {
+    "svelte": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "25.0.9",
+    "svelte": "^5.18.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },

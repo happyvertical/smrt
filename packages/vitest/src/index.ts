@@ -373,6 +373,28 @@ export function getWorkspaceViteAliases(
       );
     }
 
+    if (packageName === '@happyvertical/smrt-vitest') {
+      // Shared Svelte component-test harness (S11 #1416). Flat `src/*.ts` files,
+      // so the generic `/svelte` → `src/svelte/index.ts` convention misses them;
+      // map the exact subpaths. The length-desc sort below makes these win over
+      // the bare-package root alias.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-vitest/svelte',
+        join(packageRoot, 'src/svelte.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-vitest/svelte-setup',
+        join(packageRoot, 'src/svelte-setup.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-vitest/a11y',
+        join(packageRoot, 'src/a11y.ts'),
+      );
+    }
+
     if (packageName === '@happyvertical/smrt-svelte') {
       addAliasIfPresent(
         aliases,
