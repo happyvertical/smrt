@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.7
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: consolidate ActionBar delete-confirm onto library ConfirmDialog (S10 #1415) (#1514) (assets)
+  - @happyvertical/smrt-scanner@0.29.7
+  - @happyvertical/smrt-config@0.29.7
+  - @happyvertical/smrt-types@0.29.7
+
 ## 0.29.6
 
 ### Patch Changes
