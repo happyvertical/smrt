@@ -3,6 +3,7 @@
  * Component coverage for ReactionPicker via the shared S11 harness (#1416).
  */
 import {
+  expectNoA11yViolations,
   render,
   screen,
   userEvent,
@@ -11,23 +12,22 @@ import {
 import { describe, expect, it, vi } from 'vitest';
 import ReactionPicker from '../ReactionPicker.svelte';
 
-// NOTE: axe is intentionally not asserted here. ReactionPicker uses `role="grid"`
-// with buttons as direct children, which trips axe's `aria-required-children`
-// (a grid must contain `role="row"` → gridcells). Pre-existing a11y bug to fix
-// under S12 (#1417) — masking it with a passing axe test would hide it.
+// S12 a11y remediation (#1417): the picker is now a labelled `role="group"` of
+// buttons (was an invalid `role="grid"` with button children, which tripped axe's
+// `aria-required-children`), so axe is asserted on the open state.
 
 describe('ReactionPicker', () => {
-  it('renders a grid of emoji buttons when open', () => {
+  it('renders a labelled group of emoji buttons when open', () => {
     render(ReactionPicker, { props: { onreact: vi.fn(), isOpen: true } });
-    const grid = screen.getByRole('grid', { name: 'Emoji reactions' });
-    expect(within(grid).getAllByRole('button').length).toBeGreaterThan(0);
+    const group = screen.getByRole('group', { name: 'Emoji reactions' });
+    expect(within(group).getAllByRole('button').length).toBeGreaterThan(0);
   });
 
   it('reports the chosen emoji through onreact', async () => {
     const onreact = vi.fn();
     render(ReactionPicker, { props: { onreact, isOpen: true } });
     const [first] = within(
-      screen.getByRole('grid', { name: 'Emoji reactions' }),
+      screen.getByRole('group', { name: 'Emoji reactions' }),
     ).getAllByRole('button');
     await userEvent.click(first);
     expect(onreact).toHaveBeenCalledTimes(1);
@@ -36,6 +36,13 @@ describe('ReactionPicker', () => {
 
   it('renders nothing when closed', () => {
     render(ReactionPicker, { props: { onreact: vi.fn(), isOpen: false } });
-    expect(screen.queryByRole('grid')).toBeNull();
+    expect(screen.queryByRole('group')).toBeNull();
+  });
+
+  it('is axe-clean', async () => {
+    const { container } = render(ReactionPicker, {
+      props: { onreact: vi.fn(), isOpen: true },
+    });
+    await expectNoA11yViolations(container);
   });
 });
