@@ -164,15 +164,6 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           <tr
             class="list-table__row"
             class:list-table__row--selected={selected}
-            onclick={() => onAssetClick(asset)}
-            role="button"
-            tabindex="0"
-            onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onAssetClick(asset);
-              }
-            }}
           >
             <td class="col-checkbox">
               <input
@@ -191,7 +182,16 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
               {/if}
             </td>
             <td class="col-name">
-              <span class="row-name">{asset.name || 'Untitled'}</span>
+              <!-- The name is the row's open action (a button, not a
+                   role="button" on the <tr> nesting the checkbox → avoids axe
+                   nested-interactive). -->
+              <button
+                type="button"
+                class="row-name"
+                onclick={() => onAssetClick(asset)}
+              >
+                {asset.name || 'Untitled'}
+              </button>
               {#if asset.description}
                 <span class="row-desc">{asset.description}</span>
               {/if}
@@ -248,7 +248,6 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .list-table__row {
     border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    cursor: pointer;
     transition: background 150ms ease;
   }
 
@@ -312,6 +311,26 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 250px;
+    /* Reset the open-action button so it renders as the row's name text. */
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .row-name:hover {
+    text-decoration: underline;
+  }
+
+  .row-name:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline-offset: 2px;
+    border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
   .row-desc {
