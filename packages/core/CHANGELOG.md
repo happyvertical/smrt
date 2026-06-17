@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.5
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - repair AssetCollection bugs + raise coverage to floor (S11 #1416) (#1513) (assets)
+  - @happyvertical/smrt-scanner@0.29.5
+  - @happyvertical/smrt-config@0.29.5
+  - @happyvertical/smrt-types@0.29.5
+
 ## 0.29.4
 
 ### Patch Changes
