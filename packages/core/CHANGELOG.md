@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.11
+
+### Patch Changes
+
+- ### Other Changes
+
+  - ci: shard the Test Packages job into 3 to cut resource-pressure flakes (#1520)
+  - @happyvertical/smrt-scanner@0.29.11
+  - @happyvertical/smrt-config@0.29.11
+  - @happyvertical/smrt-types@0.29.11
+
 ## 0.29.10
 
 ### Patch Changes
