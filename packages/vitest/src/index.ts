@@ -807,22 +807,29 @@ async function generateLocalManifest(
 }
 
 /**
- * Resolve the per-test retry count injected into the vitest config.
+ * Vitest's `test.retry` accepts a plain count or an object form
+ * (`{ count, delay }`). Mirror that so explicit object configs survive.
+ */
+type RetryConfig = number | { count?: number; delay?: number };
+
+/**
+ * Resolve the per-test `retry` injected into the vitest config.
  *
  * Precedence: `SMRT_VITEST_RETRY` (a digits-only, non-negative integer) wins;
- * otherwise an explicit `test.retry` already set by the consumer is preserved;
- * otherwise the default is 2 retries in CI (`process.env.CI`) and 0 everywhere
- * else, so local runs surface flaky tests immediately while the shared
- * cross-package CI job tolerates rare transient timing flakes.
+ * otherwise an explicit consumer value is preserved as-is — including the object
+ * form (`{ count, delay }`) — so options aren't dropped; otherwise the default is
+ * 2 retries in CI (`process.env.CI`) and 0 everywhere else, so local runs surface
+ * flaky tests immediately while the shared cross-package CI job tolerates rare
+ * transient timing flakes.
  */
-function resolveRetry(explicitRetry?: number): number {
+function resolveRetry(explicitRetry?: RetryConfig): RetryConfig {
   const override = process.env.SMRT_VITEST_RETRY;
   // Digits-only so "2x"/"2.5"/"-1" fall through to the explicit/default value
   // rather than being silently coerced by parseInt.
   if (override != null && /^\d+$/.test(override)) {
     return Number.parseInt(override, 10);
   }
-  if (typeof explicitRetry === 'number' && explicitRetry >= 0) {
+  if (explicitRetry != null) {
     return explicitRetry;
   }
   return process.env.CI ? 2 : 0;
@@ -900,6 +907,7 @@ export function smrtVitestPlugin(
 
   const applyTestDefaultsToProjects = (
     projects: unknown[] | undefined,
+    rootRetry: RetryConfig | undefined,
   ): void => {
     projects?.forEach((project) => {
       if (!project || typeof project !== 'object' || !('test' in project)) {
@@ -907,15 +915,16 @@ export function smrtVitestPlugin(
       }
 
       const projectConfig = project as Record<string, unknown> & {
-        test?: { setupFiles?: string | string[]; retry?: number };
+        test?: { setupFiles?: string | string[]; retry?: RetryConfig };
       };
 
       projectConfig.test = {
         ...projectConfig.test,
         // Vitest does NOT inherit the root `test.retry` into per-project configs,
-        // so apply it here. resolveRetry (set after the spread) preserves any
-        // explicit per-project retry unless SMRT_VITEST_RETRY forces a value.
-        retry: resolveRetry(projectConfig.test?.retry),
+        // so apply it here, falling back to the root retry (then the CI default)
+        // when the project has none. resolveRetry preserves an explicit
+        // per-project value unless SMRT_VITEST_RETRY forces one.
+        retry: resolveRetry(projectConfig.test?.retry ?? rootRetry),
         setupFiles: ensureSetupFiles(projectConfig.test?.setupFiles),
       };
     });
@@ -925,7 +934,8 @@ export function smrtVitestPlugin(
     name: 'smrt-vitest',
 
     config(userConfig) {
-      applyTestDefaultsToProjects(userConfig.test?.projects);
+      const rootRetry = userConfig.test?.retry as RetryConfig | undefined;
+      applyTestDefaultsToProjects(userConfig.test?.projects, rootRetry);
       const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);
       const resolveConfig =
         userConfig.resolve && typeof userConfig.resolve === 'object'
@@ -947,8 +957,9 @@ export function smrtVitestPlugin(
           // WITHOUT masking real failures — a deterministic failure still fails
           // all attempts, and vitest reports retried tests as "flaky" so they
           // stay visible. An explicit `test.retry` in the consumer config is
-          // preserved; override with SMRT_VITEST_RETRY=<n>.
-          retry: resolveRetry(userConfig.test?.retry as number | undefined),
+          // preserved (including the object form); override with
+          // SMRT_VITEST_RETRY=<n>.
+          retry: resolveRetry(rootRetry),
         },
       };
     },
