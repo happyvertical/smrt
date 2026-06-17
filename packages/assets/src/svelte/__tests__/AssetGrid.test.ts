@@ -59,6 +59,14 @@ describe('AssetGrid', () => {
     );
   });
 
+  it('labels the card action "Select" in pick mode', () => {
+    render(AssetGrid, { props: baseProps({ mode: 'pick' }) });
+    expect(
+      screen.getByRole('button', { name: 'Select photo.png' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open photo.png' })).toBeNull();
+  });
+
   it('toggles selection via the per-asset checkbox', async () => {
     const onSelectionChange = vi.fn();
     render(AssetGrid, { props: baseProps({ onSelectionChange }) });

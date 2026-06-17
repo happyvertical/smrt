@@ -260,6 +260,7 @@ function handleManagerDrop(event: DragEvent) {
         {assets}
         {selectedIds}
         {loading}
+        {mode}
         onSelectionChange={handleSelectionChange}
         onAssetClick={handleAssetClick}
         onAssetDblClick={handleAssetDblClick}

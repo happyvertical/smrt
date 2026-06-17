@@ -15,7 +15,12 @@ let {
   onAssetClick,
   onAssetDblClick,
   loading = false,
+  mode = 'manage',
 }: AssetGridProps = $props();
+
+// A card click opens the detail view in manage mode, or toggles selection in
+// pick mode — label the action accordingly.
+const actionVerb = $derived(mode === 'pick' ? 'Select' : 'Open');
 
 function toggleSelection(asset: PersistedAsset, event: Event) {
   event.stopPropagation();
@@ -97,7 +102,7 @@ function getAltText(asset: PersistedAsset): string {
           <button
             type="button"
             class="asset-card__open"
-            aria-label="Open {asset.name || 'Untitled'}"
+            aria-label="{actionVerb} {asset.name || 'Untitled'}"
             title={asset.name || 'Untitled'}
             onclick={() => handleClick(asset)}
             ondblclick={() => handleDblClick(asset)}
