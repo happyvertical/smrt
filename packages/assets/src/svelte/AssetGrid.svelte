@@ -290,6 +290,9 @@ function getAltText(asset: PersistedAsset): string {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-small, 0.25rem);
     z-index: 2;
+    /* Informational only — let clicks fall through to the stretched open button
+       below so the badge corner isn't a dead zone for opening the asset. */
+    pointer-events: none;
   }
 
   .asset-card__badge--warning {
