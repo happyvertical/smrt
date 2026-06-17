@@ -1,5 +1,11 @@
 # @happyvertical/smrt-app-cli
 
+## 0.29.10
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.10
+
 ## 0.29.9
 
 ### Patch Changes
