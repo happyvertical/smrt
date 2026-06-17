@@ -895,17 +895,23 @@ export function smrtVitestPlugin(
     return setupFiles;
   };
 
-  const applySetupFilesToProjects = (projects: unknown[] | undefined): void => {
+  const applyTestDefaultsToProjects = (
+    projects: unknown[] | undefined,
+  ): void => {
     projects?.forEach((project) => {
       if (!project || typeof project !== 'object' || !('test' in project)) {
         return;
       }
 
       const projectConfig = project as Record<string, unknown> & {
-        test?: { setupFiles?: string | string[] };
+        test?: { setupFiles?: string | string[]; retry?: number };
       };
 
       projectConfig.test = {
+        // Vitest does NOT inherit the root `test.retry` into per-project configs,
+        // so apply the CI retry default here too — `...projectConfig.test` after
+        // it preserves any explicit per-project override.
+        retry: resolveCiRetry(),
         ...projectConfig.test,
         setupFiles: ensureSetupFiles(projectConfig.test?.setupFiles),
       };
@@ -916,7 +922,7 @@ export function smrtVitestPlugin(
     name: 'smrt-vitest',
 
     config(userConfig) {
-      applySetupFilesToProjects(userConfig.test?.projects);
+      applyTestDefaultsToProjects(userConfig.test?.projects);
       const setupFiles = ensureSetupFiles(userConfig.test?.setupFiles);
       const resolveConfig =
         userConfig.resolve && typeof userConfig.resolve === 'object'
