@@ -98,6 +98,7 @@ function getAltText(asset: PersistedAsset): string {
             type="button"
             class="asset-card__open"
             aria-label="Open {asset.name || 'Untitled'}"
+            title={asset.name || 'Untitled'}
             onclick={() => handleClick(asset)}
             ondblclick={() => handleDblClick(asset)}
           ></button>
@@ -200,7 +201,8 @@ function getAltText(asset: PersistedAsset): string {
 
   .asset-card__open:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: 2px;
+    /* Inset so the card's `overflow: hidden` doesn't clip the focus ring. */
+    outline-offset: -2px;
   }
 
   .asset-card--selected {

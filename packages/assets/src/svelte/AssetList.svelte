@@ -311,7 +311,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 250px;
-    /* Render the open-action button as inline text. */
+    /* Reset the open-action button so it renders as the row's name text. */
     margin: 0;
     padding: 0;
     border: none;
