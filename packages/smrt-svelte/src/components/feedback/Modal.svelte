@@ -377,5 +377,13 @@ const placementClass = $derived(
     .modal--xl .modal__container {
       max-width: calc(100vw - var(--smrt-spacing-4, 1rem));
     }
+
+    /* A drawer goes full-bleed on mobile — no backdrop strip. Declared after the
+       size-cap rule above so it wins for end placement regardless of size. */
+    .modal--end .modal__container {
+      width: 100%;
+      max-width: 100%;
+      max-height: 100%;
+    }
   }
 </style>
