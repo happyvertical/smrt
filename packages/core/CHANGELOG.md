@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.10
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - retry flaky tests in CI to stabilize the Test Packages job (#1519) (vitest)
+  - @happyvertical/smrt-scanner@0.29.10
+  - @happyvertical/smrt-config@0.29.10
+  - @happyvertical/smrt-types@0.29.10
+
 ## 0.29.9
 
 ### Patch Changes
