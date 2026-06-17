@@ -109,6 +109,40 @@ describe('smrtVitestPlugin config', () => {
     });
   });
 
+  it('injects CI-aware retry into root and project configs', () => {
+    vi.stubEnv('SMRT_VITEST_RETRY', '');
+    vi.stubEnv('CI', '1');
+    const userConfig = {
+      test: { projects: [{ test: { name: 'sqlite' } }] },
+    };
+    const config = smrtVitestPlugin().config?.(userConfig as any);
+    expect((config as any)?.test?.retry).toBe(2);
+    expect((userConfig.test.projects[0] as any).test.retry).toBe(2);
+
+    vi.stubEnv('CI', '');
+    expect(
+      (smrtVitestPlugin().config?.({ test: {} } as any) as any)?.test?.retry,
+    ).toBe(0);
+    vi.unstubAllEnvs();
+  });
+
+  it('preserves an explicit retry and honours SMRT_VITEST_RETRY', () => {
+    vi.stubEnv('CI', '1');
+    vi.stubEnv('SMRT_VITEST_RETRY', '');
+    const retryFor = (userConfig: unknown) =>
+      (smrtVitestPlugin().config?.(userConfig as any) as any)?.test?.retry;
+
+    // explicit root retry preserved over the CI default
+    expect(retryFor({ test: { retry: 5 } })).toBe(5);
+    // valid env override wins over everything
+    vi.stubEnv('SMRT_VITEST_RETRY', '3');
+    expect(retryFor({ test: { retry: 5 } })).toBe(3);
+    // non-digit override is ignored, falling back to the explicit value
+    vi.stubEnv('SMRT_VITEST_RETRY', '2x');
+    expect(retryFor({ test: { retry: 5 } })).toBe(5);
+    vi.unstubAllEnvs();
+  });
+
   it('does not duplicate the setup file when already configured', () => {
     const plugin = smrtVitestPlugin();
     const userConfig = {

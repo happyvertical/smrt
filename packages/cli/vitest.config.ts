@@ -21,8 +21,8 @@ export default defineConfig({
     // shared "Test Packages" job reliable without masking real failures (a
     // deterministic failure still fails all attempts). Local runs keep retry at
     // 0 so flakes stay visible; override with SMRT_VITEST_RETRY=<n>.
-    retry: process.env.SMRT_VITEST_RETRY
-      ? Number.parseInt(process.env.SMRT_VITEST_RETRY, 10)
+    retry: /^\d+$/.test(process.env.SMRT_VITEST_RETRY ?? '')
+      ? Number.parseInt(process.env.SMRT_VITEST_RETRY as string, 10)
       : process.env.CI
         ? 2
         : 0,

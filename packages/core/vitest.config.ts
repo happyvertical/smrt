@@ -42,8 +42,8 @@ export default defineConfig({
     // retry is set inline. Keeps the sharded Test Core job resilient to rare
     // CI-only timing flakes that pass on re-run; local runs keep retry at 0.
     // Override with SMRT_VITEST_RETRY=<n>.
-    retry: process.env.SMRT_VITEST_RETRY
-      ? Number.parseInt(process.env.SMRT_VITEST_RETRY, 10)
+    retry: /^\d+$/.test(process.env.SMRT_VITEST_RETRY ?? '')
+      ? Number.parseInt(process.env.SMRT_VITEST_RETRY as string, 10)
       : process.env.CI
         ? 2
         : 0,
