@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.4
+
+### Patch Changes
+
+- ### Features
+
+  - shared Svelte component-test harness (S11 #1416) (#1512) (smrt-vitest)
+  - @happyvertical/smrt-scanner@0.29.4
+  - @happyvertical/smrt-config@0.29.4
+  - @happyvertical/smrt-types@0.29.4
+
 ## 0.29.3
 
 ### Patch Changes
