@@ -37,6 +37,16 @@ export default defineConfig({
     testTimeout: 60000, // 60 seconds for slow CI
     hookTimeout: 120000, // Hooks can include module setup in constrained CI
     teardownTimeout: 60000, // Allow time for cleanup
+    // Re-run a failed test in CI before failing the run (same policy as
+    // smrt-vitest's resolveCiRetry). core does not use smrtVitestPlugin, so the
+    // retry is set inline. Keeps the sharded Test Core job resilient to rare
+    // CI-only timing flakes that pass on re-run; local runs keep retry at 0.
+    // Override with SMRT_VITEST_RETRY=<n>.
+    retry: /^\d+$/.test(process.env.SMRT_VITEST_RETRY ?? '')
+      ? Number.parseInt(process.env.SMRT_VITEST_RETRY as string, 10)
+      : process.env.CI
+        ? 2
+        : 0,
 
     // Reporter configuration
     reporters: ['default'],
