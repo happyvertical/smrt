@@ -182,6 +182,20 @@ describe('AssetCollection', () => {
       ).rejects.toThrow(/No asset found/);
     });
 
+    it('createNewVersion keeps a distinct slug when the base already ends in -vN', async () => {
+      // A primary slug shaped like `<x>-vN` must not regenerate to a slug that
+      // collides with the primary (which would upsert-overwrite it).
+      const v1 = await seed({ slug: 'spec-v2', name: 'spec' });
+      const v2 = await collection.createNewVersion(
+        v1.id as string,
+        'file:///v2',
+      );
+
+      expect(v2.slug).not.toBe(v1.slug);
+      const versions = await collection.listVersions(v1.id as string);
+      expect(versions.map((v) => v.version)).toEqual([1, 2]);
+    });
+
     it('rollbackToVersion creates a new version copying the target’s content', async () => {
       const v1 = await seed({ sourceUri: 'file:///v1' });
       await collection.createNewVersion(v1.id as string, 'file:///v2');

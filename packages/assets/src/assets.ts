@@ -153,21 +153,33 @@ export class AssetCollection extends SmrtCollection<Asset> {
     const latestVersion = versions[0];
     const newVersionNumber = latestVersion.version + 1;
 
-    // Give the new version a distinct slug. The assets table is unique on
-    // (slug, context, meta_type), so carrying the previous version's slug would
-    // upsert-overwrite the prior row instead of appending a version. Derive a
-    // `<base>-v<n>` slug from the primary version's slug (stripping any existing
-    // `-vN` suffix) so the chain — tracked by `primaryVersionId` — stays intact.
+    // Give the new version a distinct, collision-free slug. The assets table is
+    // unique on (slug, context, meta_type), so a reused slug would
+    // upsert-overwrite an existing row instead of appending a version. Build
+    // `<primary-slug>-v<n>` and verify it's not already taken by another version
+    // in the chain OR by an unrelated asset — appending a disambiguator until
+    // free. (The chain itself is tracked by `primaryVersionId`, not the slug.)
     const primary =
       versions.find((v) => v.id === primaryVersionId) ??
       versions[versions.length - 1];
-    const baseSlug = String(primary?.slug ?? '').replace(/-v\d+$/, '');
+    const baseSlug = String(primary?.slug ?? '') || 'asset';
+    const takenInChain = new Set(
+      versions.map((v) => v.slug).filter(Boolean) as string[],
+    );
+    let candidate = `${baseSlug}-v${newVersionNumber}`;
+    for (let attempt = 1; ; attempt += 1) {
+      const collides =
+        takenInChain.has(candidate) ||
+        (await this.get({ slug: candidate })) !== null;
+      if (!collides) break;
+      candidate = `${baseSlug}-v${newVersionNumber}-${attempt}`;
+    }
 
     // Create new version
     return (await this.create({
       ...latestVersion,
       id: undefined, // Generate new ID
-      slug: baseSlug ? `${baseSlug}-v${newVersionNumber}` : undefined,
+      slug: candidate,
       sourceUri: newSourceUri,
       version: newVersionNumber,
       primaryVersionId,

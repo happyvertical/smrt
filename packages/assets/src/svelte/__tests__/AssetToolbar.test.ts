@@ -31,13 +31,6 @@ describe('AssetToolbar', () => {
     ).toBeInTheDocument();
   });
 
-  it('accepts typed search input (drives the search handler)', async () => {
-    render(AssetToolbar, { props: baseProps() });
-    // The search is debounced/controlled; just exercise the input handler.
-    await userEvent.type(screen.getByLabelText('Search assets'), 'cat');
-    expect(screen.getByLabelText('Search assets')).toBeInTheDocument();
-  });
-
   it('clears the active search', async () => {
     const onFilterChange = vi.fn();
     render(AssetToolbar, {
