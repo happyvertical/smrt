@@ -156,6 +156,25 @@ runs:
         restore-keys: |
           ${{ runner.os }}-pnpm-store-
 
+    # Turbo build/test/typecheck cache shared across CI jobs. turbo.json pins the
+    # cache to .turbo/cache; the build job populates it and every dependent job
+    # restores it, so their `pnpm run build` is a turbo cache hit instead of a
+    # cold full rebuild (was ~11 redundant builds per run). Key is per-commit with
+    # progressively looser restore-keys (same manifests, then any) for warm starts.
+    - name: Ensure Turbo cache directory exists
+      shell: bash
+      run: mkdir -p .turbo/cache
+
+    - name: Setup Turbo cache
+      id: turbo-cache
+      uses: actions/cache@v4
+      with:
+        path: .turbo/cache
+        key: ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-turbo-${{ hashFiles('pnpm-lock.yaml', 'package.json', 'turbo.json', 'packages/*/package.json') }}-
+          ${{ runner.os }}-turbo-
+
     - name: Cache Playwright browsers
       if: inputs.setup-playwright == 'true'
       uses: actions/cache@v4
