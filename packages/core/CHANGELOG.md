@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.6
+
+### Patch Changes
+
+- ### Other Changes
+
+  - refactor: consolidate CreateAssetModal onto Modal + Button (S10 #1415) (#1510) (assets)
+  - @happyvertical/smrt-scanner@0.29.6
+  - @happyvertical/smrt-config@0.29.6
+  - @happyvertical/smrt-types@0.29.6
+
 ## 0.29.5
 
 ### Patch Changes
