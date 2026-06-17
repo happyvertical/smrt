@@ -48,7 +48,13 @@ describe('ActionBar', () => {
       props: { selectedAssets: selected, onClearSelection: vi.fn(), onDelete },
     });
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
-    const dialog = screen.getByLabelText('Confirm delete');
+    // The library ConfirmDialog (S10) labels its dialog by the title heading.
+    // Asserting the interpolated title AND message proves Svelte attribute-string
+    // interpolation (`"… {count} …"`) resolves for component props (count = 2).
+    const dialog = screen.getByRole('dialog', { name: /Delete 2 assets\?/ });
+    expect(
+      within(dialog).getByText(/This action cannot be undone\./),
+    ).toBeInTheDocument();
     await userEvent.click(
       within(dialog).getByRole('button', { name: 'Delete' }),
     );
@@ -65,11 +71,11 @@ describe('ActionBar', () => {
     });
     await userEvent.click(screen.getByRole('button', { name: 'Delete' }));
     await userEvent.click(
-      within(screen.getByLabelText('Confirm delete')).getByRole('button', {
+      within(screen.getByRole('dialog')).getByRole('button', {
         name: 'Cancel',
       }),
     );
-    expect(screen.queryByLabelText('Confirm delete')).not.toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
 
   it('is axe-clean', async () => {
