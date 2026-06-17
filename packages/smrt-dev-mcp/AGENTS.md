@@ -41,6 +41,11 @@ Skill-aware harnesses can parse the frontmatter; other harnesses can ignore it.
 { "mcpServers": { "smrt-dev-mcp": { "command": "npx", "args": ["-y", "@happyvertical/smrt-dev-mcp"] } } }
 ```
 
+For global MCP client config, do not use `pnpm exec smrt-dev-mcp` unless the MCP
+server is always launched from a repo that installs the package. Prefer an
+absolute `node /path/to/node_modules/@happyvertical/smrt-dev-mcp/dist/index.js`
+launcher or a small wrapper script with an absolute Node path.
+
 ## MCP Tier Context
 
 - **Tier 1** (Runtime): auto-generated from `@smrt()` objects — live data operations
