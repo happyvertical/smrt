@@ -6,7 +6,7 @@
  * Event-specific getRootEvent/isRoot, status transitions, in-progress
  * detection, relationship loads, and the collection's query helpers
  * (series/type/place/status/date/upcoming/search/tree) and tenant scoping.
- * Real in-memory SQLite, no mocks.
+ * Real temp-file SQLite (file:tmpdir), no mocks.
  */
 
 import { randomUUID } from 'node:crypto';

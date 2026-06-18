@@ -4,7 +4,7 @@
  * Exercises recurrence patterns (daily/weekly/monthly/yearly), metadata
  * helpers, active-window checks, relationship loads to events and type,
  * and the collection's organizer/type/date filters and tenant scoping.
- * Real in-memory SQLite, no mocks.
+ * Real temp-file SQLite (file:tmpdir), no mocks.
  */
 
 import { randomUUID } from 'node:crypto';

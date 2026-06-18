@@ -5,7 +5,7 @@
  * placement-ordered queries, participant statistics, the home/away
  * accessors, search filters, and tenant scoping. The collection extends
  * SmrtJunction with leftField=eventId / rightField=profileId.
- * Real in-memory SQLite, no mocks.
+ * Real temp-file SQLite (file:tmpdir), no mocks.
  */
 
 import { randomUUID } from 'node:crypto';

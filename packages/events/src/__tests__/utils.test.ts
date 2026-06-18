@@ -162,7 +162,7 @@ describe('checkSchedulingConflict', () => {
     expect(checkSchedulingConflict(e1Start, null, e2Start, null)).toBe(false);
   });
 
-  it('reports a conflict between two identical instantaneous events', () => {
+  it('treats two identical instantaneous events as non-conflicting (start must be strictly before end)', () => {
     const at = new Date('2026-01-15T10:00:00Z');
     // start < end requires start < start which is false for identical instants
     expect(

@@ -1,7 +1,7 @@
 /**
  * EventType model + EventTypeCollection integration tests.
  *
- * Exercises the real create -> save -> query flow against an in-memory
+ * Exercises the real create -> save -> query flow against a temp-file (file:tmpdir)
  * SQLite database (no mocks). Covers JSON schema helpers, slug-based
  * lookup/get-or-create, default seeding, and tenant scoping.
  */
