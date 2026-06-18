@@ -4,6 +4,8 @@
  * Shows total hours, amounts, and pending items
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import { type Currency, formatCurrency, formatHours } from './utils.js';
 
 /** Props for TimeSummary component */
@@ -34,11 +36,13 @@ let {
   showApproved = false,
   layout = 'grid',
 }: Props = $props();
+
+const { t } = useI18n();
 </script>
 
 <div class="time-summary" class:horizontal={layout === 'horizontal'}>
   <div class="summary-card">
-    <span class="label">Total Hours</span>
+    <span class="label">{t(M['projects.time_summary.total_hours'])}</span>
     <span class="value">{formatHours(totalHours)}</span>
     {#if entryCount !== undefined}
       <span class="count">{entryCount} {entryCount === 1 ? 'entry' : 'entries'}</span>
@@ -46,13 +50,13 @@ let {
   </div>
 
   <div class="summary-card">
-    <span class="label">Total Value</span>
+    <span class="label">{t(M['projects.time_summary.total_value'])}</span>
     <span class="value">{formatCurrency(totalAmount, currency)}</span>
   </div>
 
   {#if showPending && (pendingHours > 0 || pendingAmount > 0)}
     <div class="summary-card highlight">
-      <span class="label">Pending Approval</span>
+      <span class="label">{t(M['projects.time_summary.pending_approval'])}</span>
       <span class="value">{formatHours(pendingHours)}</span>
       <span class="sub-value">{formatCurrency(pendingAmount, currency)}</span>
     </div>

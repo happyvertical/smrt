@@ -3,8 +3,10 @@
  * AgentScheduleList - Display a list of scheduled agents
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Button } from '@happyvertical/smrt-svelte/ui';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.js';
 import type { AgentScheduleData } from '../types.js';
 import {
   calculateSuccessRate,
@@ -12,6 +14,8 @@ import {
   formatRelativeTime,
 } from '../types.js';
 import ScheduleStatusBadge from './ScheduleStatusBadge.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Schedules to display */
@@ -69,9 +73,9 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
         <th class="schedule-list__cell">Status</th>
         <th class="schedule-list__cell">Agent</th>
         <th class="schedule-list__cell">Schedule</th>
-        <th class="schedule-list__cell">Last Run</th>
-        <th class="schedule-list__cell">Next Run</th>
-        <th class="schedule-list__cell">Success Rate</th>
+        <th class="schedule-list__cell">{t(M['agents.schedule_list.last_run'])}</th>
+        <th class="schedule-list__cell">{t(M['agents.schedule_list.next_run'])}</th>
+        <th class="schedule-list__cell">{t(M['agents.schedule_list.success_rate'])}</th>
         <th class="schedule-list__cell">Runs</th>
         {#if showActions}
           <th class="schedule-list__cell">Actions</th>
@@ -85,7 +89,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
           <td class="schedule-list__cell schedule-list__cell--loading" colspan="8">
             <div class="schedule-list__loading">
               <span class="schedule-list__spinner"></span>
-              <span>Loading schedules...</span>
+              <span>{t(M['agents.schedule_list.loading_schedules'])}</span>
             </div>
           </td>
         </tr>
@@ -96,7 +100,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
               {@render empty()}
             {:else}
               <div class="schedule-list__empty">
-                <span>No schedules found</span>
+                <span>{t(M['agents.schedule_list.no_schedules_found'])}</span>
               </div>
             {/if}
           </td>
@@ -172,7 +176,7 @@ function handleRunNow(schedule: AgentScheduleData, event: Event) {
                       size="sm"
                       onclick={(event: MouseEvent) => handleRunNow(schedule, event)}
                     >
-                      Run Now
+                      {t(M['agents.schedule_list.run_now'])}
                     </Button>
                   {/if}
                 </div>

@@ -25,9 +25,13 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    },
     "svelte": {
       "optional": true
     }
@@ -56,6 +60,7 @@
   },
   "devDependencies": {
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.7",

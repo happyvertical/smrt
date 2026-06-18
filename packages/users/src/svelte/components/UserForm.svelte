@@ -1,7 +1,11 @@
 <script lang="ts">
 import type { Profile } from '@happyvertical/smrt-profiles';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { UserStatus } from '@happyvertical/smrt-types';
 import type { User } from '@happyvertical/smrt-users';
+import { M } from '../i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   user?: User | null;
@@ -64,7 +68,7 @@ function handleSubmit(e: Event) {
     <label for="email">Email</label>
     <input id="email" type="email" bind:value={email} required disabled={loading || !!user} />
     {#if user}
-      <span class="hint">Email cannot be changed after creation</span>
+      <span class="hint">{t(M['users.user_form.email_cannot_be_changed'])}</span>
     {/if}
   </div>
 

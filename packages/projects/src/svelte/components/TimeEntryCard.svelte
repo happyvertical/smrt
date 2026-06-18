@@ -4,7 +4,9 @@
  * Supports selection mode for bulk operations
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.js';
 import {
   type Currency,
   formatCurrency,
@@ -36,6 +38,8 @@ let {
   currency = 'CAD',
   actions,
 }: Props = $props();
+
+const { t } = useI18n();
 
 function handleCheckboxChange(event: Event) {
   const target = event.target as HTMLInputElement;
@@ -74,7 +78,7 @@ function handleKeydown(event: KeyboardEvent) {
         type="checkbox"
         checked={selected}
         onchange={handleCheckboxChange}
-        aria-label="Select time entry for {entry.description}"
+        aria-label={t(M['projects.time_entry_card.select_entry'], { description: entry.description })}
       />
     </div>
   {/if}
@@ -138,7 +142,7 @@ function handleKeydown(event: KeyboardEvent) {
 
   {#if entry.mileage && entry.mileage > 0}
     <div class="mileage">
-      + {entry.mileage} km mileage
+      {t(M['projects.time_entry_card.mileage'], { mileage: entry.mileage })}
     </div>
   {/if}
 {/snippet}

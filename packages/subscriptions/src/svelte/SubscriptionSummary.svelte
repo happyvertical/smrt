@@ -1,17 +1,21 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { EntitlementResolution } from '../types.js';
+import { M } from './i18n.js';
 
 let {
   resolution = null,
 }: {
   resolution?: EntitlementResolution | null;
 } = $props();
+
+const { t } = useI18n();
 </script>
 
 <section class="smrt-subscription-summary">
   <div>
-    <p class="smrt-subscription-summary__label">Current plan</p>
-    <h2>{resolution?.planKey ?? 'No active plan'}</h2>
+    <p class="smrt-subscription-summary__label">{t(M['subscriptions.summary.current_plan'])}</p>
+    <h2>{resolution?.planKey ?? t(M['subscriptions.summary.no_active_plan'])}</h2>
   </div>
   <dl>
     <div>

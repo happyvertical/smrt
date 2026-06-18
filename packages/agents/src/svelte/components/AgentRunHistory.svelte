@@ -3,14 +3,18 @@
  * AgentRunHistory - Display run history for an agent
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Badge } from '@happyvertical/smrt-svelte/ui';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.js';
 import type { AgentRunHistoryEntry } from '../types.js';
 import {
   formatDuration,
   formatRelativeTime,
   getRunStatusVariant,
 } from '../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Run history entries */
@@ -48,7 +52,7 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
           <td class="run-history__cell run-history__cell--loading" colspan="5">
             <div class="run-history__loading">
               <span class="run-history__spinner"></span>
-              <span>Loading history...</span>
+              <span>{t(M['agents.run_history.loading_history'])}</span>
             </div>
           </td>
         </tr>
@@ -59,7 +63,7 @@ function handleEntryClick(entry: AgentRunHistoryEntry) {
               {@render empty()}
             {:else}
               <div class="run-history__empty">
-                <span>No run history</span>
+                <span>{t(M['agents.run_history.no_run_history'])}</span>
               </div>
             {/if}
           </td>

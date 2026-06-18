@@ -5,7 +5,9 @@
  */
 
 import { Icon, ripple } from '@happyvertical/smrt-svelte';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Tenant } from '@happyvertical/smrt-users';
+import { M } from '../i18n.js';
 
 export interface Props {
   tenant: Tenant;
@@ -26,6 +28,8 @@ const {
   onedit,
   ondelete,
 }: Props = $props();
+
+const { t } = useI18n();
 
 const statusClass = $derived.by(() => {
   switch (tenant.status) {
@@ -108,7 +112,7 @@ function getColor(name: string): string {
           class="action-btn" 
           onclick={(event: MouseEvent) => { event.stopPropagation(); onedit?.(); }}
           use:ripple
-          aria-label="Edit"
+          aria-label={t(M['tenancy.tenant_card.edit'])}
         >
           <Icon name="menu" size={18} />
         </button>
@@ -119,7 +123,7 @@ function getColor(name: string): string {
           class="action-btn danger" 
           onclick={(event: MouseEvent) => { event.stopPropagation(); ondelete?.(); }}
           use:ripple
-          aria-label="Delete"
+          aria-label={t(M['tenancy.tenant_card.delete'])}
         >
           <Icon name="close" size={18} />
         </button>

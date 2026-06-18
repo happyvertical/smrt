@@ -3,9 +3,13 @@
  * JobStats - Display job statistics overview
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Card } from '@happyvertical/smrt-svelte/ui';
+import { M } from '../i18n.js';
 import type { JobStats, QueueStats } from './types.js';
 import { formatDuration } from './types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Statistics data */
@@ -31,7 +35,7 @@ const successRateFormatted = $derived(
     <Card padding="sm">
       <div class="stat-card">
         <div class="stat-card__value">{stats.total.toLocaleString()}</div>
-        <div class="stat-card__label">Total Jobs</div>
+        <div class="stat-card__label">{t(M['jobs.job_stats.total_jobs'])}</div>
       </div>
     </Card>
 
@@ -71,7 +75,7 @@ const successRateFormatted = $derived(
     <Card padding="sm">
       <div class="stat-card">
         <div class="stat-card__value">{successRateFormatted}</div>
-        <div class="stat-card__label">Success Rate</div>
+        <div class="stat-card__label">{t(M['jobs.job_stats.success_rate'])}</div>
       </div>
     </Card>
 
@@ -79,7 +83,7 @@ const successRateFormatted = $derived(
     <Card padding="sm">
       <div class="stat-card">
         <div class="stat-card__value">{formatDuration(stats.avgDuration)}</div>
-        <div class="stat-card__label">Avg Duration</div>
+        <div class="stat-card__label">{t(M['jobs.job_stats.avg_duration'])}</div>
       </div>
     </Card>
   </div>
