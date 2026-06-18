@@ -4,7 +4,11 @@
  * Demonstrates "Define Once, Consume Everywhere" - form is generated from Product class definition
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
 import type { ProductData } from '../../types';
+
+const { t } = useI18n();
 
 interface Props {
   data?: ProductData;
@@ -103,7 +107,7 @@ function _getFieldType(
   <header class="form-header">
     <h2 class="form-title">{title}</h2>
     <div class="form-subtitle">
-      Auto-generated from SMRT Product model
+      {t(M['products.auto_form.subtitle'])}
     </div>
   </header>
 
@@ -135,7 +139,7 @@ function _getFieldType(
 
   <!-- Demo: Show current form state -->
   <details class="form-debug">
-    <summary>Form Data (Debug)</summary>
+    <summary>{t(M['products.auto_form.debug_summary'])}</summary>
     <pre>{JSON.stringify(formData, null, 2)}</pre>
   </details>
 </div>

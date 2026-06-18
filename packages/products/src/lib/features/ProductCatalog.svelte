@@ -1,7 +1,11 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onMount } from 'svelte';
 import { productStore } from '$lib/stores/product-store.svelte';
+import { M } from '../i18n.js';
 import type { ProductData } from '../types';
+
+const { t } = useI18n();
 
 interface Props {
   readonly?: boolean;
@@ -72,17 +76,17 @@ function _handleCancelForm() {
 
 <div class="product-catalog">
   <div class="catalog-header">
-    <h2>Product Catalog</h2>
+    <h2>{t(M['products.product_catalog.title'])}</h2>
     
     <div class="catalog-stats">
       <span class="stat">
         <strong>{productStore.items.length}</strong> products
       </span>
       <span class="stat">
-        <strong>{productStore.inStockCount}</strong> in stock
+        <strong>{productStore.inStockCount}</strong> {t(M['products.product_catalog.in_stock'])}
       </span>
       <span class="stat">
-        Total value: <strong>${productStore.totalValue.toFixed(2)}</strong>
+        {t(M['products.product_catalog.total_value'])} <strong>${productStore.totalValue.toFixed(2)}</strong>
       </span>
     </div>
   </div>
@@ -92,12 +96,12 @@ function _handleCancelForm() {
       <input
         type="text"
         bind:value={searchQuery}
-        placeholder="Search products..."
+        placeholder={t(M['products.product_catalog.search_placeholder'])}
         class="search-input"
       />
       
       <select bind:value={selectedCategory} class="category-filter">
-        <option value="">All Categories</option>
+        <option value="">{t(M['products.product_catalog.all_categories'])}</option>
         {#each productStore.categories as category}
           <option value={category}>{category}</option>
         {/each}
@@ -110,14 +114,14 @@ function _handleCancelForm() {
         onclick={handleCreateProduct}
         class="create-btn"
       >
-        Add Product
+        {t(M['products.product_catalog.add_product'])}
       </button>
     {/if}
   </div>
   
   {#if productStore.loading}
     <div class="loading-state">
-      <p>Loading products...</p>
+      <p>{t(M['products.product_catalog.loading'])}</p>
     </div>
   {:else if productStore.error}
     <div class="error-state">
@@ -129,14 +133,14 @@ function _handleCancelForm() {
   {:else if filteredProducts.length === 0}
     <div class="empty-state">
       {#if productStore.items.length === 0}
-        <p>No products yet. Create your first product to get started!</p>
+        <p>{t(M['products.product_catalog.empty'])}</p>
         {#if !readonly}
           <button type="button" onclick={handleCreateProduct} class="create-btn">
-            Create First Product
+            {t(M['products.product_catalog.create_first'])}
           </button>
         {/if}
       {:else}
-        <p>No products match your search criteria.</p>
+        <p>{t(M['products.product_catalog.no_match'])}</p>
       {/if}
     </div>
   {:else}

@@ -47,6 +47,7 @@ const STRICT_PACKAGES = new Set([
   'events',
   'messages',
   'images',
+  'products',
 ]);
 
 // Dev/playground host, not a shippable library (consistent with the other ratchets).

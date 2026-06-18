@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { ProductData } from '../types';
+
+const { t } = useI18n();
 
 interface Props {
   product?: Partial<ProductData>;
@@ -63,7 +67,7 @@ function _handleSubmit(event: Event) {
 
 <form onsubmit={handleSubmit} class="product-form">
   <div class="form-group">
-    <label for="name">Product Name *</label>
+    <label for="name">{t(M['products.product_form.name_label'])}</label>
     <input
       id="name"
       type="text"
@@ -71,7 +75,7 @@ function _handleSubmit(event: Event) {
       disabled={loading}
       class="form-input"
       class:error={errors.name}
-      placeholder="Enter product name"
+      placeholder={t(M['products.product_form.name_placeholder'])}
     />
     {#if errors.name}
       <span class="error-message">{errors.name}</span>
@@ -85,7 +89,7 @@ function _handleSubmit(event: Event) {
       bind:value={formData.description}
       disabled={loading}
       class="form-textarea"
-      placeholder="Product description (optional)"
+      placeholder={t(M['products.product_form.description_placeholder'])}
       rows="3"
     ></textarea>
   </div>
@@ -117,7 +121,7 @@ function _handleSubmit(event: Event) {
         bind:value={formData.category}
         disabled={loading}
         class="form-input"
-        placeholder="Product category"
+        placeholder={t(M['products.product_form.category_placeholder'])}
       />
     </div>
   </div>
@@ -130,9 +134,9 @@ function _handleSubmit(event: Event) {
       bind:value={formData.tags}
       disabled={loading}
       class="form-input"
-      placeholder="tag1, tag2, tag3"
+      placeholder={t(M['products.product_form.tags_placeholder'])}
     />
-    <small class="form-hint">Separate tags with commas</small>
+    <small class="form-hint">{t(M['products.product_form.tags_hint'])}</small>
   </div>
 
   <div class="form-group">
@@ -143,7 +147,7 @@ function _handleSubmit(event: Event) {
         disabled={loading}
         class="form-checkbox"
       />
-      In Stock
+      {t(M['products.product_form.in_stock_label'])}
     </label>
   </div>
 

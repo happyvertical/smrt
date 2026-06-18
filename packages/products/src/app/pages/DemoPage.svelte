@@ -4,7 +4,11 @@
  * Progressive customization: Auto-generated → Custom components
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../lib/i18n.js';
 import type { ProductData } from '../../lib/types';
+
+const { t } = useI18n();
 
 const _currentTab = $state<'auto' | 'custom' | 'comparison'>('auto');
 
@@ -37,9 +41,9 @@ function _handleCustomSubmit(data: ProductData) {
 
 <div class="demo-page">
   <header class="demo-header">
-    <h1>SMRT Framework Demo</h1>
+    <h1>{t(M['products.demo_page.title'])}</h1>
     <p class="demo-subtitle">
-      Define Once, Consume Everywhere - Progressive Customization
+      {t(M['products.demo_page.subtitle'])}
     </p>
   </header>
 
@@ -56,7 +60,7 @@ function _handleCustomSubmit(data: ProductData) {
       class:active={currentTab === 'custom'}
       onclick={() => currentTab = 'custom'}
     >
-      Custom Components
+      {t(M['products.demo_page.custom_components_tab'])}
     </button>
     <button
       class="nav-btn"
@@ -70,25 +74,24 @@ function _handleCustomSubmit(data: ProductData) {
   <main class="demo-content">
     {#if currentTab === 'auto'}
       <section class="demo-section">
-        <h2>Auto-Generated UI from SMRT Object</h2>
+        <h2>{t(M['products.demo_page.auto_generated_heading'])}</h2>
         <p class="section-description">
-          This form is automatically generated from the Product class definition.
-          The field types, labels, and validation rules are inferred from the TypeScript schema.
+          {t(M['products.demo_page.auto_generated_description'])}
         </p>
 
         <div class="demo-grid">
           <div class="demo-column">
-            <h3>Generated Form</h3>
+            <h3>{t(M['products.demo_page.generated_form_heading'])}</h3>
             <AutoForm
               data={autoFormData}
-              title="Auto-Generated Product Form"
+              title={t(M['products.demo_page.auto_form_title'])}
               onSubmit={handleAutoSubmit}
               onChange={(data) => autoFormData = { ...data }}
             />
           </div>
 
           <div class="demo-column">
-            <h3>Generated Display</h3>
+            <h3>{t(M['products.demo_page.generated_display_heading'])}</h3>
             <ProductCard
               product={autoFormData}
               onEdit={() => {}}
@@ -99,15 +102,14 @@ function _handleCustomSubmit(data: ProductData) {
 
     {:else if currentTab === 'custom'}
       <section class="demo-section">
-        <h2>Custom Components with SMRT Integration</h2>
+        <h2>{t(M['products.demo_page.custom_components_heading'])}</h2>
         <p class="section-description">
-          These are hand-crafted components that still leverage the SMRT data structure
-          but provide custom UI/UX for specific business requirements.
+          {t(M['products.demo_page.custom_components_description'])}
         </p>
 
         <div class="demo-grid">
           <div class="demo-column">
-            <h3>Custom Form</h3>
+            <h3>{t(M['products.demo_page.custom_form_heading'])}</h3>
             <ProductForm
               product={customFormData}
               onSave={handleCustomSubmit}
@@ -115,7 +117,7 @@ function _handleCustomSubmit(data: ProductData) {
           </div>
 
           <div class="demo-column">
-            <h3>Custom Display</h3>
+            <h3>{t(M['products.demo_page.custom_display_heading'])}</h3>
             <ProductCard
               product={customFormData}
               onEdit={() => {}}
@@ -126,34 +128,33 @@ function _handleCustomSubmit(data: ProductData) {
 
     {:else if currentTab === 'comparison'}
       <section class="demo-section">
-        <h2>Progressive Customization</h2>
+        <h2>{t(M['products.demo_page.progressive_heading'])}</h2>
         <p class="section-description">
-          Start with auto-generated components, then progressively customize as needed.
-          Both approaches use the same underlying SMRT Product model.
+          {t(M['products.demo_page.progressive_description'])}
         </p>
 
         <div class="comparison-grid">
           <div class="comparison-column">
             <h3>🤖 Auto-Generated</h3>
             <div class="feature-list">
-              <div class="feature">✅ Zero configuration</div>
-              <div class="feature">✅ Instant UI from schema</div>
-              <div class="feature">✅ Type-safe by default</div>
-              <div class="feature">⚡ Perfect for prototyping</div>
+              <div class="feature">{t(M['products.demo_page.feature_zero_config'])}</div>
+              <div class="feature">{t(M['products.demo_page.feature_instant_ui'])}</div>
+              <div class="feature">{t(M['products.demo_page.feature_type_safe'])}</div>
+              <div class="feature">{t(M['products.demo_page.feature_prototyping'])}</div>
             </div>
             <AutoForm
               data={autoFormData}
-              title="Auto Form"
+              title={t(M['products.demo_page.simple_auto_form_title'])}
               readonly={true}
             />
           </div>
 
           <div class="comparison-column">
-            <h3>🎨 Custom Components</h3>
+            <h3>{t(M['products.demo_page.custom_components_label'])}</h3>
             <div class="feature-list">
-              <div class="feature">✅ Tailored UX</div>
-              <div class="feature">✅ Business-specific workflows</div>
-              <div class="feature">✅ Advanced interactions</div>
+              <div class="feature">{t(M['products.demo_page.feature_tailored_ux'])}</div>
+              <div class="feature">{t(M['products.demo_page.feature_business_workflows'])}</div>
+              <div class="feature">{t(M['products.demo_page.feature_advanced_interactions'])}</div>
               <div class="feature">⚡ Production-ready</div>
             </div>
             <ProductForm
@@ -168,13 +169,13 @@ function _handleCustomSubmit(data: ProductData) {
 
   <footer class="demo-footer">
     <div class="framework-info">
-      <h4>SMRT Framework Benefits</h4>
+      <h4>{t(M['products.demo_page.benefits_heading'])}</h4>
       <ul>
-        <li><strong>Define Once:</strong> Product class with @smrt decorator</li>
-        <li><strong>Auto-Generate:</strong> REST APIs, MCP tools, TypeScript clients, default UI</li>
-        <li><strong>Progressive Enhancement:</strong> Start with defaults, customize as needed</li>
-        <li><strong>Type Safety:</strong> End-to-end TypeScript integration</li>
-        <li><strong>Multiple Consumption:</strong> Library, federation, standalone</li>
+        <li><strong>{t(M['products.demo_page.benefit_define_once_label'])}</strong> {t(M['products.demo_page.benefit_define_once_text'])}</li>
+        <li><strong>Auto-Generate:</strong> {t(M['products.demo_page.benefit_auto_generate_text'])}</li>
+        <li><strong>{t(M['products.demo_page.benefit_progressive_label'])}</strong> {t(M['products.demo_page.benefit_progressive_text'])}</li>
+        <li><strong>{t(M['products.demo_page.benefit_type_safety_label'])}</strong> {t(M['products.demo_page.benefit_type_safety_text'])}</li>
+        <li><strong>{t(M['products.demo_page.benefit_multiple_consumption_label'])}</strong> Library, federation, standalone</li>
       </ul>
     </div>
   </footer>
