@@ -10,6 +10,11 @@ export interface Props {
 </script>
 
 <script lang="ts">
+  import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+  import { M } from '../i18n.js';
+
+  const { t } = useI18n();
+
   let {
     attachments = [],
     onattach,
@@ -79,7 +84,7 @@ export interface Props {
         class="file-input"
         onchange={(e) => handleFiles((e.target as HTMLInputElement).files)}
       />
-      <span class="upload-text">Drop files or click to attach</span>
+      <span class="upload-text">{t(M['messages.attachment_upload.drop_files'])}</span>
     </label>
   </div>
 </div>

@@ -9,7 +9,11 @@ export interface Props {
 </script>
 
 <script lang="ts">
+  import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+  import { M } from '../i18n.js';
   import RecipientInput from './RecipientInput.svelte';
+
+  const { t } = useI18n();
 
   let { originalMessage, onsend, oncancel }: Props = $props();
 
@@ -45,7 +49,7 @@ export interface Props {
 </script>
 
 <div class="forward-form">
-  <div class="forward-header">Forward message</div>
+  <div class="forward-header">{t(M['messages.forward_form.header'])}</div>
 
   <RecipientInput
     label="To"
@@ -56,7 +60,7 @@ export interface Props {
   <textarea
     class="forward-body"
     bind:value={body}
-    placeholder="Add a note (optional)..."
+    placeholder={t(M['messages.forward_form.note_placeholder'])}
     rows={3}
   ></textarea>
 

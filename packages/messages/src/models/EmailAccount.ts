@@ -123,6 +123,9 @@ export class EmailAccount extends Account {
               name: folderName,
               path: folderName,
             });
+            // initialize() binds the DB connection; without it save() throws
+            // "Database accessed before initialization" and sync persists nothing.
+            await folder.initialize();
             await folder.save();
           }
 
@@ -158,12 +161,16 @@ export class EmailAccount extends Account {
 
               // Create or update email record
               const { Email } = await import('./Email');
-              const email =
-                existingEmail ||
-                new Email({
+              let email = existingEmail;
+              if (!email) {
+                email = new Email({
                   ...this.options,
                   accountId,
                 });
+                // Bind the DB connection before save() (existingEmail is already
+                // initialized via the query that loaded it).
+                await email.initialize();
+              }
 
               // Update fields
               email.messageId = msg.messageId || '';
