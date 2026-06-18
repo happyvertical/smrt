@@ -381,6 +381,30 @@ describe('EmailAccount DB-backed operations', () => {
         true,
       );
     });
+
+    it('gives each synced email its own id when the account carries id/slug (hydrated)', async () => {
+      // A DB-hydrated account has its row id/slug in `this.options`; child rows
+      // must NOT inherit them (else every email upserts under the account's PK).
+      const account = await makeAccount(db);
+      (account as any).options.id = account.id;
+      (account as any).options.slug = 'account-slug';
+      await makeFolder(db, account.id!);
+      const { client } = makeMockClient({
+        messages: [
+          makeServerMessage({ messageId: '<a@example.com>' }),
+          makeServerMessage({ messageId: '<b@example.com>' }),
+        ],
+      });
+      vi.spyOn(account, 'createClient').mockResolvedValue(client as any);
+
+      const result = await account.syncFrom();
+
+      expect(result.messagesDownloaded).toBe(2);
+      const emails = await account.getEmails();
+      const ids = new Set(emails.map((e: any) => e.id));
+      expect(ids.size).toBe(2); // two distinct rows, not collided under one PK
+      expect(ids.has(account.id)).toBe(false); // none reuse the account's id
+    });
   });
 
   // -------------------------------------------------------------------------

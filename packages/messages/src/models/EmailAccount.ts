@@ -35,6 +35,22 @@ export class EmailAccount extends Account {
   }
 
   /**
+   * Options for child rows (folders/emails) created during sync: carries the DB
+   * connection + tenant context from this account, but strips this account's own
+   * identity fields. When this account was hydrated from the DB, `this.options`
+   * holds the account row's `id`/`slug`/`_skipLoad`; spreading those into a new
+   * child would make every synced row inherit the account's primary key and
+   * upsert over each other.
+   */
+  private childOptions(): Record<string, unknown> {
+    const rest = { ...(this.options as Record<string, unknown>) };
+    delete rest.id;
+    delete rest.slug;
+    delete rest._skipLoad;
+    return rest;
+  }
+
+  /**
    * Create a sender for this email account
    */
   override async createSender(): Promise<MessageSenderInterface> {
@@ -118,7 +134,7 @@ export class EmailAccount extends Account {
             // Create folder record
             const { EmailFolder } = await import('./EmailFolder');
             folder = new EmailFolder({
-              ...this.options,
+              ...this.childOptions(),
               accountId,
               name: folderName,
               path: folderName,
@@ -164,7 +180,7 @@ export class EmailAccount extends Account {
               let email = existingEmail;
               if (!email) {
                 email = new Email({
-                  ...this.options,
+                  ...this.childOptions(),
                   accountId,
                 });
                 // Bind the DB connection before save() (existingEmail is already
