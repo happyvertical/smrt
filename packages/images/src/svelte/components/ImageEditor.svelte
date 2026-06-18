@@ -1,4 +1,6 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type {
   ImageConvertRequest,
   ImageCropRequest,
@@ -6,6 +8,8 @@ import type {
   ImageLike,
   ImageResizeRequest,
 } from '../image-clients';
+
+const { t } = useI18n();
 
 let {
   image = null,
@@ -174,14 +178,14 @@ async function handleAIEdit() {
 
 <div class="smrt-image-editor">
   <div class="header">
-    <h3>Image Editor</h3>
+    <h3>{t(M['images.image_editor.title'])}</h3>
     {#if onCancel}
       <button class="close-btn" onclick={onCancel}>×</button>
     {/if}
   </div>
 
   {#if !image}
-    <div class="empty-state">No image selected for editing.</div>
+    <div class="empty-state">{t(M['images.image_editor.no_image_selected'])}</div>
   {:else}
     <div class="editor-content">
       <div class="image-preview" style="background-image: url({image.url})">
@@ -190,8 +194,8 @@ async function handleAIEdit() {
       
       <div class="editor-controls">
         <div class="mode-selector">
-          <button class:active={mode === 'standard'} onclick={() => mode = 'standard'}>Standard Tools</button>
-          <button class:active={mode === 'ai'} onclick={() => mode = 'ai'}>AI Edit</button>
+          <button class:active={mode === 'standard'} onclick={() => mode = 'standard'}>{t(M['images.image_editor.standard_tools'])}</button>
+          <button class:active={mode === 'ai'} onclick={() => mode = 'ai'}>{t(M['images.image_editor.ai_edit'])}</button>
         </div>
 
         {#if error}
@@ -208,10 +212,10 @@ async function handleAIEdit() {
             <div class="row">
               <label>Width <input type="number" bind:value={width} onfocus={() => isEditingDimensions = true} /></label>
               <label>Height <input type="number" bind:value={height} onfocus={() => isEditingDimensions = true} /></label>
-              <button disabled={isProcessing} onclick={handleResize} class="tonal-btn">Apply Resize</button>
+              <button disabled={isProcessing} onclick={handleResize} class="tonal-btn">{t(M['images.image_editor.apply_resize'])}</button>
             </div>
             {#if isEditingDimensions}
-               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>Reset Dimensions</button></div>
+               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</button></div>
             {/if}
           </div>
 
@@ -224,15 +228,15 @@ async function handleAIEdit() {
             <div class="row">
               <label>W <input type="number" bind:value={cropW} onfocus={() => isCropping = true} /></label>
               <label>H <input type="number" bind:value={cropH} onfocus={() => isCropping = true} /></label>
-              <button disabled={isProcessing} onclick={handleCrop} class="tonal-btn">Apply Crop</button>
+              <button disabled={isProcessing} onclick={handleCrop} class="tonal-btn">{t(M['images.image_editor.apply_crop'])}</button>
             </div>
             {#if isCropping}
-               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>Reset Dimensions</button></div>
+               <div class="row"><button class="text-btn hint" onclick={resetDimensions}>{t(M['images.image_editor.reset_dimensions'])}</button></div>
             {/if}
           </div>
 
           <div class="tool-section">
-            <h4>Convert Format</h4>
+            <h4>{t(M['images.image_editor.convert_format'])}</h4>
             <div class="row">
               <select bind:value={format}>
                 <option value="webp">WebP</option>
@@ -245,11 +249,11 @@ async function handleAIEdit() {
         {:else}
           <!-- AI Operations -->
           <div class="tool-section">
-            <h4>AI Powered Edit</h4>
-            <p class="hint">Describe how you want to change this image. A new derivative asset will be created.</p>
-            <textarea 
-              bind:value={prompt} 
-              placeholder="e.g. Change the background to a sunset..."
+            <h4>{t(M['images.image_editor.ai_powered_edit'])}</h4>
+            <p class="hint">{t(M['images.image_editor.ai_powered_edit_hint'])}</p>
+            <textarea
+              bind:value={prompt}
+              placeholder={t(M['images.image_editor.ai_prompt_placeholder'])}
               rows="4"
             ></textarea>
             <button 
