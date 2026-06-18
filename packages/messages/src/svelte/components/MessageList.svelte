@@ -2,9 +2,13 @@
 /**
  * MessageList - Unified message list with selection
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.messages.js';
 import type { AccountData, MessageData } from '../types.js';
 import MessageCard from './MessageCard.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   messages: MessageData[];
@@ -43,10 +47,10 @@ function getAccount(accountId: string): AccountData | undefined {
 }
 </script>
 
-<div class="message-list" role="grid" aria-label="Messages">
+<div class="message-list" role="grid" aria-label={t(M['messages.message_list.messages_label'])}>
   {#if loading}
     <div class="loading" role="status" aria-live="polite">
-      <p>Loading messages...</p>
+      <p>{t(M['messages.message_list.loading'])}</p>
     </div>
   {:else if messages.length === 0}
     <div class="empty" role="status" aria-live="polite">

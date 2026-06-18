@@ -2,8 +2,12 @@
 /**
  * ThreadView - Conversation thread with collapsible messages
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.messages.js';
 import type { MessageData } from '../types.js';
 import MessageDetail from './MessageDetail.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   messages: MessageData[];
@@ -81,7 +85,7 @@ const _sortedMessages = $derived(
 );
 </script>
 
-<div class="thread-view" role="list" aria-label="Conversation thread">
+<div class="thread-view" role="list" aria-label={t(M['messages.thread_view.conversation_thread'])}>
   {#each _sortedMessages as message, i (message.id)}
     <div
       class="thread-message"
@@ -114,8 +118,8 @@ const _sortedMessages = $derived(
               class="collapse-btn"
               type="button"
               onclick={() => toggleCollapse(message.id)}
-              title="Collapse"
-              aria-label="Collapse message"
+              title={t(M['messages.thread_view.collapse'])}
+              aria-label={t(M['messages.thread_view.collapse_message'])}
             >
               ▼
             </button>

@@ -2,8 +2,12 @@
 /**
  * MessageToolbar - Bulk action toolbar
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.messages.js';
 import type { BulkAction } from '../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   selectedCount: number;
@@ -24,10 +28,10 @@ const {
 }: Props = $props();
 </script>
 
-<div class="toolbar" role="toolbar" aria-label="Message actions">
+<div class="toolbar" role="toolbar" aria-label={t(M['messages.message_toolbar.actions_label'])}>
   <div class="selection-info">
     {#if selectedCount > 0}
-      <span class="count">{selectedCount} of {totalCount} selected</span>
+      <span class="count">{t(M['messages.message_toolbar.count_selected'], { selectedCount, totalCount })}</span>
       {#if onclearselection}
         <button class="link-btn" type="button" onclick={onclearselection}>
           Clear
@@ -38,7 +42,7 @@ const {
     {/if}
     {#if onselectall && selectedCount < totalCount}
       <button class="link-btn" type="button" onclick={onselectall}>
-        Select all
+        {t(M['messages.message_toolbar.select_all'])}
       </button>
     {/if}
   </div>
@@ -46,10 +50,10 @@ const {
   {#if selectedCount > 0 && onaction}
     <div class="actions">
       <button class="action-btn" type="button" onclick={() => onaction?.('markRead')}>
-        Mark read
+        {t(M['messages.message_toolbar.mark_read'])}
       </button>
       <button class="action-btn" type="button" onclick={() => onaction?.('markUnread')}>
-        Mark unread
+        {t(M['messages.message_toolbar.mark_unread'])}
       </button>
       <button class="action-btn" type="button" onclick={() => onaction?.('flag')}>
         Flag

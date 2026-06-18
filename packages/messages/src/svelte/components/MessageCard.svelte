@@ -3,10 +3,14 @@
  * MessageCard - Single message row with type-adaptive rendering
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.messages.js';
 import type { AccountData, MessageData } from '../types.js';
 import MessageStatusIndicator from './MessageStatusIndicator.svelte';
 import MessageTypeBadge from './MessageTypeBadge.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   message: MessageData;
@@ -97,7 +101,7 @@ const _slackMeta = $derived.by(() => {
         type="checkbox"
         checked={selected}
         onchange={() => onselect?.(message)}
-        aria-label="Select message"
+        aria-label={t(M['messages.message_card.select_message'])}
       />
     </div>
   {/if}
