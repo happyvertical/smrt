@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onMount } from 'svelte';
+import { M } from '../lib/i18n.js';
+
+const { t } = useI18n();
 
 // Simple client-side routing (can be replaced with proper router)
 let _currentPage = $state('demo');
@@ -28,12 +32,12 @@ onMount(() => {
   {:else if currentPage === 'categories'}
     <div class="placeholder-page">
       <h2>Categories</h2>
-      <p>Category management coming soon...</p>
+      <p>{t(M['products.app.categories_coming_soon'])}</p>
     </div>
   {:else if currentPage === 'dashboard'}
     <div class="placeholder-page">
       <h2>Dashboard</h2>
-      <p>Analytics dashboard coming soon...</p>
+      <p>{t(M['products.app.analytics_coming_soon'])}</p>
     </div>
   {:else}
     <DemoPage />

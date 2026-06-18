@@ -10,6 +10,7 @@
     "verbatimModuleSyntax": true
   },
   "include": [
+    "src/lib/i18n.ts",
     "src/lib/components/**/*",
     "src/lib/features/**/*",
     "src/lib/stores/**/*"

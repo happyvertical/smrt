@@ -1,5 +1,8 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../lib/i18n.js';
 
+const { t } = useI18n();
 </script>
 
 <AppLayout>
@@ -8,8 +11,7 @@
       <div class="page-header">
         <h1>Products</h1>
         <p class="page-description">
-          Manage your product catalog with auto-generated CRUD operations, 
-          real-time updates, and AI-powered tools via MCP.
+          {t(M['products.products_page.description'])}
         </p>
       </div>
       
@@ -21,22 +23,22 @@
         <div class="info-cards">
           <div class="info-card">
             <h3>🔄 Auto-Generated</h3>
-            <p>REST API endpoints automatically created from @smrt() decorated Product class</p>
+            <p>{t(M['products.products_page.auto_generated_text'])}</p>
           </div>
           
           <div class="info-card">
-            <h3>🤖 AI Ready</h3>
-            <p>MCP tools available for Claude and other AI models to interact with products</p>
+            <h3>{t(M['products.products_page.ai_ready_heading'])}</h3>
+            <p>{t(M['products.products_page.ai_ready_text'])}</p>
           </div>
           
           <div class="info-card">
             <h3>📦 Federatable</h3>
-            <p>Components can be consumed by other applications via module federation</p>
+            <p>{t(M['products.products_page.federatable_text'])}</p>
           </div>
           
           <div class="info-card">
             <h3>📚 Library</h3>
-            <p>Install as NPM package: npm install @have/smrt-template</p>
+            <p>{t(M['products.products_page.library_text'])}</p>
           </div>
         </div>
       </div>

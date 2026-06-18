@@ -1499,6 +1499,9 @@ importers:
         specifier: ^5.2.1
         version: 5.2.1
     devDependencies:
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest
