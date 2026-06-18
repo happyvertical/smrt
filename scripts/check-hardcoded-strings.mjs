@@ -63,18 +63,22 @@ function listSvelteFiles(dir) {
   return out;
 }
 
-/** Strip `<script>` and `<style>` blocks, leaving only template markup. */
+// Replace a matched region with same-length whitespace (newlines preserved) so
+// every offset into the returned string still maps to the original source line.
+const blank = (m) => m.replace(/[^\n]/g, ' ');
+
+/** Blank out `<script>` and `<style>` blocks, leaving only template markup. */
 function extractMarkup(source) {
   return source
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '');
+    .replace(/<script[\s\S]*?<\/script>/gi, blank)
+    .replace(/<style[\s\S]*?<\/style>/gi, blank);
 }
 
-/** Replace `{...}` expressions and HTML comments with spaces (kept length-stable). */
+/** Blank `{...}` expressions and HTML comments (kept offset-stable). */
 function blankExpressions(markup) {
   return markup
-    .replace(/<!--[\s\S]*?-->/g, (m) => ' '.repeat(m.length))
-    .replace(/\{[\s\S]*?\}/g, (m) => ' '.repeat(m.length));
+    .replace(/<!--[\s\S]*?-->/g, blank)
+    .replace(/\{[\s\S]*?\}/g, blank);
 }
 
 const PROSE = /[A-Za-z][A-Za-z'’]*\s+[A-Za-z][A-Za-z'’]*/; // ≥ 2 letter-words
@@ -119,13 +123,19 @@ function packageNameOf(relPath) {
   return parts[0] === 'packages' ? parts[1] : null;
 }
 
+/** Only `packages/<pkg>/src/**` is shippable source (matches the other ratchets). */
+function isInPackageSrc(relPath) {
+  const parts = relPath.split(sep);
+  return parts[0] === 'packages' && parts[2] === 'src';
+}
+
 const strictHits = [];
 const reportHits = [];
 
 for (const file of listSvelteFiles(PACKAGES)) {
   const rel = relative(ROOT, file);
   const pkg = packageNameOf(rel);
-  if (!pkg || SCOPE_EXCLUDED_PACKAGES.has(pkg)) continue;
+  if (!pkg || !isInPackageSrc(rel) || SCOPE_EXCLUDED_PACKAGES.has(pkg)) continue;
   const violations = findViolations(readFileSync(file, 'utf8'));
   if (violations.length === 0) continue;
   const bucket = STRICT_PACKAGES.has(pkg) ? strictHits : reportHits;
