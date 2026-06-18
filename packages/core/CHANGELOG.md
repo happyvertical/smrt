@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.20
+
+### Patch Changes
+
+- ### Features
+
+  - extract events strings + raise coverage 22%→87%, flip strict (S13 #1418) (#1532) (i18n,test)
+  - @happyvertical/smrt-scanner@0.29.20
+  - @happyvertical/smrt-config@0.29.20
+  - @happyvertical/smrt-types@0.29.20
+
 ## 0.29.19
 
 ### Patch Changes
