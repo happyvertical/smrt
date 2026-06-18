@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-voice",
-  "version": "0.29.19",
+  "version": "0.29.20",
   "type": "module",
   "description": "Voice profile management for AI-powered voice synthesis and cloning in the SMRT ecosystem",
   "author": "HappyVertical",

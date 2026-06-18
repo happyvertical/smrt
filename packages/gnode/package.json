@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-gnode",
-  "version": "0.29.19",
+  "version": "0.29.20",
   "description": "SMRT federation library for building federated local knowledge bases (gnodes)",
   "author": "HappyVertical",
   "type": "module",
