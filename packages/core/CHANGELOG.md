@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.17
+
+### Patch Changes
+
+- ### Features
+
+  - extract UI strings in assets + chat, flip to lint-strict (S13 #1418 wave 2) (#1529) (i18n)
+  - @happyvertical/smrt-scanner@0.29.17
+  - @happyvertical/smrt-config@0.29.17
+  - @happyvertical/smrt-types@0.29.17
+
 ## 0.29.16
 
 ### Patch Changes
