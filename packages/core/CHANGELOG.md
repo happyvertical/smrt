@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.23
+
+### Patch Changes
+
+- ### Features
+
+  - extract products strings + raise coverage 17%→90%, flip strict (S13 #1418) (#1535) (i18n,test)
+  - @happyvertical/smrt-scanner@0.29.23
+  - @happyvertical/smrt-config@0.29.23
+  - @happyvertical/smrt-types@0.29.23
+
 ## 0.29.22
 
 ### Patch Changes
