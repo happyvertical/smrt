@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import PropertyStatusBadge from './PropertyStatusBadge.svelte';
+
+const { t } = useI18n();
 
 interface Props {
   propertyId: string | null;
@@ -39,7 +43,7 @@ const lastSyncFormatted = $derived.by(() => {
 
 <div class="property-info">
 	<div class="property-header">
-		<h3>Analytics Property</h3>
+		<h3>{t(M['analytics.property_info.title'])}</h3>
 		<PropertyStatusBadge {status} />
 	</div>
 
@@ -51,7 +55,7 @@ const lastSyncFormatted = $derived.by(() => {
 			</div>
 			{#if measurementId}
 				<div class="detail-row">
-					<dt>Measurement ID</dt>
+					<dt>{t(M['analytics.property_info.measurement_id'])}</dt>
 					<dd><code>{measurementId}</code></dd>
 				</div>
 			{/if}
@@ -62,12 +66,12 @@ const lastSyncFormatted = $derived.by(() => {
 				</div>
 			{/if}
 			<div class="detail-row">
-				<dt>Last Synced</dt>
+				<dt>{t(M['analytics.property_info.last_synced'])}</dt>
 				<dd>{lastSyncFormatted}</dd>
 			</div>
 		</dl>
 	{:else}
-		<p class="no-property">No analytics property configured for this site.</p>
+		<p class="no-property">{t(M['analytics.property_info.no_property'])}</p>
 	{/if}
 </div>
 

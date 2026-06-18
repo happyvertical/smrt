@@ -2063,6 +2063,9 @@ importers:
       '@happyvertical/logger':
         specifier: ^0.74.5
         version: 0.74.5(@sentry/node@10.51.0)
+      '@happyvertical/smrt-svelte':
+        specifier: workspace:*
+        version: link:../smrt-svelte
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

@@ -1,8 +1,12 @@
 <script lang="ts">
 import type { Profile } from '@happyvertical/smrt-profiles';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { User } from '@happyvertical/smrt-users';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.js';
 import UserCard from './UserCard.svelte';
+
+const { t } = useI18n();
 
 interface UserWithProfile {
   user: User;
@@ -33,7 +37,7 @@ const {
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
-      <span>Loading users...</span>
+      <span>{t(M['users.user_list.loading_users'])}</span>
     </div>
   {:else if users.length === 0}
     {#if empty}

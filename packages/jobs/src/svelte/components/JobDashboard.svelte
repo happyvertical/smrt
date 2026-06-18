@@ -3,10 +3,14 @@
  * JobDashboard - Combined overview panel for background jobs
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Card } from '@happyvertical/smrt-svelte/ui';
+import { M } from '../i18n.js';
 import JobList from './JobList.svelte';
 import JobStatsSummary from './JobStats.svelte';
 import type { JobData, JobStats, QueueStats } from './types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Statistics data */
@@ -57,9 +61,9 @@ let {
       <Card>
         {#snippet header()}
           <div class="panel-header">
-            <h2>Recent Jobs</h2>
+            <h2>{t(M['jobs.job_dashboard.recent_jobs'])}</h2>
             {#if onViewAll}
-              <button class="view-all-btn" onclick={onViewAll}>View All</button>
+              <button class="view-all-btn" onclick={onViewAll}>{t(M['jobs.job_dashboard.view_all'])}</button>
             {/if}
           </div>
         {/snippet}
@@ -71,7 +75,7 @@ let {
           {onJobClick}
         >
           {#snippet empty()}
-            <p class="empty-message">No recent jobs</p>
+            <p class="empty-message">{t(M['jobs.job_dashboard.no_recent_jobs'])}</p>
           {/snippet}
         </JobList>
       </Card>
@@ -83,10 +87,10 @@ let {
         <Card>
           {#snippet header()}
             <div class="panel-header panel-header--error">
-              <h2>Failed Jobs</h2>
+              <h2>{t(M['jobs.job_dashboard.failed_jobs'])}</h2>
               {#if onViewFailed}
                 <button class="view-all-btn" onclick={onViewFailed}
-                  >View All ({stats.failed})</button
+                  >{t(M['jobs.job_dashboard.view_all_count'], { count: stats.failed })}</button
                 >
               {/if}
             </div>
@@ -102,7 +106,7 @@ let {
           >
             {#snippet empty()}
               <p class="empty-message empty-message--success">
-                No failed jobs
+                {t(M['jobs.job_dashboard.no_failed_jobs'])}
               </p>
             {/snippet}
           </JobList>

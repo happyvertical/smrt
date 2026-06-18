@@ -4,6 +4,11 @@
  * Requires a reason to be entered before confirming
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
+
+const { t } = useI18n();
+
 /** Props for RejectDialog component */
 export interface Props {
   open: boolean;
@@ -72,7 +77,7 @@ $effect(() => {
     <button
       type="button"
       class="dialog-overlay"
-      aria-label="Close dialog"
+      aria-label={t(M['projects.reject_dialog.close_dialog'])}
       onclick={handleCancel}
     ></button>
     <div
@@ -97,7 +102,7 @@ $effect(() => {
       ></textarea>
 
       {#if required && reason.trim().length === 0}
-        <p class="hint">A reason is required to reject</p>
+        <p class="hint">{t(M['projects.reject_dialog.reason_required'])}</p>
       {/if}
 
       <div class="dialog-actions">

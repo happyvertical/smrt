@@ -27,9 +27,20 @@ import { join, relative, sep } from 'node:path';
 const ROOT = join(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');
 
-// Packages enforced at ERROR. Empty in phase 1 — flip a package on once its
-// user-facing strings are routed through the i18n layer.
-const STRICT_PACKAGES = new Set();
+// Packages enforced at ERROR — their user-facing strings are routed through the
+// i18n layer (`useI18n().t` / `<Trans>`). Add a package here once `pnpm
+// check:hardcoded-strings` reports 0 for it. S13 phase-2 wave 1 (#1418).
+const STRICT_PACKAGES = new Set([
+  'users',
+  'projects',
+  'commerce',
+  'jobs',
+  'agents',
+  'analytics',
+  'social',
+  'tenancy',
+  'subscriptions',
+]);
 
 // Dev/playground host, not a shippable library (consistent with the other ratchets).
 const SCOPE_EXCLUDED_PACKAGES = new Set(['smrt-playground']);
