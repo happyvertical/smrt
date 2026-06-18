@@ -172,10 +172,10 @@ function _handleCustomSubmit(data: ProductData) {
       <h4>{t(M['products.demo_page.benefits_heading'])}</h4>
       <ul>
         <li><strong>{t(M['products.demo_page.benefit_define_once_label'])}</strong> {t(M['products.demo_page.benefit_define_once_text'])}</li>
-        <li><strong>Auto-Generate:</strong> {t(M['products.demo_page.benefit_auto_generate_text'])}</li>
+        <li><strong>{t(M['products.demo_page.benefit_auto_generate_label'])}</strong> {t(M['products.demo_page.benefit_auto_generate_text'])}</li>
         <li><strong>{t(M['products.demo_page.benefit_progressive_label'])}</strong> {t(M['products.demo_page.benefit_progressive_text'])}</li>
         <li><strong>{t(M['products.demo_page.benefit_type_safety_label'])}</strong> {t(M['products.demo_page.benefit_type_safety_text'])}</li>
-        <li><strong>{t(M['products.demo_page.benefit_multiple_consumption_label'])}</strong> Library, federation, standalone</li>
+        <li><strong>{t(M['products.demo_page.benefit_multiple_consumption_label'])}</strong> {t(M['products.demo_page.benefit_multiple_consumption_text'])}</li>
       </ul>
     </div>
   </footer>

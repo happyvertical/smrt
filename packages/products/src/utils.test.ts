@@ -5,7 +5,7 @@
  * asserted directly.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   formatDate,
   formatPrice,
@@ -71,14 +71,26 @@ describe('slugify', () => {
 });
 
 describe('generateId', () => {
-  it('returns a non-empty string', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns a non-empty base36 string', () => {
     const id = generateId();
     expect(typeof id).toBe('string');
     expect(id.length).toBeGreaterThan(0);
+    // Derived from Math.random().toString(36) — only [0-9a-z], no separators.
+    expect(id).toMatch(/^[0-9a-z]+$/);
   });
 
-  it('returns different values across calls', () => {
+  it('derives distinct ids from distinct random seeds', () => {
+    // Assert the mapping deterministically rather than relying on the
+    // (astronomically unlikely but nonzero) chance that two real random
+    // draws collide, which would make this test flaky.
+    const seed = vi.spyOn(Math, 'random');
+    seed.mockReturnValueOnce(0.123456789);
     const a = generateId();
+    seed.mockReturnValueOnce(0.987654321);
     const b = generateId();
     expect(a).not.toBe(b);
   });

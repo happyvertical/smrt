@@ -70,10 +70,10 @@ export default defineConfig(async () => {
 
       // Coverage configuration
       //
-      // The coverage denominator is this package's authored business logic:
-      // `src/lib/models`, `src/lib/collections`, `src/lib/utils`, and the
-      // `src/lib/stores` runes state. The exclusions below drop code that is
-      // NOT authored business logic and only deflates the signal:
+      // The coverage denominator is this package's authored, framework-agnostic
+      // business logic: `src/lib/models`, `src/lib/collections`, `src/lib/utils`,
+      // and `src/lib/types`. The exclusions below drop code that is NOT authored
+      // business logic and only deflates the signal:
       //   - re-export barrels (top-level `src/*.ts` package entry points and the
       //     per-folder `index.ts` aggregators)
       //   - app-mode / server / federation entrypoints — this package is the

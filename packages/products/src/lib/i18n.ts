@@ -48,6 +48,7 @@ export const M = defineMessages({
   'products.demo_page.benefit_define_once_label': 'Define Once:',
   'products.demo_page.benefit_define_once_text':
     'Product class with @smrt decorator',
+  'products.demo_page.benefit_auto_generate_label': 'Auto-Generate:',
   'products.demo_page.benefit_auto_generate_text':
     'REST APIs, MCP tools, TypeScript clients, default UI',
   'products.demo_page.benefit_progressive_label': 'Progressive Enhancement:',
@@ -58,6 +59,8 @@ export const M = defineMessages({
     'End-to-end TypeScript integration',
   'products.demo_page.benefit_multiple_consumption_label':
     'Multiple Consumption:',
+  'products.demo_page.benefit_multiple_consumption_text':
+    'Library, federation, standalone',
 
   // ProductsPage
   'products.products_page.description':
