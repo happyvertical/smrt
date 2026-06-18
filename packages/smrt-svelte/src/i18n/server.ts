@@ -23,10 +23,14 @@ import {
 } from '@happyvertical/smrt-languages';
 import type { I18nSnapshot } from './context.svelte.js';
 import { getRegisteredDefaults } from './registry.js';
-// Side-effect: register smrt-svelte's own UI primitive defaults (ui.*) so they
-// are in every snapshot even when a consumer imports only `buildI18nSnapshot`
-// from this subpath and never the components themselves.
+// Side-effect: register ALL of smrt-svelte's own UI catalogs (ui.*) so they are
+// in every snapshot even when a consumer imports only `buildI18nSnapshot` from
+// this subpath and never the components themselves. Add any new smrt-svelte
+// catalog here so its keys are server-resolvable.
 import './strings.js';
+import './strings.forms.js';
+import './strings.ui.js';
+import './strings.workspace.js';
 
 export interface BuildI18nSnapshotOptions {
   /** Target locale (BCP-47-ish, e.g. `fr-CA`). */

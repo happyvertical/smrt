@@ -1,7 +1,11 @@
 <script lang="ts">
 import type { Membership, Role, Tenant } from '@happyvertical/smrt-users';
 import type { Snippet } from 'svelte';
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import MembershipCard from './MembershipCard.svelte';
+
+const { t } = useI18n();
 
 interface MembershipWithContext {
   membership: Membership;
@@ -32,7 +36,7 @@ const {
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
-      <span>Loading memberships...</span>
+      <span>{t(M['ui.membership_list.loading'])}</span>
     </div>
   {:else if memberships.length === 0}
     {#if empty}

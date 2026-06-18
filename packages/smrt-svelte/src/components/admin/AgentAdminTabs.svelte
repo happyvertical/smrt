@@ -3,7 +3,11 @@ import type {
   AgentUIComponentRegistry,
   AgentUISlots,
 } from '@happyvertical/smrt-agents/ui';
+import { M } from '../../i18n/strings.workspace.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import AgentAdminPanel from './AgentAdminPanel.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** The registry to look up components from */
@@ -111,7 +115,7 @@ async function handleSave(config: unknown) {
 </script>
 
 <div class="agent-admin-tabs">
-	<div class="tabs-nav" role="tablist" aria-label="Agent configuration tabs" bind:this={tablistEl}>
+	<div class="tabs-nav" role="tablist" aria-label={t(M['ui.agent_admin_tabs.tablist_label'])} bind:this={tablistEl}>
 		{#each sortedSlots as [slotId, slot]}
 			<button
 				class="tab-button"
@@ -160,7 +164,7 @@ async function handleSave(config: unknown) {
 			</div>
 		{:else}
 			<div class="no-slots">
-				<p>No configuration slots available for this agent.</p>
+				<p>{t(M['ui.agent_admin_tabs.no_slots'])}</p>
 			</div>
 		{/if}
 	</div>

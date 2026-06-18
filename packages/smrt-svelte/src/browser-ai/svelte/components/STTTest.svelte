@@ -1,7 +1,11 @@
 <script lang="ts">
 import { useAppState } from '../../../hooks/useAppState.svelte.js';
+import { M } from '../../../i18n/strings.workspace.js';
+import { useI18n } from '../../../i18n/use-i18n.js';
 import type { GetSTTOptions } from '../../index.js';
 import DownloadProgress from './DownloadProgress.svelte';
+
+const { t } = useI18n();
 
 /** Props for STTTest component */
 export interface Props {
@@ -101,15 +105,15 @@ function clearLogs() {
 </script>
 
 <div class="stt-test">
-  <h3>STT Adapter Test</h3>
+  <h3>{t(M['ui.stt_test.heading'])}</h3>
 
   <div class="controls">
     <div class="adapter-select">
       <label for="adapter">Adapter:</label>
       <select id="adapter" bind:value={selectedAdapter} disabled={isRecording}>
-        <option value="browser-speech">Browser (Web Speech API)</option>
-        <option value="whisper-wasm">Whisper WASM (v2)</option>
-        <option value="whisper-cpp">Whisper CPP</option>
+        <option value="browser-speech">{t(M['ui.stt_test.adapter_browser'])}</option>
+        <option value="whisper-wasm">{t(M['ui.stt_test.adapter_whisper_wasm'])}</option>
+        <option value="whisper-cpp">{t(M['ui.stt_test.adapter_whisper_cpp'])}</option>
       </select>
     </div>
 
@@ -126,11 +130,11 @@ function clearLogs() {
     <span class="status-item">
       <strong>Status:</strong>
       {#if isInitializing}
-        Initializing...
+        {t(M['ui.stt_test.status_initializing'])}
       {:else if isReady}
-        Ready
+        {t(M['ui.stt_test.status_ready'])}
       {:else}
-        Not initialized
+        {t(M['ui.stt_test.status_not_initialized'])}
       {/if}
     </span>
     <span class="status-item">

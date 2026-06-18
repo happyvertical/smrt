@@ -1,5 +1,9 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import { M } from '../../i18n/strings.workspace.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
+const { t } = useI18n();
 
 /**
  * WorkspaceShell — SvelteKit-agnostic, SSR-safe admin shell primitive.
@@ -260,7 +264,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
   <button
     class="mobile-backdrop"
     type="button"
-    aria-label="Close navigation"
+    aria-label={t(M['ui.workspace_shell.close_navigation'])}
     tabindex={mobileNavOpen ? 0 : -1}
     onclick={closeMobileNav}
   ></button>
@@ -276,7 +280,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
       <button
         class="inspector-backdrop"
         type="button"
-        aria-label="Close inspector"
+        aria-label={t(M['ui.workspace_shell.close_inspector'])}
         onclick={handleInspectorClose}
       ></button>
     {:else}
@@ -286,7 +290,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
 
   <aside
     class="smrt-workspace-sidebar"
-    aria-label="Primary navigation"
+    aria-label={t(M['ui.workspace_shell.primary_navigation'])}
     inert={sidebarInert}
   >
     <div class="brand-row">
@@ -322,7 +326,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
     </div>
 
     {#if nav}
-      <nav class="nav-region" aria-label="Workspace navigation">
+      <nav class="nav-region" aria-label={t(M['ui.workspace_shell.workspace_navigation'])}>
         {@render nav()}
       </nav>
     {/if}
@@ -396,7 +400,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
                 class="inspector-close"
                 type="button"
                 onclick={handleInspectorClose}
-                aria-label="Close inspector"
+                aria-label={t(M['ui.workspace_shell.close_inspector'])}
               >
                 <span aria-hidden="true">×</span>
               </button>
@@ -412,7 +416,7 @@ const sidebarInert = $derived(isMobileViewport && !mobileNavOpen);
         <div
           class="smrt-workspace-inspector-rail"
           role="toolbar"
-          aria-label="Inspector tools"
+          aria-label={t(M['ui.workspace_shell.inspector_tools'])}
           aria-orientation="vertical"
         >
           {@render inspectorRail!()}

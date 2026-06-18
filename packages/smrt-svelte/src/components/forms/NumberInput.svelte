@@ -1,10 +1,14 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Field name */
@@ -221,9 +225,9 @@ function handleInput(e: Event) {
   {#if showInvalid}
     <div id={`${name}-error`} class="validation-error" role="alert">
       {#if min !== undefined && value !== null && value < min}
-        Value must be at least {min}
+        {t(M['ui.number_input.value_at_least'], { min })}
       {:else if max !== undefined && value !== null && value > max}
-        Value must be at most {max}
+        {t(M['ui.number_input.value_at_most'], { max })}
       {/if}
     </div>
   {/if}

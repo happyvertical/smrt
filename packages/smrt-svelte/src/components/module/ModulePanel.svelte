@@ -15,7 +15,11 @@ import type {
   ModuleUIBaseProps,
   SmrtModuleMeta,
 } from '@happyvertical/smrt-types';
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import { ModuleUIRegistry } from '../../registry/module-registry.js';
+
+const { t } = useI18n();
 
 interface Props extends ModuleUIBaseProps {
   /** Module name (e.g., '@happyvertical/smrt-commerce') */
@@ -62,13 +66,13 @@ const slotMeta = $derived(moduleMeta?.uiSlots?.[slotId]);
       </svg>
     </div>
     <p class="module-panel-placeholder__title">
-      Component not registered
+      {t(M['ui.module_panel.component_not_registered'])}
     </p>
     <code class="module-panel-placeholder__code">
       {moduleName}/{slotId}
     </code>
     <p class="module-panel-placeholder__hint">
-      Import the module's Svelte package to register components.
+      {t(M['ui.module_panel.register_hint'])}
     </p>
     {#if slotMeta}
       <p class="module-panel-placeholder__meta">
