@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.14
+
+### Patch Changes
+
+- ### Features
+
+  - enforce Svelte compiler a11y warnings as errors in typecheck (S12 #1417) (#1526) (a11y)
+  - @happyvertical/smrt-scanner@0.29.14
+  - @happyvertical/smrt-config@0.29.14
+  - @happyvertical/smrt-types@0.29.14
+
 ## 0.29.13
 
 ### Patch Changes
