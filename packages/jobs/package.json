@@ -58,7 +58,7 @@
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",

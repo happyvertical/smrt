@@ -42,7 +42,7 @@
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && svelte-check --tsconfig ./tsconfig.kit.json",
+    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
