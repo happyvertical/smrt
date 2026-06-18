@@ -24,6 +24,7 @@ export const M = defineMessages({
   'ui.modal.close': 'Close modal',
 
   // feedback/ProgressBar.svelte
+  'ui.progress_bar.label': 'Progress',
   'ui.progress_bar.over_by': 'Over by {amount}',
 
   // layout/Footer.svelte
@@ -31,6 +32,8 @@ export const M = defineMessages({
 
   // layout/Masthead.svelte
   'ui.masthead.home': 'Home',
+  'ui.masthead.primary_nav': 'Primary',
+  'ui.masthead.mobile_nav': 'Mobile',
 
   // memberships/MembershipCard.svelte
   'ui.membership_card.change_role': 'Change Role',

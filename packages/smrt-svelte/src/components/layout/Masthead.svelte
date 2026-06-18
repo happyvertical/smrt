@@ -48,7 +48,7 @@ const {
       </div>
       <div class="right">
         {#if nav}
-          <nav class="nav">
+          <nav class="nav" aria-label={t(M['ui.masthead.primary_nav'])}>
             {@render nav()}
           </nav>
         {/if}
@@ -67,11 +67,11 @@ const {
       </div>
       <div class="right">
         {#if mobileNav}
-          <nav class="nav mobile-nav">
+          <nav class="nav mobile-nav" aria-label={t(M['ui.masthead.mobile_nav'])}>
             {@render mobileNav()}
           </nav>
         {:else if nav}
-          <nav class="nav">
+          <nav class="nav" aria-label={t(M['ui.masthead.mobile_nav'])}>
             {@render nav()}
           </nav>
         {/if}

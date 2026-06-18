@@ -89,6 +89,7 @@ const displayLabel = $derived.by(() => {
   <div
     class="progress-track"
     role="progressbar"
+    aria-label={label?.trim() ? label : t(M['ui.progress_bar.label'])}
     aria-valuenow={value}
     aria-valuemin={0}
     aria-valuemax={max}
