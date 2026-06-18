@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.24
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - bump nodemailer + undici overrides to clear high-severity advisories (#1538) (deps)
+  - @happyvertical/smrt-scanner@0.29.24
+  - @happyvertical/smrt-config@0.29.24
+  - @happyvertical/smrt-types@0.29.24
+
 ## 0.29.23
 
 ### Patch Changes
