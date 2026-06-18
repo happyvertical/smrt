@@ -3,6 +3,10 @@
  * ReactionPicker - Emoji reaction selector
  * Compact popup grid of common emojis.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Callback when an emoji is selected */
@@ -45,13 +49,13 @@ function handleKeydown(event: KeyboardEvent, emoji: string) {
 </script>
 
 {#if isOpen}
-  <div class="reaction-picker" role="group" aria-label="Emoji reactions">
+  <div class="reaction-picker" role="group" aria-label={t(M['chat.reaction_picker.reactions'])}>
     {#each emojis as emoji}
       <button
         class="reaction-picker__item"
         type="button"
         onclick={() => handleSelect(emoji)}
-        aria-label="React with {emoji}"
+        aria-label={t(M['chat.reaction_picker.react_with'], { emoji })}
       >
         {emoji}
       </button>

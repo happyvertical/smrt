@@ -11,6 +11,11 @@
  * - Material 3 styling
  */
 
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
+const { t } = useI18n();
+
 export interface Props {
   /** Current search value */
   value?: string;
@@ -187,7 +192,7 @@ const sizeClasses = {
       type="button"
       class="search-input__clear"
       onclick={handleClear}
-      aria-label="Clear search"
+      aria-label={t(M['ui.search_input.clear_aria_label'])}
     >
       <svg
         xmlns="http://www.w3.org/2000/svg"

@@ -3,8 +3,12 @@
  * AgentScheduleForm - Create or edit an agent schedule
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Button, Card } from '@happyvertical/smrt-svelte/ui';
+import { M } from '../i18n.js';
 import type { ScheduleFormData } from '../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Initial form data (for editing) */
@@ -132,10 +136,10 @@ function handleCronPreset(preset: string) {
     <div class="form-grid">
       <!-- Agent Type -->
       <div class="form-field">
-        <label for="agentType">Agent Type *</label>
+        <label for="agentType">{t(M['agents.schedule_form.agent_type'])}</label>
         {#if agentTypes.length > 0}
           <select id="agentType" bind:value={agentType} required disabled={loading}>
-            <option value="">Select agent type...</option>
+            <option value="">{t(M['agents.schedule_form.select_agent_type'])}</option>
             {#each agentTypes as type}
               <option value={type}>{type}</option>
             {/each}
@@ -145,7 +149,7 @@ function handleCronPreset(preset: string) {
             type="text"
             id="agentType"
             bind:value={agentType}
-            placeholder="e.g., Praeco, Scraper"
+            placeholder={t(M['agents.schedule_form.agent_type_placeholder'])}
             required
             disabled={loading}
           />
@@ -154,15 +158,15 @@ function handleCronPreset(preset: string) {
 
       <!-- Agent ID (optional) -->
       <div class="form-field">
-        <label for="agentId">Agent ID (optional)</label>
+        <label for="agentId">{t(M['agents.schedule_form.agent_id'])}</label>
         <input
           type="text"
           id="agentId"
           bind:value={agentId}
-          placeholder="Specific instance ID"
+          placeholder={t(M['agents.schedule_form.agent_id_placeholder'])}
           disabled={loading}
         />
-        <small>Leave empty to create a new instance for each run</small>
+        <small>{t(M['agents.schedule_form.agent_id_hint'])}</small>
       </div>
 
       <!-- Method -->
@@ -172,15 +176,15 @@ function handleCronPreset(preset: string) {
           type="text"
           id="method"
           bind:value={method}
-          placeholder="run"
+          placeholder={t(M['agents.schedule_form.method_placeholder'])}
           disabled={loading}
         />
-        <small>Method to call on the agent (default: run)</small>
+        <small>{t(M['agents.schedule_form.method_hint'])}</small>
       </div>
 
       <!-- Cron Expression -->
       <div class="form-field form-field--full">
-        <label for="cron">Cron Schedule *</label>
+        <label for="cron">{t(M['agents.schedule_form.cron_schedule'])}</label>
         <input
           type="text"
           id="cron"
@@ -201,7 +205,7 @@ function handleCronPreset(preset: string) {
             </button>
           {/each}
         </div>
-        <small>Standard 5-field cron format: minute hour day-of-month month day-of-week</small>
+        <small>{t(M['agents.schedule_form.cron_hint'])}</small>
       </div>
 
       <!-- Timezone -->
@@ -216,7 +220,7 @@ function handleCronPreset(preset: string) {
 
       <!-- Max Concurrent -->
       <div class="form-field">
-        <label for="maxConcurrent">Max Concurrent</label>
+        <label for="maxConcurrent">{t(M['agents.schedule_form.max_concurrent'])}</label>
         <input
           type="number"
           id="maxConcurrent"
@@ -225,7 +229,7 @@ function handleCronPreset(preset: string) {
           max="10"
           disabled={loading}
         />
-        <small>Maximum concurrent runs (prevents overlapping)</small>
+        <small>{t(M['agents.schedule_form.max_concurrent_hint'])}</small>
       </div>
 
       <!-- Timeout -->
@@ -246,7 +250,7 @@ function handleCronPreset(preset: string) {
       <div class="form-field form-field--checkbox">
         <label>
           <input type="checkbox" bind:checked={enabled} disabled={loading} />
-          Enable schedule immediately
+          {t(M['agents.schedule_form.enable_schedule_immediately'])}
         </label>
       </div>
     </div>

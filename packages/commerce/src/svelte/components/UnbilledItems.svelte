@@ -5,7 +5,11 @@
  * Shows unbilled items with checkbox selection for invoice creation.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { UnbilledItem } from '../types.js';
+
+const { t } = useI18n();
 
 /** Props for UnbilledItems component */
 export interface Props {
@@ -106,10 +110,10 @@ const someSelected = $derived(
           indeterminate={someSelected}
           onchange={toggleAll}
         />
-        <span>Select All</span>
+        <span>{t(M['commerce.unbilled_items.select_all'])}</span>
       </label>
       <span class="selected-count">
-        {selectedIds.size} of {items.length} selected
+        {t(M['commerce.unbilled_items.selected_count'], { selected: selectedIds.size, total: items.length })}
       </span>
     </div>
 
@@ -141,7 +145,7 @@ const someSelected = $derived(
     {#if selectedIds.size > 0}
       <div class="items-footer">
         <div class="selected-summary">
-          <span class="summary-label">Selected Total:</span>
+          <span class="summary-label">{t(M['commerce.unbilled_items.selected_total'])}</span>
           <span class="summary-value">{formatMoney(selectedTotal)}</span>
         </div>
         {#if oncreate}
@@ -150,7 +154,7 @@ const someSelected = $derived(
             class="create-btn"
             onclick={() => oncreate?.([...selectedIds])}
           >
-            Create Invoice
+            {t(M['commerce.unbilled_items.create_invoice'])}
           </button>
         {/if}
       </div>

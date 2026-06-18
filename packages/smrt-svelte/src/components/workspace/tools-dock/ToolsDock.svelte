@@ -29,8 +29,12 @@
 
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
+  import { M } from '../../../i18n/strings.workspace.js';
+  import { useI18n } from '../../../i18n/use-i18n.js';
   import type { ToolsDockContext } from '../types.js';
   import type { ToolsDockInstance } from './define-tools-dock.svelte.js';
+
+  const { t } = useI18n();
 
   interface Props {
     /** Instance produced by `defineToolsDock(...)`. */
@@ -219,14 +223,14 @@
     <div class="tools-dock__panel-body">
       {#if dock.availableTools.length === 0}
         <div class="tools-dock__empty">
-          <strong>No tools available</strong>
-          <p>No tools are available for the current context.</p>
+          <strong>{t(M['ui.tools_dock.no_tools_available'])}</strong>
+          <p>{t(M['ui.tools_dock.no_tools_context'])}</p>
         </div>
       {:else if ActiveTool}
         <ActiveTool context={dock.context} {dock} />
       {:else}
         <div class="tools-dock__empty">
-          <p>Select a tool to begin.</p>
+          <p>{t(M['ui.tools_dock.select_tool'])}</p>
         </div>
       {/if}
     </div>
@@ -238,7 +242,7 @@
 
 {#if dock.layout === 'topbar'}
   <div class="tools-dock tools-dock--topbar">
-    <nav class="tools-dock__topbar" aria-label="Workspace tools">
+    <nav class="tools-dock__topbar" aria-label={t(M['ui.tools_dock.workspace_tools'])}>
       {#each dock.availableTools as tool (tool.id)}
         {@render toolButton(tool, 'topbar')}
       {/each}
@@ -258,7 +262,7 @@
       ></button>
     {/if}
     {@render panel()}
-    <nav class="tools-dock__rail" aria-label="Workspace tools">
+    <nav class="tools-dock__rail" aria-label={t(M['ui.tools_dock.workspace_tools'])}>
       {#each dock.availableTools as tool (tool.id)}
         {@render toolButton(tool, 'rail')}
       {/each}

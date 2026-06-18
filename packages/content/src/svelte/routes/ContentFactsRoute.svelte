@@ -1,6 +1,8 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onMount } from 'svelte';
 import { createClient, type FactData } from '../../mock-smrt-client.js';
+import { M } from '../i18n.routes.js';
 import {
   CONTENT_DEFAULT_ROUTE_NAVIGATION,
   CONTENT_ROUTE_IDS,
@@ -22,6 +24,7 @@ let {
 }: ContentFactsRouteProps = $props();
 
 const client = $derived(createClient(apiBaseUrl));
+const { t } = useI18n();
 
 let query = $state('');
 let latestOnly = $state(true);
@@ -84,16 +87,15 @@ onMount(() => {
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
-        <div class="eyebrow">Content facts</div>
-        <h1>Fact catalog</h1>
+        <div class="eyebrow">{t(M['content.facts.eyebrow'])}</div>
+        <h1>{t(M['content.facts.heading'])}</h1>
         <p>
-          Search the tenant fact index, inspect confidence and domains, and
-          verify what governed content can cite or review against.
+          {t(M['content.facts.intro'])}
         </p>
       </div>
 
       <div class="page-header__actions">
-        <nav class="page-nav" aria-label="Content navigation">
+        <nav class="page-nav" aria-label={t(M['content.facts.nav_aria'])}>
           {#each navigation as item (item.routeId)}
             <a
               href={item.href}
@@ -107,7 +109,7 @@ onMount(() => {
         </nav>
 
         {#if createHref}
-          <a class="page-cta" href={createHref}>Create Content</a>
+          <a class="page-cta" href={createHref}>{t(M['content.facts.create_cta'])}</a>
         {/if}
       </div>
     </div>
@@ -121,7 +123,7 @@ onMount(() => {
           <input
             type="search"
             bind:value={query}
-            placeholder="Search fact text or domain"
+            placeholder={t(M['content.facts.search_placeholder'])}
           />
         </label>
 
@@ -131,7 +133,7 @@ onMount(() => {
             bind:checked={latestOnly}
             onchange={() => void loadFacts()}
           />
-          <span>Latest only</span>
+          <span>{t(M['content.facts.latest_only'])}</span>
         </label>
 
         <label class="toggle">
@@ -140,7 +142,7 @@ onMount(() => {
             bind:checked={includeSuperseded}
             onchange={() => void loadFacts()}
           />
-          <span>Include superseded</span>
+          <span>{t(M['content.facts.include_superseded'])}</span>
         </label>
 
         <button class="refresh-button" type="submit" disabled={refreshing}>
@@ -156,14 +158,13 @@ onMount(() => {
       </section>
     {:else if loading}
       <section class="panel empty-state">
-        <p>Loading facts…</p>
+        <p>{t(M['content.facts.loading'])}</p>
       </section>
     {:else if facts.length === 0}
       <section class="panel empty-state">
-        <h2>No facts yet</h2>
+        <h2>{t(M['content.facts.empty_title'])}</h2>
         <p>
-          Once Praeco or other content workflows record facts for this tenant,
-          they will appear here for linking and review.
+          {t(M['content.facts.empty_body'])}
         </p>
       </section>
     {:else}
@@ -203,7 +204,7 @@ onMount(() => {
 
               {#if fact.textRaw && fact.textRefined && fact.textRaw !== fact.textRefined}
                 <details>
-                  <summary>Raw input</summary>
+                  <summary>{t(M['content.facts.raw_input'])}</summary>
                   <p>{fact.textRaw}</p>
                 </details>
               {/if}

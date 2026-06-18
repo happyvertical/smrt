@@ -3,6 +3,10 @@
  * RoomCreateDialog - Modal dialog for creating a new chat room
  * Provides name, type selector, and description fields
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Whether the dialog is open */
@@ -104,7 +108,7 @@ $effect(() => {
       type="button"
       class="dialog-backdrop__dismiss"
       tabindex="-1"
-      aria-label="Close room creation dialog"
+      aria-label={t(M['chat.room_create_dialog.close'])}
       onclick={handleClose}
     ></button>
     <div
@@ -114,7 +118,7 @@ $effect(() => {
       aria-labelledby="create-room-title"
       tabindex="-1"
     >
-      <h2 id="create-room-title" class="dialog__title">Create a Room</h2>
+      <h2 id="create-room-title" class="dialog__title">{t(M['chat.room_create_dialog.title'])}</h2>
 
       <form
         class="dialog__form"
@@ -122,7 +126,7 @@ $effect(() => {
       >
         <div class="field">
           <label class="field__label" for="room-name">
-            Room Name <span class="field__required" aria-label="required">*</span>
+            {t(M['chat.room_create_dialog.room_name'])} <span class="field__required" aria-label={t(M['chat.room_create_dialog.required'])}>*</span>
           </label>
           <input
             bind:this={nameInput}
@@ -130,14 +134,14 @@ $effect(() => {
             id="room-name"
             type="text"
             class="field__input"
-            placeholder="e.g. general, project-updates"
+            placeholder={t(M['chat.room_create_dialog.name_placeholder'])}
             maxlength="100"
             autocomplete="off"
           />
         </div>
 
         <fieldset class="field">
-          <legend class="field__label">Room Type</legend>
+          <legend class="field__label">{t(M['chat.room_create_dialog.room_type'])}</legend>
           <div class="type-options">
             {#each roomTypes as option (option.value)}
               <label
@@ -166,7 +170,7 @@ $effect(() => {
             bind:value={description}
             id="room-description"
             class="field__textarea"
-            placeholder="What is this room about?"
+            placeholder={t(M['chat.room_create_dialog.description_placeholder'])}
             rows="3"
             maxlength="500"
           ></textarea>
@@ -186,7 +190,7 @@ $effect(() => {
             class="btn btn--primary"
             disabled={!canCreate}
           >
-            Create Room
+            {t(M['chat.room_create_dialog.create_room'])}
           </button>
         </div>
       </form>

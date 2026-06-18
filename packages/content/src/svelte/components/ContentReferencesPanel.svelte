@@ -1,6 +1,10 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
 import type { ContentEditorReference } from '../content-editor-form';
+import { M } from '../i18n.editor.js';
+
+const { t } = useI18n();
 
 export interface Props {
   referenceIds?: string[];
@@ -101,14 +105,14 @@ function removeReference(id: string) {
       {/each}
     </div>
   {:else}
-    <p class="empty-state">No references.</p>
+    <p class="empty-state">{t(M['content.content_references_panel.no_references'])}</p>
   {/if}
 
   <div class="reference-input-row">
     <input
       type="text"
-      aria-label="Add reference by ID or URL"
-      placeholder="Reference ID or URL"
+      aria-label={t(M['content.content_references_panel.add_reference_by_id_or_url'])}
+      placeholder={t(M['content.content_references_panel.reference_id_or_url_placeholder'])}
       bind:value={newReferenceId}
       onkeydown={(event) => {
         if (event.key === 'Enter') {

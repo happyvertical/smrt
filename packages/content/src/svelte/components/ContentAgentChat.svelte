@@ -6,6 +6,7 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type {
   ContentEditorAssistantContext,
   ContentEditorAssistantFieldUpdateAllowList,
@@ -15,6 +16,7 @@ import {
   sanitizeContentEditorAssistantFieldUpdates,
 } from '../../content-editor-assistant';
 import { joinApiUrl } from '../api';
+import { M } from '../i18n.editor.js';
 
 const AI_MODELS = [
   { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
@@ -25,6 +27,8 @@ const AI_MODELS = [
   { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
 ];
 const DEFAULT_MODEL_ID = AI_MODELS[0].id;
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -417,7 +421,7 @@ async function handleSendMessage(content: string) {
 
 <div class="content-agent-chat-container">
   {#if loadingSession && !threads.length}
-    <div class="loading-state">Loading AI Assistant...</div>
+    <div class="loading-state">{t(M['content.content_agent_chat.loading_ai_assistant'])}</div>
   {:else if error && !session}
     <div class="error-state">
       <p>{error}</p>
@@ -438,11 +442,11 @@ async function handleSendMessage(content: string) {
       <div class="agent-chat-host">
         {#if loadingMessages || isCreatingTopic}
            <div class="loading-state">
-             <span class="spinner"></span> Loading topic...
+             <span class="spinner"></span> {t(M['content.content_agent_chat.loading_topic'])}
            </div>
         {:else}
           {#if !resolvedCurrentProfileId}
-            <div class="loading-state">Loading participant...</div>
+            <div class="loading-state">{t(M['content.content_agent_chat.loading_participant'])}</div>
           {:else}
           <AgentChat 
             session={session} 
@@ -463,7 +467,7 @@ async function handleSendMessage(content: string) {
           <input 
             class="new-topic-input" 
             type="text" 
-            placeholder="Topic name..." 
+            placeholder={t(M['content.content_agent_chat.topic_name_placeholder'])}
             bind:value={newTopicTitle}
             onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') { createNewTopic(); showNewTopicInput = false; } }}
           />
@@ -480,15 +484,15 @@ async function handleSendMessage(content: string) {
           disabled={!threads.length}
         >
           {#if !threads.length}
-            <option value="" disabled>No topics...</option>
+            <option value="" disabled>{t(M['content.content_agent_chat.no_topics'])}</option>
           {/if}
           {#each threads as thread}
-            <option value={thread.id}>{thread.title || 'Untitled Topic'}</option>
+            <option value={thread.id}>{thread.title || t(M['content.content_agent_chat.untitled_topic'])}</option>
           {/each}
         </select>
-        <button class="topic-action-btn" onclick={() => { showNewTopicInput = true; newTopicTitle = ''; }} title="New Topic">
+        <button class="topic-action-btn" onclick={() => { showNewTopicInput = true; newTopicTitle = ''; }} title={t(M['content.content_agent_chat.new_topic'])}>
           <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          New
+          {t(M['content.content_agent_chat.new'])}
         </button>
       {/if}
     </div>

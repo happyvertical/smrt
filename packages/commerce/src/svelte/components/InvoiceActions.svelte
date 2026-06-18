@@ -5,7 +5,11 @@
  * Renders appropriate action buttons based on invoice status.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { InvoiceStatus } from '../types.js';
+
+const { t } = useI18n();
 
 /** Props for InvoiceActions component */
 export interface Props {
@@ -56,7 +60,7 @@ const canDelete = $derived(status === 'draft');
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M14 2L7 9M14 2l-4 12-3-5-5-3 12-4z" />
       </svg>
-      Send Invoice
+      {t(M['commerce.invoice_actions.send_invoice'])}
     </button>
   {/if}
 
@@ -65,7 +69,7 @@ const canDelete = $derived(status === 'draft');
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M3 8l4 4 6-8" />
       </svg>
-      Mark as Paid
+      {t(M['commerce.invoice_actions.mark_as_paid'])}
     </button>
   {/if}
 

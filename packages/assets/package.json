@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-assets",
-  "version": "0.29.12",
+  "version": "0.29.24",
   "description": "Asset management system with versioning, metadata, and AI-powered operations for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -42,7 +42,7 @@
     "pretest": "[ -f ../cli/dist/index.js ] && node ../cli/dist/index.js test --manifest-only || true",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && svelte-check --tsconfig ./tsconfig.kit.json",
+    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

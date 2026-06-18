@@ -4,6 +4,10 @@ import type {
   AgentUIComponentRegistry,
   AgentUISlot,
 } from '@happyvertical/smrt-agents/ui';
+import { M } from '../../i18n/strings.workspace.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** The registry to look up components from */
@@ -57,10 +61,10 @@ async function handleSave(newConfig: unknown) {
 	<div class="no-panel">
 		<div class="no-panel-icon">⚙️</div>
 		<p class="no-panel-message">
-			No admin panel registered for <code>{agentClass}.{slotId}</code>
+			{t(M['ui.agent_admin_panel.no_panel_message'])} <code>{agentClass}.{slotId}</code>
 		</p>
 		<p class="no-panel-hint">
-			Import the agent's admin package to register its panels.
+			{t(M['ui.agent_admin_panel.no_panel_hint'])}
 		</p>
 	</div>
 {/if}

@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentReviewPolicyData } from '../../mock-smrt-client';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   policy?: Partial<ContentReviewPolicyData>;
@@ -66,7 +70,7 @@ function handleSubmit() {
     Enabled
   </label>
   <div class="actions">
-    <button type="submit">Save policy</button>
+    <button type="submit">{t(M['content.governance_policy_editor.save_policy'])}</button>
     {#if onCancel}
       <button type="button" class="secondary" onclick={() => onCancel?.()}>
         Cancel

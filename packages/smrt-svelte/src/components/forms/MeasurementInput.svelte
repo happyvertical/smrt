@@ -1,11 +1,15 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
 import type { MeasurementUnit, MeasurementValue } from './types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Field name */
@@ -377,9 +381,9 @@ function handleUnitChange(e: Event) {
   {:else if showInvalid && !isInRange}
     <div id={`${name}-error`} class="validation-error" role="alert">
       {#if min !== undefined && value !== null && value < min}
-        Value must be at least {min} {unitAbbreviations[unit]}
+        {t(M['ui.measurement_input.value_at_least'], { min, unit: unitAbbreviations[unit] })}
       {:else if max !== undefined && value !== null && value > max}
-        Value must be at most {max} {unitAbbreviations[unit]}
+        {t(M['ui.measurement_input.value_at_most'], { max, unit: unitAbbreviations[unit] })}
       {/if}
     </div>
   {/if}

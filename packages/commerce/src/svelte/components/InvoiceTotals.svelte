@@ -5,6 +5,11 @@
  * Displays subtotal, tax, total, and optional amount paid/balance due.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
+
+const { t } = useI18n();
+
 /** Props for InvoiceTotals component */
 export interface Props {
   /** Subtotal in cents */
@@ -80,18 +85,18 @@ function formatMoney(cents: number): string {
 
   {#if showPaid && amountPaid > 0}
     <div class="totals-row paid">
-      <span class="totals-label">Amount Paid</span>
+      <span class="totals-label">{t(M['commerce.invoice_totals.amount_paid'])}</span>
       <span class="totals-value">-{formatMoney(amountPaid)}</span>
     </div>
 
     <div class="totals-row balance" class:due={balanceDue > 0} class:credit={balanceDue < 0}>
       <span class="totals-label">
         {#if balanceDue > 0}
-          Balance Due
+          {t(M['commerce.invoice_totals.balance_due'])}
         {:else if balanceDue < 0}
-          Credit
+          {t(M['commerce.invoice_totals.credit'])}
         {:else}
-          Paid in Full
+          {t(M['commerce.invoice_totals.paid_in_full'])}
         {/if}
       </span>
       <span class="totals-value">{formatMoney(Math.abs(balanceDue))}</span>

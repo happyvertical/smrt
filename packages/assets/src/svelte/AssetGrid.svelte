@@ -6,7 +6,11 @@
  * type-based thumbnails, and missing alt-text warnings for images.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import type { AssetGridProps, PersistedAsset } from './types';
+
+const { t } = useI18n();
 
 let {
   assets,
@@ -15,7 +19,16 @@ let {
   onAssetClick,
   onAssetDblClick,
   loading = false,
+  mode = 'manage',
 }: AssetGridProps = $props();
+
+// A card click opens the detail view in manage mode, or toggles selection in
+// pick mode — label the action accordingly.
+function openCardLabel(name: string): string {
+  return mode === 'pick'
+    ? t(M['assets.asset_grid.select_named'], { name })
+    : t(M['assets.asset_grid.open_named'], { name });
+}
 
 function toggleSelection(asset: PersistedAsset, event: Event) {
   event.stopPropagation();
@@ -34,13 +47,6 @@ function handleClick(asset: PersistedAsset) {
 
 function handleDblClick(asset: PersistedAsset) {
   onAssetDblClick?.(asset);
-}
-
-function handleKeydown(asset: PersistedAsset, event: KeyboardEvent) {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault();
-    onAssetClick(asset);
-  }
 }
 
 function isImage(asset: PersistedAsset): boolean {
@@ -77,7 +83,7 @@ function getAltText(asset: PersistedAsset): string {
   {#if loading}
     <div class="asset-grid__loading">
       <span class="spinner"></span>
-      <span>Loading assets...</span>
+      <span>{t(M['assets.asset_grid.loading'])}</span>
     </div>
   {:else if assets.length === 0}
     <div class="empty-state">
@@ -88,22 +94,28 @@ function getAltText(asset: PersistedAsset): string {
           <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
       </div>
-      <p class="empty-state__title">No assets found</p>
-      <p class="empty-state__desc">Upload an asset or change your search filters to see results.</p>
+      <p class="empty-state__title">{t(M['assets.asset_grid.no_assets_found'])}</p>
+      <p class="empty-state__desc">{t(M['assets.asset_grid.empty_hint'])}</p>
     </div>
   {:else}
     <div class="grid">
       {#each assets as asset (asset.id)}
         {@const selected = selectedIds.has(asset.id)}
-        <div
-          class="asset-card"
-          class:asset-card--selected={selected}
-          role="button"
-          tabindex="0"
-          onclick={() => handleClick(asset)}
-          ondblclick={() => handleDblClick(asset)}
-          onkeydown={(e) => handleKeydown(asset, e)}
-        >
+        <div class="asset-card" class:asset-card--selected={selected}>
+          <!-- Whole-card "open" action. A stretched, transparent button (vs. a
+               role="button" on the card) avoids nesting the interactive checkbox
+               inside an interactive control (axe nested-interactive). It sits
+               above the non-interactive content but below the checkbox (z-index),
+               and is keyboard-activatable natively (Enter/Space). -->
+          <button
+            type="button"
+            class="asset-card__open"
+            aria-label={openCardLabel(asset.name || 'Untitled')}
+            title={asset.name || 'Untitled'}
+            onclick={() => handleClick(asset)}
+            ondblclick={() => handleDblClick(asset)}
+          ></button>
+
           <!-- Selection checkbox -->
           <div class="asset-card__checkbox">
             <input
@@ -111,7 +123,7 @@ function getAltText(asset: PersistedAsset): string {
               checked={selected}
               onchange={(e) => toggleSelection(asset, e)}
               onclick={(e) => e.stopPropagation()}
-              aria-label="Select {asset.name}"
+              aria-label={t(M['assets.asset_grid.select_named_checkbox'], { name: asset.name })}
             />
           </div>
 
@@ -142,7 +154,7 @@ function getAltText(asset: PersistedAsset): string {
 
           <!-- Badges / warnings -->
           {#if isMissingAlt(asset)}
-            <span class="asset-card__badge asset-card__badge--warning" title="Missing alt text">⚠️ No alt</span>
+            <span class="asset-card__badge asset-card__badge--warning" title={t(M['assets.asset_grid.missing_alt_text'])}>{t(M['assets.asset_grid.no_alt'])}</span>
           {/if}
         </div>
       {/each}
@@ -184,9 +196,26 @@ function getAltText(asset: PersistedAsset): string {
     transform: translateY(-1px);
   }
 
-  .asset-card:focus-visible {
+  /* Stretched whole-card open action. Transparent, covers the card, sits above
+     the non-interactive content (z-index 1) but below the checkbox (z-index 2). */
+  .asset-card__open {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    z-index: 1;
+    border-radius: inherit;
+  }
+
+  .asset-card__open:focus-visible {
     outline: 2px solid var(--smrt-color-primary, #005ac1);
-    outline-offset: 2px;
+    /* Inset so the card's `overflow: hidden` doesn't clip the focus ring. */
+    outline-offset: -2px;
   }
 
   .asset-card--selected {
@@ -276,6 +305,9 @@ function getAltText(asset: PersistedAsset): string {
     font-weight: var(--smrt-typography-weight-semibold, 600);
     border-radius: var(--smrt-radius-small, 0.25rem);
     z-index: 2;
+    /* Informational only — let clicks fall through to the stretched open button
+       below so the badge corner isn't a dead zone for opening the asset. */
+    pointer-events: none;
   }
 
   .asset-card__badge--warning {

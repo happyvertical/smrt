@@ -11,6 +11,11 @@
  * - Native list semantics for numbered pages
  */
 
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
+const { t } = useI18n();
+
 /** Props for Pagination component */
 export interface Props {
   /** Current active page (1-based) */
@@ -105,11 +110,11 @@ const isLastPage = $derived(currentPage === totalPages);
     <!-- First page -->
     {#if showFirstLast}
       {#if onPageChange}
-        <button class="page-link nav-link first" type="button" disabled={isFirstPage} onclick={() => onPageChange(1)} aria-label="First page">
+        <button class="page-link nav-link first" type="button" disabled={isFirstPage} onclick={() => onPageChange(1)} aria-label={t(M['ui.pagination.first_page'])}>
           &laquo; First
         </button>
       {:else if !isFirstPage}
-        <a href={getPageUrl(1)} class="page-link nav-link first" aria-label="First page">
+        <a href={getPageUrl(1)} class="page-link nav-link first" aria-label={t(M['ui.pagination.first_page'])}>
           &laquo; First
         </a>
       {:else}
@@ -119,11 +124,11 @@ const isLastPage = $derived(currentPage === totalPages);
 
     <!-- Previous page -->
     {#if onPageChange}
-      <button class="page-link nav-link" type="button" disabled={!hasPrevPage} onclick={() => onPageChange(currentPage - 1)} aria-label="Previous page">
+      <button class="page-link nav-link" type="button" disabled={!hasPrevPage} onclick={() => onPageChange(currentPage - 1)} aria-label={t(M['ui.pagination.previous_page'])}>
         &larr; Prev
       </button>
     {:else if hasPrevPage}
-      <a href={getPageUrl(currentPage - 1)} class="page-link nav-link" aria-label="Previous page">
+      <a href={getPageUrl(currentPage - 1)} class="page-link nav-link" aria-label={t(M['ui.pagination.previous_page'])}>
         &larr; Prev
       </a>
     {:else}
@@ -138,15 +143,15 @@ const isLastPage = $derived(currentPage === totalPages);
           </li>
         {:else if page === currentPage}
           <li class="page-numbers__item">
-            <span class="page-link current" aria-current="page" aria-label="Page {page}, current">{page}</span>
+            <span class="page-link current" aria-current="page" aria-label={t(M['ui.pagination.page_current'], { page })}>{page}</span>
           </li>
         {:else if onPageChange}
           <li class="page-numbers__item">
-            <button class="page-link" type="button" onclick={() => onPageChange(page as number)} aria-label="Go to page {page}">{page}</button>
+            <button class="page-link" type="button" onclick={() => onPageChange(page as number)} aria-label={t(M['ui.pagination.go_to_page'], { page })}>{page}</button>
           </li>
         {:else}
           <li class="page-numbers__item">
-            <a href={getPageUrl(page)} class="page-link" aria-label="Go to page {page}">{page}</a>
+            <a href={getPageUrl(page)} class="page-link" aria-label={t(M['ui.pagination.go_to_page'], { page })}>{page}</a>
           </li>
         {/if}
       {/each}
@@ -154,11 +159,11 @@ const isLastPage = $derived(currentPage === totalPages);
 
     <!-- Next page -->
     {#if onPageChange}
-      <button class="page-link nav-link" type="button" disabled={!hasNextPage} onclick={() => onPageChange(currentPage + 1)} aria-label="Next page">
+      <button class="page-link nav-link" type="button" disabled={!hasNextPage} onclick={() => onPageChange(currentPage + 1)} aria-label={t(M['ui.pagination.next_page'])}>
         Next &rarr;
       </button>
     {:else if hasNextPage}
-      <a href={getPageUrl(currentPage + 1)} class="page-link nav-link" aria-label="Next page">
+      <a href={getPageUrl(currentPage + 1)} class="page-link nav-link" aria-label={t(M['ui.pagination.next_page'])}>
         Next &rarr;
       </a>
     {:else}
@@ -168,11 +173,11 @@ const isLastPage = $derived(currentPage === totalPages);
     <!-- Last page -->
     {#if showFirstLast}
       {#if onPageChange}
-        <button class="page-link nav-link last" type="button" disabled={isLastPage} onclick={() => onPageChange(totalPages)} aria-label="Last page ({totalPages})">
+        <button class="page-link nav-link last" type="button" disabled={isLastPage} onclick={() => onPageChange(totalPages)} aria-label={t(M['ui.pagination.last_page'], { totalPages })}>
           Last &raquo;
         </button>
       {:else if !isLastPage}
-        <a href={getPageUrl(totalPages)} class="page-link nav-link last" aria-label="Last page ({totalPages})">
+        <a href={getPageUrl(totalPages)} class="page-link nav-link last" aria-label={t(M['ui.pagination.last_page'], { totalPages })}>
           Last &raquo;
         </a>
       {:else}

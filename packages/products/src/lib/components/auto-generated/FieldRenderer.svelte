@@ -4,6 +4,11 @@
  * This demonstrates the "Define Once, Consume Everywhere" vision
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
+
+const { t } = useI18n();
+
 interface Props {
   fieldName: string;
   fieldType: 'string' | 'number' | 'boolean' | 'array' | 'object';
@@ -127,7 +132,7 @@ function _handleObjectInput(event: Event) {
       {required}
       oninput={handleArrayInput}
     />
-    <div class="field-hint">Enter values separated by commas</div>
+    <div class="field-hint">{t(M['products.field_renderer.array_hint'])}</div>
   {:else if fieldType === 'object'}
     <textarea
       id={fieldId}
@@ -138,7 +143,7 @@ function _handleObjectInput(event: Event) {
       {required}
       oninput={handleObjectInput}
     />
-    <div class="field-hint">Enter valid JSON</div>
+    <div class="field-hint">{t(M['products.field_renderer.object_hint'])}</div>
   {/if}
 </div>
 

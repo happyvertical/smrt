@@ -1,5 +1,141 @@
 # @happyvertical/smrt-core
 
+## 0.29.24
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - bump nodemailer + undici overrides to clear high-severity advisories (#1538) (deps)
+  - @happyvertical/smrt-scanner@0.29.24
+  - @happyvertical/smrt-config@0.29.24
+  - @happyvertical/smrt-types@0.29.24
+
+## 0.29.23
+
+### Patch Changes
+
+- ### Features
+
+  - extract products strings + raise coverage 17%→90%, flip strict (S13 #1418) (#1535) (i18n,test)
+  - @happyvertical/smrt-scanner@0.29.23
+  - @happyvertical/smrt-config@0.29.23
+  - @happyvertical/smrt-types@0.29.23
+
+## 0.29.22
+
+### Patch Changes
+
+- ### Features
+
+  - extract images strings + raise coverage 13%→99%, flip strict (S13 #1418) (#1534) (i18n,test)
+  - @happyvertical/smrt-scanner@0.29.22
+  - @happyvertical/smrt-config@0.29.22
+  - @happyvertical/smrt-types@0.29.22
+
+## 0.29.21
+
+### Patch Changes
+
+- ### Features
+
+  - extract messages strings + raise coverage 54%→88%, flip strict (S13 #1418) (#1533) (i18n,test,fix)
+  - @happyvertical/smrt-scanner@0.29.21
+  - @happyvertical/smrt-config@0.29.21
+  - @happyvertical/smrt-types@0.29.21
+
+## 0.29.20
+
+### Patch Changes
+
+- ### Features
+
+  - extract events strings + raise coverage 22%→87%, flip strict (S13 #1418) (#1532) (i18n,test)
+  - @happyvertical/smrt-scanner@0.29.20
+  - @happyvertical/smrt-config@0.29.20
+  - @happyvertical/smrt-types@0.29.20
+
+## 0.29.19
+
+### Patch Changes
+
+- ### Features
+
+  - extract UI strings in smrt-svelte, flip to lint-strict (S13 #1418 wave 4) (#1531) (i18n)
+  - @happyvertical/smrt-scanner@0.29.19
+  - @happyvertical/smrt-config@0.29.19
+  - @happyvertical/smrt-types@0.29.19
+
+## 0.29.18
+
+### Patch Changes
+
+- ### Features
+
+  - extract UI strings in content, flip to lint-strict (S13 #1418 wave 3) (#1530) (i18n)
+  - @happyvertical/smrt-scanner@0.29.18
+  - @happyvertical/smrt-config@0.29.18
+  - @happyvertical/smrt-types@0.29.18
+
+## 0.29.17
+
+### Patch Changes
+
+- ### Features
+
+  - extract UI strings in assets + chat, flip to lint-strict (S13 #1418 wave 2) (#1529) (i18n)
+  - @happyvertical/smrt-scanner@0.29.17
+  - @happyvertical/smrt-config@0.29.17
+  - @happyvertical/smrt-types@0.29.17
+
+## 0.29.16
+
+### Patch Changes
+
+- ### Features
+
+  - extract UI strings in 9 packages, flip to lint-strict (S13 #1418 wave 1) (#1528) (i18n)
+  - @happyvertical/smrt-scanner@0.29.16
+  - @happyvertical/smrt-config@0.29.16
+  - @happyvertical/smrt-types@0.29.16
+
+## 0.29.15
+
+### Patch Changes
+
+- ### Features
+
+  - i18n foundation — languages /runtime, smrt-svelte i18n layer, pilot (S13 #1418) (#1527) (i18n)
+  - @happyvertical/smrt-scanner@0.29.15
+  - @happyvertical/smrt-config@0.29.15
+  - @happyvertical/smrt-types@0.29.15
+
+## 0.29.14
+
+### Patch Changes
+
+- ### Features
+
+  - enforce Svelte compiler a11y warnings as errors in typecheck (S12 #1417) (#1526) (a11y)
+  - @happyvertical/smrt-scanner@0.29.14
+  - @happyvertical/smrt-config@0.29.14
+  - @happyvertical/smrt-types@0.29.14
+
+## 0.29.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - remove nested-interactive from AssetGrid/AssetList cards (S12 #1417) (#1522) (a11y)
+
+  ### Other Changes
+
+  - ci: shared turbo build cache across jobs + Test Packages shard headroom (#1523)
+  - @happyvertical/smrt-scanner@0.29.13
+  - @happyvertical/smrt-config@0.29.13
+  - @happyvertical/smrt-types@0.29.13
+
 ## 0.29.12
 
 ### Patch Changes

@@ -19,12 +19,14 @@
  * ```
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import ActionBar from './ActionBar.svelte';
 import AssetDetail from './AssetDetail.svelte';
 import AssetGrid from './AssetGrid.svelte';
 import AssetList from './AssetList.svelte';
 import AssetToolbar from './AssetToolbar.svelte';
 import CreateAssetModal from './CreateAssetModal.svelte';
+import { M } from './i18n.js';
 import type {
   AssetFilters,
   AssetManagerProps,
@@ -32,6 +34,8 @@ import type {
   AssetViewMode,
   PersistedAsset,
 } from './types';
+
+const { t } = useI18n();
 
 let {
   tenantId,
@@ -260,6 +264,7 @@ function handleManagerDrop(event: DragEvent) {
         {assets}
         {selectedIds}
         {loading}
+        {mode}
         onSelectionChange={handleSelectionChange}
         onAssetClick={handleAssetClick}
         onAssetDblClick={handleAssetDblClick}
@@ -298,7 +303,7 @@ function handleManagerDrop(event: DragEvent) {
           <polyline points="17 8 12 3 7 8"></polyline>
           <line x1="12" y1="3" x2="12" y2="15"></line>
         </svg>
-        <p>Drop file to upload</p>
+        <p>{t(M['assets.asset_manager.drop_file_to_upload'])}</p>
       </div>
     </div>
   {/if}

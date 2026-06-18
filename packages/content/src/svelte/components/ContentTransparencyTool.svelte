@@ -1,10 +1,14 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type {
   ContentGovernanceStateData,
   ContentTransparencyData,
 } from '../../mock-smrt-client';
 import { createClient } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -102,22 +106,22 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
   {/if}
 
   {#if !savedContentId}
-    <p class="empty-copy">Save this content to preview the public transparency breakdown.</p>
+    <p class="empty-copy">{t(M['content.transparency_tool.save_to_preview_transparency'])}</p>
   {:else if busy && !transparencyPreview}
-    <p class="empty-copy">Loading transparency...</p>
+    <p class="empty-copy">{t(M['content.transparency_tool.loading_transparency'])}</p>
   {:else if governanceState && !governanceState.transparencyEnabled}
-    <p class="empty-copy">Public transparency snapshots are not enabled for this governed content type.</p>
+    <p class="empty-copy">{t(M['content.transparency_tool.transparency_snapshots_not_enabled'])}</p>
   {:else if !transparencyPreview}
-    <p class="empty-copy">No transparency preview is available yet.</p>
+    <p class="empty-copy">{t(M['content.transparency_tool.no_transparency_preview'])}</p>
   {:else}
     <p class="section-caption">
-      The preview below reflects the latest saved article state. The published snapshot stays frozen until the next successful publication.
+      {t(M['content.transparency_tool.transparency_preview_explainer'])}
     </p>
 
     <div class="transparency-stats">
       <div class="transparency-stat">
         <strong>{transparencyPreview.factsUsed.length}</strong>
-        <span>Facts used</span>
+        <span>{t(M['content.transparency_tool.facts_used'])}</span>
       </div>
       <div class="transparency-stat">
         <strong>{transparencyPreview.references.length}</strong>
@@ -125,24 +129,24 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
       </div>
       <div class="transparency-stat">
         <strong>{transparencyPreview.otherExtractedFacts.length}</strong>
-        <span>Other extracted facts</span>
+        <span>{t(M['content.transparency_tool.other_extracted_facts'])}</span>
       </div>
       <div class="transparency-stat">
         <strong>{transparencyPreview.corrections.length}</strong>
-        <span>Public corrections</span>
+        <span>{t(M['content.transparency_tool.public_corrections'])}</span>
       </div>
     </div>
 
     <div class="transparency-card">
       <div class="tool-card-header">
-        <strong>Current preview</strong>
+        <strong>{t(M['content.transparency_tool.current_preview'])}</strong>
         <span class="pill pill--neutral">{transparencyPreview.snapshotKind}</span>
       </div>
       <span>
         {#if transparencyPreview.generation.publicPrompt}
-          Public prompt is set for publication.
+          {t(M['content.transparency_tool.public_prompt_set'])}
         {:else}
-          No public prompt is exposed yet.
+          {t(M['content.transparency_tool.no_public_prompt_exposed'])}
         {/if}
       </span>
       {#if transparencyPreview.generation.publicPrompt}
@@ -153,9 +157,9 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
 
       <div class="tool-list">
         <div class="tool-list-section">
-          <div class="section-caption">Facts used in the article</div>
+          <div class="section-caption">{t(M['content.transparency_tool.facts_used_in_article'])}</div>
           {#if transparencyPreview.factsUsed.length === 0}
-            <p class="empty-copy">No used facts will be shown publicly yet.</p>
+            <p class="empty-copy">{t(M['content.transparency_tool.no_used_facts_public'])}</p>
           {:else}
             {#each transparencyPreview.factsUsed.slice(0, 3) as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
               <div class="transparency-list-item">
@@ -172,15 +176,15 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
         </div>
 
         <div class="tool-list-section">
-          <div class="section-caption">Source material</div>
+          <div class="section-caption">{t(M['content.transparency_tool.source_material'])}</div>
           {#if transparencyPreview.references.length === 0}
-            <p class="empty-copy">No references will be shown publicly yet.</p>
+            <p class="empty-copy">{t(M['content.transparency_tool.no_references_public'])}</p>
           {:else}
             {#each transparencyPreview.references.slice(0, 3) as reference (reference.id ?? reference.url ?? reference.title)}
               <div class="transparency-list-item">
                 <strong>{getReferenceLabel(reference)}</strong>
                 <span>
-                  {reference.usedFactIds.length} used fact(s) · {reference.extractedFacts.length} extracted fact(s)
+                  {t(M['content.transparency_tool.reference_fact_counts'], { used: reference.usedFactIds.length, extracted: reference.extractedFacts.length })}
                 </span>
               </div>
             {/each}
@@ -191,7 +195,7 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
 
     <div class="transparency-card">
       <div class="tool-card-header">
-        <strong>Latest published snapshot</strong>
+        <strong>{t(M['content.transparency_tool.latest_published_snapshot'])}</strong>
         {#if publishedTransparency?.publicationVersion?.version !== null && publishedTransparency?.publicationVersion?.version !== undefined}
           <span class="pill pill--passed">v{publishedTransparency.publicationVersion.version}</span>
         {/if}
@@ -202,11 +206,11 @@ async function loadTransparency(contentIdToLoad = savedContentId) {
           Published {formatTimestamp(publishedTransparency.publicationVersion?.createdAt || publishedTransparency.generatedAt)}
         </span>
         <span>
-          {publishedTransparency.versionHistory.length} timeline event(s) and {publishedTransparency.corrections.length} public correction(s)
+          {t(M['content.transparency_tool.timeline_and_corrections'], { events: publishedTransparency.versionHistory.length, corrections: publishedTransparency.corrections.length })}
         </span>
       {:else}
         <p class="empty-copy">
-          No published transparency snapshot yet. Publish this article to freeze one for the built site.
+          {t(M['content.transparency_tool.no_published_snapshot'])}
         </p>
       {/if}
     </div>

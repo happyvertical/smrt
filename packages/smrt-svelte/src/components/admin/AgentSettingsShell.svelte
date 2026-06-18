@@ -3,7 +3,11 @@ import type {
   AgentUIComponentRegistry,
   AgentUISlots,
 } from '@happyvertical/smrt-agents/ui';
+import { M } from '../../i18n/strings.workspace.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import AgentAdminTabs from './AgentAdminTabs.svelte';
+
+const { t } = useI18n();
 
 /**
  * Serialized agent data passed from server
@@ -110,10 +114,9 @@ async function handleSave(slotId: string, config: unknown) {
 		{:else if agents.length === 0}
 			<div class="no-agents">
 				<div class="no-agents-icon">🤖</div>
-				<p class="no-agents-message">No agents configured for this site.</p>
+				<p class="no-agents-message">{t(M['ui.agent_settings_shell.no_agents_message'])}</p>
 				<p class="no-agents-hint">
-					Agents are discovered by matching their context field to the site
-					domain.
+					{t(M['ui.agent_settings_shell.no_agents_hint'])}
 				</p>
 			</div>
 		{/if}

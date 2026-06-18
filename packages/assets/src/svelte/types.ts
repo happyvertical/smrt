@@ -151,6 +151,11 @@ export interface AssetGridProps {
   onAssetDblClick?: (asset: PersistedAsset) => void;
   /** Whether the grid is loading */
   loading?: boolean;
+  /**
+   * Operating mode — drives the per-card action label ("Open" in manage mode,
+   * "Select" in pick mode, where a card click toggles selection).
+   */
+  mode?: AssetManagerMode;
 }
 
 /** Props for AssetList */

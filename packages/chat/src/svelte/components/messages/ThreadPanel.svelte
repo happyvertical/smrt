@@ -4,9 +4,13 @@
  * Shows the root message, thread replies, and an input for new replies.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatThreadData } from '../../types.js';
 import MessageInput from './MessageInput.svelte';
 import MessageList from './MessageList.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Thread metadata */
@@ -29,7 +33,7 @@ const replyCount = $derived(
 );
 </script>
 
-<aside class="thread-panel" aria-label="Thread: {threadTitle}">
+<aside class="thread-panel" aria-label={t(M['chat.thread_panel.thread_label'], { title: threadTitle })}>
   <header class="thread-panel__header">
     <div class="thread-panel__header-text">
       <h3 class="thread-panel__title">{threadTitle}</h3>
@@ -47,7 +51,7 @@ const replyCount = $derived(
       class="thread-panel__close"
       type="button"
       onclick={onclose}
-      aria-label="Close thread"
+      aria-label={t(M['chat.thread_panel.close'])}
     >
       <svg viewBox="0 0 16 16" width="16" height="16">
         <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
@@ -65,7 +69,7 @@ const replyCount = $derived(
   <div class="thread-panel__input">
     <MessageInput
       {onsend}
-      placeholder="Reply in thread..."
+      placeholder={t(M['chat.thread_panel.reply_placeholder'])}
     />
   </div>
 </aside>

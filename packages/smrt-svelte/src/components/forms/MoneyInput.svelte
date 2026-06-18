@@ -1,10 +1,14 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Field name */
@@ -316,9 +320,9 @@ function handleBlur() {
   {:else if showInvalid && !isInRange}
     <div id={`${name}-error`} class="validation-error" role="alert">
       {#if min !== undefined && value !== null && value < min}
-        Value must be at least ${(min / 100).toFixed(2)}
+        {t(M['ui.money_input.value_at_least'], { min: `${currencySymbol}${(min / 100).toFixed(2)}` })}
       {:else if max !== undefined && value !== null && value > max}
-        Value must be at most ${(max / 100).toFixed(2)}
+        {t(M['ui.money_input.value_at_most'], { max: `${currencySymbol}${(max / 100).toFixed(2)}` })}
       {/if}
     </div>
   {/if}

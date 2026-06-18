@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentContributionData } from '../../mock-smrt-client';
+import { M } from '../i18n.contribution.js';
+
+const { t } = useI18n();
 
 export interface Props {
   contributions?: ContentContributionData[];
@@ -116,8 +120,8 @@ $effect(() => {
 <section class="inbox">
   <header class="inbox__header">
     <div>
-      <h3>Contribution inbox</h3>
-      <p>Review held submissions, request changes, or promote them into editorial content.</p>
+      <h3>{t(M['content.contribution_inbox.heading'])}</h3>
+      <p>{t(M['content.contribution_inbox.intro'])}</p>
     </div>
     <span class="pill">{contributions.length}</span>
   </header>
@@ -166,12 +170,12 @@ $effect(() => {
               <dd>{selectedContribution.revisionCount || 0}</dd>
             </div>
             <div>
-              <dt>Promoted content</dt>
+              <dt>{t(M['content.contribution_inbox.promoted_content'])}</dt>
               <dd>{selectedContribution.promotedContentId || 'Not promoted yet'}</dd>
             </div>
             {#if selectedContribution.intakeDecision}
               <div>
-                <dt>Intake decision</dt>
+                <dt>{t(M['content.contribution_inbox.intake_decision'])}</dt>
                 <dd>{selectedContribution.intakeDecision}</dd>
               </div>
             {/if}
@@ -187,14 +191,14 @@ $effect(() => {
             {/if}
 
             <label>
-              Editorial note
+              {t(M['content.contribution_inbox.editorial_note'])}
               <textarea name="editorNote" bind:value={note} rows="4"></textarea>
             </label>
 
             <div class="actions">
               {#if onApprove || workflowFormAction}
                 <label class="inline">
-                  Promote to
+                  {t(M['content.contribution_inbox.promote_to'])}
                   <select name="targetStatus" bind:value={targetStatus}>
                     <option value="draft">draft</option>
                     <option value="review">review</option>
@@ -218,7 +222,7 @@ $effect(() => {
                   class="secondary"
                   disabled={!canSubmitWorkflow}
                 >
-                  Request changes
+                  {t(M['content.contribution_inbox.request_changes'])}
                 </button>
               {/if}
 

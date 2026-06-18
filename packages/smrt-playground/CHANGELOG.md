@@ -1,5 +1,77 @@
 # @happyvertical/smrt-playground
 
+## 0.29.24
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.24
+
+## 0.29.23
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.23
+
+## 0.29.22
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.22
+
+## 0.29.21
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.21
+
+## 0.29.20
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.20
+
+## 0.29.19
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.19
+
+## 0.29.18
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.18
+
+## 0.29.17
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.17
+
+## 0.29.16
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.16
+
+## 0.29.15
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.15
+
+## 0.29.14
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.14
+
+## 0.29.13
+
+### Patch Changes
+
+- @happyvertical/smrt-svelte@0.29.13
+
 ## 0.29.12
 
 ### Patch Changes

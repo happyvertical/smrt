@@ -7,7 +7,11 @@
  */
 
 import { ConfirmDialog } from '@happyvertical/smrt-svelte/feedback';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import type { ActionBarProps } from './types';
+
+const { t } = useI18n();
 
 let {
   selectedAssets,
@@ -95,10 +99,15 @@ const count = $derived(selectedAssets.length);
   <!-- Delete confirmation — library ConfirmDialog (S10 #1415) -->
   <ConfirmDialog
     open={showDeleteConfirm}
-    title="Delete {count} asset{count > 1 ? 's' : ''}?"
-    message="This action cannot be undone. The asset{count > 1 ? 's' : ''} and {count > 1 ? 'their' : 'its'} file data will be permanently removed."
-    confirmLabel="Delete"
-    cancelLabel="Cancel"
+    title={t(M['assets.action_bar.delete_confirm_title'], {
+      count,
+      plural: count > 1 ? 's' : '',
+    })}
+    message={count > 1
+      ? t(M['assets.action_bar.delete_confirm_message_other'])
+      : t(M['assets.action_bar.delete_confirm_message_one'])}
+    confirmLabel={t(M['assets.action_bar.delete'])}
+    cancelLabel={t(M['assets.action_bar.cancel'])}
     destructive
     loading={isDeleting}
     onconfirm={confirmDelete}

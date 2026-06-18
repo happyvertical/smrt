@@ -4,10 +4,14 @@
  * Displays avatar, message bubble, reactions, reply preview, and tool call data.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatMessageData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
 import MessageBubble from '../shared/MessageBubble.svelte';
 import ReactionPicker from '../shared/ReactionPicker.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Message data to render */
@@ -71,7 +75,7 @@ function toggleReactionPicker() {
     class="message-item"
     class:message-item--own={isOwn}
     role="article"
-    aria-label="Message from {message.senderName}"
+    aria-label={t(M['chat.message_item.message_from'], { name: message.senderName })}
     onmouseenter={() => showActions = true}
     onmouseleave={() => { showActions = false; showReactionPicker = false; }}
   >
@@ -154,7 +158,7 @@ function toggleReactionPicker() {
             class="message-item__action-btn"
             type="button"
             onclick={toggleReactionPicker}
-            aria-label="Add reaction"
+            aria-label={t(M['chat.message_item.add_reaction'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" stroke-width="1.2" /><circle cx="5.5" cy="6.5" r="0.8" fill="currentColor" /><circle cx="10.5" cy="6.5" r="0.8" fill="currentColor" /><path d="M5.5 9.5c.5 1.2 1.5 1.8 2.5 1.8s2-.6 2.5-1.8" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" /></svg>
           </button>
@@ -164,7 +168,7 @@ function toggleReactionPicker() {
             class="message-item__action-btn"
             type="button"
             onclick={() => onreply?.(message.id)}
-            aria-label="Reply"
+            aria-label={t(M['chat.message_item.reply'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><path d="M6 3L2 7l4 4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /><path d="M2 7h8c2.2 0 4 1.8 4 4v1" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
@@ -174,7 +178,7 @@ function toggleReactionPicker() {
             class="message-item__action-btn"
             type="button"
             onclick={() => onedit?.(message.id)}
-            aria-label="Edit"
+            aria-label={t(M['chat.message_item.edit'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><path d="M11.5 1.5l3 3L5 14H2v-3z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>
@@ -184,7 +188,7 @@ function toggleReactionPicker() {
             class="message-item__action-btn"
             type="button"
             onclick={() => ondelete?.(message.id)}
-            aria-label="Delete"
+            aria-label={t(M['chat.message_item.delete'])}
           >
             <svg viewBox="0 0 16 16" width="14" height="14"><path d="M2 4h12M5.3 4V2.7A.7.7 0 016 2h4a.7.7 0 01.7.7V4m1.6 0v9.3a1.4 1.4 0 01-1.4 1.4H5.1a1.4 1.4 0 01-1.4-1.4V4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" /></svg>
           </button>

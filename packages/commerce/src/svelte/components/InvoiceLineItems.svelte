@@ -6,8 +6,12 @@
  * Supports both read-only and editable modes.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.js';
 import type { LineItem } from '../types.js';
+
+const { t } = useI18n();
 
 /** Props for InvoiceLineItems component */
 export interface Props {
@@ -66,7 +70,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
       <p>{emptyMessage}</p>
       {#if editable && onadd}
         <button type="button" class="add-btn" onclick={onadd}>
-          Add Item
+          {t(M['commerce.invoice_line_items.add_item'])}
         </button>
       {/if}
     </div>
@@ -79,7 +83,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
             <th class="col-source">Source</th>
           {/if}
           <th class="col-qty">Qty</th>
-          <th class="col-price">Unit Price</th>
+          <th class="col-price">{t(M['commerce.invoice_line_items.unit_price'])}</th>
           <th class="col-amount">Amount</th>
           {#if editable}
             <th class="col-actions"></th>
@@ -110,7 +114,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
                 <button
                   type="button"
                   class="action-btn delete"
-                  title="Remove item"
+                  title={t(M['commerce.invoice_line_items.remove_item'])}
                   onclick={() => ondelete?.(item.id)}
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
@@ -138,7 +142,7 @@ const total = $derived(items.reduce((sum, item) => sum + item.amount, 0));
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M8 3v10M3 8h10" />
         </svg>
-        Add Item
+        {t(M['commerce.invoice_line_items.add_item'])}
       </button>
     {/if}
   {/if}

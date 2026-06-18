@@ -1,6 +1,10 @@
 <script lang="ts">
 import { useAppState } from '../../hooks/useAppState.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import { tryGetFormContext } from '../../state/form-context.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Size of the mic icon */
@@ -89,7 +93,7 @@ function handleClick() {
       </svg>
     {/if}
     {#if isListening}
-      <span class="tooltip">Speak to fill all fields. Click again to stop.</span>
+      <span class="tooltip">{t(M['ui.form_mic_button.tooltip'])}</span>
     {/if}
   </span>
 {/if}

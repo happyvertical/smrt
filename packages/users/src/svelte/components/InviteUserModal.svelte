@@ -1,6 +1,10 @@
 <script lang="ts">
 import { RoleSelector } from '@happyvertical/smrt-svelte';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Role, Tenant } from '@happyvertical/smrt-users';
+import { M } from '../i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   open: boolean;
@@ -82,13 +86,13 @@ function handleKeydown(e: KeyboardEvent) {
     <button
       type="button"
       class="modal-overlay"
-      aria-label="Close invite dialog"
+      aria-label={t(M['users.invite_user_modal.close_invite_dialog'])}
       onclick={handleClose}
     ></button>
     <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
       <div class="header">
-        <h2>Invite User to {tenant.name}</h2>
-        <button type="button" class="close-btn" onclick={handleClose} aria-label="Close">
+        <h2>{t(M['users.invite_user_modal.title'], { tenantName: tenant.name })}</h2>
+        <button type="button" class="close-btn" onclick={handleClose} aria-label={t(M['users.invite_user_modal.close'])}>
           <svg viewBox="0 0 20 20" fill="currentColor">
             <path
               d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"
@@ -104,12 +108,12 @@ function handleKeydown(e: KeyboardEvent) {
           {/if}
 
           <div class="field">
-            <label for="invite-email">Email address</label>
+            <label for="invite-email">{t(M['users.invite_user_modal.email_address'])}</label>
             <input
               id="invite-email"
               type="email"
               bind:value={email}
-              placeholder="user@example.com"
+              placeholder={t(M['users.invite_user_modal.email_placeholder'])}
               disabled={loading}
               required
             />
@@ -128,12 +132,12 @@ function handleKeydown(e: KeyboardEvent) {
 
           <div class="checkbox-field">
             <input id="send-email" type="checkbox" bind:checked={sendEmail} disabled={loading} />
-            <label for="send-email">Send invitation email</label>
+            <label for="send-email">{t(M['users.invite_user_modal.send_invitation_email'])}</label>
           </div>
 
           {#if !sendEmail}
             <div class="hint">
-              The user will be added with pending status. Share the invite link manually.
+              {t(M['users.invite_user_modal.pending_hint'])}
             </div>
           {/if}
         </div>
@@ -144,9 +148,9 @@ function handleKeydown(e: KeyboardEvent) {
           </button>
           <button type="submit" class="btn-primary" disabled={loading}>
             {#if loading}
-              Sending...
+              {t(M['users.invite_user_modal.sending'])}
             {:else}
-              Send Invite
+              {t(M['users.invite_user_modal.send_invite'])}
             {/if}
           </button>
         </div>

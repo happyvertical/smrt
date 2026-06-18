@@ -3,12 +3,16 @@ import { onDestroy, onMount } from 'svelte';
 import { ripple } from '../../actions/ripple.js';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
 import { formatEmail, formatText } from '../../utils/forms/formatters.js';
 import { Icon } from '../display/index.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Field name */
@@ -252,7 +256,7 @@ function handleInput(e: Event) {
         onmouseleave={handleMouseLeave}
         ontouchstart={(e) => { e.stopPropagation(); e.preventDefault(); startHoldRecording(); }}
         ontouchend={handleTouchEnd}
-        aria-label="Hold to speak"
+        aria-label={t(M['ui.text_input.mic_aria_label'])}
       >
         <Icon name="mic" size={20} />
       </button>
@@ -263,7 +267,7 @@ function handleInput(e: Event) {
 
   <div id={`${name}-supporting`} class="supporting-text" aria-live="polite">
     {#if isInitializing}
-      <span class="info">Downloading Whisper model... {downloadProgress}%</span>
+      <span class="info">{t(M['ui.text_input.downloading_model'], { progress: downloadProgress })}</span>
     {:else if isHolding}
       <span class="success">Recording...</span>
     {:else if isProcessing}
@@ -271,7 +275,7 @@ function handleInput(e: Event) {
     {:else if processError}
       <span class="error">{processError}</span>
     {:else if showInvalid}
-      <span class="error">Invalid email address</span>
+      <span class="error">{t(M['ui.text_input.invalid_email'])}</span>
     {:else if description && isFocused}
       <span class="info">{description}</span>
     {/if}

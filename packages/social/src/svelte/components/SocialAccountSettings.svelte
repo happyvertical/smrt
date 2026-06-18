@@ -1,6 +1,10 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { SocialPlatformType } from '../../social-account.js';
+import { M } from '../i18n.js';
 import type { SocialAccountSettingsItem } from '../types.js';
+
+const { t } = useI18n();
 
 let {
   accounts = [],
@@ -38,8 +42,8 @@ function statusLabel(account: SocialAccountSettingsItem): string {
 <section class="social-settings">
   <header class="toolbar">
     <div>
-      <h2>Social Accounts</h2>
-      <p>{accounts.length} account{accounts.length === 1 ? '' : 's'} configured</p>
+      <h2>{t(M['social.account_settings.heading'])}</h2>
+      <p>{accounts.length === 1 ? t(M['social.account_settings.configured_one'], { count: accounts.length }) : t(M['social.account_settings.configured_other'], { count: accounts.length })}</p>
     </div>
     {#if onRefresh}
       <button type="button" class="secondary" onclick={() => onRefresh?.()} disabled={loading}>Refresh</button>
@@ -47,7 +51,7 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   </header>
 
   {#if !readonly}
-    <div class="connect-row" aria-label="Connect social account">
+    <div class="connect-row" aria-label={t(M['social.account_settings.connect_aria'])}>
       {#each platforms as item}
         {#if connectHrefs[item.platform]}
           <a class="connect-button" href={connectHrefs[item.platform]}>{item.label}</a>
@@ -59,9 +63,9 @@ function statusLabel(account: SocialAccountSettingsItem): string {
   {/if}
 
   {#if loading}
-    <div class="empty">Loading accounts...</div>
+    <div class="empty">{t(M['social.account_settings.loading'])}</div>
   {:else if accounts.length === 0}
-    <div class="empty">No social accounts are configured yet.</div>
+    <div class="empty">{t(M['social.account_settings.empty'])}</div>
   {:else}
     <div class="account-list">
       {#each accounts as account (account.id)}

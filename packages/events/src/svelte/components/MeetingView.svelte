@@ -4,7 +4,11 @@
  * Displays details for a council meeting with links to agenda, minutes, video
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { Meeting } from '../types.js';
+
+const { t } = useI18n();
 
 interface Props {
   meeting: Meeting;
@@ -47,7 +51,7 @@ const hasDocuments = $derived(
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      Back to Calendar
+      {t(M['events.meeting_view.back_to_calendar'])}
     </a>
 
     {#if meeting.council}
@@ -68,7 +72,7 @@ const hasDocuments = $derived(
   <div class="meeting-content">
     {#if hasDocuments}
       <section class="documents-section">
-        <h2 class="section-title">Documents & Resources</h2>
+        <h2 class="section-title">{t(M['events.meeting_view.documents_and_resources'])}</h2>
 
         <div class="documents-grid">
           {#if meeting.agendaUrl}
@@ -76,7 +80,7 @@ const hasDocuments = $derived(
               <span class="document-icon">{'\u{1F4CB}'}</span>
               <div class="document-info">
                 <span class="document-name">Agenda</span>
-                <span class="document-desc">Meeting agenda and items</span>
+                <span class="document-desc">{t(M['events.meeting_view.agenda_desc'])}</span>
               </div>
               <span class="document-arrow">{'\u2197'}</span>
             </a>
@@ -87,7 +91,7 @@ const hasDocuments = $derived(
               <span class="document-icon">{'\u{1F4DD}'}</span>
               <div class="document-info">
                 <span class="document-name">Minutes</span>
-                <span class="document-desc">Official meeting minutes</span>
+                <span class="document-desc">{t(M['events.meeting_view.minutes_desc'])}</span>
               </div>
               <span class="document-arrow">{'\u2197'}</span>
             </a>
@@ -98,7 +102,7 @@ const hasDocuments = $derived(
               <span class="document-icon">{'\u{1F3AC}'}</span>
               <div class="document-info">
                 <span class="document-name">Video</span>
-                <span class="document-desc">Watch the recording</span>
+                <span class="document-desc">{t(M['events.meeting_view.video_desc'])}</span>
               </div>
               <span class="document-arrow">{'\u2197'}</span>
             </a>
@@ -109,7 +113,7 @@ const hasDocuments = $derived(
               <span class="document-icon">{'\u{2728}'}</span>
               <div class="document-info">
                 <span class="document-name">Highlights</span>
-                <span class="document-desc">Key decisions summary</span>
+                <span class="document-desc">{t(M['events.meeting_view.highlights_desc'])}</span>
               </div>
               <span class="document-arrow">{'\u2197'}</span>
             </a>
@@ -119,7 +123,7 @@ const hasDocuments = $derived(
     {:else}
       <div class="empty-state">
         <span class="empty-icon">{'\u{1F4C4}'}</span>
-        <p class="empty-text">No documents available yet for this meeting</p>
+        <p class="empty-text">{t(M['events.meeting_view.no_documents'])}</p>
       </div>
     {/if}
   </div>

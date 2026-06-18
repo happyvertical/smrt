@@ -1,4 +1,5 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onMount } from 'svelte';
 import {
   type ContentGovernanceAssignmentData,
@@ -9,6 +10,7 @@ import {
 } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
 import type { ContentGovernanceManagerClient } from '../governance-manager-client';
+import { M } from '../i18n.tools.js';
 import ContentGovernanceAssignmentEditor from './ContentGovernanceAssignmentEditor.svelte';
 import ContentGovernancePolicyEditor from './ContentGovernancePolicyEditor.svelte';
 import ContentGovernanceProfileEditor from './ContentGovernanceProfileEditor.svelte';
@@ -26,6 +28,8 @@ let {
   client = undefined,
   onChange = undefined,
 }: Props = $props();
+
+const { t } = useI18n();
 
 const governanceClient = $derived(
   client ?? createClient(normalizeApiBaseUrl(apiBaseUrl)),
@@ -134,8 +138,8 @@ function cancelEditing() {
 <div class="governance-manager">
   <div class="governance-manager__header">
     <div>
-      <h3>Content Governance</h3>
-      <p>Manage effective policies, profiles, and type assignments for governed content.</p>
+      <h3>{t(M['content.governance_manager.content_governance'])}</h3>
+      <p>{t(M['content.governance_manager.manage_governed_content'])}</p>
     </div>
     <button type="button" class="secondary" onclick={() => void loadDefinitions()}>
       Refresh
@@ -143,7 +147,7 @@ function cancelEditing() {
   </div>
 
   {#if loading}
-    <p>Loading governance definitions...</p>
+    <p>{t(M['content.governance_manager.loading_governance_definitions'])}</p>
   {:else if error}
     <p class="error">{error}</p>
   {:else if definitions}
@@ -155,7 +159,7 @@ function cancelEditing() {
             editMode = 'policy';
             editingPolicy = null;
           }}>
-            Add policy
+            {t(M['content.governance_manager.add_policy'])}
           </button>
         </div>
         {#if editMode === 'policy'}
@@ -183,7 +187,7 @@ function cancelEditing() {
                 </button>
                 {#if definitions.persisted.policies.some((item) => item.key === policy.key)}
                   <button type="button" class="secondary" onclick={() => void deletePolicy(policy.id)}>
-                    Delete override
+                    {t(M['content.governance_manager.delete_override'])}
                   </button>
                 {/if}
               </div>
@@ -199,7 +203,7 @@ function cancelEditing() {
             editMode = 'profile';
             editingProfile = null;
           }}>
-            Add profile
+            {t(M['content.governance_manager.add_profile'])}
           </button>
         </div>
         {#if editMode === 'profile'}
@@ -228,7 +232,7 @@ function cancelEditing() {
                 </button>
                 {#if definitions.persisted.profiles.some((item) => item.key === profile.key)}
                   <button type="button" class="secondary" onclick={() => void deleteProfile(profile.id)}>
-                    Delete override
+                    {t(M['content.governance_manager.delete_override'])}
                   </button>
                 {/if}
               </div>
@@ -244,7 +248,7 @@ function cancelEditing() {
             editMode = 'assignment';
             editingAssignment = null;
           }}>
-            Add assignment
+            {t(M['content.governance_manager.add_assignment'])}
           </button>
         </div>
         {#if editMode === 'assignment'}

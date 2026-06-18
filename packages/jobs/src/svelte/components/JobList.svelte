@@ -2,11 +2,15 @@
 /**
  * JobList - Display a filterable, sortable list of background jobs
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
+import { M } from '../i18n.js';
 import JobActions from './JobActions.svelte';
 import JobStatusBadge from './JobStatusBadge.svelte';
 import type { JobData, JobFilter, JobSort } from './types.js';
 import { formatRelativeTime, getPriorityLabel } from './types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Jobs to display */
@@ -102,7 +106,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
               checked={allSelected}
               use:setIndeterminate={someSelected}
               onchange={handleSelectAll}
-              aria-label="Select all jobs"
+              aria-label={t(M['jobs.job_list.select_all_jobs'])}
             />
           </th>
         {/if}
@@ -113,7 +117,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
         <th class="job-list__cell">Priority</th>
         <th class="job-list__cell">Attempts</th>
         <th class="job-list__cell">Created</th>
-        <th class="job-list__cell">Run At</th>
+        <th class="job-list__cell">{t(M['jobs.job_list.run_at'])}</th>
         {#if showActions}
           <th class="job-list__cell">Actions</th>
         {/if}
@@ -126,7 +130,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           <td class="job-list__cell job-list__cell--loading" colspan="10">
             <div class="job-list__loading">
               <span class="job-list__spinner"></span>
-              <span>Loading jobs...</span>
+              <span>{t(M['jobs.job_list.loading_jobs'])}</span>
             </div>
           </td>
         </tr>
@@ -137,7 +141,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
               {@render empty()}
             {:else}
               <div class="job-list__empty">
-                <span>No jobs found</span>
+                <span>{t(M['jobs.job_list.no_jobs_found'])}</span>
               </div>
             {/if}
           </td>
@@ -158,7 +162,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
                   type="checkbox"
                   checked={isSelected}
                   onchange={(e) => handleRowSelect(job.id, e)}
-                  aria-label="Select job"
+                  aria-label={t(M['jobs.job_list.select_job'])}
                 />
               </td>
             {/if}

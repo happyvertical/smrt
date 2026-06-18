@@ -1,8 +1,12 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type {
   ContentGovernanceAssignmentData,
   ContentGovernanceProfileData,
 } from '../../mock-smrt-client';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   assignment?: Partial<ContentGovernanceAssignmentData>;
@@ -99,33 +103,33 @@ function handleSubmit() {
     <input type="text" bind:value={draft.label} />
   </label>
   <label>
-    Content type
+    {t(M['content.governance_assignment_editor.content_type'])}
     <input type="text" bind:value={draft.contentType} required />
   </label>
   <label>
-    Content variant
+    {t(M['content.governance_assignment_editor.content_variant'])}
     <input type="text" bind:value={draft.contentVariant} />
   </label>
   <label>
-    Publication profile
+    {t(M['content.governance_assignment_editor.publication_profile'])}
     <select bind:value={draft.publicationProfileKey}>
-      <option value="" disabled={profiles.length > 0}>Select a profile</option>
+      <option value="" disabled={profiles.length > 0}>{t(M['content.governance_assignment_editor.select_a_profile'])}</option>
       {#each profiles as profile (profile.key)}
         <option value={profile.key}>{profile.label}</option>
       {/each}
     </select>
   </label>
   <label>
-    Correction profile
+    {t(M['content.governance_assignment_editor.correction_profile'])}
     <select bind:value={draft.correctionProfileKey}>
-      <option value="" disabled={profiles.length > 0}>Select a profile</option>
+      <option value="" disabled={profiles.length > 0}>{t(M['content.governance_assignment_editor.select_a_profile'])}</option>
       {#each profiles as profile (profile.key)}
         <option value={profile.key}>{profile.label}</option>
       {/each}
     </select>
   </label>
   <label>
-    Default fact relationship
+    {t(M['content.governance_assignment_editor.default_fact_relationship'])}
     <select bind:value={draft.defaultFactRelationship}>
       <option value="supports">supports</option>
       <option value="referenced_in">referenced_in</option>
@@ -141,7 +145,7 @@ function handleSubmit() {
     </label>
     <label class="checkbox">
       <input type="checkbox" bind:checked={draft.factLinkingEnabled} />
-      Fact linking
+      {t(M['content.governance_assignment_editor.fact_linking'])}
     </label>
     <label class="checkbox">
       <input type="checkbox" bind:checked={draft.transparencyEnabled} />
@@ -149,12 +153,12 @@ function handleSubmit() {
     </label>
     <label class="checkbox">
       <input type="checkbox" bind:checked={draft.enforcePublishReadiness} />
-      Enforce publish readiness
+      {t(M['content.governance_assignment_editor.enforce_publish_readiness'])}
     </label>
   </div>
 
   <div class="actions">
-    <button type="submit">Save assignment</button>
+    <button type="submit">{t(M['content.governance_assignment_editor.save_assignment'])}</button>
     {#if onCancel}
       <button type="button" class="secondary" onclick={() => onCancel?.()}>
         Cancel

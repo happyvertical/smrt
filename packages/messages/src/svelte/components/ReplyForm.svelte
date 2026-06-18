@@ -10,6 +10,11 @@ export interface Props {
 </script>
 
 <script lang="ts">
+  import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+  import { M } from '../i18n.js';
+
+  const { t } = useI18n();
+
   let {
     originalMessage,
     replyAll = false,
@@ -47,7 +52,7 @@ export interface Props {
   <textarea
     class="reply-body"
     bind:value={body}
-    placeholder="Write your reply..."
+    placeholder={t(M['messages.reply_form.body_placeholder'])}
     rows={5}
   ></textarea>
 

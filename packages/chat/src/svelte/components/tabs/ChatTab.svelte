@@ -4,9 +4,13 @@
  * Compact header with title, collapse/close buttons. Contains message list and input.
  * Expands upward from the bottom tab bar.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatTabState } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
 import MiniChat from './MiniChat.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Tab state */
@@ -37,13 +41,13 @@ const {
 </script>
 
 {#if tab.isExpanded}
-  <div class="chat-tab chat-tab--expanded" aria-label="Chat with {tab.room.name}">
+  <div class="chat-tab chat-tab--expanded" aria-label={t(M['chat.chat_tab.chat_with'], { name: tab.room.name })}>
     <div class="chat-tab__header">
       <button
         class="chat-tab__header-btn"
         type="button"
         onclick={oncollapse}
-        aria-label="Collapse chat"
+        aria-label={t(M['chat.chat_tab.collapse'])}
       >
         <Avatar
           name={tab.room.name}
@@ -58,8 +62,8 @@ const {
           class="chat-tab__icon-btn"
           type="button"
           onclick={oncollapse}
-          aria-label="Minimize"
-          title="Minimize"
+          aria-label={t(M['chat.chat_tab.minimize'])}
+          title={t(M['chat.chat_tab.minimize'])}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
             <rect x="3" y="12" width="10" height="2" rx="1" />
@@ -69,8 +73,8 @@ const {
           class="chat-tab__icon-btn"
           type="button"
           onclick={onclose}
-          aria-label="Close"
-          title="Close"
+          aria-label={t(M['chat.chat_tab.close'])}
+          title={t(M['chat.chat_tab.close'])}
         >
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
             <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />
@@ -93,7 +97,7 @@ const {
     class="chat-tab chat-tab--collapsed"
     type="button"
     onclick={onexpand}
-    aria-label="Open chat with {tab.room.name}"
+    aria-label={t(M['chat.chat_tab.open_chat_with'], { name: tab.room.name })}
   >
     <Avatar
       name={tab.room.name}
@@ -102,7 +106,7 @@ const {
     />
     <span class="chat-tab__name">{tab.room.name}</span>
     {#if tab.unreadCount > 0}
-      <span class="chat-tab__badge" aria-label="{tab.unreadCount} unread">{tab.unreadCount}</span>
+      <span class="chat-tab__badge" aria-label={t(M['chat.chat_tab.unread'], { count: tab.unreadCount })}>{tab.unreadCount}</span>
     {/if}
   </button>
 {/if}

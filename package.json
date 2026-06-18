@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.29.12",
+  "version": "0.29.24",
   "files": [
     "AGENTS.md",
     "CLAUDE.md"
@@ -32,6 +32,7 @@
     "check:radius": "node scripts/check-radius.mjs",
     "check:elevation": "node scripts/check-elevation.mjs",
     "check:typography": "node scripts/check-typography.mjs",
+    "check:hardcoded-strings": "node scripts/check-hardcoded-strings.mjs",
     "check:coverage": "node scripts/check-coverage.mjs",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "changeset": "changeset",
@@ -107,7 +108,8 @@
       "@happyvertical/utils": "^0.74.5",
       "@grpc/grpc-js@>=1.14.0 <1.14.4": "1.14.4",
       "minimatch@>=10.0.0 <10.2.3": "10.2.3",
-      "undici@>=7.0.0 <7.24.0": "7.24.0",
+      "undici@>=7.0.0 <7.28.0": "7.28.0",
+      "nodemailer@<9.0.1": "9.0.1",
       "tar@>=7.0.0 <7.5.11": "7.5.11",
       "protobufjs@>=7.0.0 <7.6.1": "7.6.1",
       "picomatch@>=2.0.0 <2.3.2": "2.3.2",

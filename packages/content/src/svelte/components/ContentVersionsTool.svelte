@@ -1,7 +1,11 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentVersionData } from '../../mock-smrt-client';
 import { createClient } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -164,9 +168,9 @@ async function restoreVersion(versionNumber: number) {
   {/if}
 
   {#if !savedContentId}
-    <p class="empty-copy">Save this content to manage versions.</p>
+    <p class="empty-copy">{t(M['content.versions_tool.save_to_manage_versions'])}</p>
   {:else if versions.length === 0}
-    <p class="empty-copy">No versions saved yet.</p>
+    <p class="empty-copy">{t(M['content.versions_tool.no_versions_saved'])}</p>
   {:else}
     <div class="tool-list">
       {#each versions as version (version.id ?? `version-${version.version ?? 0}`)}

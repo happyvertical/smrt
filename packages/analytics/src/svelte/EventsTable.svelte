@@ -1,4 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
+
+const { t } = useI18n();
+
 interface EventRow {
   id: string;
   eventName: string;
@@ -32,7 +37,7 @@ function statusClass(status: string): string {
 
 <div class="events-table-wrapper">
 	{#if displayEvents.length === 0}
-		<p class="events-empty">No recent events.</p>
+		<p class="events-empty">{t(M['analytics.events_table.empty'])}</p>
 	{:else}
 		<table class="events-table">
 			<thead>
@@ -57,7 +62,7 @@ function statusClass(status: string): string {
 			</tbody>
 		</table>
 		{#if events.length > maxRows}
-			<p class="events-overflow">Showing {maxRows} of {events.length} events</p>
+			<p class="events-overflow">{t(M['analytics.events_table.showing'], { maxRows, total: events.length })}</p>
 		{/if}
 	{/if}
 </div>

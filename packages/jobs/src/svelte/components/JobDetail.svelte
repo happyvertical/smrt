@@ -3,7 +3,9 @@
  * JobDetail - Detailed view of a single job
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Card } from '@happyvertical/smrt-svelte/ui';
+import { M } from '../i18n.js';
 import JobActions from './JobActions.svelte';
 import JobStatusBadge from './JobStatusBadge.svelte';
 import type { JobData } from './types.js';
@@ -12,6 +14,8 @@ import {
   formatRelativeTime,
   getPriorityLabel,
 } from './types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Job to display */
@@ -66,7 +70,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
       <div class="job-detail__grid">
         <!-- Basic Info -->
         <div class="job-detail__section">
-          <h3>Job Info</h3>
+          <h3>{t(M['jobs.job_detail.job_info'])}</h3>
           <dl class="job-detail__list">
             <dt>ID</dt>
             <dd><code>{job.id}</code></dd>
@@ -77,11 +81,11 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
             <dt>Priority</dt>
             <dd>{getPriorityLabel(job.priority)} ({job.priority})</dd>
 
-            <dt>Object Type</dt>
+            <dt>{t(M['jobs.job_detail.object_type'])}</dt>
             <dd>{job.objectType}</dd>
 
             {#if job.objectId}
-              <dt>Object ID</dt>
+              <dt>{t(M['jobs.job_detail.object_id'])}</dt>
               <dd><code>{job.objectId}</code></dd>
             {/if}
 
@@ -97,7 +101,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
             <dt>Created</dt>
             <dd>{formatRelativeTime(job.createdAt)}</dd>
 
-            <dt>Scheduled For</dt>
+            <dt>{t(M['jobs.job_detail.scheduled_for'])}</dt>
             <dd>{formatRelativeTime(job.runAt)}</dd>
 
             {#if job.startedAt}
@@ -149,7 +153,7 @@ const formattedArgs = $derived(JSON.stringify(job.args, null, 2));
       <!-- Error -->
       {#if job.lastError}
         <div class="job-detail__section job-detail__section--full job-detail__section--error">
-          <h3>Last Error</h3>
+          <h3>{t(M['jobs.job_detail.last_error'])}</h3>
           <pre class="job-detail__code job-detail__code--error">{job.lastError}</pre>
         </div>
       {/if}

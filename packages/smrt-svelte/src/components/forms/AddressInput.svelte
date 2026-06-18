@@ -1,11 +1,15 @@
 <script lang="ts">
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
 import type { AddressValue } from './types.js';
+
+const { t } = useI18n();
 
 type AddressField = keyof AddressValue;
 
@@ -282,7 +286,7 @@ function handleCountryChange(e: Event) {
           id="{name}_street"
           name="{name}[street]"
           type="text"
-          placeholder="123 Main Street"
+          placeholder={t(M['ui.address_input.street_placeholder'])}
           value={street}
           {disabled}
           required={required && fields.includes('street')}
@@ -303,7 +307,7 @@ function handleCountryChange(e: Event) {
             id="{name}_city"
             name="{name}[city]"
             type="text"
-            placeholder="City"
+            placeholder={t(M['ui.address_input.city_placeholder'])}
             value={city}
             {disabled}
             required={required && fields.includes('city')}
@@ -348,7 +352,7 @@ function handleCountryChange(e: Event) {
             id="{name}_postal"
             name="{name}[postalCode]"
             type="text"
-            placeholder="A1A 1A1"
+            placeholder={t(M['ui.address_input.postal_code_placeholder'])}
             value={postalCode}
             {disabled}
             required={required && fields.includes('postalCode')}

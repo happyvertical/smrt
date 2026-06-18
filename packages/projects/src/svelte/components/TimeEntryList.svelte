@@ -4,6 +4,8 @@
  * Supports bulk selection and grouping
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import {
   type Currency,
   formatCurrency,
@@ -12,6 +14,8 @@ import {
   statusColors,
   type TimeEntry,
 } from './utils.js';
+
+const { t } = useI18n();
 
 /** Props for TimeEntryList component */
 export interface Props {
@@ -86,12 +90,12 @@ function getEntryHref(entry: TimeEntry): string | undefined {
             checked={allSelected}
             indeterminate={someSelected}
             onchange={handleSelectAll}
-            aria-label="Select all time entries"
+            aria-label={t(M['projects.time_entry_list.select_all_aria'])}
           />
-          <span>Select All</span>
+          <span>{t(M['projects.time_entry_list.select_all'])}</span>
         </label>
         <span class="selection-count">
-          {selectedIds.length} of {selectableEntries.length} selected
+          {t(M['projects.time_entry_list.selection_count'], { selected: selectedIds.length, total: selectableEntries.length })}
         </span>
       </div>
     {/if}
@@ -114,7 +118,7 @@ function getEntryHref(entry: TimeEntry): string | undefined {
                   type="checkbox"
                   checked={isSelected}
                   onchange={(e) => handleSelect(entry.id, (e.target as HTMLInputElement).checked, e)}
-                  aria-label="Select entry: {entry.description}"
+                  aria-label={t(M['projects.time_entry_list.select_entry_aria'], { description: entry.description })}
                 />
               {/if}
             </div>

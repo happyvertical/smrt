@@ -3,7 +3,11 @@
  * SearchMessages - Message search interface with results list
  * Provides a search input and displays matching messages
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
 import type { ChatMessageData } from '../../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Whether the search panel is open */
@@ -100,15 +104,15 @@ $effect(() => {
   <div
     class="search-panel"
     role="search"
-    aria-label="Search messages"
+    aria-label={t(M['chat.search_messages.search'])}
   >
     <div class="search-panel__header">
-      <h2 class="search-panel__title">Search Messages</h2>
+      <h2 class="search-panel__title">{t(M['chat.search_messages.title'])}</h2>
       <button
         class="close-btn"
         type="button"
         onclick={handleClose}
-        aria-label="Close search"
+        aria-label={t(M['chat.search_messages.close'])}
       >
         <svg class="close-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M18 6 6 18" />
@@ -131,16 +135,16 @@ $effect(() => {
           bind:value={query}
           type="search"
           class="search-input"
-          placeholder="Search messages..."
+          placeholder={t(M['chat.search_messages.input_placeholder'])}
           autocomplete="off"
-          aria-label="Search query"
+          aria-label={t(M['chat.search_messages.query'])}
         />
         {#if hasQuery}
           <button
             class="clear-btn"
             type="button"
             onclick={() => { query = ''; searchInput?.focus(); }}
-            aria-label="Clear search"
+            aria-label={t(M['chat.search_messages.clear'])}
           >
             <svg class="clear-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M18 6 6 18" />
@@ -151,12 +155,12 @@ $effect(() => {
       </div>
     </form>
 
-    <div class="search-results" aria-label="Search results">
+    <div class="search-results" aria-label={t(M['chat.search_messages.results'])}>
       {#if hasResults}
         <p class="results-count">
-          {results.length} result{results.length !== 1 ? 's' : ''} found
+          {t(M['chat.search_messages.results_count'], { count: results.length, plural: results.length !== 1 ? 's' : '' })}
         </p>
-        <ul class="results-list" aria-label="Search results">
+        <ul class="results-list" aria-label={t(M['chat.search_messages.results'])}>
           {#each results as message (message.id)}
             <li class="results-list__item">
               <button
@@ -190,12 +194,12 @@ $effect(() => {
         </ul>
       {:else if hasQuery}
         <div class="search-empty" role="status">
-          <p class="search-empty__text">No messages found for "{query}"</p>
-          <p class="search-empty__hint">Try different keywords or check your spelling</p>
+          <p class="search-empty__text">{t(M['chat.search_messages.no_results'], { query })}</p>
+          <p class="search-empty__hint">{t(M['chat.search_messages.no_results_hint'])}</p>
         </div>
       {:else}
         <div class="search-empty" role="status">
-          <p class="search-empty__text">Enter a search term to find messages</p>
+          <p class="search-empty__text">{t(M['chat.search_messages.empty'])}</p>
         </div>
       {/if}
     </div>

@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import CreateAssetModal from '../CreateAssetModal.svelte';
+import { M } from '../i18n.js';
+
+const { t } = useI18n();
 
 interface CreatedAssetSummary {
   name: string;
@@ -40,13 +44,10 @@ function handleCreate(data: {
 
 <div class="preview-shell">
   <div class="preview-card">
-    <p class="eyebrow">Modal Preview</p>
-    <h4>Create Asset Modal</h4>
-    <p>
-      Open the upload dialog from inside the preview stage to exercise the real
-      modal flow without covering the host navigation.
-    </p>
-    <button type="button" onclick={openPreview}>Open Upload Modal</button>
+    <p class="eyebrow">{t(M['assets.create_asset_modal_preview.modal_preview'])}</p>
+    <h4>{t(M['assets.create_asset_modal_preview.title'])}</h4>
+    <p>{t(M['assets.create_asset_modal_preview.description'])}</p>
+    <button type="button" onclick={openPreview}>{t(M['assets.create_asset_modal_preview.open_upload_modal'])}</button>
 
     {#if statusMessage}
       <p class="status">{statusMessage}</p>
@@ -67,7 +68,7 @@ function handleCreate(data: {
           <dd>{lastCreated.description || '—'}</dd>
         </div>
         <div>
-          <dt>Alt Text</dt>
+          <dt>{t(M['assets.create_asset_modal_preview.alt_text'])}</dt>
           <dd>{lastCreated.altText || '—'}</dd>
         </div>
       </dl>

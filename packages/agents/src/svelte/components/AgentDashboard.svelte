@@ -3,10 +3,14 @@
  * AgentDashboard - Combined overview panel for agent schedules
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Button, Card } from '@happyvertical/smrt-svelte/ui';
+import { M } from '../i18n.js';
 import type { AgentRunHistoryEntry, AgentScheduleData } from '../types.js';
 import AgentRunHistory from './AgentRunHistory.svelte';
 import AgentScheduleList from './AgentScheduleList.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** All schedules */
@@ -60,7 +64,7 @@ const stats = $derived.by(() => {
       <Card padding="sm">
         <div class="stat-card">
           <div class="stat-card__value">{schedules.length}</div>
-          <div class="stat-card__label">Total Schedules</div>
+          <div class="stat-card__label">{t(M['agents.dashboard.total_schedules'])}</div>
         </div>
       </Card>
 
@@ -74,14 +78,14 @@ const stats = $derived.by(() => {
       <Card padding="sm">
         <div class="stat-card stat-card--running">
           <div class="stat-card__value">{stats.running}</div>
-          <div class="stat-card__label">Running Now</div>
+          <div class="stat-card__label">{t(M['agents.dashboard.running_now'])}</div>
         </div>
       </Card>
 
       <Card padding="sm">
         <div class="stat-card">
           <div class="stat-card__value">{stats.totalRuns.toLocaleString()}</div>
-          <div class="stat-card__label">Total Runs</div>
+          <div class="stat-card__label">{t(M['agents.dashboard.total_runs'])}</div>
         </div>
       </Card>
 
@@ -92,7 +96,7 @@ const stats = $derived.by(() => {
               ? `${(stats.successRate * 100).toFixed(1)}%`
               : '-'}
           </div>
-          <div class="stat-card__label">Success Rate</div>
+          <div class="stat-card__label">{t(M['agents.dashboard.success_rate'])}</div>
         </div>
       </Card>
 
@@ -112,10 +116,10 @@ const stats = $derived.by(() => {
     <Card>
       {#snippet header()}
         <div class="panel-header">
-          <h2>Scheduled Agents</h2>
+          <h2>{t(M['agents.dashboard.scheduled_agents'])}</h2>
           {#if onCreateSchedule}
             <Button variant="primary" size="sm" onclick={onCreateSchedule}>
-              New Schedule
+              {t(M['agents.dashboard.new_schedule'])}
             </Button>
           {/if}
         </div>
@@ -131,10 +135,10 @@ const stats = $derived.by(() => {
       >
         {#snippet empty()}
           <div class="empty-state">
-            <p>No scheduled agents</p>
+            <p>{t(M['agents.dashboard.no_scheduled_agents'])}</p>
             {#if onCreateSchedule}
               <Button variant="secondary" onclick={onCreateSchedule}>
-                Create First Schedule
+                {t(M['agents.dashboard.create_first_schedule'])}
               </Button>
             {/if}
           </div>
@@ -149,7 +153,7 @@ const stats = $derived.by(() => {
       <Card>
         {#snippet header()}
           <div class="panel-header">
-            <h2>Recent Runs</h2>
+            <h2>{t(M['agents.dashboard.recent_runs'])}</h2>
           </div>
         {/snippet}
 
