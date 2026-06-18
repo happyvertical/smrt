@@ -32,6 +32,7 @@ export {
   CACHE_INVALIDATION_CHANNEL,
   type CollectionCacheConfig,
   ensureCacheInvalidationListener,
+  getCacheGeneration,
   invalidateCollectionCache,
   resetCollectionCache,
   resolveDbCacheKey,

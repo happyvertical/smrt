@@ -7,6 +7,8 @@ import {
   type CollectionCacheConfig,
   ensureCacheInvalidationListener,
   getCachedRows,
+  getCacheGeneration,
+  invalidateCollectionCache,
   registerCrossProcessCacheInterest,
   resolveDbCacheKey,
   setCachedRows,
@@ -791,6 +793,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       return cached;
     }
 
+    // Capture the table's invalidation generation BEFORE the round-trip; if a
+    // concurrent write invalidates while this SELECT is in flight, setCachedRows
+    // sees the bumped generation and drops the now-stale result instead of
+    // caching it for the full TTL.
+    const generation = getCacheGeneration(dbKey, this.tableName);
     const result = await this.db.query(sql, ...params);
     setCachedRows(
       dbKey,
@@ -798,6 +805,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       queryKey,
       result.rows,
       cacheConfig.ttl,
+      generation,
     );
     return result.rows;
   }
@@ -1681,7 +1689,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     } else {
       where = logicalData;
     }
-    const existing = await this.get(where);
+    // Force a fresh read: this probe decides create-vs-update, so a stale cache
+    // hit could update a row that no longer exists or miss one that does.
+    const existing = await this.get(where, { cache: false });
     if (existing) {
       const diff = this.getDiffSync(existing, diffData);
       if (diff) {
@@ -1963,8 +1973,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages
     await ObjectRegistry.ensureManifestLoaded(this.getResolvedItemClassName());
 
-    // Load the object first - if it doesn't exist, return false immediately
-    const instance = await this.get(id);
+    // Load the object first - if it doesn't exist, return false immediately.
+    // Force a fresh read: this probe gates a mutation and decides the return
+    // value, so a stale cache hit could delete a phantom (returning true for a
+    // row another process already removed) or skip a real delete.
+    const instance = await this.get(id, { cache: false });
     if (!instance) {
       return false;
     }
@@ -1986,6 +1999,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Executes a `SELECT COUNT(*)` query with the same WHERE conversion as
    * `list()` (camelCase field names, operator suffixes, STI auto-filtering).
    * `limit`, `offset`, and `orderBy` are not applicable and are ignored.
+   *
+   * Note: `count()` is never served from the read cache (issue #1498) — only
+   * `list()`/`get()` are. On a page that caches `list()`, a `count()` issued
+   * in the same request reflects the live database and may briefly diverge
+   * from the cached rows within the TTL window.
    *
    * @param options.where - Filter conditions (same syntax as `list()`)
    * @returns Total count of matching records as an integer
@@ -2096,6 +2114,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       interceptedQuery.sql,
       ...interceptedQuery.params,
     );
+
+    // query() is a raw escape hatch documented for SELECTs, but it can run any
+    // SQL. A write issued through it bypasses the save()/delete() invalidation
+    // hooks, so conservatively bust this table's cache when the statement looks
+    // like a mutation (issue #1498). The word-boundary match ignores column
+    // names like `updated_at`/`deleted_at`; a false positive (e.g. SELECT ...
+    // FOR UPDATE) only costs a cache miss, never a stale read.
+    if (
+      /\b(?:insert|update|delete|merge|truncate|replace)\b/i.test(
+        interceptedQuery.sql,
+      )
+    ) {
+      invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
+    }
+
     const fields = this.getFieldsSync();
 
     // STI: Check if we need polymorphic hydration.

@@ -24,9 +24,14 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection';
 import {
+  buildQueryCacheKey,
   CACHE_INVALIDATION_CHANNEL,
+  getCachedRows,
+  getCacheGeneration,
+  invalidateCollectionCache,
   resetCollectionCache,
   resolveDbCacheKey,
+  setCachedRows,
 } from '../collection-cache';
 import { GlobalInterceptors } from '../interceptors';
 import { SmrtObject } from '../object';
@@ -421,6 +426,148 @@ describe('collection read cache (issue #1498)', () => {
 
       const third = await products.get(id, { cache: { ttl: 60_000 } });
       expect(third?.price).toBe(12.5);
+    });
+
+    it('caches get()-by-slug independently and invalidates on write', async () => {
+      const articles = await CacheTestArticleCollection.create({ db });
+      const created = await articles.create({ title: 'Hello' });
+      const slug = created.slug as string;
+
+      const first = await articles.get(slug, { cache: { ttl: 60_000 } });
+      expect(first?.title).toBe('Hello');
+
+      const querySpy = vi.spyOn(db, 'query');
+      const second = await articles.get(slug, { cache: { ttl: 60_000 } });
+      expect(second?.title).toBe('Hello');
+      // by-slug shape served from cache, no new SELECT
+      expect(countSelectsAgainst(querySpy, 'cache_test_articles')).toBe(0);
+
+      created.title = 'Updated';
+      await created.save();
+
+      const third = await articles.get(slug, { cache: { ttl: 60_000 } });
+      expect(third?.title).toBe('Updated');
+    });
+  });
+
+  describe('internal mutation-gating reads bypass the cache', () => {
+    it('delete() returns false for a row removed out-of-band despite a cached read', async () => {
+      // CacheTestArticle has model-level caching, so delete()'s internal
+      // existence probe would hit the cache unless it forces a fresh read.
+      const articles = await CacheTestArticleCollection.create({ db });
+      const created = await articles.create({ title: 'Doomed' });
+      const id = created.id as string;
+
+      // Prime the model cache for this id.
+      await articles.get(id);
+
+      // Remove the row WITHOUT going through the framework (no invalidation).
+      await db.query('DELETE FROM cache_test_articles WHERE id = ?', id);
+
+      // The probe must read through: the row is gone, so delete returns false.
+      expect(await articles.delete(id)).toBe(false);
+    });
+
+    it('getOrUpsert() creates when the cached row was removed out-of-band', async () => {
+      const articles = await CacheTestArticleCollection.create({ db });
+      const created = await articles.create({ title: 'Seed' });
+      const slug = created.slug as string;
+
+      // Prime cache, then delete out-of-band.
+      await articles.get(slug);
+      await db.query('DELETE FROM cache_test_articles WHERE slug = ?', slug);
+
+      // Fresh probe sees no row → creates rather than updating a phantom.
+      const upserted = await articles.getOrUpsert({ slug, title: 'Reborn' });
+      expect(upserted.title).toBe('Reborn');
+      expect(await articles.count({ where: { slug } })).toBe(1);
+    });
+  });
+
+  describe('query() raw-SQL invalidation', () => {
+    it('busts the table cache after a write issued through query()', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      const p = await products.create({ name: 'Widget', price: 9.99 });
+
+      const before = await products.list({ cache: { ttl: 60_000 } });
+      expect(before[0].name).toBe('Widget');
+
+      // Mutate through the raw escape hatch, bypassing save()/delete().
+      await products.query(
+        'UPDATE cache_test_products SET name = ? WHERE id = ?',
+        ['Renamed', p.id],
+      );
+
+      const after = await products.list({ cache: { ttl: 60_000 } });
+      expect(after[0].name).toBe('Renamed');
+    });
+
+    it('does not invalidate for a read-only query()', async () => {
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Widget', price: 9.99 });
+
+      await products.list({ cache: { ttl: 60_000 } });
+      // A SELECT (even mentioning columns like updated_at) must not bust cache.
+      await products.query(
+        'SELECT * FROM cache_test_products ORDER BY updated_at DESC',
+      );
+
+      const querySpy = vi.spyOn(db, 'query');
+      await products.list({ cache: { ttl: 60_000 } });
+      expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(0);
+    });
+  });
+
+  describe('concurrent write during in-flight read (generation guard)', () => {
+    it('drops a result whose table was invalidated mid-flight', () => {
+      const dbKey = 'gen-test-db';
+      const table = 'gen_test_rows';
+      const queryKey = buildQueryCacheKey('SELECT * FROM gen_test_rows', []);
+
+      // Simulate: read captures generation, a concurrent write invalidates,
+      // then the stale read tries to cache its result.
+      const captured = getCacheGeneration(dbKey, table);
+      invalidateCollectionCache(dbKey, table); // concurrent write
+      setCachedRows(
+        dbKey,
+        table,
+        queryKey,
+        [{ id: 'stale' }],
+        60_000,
+        captured,
+      );
+
+      expect(getCachedRows(dbKey, table, queryKey)).toBeUndefined();
+
+      // A fresh read (post-invalidation generation) caches normally.
+      const fresh = getCacheGeneration(dbKey, table);
+      setCachedRows(dbKey, table, queryKey, [{ id: 'fresh' }], 60_000, fresh);
+      expect(getCachedRows(dbKey, table, queryKey)).toEqual([{ id: 'fresh' }]);
+    });
+  });
+
+  describe('crossProcess without notification capability', () => {
+    it('caches in-process and returns correct data when db has no notifications', async () => {
+      // The default test db exposes no `notifications` capability.
+      expect(
+        (db as unknown as { notifications?: unknown }).notifications,
+      ).toBeUndefined();
+
+      const products = await CacheTestProductCollection.create({ db });
+      await products.create({ name: 'Widget', price: 9.99 });
+
+      const first = await products.list({
+        cache: { ttl: 60_000, crossProcess: true },
+      });
+      const querySpy = vi.spyOn(db, 'query');
+      const second = await products.list({
+        cache: { ttl: 60_000, crossProcess: true },
+      });
+
+      expect(first).toHaveLength(1);
+      expect(second).toHaveLength(1);
+      // Still served from the in-process cache despite no notifications.
+      expect(countSelectsAgainst(querySpy, 'cache_test_products')).toBe(0);
     });
   });
 
