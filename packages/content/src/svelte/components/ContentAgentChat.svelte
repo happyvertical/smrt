@@ -487,12 +487,12 @@ async function handleSendMessage(content: string) {
             <option value="" disabled>{t(M['content.content_agent_chat.no_topics'])}</option>
           {/if}
           {#each threads as thread}
-            <option value={thread.id}>{thread.title || 'Untitled Topic'}</option>
+            <option value={thread.id}>{thread.title || t(M['content.content_agent_chat.untitled_topic'])}</option>
           {/each}
         </select>
         <button class="topic-action-btn" onclick={() => { showNewTopicInput = true; newTopicTitle = ''; }} title={t(M['content.content_agent_chat.new_topic'])}>
           <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-          New
+          {t(M['content.content_agent_chat.new'])}
         </button>
       {/if}
     </div>

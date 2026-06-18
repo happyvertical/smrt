@@ -71,10 +71,11 @@ function listSvelteFiles(dir) {
       }
       out.push(...listSvelteFiles(full));
     } else if (entry.name.endsWith('.svelte') && !entry.name.startsWith('+')) {
-      // Skip SvelteKit route files (`+page`/`+layout`/`+error`/`+server`.svelte):
+      // Skip SvelteKit route components (`+page`/`+layout`/`+error`.svelte):
       // those are a package's dev-server/demo app surface, not the shippable
       // library components (which live under src/svelte/). Same rationale as the
-      // smrt-playground exclusion.
+      // smrt-playground exclusion. (`+server` files are `.ts`/`.js`, already
+      // out of scope.)
       out.push(full);
     }
   }

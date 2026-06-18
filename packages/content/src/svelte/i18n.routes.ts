@@ -89,5 +89,9 @@ export const M = defineMessages({
 
   // PublishedArticleRoute.svelte
   'content.published_article.eyebrow': 'Published article',
+  'content.published_article.untitled': 'Untitled article',
+  'content.published_article.unknown_author': 'Unknown author',
+  'content.published_article.empty_copy':
+    'This published article does not have a public transparency snapshot yet.',
   'content.published_article.transparency_title': 'How this article was made',
 });

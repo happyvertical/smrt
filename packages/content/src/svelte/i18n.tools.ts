@@ -71,6 +71,8 @@ export const M = defineMessages({
 
   // ContentTransparencyReport
   'content.transparency_report.facts_used': 'facts used',
+  'content.transparency_report.references': 'references',
+  'content.transparency_report.corrections': 'corrections',
   'content.transparency_report.ai_assisted': 'AI-assisted',
   'content.transparency_report.authored_without_disclosure':
     'Authored without public AI disclosure',

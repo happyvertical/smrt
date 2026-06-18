@@ -145,17 +145,17 @@ function handleDeleteContent(content: any) {
       {#if !type}
         <select bind:value={selectedType}>
           <option value="All Types">{t(M['content.content_list.all_types'])}</option>
-          <option>Articles</option>
-          <option>Documents</option>
-          <option>Mirrors</option>
+          <option value="Articles">Articles</option>
+          <option value="Documents">Documents</option>
+          <option value="Mirrors">Mirrors</option>
         </select>
       {/if}
       
       <select bind:value={selectedStatus}>
         <option value="All Statuses">{t(M['content.content_list.all_statuses'])}</option>
-        <option>Published</option>
-        <option>Draft</option>
-        <option>Archived</option>
+        <option value="Published">Published</option>
+        <option value="Draft">Draft</option>
+        <option value="Archived">Archived</option>
       </select>
       
       {#if controls}
@@ -303,13 +303,13 @@ function handleDeleteContent(content: any) {
             {#if getViewHref?.(content)}
               <a href={getViewHref(content) || '#'} class="quiet-action">{t(M['content.content_list.view_article'])}</a>
             {/if}
-            <button type="button" class="quiet-action" onclick={() => onEdit(content)}>Edit</button>
+            <button type="button" class="quiet-action" onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</button>
             <button
               type="button"
               class="quiet-action quiet-action--danger"
               onclick={() => handleDeleteContent(content)}
             >
-              Delete
+              {t(M['content.content_list.delete'])}
             </button>
           </div>
         </article>
@@ -363,8 +363,8 @@ function handleDeleteContent(content: any) {
               {#if getViewHref?.(content)}
                 <a href={getViewHref(content) || '#'} class="view-btn">{t(M['content.content_list.view_article_button'])}</a>
               {/if}
-              <button onclick={() => onEdit(content)}>Edit</button>
-              <button onclick={() => handleDeleteContent(content)} class="delete-btn">Delete</button>
+              <button onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</button>
+              <button onclick={() => handleDeleteContent(content)} class="delete-btn">{t(M['content.content_list.delete'])}</button>
             </div>
           </div>
         </div>

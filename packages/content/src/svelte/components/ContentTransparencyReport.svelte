@@ -58,8 +58,8 @@ function getFactLabel(fact: {
     {#if transparency}
       <div class="transparency-report__badges">
         <span class="badge">{transparency.factsUsed.length} {t(M['content.transparency_report.facts_used'])}</span>
-        <span class="badge">{transparency.references.length} references</span>
-        <span class="badge">{transparency.corrections.length} corrections</span>
+        <span class="badge">{transparency.references.length} {t(M['content.transparency_report.references'])}</span>
+        <span class="badge">{transparency.corrections.length} {t(M['content.transparency_report.corrections'])}</span>
       </div>
     {/if}
   </div>

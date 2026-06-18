@@ -37,13 +37,13 @@ function formatTimestamp(value: string | null | undefined) {
     <div class="article-hero__inner">
       <a href={backHref} class="back-link">{backLabel}</a>
       <div class="eyebrow">{t(M['content.published_article.eyebrow'])}</div>
-      <h1>{data.content.title || 'Untitled article'}</h1>
+      <h1>{data.content.title || t(M['content.published_article.untitled'])}</h1>
       {#if data.content.description}
         <p class="article-dek">{data.content.description}</p>
       {/if}
 
       <div class="article-meta">
-        <span>{data.content.author || 'Unknown author'}</span>
+        <span>{data.content.author || t(M['content.published_article.unknown_author'])}</span>
         <span>{formatTimestamp(data.content.publish_date)}</span>
         {#if data.content.slug}
           <span>/{data.content.slug}</span>
@@ -64,7 +64,7 @@ function formatTimestamp(value: string | null | undefined) {
       <ContentTransparencyReport
         transparency={data.transparency}
         title={t(M['content.published_article.transparency_title'])}
-        emptyCopy="This published article does not have a public transparency snapshot yet."
+        emptyCopy={t(M['content.published_article.empty_copy'])}
       />
     </aside>
   </main>
