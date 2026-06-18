@@ -1968,6 +1968,9 @@ importers:
       '@happyvertical/smrt-jobs':
         specifier: workspace:*
         version: link:../jobs
+      '@happyvertical/smrt-languages':
+        specifier: workspace:*
+        version: link:../languages
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles

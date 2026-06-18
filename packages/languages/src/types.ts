@@ -1,4 +1,5 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type { LanguageVariables } from './runtime.js';
 
 /** A registered code default for a single (key, locale) pair. */
 export interface LanguageStringDefinitionInput {
@@ -34,7 +35,7 @@ export interface LanguagesPackageConfig {
   [key: string]: unknown;
 }
 
-export type LanguageVariables = Record<string, unknown>;
+export type { LanguageVariables };
 
 export interface ResolveLanguageStringOptions {
   db?: SmrtClassOptions['db'];

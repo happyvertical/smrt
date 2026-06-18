@@ -55,6 +55,20 @@ The translation job:
   `'__app__'` so the `(key, locale, context)` upsert key remains unique even
   with nullable `tenantId`.
 
+## Subpaths
+
+- **root** — read path (`defineLanguageString`, `resolveLanguageString`,
+  overrides, cache). Pulls smrt-core/sql/ai/jobs; server-only.
+- **`/jobs`** — translation-worker stack. **`/cli`** — admin helpers.
+- **`/runtime`** — browser-safe, **dependency-free** pure helpers
+  (`renderTemplate`, `normalizeLocale`, `buildLocaleFallbackChain`) with no
+  `node:*` imports. This is the single source of truth for the `{var}`
+  interpolation + locale-matching contract, so client i18n layers (the
+  smrt-svelte i18n layer, #1418) share it with the server resolver instead of
+  re-implementing it. The pure helpers live in `src/runtime.ts`; `src/utils.ts`
+  re-exports them and adds the crypto-dependent `computeSourceHash` /
+  `buildTranslationJobId`.
+
 ## Public API surface
 
 ```typescript
@@ -65,6 +79,8 @@ import {
   LanguageOverrideCollection,
   clearLanguageCache,
 } from '@happyvertical/smrt-languages';
+// Browser-safe interpolation/locale helpers (no server deps):
+import { renderTemplate } from '@happyvertical/smrt-languages/runtime';
 
 defineLanguageString({
   key: 'users.role.member',

@@ -238,6 +238,12 @@ jobs:
       - name: Check raw typography
         run: node scripts/check-typography.mjs
 
+      # Flags hardcoded user-facing strings in .svelte markup (Sweep S13,
+      # #1418). Report-only in phase 1 (no package fully extracted yet); fails
+      # only for packages in the script's STRICT_PACKAGES set. Node-only, no deps.
+      - name: Check hardcoded UI strings
+        run: node scripts/check-hardcoded-strings.mjs
+
   dependency-audit:
     name: Dependency Vulnerability Audit
     runs-on: arc-happyvertical

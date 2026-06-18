@@ -12,6 +12,9 @@
  */
 
 import type { Snippet } from 'svelte';
+import { M } from '../../i18n/strings.js';
+import Trans from '../../i18n/Trans.svelte';
+import { useI18n } from '../../i18n/use-i18n.js';
 import type {
   DataTableColumn,
   DataTableProps,
@@ -19,6 +22,8 @@ import type {
   SortState,
 } from './types.js';
 import { defaultSort, getNestedValue } from './types.js';
+
+const { t } = useI18n();
 
 interface ExtendedProps<T> extends DataTableProps<T> {
   /** Global cell renderer - takes precedence over column.cell */
@@ -188,7 +193,7 @@ const sizeClasses = {
               checked={allSelected}
               use:setIndeterminate={someSelected}
               onchange={handleSelectAll}
-              aria-label="Select all rows"
+              aria-label={t(M['ui.data_table.select_all'])}
               class="data-table__checkbox"
             />
           </th>
@@ -244,7 +249,7 @@ const sizeClasses = {
           >
             <div class="data-table__loading-indicator">
               <span class="data-table__spinner"></span>
-              <span>Loading...</span>
+              <span><Trans key={M['ui.data_table.loading']} /></span>
             </div>
           </td>
         </tr>
@@ -258,7 +263,7 @@ const sizeClasses = {
               {@render empty()}
             {:else}
               <div class="data-table__empty-state">
-                <span>No data available</span>
+                <span><Trans key={M['ui.data_table.empty']} /></span>
               </div>
             {/if}
           </td>
@@ -286,7 +291,7 @@ const sizeClasses = {
                   type="checkbox"
                   checked={isSelected}
                   onchange={(e) => handleRowSelect(key, e)}
-                  aria-label="Select row"
+                  aria-label={t(M['ui.data_table.select_row'])}
                   class="data-table__checkbox"
                 />
               </td>
