@@ -402,7 +402,7 @@ never disable the scan.
 - **`./playground` subpath**: exports the package's playground module for use by `smrt-playground`
 - **Svelte peer**: `svelte: ^5.18.0` (uniform). Drop the `^4.0.0 || ^5.0.0` range.
 - **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json`
-- **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks via the a11y wrapper, e.g. `tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json` (see Accessibility enforcement below). SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript and `svelte-check` passes.
+- **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks via the a11y wrapper, e.g. `tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json` (see Accessibility enforcement below). SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript pass and the `svelte-check-a11y` wrapper pass.
 - **`tsconfig.svelte.json`**: extends `tsconfig.package-svelte.json`, includes `ambient.d.ts` and `*.svelte`
 
 ### Accessibility enforcement (S12, #1417)
@@ -412,10 +412,11 @@ the existing (required) `typecheck` CI gate — no separate build job and no new
 required status check.
 
 - **Mechanism**: `scripts/svelte-check-a11y.mjs` is a drop-in `svelte-check`
-  wrapper that appends `--compiler-warnings "<a11y_*:error>"` (svelte-check's
-  native warning-promotion flag). Every UI package's `typecheck` calls the
-  wrapper instead of bare `svelte-check`, reusing each package's own
-  tsconfig/codegen flow unchanged.
+  wrapper that appends `--compiler-warnings` with an explicit comma-separated
+  list of every `a11y_*` code mapped to `:error` (svelte-check's native
+  warning-promotion flag — there is no wildcard syntax, so each code is listed).
+  Every UI package's `typecheck` calls the wrapper instead of bare
+  `svelte-check`, reusing each package's own tsconfig/codegen flow unchanged.
 - **Single source of truth**: the canonical `a11y_*` code list lives in the
   wrapper. A Svelte upgrade that adds a NEW a11y code surfaces it as a plain
   (non-gating) warning until it is added to that list.
