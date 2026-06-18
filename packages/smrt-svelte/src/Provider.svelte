@@ -2,6 +2,11 @@
 import type { Snippet } from 'svelte';
 import { onDestroy, untrack } from 'svelte';
 import AILoadingOverlay from './browser-ai/svelte/components/AILoadingOverlay.svelte';
+import {
+  createI18nContext,
+  type I18nSnapshot,
+  setI18nContext,
+} from './i18n/index.js';
 import type {
   AIConfig,
   AILoadingState,
@@ -67,6 +72,13 @@ interface Props {
    */
   onAILoadingChange?: (state: AILoadingState) => void;
   /**
+   * i18n snapshot from your load function (`buildI18nSnapshot` on
+   * `@happyvertical/smrt-svelte/i18n/server`). Provides the active locale +
+   * resolved message templates to `useI18n()` / `<Trans>`. Omit for
+   * English-default-only rendering.
+   */
+  i18n?: I18nSnapshot;
+  /**
    * Children to render
    */
   children: Snippet;
@@ -82,6 +94,7 @@ const {
   onReady,
   onModeChange,
   onAILoadingChange,
+  i18n,
   children,
 }: Props = $props();
 
@@ -123,6 +136,19 @@ $effect(() => {
 
 // Provide context
 setAppStateContext(appState);
+
+// i18n: seed the store from the initial snapshot synchronously (untrack — this
+// MUST run during SSR, where $effect does not, so translated strings render on
+// the server), then keep it in sync when the `i18n` prop changes (locale
+// switch). Reads stay synchronous on the client; all async resolution happened
+// server-side in buildI18nSnapshot.
+const i18nStore = untrack(() => createI18nContext(i18n));
+setI18nContext(i18nStore);
+$effect(() => {
+  if (i18n) {
+    i18nStore.snapshot = i18n;
+  }
+});
 
 // Initialize on mount (untrack to prevent infinite loop)
 // Skip during SSR - browser-ai APIs require browser environment

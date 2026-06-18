@@ -107,6 +107,37 @@ code for tree-shaking and clarity.
 downstream (e.g. the library `Avatar` gained an image-error→initials fallback
 while consolidating chat's avatar).
 
+## i18n (`./i18n` + `./i18n/server`, Sweep S13 #1418)
+
+Routes user-facing strings through `@happyvertical/smrt-languages`. The server
+pre-resolves a per-locale dictionary of **templates**; the client reads it
+synchronously and interpolates `{var}` placeholders with its own dependency-free
+`renderTemplate` (`src/i18n/render.ts`, parity-tested against languages — the
+client never bundles the heavy languages package). No async in render. The
+languages root is imported only by the Node-only `/i18n/server` subpath. See
+`docs/content/architecture/i18n.md`.
+
+- **`defineMessages({ key: englishDefault })`** — register a package's English
+  code defaults (key namespace `<package>.<component>.<descriptor>`; smrt-svelte
+  primitives use `ui.`). Returns a typed key map. Client-safe (no languages
+  root import). smrt-svelte's own catalog is `src/i18n/strings.ts`.
+- **`useI18n()` → `{ locale, t }`** and **`<Trans key vars />`** — equal
+  first-class APIs (`t` for attributes like `placeholder`/`aria-label`, `<Trans>`
+  for element bodies). Resolution order: snapshot template → registered default
+  → the key itself (never blank). Both work outside a `<Provider>` (fall back to
+  registered defaults) so primitives stay usable in isolation/tests.
+- **`<Provider i18n={snapshot}>`** puts the store on context; the prop is
+  seeded synchronously (SSR-safe) and a locale switch (reassigning `i18n`)
+  re-renders every `t` / `<Trans>`.
+- **`buildI18nSnapshot({ locale, tenantId, db })`** (`./i18n/server`, Node-only)
+  — a consumer's load function calls it for the request locale and passes the
+  result to `<Provider>`. It seeds the languages registry from `defineMessages`
+  defaults, then resolves each key through the override/tenant/locale chain.
+- Enforcement: `scripts/check-hardcoded-strings.mjs` (`pnpm
+  check:hardcoded-strings`) flags hardcoded prose in `.svelte` markup —
+  report-only until a package's extraction completes, then add it to the
+  script's `STRICT_PACKAGES`. Phase 1 extracted `DataTable` as the pilot.
+
 ## Permission Action
 
 ```svelte

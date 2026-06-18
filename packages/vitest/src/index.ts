@@ -421,6 +421,16 @@ export function getWorkspaceViteAliases(
         '@happyvertical/smrt-svelte/themes',
         join(packageRoot, 'src/themes/index.ts'),
       );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/i18n',
+        join(packageRoot, 'src/i18n/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-svelte/i18n/server',
+        join(packageRoot, 'src/i18n/server.ts'),
+      );
     }
   }
 
