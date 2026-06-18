@@ -103,9 +103,11 @@ const count = $derived(selectedAssets.length);
       count,
       plural: count > 1 ? 's' : '',
     })}
-    message="This action cannot be undone. The asset{count > 1 ? 's' : ''} and {count > 1 ? 'their' : 'its'} file data will be permanently removed."
-    confirmLabel="Delete"
-    cancelLabel="Cancel"
+    message={count > 1
+      ? t(M['assets.action_bar.delete_confirm_message_other'])
+      : t(M['assets.action_bar.delete_confirm_message_one'])}
+    confirmLabel={t(M['assets.action_bar.delete'])}
+    cancelLabel={t(M['assets.action_bar.cancel'])}
     destructive
     loading={isDeleting}
     onconfirm={confirmDelete}

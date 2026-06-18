@@ -3,6 +3,13 @@ import { defineMessages } from '@happyvertical/smrt-svelte/i18n';
 export const M = defineMessages({
   // ActionBar
   'assets.action_bar.delete_confirm_title': 'Delete {count} asset{plural}?',
+  // Separate singular/plural messages (an English `{plural}` suffix doesn't translate).
+  'assets.action_bar.delete_confirm_message_one':
+    'This action cannot be undone. The asset and its file data will be permanently removed.',
+  'assets.action_bar.delete_confirm_message_other':
+    'This action cannot be undone. The assets and their file data will be permanently removed.',
+  'assets.action_bar.delete': 'Delete',
+  'assets.action_bar.cancel': 'Cancel',
 
   // AssetDetail
   'assets.asset_detail.open_pdf_in_new_tab': 'Open PDF in new tab',
