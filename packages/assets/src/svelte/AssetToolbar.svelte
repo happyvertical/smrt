@@ -7,6 +7,8 @@ import { onDestroy } from 'svelte';
  * and an upload button.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import type {
   AssetFilters,
   AssetSort,
@@ -14,6 +16,8 @@ import type {
   AssetToolbarProps,
   AssetViewMode,
 } from './types';
+
+const { t } = useI18n();
 
 let {
   view,
@@ -106,13 +110,13 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
       <input
         type="search"
         class="search-field"
-        placeholder="Search assets..."
+        placeholder={t(M['assets.asset_toolbar.search_placeholder'])}
         value={searchValue}
         oninput={handleSearch}
-        aria-label="Search assets"
+        aria-label={t(M['assets.asset_toolbar.search_assets'])}
       />
       {#if searchValue}
-        <button type="button" class="search-clear" onclick={handleClearSearch} aria-label="Clear search">
+        <button type="button" class="search-clear" onclick={handleClearSearch} aria-label={t(M['assets.asset_toolbar.clear_search'])}>
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -122,8 +126,8 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </div>
 
     <!-- Type Filter -->
-    <select class="asset-toolbar__select" value={typeValue} onchange={handleTypeFilter} aria-label="Filter by type">
-      <option value="">All types</option>
+    <select class="asset-toolbar__select" value={typeValue} onchange={handleTypeFilter} aria-label={t(M['assets.asset_toolbar.filter_by_type'])}>
+      <option value="">{t(M['assets.asset_toolbar.all_types'])}</option>
       <option value="image">Images</option>
       <option value="video">Videos</option>
       <option value="document">Documents</option>
@@ -131,25 +135,25 @@ const views: { key: AssetViewMode; label: string; icon: string }[] = [
     </select>
 
     <!-- Sort -->
-    <select class="asset-toolbar__select" value={sortValue} onchange={handleSortChange} aria-label="Sort assets">
-      <option value="createdAt:desc">Newest first</option>
-      <option value="createdAt:asc">Oldest first</option>
-      <option value="name:asc">Name A–Z</option>
-      <option value="name:desc">Name Z–A</option>
-      <option value="updatedAt:desc">Recently updated</option>
+    <select class="asset-toolbar__select" value={sortValue} onchange={handleSortChange} aria-label={t(M['assets.asset_toolbar.sort_assets'])}>
+      <option value="createdAt:desc">{t(M['assets.asset_toolbar.newest_first'])}</option>
+      <option value="createdAt:asc">{t(M['assets.asset_toolbar.oldest_first'])}</option>
+      <option value="name:asc">{t(M['assets.asset_toolbar.name_a_z'])}</option>
+      <option value="name:desc">{t(M['assets.asset_toolbar.name_z_a'])}</option>
+      <option value="updatedAt:desc">{t(M['assets.asset_toolbar.recently_updated'])}</option>
     </select>
   </div>
 
   <div class="asset-toolbar__right">
     <!-- View Toggle -->
-    <div class="view-toggle" role="group" aria-label="View mode">
+    <div class="view-toggle" role="group" aria-label={t(M['assets.asset_toolbar.view_mode'])}>
       {#each views as v (v.key)}
         <button
           type="button"
           class="view-toggle__btn"
           class:view-toggle__btn--active={view === v.key}
           onclick={() => (onviewchange ?? onViewChange)(v.key)}
-          aria-label="{v.label} view"
+          aria-label={t(M['assets.asset_toolbar.view_label'], { label: v.label })}
           aria-pressed={view === v.key}
         >
           {#if v.icon === 'grid'}

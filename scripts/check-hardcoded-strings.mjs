@@ -40,6 +40,8 @@ const STRICT_PACKAGES = new Set([
   'social',
   'tenancy',
   'subscriptions',
+  'assets',
+  'chat',
 ]);
 
 // Dev/playground host, not a shippable library (consistent with the other ratchets).

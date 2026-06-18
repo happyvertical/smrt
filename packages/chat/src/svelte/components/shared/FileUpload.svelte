@@ -4,6 +4,10 @@
  * Button with drag-and-drop zone. Shows file preview before upload.
  * Supports file type filtering and max size constraints.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Callback when files are selected */
@@ -104,7 +108,7 @@ function getFileIcon(type: string): string {
 
 <div class="file-upload" class:file-upload--disabled={disabled}>
   {#if pendingFiles.length > 0}
-    <div class="file-upload__preview" aria-label="Files to upload">
+    <div class="file-upload__preview" aria-label={t(M['chat.file_upload.preview'])}>
       {#each pendingFiles as file, i (file.name + i)}
         <div class="file-upload__file">
           <span class="file-upload__file-icon">{getFileIcon(file.type)}</span>
@@ -116,7 +120,7 @@ function getFileIcon(type: string): string {
             class="file-upload__file-remove"
             type="button"
             onclick={() => removePending(i)}
-            aria-label="Remove {file.name}"
+            aria-label={t(M['chat.file_upload.remove'], { name: file.name })}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
               <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
@@ -131,7 +135,7 @@ function getFileIcon(type: string): string {
           type="button"
           onclick={confirmUpload}
         >
-          Upload {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}
+          {t(M['chat.file_upload.upload_files'], { count: pendingFiles.length, plural: pendingFiles.length !== 1 ? 's' : '' })}
         </button>
         <button
           class="file-upload__clear-btn"
@@ -173,12 +177,12 @@ function getFileIcon(type: string): string {
       </svg>
       <span class="file-upload__text">
         {#if disabled}
-          Upload disabled
+          {t(M['chat.file_upload.disabled'])}
         {:else}
-          Drop files here or click to browse
+          {t(M['chat.file_upload.drop_files'])}
         {/if}
       </span>
-      <span class="file-upload__hint">Max {formatSize(maxSize)} per file</span>
+      <span class="file-upload__hint">{t(M['chat.file_upload.max_size'], { size: formatSize(maxSize) })}</span>
     </label>
   </div>
 </div>

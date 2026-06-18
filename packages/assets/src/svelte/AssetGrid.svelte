@@ -6,7 +6,11 @@
  * type-based thumbnails, and missing alt-text warnings for images.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import type { AssetGridProps, PersistedAsset } from './types';
+
+const { t } = useI18n();
 
 let {
   assets,
@@ -20,7 +24,11 @@ let {
 
 // A card click opens the detail view in manage mode, or toggles selection in
 // pick mode — label the action accordingly.
-const actionVerb = $derived(mode === 'pick' ? 'Select' : 'Open');
+function openCardLabel(name: string): string {
+  return mode === 'pick'
+    ? t(M['assets.asset_grid.select_named'], { name })
+    : t(M['assets.asset_grid.open_named'], { name });
+}
 
 function toggleSelection(asset: PersistedAsset, event: Event) {
   event.stopPropagation();
@@ -75,7 +83,7 @@ function getAltText(asset: PersistedAsset): string {
   {#if loading}
     <div class="asset-grid__loading">
       <span class="spinner"></span>
-      <span>Loading assets...</span>
+      <span>{t(M['assets.asset_grid.loading'])}</span>
     </div>
   {:else if assets.length === 0}
     <div class="empty-state">
@@ -86,8 +94,8 @@ function getAltText(asset: PersistedAsset): string {
           <polyline points="21 15 16 10 5 21"></polyline>
         </svg>
       </div>
-      <p class="empty-state__title">No assets found</p>
-      <p class="empty-state__desc">Upload an asset or change your search filters to see results.</p>
+      <p class="empty-state__title">{t(M['assets.asset_grid.no_assets_found'])}</p>
+      <p class="empty-state__desc">{t(M['assets.asset_grid.empty_hint'])}</p>
     </div>
   {:else}
     <div class="grid">
@@ -102,7 +110,7 @@ function getAltText(asset: PersistedAsset): string {
           <button
             type="button"
             class="asset-card__open"
-            aria-label="{actionVerb} {asset.name || 'Untitled'}"
+            aria-label={openCardLabel(asset.name || 'Untitled')}
             title={asset.name || 'Untitled'}
             onclick={() => handleClick(asset)}
             ondblclick={() => handleDblClick(asset)}
@@ -115,7 +123,7 @@ function getAltText(asset: PersistedAsset): string {
               checked={selected}
               onchange={(e) => toggleSelection(asset, e)}
               onclick={(e) => e.stopPropagation()}
-              aria-label="Select {asset.name}"
+              aria-label={t(M['assets.asset_grid.select_named_checkbox'], { name: asset.name })}
             />
           </div>
 
@@ -146,7 +154,7 @@ function getAltText(asset: PersistedAsset): string {
 
           <!-- Badges / warnings -->
           {#if isMissingAlt(asset)}
-            <span class="asset-card__badge asset-card__badge--warning" title="Missing alt text">⚠️ No alt</span>
+            <span class="asset-card__badge asset-card__badge--warning" title={t(M['assets.asset_grid.missing_alt_text'])}>{t(M['assets.asset_grid.no_alt'])}</span>
           {/if}
         </div>
       {/each}

@@ -3,7 +3,11 @@
  * MemberList - Room member sidebar panel
  * Lists participants grouped by online status with role badges
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatParticipantData } from '../../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Room participants */
@@ -64,7 +68,7 @@ function getRoleBadgeLabel(role: string): string {
 }
 </script>
 
-<aside class="member-list" aria-label="Room members">
+<aside class="member-list" aria-label={t(M['chat.member_list.room_members'])}>
   <div class="member-list__header">
     <h2 class="member-list__title">Members</h2>
     <span class="member-list__count">{participants.length}</span>
@@ -72,7 +76,7 @@ function getRoleBadgeLabel(role: string): string {
       class="close-btn"
       type="button"
       onclick={onclose}
-      aria-label="Close member list"
+      aria-label={t(M['chat.member_list.close'])}
     >
       <svg class="close-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <path d="M18 6 6 18" />
@@ -194,7 +198,7 @@ function getRoleBadgeLabel(role: string): string {
     {/if}
 
     {#if participants.length === 0}
-      <p class="member-list__empty">No members</p>
+      <p class="member-list__empty">{t(M['chat.member_list.empty'])}</p>
     {/if}
   </div>
 </aside>

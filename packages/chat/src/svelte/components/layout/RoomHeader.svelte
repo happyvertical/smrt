@@ -3,7 +3,11 @@
  * RoomHeader - Room header bar with name, topic, and action buttons
  * Displays room info and provides access to members and search
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatRoomData } from '../../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Current room data */
@@ -49,7 +53,7 @@ const roomTypeLabel = $derived.by(() => {
 });
 </script>
 
-<header class="room-header" aria-label="Room: {room.name}">
+<header class="room-header" aria-label={t(M['chat.room_header.room_label'], { name: room.name })}>
   <div class="room-header__info">
     <div class="room-header__title-row">
       {#if room.roomType !== 'dm'}
@@ -78,8 +82,8 @@ const roomTypeLabel = $derived.by(() => {
         class="header-btn"
         type="button"
         onclick={onshowmembers}
-        aria-label="Show members ({participantCount})"
-        title="Members"
+        aria-label={t(M['chat.room_header.show_members'], { count: participantCount })}
+        title={t(M['chat.room_header.members'])}
       >
         <svg class="header-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -96,8 +100,8 @@ const roomTypeLabel = $derived.by(() => {
         class="header-btn"
         type="button"
         onclick={onshowsearch}
-        aria-label="Search messages"
-        title="Search"
+        aria-label={t(M['chat.room_header.search_messages'])}
+        title={t(M['chat.room_header.search'])}
       >
         <svg class="header-btn__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="11" cy="11" r="8" />

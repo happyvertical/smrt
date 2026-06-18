@@ -4,8 +4,12 @@
  * Lists past agent sessions with status, message count, and allowed tools.
  * Allows selecting an existing session or creating a new one.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
 import type { AgentSessionData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Available sessions */
@@ -41,7 +45,7 @@ const statusLabel: Record<string, string> = {
 };
 </script>
 
-<aside class="session-panel" aria-label="Agent sessions">
+<aside class="session-panel" aria-label={t(M['chat.agent_session_panel.sessions'])}>
   <div class="session-panel__header">
     <h2 class="session-panel__title">Sessions</h2>
     {#if onnewsession}
@@ -49,8 +53,8 @@ const statusLabel: Record<string, string> = {
         class="session-panel__new-btn"
         type="button"
         onclick={onnewsession}
-        aria-label="New session"
-        title="New session"
+        aria-label={t(M['chat.agent_session_panel.new_session'])}
+        title={t(M['chat.agent_session_panel.new_session'])}
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
@@ -59,7 +63,7 @@ const statusLabel: Record<string, string> = {
     {/if}
   </div>
 
-  <div class="session-panel__list" role="listbox" aria-label="Session list">
+  <div class="session-panel__list" role="listbox" aria-label={t(M['chat.agent_session_panel.session_list'])}>
     {#each sessions as session (session.id)}
       {@const isCurrent = session.id === currentSessionId}
       <button
@@ -116,7 +120,7 @@ const statusLabel: Record<string, string> = {
 
     {#if sessions.length === 0}
       <div class="session-panel__empty">
-        <span class="session-panel__empty-text">No sessions yet</span>
+        <span class="session-panel__empty-text">{t(M['chat.agent_session_panel.empty'])}</span>
       </div>
     {/if}
   </div>

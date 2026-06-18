@@ -4,6 +4,8 @@
  * Grid/list of available agents with avatars, names, and descriptions.
  * Disabled state for unavailable agents.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
 import type { AgentDescriptor } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
 
@@ -15,12 +17,14 @@ export interface Props {
 }
 
 const { agents, onselect }: Props = $props();
+
+const { t } = useI18n();
 </script>
 
-<div class="agent-selector" aria-label="Select an agent">
-  <h3 class="agent-selector__title">Choose an Agent</h3>
+<div class="agent-selector" aria-label={t(M['chat.agent_selector.select_an_agent'])}>
+  <h3 class="agent-selector__title">{t(M['chat.agent_selector.title'])}</h3>
 
-  <div class="agent-selector__grid" role="listbox" aria-label="Available agents">
+  <div class="agent-selector__grid" role="listbox" aria-label={t(M['chat.agent_selector.available_agents'])}>
     {#each agents as agent (agent.id)}
       <button
         class="agent-selector__card"
@@ -52,7 +56,7 @@ const { agents, onselect }: Props = $props();
 
   {#if agents.length === 0}
     <div class="agent-selector__empty">
-      <span class="agent-selector__empty-text">No agents available</span>
+      <span class="agent-selector__empty-text">{t(M['chat.agent_selector.empty'])}</span>
     </div>
   {/if}
 </div>
