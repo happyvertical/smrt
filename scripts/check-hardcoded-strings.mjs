@@ -42,6 +42,7 @@ const STRICT_PACKAGES = new Set([
   'subscriptions',
   'assets',
   'chat',
+  'content',
 ]);
 
 // Dev/playground host, not a shippable library (consistent with the other ratchets).
@@ -69,7 +70,12 @@ function listSvelteFiles(dir) {
         continue;
       }
       out.push(...listSvelteFiles(full));
-    } else if (entry.name.endsWith('.svelte')) {
+    } else if (entry.name.endsWith('.svelte') && !entry.name.startsWith('+')) {
+      // Skip SvelteKit route components (`+page`/`+layout`/`+error`.svelte):
+      // those are a package's dev-server/demo app surface, not the shippable
+      // library components (which live under src/svelte/). Same rationale as the
+      // smrt-playground exclusion. (`+server` files are `.ts`/`.js`, already
+      // out of scope.)
       out.push(full);
     }
   }

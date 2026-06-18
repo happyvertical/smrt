@@ -1,5 +1,7 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import ContentGovernanceManager from '../components/ContentGovernanceManager.svelte';
+import { M } from '../i18n.routes.js';
 import {
   CONTENT_DEFAULT_ROUTE_NAVIGATION,
   CONTENT_ROUTE_IDS,
@@ -22,21 +24,21 @@ let {
 const workspaceHref = $derived(
   getContentRouteHref(navigation, CONTENT_ROUTE_IDS.workspace),
 );
+const { t } = useI18n();
 </script>
 
 <div class:page={true} class:page--embedded={embedded}>
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
-        <div class="eyebrow">Content governance</div>
-        <h1>Governance rules</h1>
+        <div class="eyebrow">{t(M['content.governance.eyebrow'])}</div>
+        <h1>{t(M['content.governance.heading'])}</h1>
         <p>
-          Manage the policies, review profiles, fact-linking settings, and
-          publication rules the workspace applies during authoring.
+          {t(M['content.governance.intro'])}
         </p>
       </div>
 
-      <nav class="page-nav" aria-label="Content navigation">
+      <nav class="page-nav" aria-label={t(M['content.governance.nav_aria'])}>
         {#each navigation as item (item.routeId)}
           <a
             href={item.href}
@@ -53,13 +55,12 @@ const workspaceHref = $derived(
 
   <main class="container page-main">
     <section class="callout">
-      <strong>What you control here</strong>
+      <strong>{t(M['content.governance.controls_title'])}</strong>
       <ul>
-        <li>Create and edit review policies, profiles, and type assignments.</li>
-        <li>Control which content types require facts, reviews, and transparency.</li>
+        <li>{t(M['content.governance.controls_policies'])}</li>
+        <li>{t(M['content.governance.controls_types'])}</li>
         <li>
-          Return to the <a href={workspaceHref}>content workspace</a> to verify
-          how the current rules affect live authoring and publication.
+          {t(M['content.governance.controls_return_prefix'])} <a href={workspaceHref}>{t(M['content.governance.controls_workspace_link'])}</a> {t(M['content.governance.controls_return_suffix'])}
         </li>
       </ul>
     </section>

@@ -1,7 +1,11 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentCorrectionData, FactData } from '../../mock-smrt-client';
 import { createClient } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -164,21 +168,21 @@ async function issueCorrection() {
   {/if}
 
   {#if !savedContentId}
-    <p class="empty-copy">Save this content to issue corrections.</p>
+    <p class="empty-copy">{t(M['content.corrections_tool.save_to_issue_corrections'])}</p>
   {:else}
     <label class="workflow-field">
       Summary
       <input
         type="text"
         bind:value={correctionSummary}
-        placeholder="What was wrong?"
+        placeholder={t(M['content.corrections_tool.what_was_wrong'])}
       />
     </label>
 
     <label class="workflow-field">
-      Related fact
+      {t(M['content.corrections_tool.related_fact'])}
       <select bind:value={correctionFactId}>
-        <option value="">General correction</option>
+        <option value="">{t(M['content.corrections_tool.general_correction'])}</option>
         {#each facts as fact (fact.id)}
           <option value={fact.id ?? ''}>{fact.textRefined}</option>
         {/each}
@@ -186,26 +190,26 @@ async function issueCorrection() {
     </label>
 
     <label class="workflow-field">
-      Corrected fact text
+      {t(M['content.corrections_tool.corrected_fact_text'])}
       <textarea
         rows="4"
         bind:value={correctedFactText}
-        placeholder="Provide the corrected claim or wording"
+        placeholder={t(M['content.corrections_tool.provide_corrected_wording'])}
       ></textarea>
     </label>
 
     <label class="workflow-field">
-      Public note
+      {t(M['content.corrections_tool.public_note'])}
       <textarea
         rows="3"
         bind:value={correctionPublicNote}
-        placeholder="Optional public-facing correction note"
+        placeholder={t(M['content.corrections_tool.optional_public_correction_note'])}
       ></textarea>
     </label>
 
     <label class="checkbox-row">
       <input type="checkbox" bind:checked={publishCorrection} />
-      Publish immediately
+      {t(M['content.corrections_tool.publish_immediately'])}
     </label>
 
     <button
@@ -217,9 +221,9 @@ async function issueCorrection() {
     </button>
 
     <div class="tool-list">
-      <div class="section-caption">Published history</div>
+      <div class="section-caption">{t(M['content.corrections_tool.published_history'])}</div>
       {#if corrections.length === 0}
-        <p class="empty-copy">No corrections issued.</p>
+        <p class="empty-copy">{t(M['content.corrections_tool.no_corrections_issued'])}</p>
       {:else}
         {#each corrections as correction (correction.id ?? `${correction.correctionType}-${correction.createdAt}`)}
           <div class="tool-card">

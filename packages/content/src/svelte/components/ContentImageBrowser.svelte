@@ -3,7 +3,11 @@ import {
   type ImageLike,
   ImageUploader,
 } from '@happyvertical/smrt-images/svelte';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentEditorAsset } from '../content-editor-form';
+import { M } from '../i18n.editor.js';
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -96,7 +100,7 @@ function handleSelect(selected: ImageLike | File | string) {
       {/each}
     </div>
   {:else}
-    <p class="empty-state">No images attached.</p>
+    <p class="empty-state">{t(M['content.content_image_browser.no_images_attached'])}</p>
   {/if}
 
   {#if showUploader}

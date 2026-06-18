@@ -1,7 +1,11 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
 import { untrack } from 'svelte';
+import { M } from '../i18n.contribution.js';
 import ImageThumbnail from './ImageThumbnail.svelte';
+
+const { t } = useI18n();
 
 let {
   apiBaseUrl = '/api/v1',
@@ -136,22 +140,22 @@ function handleDeleteContent(content: any) {
   
   <div class="content-controls">
     <div class="search-filters">
-      <input type="text" placeholder="Search contents..." bind:value={searchTerm} />
+      <input type="text" placeholder={t(M['content.content_list.search_placeholder'])} bind:value={searchTerm} />
       
       {#if !type}
         <select bind:value={selectedType}>
-          <option>All Types</option>
-          <option>Articles</option>
-          <option>Documents</option>
-          <option>Mirrors</option>
+          <option value="All Types">{t(M['content.content_list.all_types'])}</option>
+          <option value="Articles">Articles</option>
+          <option value="Documents">Documents</option>
+          <option value="Mirrors">Mirrors</option>
         </select>
       {/if}
       
       <select bind:value={selectedStatus}>
-        <option>All Statuses</option>
-        <option>Published</option>
-        <option>Draft</option>
-        <option>Archived</option>
+        <option value="All Statuses">{t(M['content.content_list.all_statuses'])}</option>
+        <option value="Published">Published</option>
+        <option value="Draft">Draft</option>
+        <option value="Archived">Archived</option>
       </select>
       
       {#if controls}
@@ -165,7 +169,7 @@ function handleDeleteContent(content: any) {
           type="button"
           class:active={viewMode === 'grid'} 
           onclick={() => viewMode = 'grid'}
-          title="Grid View"
+          title={t(M['content.content_list.grid_view'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
             <rect x="3" y="3" width="7" height="7"></rect>
@@ -178,7 +182,7 @@ function handleDeleteContent(content: any) {
           type="button"
           class:active={viewMode === 'detailed'} 
           onclick={() => viewMode = 'detailed'}
-          title="Detailed List"
+          title={t(M['content.content_list.detailed_list'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
             <line x1="8" y1="6" x2="21" y2="6"></line>
@@ -193,7 +197,7 @@ function handleDeleteContent(content: any) {
           type="button"
           class:active={viewMode === 'compact'} 
           onclick={() => viewMode = 'compact'}
-          title="Compact List"
+          title={t(M['content.content_list.compact_list'])}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" stroke-width="2" fill="none">
             <line x1="3" y1="6" x2="21" y2="6"></line>
@@ -208,14 +212,14 @@ function handleDeleteContent(content: any) {
           <line x1="12" y1="5" x2="12" y2="19"></line>
           <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
-        Add Content
+        {t(M['content.content_list.add_content'])}
       </button>
     </div>
   </div>
 
   {#if filteredContents.length === 0}
     <div class="empty-state">
-      No contents match your filters.
+      {t(M['content.content_list.empty'])}
     </div>
   {:else if viewMode === 'compact'}
     <div class="content-table-wrapper">
@@ -244,10 +248,10 @@ function handleDeleteContent(content: any) {
               <td><span class="badge state-{getStateBadge(content.state)}">{content.state}</span></td>
               <td class="actions-cell">
                 {#if getViewHref?.(content)}
-                  <a class="icon-btn" href={getViewHref(content) || '#'} title="View published article">🔎</a>
+                  <a class="icon-btn" href={getViewHref(content) || '#'} title={t(M['content.content_list.view_published_article'])}>🔎</a>
                 {/if}
-                <button class="icon-btn" type="button" onclick={() => onEdit(content)} title="Edit">✏️</button>
-                <button class="icon-btn delete-icon" type="button" onclick={() => handleDeleteContent(content)} title="Delete">🗑️</button>
+                <button class="icon-btn" type="button" onclick={() => onEdit(content)} title={t(M['content.content_list.edit'])}>✏️</button>
+                <button class="icon-btn delete-icon" type="button" onclick={() => handleDeleteContent(content)} title={t(M['content.content_list.delete'])}>🗑️</button>
               </td>
             </tr>
           {/each}
@@ -278,7 +282,7 @@ function handleDeleteContent(content: any) {
               <div class="content-row__links">
                 {#if content.url}
                   <a href={content.url} target="_blank" rel="noreferrer">
-                    Source material
+                    {t(M['content.content_list.source_material'])}
                   </a>
                 {/if}
                 {#if content.fileKey}
@@ -297,15 +301,15 @@ function handleDeleteContent(content: any) {
 
           <div class="content-row__actions">
             {#if getViewHref?.(content)}
-              <a href={getViewHref(content) || '#'} class="quiet-action">View article</a>
+              <a href={getViewHref(content) || '#'} class="quiet-action">{t(M['content.content_list.view_article'])}</a>
             {/if}
-            <button type="button" class="quiet-action" onclick={() => onEdit(content)}>Edit</button>
+            <button type="button" class="quiet-action" onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</button>
             <button
               type="button"
               class="quiet-action quiet-action--danger"
               onclick={() => handleDeleteContent(content)}
             >
-              Delete
+              {t(M['content.content_list.delete'])}
             </button>
           </div>
         </article>
@@ -357,10 +361,10 @@ function handleDeleteContent(content: any) {
             
             <div class="content-actions">
               {#if getViewHref?.(content)}
-                <a href={getViewHref(content) || '#'} class="view-btn">View Article</a>
+                <a href={getViewHref(content) || '#'} class="view-btn">{t(M['content.content_list.view_article_button'])}</a>
               {/if}
-              <button onclick={() => onEdit(content)}>Edit</button>
-              <button onclick={() => handleDeleteContent(content)} class="delete-btn">Delete</button>
+              <button onclick={() => onEdit(content)}>{t(M['content.content_list.edit'])}</button>
+              <button onclick={() => handleDeleteContent(content)} class="delete-btn">{t(M['content.content_list.delete'])}</button>
             </div>
           </div>
         </div>

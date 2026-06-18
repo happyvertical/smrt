@@ -1,4 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.editor.js';
+
+const { t } = useI18n();
+
 export interface Props {
   data: Record<string, any>;
   onChange?: (change: Record<string, unknown>) => void;
@@ -47,7 +52,7 @@ function updateTags(value: string) {
     <input
       type="text"
       value={tagsValue}
-      placeholder="e.g. news, tech"
+      placeholder={t(M['content.content_metadata_fields.tags_placeholder'])}
       oninput={(event) => updateTags(event.currentTarget.value)}
     />
   </label>
@@ -60,7 +65,7 @@ function updateTags(value: string) {
     />
   </label>
   <label>
-    <span>File Key</span>
+    <span>{t(M['content.content_metadata_fields.file_key'])}</span>
     <input
       type="text"
       value={data.fileKey || ''}

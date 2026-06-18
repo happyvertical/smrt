@@ -1,8 +1,12 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type {
   ContentContributionData,
   ContentContributionTypeData,
 } from '../../mock-smrt-client';
+import { M } from '../i18n.contribution.js';
+
+const { t } = useI18n();
 
 export interface ContentContributionFormSubmitData {
   typeKey: string;
@@ -121,10 +125,10 @@ function handleSubmit(event: SubmitEvent) {
   {action}
   onsubmit={handleSubmit}
 >
-  <h3>Submit a contribution</h3>
+  <h3>{t(M['content.contribution_form.heading'])}</h3>
 
   <label>
-    Contribution type
+    {t(M['content.contribution_form.contribution_type'])}
     <select name="typeKey" bind:value={draft.typeKey} required>
       {#each types.filter((type) => type.enabled !== false) as type (type.key)}
         <option value={type.key}>{type.label}</option>
@@ -162,7 +166,7 @@ function handleSubmit(event: SubmitEvent) {
 
   {#if activeType?.allowFiles !== false}
     <label>
-      Attach files
+      {t(M['content.contribution_form.attach_files'])}
       <input
         name="files"
         type="file"
