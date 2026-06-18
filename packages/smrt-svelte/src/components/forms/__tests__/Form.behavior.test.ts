@@ -105,12 +105,23 @@ describe('Form — submit value collection', () => {
   it('drops a field from the collected data once it unmounts (unregister)', async () => {
     const onsubmit = vi.fn();
     const { rerender } = render(FormWithFields, {
-      props: { onsubmit, textValue: 'Keep', numberValue: 7 },
+      props: { onsubmit, textValue: 'Keep', numberValue: 7, showAge: true },
     });
 
-    // Sanity: both fields present.
+    // Both fields registered → both collected.
     await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
     expect(onsubmit).toHaveBeenLastCalledWith({ fullname: 'Keep', age: 7 });
+
+    // Unmount the age field; Form.unregisterField drops it from the next submit.
+    await rerender({
+      onsubmit,
+      textValue: 'Keep',
+      numberValue: 7,
+      showAge: false,
+    });
+    expect(screen.queryByLabelText('Age')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Submit' }));
+    expect(onsubmit).toHaveBeenLastCalledWith({ fullname: 'Keep' });
   });
 });
 

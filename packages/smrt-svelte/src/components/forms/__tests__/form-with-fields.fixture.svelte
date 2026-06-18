@@ -13,17 +13,21 @@ let {
   action = undefined,
   textValue = '',
   numberValue = null,
+  showAge = true,
 }: {
   onsubmit?: (data: Record<string, unknown>) => void;
   method?: 'GET' | 'POST';
   action?: string;
   textValue?: string;
   numberValue?: number | null;
+  showAge?: boolean;
 } = $props();
 </script>
 
 <Form {onsubmit} {method} {action}>
 	<TextInput name="fullname" label="Full name" bind:value={textValue} />
-	<NumberInput name="age" label="Age" bind:value={numberValue} />
+	{#if showAge}
+		<NumberInput name="age" label="Age" bind:value={numberValue} />
+	{/if}
 	<button type="submit">Submit</button>
 </Form>

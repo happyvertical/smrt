@@ -12,15 +12,23 @@ import { expectNoA11yViolations } from '../../../test-support/a11y';
 import ProgressBar from '../ProgressBar.svelte';
 
 describe('ProgressBar', () => {
-  it('gives the progressbar an accessible name (default and custom label)', () => {
+  it('gives the progressbar an accessible name (default and custom label)', async () => {
     const { rerender } = render(ProgressBar, { props: { value: 40 } });
     // Default accessible name comes from the i18n'd "Progress" label.
     expect(
       screen.getByRole('progressbar', { name: 'Progress' }),
     ).toBeInTheDocument();
-    rerender({ value: 40, label: 'Upload' });
+    // rerender resolves the prop update asynchronously — await before querying.
+    await rerender({ value: 40, label: 'Upload' });
     expect(
       screen.getByRole('progressbar', { name: 'Upload' }),
+    ).toBeInTheDocument();
+  });
+
+  it('falls back to the default name when label is empty or whitespace', () => {
+    render(ProgressBar, { props: { value: 40, label: '   ' } });
+    expect(
+      screen.getByRole('progressbar', { name: 'Progress' }),
     ).toBeInTheDocument();
   });
 
