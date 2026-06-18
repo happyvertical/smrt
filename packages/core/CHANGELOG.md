@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.22
+
+### Patch Changes
+
+- ### Features
+
+  - extract images strings + raise coverage 13%→99%, flip strict (S13 #1418) (#1534) (i18n,test)
+  - @happyvertical/smrt-scanner@0.29.22
+  - @happyvertical/smrt-config@0.29.22
+  - @happyvertical/smrt-types@0.29.22
+
 ## 0.29.21
 
 ### Patch Changes
