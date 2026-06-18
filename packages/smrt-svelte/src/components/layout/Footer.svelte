@@ -1,6 +1,10 @@
 <script lang="ts">
 import type { Snippet } from 'svelte';
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import Container from './Container.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   children?: Snippet;
@@ -14,7 +18,7 @@ const currentYear = new Date().getFullYear();
 <footer class="site-footer">
   <Container>
     <div class="footer-content">
-      <p class="copyright">&copy; {currentYear} All rights reserved.</p>
+      <p class="copyright">&copy; {currentYear} {t(M['ui.footer.all_rights_reserved'])}</p>
 
       {#if children}
         <div class="footer-links">

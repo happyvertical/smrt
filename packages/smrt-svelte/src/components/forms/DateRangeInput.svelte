@@ -2,11 +2,15 @@
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
 import type { DateRangeValue } from './types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Field name */
@@ -343,7 +347,7 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
           onmouseleave={handleMouseLeave}
           ontouchstart={handleTouchStart}
           ontouchend={handleTouchEnd}
-          aria-label="Hold to speak date range"
+          aria-label={t(M['ui.date_range_input.mic_aria_label'])}
         >
           {#if isParsing}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spinner">
@@ -409,14 +413,14 @@ const primaryControlId = $derived(isSmrt ? `${name}_voice` : `${name}_start`);
   {#if isRecording}
     <div class="listening-indicator">Recording... say "from [start] to [end]"</div>
   {:else if isParsing}
-    <div class="parsing-indicator">Parsing dates...</div>
+    <div class="parsing-indicator">{t(M['ui.date_range_input.parsing'])}</div>
   {:else if parseError}
     <div id={`${name}-error`} class="error-indicator" role="alert">{parseError}</div>
   {:else if error}
     <div id={`${name}-error`} class="error-indicator" role="alert">{error}</div>
   {:else if !isValidRange}
     <div id={`${name}-error`} class="error-indicator" role="alert">
-      End date must be after start date
+      {t(M['ui.date_range_input.end_after_start'])}
     </div>
   {/if}
 </div>

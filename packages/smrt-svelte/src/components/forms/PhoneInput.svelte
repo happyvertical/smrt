@@ -2,10 +2,14 @@
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Field name */
@@ -282,7 +286,7 @@ function handleInput(e: Event) {
         onmouseleave={handleMouseLeave}
         ontouchstart={handleTouchStart}
         ontouchend={handleTouchEnd}
-        aria-label="Hold to speak"
+        aria-label={t(M['ui.phone_input.mic_aria_label'])}
       >
         <svg
           width="16"
@@ -305,7 +309,7 @@ function handleInput(e: Event) {
   {#if isInitializing}
     <div class="downloading-indicator">
       <span class="processing-spinner"></span>
-      <span>Downloading Whisper model... {downloadProgress}%</span>
+      <span>{t(M['ui.phone_input.downloading_model'], { progress: downloadProgress })}</span>
     </div>
   {:else if isHolding}
     <div class="listening-indicator">
@@ -324,7 +328,7 @@ function handleInput(e: Event) {
   {/if}
 
   {#if showInvalid}
-    <div id={`${name}-error`} class="validation-error" role="alert">Invalid phone number</div>
+    <div id={`${name}-error`} class="validation-error" role="alert">{t(M['ui.phone_input.invalid'])}</div>
   {/if}
 </div>
 

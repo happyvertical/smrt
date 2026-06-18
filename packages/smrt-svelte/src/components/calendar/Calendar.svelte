@@ -4,7 +4,11 @@
  * Month view calendar with event indicators and day navigation
  */
 
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import type { DayEventDetail, DayEventsData } from '../../types-generic';
+
+const { t } = useI18n();
 
 export interface Props {
   events?: DayEventsData[] | null;
@@ -209,13 +213,13 @@ const yearOptions = $derived(() => {
 <div class="calendar">
   <header class="calendar-header">
     <div class="nav-buttons">
-      <button class="nav-btn" onclick={prevMonth} aria-label="Previous month">
+      <button class="nav-btn" onclick={prevMonth} aria-label={t(M['ui.calendar.previous_month'])}>
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           <path d="M12 15L7 10L12 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       </button>
       <span class="current-month">{MONTHS[currentMonth]} {currentYear}</span>
-      <button class="nav-btn" onclick={nextMonth} aria-label="Next month">
+      <button class="nav-btn" onclick={nextMonth} aria-label={t(M['ui.calendar.next_month'])}>
         <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
           <path d="M8 5L13 10L8 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
@@ -226,7 +230,7 @@ const yearOptions = $derived(() => {
       <select
         class="month-select"
         bind:value={currentMonth}
-        aria-label="Select month"
+        aria-label={t(M['ui.calendar.select_month'])}
       >
         {#each MONTHS as month, i}
           <option value={i}>{month}</option>
@@ -236,7 +240,7 @@ const yearOptions = $derived(() => {
       <select
         class="year-select"
         bind:value={currentYear}
-        aria-label="Select year"
+        aria-label={t(M['ui.calendar.select_year'])}
       >
         {#each yearOptions() as year}
           <option value={year}>{year}</option>

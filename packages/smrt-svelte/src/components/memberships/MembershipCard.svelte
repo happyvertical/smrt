@@ -1,6 +1,10 @@
 <script lang="ts">
 import type { Membership, Role, Tenant } from '@happyvertical/smrt-users';
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import RoleBadge from '../roles/RoleBadge.svelte';
+
+const { t } = useI18n();
 
 interface Props {
   membership: Membership;
@@ -53,7 +57,7 @@ function formatDate(date: Date | string | null | undefined): string {
     {#if onchangerole || onremove}
       <div class="actions">
         {#if onchangerole}
-          <button type="button" class="action-btn" onclick={onchangerole}>Change Role</button>
+          <button type="button" class="action-btn" onclick={onchangerole}>{t(M['ui.membership_card.change_role'])}</button>
         {/if}
         {#if onremove}
           <button type="button" class="action-btn danger" onclick={onremove}>Remove</button>

@@ -31,6 +31,7 @@ const PACKAGES = join(ROOT, 'packages');
 // i18n layer (`useI18n().t` / `<Trans>`). Add a package here once `pnpm
 // check:hardcoded-strings` reports 0 for it. S13 phase-2 wave 1 (#1418).
 const STRICT_PACKAGES = new Set([
+  'smrt-svelte',
   'users',
   'projects',
   'commerce',

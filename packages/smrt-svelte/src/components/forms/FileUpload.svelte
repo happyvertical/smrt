@@ -11,6 +11,11 @@
  * - Material 3 styling
  */
 
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
+const { t } = useI18n();
+
 export interface Props {
   /** Accepted file types (e.g., '.pdf,.csv' or 'application/pdf,text/csv') */
   accept?: string;
@@ -211,7 +216,7 @@ function formatFileSize(bytes: number): string {
           <button
             class="file-list__remove"
             onclick={() => removeFile(i)}
-            aria-label="Remove {file.name}"
+            aria-label={t(M['ui.file_upload.remove_file'], { name: file.name })}
             type="button"
             {disabled}
           >
