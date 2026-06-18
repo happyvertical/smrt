@@ -7,7 +7,5 @@ export default createPackageConfig('languages', {
   // root for `defineLanguageString` / `resolveLanguageString` does not drag
   // jobs/features/prompts/AI into every consumer bundle. See README and
   // `index.ts` for the contract.
-  // `runtime` is the browser-safe, dependency-free helper subpath consumed by
-  // client i18n layers (smrt-svelte); `jobs`/`cli` carry the server/admin stack.
-  entries: ['jobs', 'cli', 'runtime'],
+  entries: ['jobs', 'cli'],
 });

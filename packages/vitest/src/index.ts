@@ -432,17 +432,6 @@ export function getWorkspaceViteAliases(
         join(packageRoot, 'src/i18n/server.ts'),
       );
     }
-
-    if (packageName === '@happyvertical/smrt-languages') {
-      // Browser-safe pure helpers (renderTemplate/normalizeLocale) consumed by
-      // the smrt-svelte i18n layer (S13 #1418). Flat `src/runtime.ts`, so the
-      // generic conventions miss it; map the exact subpath.
-      addAliasIfPresent(
-        aliases,
-        '@happyvertical/smrt-languages/runtime',
-        join(packageRoot, 'src/runtime.ts'),
-      );
-    }
   }
 
   return aliases.sort((left, right) => right.find.length - left.find.length);

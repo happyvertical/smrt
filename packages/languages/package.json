@@ -23,10 +23,6 @@
       "types": "./dist/cli.d.ts",
       "import": "./dist/cli.js"
     },
-    "./runtime": {
-      "types": "./dist/runtime.d.ts",
-      "import": "./dist/runtime.js"
-    },
     "./manifest": "./dist/manifest.json",
     "./manifest.json": "./dist/manifest.json"
   },

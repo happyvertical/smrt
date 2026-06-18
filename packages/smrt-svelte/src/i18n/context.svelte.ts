@@ -3,14 +3,13 @@
  *
  * The `Provider` builds an `I18nStore` from a server snapshot and puts it on a
  * Svelte context; `useI18n()` / `$t` / `<Trans>` read it synchronously. Browser
- * safe — the only `@happyvertical/smrt-languages` import is `renderTemplate`
- * from the dependency-free `/runtime` subpath.
+ * safe — interpolation uses the client's own dependency-free `renderTemplate`
+ * (see ./render.ts) so the heavy languages package is never bundled client-side.
  */
 
-import type { LanguageVariables } from '@happyvertical/smrt-languages/runtime';
-import { renderTemplate } from '@happyvertical/smrt-languages/runtime';
 import { getContext, setContext } from 'svelte';
 import { getRegisteredDefault } from './registry.js';
+import { type LanguageVariables, renderTemplate } from './render.js';
 
 /** A per-locale dictionary of message templates, as built on the server. */
 export interface I18nSnapshot {

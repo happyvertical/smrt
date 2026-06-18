@@ -111,9 +111,11 @@ while consolidating chat's avatar).
 
 Routes user-facing strings through `@happyvertical/smrt-languages`. The server
 pre-resolves a per-locale dictionary of **templates**; the client reads it
-synchronously and interpolates `{var}` placeholders with the same
-`renderTemplate` (from the browser-safe `@happyvertical/smrt-languages/runtime`).
-No async in render. See `docs/content/architecture/i18n.md`.
+synchronously and interpolates `{var}` placeholders with its own dependency-free
+`renderTemplate` (`src/i18n/render.ts`, parity-tested against languages — the
+client never bundles the heavy languages package). No async in render. The
+languages root is imported only by the Node-only `/i18n/server` subpath. See
+`docs/content/architecture/i18n.md`.
 
 - **`defineMessages({ key: englishDefault })`** — register a package's English
   code defaults (key namespace `<package>.<component>.<descriptor>`; smrt-svelte

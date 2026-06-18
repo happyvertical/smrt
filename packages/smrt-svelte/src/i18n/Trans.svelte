@@ -12,7 +12,7 @@
  * components inside placeholders) is a planned extension via snippet values —
  * see the i18n ADR.
  */
-import type { LanguageVariables } from '@happyvertical/smrt-languages/runtime';
+import type { LanguageVariables } from './render.js';
 import { useI18n } from './use-i18n.js';
 
 interface Props {
