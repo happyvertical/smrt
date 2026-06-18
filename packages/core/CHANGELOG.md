@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.15
+
+### Patch Changes
+
+- ### Features
+
+  - i18n foundation — languages /runtime, smrt-svelte i18n layer, pilot (S13 #1418) (#1527) (i18n)
+  - @happyvertical/smrt-scanner@0.29.15
+  - @happyvertical/smrt-config@0.29.15
+  - @happyvertical/smrt-types@0.29.15
+
 ## 0.29.14
 
 ### Patch Changes
