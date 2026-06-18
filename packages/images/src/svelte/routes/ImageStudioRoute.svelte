@@ -1,6 +1,10 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { ImageLike } from '../image-clients.js';
 import { AssetsGallery, ImageEditor, ImageUploader } from '../index.js';
+
+const { t } = useI18n();
 
 let { apiBaseUrl = '/api/v1' }: { apiBaseUrl?: string } = $props();
 
@@ -47,22 +51,19 @@ function handleEditorSave(image: StudioImage) {
 <div class="images-route">
   <header class="images-route__header">
     <div>
-      <p class="images-route__eyebrow">Package Route Surface</p>
-      <h1>Image Studio</h1>
+      <p class="images-route__eyebrow">{t(M['images.image_studio_route.eyebrow'])}</p>
+      <h1>{t(M['images.image_studio_route.title'])}</h1>
       <p class="images-route__lede">
-        A package-owned route for acquiring images, browsing stored assets, and
-        moving directly into the editor workflow.
+        {t(M['images.image_studio_route.lede'])}
       </p>
     </div>
   </header>
 
   <section class="images-route__uploader">
     <div class="images-route__section-copy">
-      <h2>Acquire Images</h2>
+      <h2>{t(M['images.image_studio_route.acquire_images'])}</h2>
       <p>
-        Use the uploader to test gallery selection, local uploads, camera
-        capture, and external URLs from the same package surface downstream apps
-        can mount.
+        {t(M['images.image_studio_route.acquire_images_description'])}
       </p>
       <p class="images-route__status">{uploaderStatus}</p>
     </div>
@@ -74,10 +75,9 @@ function handleEditorSave(image: StudioImage) {
 
   <section class="images-route__workspace">
     <div class="images-route__section-copy">
-      <h2>Browse And Edit</h2>
+      <h2>{t(M['images.image_studio_route.browse_and_edit'])}</h2>
       <p>
-        The gallery and editor stay wired together so route consumers can see
-        the intended package flow instead of disconnected component snapshots.
+        {t(M['images.image_studio_route.browse_and_edit_description'])}
       </p>
     </div>
 

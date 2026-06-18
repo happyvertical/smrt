@@ -1,11 +1,15 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onDestroy } from 'svelte';
+import { M } from '../i18n.js';
 import type {
   ImageEditorClient,
   ImageLike,
   ImagesGalleryClient,
 } from '../image-clients';
 import AssetsGallery from './AssetsGallery.svelte';
+
+const { t } = useI18n();
 
 let {
   apiBaseUrl = '/api/v1',
@@ -274,7 +278,7 @@ onDestroy(() => {
 
       <div class="confirm-actions">
         <button type="button" class="primary-btn" onclick={handleConfirmOriginal}>
-          Select Image
+          {t(M['images.image_uploader.select_image'])}
         </button>
         <button 
           type="button"
@@ -286,16 +290,16 @@ onDestroy(() => {
             <path d="M12 20h9"></path>
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path>
           </svg>
-          Create Variation
+          {t(M['images.image_uploader.create_variation'])}
         </button>
       </div>
 
       {#if showVariation}
         <div class="variation-form">
-          <p class="variation-hint">Describe how this image should be changed. A new derivative will be created from the original.</p>
-          <textarea 
-            bind:value={variationPrompt} 
-            placeholder="e.g. Change the sky to show heavy rain and overcast clouds..."
+          <p class="variation-hint">{t(M['images.image_uploader.variation_hint'])}</p>
+          <textarea
+            bind:value={variationPrompt}
+            placeholder={t(M['images.image_uploader.variation_prompt_placeholder'])}
             rows="3"
             disabled={isGenerating}
           ></textarea>
@@ -310,9 +314,9 @@ onDestroy(() => {
           >
             {#if isGenerating}
               <span class="spinner"></span>
-              Generating…
+              {t(M['images.image_uploader.generating'])}
             {:else}
-              Generate Variation
+              {t(M['images.image_uploader.generate_variation'])}
             {/if}
           </button>
         </div>
@@ -322,7 +326,7 @@ onDestroy(() => {
   {:else}
     <!-- Normal Chooser -->
     <div class="header">
-      <h3>Choose Image</h3>
+      <h3>{t(M['images.image_uploader.choose_image'])}</h3>
       {#if onCancel}
         <button type="button" class="close-btn" onclick={onCancel}>×</button>
       {/if}
@@ -339,7 +343,7 @@ onDestroy(() => {
         <button type="button" class:active={activeTab === 'camera'} onclick={() => activeTab = 'camera'}>Camera</button>
       {/if}
       {#if allowedTabs.includes('external')}
-        <button type="button" class:active={activeTab === 'external'} onclick={() => activeTab = 'external'}>External URL</button>
+        <button type="button" class:active={activeTab === 'external'} onclick={() => activeTab = 'external'}>{t(M['images.image_uploader.external_url'])}</button>
       {/if}
     </div>
     
@@ -374,9 +378,9 @@ onDestroy(() => {
               <line x1="12" y1="3" x2="12" y2="15"></line>
             </svg>
           </div>
-          <p>Drag and drop an image here</p>
+          <p>{t(M['images.image_uploader.drag_and_drop'])}</p>
           <span class="divider">or</span>
-          <button type="button" class="browse-btn">Browse Files</button>
+          <button type="button" class="browse-btn">{t(M['images.image_uploader.browse_files'])}</button>
           <input 
             type="file" 
             accept="image/*" 
@@ -394,18 +398,18 @@ onDestroy(() => {
           {#if cameraError}
             <div class="error-panel">
               <p>{cameraError}</p>
-              <button type="button" onclick={startCamera}>Try Again</button>
+              <button type="button" onclick={startCamera}>{t(M['images.image_uploader.try_again'])}</button>
             </div>
           {:else}
             <div class="video-container">
               <!-- svelte-ignore a11y_media_has_caption -->
               <video bind:this={videoElement} autoplay playsinline></video>
               {#if !isCameraActive}
-                <div class="loading-overlay">Starting camera...</div>
+                <div class="loading-overlay">{t(M['images.image_uploader.starting_camera'])}</div>
               {/if}
             </div>
             <button type="button" class="capture-btn" disabled={!isCameraActive} onclick={takePicture}>
-              Take Picture
+              {t(M['images.image_uploader.take_picture'])}
             </button>
             <canvas bind:this={canvasElement} style="display: none;"></canvas>
           {/if}
@@ -413,12 +417,12 @@ onDestroy(() => {
         
       {:else if activeTab === 'external'}
         <div class="external-area">
-          <p class="hint">Enter a direct URL to an image or a supported provider link.</p>
+          <p class="hint">{t(M['images.image_uploader.external_hint'])}</p>
           <div class="input-group">
             <input 
               type="url" 
-              bind:value={externalUrl} 
-              placeholder="https://example.com/image.jpg"
+              bind:value={externalUrl}
+              placeholder={t(M['images.image_uploader.external_url_placeholder'])}
               onkeydown={(e) => e.key === 'Enter' && handleExternalSubmit()}
             />
             <button 
