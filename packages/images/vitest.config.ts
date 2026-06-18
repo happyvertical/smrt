@@ -50,7 +50,6 @@ export default defineConfig({
         // not authored logic.
         'src/routes/**',
         'src/lib/server/**',
-        'src/route-module.ts',
       ],
     },
   },

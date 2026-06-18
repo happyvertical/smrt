@@ -51,11 +51,11 @@ export const M = defineMessages({
   'images.image_studio_route.eyebrow': 'Package Route Surface',
   'images.image_studio_route.title': 'Image Studio',
   'images.image_studio_route.lede':
-    'A package-owned route for acquiring images, browsing stored assets, and\n        moving directly into the editor workflow.',
+    'A package-owned route for acquiring images, browsing stored assets, and moving directly into the editor workflow.',
   'images.image_studio_route.acquire_images': 'Acquire Images',
   'images.image_studio_route.acquire_images_description':
-    'Use the uploader to test gallery selection, local uploads, camera\n        capture, and external URLs from the same package surface downstream apps\n        can mount.',
+    'Use the uploader to test gallery selection, local uploads, camera capture, and external URLs from the same package surface downstream apps can mount.',
   'images.image_studio_route.browse_and_edit': 'Browse And Edit',
   'images.image_studio_route.browse_and_edit_description':
-    'The gallery and editor stay wired together so route consumers can see\n        the intended package flow instead of disconnected component snapshots.',
+    'The gallery and editor stay wired together so route consumers can see the intended package flow instead of disconnected component snapshots.',
 });

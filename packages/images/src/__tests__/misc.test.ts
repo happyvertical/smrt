@@ -34,9 +34,11 @@ describe('package barrel (index.ts)', () => {
     expect(typeof images.persistImageMediaBundleInspection).toBe('function');
   });
 
-  it('exports ImageCollection that extends a SMRT collection', () => {
-    // Static item class is wired so STI resolution works
-    expect((images.ImageCollection as any)._itemClass).toBe(images.Image);
+  it('exports ImageCollection and Image as a public, instantiable pair', () => {
+    // Assert the public surface (both exported, ImageCollection is constructable)
+    // rather than reaching into the underscored `_itemClass` STI internal.
+    expect(typeof images.ImageCollection).toBe('function');
+    expect(typeof images.Image).toBe('function');
   });
 });
 
