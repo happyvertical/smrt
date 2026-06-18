@@ -55,7 +55,8 @@ overrides:
   '@happyvertical/utils': ^0.74.5
   '@grpc/grpc-js@>=1.14.0 <1.14.4': 1.14.4
   minimatch@>=10.0.0 <10.2.3: 10.2.3
-  undici@>=7.0.0 <7.24.0: 7.24.0
+  undici@>=7.0.0 <7.28.0: 7.28.0
+  nodemailer@<9.0.1: 9.0.1
   tar@>=7.0.0 <7.5.11: 7.5.11
   protobufjs@>=7.0.0 <7.6.1: 7.6.1
   picomatch@>=2.0.0 <2.3.2: 2.3.2
@@ -8053,12 +8054,8 @@ packages:
     resolution: {integrity: sha512-Uzmd6LXpouKo8EUK68IjH4+E01w/hXyV3R3g/geCJo+rXLNfh1xucB+LOzYEOQPSiUK3h/xZf0cQGcSsmyL2Og==}
     engines: {node: '>=18'}
 
-  nodemailer@7.0.13:
-    resolution: {integrity: sha512-PNDFSJdP+KFgdsG3ZzMXCgquO7I6McjY2vlqILjtJd0hy8wEvtugS9xKRF2NWlPNGxvLCXlTNIae4serI7dinw==}
-    engines: {node: '>=6.0.0'}
-
-  nodemailer@8.0.10:
-    resolution: {integrity: sha512-BLFuSth7QtHOkBzyqTehWWyub0NTRDuK2Q2SQfnGLsrJnzyU+Yeh4WpV1eZGuARFj1xQJHIdnTuJZLP+b9R1GQ==}
+  nodemailer@9.0.1:
+    resolution: {integrity: sha512-Gwv8SQewT616ZM/URn0H54b8PWo/Wum7md3EW2aWy1lO27+WZCX+Xyak3J+NlmHUjDh5ME+uesJUDRbR3Ye8Bw==}
     engines: {node: '>=6.0.0'}
 
   normalize-url@8.1.1:
@@ -9342,8 +9339,8 @@ packages:
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
-  undici@7.24.0:
-    resolution: {integrity: sha512-jxytwMHhsbdpBXxLAcuu0fzlQeXCNnWdDyRHpvWsUl8vd98UwYdl9YTyn8/HcpcJPC3pwUveefsa3zTxyD/ERg==}
+  undici@7.28.0:
+    resolution: {integrity: sha512-cRZYrTDwWznlnRiPjggAGxZXanty6M8RV1ff8Wm4LWXBp7/IG8v5DnOm74DtUBp9OONpK75YlPnIjQqX0dBDtA==}
     engines: {node: '>=20.18.1'}
 
   unicode-trie@2.0.0:
@@ -11592,7 +11589,7 @@ snapshots:
       imapflow: 1.4.0
       mailparser: 3.9.9
       node-pop3: 0.11.0
-      nodemailer: 7.0.13
+      nodemailer: 9.0.1
     transitivePeerDependencies:
       - '@sentry/node'
       - supports-color
@@ -11742,7 +11739,7 @@ snapshots:
       crawlee: 3.17.0(@types/node@24.10.9)(playwright@1.60.0)
       happy-dom: 20.10.2
       playwright: 1.60.0
-      undici: 7.24.0
+      undici: 7.28.0
     optionalDependencies:
       cloakbrowser: 0.3.31(playwright-core@1.60.0)
     transitivePeerDependencies:
@@ -14570,7 +14567,7 @@ snapshots:
       parse5: 7.3.0
       parse5-htmlparser2-tree-adapter: 7.1.0
       parse5-parser-stream: 7.1.2
-      undici: 7.24.0
+      undici: 7.28.0
       whatwg-mimetype: 4.0.0
 
   chokidar@4.0.3:
@@ -15800,7 +15797,7 @@ snapshots:
       libbase64: 1.3.0
       libmime: 5.3.8
       libqp: 2.1.1
-      nodemailer: 8.0.10
+      nodemailer: 9.0.1
       pino: 10.3.1
       socks: 2.8.9
 
@@ -16346,7 +16343,7 @@ snapshots:
       iconv-lite: 0.7.2
       libmime: 5.3.8
       linkify-it: 5.0.1
-      nodemailer: 8.0.10
+      nodemailer: 9.0.1
       punycode.js: 2.3.1
       tlds: 1.261.0
 
@@ -16538,9 +16535,7 @@ snapshots:
 
   node-releases@2.0.47: {}
 
-  nodemailer@7.0.13: {}
-
-  nodemailer@8.0.10: {}
+  nodemailer@9.0.1: {}
 
   normalize-url@8.1.1: {}
 
@@ -18027,7 +18022,7 @@ snapshots:
 
   undici-types@7.16.0: {}
 
-  undici@7.24.0: {}
+  undici@7.28.0: {}
 
   unicode-trie@2.0.0:
     dependencies:
