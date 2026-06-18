@@ -79,6 +79,20 @@ function isSecretKey(key: string): boolean {
   return SECRET_PATTERNS.some((pattern) => pattern.test(key));
 }
 
+// Credentials embedded in the *value* of an otherwise-benign key — most
+// importantly DB connection strings like `postgres://user:pass@host:5432/db`
+// stored under keys such as `url` / `database.url` that the key-based
+// {@link SECRET_PATTERNS} deliberately don't match (#1381). Key-based redaction
+// alone leaks these into the published SSG artifact. Mask the userinfo
+// (`scheme://user:pass@host` → `scheme://***@host`) while preserving the
+// non-secret host so the value stays diagnosable.
+const CREDENTIAL_URL_RE = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@\s]+@/i;
+
+/** Redact credentials embedded in a string value (URL userinfo). */
+function redactValueSecrets(value: string): string {
+  return value.replace(CREDENTIAL_URL_RE, '$1***@');
+}
+
 /**
  * Deep-clone a config object, removing every key that looks like a secret.
  *
@@ -137,7 +151,11 @@ export function sanitizeConfig(config: unknown): unknown {
     return result;
   }
 
-  // Primitive values pass through unchanged
+  // String primitives get value-level secret redaction (credentials embedded in
+  // URLs under benign keys, #1381); other primitives pass through unchanged.
+  if (typeof config === 'string') {
+    return redactValueSecrets(config);
+  }
   return config;
 }
 
