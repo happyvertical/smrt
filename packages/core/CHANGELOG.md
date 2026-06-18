@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.29.13
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - remove nested-interactive from AssetGrid/AssetList cards (S12 #1417) (#1522) (a11y)
+
+  ### Other Changes
+
+  - ci: shared turbo build cache across jobs + Test Packages shard headroom (#1523)
+  - @happyvertical/smrt-scanner@0.29.13
+  - @happyvertical/smrt-config@0.29.13
+  - @happyvertical/smrt-types@0.29.13
+
 ## 0.29.12
 
 ### Patch Changes
