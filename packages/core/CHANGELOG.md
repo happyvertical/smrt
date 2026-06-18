@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.18
+
+### Patch Changes
+
+- ### Features
+
+  - extract UI strings in content, flip to lint-strict (S13 #1418 wave 3) (#1530) (i18n)
+  - @happyvertical/smrt-scanner@0.29.18
+  - @happyvertical/smrt-config@0.29.18
+  - @happyvertical/smrt-types@0.29.18
+
 ## 0.29.17
 
 ### Patch Changes

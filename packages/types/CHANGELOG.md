@@ -1,5 +1,7 @@
 # @happyvertical/smrt-types
 
+## 0.29.18
+
 ## 0.29.17
 
 ## 0.29.16
