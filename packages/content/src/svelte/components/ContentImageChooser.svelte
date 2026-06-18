@@ -1,9 +1,13 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import {
   type ContentBodyFormat,
   extractBodyImages,
   resolveBodyFormat,
 } from '../../body-format';
+import { M } from '../i18n.editor.js';
+
+const { t } = useI18n();
 
 export interface Props {
   body: string;
@@ -42,12 +46,12 @@ function cycle(delta: number) {
 </script>
 
 {#if activeImage}
-  <div class="content-image-chooser" aria-label="Body images">
+  <div class="content-image-chooser" aria-label={t(M['content.content_image_chooser.body_images'])}>
     {#if hasMultiple}
       <button
         type="button"
         class="chooser-arrow"
-        aria-label="Previous body image"
+        aria-label={t(M['content.content_image_chooser.previous_body_image'])}
         onclick={() => cycle(-1)}
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -59,7 +63,7 @@ function cycle(delta: number) {
     <button
       type="button"
       class="chooser-preview"
-      aria-label="Focus selected body image"
+      aria-label={t(M['content.content_image_chooser.focus_selected_body_image'])}
       onclick={() => onSelect?.(normalizedIndex)}
     >
       <img src={activeImage.src} alt={activeImage.alt || 'Body image'} />
@@ -70,7 +74,7 @@ function cycle(delta: number) {
       <button
         type="button"
         class="chooser-arrow"
-        aria-label="Next body image"
+        aria-label={t(M['content.content_image_chooser.next_body_image'])}
         onclick={() => cycle(1)}
       >
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

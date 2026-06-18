@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentTransparencyData } from '../../mock-smrt-client';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   transparency?: ContentTransparencyData | null;
@@ -53,7 +57,7 @@ function getFactLabel(fact: {
     </div>
     {#if transparency}
       <div class="transparency-report__badges">
-        <span class="badge">{transparency.factsUsed.length} facts used</span>
+        <span class="badge">{transparency.factsUsed.length} {t(M['content.transparency_report.facts_used'])}</span>
         <span class="badge">{transparency.references.length} references</span>
         <span class="badge">{transparency.corrections.length} corrections</span>
       </div>
@@ -68,9 +72,9 @@ function getFactLabel(fact: {
         <h4>Generation</h4>
         <p>
           {#if transparency.generation.aiAssisted}
-            AI-assisted
+            {t(M['content.transparency_report.ai_assisted'])}
           {:else}
-            Authored without public AI disclosure
+            {t(M['content.transparency_report.authored_without_disclosure'])}
           {/if}
           {#if transparency.generation.model}
             · {transparency.generation.model}
@@ -79,14 +83,14 @@ function getFactLabel(fact: {
         {#if transparency.generation.publicPrompt}
           <pre class="prompt">{transparency.generation.publicPrompt}</pre>
         {:else}
-          <p class="empty-copy">No public prompt was attached to this publication.</p>
+          <p class="empty-copy">{t(M['content.transparency_report.no_public_prompt_attached'])}</p>
         {/if}
       </article>
 
       <article class="panel">
-        <h4>Facts Used</h4>
+        <h4>{t(M['content.transparency_report.facts_used_heading'])}</h4>
         {#if transparency.factsUsed.length === 0}
-          <p class="empty-copy">No explicit facts were marked as used in the article.</p>
+          <p class="empty-copy">{t(M['content.transparency_report.no_explicit_facts'])}</p>
         {:else}
           <div class="item-list">
             {#each transparency.factsUsed as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
@@ -106,9 +110,9 @@ function getFactLabel(fact: {
     </div>
 
     <article class="panel">
-      <h4>Source Material</h4>
+      <h4>{t(M['content.transparency_report.source_material'])}</h4>
       {#if transparency.references.length === 0}
-        <p class="empty-copy">No public references are attached to this snapshot.</p>
+        <p class="empty-copy">{t(M['content.transparency_report.no_public_references'])}</p>
       {:else}
         <div class="item-list">
           {#each transparency.references as reference (reference.id ?? reference.url ?? reference.title)}
@@ -135,7 +139,7 @@ function getFactLabel(fact: {
 
     {#if transparency.otherExtractedFacts.length > 0}
       <article class="panel">
-        <h4>Other Extracted Facts</h4>
+        <h4>{t(M['content.transparency_report.other_extracted_facts'])}</h4>
         <div class="pill-list">
           {#each transparency.otherExtractedFacts as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
             <span>{getFactLabel(fact)}</span>
@@ -148,7 +152,7 @@ function getFactLabel(fact: {
       <article class="panel">
         <h4>Reviews</h4>
         {#if transparency.reviews.length === 0}
-          <p class="empty-copy">No reviews were captured in this snapshot.</p>
+          <p class="empty-copy">{t(M['content.transparency_report.no_reviews_captured'])}</p>
         {:else}
           <div class="item-list">
             {#each transparency.reviews as review (`${review.id ?? review.policyKey}-${review.createdAt ?? ''}`)}
@@ -167,7 +171,7 @@ function getFactLabel(fact: {
       <article class="panel">
         <h4>Corrections</h4>
         {#if transparency.corrections.length === 0}
-          <p class="empty-copy">No public corrections have been issued.</p>
+          <p class="empty-copy">{t(M['content.transparency_report.no_public_corrections'])}</p>
         {:else}
           <div class="item-list">
             {#each transparency.corrections as correction (`${correction.id ?? correction.summary}-${correction.publishedAt ?? ''}`)}
@@ -187,9 +191,9 @@ function getFactLabel(fact: {
     </div>
 
     <article class="panel">
-      <h4>Version History</h4>
+      <h4>{t(M['content.transparency_report.version_history'])}</h4>
       {#if transparency.versionHistory.length === 0}
-        <p class="empty-copy">No version history is attached to this snapshot.</p>
+        <p class="empty-copy">{t(M['content.transparency_report.no_version_history'])}</p>
       {:else}
         <div class="item-list">
           {#each transparency.versionHistory as version (`${version.id ?? version.version}-${version.createdAt ?? ''}`)}

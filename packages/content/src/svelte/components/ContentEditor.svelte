@@ -1,6 +1,7 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { untrack } from 'svelte';
 import { extractBodyImages, resolveBodyFormat } from '../../body-format';
 import type {
@@ -26,11 +27,14 @@ import {
   getContentEditorSnapshot,
   normalizePublishDate,
 } from '../content-editor-form';
+import { M } from '../i18n.editor.js';
 import ContentAgentChat from './ContentAgentChat.svelte';
 import ContentBodyEditor, {
   type ContentBodyEditorChange,
 } from './ContentBodyEditor.svelte';
 import ContentImageChooser from './ContentImageChooser.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -940,7 +944,7 @@ function removeAsset(id: string) {
           </div>
           <div class="mui-field">
             <input id="publish-date-input" type="datetime-local" bind:value={formData.publish_date} class="mui-input" />
-            <label for="publish-date-input">Publish Date</label>
+            <label for="publish-date-input">{t(M['content.content_editor.publish_date'])}</label>
           </div>
         </div>
         {#if showActions}
@@ -960,8 +964,8 @@ function removeAsset(id: string) {
       <input 
          type="text" 
          class="document-title-input" 
-         bind:value={formData.title} 
-         placeholder="Document title..."
+         bind:value={formData.title}
+         placeholder={t(M['content.content_editor.document_title_placeholder'])}
          required 
       />
 
@@ -969,7 +973,15 @@ function removeAsset(id: string) {
         <div class="undo-banner">
           <span class="undo-banner__text">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-1"/></svg>
-            AI updated {lastAppliedFields.length} field{lastAppliedFields.length !== 1 ? 's' : ''}: {lastAppliedFields.join(', ')}
+            {t(M['content.content_editor.ai_updated_fields'], {
+              count: lastAppliedFields.length,
+              fieldLabel: t(
+                lastAppliedFields.length !== 1
+                  ? M['content.content_editor.field_plural']
+                  : M['content.content_editor.field_singular'],
+              ),
+              fields: lastAppliedFields.join(', '),
+            })}
           </span>
           <button type="button" class="undo-banner__btn" onclick={undoLastApply}>
             Undo{fieldUndoStack.length > 1 ? ` (${fieldUndoStack.length})` : ''}
@@ -1040,18 +1052,18 @@ function removeAsset(id: string) {
                         class="media-item"
                         class:is-thumbnail={assetId === formData.thumbnailAssetId}
                         draggable="true"
-                        title="Drag into the body"
+                        title={t(M['content.content_editor.drag_into_body'])}
                         ondragstart={(event) => handleAttachedImageDragStart(event, asset)}
                       >
                         <img class="media-item-image" src={getAssetImageSource(asset)} alt={asset.name || 'Asset image'} />
                         <div class="media-item-overlay">
                            {#if assetId && assetId !== formData.thumbnailAssetId}
-                             <button type="button" class="btn-make-thumbnail" title="Make Thumbnail" onclick={() => setThumbnail(assetId)}>
+                             <button type="button" class="btn-make-thumbnail" title={t(M['content.content_editor.make_thumbnail'])} onclick={() => setThumbnail(assetId)}>
                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                              </button>
                            {/if}
                            {#if assetId}
-                             <button type="button" class="btn-remove-asset" title="Remove" onclick={() => removeAsset(assetId)}>
+                             <button type="button" class="btn-remove-asset" title={t(M['content.content_editor.remove'])} onclick={() => removeAsset(assetId)}>
                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
                              </button>
                            {/if}
@@ -1063,7 +1075,7 @@ function removeAsset(id: string) {
                     {/each}
                   </div>
                 {:else}
-                  <p class="no-media-text">No images attached.</p>
+                  <p class="no-media-text">{t(M['content.content_editor.no_images_attached'])}</p>
                 {/if}
                 {#if !showImageUploader}
                   <button type="button" class="add-image-btn" onclick={() => showImageUploader = true} style="margin-top: 1rem;">
@@ -1072,7 +1084,7 @@ function removeAsset(id: string) {
                       <circle cx="8.5" cy="8.5" r="1.5"></circle>
                       <polyline points="21 15 16 10 5 21"></polyline>
                     </svg>
-                    Add Image
+                    {t(M['content.content_editor.add_image'])}
                   </button>
                 {/if}
 
@@ -1099,18 +1111,18 @@ function removeAsset(id: string) {
         <div class="editor-drawer-content">
           <label>
             Author:
-            <input type="text" bind:value={formData.author} placeholder="Author name" />
+            <input type="text" bind:value={formData.author} placeholder={t(M['content.content_editor.author_name_placeholder'])} />
           </label>
           <label>
             Description:
-            <textarea bind:value={formData.description} rows="2" placeholder="Brief summary..."></textarea>
+            <textarea bind:value={formData.description} rows="2" placeholder={t(M['content.content_editor.brief_summary_placeholder'])}></textarea>
           </label>
           <label>
-            Tags (Comma separated):
+            {t(M['content.content_editor.tags_comma_separated'])}
             <input
               type="text"
               value={(formData.tags || []).join(', ')}
-              placeholder="e.g. news, tech"
+              placeholder={t(M['content.content_editor.tags_placeholder'])}
               oninput={(event) => parseTagsInput((event.currentTarget as HTMLInputElement).value)}
             />
           </label>
@@ -1145,7 +1157,7 @@ function removeAsset(id: string) {
                     </div>
                   {/each}
                   {#if formData.referenceIds.length === 0 && auditReferences.length === 0}
-                    <span class="no-refs">No references.</span>
+                    <span class="no-refs">{t(M['content.content_editor.no_references'])}</span>
                   {/if}
                </div>
                {#if auditReferences.length > 0}
@@ -1157,7 +1169,14 @@ function removeAsset(id: string) {
                      <p class="evidence-message evidence-message--notice">{evidenceNotice}</p>
                    {/if}
                    <div class="evidence-bulk-toolbar">
-                     <span>{selectedEvidenceCount} evidence item{selectedEvidenceCount === 1 ? '' : 's'} selected</span>
+                     <span>{t(M['content.content_editor.evidence_items_selected'], {
+                       count: selectedEvidenceCount,
+                       itemLabel: t(
+                         selectedEvidenceCount === 1
+                           ? M['content.content_editor.evidence_item_singular']
+                           : M['content.content_editor.evidence_item_plural'],
+                       ),
+                     })}</span>
                      <select bind:value={bulkEvidenceStatus} disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}>
                        {#each evidenceStatuses as status}
                          <option value={status}>{status}</option>
@@ -1175,7 +1194,7 @@ function removeAsset(id: string) {
                        disabled={selectedEvidenceCount === 0 || Boolean(evidenceBusy)}
                        onclick={() => void repairSelectedReferenceEvidence()}
                      >
-                       Repair resources
+                       {t(M['content.content_editor.repair_resources'])}
                      </button>
                    </div>
                    {#each auditReferences as reference, referenceIndex (reference._auditSourceId ?? reference.id ?? reference.url ?? reference.title)}
@@ -1193,7 +1212,14 @@ function removeAsset(id: string) {
                            {/if}
                          </div>
                          <div class="reference-detail-actions">
-                           <span>{resourceClaims.length} evidence claim{resourceClaims.length === 1 ? '' : 's'}</span>
+                           <span>{t(M['content.content_editor.evidence_claims'], {
+                             count: resourceClaims.length,
+                             claimLabel: t(
+                               resourceClaims.length === 1
+                                 ? M['content.content_editor.evidence_claim_singular']
+                                 : M['content.content_editor.evidence_claim_plural'],
+                             ),
+                           })}</span>
                            <button
                              type="button"
                              disabled={Boolean(evidenceBusy)}
@@ -1288,7 +1314,7 @@ function removeAsset(id: string) {
                  </div>
                {/if}
                <div class="add-reference-row">
-                  <input type="text" bind:value={newReferenceId} placeholder="Reference ID or URL" />
+                  <input type="text" bind:value={newReferenceId} placeholder={t(M['content.content_editor.reference_id_or_url_placeholder'])} />
                   <button type="button" onclick={addReference}>Add</button>
                </div>
             </div>
@@ -1298,7 +1324,7 @@ function removeAsset(id: string) {
               <input type="url" bind:value={formData.url} />
             </label>
             <label>
-              File Key:
+              {t(M['content.content_editor.file_key'])}
               <input type="text" bind:value={formData.fileKey} />
             </label>
           </div>
@@ -1325,7 +1351,7 @@ function removeAsset(id: string) {
               class="chat-sidebar-empty-state"
               data-testid="content-editor-agent-chat-disabled"
             >
-              <h3>Agent chat unavailable</h3>
+              <h3>{t(M['content.content_editor.agent_chat_unavailable'])}</h3>
               <p>
                 {agentChatNotice ||
                   'Run the content package dev server to use the agent chat sidebar for this editor.'}

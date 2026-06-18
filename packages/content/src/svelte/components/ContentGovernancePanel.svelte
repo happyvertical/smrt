@@ -1,4 +1,5 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import {
   type ContentCorrectionData,
   type ContentGovernanceDefinitionsData,
@@ -16,6 +17,9 @@ import {
   type ResolvedContentGovernanceData,
 } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
+import { M } from '../i18n.governance.js';
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -1038,7 +1042,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     <details class="editor-drawer" open={(factAudit?.counts.total ?? 0) > 0}>
     <summary class="editor-drawer-header">
       <div style="display: flex; align-items: center; gap: 0.5rem;">
-        Article claim audit
+        {t(M['content.governance_panel.article_claim_audit'])}
         {#if factAuditBusy}
           <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Repairing...</span>
         {/if}
@@ -1047,11 +1051,11 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     </summary>
     <div class="editor-drawer-content">
       {#if !savedContentId}
-        <p class="empty-copy">Save this content to audit article claims against evidence.</p>
+        <p class="empty-copy">{t(M['content.governance_panel.save_to_audit_claims'])}</p>
       {:else}
         <div class="claim-audit-toolbar">
           <div class="claim-audit-counts">
-            <span><strong>{factAudit?.counts.total ?? 0}</strong> article claims</span>
+            <span><strong>{factAudit?.counts.total ?? 0}</strong> {t(M['content.governance_panel.article_claims'])}</span>
             <span><strong>{factAudit?.counts.supported ?? 0}</strong> supported</span>
             <span><strong>{factAudit?.counts.unsupported ?? 0}</strong> unsupported</span>
             <span><strong>{factAudit?.counts.contradicted ?? 0}</strong> contradicted</span>
@@ -1075,7 +1079,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           </button>
         </div>
         <p class="claim-audit-help">
-          Article claims are statements made by this draft. A supported claim has linked source evidence from the references; unsupported means the audit has not found that supporting evidence yet.
+          {t(M['content.governance_panel.article_claims_help'])}
         </p>
 
         {#if actionableFactAuditWarnings.length}
@@ -1088,7 +1092,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
         {#if !factAudit || factAudit.counts.total === 0}
           <p class="empty-copy">
-            No article claim audit has been generated yet.
+            {t(M['content.governance_panel.no_claim_audit_generated'])}
           </p>
         {:else}
           {#each [
@@ -1101,7 +1105,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {@const groupClaims = factAuditGroups[groupKey]}
             {#if groupClaims.length > 0}
               <div class="claim-audit-group">
-                <div class="section-caption">{group[1]} article claims</div>
+                <div class="section-caption">{t(M['content.governance_panel.group_article_claims'], { group: group[1] })}</div>
                 {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
                   <details class="claim-audit-item">
                     <summary>
@@ -1129,18 +1133,18 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                             if (claimId) void recheckFactClaims([claimId]);
                           }}
                         >
-                          Recheck support
+                          {t(M['content.governance_panel.recheck_support'])}
                         </button>
                       </div>
                       {#if claim.claimQuote}
-                        <p><strong>Article claim:</strong> {claim.claimQuote}</p>
+                        <p><strong>{t(M['content.governance_panel.article_claim_label'])}</strong> {claim.claimQuote}</p>
                       {/if}
                       {#if claim.rationale}
-                        <p><strong>Support assessment:</strong> {claim.rationale}</p>
+                        <p><strong>{t(M['content.governance_panel.support_assessment_label'])}</strong> {claim.rationale}</p>
                       {/if}
                       {#if claim.evidence?.length}
                         <div class="claim-audit-evidence">
-                          <div class="section-caption">Claim excerpt</div>
+                          <div class="section-caption">{t(M['content.governance_panel.claim_excerpt'])}</div>
                           {#each claim.evidence as evidence (evidence.id ?? evidence.evidenceKey)}
                             <p>{evidence.quote || evidence.locator || evidence.sourceTitle}</p>
                           {/each}
@@ -1148,10 +1152,10 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                       {/if}
                       {#if claim.matchedFacts?.length}
                         <div class="claim-audit-evidence">
-                          <div class="section-caption">Based on source evidence</div>
+                          <div class="section-caption">{t(M['content.governance_panel.based_on_source_evidence'])}</div>
                           {#each claim.matchedFacts as matched (matched.fact.id ?? matched.fact.textRefined)}
                             <div class="claim-audit-match">
-                              <strong>Source claim: {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
+                              <strong>{t(M['content.governance_panel.source_claim_label'])} {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
                               {#each matched.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
                                 <span>
                                   {evidence.sourceTitle || 'Source'}
@@ -1167,7 +1171,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                           {/each}
                         </div>
                       {:else}
-                        <p><strong>Based on:</strong> No supporting source evidence linked.</p>
+                        <p><strong>{t(M['content.governance_panel.based_on_label'])}</strong> {t(M['content.governance_panel.no_supporting_source_evidence'])}</p>
                       {/if}
                     </div>
                   </details>
@@ -1185,9 +1189,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
     <details class="editor-drawer" open={selectedFactsResolved.length > 0}>
       <summary class="editor-drawer-header">
         <div style="display: flex; align-items: center; gap: 0.5rem;">
-          Manual fact links
+          {t(M['content.governance_panel.manual_fact_links'])}
           {#if syncingFacts}
-            <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">Saving links...</span>
+            <span class="section-status" style="font-size: 0.875rem; font-weight: 400; color: var(--smrt-color-outline);">{t(M['content.governance_panel.saving_links'])}</span>
           {/if}
         </div>
         <svg class="drawer-icon" viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
@@ -1195,13 +1199,13 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       <div class="editor-drawer-content">
         {#if governanceState && !governanceState.factLinkingEnabled}
           <p class="empty-copy">
-            Fact linking is not enabled for this governed content type.
+            {t(M['content.governance_panel.fact_linking_not_enabled'])}
           </p>
         {:else}
           <div class="selected-facts">
-            <div class="section-caption">Manually linked facts</div>
+            <div class="section-caption">{t(M['content.governance_panel.manually_linked_facts'])}</div>
             {#if selectedFactsResolved.length === 0}
-              <p class="empty-copy">No manually linked facts yet.</p>
+              <p class="empty-copy">{t(M['content.governance_panel.no_manually_linked_facts'])}</p>
             {:else}
               <div class="fact-chip-list">
                 {#each selectedFactsResolved as fact (fact.id ?? fact.textRefined)}
@@ -1230,7 +1234,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               <input
                 type="text"
                 bind:value={factQuery}
-                placeholder="Search fact catalog"
+                placeholder={t(M['content.governance_panel.search_fact_catalog'])}
               />
               <button type="button" onclick={searchFactsFirstPage}>
                 Search
@@ -1242,11 +1246,11 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             {/if}
 
             <div class="fact-catalog">
-              <div class="section-caption">Fact catalog</div>
+              <div class="section-caption">{t(M['content.governance_panel.fact_catalog'])}</div>
               {#if catalogLoading}
-                <p class="empty-copy">Loading facts...</p>
+                <p class="empty-copy">{t(M['content.governance_panel.loading_facts'])}</p>
               {:else if catalogFacts.length === 0}
-                <p class="empty-copy">No facts matched this search.</p>
+                <p class="empty-copy">{t(M['content.governance_panel.no_facts_matched'])}</p>
               {:else}
                 <div class="fact-catalog__list">
                   {#each catalogFacts as fact (fact.id ?? fact.textRefined)}
@@ -1270,7 +1274,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               {/if}
 
               {#if catalogFacts.length > 0 || catalogPage > 1}
-                <div class="fact-pagination" aria-label="Fact catalog pagination">
+                <div class="fact-pagination" aria-label={t(M['content.governance_panel.fact_catalog_pagination'])}>
                   <span>
                     Page {catalogPage}
                     {#if catalogFacts.length > 0}
@@ -1327,12 +1331,12 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
     {#if !savedContentId}
       <p class="empty-copy">
-        Save this content to run governance reviews, corrections, and version management.
+        {t(M['content.governance_panel.save_to_run_governance'])}
       </p>
     {:else}
       {#if reviewProfiles.length > 0}
         <label class="workflow-field">
-          Review profile
+          {t(M['content.governance_panel.review_profile'])}
           <select bind:value={activeReviewProfileKey}>
             {#each reviewProfiles as profile (profile.profileKey)}
               <option value={profile.profileKey}>
@@ -1359,15 +1363,15 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
           {#if activeUnsatisfiedRequirements.length > 0}
             <div class="review-profile-callout">
-              <strong>Needs attention</strong>
+              <strong>{t(M['content.governance_panel.needs_attention'])}</strong>
               <span>
-                {activeUnsatisfiedRequirements.length} review requirement(s) still need attention before this profile is fully ready.
+                {t(M['content.governance_panel.requirements_need_attention'], { count: activeUnsatisfiedRequirements.length })}
               </span>
             </div>
           {/if}
 
           {#if activeReviewProfile.requirements?.length === 0}
-            <p class="empty-copy">No review requirements are configured for this profile.</p>
+            <p class="empty-copy">{t(M['content.governance_panel.no_review_requirements'])}</p>
           {:else}
             <div class="review-profile-list">
               {#each activeReviewProfile.requirements as requirement (requirement.policyKey)}
@@ -1410,7 +1414,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       <div class="workflow-field-group">
         {#if availableCustomPolicies.length > 0}
           <label class="workflow-field">
-            App review policy
+            {t(M['content.governance_panel.app_review_policy'])}
             <select bind:value={activeCustomPolicyKey}>
               {#each availableCustomPolicies as policy (policy.key)}
                 <option value={policy.key}>
@@ -1426,7 +1430,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           <textarea
             rows="3"
             bind:value={customReviewText}
-            placeholder="Optional additional review instructions"
+            placeholder={t(M['content.governance_panel.optional_review_instructions'])}
           ></textarea>
         </label>
         <button
@@ -1451,9 +1455,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
       </div>
 
       <div class="review-list">
-        <div class="section-caption">Recent reviews</div>
+        <div class="section-caption">{t(M['content.governance_panel.recent_reviews'])}</div>
         {#if reviews.length === 0}
-          <p class="empty-copy">No reviews have been run yet.</p>
+          <p class="empty-copy">{t(M['content.governance_panel.no_reviews_run'])}</p>
         {:else}
           {#each reviews as review (review.id ?? `${review.kind}-${review.createdAt}`)}
             <div class="review-card">
@@ -1478,7 +1482,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
                     </div>
                   {/each}
                   {#if review.findings.length > 2}
-                    <span>+ {review.findings.length - 2} more finding(s)</span>
+                    <span>{t(M['content.governance_panel.more_findings'], { count: review.findings.length - 2 })}</span>
                   {/if}
                 </div>
               {:else}
@@ -1508,23 +1512,23 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
     {#if !savedContentId}
       <p class="empty-copy">
-        Save this content to preview the public transparency breakdown.
+        {t(M['content.governance_panel.save_to_preview_transparency'])}
       </p>
     {:else if governanceState && !governanceState.transparencyEnabled}
       <p class="empty-copy">
-        Public transparency snapshots are not enabled for this governed content type.
+        {t(M['content.governance_panel.transparency_snapshots_not_enabled'])}
       </p>
     {:else if !transparencyPreview}
-      <p class="empty-copy">No transparency preview is available yet.</p>
+      <p class="empty-copy">{t(M['content.governance_panel.no_transparency_preview'])}</p>
     {:else}
       <p class="section-caption">
-        The preview below reflects the latest saved article state. The published snapshot stays frozen until the next successful publication.
+        {t(M['content.governance_panel.transparency_preview_explainer'])}
       </p>
 
       <div class="transparency-stats">
         <div class="transparency-stat">
           <strong>{transparencyPreview.factsUsed.length}</strong>
-          <span>Facts used</span>
+          <span>{t(M['content.governance_panel.facts_used'])}</span>
         </div>
         <div class="transparency-stat">
           <strong>{transparencyPreview.references.length}</strong>
@@ -1532,25 +1536,25 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         </div>
         <div class="transparency-stat">
           <strong>{transparencyPreview.otherExtractedFacts.length}</strong>
-          <span>Other extracted facts</span>
+          <span>{t(M['content.governance_panel.other_extracted_facts'])}</span>
         </div>
         <div class="transparency-stat">
           <strong>{transparencyPreview.corrections.length}</strong>
-          <span>Public corrections</span>
+          <span>{t(M['content.governance_panel.public_corrections'])}</span>
         </div>
       </div>
 
       <div class="transparency-grid">
         <div class="transparency-card">
           <div class="transparency-card__header">
-            <strong>Current preview</strong>
+            <strong>{t(M['content.governance_panel.current_preview'])}</strong>
             <span class="pill pill--neutral">{transparencyPreview.snapshotKind}</span>
           </div>
           <span>
             {#if transparencyPreview.generation.publicPrompt}
-              Public prompt is set for publication.
+              {t(M['content.governance_panel.public_prompt_set'])}
             {:else}
-              No public prompt is exposed yet.
+              {t(M['content.governance_panel.no_public_prompt_exposed'])}
             {/if}
           </span>
           {#if transparencyPreview.generation.publicPrompt}
@@ -1561,9 +1565,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
           <div class="transparency-list">
             <div class="transparency-list__section">
-              <div class="section-caption">Facts used in the article</div>
+              <div class="section-caption">{t(M['content.governance_panel.facts_used_in_article'])}</div>
               {#if transparencyPreview.factsUsed.length === 0}
-                <p class="empty-copy">No used facts will be shown publicly yet.</p>
+                <p class="empty-copy">{t(M['content.governance_panel.no_used_facts_public'])}</p>
               {:else}
                 {#each transparencyPreview.factsUsed.slice(0, 3) as fact (fact.id ?? fact.textRefined ?? fact.textRaw)}
                   <div class="transparency-list__item">
@@ -1580,15 +1584,15 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
             </div>
 
             <div class="transparency-list__section">
-              <div class="section-caption">Source material</div>
+              <div class="section-caption">{t(M['content.governance_panel.source_material'])}</div>
               {#if transparencyPreview.references.length === 0}
-                <p class="empty-copy">No references will be shown publicly yet.</p>
+                <p class="empty-copy">{t(M['content.governance_panel.no_references_public'])}</p>
               {:else}
                 {#each transparencyPreview.references.slice(0, 3) as reference (reference.id ?? reference.url ?? reference.title)}
                   <div class="transparency-list__item">
                     <strong>{getTransparencyReferenceLabel(reference)}</strong>
                     <span>
-                      {reference.usedFactIds.length} used fact(s) · {reference.extractedFacts.length} extracted fact(s)
+                      {t(M['content.governance_panel.reference_fact_counts'], { used: reference.usedFactIds.length, extracted: reference.extractedFacts.length })}
                     </span>
                   </div>
                 {/each}
@@ -1599,7 +1603,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
 
         <div class="transparency-card">
           <div class="transparency-card__header">
-            <strong>Latest published snapshot</strong>
+            <strong>{t(M['content.governance_panel.latest_published_snapshot'])}</strong>
             {#if publishedTransparency?.publicationVersion?.version !== null && publishedTransparency?.publicationVersion?.version !== undefined}
               <span class="pill pill--passed">v{publishedTransparency.publicationVersion.version}</span>
             {/if}
@@ -1610,11 +1614,11 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
               Published {formatTimestamp(publishedTransparency.publicationVersion?.createdAt || publishedTransparency.generatedAt)}
             </span>
             <span>
-              {publishedTransparency.versionHistory.length} timeline event(s) and {publishedTransparency.corrections.length} public correction(s)
+              {t(M['content.governance_panel.timeline_and_corrections'], { events: publishedTransparency.versionHistory.length, corrections: publishedTransparency.corrections.length })}
             </span>
           {:else}
             <p class="empty-copy">
-              No published transparency snapshot yet. Publish this article to freeze one for the built site.
+              {t(M['content.governance_panel.no_published_snapshot'])}
             </p>
           {/if}
         </div>
@@ -1639,14 +1643,14 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
           <input
             type="text"
             bind:value={correctionSummary}
-            placeholder="What was wrong?"
+            placeholder={t(M['content.governance_panel.what_was_wrong'])}
           />
         </label>
 
         <label class="workflow-field">
-          Related fact
+          {t(M['content.governance_panel.related_fact'])}
           <select bind:value={correctionFactId}>
-            <option value="">General correction</option>
+            <option value="">{t(M['content.governance_panel.general_correction'])}</option>
             {#each selectedFactsResolved as fact (fact.id)}
               <option value={fact.id ?? ''}>{fact.textRefined}</option>
             {/each}
@@ -1654,26 +1658,26 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         </label>
 
         <label class="workflow-field">
-          Corrected fact text
+          {t(M['content.governance_panel.corrected_fact_text'])}
           <textarea
             rows="4"
             bind:value={correctedFactText}
-            placeholder="Provide the corrected claim or wording"
+            placeholder={t(M['content.governance_panel.provide_corrected_wording'])}
           ></textarea>
         </label>
 
         <label class="workflow-field">
-          Public note
+          {t(M['content.governance_panel.public_note'])}
           <textarea
             rows="3"
             bind:value={correctionPublicNote}
-            placeholder="Optional public-facing correction note"
+            placeholder={t(M['content.governance_panel.optional_public_correction_note'])}
           ></textarea>
         </label>
 
         <label class="checkbox-row">
           <input type="checkbox" bind:checked={publishCorrection} />
-          Publish immediately
+          {t(M['content.governance_panel.publish_immediately'])}
         </label>
 
         <button
@@ -1685,9 +1689,9 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         </button>
 
         <div class="review-list">
-          <div class="section-caption">Published history</div>
+          <div class="section-caption">{t(M['content.governance_panel.published_history'])}</div>
           {#if corrections.length === 0}
-            <p class="empty-copy">No corrections issued.</p>
+            <p class="empty-copy">{t(M['content.governance_panel.no_corrections_issued'])}</p>
           {:else}
             {#each corrections as correction (correction.id ?? `${correction.correctionType}-${correction.createdAt}`)}
               <div class="review-card">
@@ -1729,7 +1733,7 @@ function getVersionProvenanceCopy(version: ContentVersionData) {
         <div class="editor-drawer-content">
 
         {#if versions.length === 0}
-          <p class="empty-copy">No versions saved yet.</p>
+          <p class="empty-copy">{t(M['content.governance_panel.no_versions_saved'])}</p>
         {:else}
           <div class="review-list">
             {#each versions as version (version.id ?? `version-${version.version ?? 0}`)}

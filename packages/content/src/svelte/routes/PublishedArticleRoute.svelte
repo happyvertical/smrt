@@ -1,6 +1,8 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import ContentBodyRenderer from '../components/ContentBodyRenderer.svelte';
 import ContentTransparencyReport from '../components/ContentTransparencyReport.svelte';
+import { M } from '../i18n.routes.js';
 import {
   CONTENT_ROUTE_IDS,
   getContentRouteDefaultPath,
@@ -19,6 +21,8 @@ let {
   backLabel = 'Back to content workspace',
 }: PublishedArticleRouteProps = $props();
 
+const { t } = useI18n();
+
 function formatTimestamp(value: string | null | undefined) {
   if (!value) {
     return 'Unscheduled';
@@ -32,7 +36,7 @@ function formatTimestamp(value: string | null | undefined) {
   <header class="article-hero">
     <div class="article-hero__inner">
       <a href={backHref} class="back-link">{backLabel}</a>
-      <div class="eyebrow">Published article</div>
+      <div class="eyebrow">{t(M['content.published_article.eyebrow'])}</div>
       <h1>{data.content.title || 'Untitled article'}</h1>
       {#if data.content.description}
         <p class="article-dek">{data.content.description}</p>
@@ -59,7 +63,7 @@ function formatTimestamp(value: string | null | undefined) {
     <aside class="article-sidebar">
       <ContentTransparencyReport
         transparency={data.transparency}
-        title="How this article was made"
+        title={t(M['content.published_article.transparency_title'])}
         emptyCopy="This published article does not have a public transparency snapshot yet."
       />
     </aside>

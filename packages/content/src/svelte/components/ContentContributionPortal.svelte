@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentContributionData } from '../../mock-smrt-client';
+import { M } from '../i18n.contribution.js';
+
+const { t } = useI18n();
 
 export interface Props {
   contributions?: ContentContributionData[];
@@ -33,8 +37,8 @@ function canWithdraw(contribution: ContentContributionData) {
 <section class="portal">
   <header class="portal__header">
     <div>
-      <h3>Your contributions</h3>
-      <p>Track the status of your submissions and follow up when editors request changes.</p>
+      <h3>{t(M['content.contribution_portal.heading'])}</h3>
+      <p>{t(M['content.contribution_portal.intro'])}</p>
     </div>
     <span class="pill">{contributions.length}</span>
   </header>
@@ -67,7 +71,7 @@ function canWithdraw(contribution: ContentContributionData) {
           {/if}
           {#if selectedContribution.editorNotes}
             <div class="callout">
-              <strong>Editor notes</strong>
+              <strong>{t(M['content.contribution_portal.editor_notes'])}</strong>
               <p>{selectedContribution.editorNotes}</p>
             </div>
           {/if}
@@ -88,7 +92,7 @@ function canWithdraw(contribution: ContentContributionData) {
 
           {#if onWithdraw && canWithdraw(selectedContribution)}
             <button type="button" class="secondary" onclick={() => onWithdraw?.(selectedContribution)}>
-              Withdraw submission
+              {t(M['content.contribution_portal.withdraw_submission'])}
             </button>
           {/if}
         </article>

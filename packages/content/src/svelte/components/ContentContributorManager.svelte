@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentContributorData } from '../../mock-smrt-client';
+import { M } from '../i18n.contribution.js';
+
+const { t } = useI18n();
 
 export interface Props {
   contributors?: ContentContributorData[];
@@ -39,9 +43,9 @@ function handleSubmit() {
   <header>
     <div>
       <h3>Contributors</h3>
-      <p>Manage contributor trust levels for intake queue bypass and moderation.</p>
+      <p>{t(M['content.contributor_manager.intro'])}</p>
     </div>
-    <button type="button" onclick={() => (editing = {})}>Add contributor</button>
+    <button type="button" onclick={() => (editing = {})}>{t(M['content.contributor_manager.add_contributor'])}</button>
   </header>
 
   <div class="layout">
@@ -78,7 +82,7 @@ function handleSubmit() {
         <input type="text" bind:value={draft.name} />
       </label>
       <label>
-        Trust level
+        {t(M['content.contributor_manager.trust_level'])}
         <select bind:value={draft.trustLevel}>
           <option value="standard">standard</option>
           <option value="trusted">trusted</option>
@@ -87,7 +91,7 @@ function handleSubmit() {
       </label>
 
       <div class="actions">
-        <button type="submit">Save contributor</button>
+        <button type="submit">{t(M['content.contributor_manager.save_contributor'])}</button>
       </div>
     </form>
   </div>
