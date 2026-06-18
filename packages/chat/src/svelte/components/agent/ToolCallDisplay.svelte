@@ -4,6 +4,8 @@
  * Collapsible card showing tool name, arguments (as JSON), status indicator,
  * and result/error. Color-coded by status (pending, running, success, error).
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
 import type { ToolCallDisplayData } from '../../types.js';
 
 export interface Props {
@@ -12,6 +14,8 @@ export interface Props {
 }
 
 const { toolCall }: Props = $props();
+
+const { t } = useI18n();
 
 let isExpanded = $state(false);
 
@@ -60,7 +64,7 @@ function formatDuration(ms: number | undefined): string {
 }
 </script>
 
-<div class="tool-call tool-call--{toolCall.status}" aria-label="Tool call: {toolCall.toolName}">
+<div class="tool-call tool-call--{toolCall.status}" aria-label={t(M['chat.tool_call_display.tool_call'], { toolName: toolCall.toolName })}>
   <button
     class="tool-call__header"
     type="button"
@@ -116,7 +120,7 @@ function formatDuration(ms: number | undefined): string {
 
       {#if toolCall.status === 'running'}
         <div class="tool-call__running">
-          <div class="tool-call__spinner" aria-label="Running"></div>
+          <div class="tool-call__spinner" aria-label={t(M['chat.tool_call_display.running'])}></div>
           <span>Executing...</span>
         </div>
       {/if}

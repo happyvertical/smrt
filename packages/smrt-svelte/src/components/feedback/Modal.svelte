@@ -13,6 +13,10 @@
  */
 
 import type { Snippet } from 'svelte';
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
+const { t } = useI18n();
 
 /** Props for Modal component */
 export interface Props {
@@ -24,6 +28,8 @@ export interface Props {
   title?: string;
   /** Modal size variant */
   size?: 'sm' | 'md' | 'lg' | 'xl' | 'full';
+  /** Placement: center (default) or end for a right-anchored full-height drawer */
+  placement?: 'center' | 'end';
   /** Whether clicking backdrop closes modal */
   closeOnBackdrop?: boolean;
   /** Whether pressing Escape closes modal */
@@ -47,6 +53,7 @@ let {
   onClose,
   title,
   size = 'md',
+  placement = 'center',
   closeOnBackdrop = true,
   closeOnEscape = true,
   showClose = true,
@@ -106,12 +113,16 @@ const sizeClasses = {
   xl: 'modal--xl',
   full: 'modal--full',
 };
+
+const placementClass = $derived(
+  placement === 'end' ? 'modal--end' : 'modal--center',
+);
 </script>
 
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <dialog
   bind:this={dialogEl}
-  class="modal {sizeClasses[size]}"
+  class="modal {sizeClasses[size]} {placementClass}"
   onclick={handleBackdropClick}
   onkeydown={handleKeydown}
   oncancel={handleCancel}
@@ -135,7 +146,7 @@ const sizeClasses = {
             type="button"
             class="modal__close"
             onclick={handleClose}
-            aria-label="Close modal"
+            aria-label={t(M['ui.modal.close'])}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -256,6 +267,38 @@ const sizeClasses = {
     border-radius: var(--smrt-radius-medium, 0.5rem);
   }
 
+  /* Placement: end = right-anchored, full-height drawer (e.g. detail panels).
+     The size variant still sets the panel width. */
+  .modal--end {
+    justify-content: flex-end;
+    align-items: stretch;
+  }
+
+  .modal--end .modal__container {
+    height: 100%;
+    max-height: 100%;
+    border-radius: var(--smrt-radius-none, 0);
+    animation: modal-slide-end var(--smrt-duration-medium2, 300ms)
+      var(--smrt-easing-emphasized, cubic-bezier(0.2, 0, 0, 1));
+  }
+
+  @keyframes modal-slide-end {
+    from {
+      opacity: 0;
+      transform: translateX(100%);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .modal--end .modal__container {
+      animation: none;
+    }
+  }
+
   /* Header */
   .modal__header {
     display: flex;
@@ -337,6 +380,14 @@ const sizeClasses = {
     .modal--lg .modal__container,
     .modal--xl .modal__container {
       max-width: calc(100vw - var(--smrt-spacing-4, 1rem));
+    }
+
+    /* A drawer goes full-bleed on mobile — no backdrop strip. Declared after the
+       size-cap rule above so it wins for end placement regardless of size. */
+    .modal--end .modal__container {
+      width: 100%;
+      max-width: 100%;
+      max-height: 100%;
     }
   }
 </style>

@@ -1,8 +1,12 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type {
   ContentGovernanceProfileData,
   ContentReviewPolicyData,
 } from '../../mock-smrt-client';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   profile?: Partial<ContentGovernanceProfileData>;
@@ -102,7 +106,7 @@ function handleSubmit() {
     <div class="requirements__header">
       <strong>Requirements</strong>
       <button type="button" class="secondary" onclick={addRequirement}>
-        Add requirement
+        {t(M['content.governance_profile_editor.add_requirement'])}
       </button>
     </div>
 
@@ -132,7 +136,7 @@ function handleSubmit() {
   </div>
 
   <div class="actions">
-    <button type="submit">Save profile</button>
+    <button type="submit">{t(M['content.governance_profile_editor.save_profile'])}</button>
     {#if onCancel}
       <button type="button" class="secondary" onclick={() => onCancel?.()}>
         Cancel

@@ -3,8 +3,12 @@
  * ChatTabList - Minimized tab overview bar
  * Horizontal bar of small avatars/names at bottom. Shows unread badges.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatTabState } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Collapsed/minimized tabs */
@@ -19,14 +23,14 @@ const { tabs, onselect, onclose }: Props = $props();
 </script>
 
 {#if tabs.length > 0}
-  <nav class="tab-list" aria-label="Minimized chats">
+  <nav class="tab-list" aria-label={t(M['chat.chat_tab_list.minimized_chats'])}>
     {#each tabs as tab (tab.roomId)}
       <div class="tab-list__item">
         <button
           class="tab-list__btn"
           type="button"
           onclick={() => onselect(tab.roomId)}
-          aria-label="Open chat with {tab.room.name}"
+          aria-label={t(M['chat.chat_tab_list.open_chat_with'], { name: tab.room.name })}
           title={tab.room.name}
         >
           <Avatar
@@ -35,7 +39,7 @@ const { tabs, onselect, onclose }: Props = $props();
             size="sm"
           />
           {#if tab.unreadCount > 0}
-            <span class="tab-list__badge" aria-label="{tab.unreadCount} unread">
+            <span class="tab-list__badge" aria-label={t(M['chat.chat_tab_list.unread'], { count: tab.unreadCount })}>
               {tab.unreadCount > 99 ? '99+' : tab.unreadCount}
             </span>
           {/if}
@@ -44,8 +48,8 @@ const { tabs, onselect, onclose }: Props = $props();
           class="tab-list__close"
           type="button"
           onclick={(e) => { e.stopPropagation(); onclose(tab.roomId); }}
-          aria-label="Close chat with {tab.room.name}"
-          title="Close"
+          aria-label={t(M['chat.chat_tab_list.close_chat_with'], { name: tab.room.name })}
+          title={t(M['chat.chat_tab_list.close'])}
         >
           <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
             <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z" />

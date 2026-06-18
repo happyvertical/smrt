@@ -1,6 +1,8 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import ContentBodyRenderer from '../components/ContentBodyRenderer.svelte';
 import ContentTransparencyReport from '../components/ContentTransparencyReport.svelte';
+import { M } from '../i18n.routes.js';
 import {
   CONTENT_ROUTE_IDS,
   getContentRouteDefaultPath,
@@ -19,6 +21,8 @@ let {
   backLabel = 'Back to content workspace',
 }: PublishedArticleRouteProps = $props();
 
+const { t } = useI18n();
+
 function formatTimestamp(value: string | null | undefined) {
   if (!value) {
     return 'Unscheduled';
@@ -32,14 +36,14 @@ function formatTimestamp(value: string | null | undefined) {
   <header class="article-hero">
     <div class="article-hero__inner">
       <a href={backHref} class="back-link">{backLabel}</a>
-      <div class="eyebrow">Published article</div>
-      <h1>{data.content.title || 'Untitled article'}</h1>
+      <div class="eyebrow">{t(M['content.published_article.eyebrow'])}</div>
+      <h1>{data.content.title || t(M['content.published_article.untitled'])}</h1>
       {#if data.content.description}
         <p class="article-dek">{data.content.description}</p>
       {/if}
 
       <div class="article-meta">
-        <span>{data.content.author || 'Unknown author'}</span>
+        <span>{data.content.author || t(M['content.published_article.unknown_author'])}</span>
         <span>{formatTimestamp(data.content.publish_date)}</span>
         {#if data.content.slug}
           <span>/{data.content.slug}</span>
@@ -59,8 +63,8 @@ function formatTimestamp(value: string | null | undefined) {
     <aside class="article-sidebar">
       <ContentTransparencyReport
         transparency={data.transparency}
-        title="How this article was made"
-        emptyCopy="This published article does not have a public transparency snapshot yet."
+        title={t(M['content.published_article.transparency_title'])}
+        emptyCopy={t(M['content.published_article.empty_copy'])}
       />
     </aside>
   </main>

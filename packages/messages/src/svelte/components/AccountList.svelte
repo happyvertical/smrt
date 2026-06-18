@@ -2,9 +2,13 @@
 /**
  * AccountList - Account management list
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Grid } from '@happyvertical/smrt-svelte/layout';
+import { M } from '../i18n.js';
 import type { AccountData } from '../types.js';
 import AccountCard from './AccountCard.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   accounts: AccountData[];
@@ -38,17 +42,17 @@ function handleAccountKeydown(event: KeyboardEvent, account: AccountData) {
 }
 </script>
 
-<div class="account-list" role="list" aria-label="Accounts">
+<div class="account-list" role="list" aria-label={t(M['messages.account_list.accounts'])}>
   {#if loading}
     <div class="loading" role="status" aria-live="polite">
-      <p>Loading accounts...</p>
+      <p>{t(M['messages.account_list.loading'])}</p>
     </div>
   {:else if accounts.length === 0}
     <div class="empty" role="status" aria-live="polite">
-      <p>No accounts configured.</p>
+      <p>{t(M['messages.account_list.empty'])}</p>
     </div>
   {:else}
-    <Grid columns="auto" role="list" aria-label="Accounts">
+    <Grid columns="auto" role="list" aria-label={t(M['messages.account_list.accounts'])}>
       {#each accounts as account (account.id)}
         <div role="listitem">
           {#if onaccountclick}

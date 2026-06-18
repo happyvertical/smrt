@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-users",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "description": "Multi-tenant user management for the SMRT framework - users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",
@@ -39,7 +39,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:postgres": "DATABASE_URL=${DATABASE_URL:-postgresql://postgres:postgres@localhost:5432/test_db} vitest run",
-    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },

@@ -5,8 +5,12 @@
  * Supports infinite scroll via onloadmore callback.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatMessageData } from '../../types.js';
 import MessageItem from './MessageItem.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Messages to display */
@@ -64,11 +68,11 @@ function handleScroll(event: Event) {
   bind:this={scrollContainer}
   onscroll={handleScroll}
   role="log"
-  aria-label="Messages"
+  aria-label={t(M['chat.message_list.messages_label'])}
 >
   {#if messages.length === 0}
     <div class="message-list__empty">
-      <span>No messages yet</span>
+      <span>{t(M['chat.message_list.no_messages'])}</span>
     </div>
   {:else}
     {#each groupedMessages as group}

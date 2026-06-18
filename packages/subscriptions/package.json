@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-subscriptions",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "description": "Tenant subscriptions, entitlement resolution, usage thresholds, and subscription UI for SMRT",
   "type": "module",
   "main": "./dist/index.js",
@@ -28,7 +28,7 @@
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "clean": "rm -rf dist",
     "dev": "vite dev",
     "prepack": "node ../../scripts/prepack-package.js",

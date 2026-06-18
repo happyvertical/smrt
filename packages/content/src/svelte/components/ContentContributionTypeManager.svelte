@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { ContentContributionTypeData } from '../../mock-smrt-client';
+import { M } from '../i18n.contribution.js';
+
+const { t } = useI18n();
 
 export interface Props {
   types?: ContentContributionTypeData[];
@@ -109,10 +113,10 @@ function handleSubmit() {
 <section class="manager">
   <header>
     <div>
-      <h3>Contribution types</h3>
-      <p>Configure what contributors can send, where it promotes, and which intake rules apply.</p>
+      <h3>{t(M['content.contribution_type_manager.heading'])}</h3>
+      <p>{t(M['content.contribution_type_manager.intro'])}</p>
     </div>
-    <button type="button" onclick={() => (editing = {})}>Add type</button>
+    <button type="button" onclick={() => (editing = {})}>{t(M['content.contribution_type_manager.add_type'])}</button>
   </header>
 
   <div class="layout">
@@ -151,9 +155,9 @@ function handleSubmit() {
 
       <div class="checkbox-grid">
         <label><input type="checkbox" bind:checked={draft.enabled} /> Enabled</label>
-        <label><input type="checkbox" bind:checked={draft.allowText} /> Allow text</label>
-        <label><input type="checkbox" bind:checked={draft.allowFiles} /> Allow files</label>
-        <label><input type="checkbox" bind:checked={draft.allowEmptyText} /> Allow empty text</label>
+        <label><input type="checkbox" bind:checked={draft.allowText} /> {t(M['content.contribution_type_manager.allow_text'])}</label>
+        <label><input type="checkbox" bind:checked={draft.allowFiles} /> {t(M['content.contribution_type_manager.allow_files'])}</label>
+        <label><input type="checkbox" bind:checked={draft.allowEmptyText} /> {t(M['content.contribution_type_manager.allow_empty_text'])}</label>
       </div>
 
       <div class="checkbox-grid">
@@ -176,15 +180,15 @@ function handleSubmit() {
       </div>
 
       <label>
-        Promotion content type
+        {t(M['content.contribution_type_manager.promotion_content_type'])}
         <input type="text" bind:value={draft.promotion.targetContentType} required />
       </label>
       <label>
-        Promotion variant
+        {t(M['content.contribution_type_manager.promotion_variant'])}
         <input type="text" bind:value={draft.promotion.targetContentVariant} />
       </label>
       <label>
-        Promotion status
+        {t(M['content.contribution_type_manager.promotion_status'])}
         <select bind:value={draft.promotion.targetContentStatus}>
           <option value="draft">draft</option>
           <option value="review">review</option>
@@ -192,42 +196,42 @@ function handleSubmit() {
       </label>
 
       <div class="checkbox-grid">
-        <label><input type="checkbox" bind:checked={draft.promotion.autoPromoteTrusted} /> Auto-promote trusted</label>
-        <label><input type="checkbox" bind:checked={draft.promotion.createAssets} /> Create assets on promotion</label>
-        <label><input type="checkbox" bind:checked={draft.intakeRules.trustedOnly} /> Trusted contributors only</label>
+        <label><input type="checkbox" bind:checked={draft.promotion.autoPromoteTrusted} /> {t(M['content.contribution_type_manager.auto_promote_trusted'])}</label>
+        <label><input type="checkbox" bind:checked={draft.promotion.createAssets} /> {t(M['content.contribution_type_manager.create_assets_on_promotion'])}</label>
+        <label><input type="checkbox" bind:checked={draft.intakeRules.trustedOnly} /> {t(M['content.contribution_type_manager.trusted_contributors_only'])}</label>
       </div>
 
       <label>
-        Max files
+        {t(M['content.contribution_type_manager.max_files'])}
         <input type="number" min="0" bind:value={draft.intakeRules.maxFiles} />
       </label>
       <label>
-        Max total bytes
+        {t(M['content.contribution_type_manager.max_total_bytes'])}
         <input type="number" min="0" bind:value={draft.intakeRules.maxTotalBytes} />
       </label>
       <label>
-        Allowed MIME patterns
-        <input type="text" bind:value={draft.intakeRules.allowedMimePatterns} placeholder="image/*, video/mp4" />
+        {t(M['content.contribution_type_manager.allowed_mime_patterns'])}
+        <input type="text" bind:value={draft.intakeRules.allowedMimePatterns} placeholder={t(M['content.contribution_type_manager.allowed_mime_patterns_placeholder'])} />
       </label>
       <label>
-        Blocked MIME patterns
+        {t(M['content.contribution_type_manager.blocked_mime_patterns'])}
         <input type="text" bind:value={draft.intakeRules.blockedMimePatterns} />
       </label>
       <label>
-        Quarantine MIME patterns
+        {t(M['content.contribution_type_manager.quarantine_mime_patterns'])}
         <input type="text" bind:value={draft.intakeRules.quarantineMimePatterns} />
       </label>
       <label>
-        Blocked text patterns
+        {t(M['content.contribution_type_manager.blocked_text_patterns'])}
         <textarea bind:value={draft.intakeRules.blockedTextPatterns} rows="2"></textarea>
       </label>
       <label>
-        Quarantine text patterns
+        {t(M['content.contribution_type_manager.quarantine_text_patterns'])}
         <textarea bind:value={draft.intakeRules.quarantineTextPatterns} rows="2"></textarea>
       </label>
 
       <div class="actions">
-        <button type="submit">Save type</button>
+        <button type="submit">{t(M['content.contribution_type_manager.save_type'])}</button>
       </div>
     </form>
   </div>

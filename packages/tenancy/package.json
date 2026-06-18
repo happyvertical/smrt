@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-tenancy",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "description": "Production-ready multi-tenancy framework for SMRT with automatic tenant isolation and enforcement",
   "type": "module",
   "main": "./dist/index.js",
@@ -48,7 +48,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

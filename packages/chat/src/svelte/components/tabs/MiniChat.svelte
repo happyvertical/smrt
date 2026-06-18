@@ -4,8 +4,12 @@
  * Simplified message list + input in minimal space.
  * No thread panel, no reactions. Just messages and a send box.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatMessageData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Messages to display */
@@ -56,7 +60,7 @@ $effect(() => {
     style:max-height="{maxHeight}px"
     bind:this={messageContainer}
     role="log"
-    aria-label="Chat messages"
+    aria-label={t(M['chat.mini_chat.messages_label'])}
   >
     {#each messages as msg (msg.id)}
       {@const isOwn = msg.senderProfileId === currentProfileId}
@@ -76,7 +80,7 @@ $effect(() => {
 
     {#if messages.length === 0}
       <div class="mini-chat__empty">
-        <span class="mini-chat__empty-text">No messages yet</span>
+        <span class="mini-chat__empty-text">{t(M['chat.mini_chat.no_messages'])}</span>
       </div>
     {/if}
   </div>
@@ -85,16 +89,16 @@ $effect(() => {
     <input
       class="mini-chat__input"
       type="text"
-      placeholder="Type a message..."
+      placeholder={t(M['chat.mini_chat.placeholder'])}
       bind:value={inputValue}
       onkeydown={handleKeydown}
-      aria-label="Message input"
+      aria-label={t(M['chat.mini_chat.input_label'])}
     />
     <button
       class="mini-chat__send-btn"
       type="submit"
       disabled={!inputValue.trim()}
-      aria-label="Send message"
+      aria-label={t(M['chat.mini_chat.send'])}
     >
       <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
         <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />

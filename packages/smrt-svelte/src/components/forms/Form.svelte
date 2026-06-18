@@ -3,12 +3,16 @@ import type { Snippet } from 'svelte';
 import { onDestroy } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   type SMRTFormContext,
   setFormContext,
 } from '../../state/form-context.js';
 import type { LLMModelId, STTAdapterType } from './types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Form children */
@@ -497,9 +501,9 @@ function getFormData(): Record<string, unknown> {
   -->
   <div class="smrt-form__status" role="status" aria-live="polite">
     {#if isExtracting}
-      Extracting form fields…
+      {t(M['ui.form.extracting'])}
     {:else if isFormListening}
-      Listening. Say "done" to finish.
+      {t(M['ui.form.listening_status'])}
     {/if}
   </div>
 
@@ -561,7 +565,7 @@ function getFormData(): Record<string, unknown> {
               <rect x="6" y="4" width="4" height="16"/>
               <rect x="14" y="4" width="4" height="16"/>
             </svg>
-            Listening... (say "done" to finish)
+            {t(M['ui.form.listening_button'])}
           {:else}
             <svg
               width="18"
@@ -577,7 +581,7 @@ function getFormData(): Record<string, unknown> {
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
               <line x1="12" x2="12" y1="19" y2="22"/>
             </svg>
-            Speak all fields
+            {t(M['ui.form.speak_all_fields'])}
           {/if}
         </button>
       {/if}
@@ -595,7 +599,7 @@ function getFormData(): Record<string, unknown> {
 
 {#if isFormListening && spokenText}
   <div class="spoken-toaster">
-    <strong>You said:</strong> {spokenText}
+    <strong>{t(M['ui.form.you_said'])}</strong> {spokenText}
   </div>
 {/if}
 

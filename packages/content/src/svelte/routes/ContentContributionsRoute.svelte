@@ -1,4 +1,5 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onMount } from 'svelte';
 import {
   type ContentContributionData,
@@ -13,6 +14,7 @@ import ContentContributionInbox from '../components/ContentContributionInbox.sve
 import ContentContributionPortal from '../components/ContentContributionPortal.svelte';
 import ContentContributionTypeManager from '../components/ContentContributionTypeManager.svelte';
 import ContentContributorManager from '../components/ContentContributorManager.svelte';
+import { M } from '../i18n.routes.js';
 import {
   CONTENT_DEFAULT_ROUTE_NAVIGATION,
   CONTENT_ROUTE_IDS,
@@ -32,6 +34,7 @@ let {
 }: ContentContributionsRouteProps = $props();
 
 const client = $derived(createClient(apiBaseUrl));
+const { t } = useI18n();
 
 let contributionTypes = $state<ContentContributionTypeConfigStateData | null>(
   null,
@@ -300,15 +303,14 @@ async function handleDeleteContributor(data: Record<string, any>) {
   <header class="page-header">
     <div class="container">
       <div class="page-header__copy">
-        <div class="eyebrow">Content contributions</div>
-        <h1>Contribution operations</h1>
+        <div class="eyebrow">{t(M['content.contributions.eyebrow'])}</div>
+        <h1>{t(M['content.contributions.heading'])}</h1>
         <p>
-          Manage public intake, contributor records, moderation decisions, and
-          promotion into draft or review-ready content.
+          {t(M['content.contributions.intro'])}
         </p>
       </div>
 
-      <nav class="page-nav" aria-label="Content navigation">
+      <nav class="page-nav" aria-label={t(M['content.contributions.nav_aria'])}>
         {#each navigation as item (item.routeId)}
           <a
             href={item.href}
@@ -327,32 +329,30 @@ async function handleDeleteContributor(data: Record<string, any>) {
     <section class="callout">
       <div class="callout__header">
         <div>
-          <strong>Live contribution stack</strong>
+          <strong>{t(M['content.contributions.callout_title'])}</strong>
           <p>
-            Intake, moderation, and contributor controls against the generated
-            content APIs.
+            {t(M['content.contributions.callout_body'])}
           </p>
         </div>
         <span class="pill">Live</span>
       </div>
 
-      <div class="callout__chips" aria-label="Workspace scope">
-        <span>Held web intake</span>
-        <span>Contributor portal actions</span>
-        <span>Editorial inbox decisions</span>
-        <span>Type and trust overrides</span>
+      <div class="callout__chips" aria-label={t(M['content.contributions.chips_aria'])}>
+        <span>{t(M['content.contributions.chip_held_intake'])}</span>
+        <span>{t(M['content.contributions.chip_portal_actions'])}</span>
+        <span>{t(M['content.contributions.chip_inbox_decisions'])}</span>
+        <span>{t(M['content.contributions.chip_type_trust'])}</span>
       </div>
 
       <p class="callout__note">
-        Email ingestion remains available at
-        <code>/api/v1/contentcontributions/ingest-email</code> when message
-        records exist.
+        {t(M['content.contributions.email_note_prefix'])}
+        <code>/api/v1/contentcontributions/ingest-email</code> {t(M['content.contributions.email_note_suffix'])}
       </p>
     </section>
 
     {#if loading}
       <section class="panel">
-        <p>Loading contribution operations...</p>
+        <p>{t(M['content.contributions.loading'])}</p>
       </section>
     {:else}
       {#if error}
@@ -364,7 +364,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
 
       {#if notice}
         <section class="panel panel--notice">
-          <strong>Latest action</strong>
+          <strong>{t(M['content.contributions.latest_action'])}</strong>
           <p>{notice}</p>
         </section>
       {/if}
@@ -379,10 +379,9 @@ async function handleDeleteContributor(data: Record<string, any>) {
         <section class="panel">
           <div class="section-heading">
             <div>
-              <h2>Contributor submission</h2>
+              <h2>{t(M['content.contributions.submission_title'])}</h2>
               <p>
-                Submit a held contribution through the same generated action
-                your app would call.
+                {t(M['content.contributions.submission_body'])}
               </p>
             </div>
           </div>
@@ -397,10 +396,9 @@ async function handleDeleteContributor(data: Record<string, any>) {
         <section class="panel">
           <div class="section-heading">
             <div>
-              <h2>Contributor portal</h2>
+              <h2>{t(M['content.contributions.portal_title'])}</h2>
               <p>
-                Load a contributor by email to inspect their submissions and
-                withdraw eligible items.
+                {t(M['content.contributions.portal_body'])}
               </p>
             </div>
             <form
@@ -413,7 +411,7 @@ async function handleDeleteContributor(data: Record<string, any>) {
               <input
                 type="email"
                 bind:value={portalEmail}
-                placeholder="contributor@example.com"
+                placeholder={t(M['content.contributions.portal_email_placeholder'])}
               />
               <button
                 type="submit"
@@ -440,10 +438,9 @@ async function handleDeleteContributor(data: Record<string, any>) {
       <section class="panel">
         <div class="section-heading">
           <div>
-            <h2>Editorial inbox</h2>
+            <h2>{t(M['content.contributions.inbox_title'])}</h2>
             <p>
-              Review held or quarantined submissions and promote them into
-              draft or review content.
+              {t(M['content.contributions.inbox_body'])}
             </p>
           </div>
         </div>
@@ -464,9 +461,9 @@ async function handleDeleteContributor(data: Record<string, any>) {
         <section class="panel">
           <div class="section-heading">
             <div>
-              <h2>Contribution types</h2>
+              <h2>{t(M['content.contributions.types_title'])}</h2>
               <p>
-                Adjust intake rules, allowed channels, and promotion behavior.
+                {t(M['content.contributions.types_body'])}
               </p>
             </div>
             <span class="pill">{contributionTypes?.effective.length || 0}</span>
@@ -482,10 +479,9 @@ async function handleDeleteContributor(data: Record<string, any>) {
         <section class="panel">
           <div class="section-heading">
             <div>
-              <h2>Contributor trust</h2>
+              <h2>{t(M['content.contributions.trust_title'])}</h2>
               <p>
-                Set contributor trust levels for moderation and auto-promotion
-                paths.
+                {t(M['content.contributions.trust_body'])}
               </p>
             </div>
             <span class="pill">{contributors.length}</span>

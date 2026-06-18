@@ -74,14 +74,39 @@ does not touch are not blocked; bringing them to floor is Wave 3 remediation.
 add no testable surface, so a vitest-timeout tweak or a test-only PR isn't
 blocked by a package's pre-existing coverage debt.
 
-**Gate exemption — `smrt-svelte`.** The v8 line-coverage gate can't instrument
+A below-floor package is also **not blocked when the PR cannot have changed its
+covered surface** — specifically when every touched file is an in-place
+*modification* (no add/delete/rename) **and** none of those files appear in the
+coverage report. That covers a `.svelte`-only refactor in a package without
+component tests (a UI consolidation, S10 #1415): the change can't move the
+measured number, so the shortfall is pre-existing debt the PR didn't cause
+(Wave 3), not a regression to block on. Anything that *can* shift coverage still
+gates: a modified file that **is** measured (e.g. `content`'s component-tested
+`.svelte`), or any **added/deleted/renamed** source in a below-floor package.
+
+**Interim ratchet floor.** The hard floor with only the exemptions above would
+*freeze* a below-floor package the moment a PR legitimately adds new measured
+source to it (the modified-only exemption can't cover a new file) — even though
+bringing the whole package to its tier floor is Wave 3 work, not that PR's job.
+For such a package, `INTERIM_FLOORS` in `check-coverage.mjs` pins an interim
+floor at its **measured baseline** instead: regressions below the baseline still
+block, but the PR isn't forced to close the entire tier gap. This is the
+narrowest possible relaxation — it never lowers an at-floor package and is
+deleted the moment the package reaches its tier floor. The uplift itself is
+tracked as a per-package Wave 3 issue (core measured ~66% vs the T1 80% floor →
+interim floor 65%, uplift #1500).
+
+**Gate exemption — `smrt-svelte` and `vitest`.** The v8 line-coverage gate can't instrument
 `.svelte` files, so for a Svelte-heavy package the `.ts`-only measure is both
 unrepresentative and unstable (rendering a component in a test pulls its untested
 transitive `.ts` into the denominator, so adding tests can *lower* the number).
 `smrt-svelte` is therefore exempt from the line-coverage gate
 (`GATE_EXEMPT` in `check-coverage.mjs`); its real component-coverage bar is the
 deliverable of sweep S11 (#1416, UI test harness + axe). Remove the exemption
-when S11 lands.
+when S11 lands. `vitest` (`@happyvertical/smrt-vitest`) is exempt for a
+different reason: it is the shared test/build plugin whose uncovered surface is
+the Vite plugin lifecycle, exercised through every other package's test run
+rather than its own unit line-coverage.
 
 ## Dimensions
 
@@ -122,13 +147,8 @@ never run); every fixed bug has a regression test; clean `afterEach`/`afterAll`.
 **Tiers:** T1 ✅ (80%) · T2 ✅ (70%) · T3 ✅ (50%) · T4 ➖ (smoke test only)
 > Tier floors **refine** `TESTING_STANDARD.md`'s blanket 80% line-coverage minimum:
 > T1 retains 80%; T2/T3 are interim stabilization floors, ratcheted toward 80% as
-> packages are uplifted (Wave 3).
->
-> A package that measured below its tier floor when the CI gate (S6, #1411)
-> landed gets an **interim ratchet floor** at its measured baseline in
-> `scripts/check-coverage.mjs` (`INTERIM_FLOORS`), so regressions stay blocked
-> without freezing development; the uplift to the tier floor is tracked as its
-> own Wave 3 issue (core: #1500).
+> packages are uplifted (Wave 3). See [Coverage-floor policy](#coverage-floor-policy-hard-floor)
+> for how the gate handles packages still below their floor (interim ratchet floor).
 
 ### 5. SMRT pattern compliance
 **PASS when:** `@smrt()` usage is correct; same-package FKs use `@foreignKey`,

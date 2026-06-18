@@ -7,6 +7,11 @@
  * Useful for budget tracking, task completion, etc.
  */
 
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
+
+const { t } = useI18n();
+
 /** Props for ProgressBar component */
 export interface Props {
   /** Current value (0-100 or custom range) */
@@ -76,7 +81,7 @@ const displayLabel = $derived.by(() => {
     <div class="progress-header">
       <span class="progress-label">{displayLabel}</span>
       {#if value > max}
-        <span class="over-badge">Over by {Math.round(value - max).toLocaleString()}</span>
+        <span class="over-badge">{t(M['ui.progress_bar.over_by'], { amount: Math.round(value - max).toLocaleString() })}</span>
       {/if}
     </div>
   {/if}
@@ -84,6 +89,7 @@ const displayLabel = $derived.by(() => {
   <div
     class="progress-track"
     role="progressbar"
+    aria-label={label?.trim() ? label : t(M['ui.progress_bar.label'])}
     aria-valuenow={value}
     aria-valuemin={0}
     aria-valuemax={max}

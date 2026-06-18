@@ -2,7 +2,7 @@
  * Golden tests for the L3 gap primitives — batch 1 (Avatar, Chip, Skeleton).
  * Render + interaction + a11y, per the L4 harness pattern (#1422 / #1423).
  */
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { expectNoA11yViolations } from '../../../test-support/a11y';
@@ -25,6 +25,18 @@ describe('Avatar', () => {
   it('announces presence status', () => {
     render(Avatar, { props: { name: 'Ada', status: 'online' } });
     expect(screen.getByText('Online')).toBeInTheDocument();
+  });
+
+  it('falls back to initials when the image fails to load', async () => {
+    render(Avatar, {
+      props: { name: 'Ada Lovelace', src: 'https://x/broken.png' },
+    });
+    const img = screen.getByRole('img', { name: 'Ada Lovelace' });
+    expect(img.tagName).toBe('IMG');
+    await fireEvent.error(img);
+    expect(screen.getByRole('img', { name: 'Ada Lovelace' })).toHaveTextContent(
+      'AL',
+    );
   });
 
   it('is axe-clean', async () => {

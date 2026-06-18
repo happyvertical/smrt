@@ -3,9 +3,13 @@
  * ChatTabs - Bottom bar with expandable chat tabs (Facebook Messenger style)
  * Fixed to viewport bottom. Shows collapsed tab headers that expand upward on click.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatTabState } from '../../types.js';
 import ChatTab from './ChatTab.svelte';
 import ChatTabList from './ChatTabList.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Active chat tabs */
@@ -38,7 +42,7 @@ const expandedTabs = $derived(tabs.filter((t) => t.isExpanded));
 const collapsedTabs = $derived(tabs.filter((t) => !t.isExpanded));
 </script>
 
-<div class="chat-tabs" aria-label="Chat tabs">
+<div class="chat-tabs" aria-label={t(M['chat.chat_tabs.tabs_label'])}>
   <div class="chat-tabs__expanded">
     {#each expandedTabs as tab (tab.roomId)}
       <ChatTab

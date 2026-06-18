@@ -2,12 +2,16 @@
 /**
  * MessageFilters - Filter/sort controls bar
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.messages.js';
 import type {
   AccountData,
   MessageFilterState,
   MessageSort,
   MessageType,
 } from '../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   filters?: MessageFilterState;
@@ -71,15 +75,15 @@ const _hasActiveFilters = $derived(
 );
 </script>
 
-<div class="message-filters" role="search" aria-label="Message filters">
+<div class="message-filters" role="search" aria-label={t(M['messages.message_filters.filters_label'])}>
   <div class="search-row">
     <input
       type="search"
       class="search-input"
-      placeholder="Search messages..."
+      placeholder={t(M['messages.message_filters.search_placeholder'])}
       bind:value={searchValue}
       onkeydown={(e) => { if (e.key === 'Enter') handleSearch(); }}
-      aria-label="Search messages"
+      aria-label={t(M['messages.message_filters.search_label'])}
     />
     <button class="search-btn" type="button" onclick={handleSearch}>Search</button>
   </div>
@@ -89,9 +93,9 @@ const _hasActiveFilters = $derived(
       class="filter-select"
       value={filters.type || ''}
       onchange={(e) => updateFilter('type', (e.target as HTMLSelectElement).value)}
-      aria-label="Filter by type"
+      aria-label={t(M['messages.message_filters.filter_by_type'])}
     >
-      <option value="">All types</option>
+      <option value="">{t(M['messages.message_filters.all_types'])}</option>
       {#each availableTypes as type}
         <option value={type}>{type === 'email' ? 'Email' : type === 'tweet' ? 'Tweet' : type === 'slack' ? 'Slack' : type}</option>
       {/each}
@@ -102,9 +106,9 @@ const _hasActiveFilters = $derived(
         class="filter-select"
         value={filters.accountId || ''}
         onchange={(e) => updateFilter('accountId', (e.target as HTMLSelectElement).value)}
-        aria-label="Filter by account"
+        aria-label={t(M['messages.message_filters.filter_by_account'])}
       >
-        <option value="">All accounts</option>
+        <option value="">{t(M['messages.message_filters.all_accounts'])}</option>
         {#each accounts as account}
           <option value={account.id}>{account.name}</option>
         {/each}
@@ -118,11 +122,11 @@ const _hasActiveFilters = $derived(
         const val = (e.target as HTMLSelectElement).value;
         updateFilter('isRead', val === '' ? undefined : val === 'read');
       }}
-      aria-label="Filter by read status"
+      aria-label={t(M['messages.message_filters.filter_by_read_status'])}
     >
       <option value="">Read & unread</option>
-      <option value="unread">Unread only</option>
-      <option value="read">Read only</option>
+      <option value="unread">{t(M['messages.message_filters.unread_only'])}</option>
+      <option value="read">{t(M['messages.message_filters.read_only'])}</option>
     </select>
 
     <label class="filter-checkbox">
@@ -136,7 +140,7 @@ const _hasActiveFilters = $derived(
 
     {#if _hasActiveFilters}
       <button class="clear-btn" type="button" onclick={clearFilters}>
-        Clear filters
+        {t(M['messages.message_filters.clear_filters'])}
       </button>
     {/if}
   </div>

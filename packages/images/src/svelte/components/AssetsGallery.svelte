@@ -1,10 +1,14 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onMount } from 'svelte';
+import { M } from '../i18n.js';
 import type {
   ImageLike,
   ImagesGalleryClient,
   ImagesGalleryQuery,
 } from '../image-clients';
+
+const { t } = useI18n();
 
 let {
   apiBaseUrl = '/api/v1',
@@ -142,20 +146,20 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
 
 <div class="smrt-assets-gallery">
   <div class="gallery-header">
-    <h3>Asset Gallery</h3>
+    <h3>{t(M['images.assets_gallery.title'])}</h3>
     
     <div class="toolbar">
       <div class="search-box">
         <input 
           type="search" 
-          bind:value={searchQuery} 
-          placeholder="Search images (name, alt text)..." 
+          bind:value={searchQuery}
+          placeholder={t(M['images.assets_gallery.search_placeholder'])}
         />
       </div>
       
       <div class="filters">
         <select bind:value={orientationFilter}>
-          <option value="all">Any Orientation</option>
+          <option value="all">{t(M['images.assets_gallery.any_orientation'])}</option>
           <option value="landscape">Landscape</option>
           <option value="portrait">Portrait</option>
           <option value="square">Square</option>
@@ -163,14 +167,14 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
         
         <input 
           type="number" 
-          bind:value={minWidth} 
-          placeholder="Min Width (px)" 
+          bind:value={minWidth}
+          placeholder={t(M['images.assets_gallery.min_width_placeholder'])}
           class="size-input"
         />
         <input 
           type="number" 
-          bind:value={minHeight} 
-          placeholder="Min Height (px)" 
+          bind:value={minHeight}
+          placeholder={t(M['images.assets_gallery.min_height_placeholder'])}
           class="size-input"
         />
       </div>
@@ -215,7 +219,7 @@ function handleDragStart(event: DragEvent, image: ImageLike) {
     
     {#if images.length === 0 && !isLoading}
       <div class="empty-state">
-        <p>No images found matching your criteria.</p>
+        <p>{t(M['images.assets_gallery.no_images_found'])}</p>
       </div>
     {/if}
   </div>

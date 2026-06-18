@@ -1,5 +1,155 @@
 # @happyvertical/smrt-app-cli
 
+## 0.29.24
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.24
+
+## 0.29.23
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.23
+
+## 0.29.22
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.22
+
+## 0.29.21
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.21
+
+## 0.29.20
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.20
+
+## 0.29.19
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.19
+
+## 0.29.18
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.18
+
+## 0.29.17
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.17
+
+## 0.29.16
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.16
+
+## 0.29.15
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.15
+
+## 0.29.14
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.14
+
+## 0.29.13
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.13
+
+## 0.29.12
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.12
+
+## 0.29.11
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.11
+
+## 0.29.10
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.10
+
+## 0.29.9
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.9
+
+## 0.29.8
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.8
+
+## 0.29.7
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.7
+
+## 0.29.6
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.6
+
+## 0.29.5
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.5
+
+## 0.29.4
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.4
+
+## 0.29.3
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.3
+
+## 0.29.2
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.2
+
+## 0.29.1
+
+### Patch Changes
+
+- @happyvertical/smrt-users@0.29.1
+
+## 1.0.0
+
+### Patch Changes
+
+- @happyvertical/smrt-users@1.0.0
+
 ## 0.28.9
 
 ### Patch Changes

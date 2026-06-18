@@ -4,6 +4,11 @@
  * Appears when items are selected in a list
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
+
+const { t } = useI18n();
+
 /** Props for BulkActions component */
 export interface Props {
   selectedCount: number;
@@ -48,7 +53,7 @@ const visible = $derived(selectedCount > 0);
           onclick={onapprove}
           disabled={loading}
         >
-          Approve All
+          {t(M['projects.bulk_actions.approve_all'])}
         </button>
       {/if}
 
@@ -59,7 +64,7 @@ const visible = $derived(selectedCount > 0);
           onclick={onreject}
           disabled={loading}
         >
-          Reject All
+          {t(M['projects.bulk_actions.reject_all'])}
         </button>
       {/if}
 

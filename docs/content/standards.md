@@ -402,8 +402,34 @@ never disable the scan.
 - **`./playground` subpath**: exports the package's playground module for use by `smrt-playground`
 - **Svelte peer**: `svelte: ^5.18.0` (uniform). Drop the `^4.0.0 || ^5.0.0` range.
 - **Build script**: `vite build && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json`
-- **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks, e.g. `tsc --noEmit && svelte-check --tsconfig ./tsconfig.svelte.json`. SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript and `svelte-check` passes.
+- **Typecheck script**: packages with `./svelte` exports must run both TypeScript and Svelte checks via the a11y wrapper, e.g. `tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json` (see Accessibility enforcement below). SvelteKit-backed packages should run `svelte-kit sync` before both the TypeScript pass and the `svelte-check-a11y` wrapper pass.
 - **`tsconfig.svelte.json`**: extends `tsconfig.package-svelte.json`, includes `ambient.d.ts` and `*.svelte`
+
+### Accessibility enforcement (S12, #1417)
+
+Svelte's compiler a11y warnings are promoted to **errors** so a regression fails
+the existing (required) `typecheck` CI gate — no separate build job and no new
+required status check.
+
+- **Mechanism**: `scripts/svelte-check-a11y.mjs` is a drop-in `svelte-check`
+  wrapper that appends `--compiler-warnings` with an explicit comma-separated
+  list of every `a11y_*` code mapped to `:error` (svelte-check's native
+  warning-promotion flag — there is no wildcard syntax, so each code is listed).
+  Every UI package's `typecheck` calls the wrapper instead of bare
+  `svelte-check`, reusing each package's own tsconfig/codegen flow unchanged.
+- **Single source of truth**: the canonical `a11y_*` code list lives in the
+  wrapper. A Svelte upgrade that adds a NEW a11y code surfaces it as a plain
+  (non-gating) warning until it is added to that list.
+- **Escape hatch**: `SMRT_A11Y_ENFORCE=0` runs plain `svelte-check` without the
+  promotion (local debugging only; CI always enforces).
+- **Remediation pairs with the gate**: the deterministic gate catches what the
+  compiler can see; component-test `axe` assertions (S11 harness) cover the
+  rest. As of S12 the repo is a11y-clean repo-wide (0 compiler a11y warnings).
+- **Waiver — `products`**: its `typecheck` is `npm run generate && tsc` (no
+  `svelte-check`, a pre-existing #1370/#1375 carve-out for its mixed app-mode
+  entrypoints), so its `.svelte` files are **not** a11y-gated. They are a11y-clean
+  today (verified via standalone `svelte-check`); wiring `svelte-check` into the
+  `products` typecheck is tracked with the rest of #1370.
 
 ---
 

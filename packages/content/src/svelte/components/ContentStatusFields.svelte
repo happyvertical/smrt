@@ -1,4 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.editor.js';
+
+const { t } = useI18n();
+
 export interface Props {
   data: Record<string, any>;
   onChange?: (change: Record<string, unknown>) => void;
@@ -18,7 +23,7 @@ function updateField(key: string, value: unknown) {
       <option value="article">Article</option>
       <option value="document">Document</option>
       <option value="mirror">Mirror</option>
-      <option value="video-segment">Video Segment</option>
+      <option value="video-segment">{t(M['content.content_status_fields.video_segment'])}</option>
     </select>
   </label>
   <label>

@@ -1,13 +1,17 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
+
 interface Props {
   message?: string;
 }
 
 const { message = 'Hello Federation!' }: Props = $props();
+const { t } = useI18n();
 </script>
 
 <div class="test-component">
-  <h3>Test Component</h3>
+  <h3>{t(M['products.test_component.title'])}</h3>
   <p>{message}</p>
 </div>
 

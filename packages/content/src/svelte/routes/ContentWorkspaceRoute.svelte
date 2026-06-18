@@ -1,10 +1,12 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { onMount } from 'svelte';
 import type { ContentData } from '../../mock-smrt-client.js';
 import { createClient } from '../../mock-smrt-client.js';
 import ContentEditor from '../components/ContentEditor.svelte';
 import ContentList from '../components/ContentList.svelte';
 import GovernedContentEditor from '../components/GovernedContentEditor.svelte';
+import { M } from '../i18n.routes.js';
 import {
   buildPublishedArticlePath,
   CONTENT_DEFAULT_ROUTE_NAVIGATION,
@@ -39,6 +41,7 @@ const client = $derived(createClient(apiBaseUrl));
 const governanceHref = $derived(
   getContentRouteHref(navigation, CONTENT_ROUTE_IDS.governance),
 );
+const { t } = useI18n();
 
 let contents = $state<ContentData[]>([]);
 let loading = $state(true);
@@ -152,15 +155,14 @@ function closeForms() {
 <div class:workspace-shell={true} class:workspace-shell--embedded={embedded}>
   <header class="workspace-header">
     <div class="workspace-header__copy">
-      <div class="eyebrow">Content operations</div>
-      <h1>Content workspace</h1>
+      <div class="eyebrow">{t(M['content.workspace.eyebrow'])}</div>
+      <h1>{t(M['content.workspace.heading'])}</h1>
       <p>
-        Search, edit, and publish the tenant's articles, agendas, documents,
-        and mirrored records from one workspace.
+        {t(M['content.workspace.intro'])}
       </p>
     </div>
 
-    <nav class="workspace-nav" aria-label="Content navigation">
+    <nav class="workspace-nav" aria-label={t(M['content.workspace.nav_aria'])}>
       {#each navigation as item (item.routeId)}
         <a
           href={item.href}
@@ -178,22 +180,22 @@ function closeForms() {
     <section class="callout-grid">
       <article class="callout-card">
         <strong>{stats.total}</strong>
-        <span>Records in the library</span>
+        <span>{t(M['content.workspace.stat_total'])}</span>
       </article>
       <article class="callout-card">
         <strong>{stats.published}</strong>
-        <span>Published right now</span>
+        <span>{t(M['content.workspace.stat_published'])}</span>
       </article>
     </section>
 
     {#if loading}
       <section class="panel">
-        <p>Loading contents...</p>
+        <p>{t(M['content.workspace.loading'])}</p>
       </section>
     {:else if error}
       <section class="panel panel--error">
         <p><strong>Error:</strong> {error}</p>
-        <button type="button" onclick={loadContents}>Try again</button>
+        <button type="button" onclick={loadContents}>{t(M['content.workspace.try_again'])}</button>
       </section>
     {:else if showAddForm || editingContent}
       <section class="panel">
@@ -233,10 +235,10 @@ function closeForms() {
                 class="secondary-action"
                 onclick={handleAddGovernedContent}
               >
-                Create governed article
+                {t(M['content.workspace.create_governed'])}
               </button>
               <a class="inline-link" href={governanceHref}>
-                Review governance settings
+                {t(M['content.workspace.review_governance'])}
               </a>
             </div>
           {/snippet}

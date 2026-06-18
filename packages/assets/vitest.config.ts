@@ -16,7 +16,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/*.{test,spec}.ts'],
-    setupFiles: [smrtVitestSetupPath],
+    // Manifest setup + the shared Svelte component-test harness (S11 #1416). The
+    // harness only activates under a DOM, so node-environment tests are
+    // unaffected; component tests opt in with `// @vitest-environment jsdom`.
+    setupFiles: [smrtVitestSetupPath, '@happyvertical/smrt-vitest/svelte-setup'],
     testTimeout: 30000,
     hookTimeout: 30000,
     fileParallelism: false,

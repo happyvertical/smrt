@@ -7,7 +7,16 @@
  * opens with the file pre-loaded.
  */
 
-import type { Snippet } from 'svelte';
+// Import primitives from subpaths (not the root barrel) so downstream
+// consumers of `@happyvertical/smrt-assets/svelte` don't have to resolve the
+// entire smrt-svelte surface — including optional peers like smrt-agents /
+// smrt-users — just to compile this modal.
+import { Modal } from '@happyvertical/smrt-svelte/feedback';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { Button } from '@happyvertical/smrt-svelte/ui';
+import { M } from './i18n.js';
+
+const { t } = useI18n();
 
 export interface CreateAssetModalProps {
   /** Whether the modal is open */
@@ -32,23 +41,12 @@ let {
   onclose,
 }: CreateAssetModalProps = $props();
 
-let dialogEl: HTMLDialogElement | null = $state(null);
 let file = $state<File | null>(null);
 let name = $state('');
 let description = $state('');
 let altText = $state('');
 let dragOver = $state(false);
 let previewUrl: string | null = $state(null);
-
-// Sync open state with dialog
-$effect(() => {
-  if (!dialogEl) return;
-  if (open && !dialogEl.open) {
-    dialogEl.showModal();
-  } else if (!open && dialogEl.open) {
-    dialogEl.close();
-  }
-});
 
 // Sync initial file
 $effect(() => {
@@ -120,18 +118,6 @@ function resetForm() {
   altText = '';
 }
 
-function handleCancel(e: Event) {
-  e.preventDefault();
-  handleClose();
-}
-
-function handleKeydown(e: KeyboardEvent) {
-  if (e.key === 'Escape') {
-    e.preventDefault();
-    handleClose();
-  }
-}
-
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -142,33 +128,7 @@ const isImage = $derived(file?.type?.startsWith('image/') ?? false);
 const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<dialog
-  bind:this={dialogEl}
-  class="create-modal"
-  oncancel={handleCancel}
-  onkeydown={handleKeydown}
-  onclick={(e) => { if (e.target === dialogEl) handleClose(); }}
-  aria-label="Upload asset"
->
-  <div
-    class="create-modal__container"
-    role="presentation"
-    tabindex="-1"
-    onclick={(e) => e.stopPropagation()}
-    onkeydown={(e) => e.stopPropagation()}
-  >
-    <header class="create-modal__header">
-      <h2 class="create-modal__title">Upload Asset</h2>
-      <button type="button" class="create-modal__close" onclick={handleClose} aria-label="Close">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="18" y1="6" x2="6" y2="18"></line>
-          <line x1="6" y1="6" x2="18" y2="18"></line>
-        </svg>
-      </button>
-    </header>
-
-    <div class="create-modal__body">
+<Modal open={open} title={t(M['assets.create_asset_modal.upload_asset'])} onClose={handleClose} size="md">
       {#if !file}
         <!-- Dropzone -->
         <div
@@ -187,15 +147,15 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
             <polyline points="17 8 12 3 7 8"></polyline>
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
-          <p class="dropzone__text">Drag & drop a file here, or click to browse</p>
-          <p class="dropzone__hint">You can also paste an image from your clipboard</p>
+          <p class="dropzone__text">{t(M['assets.create_asset_modal.dropzone_text'])}</p>
+          <p class="dropzone__hint">{t(M['assets.create_asset_modal.dropzone_hint'])}</p>
           <input id="file-input" type="file" class="dropzone__input" onchange={handleFileSelect} />
         </div>
       {:else}
         <!-- File preview + metadata form -->
         <div class="file-preview">
           {#if previewUrl}
-            <img src={previewUrl} alt="Preview" class="file-preview__image" />
+            <img src={previewUrl} alt={t(M['assets.create_asset_modal.preview_alt'])} class="file-preview__image" />
           {:else}
             <div class="file-preview__icon">📎</div>
           {/if}
@@ -203,10 +163,10 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
             <span class="file-preview__filename">{file.name}</span>
             <span class="file-preview__size">{formatSize(file.size)}</span>
             {#if isLargeFile}
-              <span class="file-preview__warning">⚠️ Large file — may slow page loads</span>
+              <span class="file-preview__warning">{t(M['assets.create_asset_modal.large_file_warning'])}</span>
             {/if}
           </div>
-          <button type="button" class="file-preview__remove" onclick={() => { file = null; }} aria-label="Remove file">
+          <button type="button" class="file-preview__remove" onclick={() => { file = null; }} aria-label={t(M['assets.create_asset_modal.remove_file'])}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
@@ -214,122 +174,37 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
         <div class="form-fields">
           <div class="form-field">
             <label for="asset-name" class="form-label">Name</label>
-            <input id="asset-name" type="text" class="form-input" bind:value={name} placeholder="Asset name" />
+            <input id="asset-name" type="text" class="form-input" bind:value={name} placeholder={t(M['assets.create_asset_modal.name_placeholder'])} />
           </div>
 
           <div class="form-field">
             <label for="asset-desc" class="form-label">Description</label>
-            <textarea id="asset-desc" class="form-textarea" bind:value={description} placeholder="Optional description" rows="2"></textarea>
+            <textarea id="asset-desc" class="form-textarea" bind:value={description} placeholder={t(M['assets.create_asset_modal.description_placeholder'])} rows="2"></textarea>
           </div>
 
           {#if isImage}
             <div class="form-field">
               <label for="asset-alt" class="form-label">
-                Alt Text
+                {t(M['assets.create_asset_modal.alt_text'])}
                 {#if !altText}
-                  <span class="form-label__warning">⚠️ Recommended for accessibility</span>
+                  <span class="form-label__warning">{t(M['assets.create_asset_modal.alt_text_recommended_warning'])}</span>
                 {/if}
               </label>
-              <input id="asset-alt" type="text" class="form-input" bind:value={altText} placeholder="Describe this image for screen readers" />
+              <input id="asset-alt" type="text" class="form-input" bind:value={altText} placeholder={t(M['assets.create_asset_modal.alt_text_placeholder'])} />
             </div>
           {/if}
         </div>
       {/if}
-    </div>
 
-    <footer class="create-modal__footer">
-      <button type="button" class="footer-btn footer-btn--cancel" onclick={handleClose}>Cancel</button>
-      <button type="button" class="footer-btn footer-btn--create" onclick={handleSubmit} disabled={!file}>
-        Upload
-      </button>
-    </footer>
-  </div>
-</dialog>
+  {#snippet footer()}
+    <Button variant="ghost" size="sm" onclick={handleClose}>Cancel</Button>
+    <Button variant="primary" size="sm" onclick={handleSubmit} disabled={!file}>
+      Upload
+    </Button>
+  {/snippet}
+</Modal>
 
 <style>
-  .create-modal {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    max-width: 100%;
-    max-height: 100%;
-    margin: 0;
-    padding: 0;
-    border: none;
-    background: transparent;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .create-modal::backdrop {
-    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.5));
-    backdrop-filter: blur(2px);
-  }
-
-  .create-modal:not([open]) {
-    display: none;
-  }
-
-  .create-modal__container {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    max-width: 32rem;
-    max-height: calc(100vh - 2rem);
-    background: var(--smrt-color-surface, #ffffff);
-    border-radius: var(--smrt-radius-large, 0.75rem);
-    box-shadow: var(--smrt-elevation-3);
-    overflow: hidden;
-    animation: modalEnter 300ms cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  @keyframes modalEnter {
-    from { opacity: 0; transform: scale(0.9) translateY(-16px); }
-    to { opacity: 1; transform: scale(1) translateY(0); }
-  }
-
-  .create-modal__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-  }
-
-  .create-modal__title {
-    margin: 0;
-    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #111827);
-  }
-
-  .create-modal__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: none;
-    background: transparent;
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    cursor: pointer;
-    border-radius: var(--smrt-radius-full, 9999px);
-  }
-
-  .create-modal__close:hover {
-    background: var(--smrt-color-surface-container-highest, #e0e2ec);
-  }
-
-  .create-modal__body {
-    flex: 1;
-    padding: var(--smrt-spacing-5, 1.25rem);
-    overflow-y: auto;
-  }
-
   /* Dropzone */
   .dropzone {
     display: flex;
@@ -495,53 +370,4 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
     min-height: 60px;
   }
 
-  /* Footer */
-  .create-modal__footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--smrt-spacing-2, 0.5rem);
-    padding: var(--smrt-spacing-4, 1rem) var(--smrt-spacing-5, 1.25rem);
-    border-top: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-  }
-
-  .footer-btn {
-    height: 36px;
-    padding: 0 var(--smrt-spacing-4, 1rem);
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-medium, 0.5rem);
-    cursor: pointer;
-    border: none;
-    transition: all 150ms ease;
-  }
-
-  .footer-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .footer-btn--cancel {
-    background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .footer-btn--cancel:hover {
-    background: var(--smrt-color-surface-container, #f3f4f6);
-  }
-
-  .footer-btn--create {
-    background: var(--smrt-color-primary, #005ac1);
-    color: var(--smrt-color-on-primary, #ffffff);
-  }
-
-  .footer-btn--create:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-2);
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .create-modal__container {
-      animation: none;
-    }
-  }
 </style>

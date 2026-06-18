@@ -1,5 +1,9 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { CategoryData } from '../types';
+
+const { t } = useI18n();
 
 interface Props {
   readonly?: boolean;
@@ -14,18 +18,18 @@ const _loading = $state(false);
 
 <div class="category-manager">
   <div class="manager-header">
-    <h2>Category Manager</h2>
-    <p>Manage product categories</p>
+    <h2>{t(M['products.category_manager.title'])}</h2>
+    <p>{t(M['products.category_manager.subtitle'])}</p>
   </div>
-  
+
   <div class="placeholder-content">
-    <p>Category management feature coming soon...</p>
-    <p>This will include:</p>
+    <p>{t(M['products.category_manager.coming_soon'])}</p>
+    <p>{t(M['products.category_manager.will_include'])}</p>
     <ul>
-      <li>Create and edit categories</li>
-      <li>Organize category hierarchy</li>
-      <li>Manage category permissions</li>
-      <li>Category analytics</li>
+      <li>{t(M['products.category_manager.create_edit'])}</li>
+      <li>{t(M['products.category_manager.organize_hierarchy'])}</li>
+      <li>{t(M['products.category_manager.manage_permissions'])}</li>
+      <li>{t(M['products.category_manager.analytics'])}</li>
     </ul>
   </div>
 </div>

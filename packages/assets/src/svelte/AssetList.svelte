@@ -6,12 +6,16 @@
  * type badges, and metadata columns.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import type {
   AssetListProps,
   AssetSort,
   AssetSortField,
   PersistedAsset,
 } from './types';
+
+const { t } = useI18n();
 
 interface ListAsset extends PersistedAsset {
   alt?: string;
@@ -111,7 +115,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             checked={allSelected}
             use:setIndeterminate={someSelected}
             onchange={toggleSelectAll}
-            aria-label="Select all"
+            aria-label={t(M['assets.asset_list.select_all'])}
           />
         </th>
         <th class="col-thumb">Preview</th>
@@ -135,7 +139,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           <td colspan="6" class="cell-empty">
             <div class="asset-list__loading">
               <span class="spinner"></span>
-              <span>Loading assets...</span>
+              <span>{t(M['assets.asset_list.loading'])}</span>
             </div>
           </td>
         </tr>
@@ -153,8 +157,8 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
                   <line x1="3" y1="18" x2="3.01" y2="18"></line>
                 </svg>
               </div>
-              <p class="empty-state__title">No assets found</p>
-              <p class="empty-state__desc">Upload an asset or change your search filters to see results.</p>
+              <p class="empty-state__title">{t(M['assets.asset_list.no_assets_found'])}</p>
+              <p class="empty-state__desc">{t(M['assets.asset_list.empty_hint'])}</p>
             </div>
           </td>
         </tr>
@@ -164,15 +168,6 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           <tr
             class="list-table__row"
             class:list-table__row--selected={selected}
-            onclick={() => onAssetClick(asset)}
-            role="button"
-            tabindex="0"
-            onkeydown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onAssetClick(asset);
-              }
-            }}
           >
             <td class="col-checkbox">
               <input
@@ -180,7 +175,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
                 checked={selected}
                 onchange={(e) => toggleSelection(asset, e)}
                 onclick={(e) => e.stopPropagation()}
-                aria-label="Select {asset.name}"
+                aria-label={t(M['assets.asset_list.select_named'], { name: asset.name })}
               />
             </td>
             <td class="col-thumb">
@@ -191,7 +186,16 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
               {/if}
             </td>
             <td class="col-name">
-              <span class="row-name">{asset.name || 'Untitled'}</span>
+              <!-- The name is the row's open action (a button, not a
+                   role="button" on the <tr> nesting the checkbox → avoids axe
+                   nested-interactive). -->
+              <button
+                type="button"
+                class="row-name"
+                onclick={() => onAssetClick(asset)}
+              >
+                {asset.name || 'Untitled'}
+              </button>
               {#if asset.description}
                 <span class="row-desc">{asset.description}</span>
               {/if}
@@ -248,7 +252,6 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
 
   .list-table__row {
     border-bottom: 1px solid var(--smrt-color-outline-variant, #e5e7eb);
-    cursor: pointer;
     transition: background 150ms ease;
   }
 
@@ -312,6 +315,26 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
     overflow: hidden;
     text-overflow: ellipsis;
     max-width: 250px;
+    /* Reset the open-action button so it renders as the row's name text. */
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .row-name:hover {
+    text-decoration: underline;
+  }
+
+  .row-name:focus-visible {
+    outline: 2px solid var(--smrt-color-primary, #005ac1);
+    outline-offset: 2px;
+    border-radius: var(--smrt-radius-small, 0.25rem);
   }
 
   .row-desc {

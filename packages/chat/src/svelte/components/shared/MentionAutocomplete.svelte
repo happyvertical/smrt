@@ -4,7 +4,11 @@
  * Floating dropdown positioned near cursor. Shows matching profile names
  * with optional avatars. Keyboard navigable.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
 import Avatar from './Avatar.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Current search query (text after @) */
@@ -72,7 +76,7 @@ function highlightMatch(
   <div
     class="mention-autocomplete"
     role="listbox"
-    aria-label="Mention suggestions"
+    aria-label={t(M['chat.mention_autocomplete.suggestions'])}
   >
     {#each suggestions as suggestion, i (suggestion.id)}
       {@const parts = highlightMatch(suggestion.name, query)}

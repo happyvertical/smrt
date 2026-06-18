@@ -25,6 +25,10 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.ts'],
     setupFiles: [smrtVitestSetupPath],
     testTimeout: 30000,
+    // The smrt-vitest setup's async afterAll dynamically loads smrt-core; under
+    // loaded CI runners that exceeds the default 10s hookTimeout and times out
+    // the suite even though all test bodies pass (the ContentEditor flake).
+    hookTimeout: 30000,
     fileParallelism: false,
     pool: 'forks',
     singleFork: true,

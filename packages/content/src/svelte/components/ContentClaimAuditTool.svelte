@@ -1,10 +1,14 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type {
   FactAuditClaimData,
   FactAuditStateData,
 } from '../../mock-smrt-client';
 import { createClient } from '../../mock-smrt-client';
 import { normalizeApiBaseUrl } from '../api';
+import { M } from '../i18n.tools.js';
+
+const { t } = useI18n();
 
 export interface Props {
   apiBaseUrl?: string;
@@ -183,11 +187,11 @@ async function recheckFactClaims(claimIds: string[]) {
   {/if}
 
   {#if !savedContentId}
-    <p class="empty-copy">Save this content to audit article claims against evidence.</p>
+    <p class="empty-copy">{t(M['content.claim_audit_tool.save_to_audit_claims'])}</p>
   {:else}
     <div class="claim-audit-toolbar">
       <div class="claim-audit-counts">
-        <span><strong>{factAudit?.counts.total ?? 0}</strong> article claims</span>
+        <span><strong>{factAudit?.counts.total ?? 0}</strong> {t(M['content.claim_audit_tool.article_claims'])}</span>
         <span><strong>{factAudit?.counts.supported ?? 0}</strong> supported</span>
         <span><strong>{factAudit?.counts.unsupported ?? 0}</strong> unsupported</span>
         <span><strong>{factAudit?.counts.contradicted ?? 0}</strong> contradicted</span>
@@ -211,7 +215,7 @@ async function recheckFactClaims(claimIds: string[]) {
       </button>
     </div>
     <p class="empty-copy">
-      Article claims are statements made by this draft. A supported claim has linked source evidence from the references; unsupported means the audit has not found that supporting evidence yet.
+      {t(M['content.claim_audit_tool.article_claims_help'])}
     </p>
 
     {#if actionableWarnings.length}
@@ -223,7 +227,7 @@ async function recheckFactClaims(claimIds: string[]) {
     {/if}
 
     {#if !factAudit || factAudit.counts.total === 0}
-      <p class="empty-copy">No article claim audit has been generated yet.</p>
+      <p class="empty-copy">{t(M['content.claim_audit_tool.no_claim_audit_generated'])}</p>
     {:else}
       {#each [
         ['contradicted', 'Contradicted'],
@@ -235,7 +239,7 @@ async function recheckFactClaims(claimIds: string[]) {
         {@const groupClaims = factAuditGroups[groupKey]}
         {#if groupClaims.length > 0}
           <div class="tool-list">
-            <div class="section-caption">{group[1]} article claims</div>
+            <div class="section-caption">{t(M['content.claim_audit_tool.group_article_claims'], { group: group[1] })}</div>
             {#each groupClaims as claim (claim.id ?? claim.claimQuote ?? claim.fact.textRefined)}
               <details class="tool-card">
                 <summary>
@@ -263,21 +267,21 @@ async function recheckFactClaims(claimIds: string[]) {
                         if (claimId) void recheckFactClaims([claimId]);
                       }}
                     >
-                      Recheck support
+                      {t(M['content.claim_audit_tool.recheck_support'])}
                     </button>
                   </div>
                   {#if claim.claimQuote}
-                    <p><strong>Article claim:</strong> {claim.claimQuote}</p>
+                    <p><strong>{t(M['content.claim_audit_tool.article_claim_label'])}</strong> {claim.claimQuote}</p>
                   {/if}
                   {#if claim.rationale}
-                    <p><strong>Support assessment:</strong> {claim.rationale}</p>
+                    <p><strong>{t(M['content.claim_audit_tool.support_assessment_label'])}</strong> {claim.rationale}</p>
                   {/if}
                   {#if claim.matchedFacts?.length}
                     <div class="tool-list">
-                      <div class="section-caption">Based on source evidence</div>
+                      <div class="section-caption">{t(M['content.claim_audit_tool.based_on_source_evidence'])}</div>
                       {#each claim.matchedFacts as matched (matched.fact.id ?? matched.fact.textRefined)}
                         <div class="tool-card nested">
-                          <strong>Source claim: {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
+                          <strong>{t(M['content.claim_audit_tool.source_claim_label'])} {matched.fact.textRefined || matched.fact.textRaw || matched.fact.id}</strong>
                           {#each matched.evidence ?? [] as evidence (evidence.id ?? evidence.evidenceKey)}
                             <span>
                               {evidence.sourceTitle || 'Source'}
@@ -293,7 +297,7 @@ async function recheckFactClaims(claimIds: string[]) {
                       {/each}
                     </div>
                   {:else}
-                    <p><strong>Based on:</strong> No supporting source evidence linked.</p>
+                    <p><strong>{t(M['content.claim_audit_tool.based_on_label'])}</strong> {t(M['content.claim_audit_tool.no_supporting_source_evidence'])}</p>
                   {/if}
                 </div>
               </details>

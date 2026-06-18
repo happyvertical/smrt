@@ -6,7 +6,12 @@
  * default actions (delete), and any custom actions passed by the consumer.
  */
 
+import { ConfirmDialog } from '@happyvertical/smrt-svelte/feedback';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import type { ActionBarProps } from './types';
+
+const { t } = useI18n();
 
 let {
   selectedAssets,
@@ -91,35 +96,23 @@ const count = $derived(selectedAssets.length);
     </div>
   </div>
 
-  <!-- Delete confirmation inline dialog -->
-  {#if showDeleteConfirm}
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <div
-      class="confirm-overlay"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Confirm delete"
-      tabindex="-1"
-      onclick={(e) => { if (e.target === e.currentTarget) cancelDelete(); }}
-      onkeydown={(e) => { if (e.key === 'Escape') cancelDelete(); }}
-    >
-      <div class="confirm-card">
-        <h3 class="confirm-title">Delete {count} asset{count > 1 ? 's' : ''}?</h3>
-        <p class="confirm-message">This action cannot be undone. The asset{count > 1 ? 's' : ''} and {count > 1 ? 'their' : 'its'} file data will be permanently removed.</p>
-        <div class="confirm-actions">
-          <button type="button" class="confirm-btn confirm-btn--cancel" onclick={cancelDelete} disabled={isDeleting}>
-            Cancel
-          </button>
-          <button type="button" class="confirm-btn confirm-btn--delete" onclick={confirmDelete} disabled={isDeleting}>
-            {#if isDeleting}
-              <span class="spinner"></span>
-            {/if}
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
-  {/if}
+  <!-- Delete confirmation — library ConfirmDialog (S10 #1415) -->
+  <ConfirmDialog
+    open={showDeleteConfirm}
+    title={t(M['assets.action_bar.delete_confirm_title'], {
+      count,
+      plural: count > 1 ? 's' : '',
+    })}
+    message={count > 1
+      ? t(M['assets.action_bar.delete_confirm_message_other'])
+      : t(M['assets.action_bar.delete_confirm_message_one'])}
+    confirmLabel={t(M['assets.action_bar.delete'])}
+    cancelLabel={t(M['assets.action_bar.cancel'])}
+    destructive
+    loading={isDeleting}
+    onconfirm={confirmDelete}
+    oncancel={cancelDelete}
+  />
 {/if}
 
 <style>
@@ -202,111 +195,8 @@ const count = $derived(selectedAssets.length);
     background: var(--smrt-color-error-container, #fef2f2);
   }
 
-  /* Confirm overlay */
-  .confirm-overlay {
-    position: fixed;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--smrt-color-scrim, rgba(0, 0, 0, 0.4));
-    backdrop-filter: blur(2px);
-    z-index: var(--smrt-z-index-dialog, 1000);
-    padding: 1rem;
-  }
-
-  .confirm-card {
-    background: var(--smrt-color-surface-container-high, #ffffff);
-    border-radius: var(--smrt-radius-3xl, 32px);
-    padding: var(--smrt-spacing-6, 24px);
-    max-width: 400px;
-    width: 100%;
-    box-shadow: var(--smrt-elevation-3);
-    animation: dialogEnter 300ms cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  @keyframes dialogEnter {
-    from { opacity: 0; transform: translateY(20px) scale(0.9); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
-  }
-
-  .confirm-title {
-    margin: 0 0 var(--smrt-spacing-4, 16px);
-    font-size: var(--smrt-typography-title-medium-size, 1.125rem);
-    font-weight: var(--smrt-typography-weight-semibold, 600);
-    color: var(--smrt-color-on-surface, #111827);
-  }
-
-  .confirm-message {
-    margin: 0 0 var(--smrt-spacing-6, 24px);
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    color: var(--smrt-color-on-surface-variant, #6b7280);
-    line-height: 1.5;
-  }
-
-  .confirm-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: var(--smrt-spacing-2, 8px);
-  }
-
-  .confirm-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--smrt-spacing-2, 8px);
-    height: 40px;
-    padding: 0 var(--smrt-spacing-6, 24px);
-    font-family: inherit;
-    font-size: var(--smrt-typography-body-medium-size, 0.875rem);
-    font-weight: var(--smrt-typography-weight-medium, 500);
-    border-radius: var(--smrt-radius-2xl, 24px);
-    cursor: pointer;
-    border: none;
-    transition: all 200ms ease;
-  }
-
-  .confirm-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .confirm-btn--cancel {
-    background: transparent;
-    color: var(--smrt-color-primary, #005ac1);
-  }
-
-  .confirm-btn--cancel:hover:not(:disabled) {
-    background: var(--smrt-color-surface-container-highest, #e0e2ec);
-  }
-
-  .confirm-btn--delete {
-    background: var(--smrt-color-error, #dc2626);
-    color: var(--smrt-color-on-error, #ffffff);
-    box-shadow: var(--smrt-elevation-1);
-  }
-
-  .confirm-btn--delete:hover:not(:disabled) {
-    box-shadow: var(--smrt-elevation-2);
-  }
-
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid transparent;
-    border-top-color: currentColor;
-    border-radius: var(--smrt-radius-full, 9999px);
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
   @media (prefers-reduced-motion: reduce) {
-    .action-bar, .confirm-card {
-      animation: none;
-    }
-    .spinner {
+    .action-bar {
       animation: none;
     }
   }

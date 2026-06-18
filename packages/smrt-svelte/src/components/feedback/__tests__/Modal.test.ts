@@ -49,11 +49,37 @@ describe('Modal', () => {
     ).toBeNull();
   });
 
+  it('defaults to centered placement', () => {
+    render(Modal, { props: { open: true, title: 'X' } });
+    expect(screen.getByRole('dialog', { hidden: true })).toHaveClass(
+      'modal--center',
+    );
+  });
+
+  it('applies the end (drawer) placement variant', () => {
+    render(Modal, { props: { open: true, title: 'X', placement: 'end' } });
+    const dialog = screen.getByRole('dialog', { hidden: true });
+    expect(dialog).toHaveClass('modal--end');
+    expect(dialog).not.toHaveClass('modal--center');
+  });
+
   it('is axe-clean', async () => {
     const { container } = render(Modal, {
       props: {
         open: true,
         title: 'Accessible dialog',
+        children: bodySnippet('content'),
+      },
+    });
+    await expectNoA11yViolations(container);
+  });
+
+  it('is axe-clean with end placement', async () => {
+    const { container } = render(Modal, {
+      props: {
+        open: true,
+        title: 'Detail drawer',
+        placement: 'end',
         children: bodySnippet('content'),
       },
     });

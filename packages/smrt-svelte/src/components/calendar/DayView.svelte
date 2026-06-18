@@ -4,7 +4,11 @@
  * Full event list for a specific day with optional weather
  */
 
+import { M } from '../../i18n/strings.ui.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import type { DayEventDetail, DayForecast } from '../../types-generic';
+
+const { t } = useI18n();
 
 export interface Props {
   date: Date;
@@ -94,7 +98,7 @@ function getTypeLabel(type: string): string {
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      Back to Calendar
+      {t(M['ui.day_view.back_to_calendar'])}
     </a>
     <h1 class="date-title">{formattedDate}</h1>
 
@@ -113,7 +117,7 @@ function getTypeLabel(type: string): string {
     {#if !events || events.length === 0}
       <div class="empty-state">
         <span class="empty-icon">{'\u{1F4C5}'}</span>
-        <p class="empty-text">No events scheduled for this day</p>
+        <p class="empty-text">{t(M['ui.day_view.no_events'])}</p>
       </div>
     {:else if groupedEvents()}
       {#each Object.entries(groupedEvents()!) as [type, typeEvents]}

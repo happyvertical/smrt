@@ -2,11 +2,15 @@
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
+import { M } from '../../i18n/strings.forms.js';
+import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
 import { importOptional } from '../../utils/import-optional.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Field name */
@@ -320,7 +324,7 @@ function handleNativeChange(e: Event) {
         onmouseleave={handleMouseLeave}
         ontouchstart={handleMicTouchStart}
         ontouchend={handleTouchEnd}
-        aria-label="Hold to speak"
+        aria-label={t(M['ui.date_time_input.mic_aria_label'])}
       >
         {#if isParsing}
           <svg
@@ -372,7 +376,7 @@ function handleNativeChange(e: Event) {
   {#if isHolding}
     <div class="listening-indicator">Recording...</div>
   {:else if isParsing}
-    <div class="parsing-indicator">Parsing date...</div>
+    <div class="parsing-indicator">{t(M['ui.date_time_input.parsing'])}</div>
   {:else if parseError}
     <div id={`${name}-error`} class="error-indicator" role="alert">{parseError}</div>
   {/if}

@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-social",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "type": "module",
   "description": "Social media account management for multi-platform publishing in the SMRT ecosystem",
   "author": "HappyVertical",
@@ -25,9 +25,13 @@
     "./manifest.json": "./dist/manifest.json"
   },
   "peerDependencies": {
+    "@happyvertical/smrt-svelte": "workspace:*",
     "svelte": "^5.0.0"
   },
   "peerDependenciesMeta": {
+    "@happyvertical/smrt-svelte": {
+      "optional": true
+    },
     "svelte": {
       "optional": true
     }
@@ -41,7 +45,7 @@
     "build": "vite build --mode library && svelte-package -i src/svelte -o dist/svelte --tsconfig tsconfig.svelte.json",
     "build:watch": "vite build --mode library --watch",
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
-    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -56,6 +60,7 @@
   },
   "devDependencies": {
     "@happyvertical/logger": "catalog:",
+    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.7",

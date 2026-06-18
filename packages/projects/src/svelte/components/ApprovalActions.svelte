@@ -4,7 +4,11 @@
  * Shows appropriate buttons based on current status
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { ApprovalStatus } from './utils.js';
+
+const { t } = useI18n();
 
 /** Props for ApprovalActions component */
 export interface Props {
@@ -99,13 +103,13 @@ const canDelete = $derived(status === 'draft' && ondelete);
 
   {#if status === 'approved'}
     <span class="status-message success">
-      This entry has been approved
+      {t(M['projects.approval_actions.approved_message'])}
     </span>
   {/if}
 
   {#if status === 'rejected'}
     <span class="status-message error">
-      This entry was rejected
+      {t(M['projects.approval_actions.rejected_message'])}
     </span>
   {/if}
 </div>

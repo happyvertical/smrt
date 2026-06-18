@@ -1,11 +1,15 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { joinApiUrl } from '../api';
+import { M } from '../i18n.editor.js';
 import {
   getCachedThumbnail,
   setCachedThumbnail,
   THUMBNAIL_FAILURE_TTL_MS,
   type ThumbnailState,
 } from './ImageThumbnail.cache';
+
+const { t } = useI18n();
 
 interface ImageThumbnailProps {
   assetId: string;
@@ -95,7 +99,7 @@ $effect(() => {
 {#if thumbnailState === 'ready' && imageUrl}
   <img
     src={imageUrl}
-    alt="Thumbnail preview"
+    alt={t(M['content.image_thumbnail.thumbnail_preview'])}
     class="smrt-thumbnail-img"
     loading="lazy"
     onerror={() => {
@@ -113,8 +117,8 @@ $effect(() => {
 {:else if thumbnailState === 'loading'}
   <div class="smrt-thumbnail-skeleton" aria-hidden="true"></div>
 {:else}
-  <div class="smrt-thumbnail-missing" aria-label="Thumbnail unavailable">
-    <span>Preview unavailable</span>
+  <div class="smrt-thumbnail-missing" aria-label={t(M['content.image_thumbnail.thumbnail_unavailable'])}>
+    <span>{t(M['content.image_thumbnail.preview_unavailable'])}</span>
   </div>
 {/if}
 

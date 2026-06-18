@@ -5,7 +5,11 @@
  * Reusable component for managing email allow/block lists.
  * Works with any backend via callback props.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { BlacklistEntry, WhitelistEntry } from '../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   whitelist: WhitelistEntry[];
@@ -162,7 +166,7 @@ function getPatternPlaceholder(type: string): string {
     <div class="section-content">
       <div class="section-header-row">
         <div class="section-description">
-          Whitelisted senders bypass blacklist checks and are always allowed through.
+          {t(M['messages.email_filter_manager.whitelist_description'])}
         </div>
         {#if !isReadonly && onaddwhitelist}
           <button
@@ -174,7 +178,7 @@ function getPatternPlaceholder(type: string): string {
 
       {#if showWhitelistForm}
         <div class="entry-form">
-          <div class="form-title">Add Whitelist Entry</div>
+          <div class="form-title">{t(M['messages.email_filter_manager.add_whitelist_entry'])}</div>
           <div class="form-row">
             <div class="form-field" style="flex: 0 0 120px;">
               <label class="form-label" for="wl-type">Type</label>
@@ -203,7 +207,7 @@ function getPatternPlaceholder(type: string): string {
                 class="form-input"
                 type="text"
                 bind:value={wlCategory}
-                placeholder="e.g. support, sales"
+                placeholder={t(M['messages.email_filter_manager.category_placeholder'])}
               />
             </div>
             <div class="form-field" style="flex: 2;">
@@ -213,7 +217,7 @@ function getPatternPlaceholder(type: string): string {
                 class="form-input"
                 type="text"
                 bind:value={wlDescription}
-                placeholder="Why is this entry whitelisted?"
+                placeholder={t(M['messages.email_filter_manager.whitelist_description_placeholder'])}
               />
             </div>
           </div>
@@ -227,7 +231,7 @@ function getPatternPlaceholder(type: string): string {
       {/if}
 
       {#if whitelist.length === 0 && !showWhitelistForm}
-        <p class="placeholder">No whitelist entries yet.</p>
+        <p class="placeholder">{t(M['messages.email_filter_manager.no_whitelist_entries'])}</p>
       {:else}
         <div class="entries-list">
           {#each whitelist as entry}
@@ -248,7 +252,7 @@ function getPatternPlaceholder(type: string): string {
                 <button
                   class="delete-btn"
                   onclick={() => removeWhitelistEntry(entry)}
-                  title="Remove"
+                  title={t(M['messages.email_filter_manager.whitelist_remove'])}
                 >&times;</button>
               {/if}
             </div>
@@ -262,7 +266,7 @@ function getPatternPlaceholder(type: string): string {
     <div class="section-content">
       <div class="section-header-row">
         <div class="section-description">
-          Blacklisted senders are automatically blocked or archived.
+          {t(M['messages.email_filter_manager.blacklist_description'])}
         </div>
         {#if !isReadonly && onaddblacklist}
           <button
@@ -274,7 +278,7 @@ function getPatternPlaceholder(type: string): string {
 
       {#if showBlacklistForm}
         <div class="entry-form">
-          <div class="form-title">Add Blacklist Entry</div>
+          <div class="form-title">{t(M['messages.email_filter_manager.add_blacklist_entry'])}</div>
           <div class="form-row">
             <div class="form-field" style="flex: 0 0 120px;">
               <label class="form-label" for="bl-type">Type</label>
@@ -303,7 +307,7 @@ function getPatternPlaceholder(type: string): string {
                 class="form-input"
                 type="text"
                 bind:value={blReason}
-                placeholder="Why is this entry blocked?"
+                placeholder={t(M['messages.email_filter_manager.reason_placeholder'])}
               />
             </div>
             <div class="form-field checkbox-field">
@@ -323,7 +327,7 @@ function getPatternPlaceholder(type: string): string {
       {/if}
 
       {#if blacklist.length === 0 && !showBlacklistForm}
-        <p class="placeholder">No blacklist entries yet.</p>
+        <p class="placeholder">{t(M['messages.email_filter_manager.no_blacklist_entries'])}</p>
       {:else}
         <div class="entries-list">
           {#each blacklist as entry}
@@ -344,7 +348,7 @@ function getPatternPlaceholder(type: string): string {
                 <button
                   class="delete-btn"
                   onclick={() => removeBlacklistEntry(entry)}
-                  title="Remove"
+                  title={t(M['messages.email_filter_manager.blacklist_remove'])}
                 >&times;</button>
               {/if}
             </div>

@@ -4,9 +4,14 @@
  *
  * Renders articles in a responsive grid layout with configurable columns.
  */
+
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Grid } from '@happyvertical/smrt-svelte/layout';
+import { M } from '../i18n.contribution.js';
 import type { Article } from '../types.js';
 import ArticleCard from './ArticleCard.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Array of articles to display */
@@ -42,7 +47,7 @@ const {
     <p>{emptyMessage}</p>
   </div>
 {:else}
-  <Grid {columns} role="list" aria-label="Articles">
+  <Grid {columns} role="list" aria-label={t(M['content.article_list.aria_label'])}>
     {#each articles as article (article.id)}
       <div role="listitem">
         <ArticleCard

@@ -1,6 +1,10 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import { AssetManager } from '../index.js';
 import type { PersistedAsset } from '../types.js';
+
+const { t } = useI18n();
 
 let selectedAssets = $state<PersistedAsset[]>([]);
 let lastActionMessage = $state<string | null>(null);
@@ -31,17 +35,14 @@ const customActions = [
 <div class="assets-route">
   <header class="assets-route__header">
     <div>
-      <p class="assets-route__eyebrow">Package Route Surface</p>
-      <h1>Asset Manager</h1>
-      <p class="assets-route__lede">
-        The reference route for browsing, selecting, and reviewing uploaded
-        assets with the package-owned asset manager UI.
-      </p>
+      <p class="assets-route__eyebrow">{t(M['assets.asset_manager_route.eyebrow'])}</p>
+      <h1>{t(M['assets.asset_manager_route.title'])}</h1>
+      <p class="assets-route__lede">{t(M['assets.asset_manager_route.lede'])}</p>
     </div>
   </header>
 
   <div class="assets-route__body">
-    <section class="assets-route__manager" aria-label="Asset manager surface">
+    <section class="assets-route__manager" aria-label={t(M['assets.asset_manager_route.surface_label'])}>
       <AssetManager
         mode="manage"
         accept="image/*"
@@ -50,17 +51,17 @@ const customActions = [
       />
     </section>
 
-    <aside class="assets-route__sidebar" aria-label="Asset route state">
+    <aside class="assets-route__sidebar" aria-label={t(M['assets.asset_manager_route.route_state_label'])}>
       <div class="assets-route__panel">
-        <h2>Selection State</h2>
+        <h2>{t(M['assets.asset_manager_route.selection_state'])}</h2>
         {#if selectedAssets.length === 0}
-          <p class="assets-route__empty">No assets selected.</p>
+          <p class="assets-route__empty">{t(M['assets.asset_manager_route.no_assets_selected'])}</p>
         {:else}
           <p>
-            <strong>{selectedAssets.length}</strong> asset{selectedAssets.length ===
-            1
-              ? ''
-              : 's'} selected.
+            <strong>{selectedAssets.length}</strong> {t(
+              M['assets.asset_manager_route.assets_selected'],
+              { plural: selectedAssets.length === 1 ? '' : 's' },
+            )}
           </p>
           <ul class="assets-route__selection-list">
             {#each selectedAssets as asset}
@@ -74,17 +75,13 @@ const customActions = [
       </div>
 
       <div class="assets-route__panel">
-        <h2>Custom Action Example</h2>
-        <p>
-          This route keeps package-owned defaults while leaving room for app
-          specific actions.
-        </p>
+        <h2>{t(M['assets.asset_manager_route.custom_action_example'])}</h2>
+        <p>{t(M['assets.asset_manager_route.custom_action_description'])}</p>
         {#if lastActionMessage}
           <p class="assets-route__message">{lastActionMessage}</p>
         {:else}
           <p class="assets-route__empty">
-            Trigger <em>Queue Review</em> from the selection action bar to see
-            the package route feedback.
+            Trigger <em>{t(M['assets.asset_manager_route.queue_review'])}</em> {t(M['assets.asset_manager_route.queue_review_hint'])}
           </p>
         {/if}
       </div>

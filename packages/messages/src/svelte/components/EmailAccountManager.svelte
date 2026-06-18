@@ -5,7 +5,11 @@
  * Reusable component for adding, editing, testing, and removing
  * email accounts. Works with any backend via callback props.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { EmailAccountData } from '../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   accounts: EmailAccountData[];
@@ -153,28 +157,28 @@ function getProviderLabel(type: string): string {
 <div class="email-account-manager">
   <div class="section-header-row">
     <div class="section-description">
-      Configure email accounts for mailbox access and message routing.
+      {t(M['messages.email_account_manager.section_description'])}
     </div>
     {#if !isReadonly && onsave}
       <button
         class="add-btn"
         onclick={() => { resetForm(); showForm = true; }}
-      >+ Add Account</button>
+      >{t(M['messages.email_account_manager.add_account'])}</button>
     {/if}
   </div>
 
   {#if showForm}
     <div class="entry-form">
-      <div class="form-title">{editingId ? 'Edit' : 'Add'} Mail Account</div>
+      <div class="form-title">{editingId ? 'Edit' : 'Add'} {t(M['messages.email_account_manager.mail_account'])}</div>
 
       <div class="form-row">
         <div class="form-field" style="flex: 1;">
-          <label class="form-label" for="ea-name">Account Name</label>
-          <input id="ea-name" class="form-input" type="text" bind:value={maName} placeholder="e.g. Work, Personal" />
+          <label class="form-label" for="ea-name">{t(M['messages.email_account_manager.account_name'])}</label>
+          <input id="ea-name" class="form-input" type="text" bind:value={maName} placeholder={t(M['messages.email_account_manager.account_name_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 1;">
-          <label class="form-label" for="ea-email">Email Address</label>
-          <input id="ea-email" class="form-input" type="email" bind:value={maEmail} placeholder="user@example.com" />
+          <label class="form-label" for="ea-email">{t(M['messages.email_account_manager.email_address'])}</label>
+          <input id="ea-email" class="form-input" type="email" bind:value={maEmail} placeholder={t(M['messages.email_account_manager.email_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 0 0 130px;">
           <label class="form-label" for="ea-provider">Provider</label>
@@ -187,11 +191,11 @@ function getProviderLabel(type: string): string {
         </div>
       </div>
 
-      <div class="form-section-label">Incoming Mail (IMAP)</div>
+      <div class="form-section-label">{t(M['messages.email_account_manager.incoming_mail'])}</div>
       <div class="form-row">
         <div class="form-field" style="flex: 2;">
           <label class="form-label" for="ea-imap-host">Host</label>
-          <input id="ea-imap-host" class="form-input" type="text" bind:value={maImapHost} placeholder="imap.example.com" />
+          <input id="ea-imap-host" class="form-input" type="text" bind:value={maImapHost} placeholder={t(M['messages.email_account_manager.imap_host_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 0 0 90px;">
           <label class="form-label" for="ea-imap-port">Port</label>
@@ -207,11 +211,11 @@ function getProviderLabel(type: string): string {
         </div>
       </div>
 
-      <div class="form-section-label">Outgoing Mail (SMTP)</div>
+      <div class="form-section-label">{t(M['messages.email_account_manager.outgoing_mail'])}</div>
       <div class="form-row">
         <div class="form-field" style="flex: 2;">
           <label class="form-label" for="ea-smtp-host">Host</label>
-          <input id="ea-smtp-host" class="form-input" type="text" bind:value={maSmtpHost} placeholder="smtp.example.com" />
+          <input id="ea-smtp-host" class="form-input" type="text" bind:value={maSmtpHost} placeholder={t(M['messages.email_account_manager.smtp_host_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 0 0 90px;">
           <label class="form-label" for="ea-smtp-port">Port</label>
@@ -231,7 +235,7 @@ function getProviderLabel(type: string): string {
       <div class="form-row">
         <div class="form-field" style="flex: 1;">
           <label class="form-label" for="ea-username">Username</label>
-          <input id="ea-username" class="form-input" type="text" bind:value={maUsername} placeholder="user@example.com" />
+          <input id="ea-username" class="form-input" type="text" bind:value={maUsername} placeholder={t(M['messages.email_account_manager.username_placeholder'])} />
         </div>
         <div class="form-field" style="flex: 1;">
           <label class="form-label" for="ea-password">Password</label>
@@ -257,16 +261,16 @@ function getProviderLabel(type: string): string {
   {#if testResult}
     <div class="test-result" class:success={testResult.success} class:failure={!testResult.success}>
       {#if testResult.success}
-        Connection successful
+        {t(M['messages.email_account_manager.connection_successful'])}
       {:else}
-        Connection failed: {testResult.error ?? 'Unknown error'}
+        {t(M['messages.email_account_manager.connection_failed'])} {testResult.error ?? 'Unknown error'}
       {/if}
       <button class="dismiss-btn" onclick={() => testResult = null}>&times;</button>
     </div>
   {/if}
 
   {#if accounts.length === 0 && !showForm}
-    <p class="placeholder">No mail accounts configured yet.</p>
+    <p class="placeholder">{t(M['messages.email_account_manager.empty'])}</p>
   {:else}
     <div class="entries-list">
       {#each accounts as acct}
@@ -291,7 +295,7 @@ function getProviderLabel(type: string): string {
               <span class="entry-description">{acct.email}</span>
             </div>
             {#if acct.imapHost}
-              <span class="host-tag" title="IMAP: {acct.imapHost}:{acct.imapPort}">{acct.imapHost}</span>
+              <span class="host-tag" title={t(M['messages.email_account_manager.imap_host_title'], { host: acct.imapHost, port: acct.imapPort })}>{acct.imapHost}</span>
             {/if}
             {#if !acct.isActive}
               <span class="inactive-tag">inactive</span>
@@ -304,7 +308,7 @@ function getProviderLabel(type: string): string {
                   class="test-btn"
                   onclick={(e) => { e.stopPropagation(); testConnection(acct); }}
                   disabled={testingId === acct.id}
-                  title="Test connection"
+                  title={t(M['messages.email_account_manager.test_connection'])}
                 >
                   {testingId === acct.id ? '...' : 'Test'}
                 </button>
@@ -313,7 +317,7 @@ function getProviderLabel(type: string): string {
                 <button
                   class="delete-btn"
                   onclick={(e) => { e.stopPropagation(); remove(acct); }}
-                  title="Remove"
+                  title={t(M['messages.email_account_manager.remove'])}
                 >&times;</button>
               {/if}
             </div>

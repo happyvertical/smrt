@@ -3,7 +3,7 @@
   "description": "smrt framework for building vertical AI agents",
   "author": "Will Griffin <willgriffin@gmail.com>",
   "type": "module",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "files": [
     "AGENTS.md",
     "CLAUDE.md"
@@ -32,6 +32,7 @@
     "check:radius": "node scripts/check-radius.mjs",
     "check:elevation": "node scripts/check-elevation.mjs",
     "check:typography": "node scripts/check-typography.mjs",
+    "check:hardcoded-strings": "node scripts/check-hardcoded-strings.mjs",
     "check:coverage": "node scripts/check-coverage.mjs",
     "knowledge:check": "tsx scripts/check-knowledge.ts",
     "changeset": "changeset",
@@ -107,16 +108,20 @@
       "@happyvertical/utils": "^0.74.5",
       "@grpc/grpc-js@>=1.14.0 <1.14.4": "1.14.4",
       "minimatch@>=10.0.0 <10.2.3": "10.2.3",
-      "undici@>=7.0.0 <7.24.0": "7.24.0",
+      "undici@>=7.0.0 <7.28.0": "7.28.0",
+      "nodemailer@<9.0.1": "9.0.1",
       "tar@>=7.0.0 <7.5.11": "7.5.11",
-      "protobufjs@>=7.0.0 <7.5.6": "7.5.6",
+      "protobufjs@>=7.0.0 <7.6.1": "7.6.1",
       "picomatch@>=2.0.0 <2.3.2": "2.3.2",
       "picomatch@>=4.0.0 <4.0.4": "4.0.4",
-      "vite@>=7.0.0 <7.3.2": "7.3.2",
+      "vite@>=7.0.0 <7.3.5": "7.3.5",
+      "esbuild@>=0.17.0 <0.28.1": "0.28.1",
+      "ws@>=8.0.0 <8.21.0": "8.21.0",
+      "form-data@>=4.0.0 <4.0.6": "4.0.6",
       "devalue@>=5.6.3 <5.8.1": "5.8.1",
       "vitest@>=4.0.0 <4.1.0": "4.1.0",
       "shell-quote@>=1.1.0 <1.8.4": "1.8.4",
-      "hono@>=4.0.0 <4.12.4": "4.12.4",
+      "hono@>=4.0.0 <4.12.25": "4.12.25",
       "@hono/node-server@>=1.0.0 <1.19.10": "1.19.10",
       "express-rate-limit@>=8.2.0 <8.2.2": "8.2.2",
       "@sveltejs/kit@>=2.0.0 <2.57.1": "2.57.1",
@@ -131,7 +136,8 @@
         "GHSA-66ff-xgx4-vchm",
         "GHSA-75px-5xx7-5xc7",
         "GHSA-jvwf-75h9-cwgg",
-        "GHSA-685m-2w69-288q"
+        "GHSA-685m-2w69-288q",
+        "GHSA-wcpc-wj8m-hjx6"
       ]
     }
   }

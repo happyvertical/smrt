@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-svelte",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "description": "Svelte 5 components for SMRT user management - auth, users, tenants, roles, permissions, groups",
   "type": "module",
   "main": "./dist/index.js",
@@ -31,11 +31,28 @@
       "import": "./dist/components/chat/index.js",
       "default": "./dist/components/chat/index.js"
     },
+    "./feedback": {
+      "types": "./dist/components/feedback/index.d.ts",
+      "svelte": "./dist/components/feedback/index.js",
+      "import": "./dist/components/feedback/index.js",
+      "default": "./dist/components/feedback/index.js"
+    },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",
       "svelte": "./dist/components/forms/index.js",
       "import": "./dist/components/forms/index.js",
       "default": "./dist/components/forms/index.js"
+    },
+    "./i18n": {
+      "types": "./dist/i18n/index.d.ts",
+      "svelte": "./dist/i18n/index.js",
+      "import": "./dist/i18n/index.js",
+      "default": "./dist/i18n/index.js"
+    },
+    "./i18n/server": {
+      "types": "./dist/i18n/server.d.ts",
+      "import": "./dist/i18n/server.js",
+      "default": "./dist/i18n/server.js"
     },
     "./layout": {
       "types": "./dist/components/layout/index.d.ts",
@@ -101,7 +118,7 @@
     "check": "pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "keywords": [
@@ -140,7 +157,8 @@
     "@remotion/whisper-web": ">=4.0.0",
     "@xenova/transformers": "^2.17.2",
     "chrono-node": "^2.9.0",
-    "svelte": "^5.18.2"
+    "svelte": "^5.18.2",
+    "@happyvertical/smrt-languages": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@happyvertical/smrt-agents": {
@@ -168,6 +186,9 @@
       "optional": true
     },
     "chrono-node": {
+      "optional": true
+    },
+    "@happyvertical/smrt-languages": {
       "optional": true
     }
   },

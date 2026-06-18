@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-events",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "description": "Hierarchical event management with participant tracking and SMRT framework support",
   "type": "module",
   "main": "./dist/index.js",
@@ -44,7 +44,7 @@
     "prepack": "node ../../scripts/prepack-package.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit && pnpm exec svelte-check --tsconfig ./tsconfig.svelte.json",
+    "typecheck": "tsc --noEmit && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.svelte.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "peerDependencies": {

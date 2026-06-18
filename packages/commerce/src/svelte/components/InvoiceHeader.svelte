@@ -5,7 +5,11 @@
  * Shows invoice number, status, dates, and customer info.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.js';
 import type { InvoiceStatus } from '../types.js';
+
+const { t } = useI18n();
 
 /** Props for InvoiceHeader component */
 export interface Props {
@@ -139,20 +143,20 @@ const isOverdue = $derived.by(() => {
 
   <div class="header-meta">
     <div class="meta-item">
-      <span class="meta-label">Issue Date</span>
+      <span class="meta-label">{t(M['commerce.invoice_header.issue_date'])}</span>
       <span class="meta-value">{formatDate(issueDate)}</span>
     </div>
 
     {#if dueDate}
       <div class="meta-item" class:overdue={isOverdue}>
-        <span class="meta-label">Due Date</span>
+        <span class="meta-label">{t(M['commerce.invoice_header.due_date'])}</span>
         <span class="meta-value">{formatDate(dueDate)}</span>
       </div>
     {/if}
 
     {#if paidDate && status === 'paid'}
       <div class="meta-item paid">
-        <span class="meta-label">Paid Date</span>
+        <span class="meta-label">{t(M['commerce.invoice_header.paid_date'])}</span>
         <span class="meta-value">{formatDate(paidDate)}</span>
       </div>
     {/if}

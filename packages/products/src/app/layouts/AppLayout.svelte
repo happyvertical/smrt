@@ -1,9 +1,13 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../lib/i18n.js';
+
 interface Props {
   children: any;
 }
 
 const { children }: Props = $props();
+const { t } = useI18n();
 </script>
 
 <div class="app-layout">
@@ -11,7 +15,7 @@ const { children }: Props = $props();
     <div class="header-content">
       <h1 class="app-title">
         <span class="logo">📦</span>
-        Product Service
+        {t(M['products.app_layout.service_title'])}
       </h1>
       
       <nav class="main-nav">
@@ -35,11 +39,11 @@ const { children }: Props = $props();
   
   <footer class="app-footer">
     <div class="footer-content">
-      <p>&copy; 2024 SMRT Product Service - Auto-generated with ❤️</p>
+      <p>&copy; {t(M['products.app_layout.footer_copyright'])}</p>
       <div class="footer-links">
-        <a href="#api-docs">API Docs</a>
+        <a href="#api-docs">{t(M['products.app_layout.api_docs'])}</a>
         <a href="#federation">Federation</a>
-        <a href="#mcp-tools">MCP Tools</a>
+        <a href="#mcp-tools">{t(M['products.app_layout.mcp_tools'])}</a>
       </div>
     </div>
   </footer>

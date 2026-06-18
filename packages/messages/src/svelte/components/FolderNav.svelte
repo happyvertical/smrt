@@ -2,7 +2,11 @@
 /**
  * FolderNav - Folder/label navigation sidebar
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.messages.js';
 import type { FolderData } from '../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   folders: FolderData[];
@@ -41,7 +45,7 @@ function getFolderIcon(specialUse?: string): string {
 }
 </script>
 
-<nav class="folder-nav" aria-label="Folders">
+<nav class="folder-nav" aria-label={t(M['messages.folder_nav.folders'])}>
   {#if _systemFolders.length > 0}
     <ul class="folder-list" role="list">
       {#each _systemFolders as folder (folder.id)}

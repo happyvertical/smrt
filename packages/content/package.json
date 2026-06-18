@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-content",
-  "version": "0.28.9",
+  "version": "0.29.24",
   "description": "Content processing module for SMRT framework - handles documents, web content, and media",
   "type": "module",
   "main": "./dist/index.js",
@@ -47,7 +47,7 @@
     "test:e2e": "pnpm exec playwright test -c playwright.config.ts",
     "test:e2e:headed": "pnpm exec playwright test -c playwright.config.ts --headed",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.kit.json",
-    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && svelte-check --tsconfig ./tsconfig.kit.json",
+    "typecheck": "svelte-kit sync && tsc -p tsconfig.typecheck.json && node ../../scripts/svelte-check-a11y.mjs --tsconfig ./tsconfig.kit.json",
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {

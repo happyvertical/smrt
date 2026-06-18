@@ -3,7 +3,11 @@
  * RoomList - Sidebar room navigation with grouping and unread badges
  * Groups rooms by type: channels, DMs, and agent conversations
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
 import type { ChatRoomData } from '../../types.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Available chat rooms */
@@ -64,16 +68,16 @@ function formatTimestamp(date?: string | Date | null): string {
 }
 </script>
 
-<nav class="room-list" aria-label="Chat rooms">
+<nav class="room-list" aria-label={t(M['chat.room_list.rooms_label'])}>
   {#if oncreateroom}
     <div class="room-list__header">
       <button
         class="create-room-btn"
         type="button"
         onclick={oncreateroom}
-        aria-label="Create new room"
+        aria-label={t(M['chat.room_list.create_new_room'])}
       >
-        + New Room
+        {t(M['chat.room_list.new_room'])}
       </button>
     </div>
   {/if}
@@ -108,7 +112,7 @@ function formatTimestamp(date?: string | Date | null): string {
                 <span class="room-item__icon">{getRoomIcon(room)}</span>
                 <span class="room-item__name">{room.name}</span>
                 {#if room.unreadCount > 0}
-                  <span class="unread-badge" aria-label="{room.unreadCount} unread messages">
+                  <span class="unread-badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
                     {room.unreadCount > 99 ? '99+' : room.unreadCount}
                   </span>
                 {/if}
@@ -131,7 +135,7 @@ function formatTimestamp(date?: string | Date | null): string {
         <span class="room-group__chevron" class:room-group__chevron--collapsed={collapsedGroups['dms']}>
           &#9662;
         </span>
-        <span class="room-group__label">Direct Messages</span>
+        <span class="room-group__label">{t(M['chat.room_list.direct_messages'])}</span>
         <span class="room-group__count">{directMessages.length}</span>
       </button>
 
@@ -165,7 +169,7 @@ function formatTimestamp(date?: string | Date | null): string {
                     <span class="room-item__time">{formatTimestamp(room.lastMessageAt)}</span>
                   {/if}
                   {#if room.unreadCount > 0}
-                    <span class="unread-badge" aria-label="{room.unreadCount} unread messages">
+                    <span class="unread-badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
                       {room.unreadCount > 99 ? '99+' : room.unreadCount}
                     </span>
                   {/if}
@@ -207,7 +211,7 @@ function formatTimestamp(date?: string | Date | null): string {
                 <span class="room-item__agent-icon" aria-hidden="true">&#9881;</span>
                 <span class="room-item__name">{room.name}</span>
                 {#if room.unreadCount > 0}
-                  <span class="unread-badge" aria-label="{room.unreadCount} unread messages">
+                  <span class="unread-badge" aria-label={t(M['chat.room_list.unread_messages'], { count: room.unreadCount })}>
                     {room.unreadCount > 99 ? '99+' : room.unreadCount}
                   </span>
                 {/if}
@@ -221,10 +225,10 @@ function formatTimestamp(date?: string | Date | null): string {
 
   {#if rooms.length === 0}
     <div class="room-list__empty">
-      <p>No rooms yet</p>
+      <p>{t(M['chat.room_list.no_rooms'])}</p>
       {#if oncreateroom}
         <button class="create-link" type="button" onclick={oncreateroom}>
-          Create your first room
+          {t(M['chat.room_list.create_first_room'])}
         </button>
       {/if}
     </div>

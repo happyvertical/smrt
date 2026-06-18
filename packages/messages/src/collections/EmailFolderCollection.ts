@@ -187,7 +187,10 @@ export class EmailFolderCollection extends SmrtCollection<EmailFolder> {
     for (const folderData of standardFolders) {
       const existing = await this.getByPath(accountId, folderData.path);
       if (!existing) {
-        const folder = new EmailFolder({
+        // Create through the collection so the DB connection is bound; a bare
+        // `new EmailFolder(...)` + save() throws "Database accessed before
+        // initialization" under per-instance DB injection.
+        const folder = await this.create({
           accountId,
           ...folderData,
         });

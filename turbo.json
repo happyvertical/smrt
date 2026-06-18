@@ -1,9 +1,18 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalDependencies": ["pnpm-lock.yaml"],
+  "cacheDir": ".turbo/cache",
+  "globalDependencies": [
+    "pnpm-lock.yaml",
+    "tsconfig*.json",
+    "vite.config.base.ts",
+    "vitest.workspace.ts",
+    "biome.json"
+  ],
   "tasks": {
     "generate": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "inputs": [
         "src/**/*.ts",
         "!src/**/*.test.ts",
@@ -28,7 +37,9 @@
       "cache": true
     },
     "generate:test": {
-      "dependsOn": ["^build"],
+      "dependsOn": [
+        "^build"
+      ],
       "inputs": [
         "src/**/__tests__/**/*.ts",
         "src/**/*.test.ts",
@@ -45,27 +56,54 @@
       "cache": true
     },
     "build": {
-      "dependsOn": ["^build", "generate"],
-      "inputs": ["src/**", "package.json", "tsconfig*.json", "vite.config.ts", "vite.config.js"],
+      "dependsOn": [
+        "^build",
+        "generate"
+      ],
+      "inputs": [
+        "src/**",
+        "package.json",
+        "tsconfig*.json",
+        "vite.config.ts",
+        "vite.config.js"
+      ],
       "outputs": [
         "dist/**",
         ".next/**",
         "docs/**",
-        "tsconfig.*.tsbuildinfo",
-        "src/manifest/test-manifest.json",
-        "src/manifest/test-manifest-stub.ts"
+        "tsconfig.*.tsbuildinfo"
       ],
       "cache": true
     },
     "prebuild": {
-      "inputs": ["src/**", "package.json", "tsconfig*.json"],
-      "outputs": ["src/runtime/**"],
+      "inputs": [
+        "src/**",
+        "package.json",
+        "tsconfig*.json"
+      ],
+      "outputs": [
+        "src/runtime/**"
+      ],
       "cache": true
     },
     "test": {
-      "dependsOn": ["^build", "build", "generate:test"],
-      "inputs": ["src/**", "test/**", "**/*.test.ts", "**/*.spec.ts", "package.json", "vitest.config.ts", "vitest.config.js"],
-      "outputs": ["coverage/**"],
+      "dependsOn": [
+        "^build",
+        "build",
+        "generate:test"
+      ],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "**/*.test.ts",
+        "**/*.spec.ts",
+        "package.json",
+        "vitest.config.ts",
+        "vitest.config.js"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
       "cache": true
     },
     "test:watch": {
@@ -73,24 +111,60 @@
       "persistent": true
     },
     "lint": {
-      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "biome.json"],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "**/*.ts",
+        "**/*.js",
+        "biome.json"
+      ],
       "cache": true
     },
     "lint:fix": {
-      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "biome.json"],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "**/*.ts",
+        "**/*.js",
+        "biome.json"
+      ],
       "cache": false
     },
     "format": {
-      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "**/*.json", "**/*.md", "biome.json"],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "**/*.ts",
+        "**/*.js",
+        "**/*.json",
+        "**/*.md",
+        "biome.json"
+      ],
       "cache": false
     },
     "format-check": {
-      "inputs": ["src/**", "test/**", "**/*.ts", "**/*.js", "**/*.json", "**/*.md", "biome.json"],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "**/*.ts",
+        "**/*.js",
+        "**/*.json",
+        "**/*.md",
+        "biome.json"
+      ],
       "cache": true
     },
     "typecheck": {
-      "dependsOn": ["^build", "generate:test"],
-      "inputs": ["src/**", "test/**", "**/*.ts", "tsconfig*.json"],
+      "dependsOn": [
+        "^build",
+        "generate:test"
+      ],
+      "inputs": [
+        "src/**",
+        "test/**",
+        "**/*.ts",
+        "tsconfig*.json"
+      ],
       "cache": true
     },
     "dev": {
@@ -101,9 +175,19 @@
       "cache": false
     },
     "docs": {
-      "dependsOn": ["build"],
-      "inputs": ["src/**", "README.md", "CLAUDE.md", "package.json"],
-      "outputs": ["docs/**", "manual/**"],
+      "dependsOn": [
+        "build"
+      ],
+      "inputs": [
+        "src/**",
+        "README.md",
+        "CLAUDE.md",
+        "package.json"
+      ],
+      "outputs": [
+        "docs/**",
+        "manual/**"
+      ],
       "cache": true
     }
   }

@@ -24,22 +24,32 @@ export interface ListSecretsOptions {
 
 /**
  * Collection for managing Secret objects
+ *
+ * All lookups take an explicit `tenantId` and scope on the authoritative
+ * `tenant_id` column. Scoping must NOT rely on the tenancy interceptor
+ * (which may be disabled in the host application) and must NOT use the
+ * `context` column: `context = tenantId` is only a convention applied on
+ * the create path, so pre-convention rows may have a divergent `context`.
+ * See https://github.com/happyvertical/smrt/issues/1501
  */
 export class SecretCollection extends SmrtCollection<Secret> {
   static readonly _itemClass = Secret;
 
   /**
-   * Find a secret by name within the current tenant context
+   * Find a secret by name within the given tenant
    */
-  async findByName(name: string): Promise<Secret | null> {
-    return this.get({ name });
+  async findByName(tenantId: string, name: string): Promise<Secret | null> {
+    return this.get({ name, tenantId });
   }
 
   /**
-   * List secrets with filtering options
+   * List secrets for a tenant with filtering options
    */
-  async listSecrets(options: ListSecretsOptions = {}): Promise<Secret[]> {
-    const where: Record<string, unknown> = {};
+  async listSecrets(
+    tenantId: string,
+    options: ListSecretsOptions = {},
+  ): Promise<Secret[]> {
+    const where: Record<string, unknown> = { tenantId };
 
     if (options.category) {
       where.category = options.category;
@@ -65,28 +75,32 @@ export class SecretCollection extends SmrtCollection<Secret> {
   }
 
   /**
-   * List all active secrets
+   * List all active secrets for a tenant
    */
-  async listActive(): Promise<Secret[]> {
-    return this.listSecrets({ status: 'active' });
+  async listActive(tenantId: string): Promise<Secret[]> {
+    return this.listSecrets(tenantId, { status: 'active' });
   }
 
   /**
-   * List secrets by category
+   * List a tenant's secrets by category
    */
-  async listByCategory(category: string): Promise<Secret[]> {
-    return this.listSecrets({ category, status: 'active' });
+  async listByCategory(tenantId: string, category: string): Promise<Secret[]> {
+    return this.listSecrets(tenantId, { category, status: 'active' });
   }
 
   /**
-   * List secrets that need attention (expired or about to expire)
+   * List a tenant's secrets that need attention (expired or about to expire)
    */
-  async listExpiring(daysAhead: number = 30): Promise<Secret[]> {
+  async listExpiring(
+    tenantId: string,
+    daysAhead: number = 30,
+  ): Promise<Secret[]> {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + daysAhead);
 
     const secrets = await this.list({
       where: {
+        tenantId,
         status: 'active',
         'expiresAt !=': null,
         'expiresAt <': futureDate.toISOString(),
@@ -98,19 +112,19 @@ export class SecretCollection extends SmrtCollection<Secret> {
   }
 
   /**
-   * Get categories used in secrets
+   * Get categories used in a tenant's secrets
    */
-  async getCategories(): Promise<string[]> {
-    const secrets = await this.list({});
+  async getCategories(tenantId: string): Promise<string[]> {
+    const secrets = await this.list({ where: { tenantId } });
     const categories = new Set(secrets.map((s) => s.category).filter(Boolean));
     return Array.from(categories).sort();
   }
 
   /**
-   * Count secrets by status
+   * Count a tenant's secrets by status
    */
-  async countByStatus(): Promise<Record<SecretStatus, number>> {
-    const secrets = await this.list({});
+  async countByStatus(tenantId: string): Promise<Record<SecretStatus, number>> {
+    const secrets = await this.list({ where: { tenantId } });
 
     const counts: Record<SecretStatus, number> = {
       active: 0,
@@ -130,10 +144,10 @@ export class SecretCollection extends SmrtCollection<Secret> {
   }
 
   /**
-   * Delete a secret by name
+   * Delete a tenant's secret by name
    */
-  async deleteByName(name: string): Promise<boolean> {
-    const secret = await this.findByName(name);
+  async deleteByName(tenantId: string, name: string): Promise<boolean> {
+    const secret = await this.findByName(tenantId, name);
     if (!secret) return false;
 
     await secret.delete();

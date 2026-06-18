@@ -2,6 +2,10 @@
 /**
  * MessageStatusIndicator - Read/flag/attachment indicators
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../i18n.messages.js';
+
+const { t } = useI18n();
 
 export interface Props {
   isRead: boolean;
@@ -20,23 +24,23 @@ const {
 }: Props = $props();
 </script>
 
-<span class="status-indicators" role="group" aria-label="Message status">
+<span class="status-indicators" role="group" aria-label={t(M['messages.message_status_indicator.status'])}>
   {#if !isRead}
-    <span class="indicator unread" title="Unread" aria-label="Unread">
+    <span class="indicator unread" title={t(M['messages.message_status_indicator.unread'])} aria-label={t(M['messages.message_status_indicator.unread'])}>
       <span class="dot"></span>
     </span>
   {/if}
   {#if isFlagged}
-    <span class="indicator flagged" title="Flagged" aria-label="Flagged">⚑</span>
+    <span class="indicator flagged" title={t(M['messages.message_status_indicator.flagged'])} aria-label={t(M['messages.message_status_indicator.flagged'])}>⚑</span>
   {/if}
   {#if hasAttachments}
-    <span class="indicator attachment" title="Has attachments" aria-label="Has attachments">📎</span>
+    <span class="indicator attachment" title={t(M['messages.message_status_indicator.has_attachments'])} aria-label={t(M['messages.message_status_indicator.has_attachments'])}>📎</span>
   {/if}
   {#if isAnswered}
-    <span class="indicator answered" title="Replied" aria-label="Replied">↩</span>
+    <span class="indicator answered" title={t(M['messages.message_status_indicator.replied'])} aria-label={t(M['messages.message_status_indicator.replied'])}>↩</span>
   {/if}
   {#if isDraft}
-    <span class="indicator draft" title="Draft" aria-label="Draft">✎</span>
+    <span class="indicator draft" title={t(M['messages.message_status_indicator.draft'])} aria-label={t(M['messages.message_status_indicator.draft'])}>✎</span>
   {/if}
 </span>
 

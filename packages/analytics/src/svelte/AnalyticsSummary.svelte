@@ -1,6 +1,10 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { PropertyStatsWithTrend } from '../index.js';
+import { M } from './i18n.js';
 import StatCard from './StatCard.svelte';
+
+const { t } = useI18n();
 
 interface Props {
   stats: PropertyStatsWithTrend | null;
@@ -34,7 +38,7 @@ const { stats }: Props = $props();
 	</div>
 {:else}
 	<div class="analytics-empty">
-		<p>No analytics data available yet.</p>
+		<p>{t(M['analytics.analytics_summary.empty'])}</p>
 	</div>
 {/if}
 

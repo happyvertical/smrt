@@ -17,8 +17,12 @@ export interface Props {
 </script>
 
 <script lang="ts">
+  import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+  import { M } from '../i18n.js';
   import RecipientInput from './RecipientInput.svelte';
   import AttachmentUpload from './AttachmentUpload.svelte';
+
+  const { t } = useI18n();
 
   let {
     type = 'email',
@@ -183,7 +187,7 @@ export interface Props {
         class="text-input"
         bind:value={subject}
         oninput={markDirty}
-        placeholder="Subject"
+        placeholder={t(M['messages.compose_form.subject_placeholder'])}
       />
     </div>
   {:else if type === 'slack'}
@@ -195,7 +199,7 @@ export interface Props {
         class="text-input"
         bind:value={channelId}
         oninput={markDirty}
-        placeholder="Channel ID"
+        placeholder={t(M['messages.compose_form.channel_id_placeholder'])}
       />
     </div>
   {/if}
@@ -246,7 +250,7 @@ export interface Props {
       {isSending ? 'Sending...' : 'Send'}
     </button>
     <button type="button" class="btn-secondary" onclick={handleSaveDraft}>
-      Save Draft
+      {t(M['messages.compose_form.save_draft'])}
     </button>
     <button type="button" class="btn-text" onclick={() => ondiscard?.()}>
       Discard

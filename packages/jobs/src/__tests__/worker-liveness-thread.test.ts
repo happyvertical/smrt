@@ -30,10 +30,13 @@ async function readLease(
 const dbPaths: string[] = [];
 afterEach(() => {
   for (const path of dbPaths.splice(0)) {
-    try {
-      if (existsSync(path)) unlinkSync(path);
-    } catch {
-      // best-effort temp cleanup
+    // Remove the db plus its WAL sidecar files (-wal/-shm).
+    for (const file of [path, `${path}-wal`, `${path}-shm`]) {
+      try {
+        if (existsSync(file)) unlinkSync(file);
+      } catch {
+        // best-effort temp cleanup
+      }
     }
   }
 });
@@ -67,6 +70,29 @@ describe('off-loop liveness (Stage 2)', () => {
     const afterStop = await readLease(seed, 'tick-w');
     // No further renewal once the ticker is stopped.
     expect(afterStop).toBe(atStop);
+  });
+
+  it('enables WAL on the SQLite connection so it does not lock-race the off-loop ticker', async () => {
+    const dbUrl = tmpDbUrl('liveness-wal');
+    dbPaths.push(dbUrl.replace('file:', ''));
+    const db = await getTestDatabase({ type: 'sqlite', url: dbUrl });
+
+    const runner = createTaskRunner({
+      pollInterval: 1_000,
+      leaseTickMs: 40,
+      leaseTtlMs: 10_000,
+    });
+    await runner.initialize(db);
+    await runner.start();
+    try {
+      // start() tunes its own connection for the shared-file topology.
+      const result = await db.query('PRAGMA journal_mode');
+      const mode = (result.rows[0] as { journal_mode?: string } | undefined)
+        ?.journal_mode;
+      expect(String(mode).toLowerCase()).toBe('wal');
+    } finally {
+      await runner.stop();
+    }
   });
 
   it('TaskRunner spawns the off-loop thread on a file database and renews off the main loop', async () => {
