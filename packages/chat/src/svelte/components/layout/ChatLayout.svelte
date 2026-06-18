@@ -3,9 +3,13 @@
  * ChatLayout - Main chat container with sidebar and content area
  * Discord/Slack-style layout with resizable room list sidebar
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { Snippet } from 'svelte';
+import { M } from '../../i18n.messages.js';
 import type { ChatRoomData } from '../../types.js';
 import RoomList from './RoomList.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Available chat rooms */
@@ -50,7 +54,7 @@ function handlePointerUp() {
   <aside
     class="chat-layout__sidebar"
     style:width="{sidebarWidth}px"
-    aria-label="Chat rooms"
+    aria-label={t(M['chat.chat_layout.rooms_label'])}
   >
     <RoomList
       {rooms}
@@ -62,7 +66,7 @@ function handlePointerUp() {
   <button
     type="button"
     class="chat-layout__resize-handle"
-    aria-label="Resize sidebar"
+    aria-label={t(M['chat.chat_layout.resize_sidebar'])}
     onpointerdown={handlePointerDown}
     onpointermove={handlePointerMove}
     onpointerup={handlePointerUp}

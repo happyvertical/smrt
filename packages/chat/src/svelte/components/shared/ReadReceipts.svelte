@@ -3,6 +3,10 @@
  * ReadReceipts - Message read status display
  * Shows checkmarks or small avatars indicating who has read a message.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Users who have read the message */
@@ -21,7 +25,7 @@ function getInitial(name: string): string {
 }
 </script>
 
-<span class="read-receipts" aria-label="{readBy.length} of {totalParticipants} read">
+<span class="read-receipts" aria-label={t(M['chat.read_receipts.read_status'], { readCount: readBy.length, total: totalParticipants })}>
   {#if readBy.length === 0}
     <!-- Single check: sent -->
     <svg class="read-receipts__icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">

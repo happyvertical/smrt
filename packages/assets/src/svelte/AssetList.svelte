@@ -6,12 +6,16 @@
  * type badges, and metadata columns.
  */
 
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from './i18n.js';
 import type {
   AssetListProps,
   AssetSort,
   AssetSortField,
   PersistedAsset,
 } from './types';
+
+const { t } = useI18n();
 
 interface ListAsset extends PersistedAsset {
   alt?: string;
@@ -111,7 +115,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
             checked={allSelected}
             use:setIndeterminate={someSelected}
             onchange={toggleSelectAll}
-            aria-label="Select all"
+            aria-label={t(M['assets.asset_list.select_all'])}
           />
         </th>
         <th class="col-thumb">Preview</th>
@@ -135,7 +139,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
           <td colspan="6" class="cell-empty">
             <div class="asset-list__loading">
               <span class="spinner"></span>
-              <span>Loading assets...</span>
+              <span>{t(M['assets.asset_list.loading'])}</span>
             </div>
           </td>
         </tr>
@@ -153,8 +157,8 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
                   <line x1="3" y1="18" x2="3.01" y2="18"></line>
                 </svg>
               </div>
-              <p class="empty-state__title">No assets found</p>
-              <p class="empty-state__desc">Upload an asset or change your search filters to see results.</p>
+              <p class="empty-state__title">{t(M['assets.asset_list.no_assets_found'])}</p>
+              <p class="empty-state__desc">{t(M['assets.asset_list.empty_hint'])}</p>
             </div>
           </td>
         </tr>
@@ -171,7 +175,7 @@ function setIndeterminate(node: HTMLInputElement, value: boolean) {
                 checked={selected}
                 onchange={(e) => toggleSelection(asset, e)}
                 onclick={(e) => e.stopPropagation()}
-                aria-label="Select {asset.name}"
+                aria-label={t(M['assets.asset_list.select_named'], { name: asset.name })}
               />
             </td>
             <td class="col-thumb">

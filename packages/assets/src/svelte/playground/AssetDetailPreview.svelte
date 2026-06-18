@@ -1,7 +1,11 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import type { AssetDetailUpdates } from '../AssetDetail.svelte';
 import AssetDetail from '../AssetDetail.svelte';
+import { M } from '../i18n.js';
 import type { PersistedAsset } from '../types';
+
+const { t } = useI18n();
 
 let { asset }: { asset: PersistedAsset } = $props();
 
@@ -60,13 +64,10 @@ function handleEdit() {
 
 <div class="preview-shell">
   <div class="preview-card">
-    <p class="eyebrow">Modal Preview</p>
+    <p class="eyebrow">{t(M['assets.asset_detail_preview.modal_preview'])}</p>
     <h4>{previewAsset?.name ?? asset.name}</h4>
-    <p>
-      Launch the asset detail dialog from inside the preview stage so the shared
-      playground stays navigable.
-    </p>
-    <button type="button" onclick={openPreview}>Open Asset Detail</button>
+    <p>{t(M['assets.asset_detail_preview.description'])}</p>
+    <button type="button" onclick={openPreview}>{t(M['assets.asset_detail_preview.open_asset_detail'])}</button>
     {#if statusMessage}
       <p class="status">{statusMessage}</p>
     {/if}

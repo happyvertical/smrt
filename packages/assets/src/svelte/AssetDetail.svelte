@@ -7,9 +7,13 @@
  */
 
 import { Modal } from '@happyvertical/smrt-svelte/feedback';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Button } from '@happyvertical/smrt-svelte/ui';
 import type { Snippet } from 'svelte';
+import { M } from './i18n.js';
 import type { PersistedAsset } from './types';
+
+const { t } = useI18n();
 
 export interface AssetDetailProps {
   /** The asset to display */
@@ -180,7 +184,7 @@ function formatDate(date: Date | string | undefined): string {
             {:else if isPdf && asset.sourceUri}
               <div class="preview-document">
                 <span class="preview-document__icon">📄</span>
-                <a href={asset.sourceUri} target="_blank" rel="noopener noreferrer" class="preview-document__link">Open PDF in new tab</a>
+                <a href={asset.sourceUri} target="_blank" rel="noopener noreferrer" class="preview-document__link">{t(M['assets.asset_detail.open_pdf_in_new_tab'])}</a>
               </div>
             {:else}
               <div class="preview-generic">
@@ -204,18 +208,18 @@ function formatDate(date: Date | string | undefined): string {
             {#if isImage}
               <div class="form-field">
                 <label for="detail-alt" class="form-label">
-                  Alt Text
+                  {t(M['assets.asset_detail.alt_text'])}
                   {#if missingAlt}
-                    <span class="label-warning">⚠️ Missing — required for accessibility</span>
+                    <span class="label-warning">{t(M['assets.asset_detail.alt_text_missing_warning'])}</span>
                   {/if}
                 </label>
-                <input id="detail-alt" type="text" class="form-input" bind:value={editAlt} placeholder="Describe this image for screen readers" />
+                <input id="detail-alt" type="text" class="form-input" bind:value={editAlt} placeholder={t(M['assets.asset_detail.alt_text_placeholder'])} />
               </div>
             {/if}
 
             <div class="form-field">
               <label for="detail-desc" class="form-label">Description</label>
-              <textarea id="detail-desc" class="form-textarea" bind:value={editDescription} rows="3" placeholder="Optional description"></textarea>
+              <textarea id="detail-desc" class="form-textarea" bind:value={editDescription} rows="3" placeholder={t(M['assets.asset_detail.description_placeholder'])}></textarea>
             </div>
           </div>
         </section>
@@ -255,19 +259,19 @@ function formatDate(date: Date | string | undefined): string {
 
         <!-- Quick Actions -->
         <section class="detail__section">
-          <h3 class="section-heading">Quick Actions</h3>
+          <h3 class="section-heading">{t(M['assets.asset_detail.quick_actions'])}</h3>
           <div class="quick-actions">
             <button type="button" class="quick-btn" onclick={copyUrl} disabled={!asset.sourceUri}>
-              📋 Copy URL
+              {t(M['assets.asset_detail.copy_url'])}
             </button>
             {#if isImage}
               <button type="button" class="quick-btn" onclick={copyMarkdown} disabled={!asset.sourceUri}>
-                📝 Copy Markdown
+                {t(M['assets.asset_detail.copy_markdown'])}
               </button>
             {/if}
             {#if onedit && isImage}
               <button type="button" class="quick-btn" onclick={handleEdit}>
-                ✏️ Edit Image
+                {t(M['assets.asset_detail.edit_image'])}
               </button>
             {/if}
           </div>
@@ -279,7 +283,7 @@ function formatDate(date: Date | string | undefined): string {
         <!-- Content References (injected) -->
         {#if contentReferences && asset.id}
           <section class="detail__section">
-            <h3 class="section-heading">Used In</h3>
+            <h3 class="section-heading">{t(M['assets.asset_detail.used_in'])}</h3>
             {@render contentReferences({ assetId: asset.id })}
           </section>
         {/if}

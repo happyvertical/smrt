@@ -3,6 +3,10 @@
  * MessageInput - Chat message input bar
  * Text area with send button. Shows reply preview when replying.
  */
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.messages.js';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Callback when a message is sent */
@@ -64,7 +68,7 @@ function handleInput() {
           class="message-input__reply-close"
           type="button"
           onclick={oncancelreply}
-          aria-label="Cancel reply"
+          aria-label={t(M['chat.message_input.cancel_reply'])}
         >
           <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" /></svg>
         </button>
@@ -82,14 +86,14 @@ function handleInput() {
       rows="1"
       onkeydown={handleKeydown}
       oninput={handleInput}
-      aria-label="Message input"
+      aria-label={t(M['chat.message_input.input_label'])}
     ></textarea>
     <button
       class="message-input__send"
       type="button"
       onclick={handleSend}
       disabled={disabled || content.trim().length === 0}
-      aria-label="Send message"
+      aria-label={t(M['chat.message_input.send'])}
     >
       <svg viewBox="0 0 20 20" width="18" height="18">
         <path

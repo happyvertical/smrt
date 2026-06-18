@@ -4,6 +4,9 @@
  * Shows agent info header, message list with tool call displays, and input bar.
  * Agent messages are styled differently from user messages.
  */
+
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { M } from '../../i18n.js';
 import type {
   AgentSessionData,
   ChatMessageData,
@@ -12,6 +15,8 @@ import type {
 import Avatar from '../shared/Avatar.svelte';
 import { parseAgentMessageBlocks } from './message-blocks.js';
 import ToolCallDisplay from './ToolCallDisplay.svelte';
+
+const { t } = useI18n();
 
 export interface Props {
   /** Agent session data */
@@ -85,27 +90,27 @@ $effect(() => {
 });
 </script>
 
-<div class="agent-chat" aria-label="Agent conversation">
+<div class="agent-chat" aria-label={t(M['chat.agent_chat.conversation'])}>
   <form class="agent-chat__input-bar" onsubmit={(e) => handleSubmit(e)}>
     {#if !isActive}
       <div class="agent-chat__inactive-notice">
-        Session {session.status}. Cannot send messages.
+        {t(M['chat.agent_chat.inactive_notice'], { status: session.status })}
       </div>
     {:else}
       <textarea
         class="agent-chat__input"
-        placeholder="Ask the AI to write or edit content..."
+        placeholder={t(M['chat.agent_chat.input_placeholder'])}
         bind:value={inputValue}
         onkeydown={handleKeydown}
         rows={1}
         disabled={!isActive}
-        aria-label="Message input"
+        aria-label={t(M['chat.agent_chat.message_input'])}
       ></textarea>
       <button
         class="agent-chat__send-btn"
         type="submit"
         disabled={!inputValue.trim() || !isActive}
-        aria-label="Send message"
+        aria-label={t(M['chat.agent_chat.send_message'])}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
           <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
@@ -118,7 +123,7 @@ $effect(() => {
     class="agent-chat__messages"
     bind:this={messageContainer}
     role="log"
-    aria-label="Conversation messages"
+    aria-label={t(M['chat.agent_chat.messages'])}
   >
     {#each messages as msg (msg.id)}
       {@const isUser = msg.role === 'user'}
@@ -145,7 +150,7 @@ $effect(() => {
                     <span class="text-block">{block.content}</span>
                   {:else if block.type === 'fields'}
                     <div class="field-update-block">
-                      <span class="applied-badge">✓ Updated {Object.keys(block.fields).length} field{Object.keys(block.fields).length !== 1 ? 's' : ''}</span>
+                      <span class="applied-badge">{t(M['chat.agent_chat.updated_fields'], { count: Object.keys(block.fields).length, plural: Object.keys(block.fields).length !== 1 ? 's' : '' })}</span>
                       <button class="diff-btn" type="button" onclick={() => showDiff(block.fields)}>Diff</button>
                     </div>
                   {:else if block.type === 'markdown'}
@@ -183,7 +188,7 @@ $effect(() => {
 
     {#if messages.length === 0 && !loading}
       <div class="agent-chat__empty">
-        <span class="agent-chat__empty-text">Ask the AI to write or edit your content</span>
+        <span class="agent-chat__empty-text">{t(M['chat.agent_chat.empty'])}</span>
       </div>
     {/if}
   </div>
@@ -192,7 +197,7 @@ $effect(() => {
 <!-- Diff Modal -->
 <dialog bind:this={diffDialog} class="diff-dialog">
   <div class="diff-dialog__header">
-    <h4>Field Changes</h4>
+    <h4>{t(M['chat.agent_chat.field_changes'])}</h4>
     <button class="diff-dialog__close" type="button" onclick={closeDiff}>✕</button>
   </div>
   {#if diffDialogFields}

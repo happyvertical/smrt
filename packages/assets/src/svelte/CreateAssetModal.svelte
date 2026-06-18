@@ -12,7 +12,11 @@
 // entire smrt-svelte surface — including optional peers like smrt-agents /
 // smrt-users — just to compile this modal.
 import { Modal } from '@happyvertical/smrt-svelte/feedback';
+import { useI18n } from '@happyvertical/smrt-svelte/i18n';
 import { Button } from '@happyvertical/smrt-svelte/ui';
+import { M } from './i18n.js';
+
+const { t } = useI18n();
 
 export interface CreateAssetModalProps {
   /** Whether the modal is open */
@@ -124,7 +128,7 @@ const isImage = $derived(file?.type?.startsWith('image/') ?? false);
 const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
 </script>
 
-<Modal open={open} title="Upload Asset" onClose={handleClose} size="md">
+<Modal open={open} title={t(M['assets.create_asset_modal.upload_asset'])} onClose={handleClose} size="md">
       {#if !file}
         <!-- Dropzone -->
         <div
@@ -143,15 +147,15 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
             <polyline points="17 8 12 3 7 8"></polyline>
             <line x1="12" y1="3" x2="12" y2="15"></line>
           </svg>
-          <p class="dropzone__text">Drag & drop a file here, or click to browse</p>
-          <p class="dropzone__hint">You can also paste an image from your clipboard</p>
+          <p class="dropzone__text">{t(M['assets.create_asset_modal.dropzone_text'])}</p>
+          <p class="dropzone__hint">{t(M['assets.create_asset_modal.dropzone_hint'])}</p>
           <input id="file-input" type="file" class="dropzone__input" onchange={handleFileSelect} />
         </div>
       {:else}
         <!-- File preview + metadata form -->
         <div class="file-preview">
           {#if previewUrl}
-            <img src={previewUrl} alt="Preview" class="file-preview__image" />
+            <img src={previewUrl} alt={t(M['assets.create_asset_modal.preview_alt'])} class="file-preview__image" />
           {:else}
             <div class="file-preview__icon">📎</div>
           {/if}
@@ -159,10 +163,10 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
             <span class="file-preview__filename">{file.name}</span>
             <span class="file-preview__size">{formatSize(file.size)}</span>
             {#if isLargeFile}
-              <span class="file-preview__warning">⚠️ Large file — may slow page loads</span>
+              <span class="file-preview__warning">{t(M['assets.create_asset_modal.large_file_warning'])}</span>
             {/if}
           </div>
-          <button type="button" class="file-preview__remove" onclick={() => { file = null; }} aria-label="Remove file">
+          <button type="button" class="file-preview__remove" onclick={() => { file = null; }} aria-label={t(M['assets.create_asset_modal.remove_file'])}>
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
@@ -170,23 +174,23 @@ const isLargeFile = $derived((file?.size ?? 0) > 2 * 1024 * 1024);
         <div class="form-fields">
           <div class="form-field">
             <label for="asset-name" class="form-label">Name</label>
-            <input id="asset-name" type="text" class="form-input" bind:value={name} placeholder="Asset name" />
+            <input id="asset-name" type="text" class="form-input" bind:value={name} placeholder={t(M['assets.create_asset_modal.name_placeholder'])} />
           </div>
 
           <div class="form-field">
             <label for="asset-desc" class="form-label">Description</label>
-            <textarea id="asset-desc" class="form-textarea" bind:value={description} placeholder="Optional description" rows="2"></textarea>
+            <textarea id="asset-desc" class="form-textarea" bind:value={description} placeholder={t(M['assets.create_asset_modal.description_placeholder'])} rows="2"></textarea>
           </div>
 
           {#if isImage}
             <div class="form-field">
               <label for="asset-alt" class="form-label">
-                Alt Text
+                {t(M['assets.create_asset_modal.alt_text'])}
                 {#if !altText}
-                  <span class="form-label__warning">⚠️ Recommended for accessibility</span>
+                  <span class="form-label__warning">{t(M['assets.create_asset_modal.alt_text_recommended_warning'])}</span>
                 {/if}
               </label>
-              <input id="asset-alt" type="text" class="form-input" bind:value={altText} placeholder="Describe this image for screen readers" />
+              <input id="asset-alt" type="text" class="form-input" bind:value={altText} placeholder={t(M['assets.create_asset_modal.alt_text_placeholder'])} />
             </div>
           {/if}
         </div>
