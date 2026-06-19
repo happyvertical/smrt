@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.29.28
+
+### Patch Changes
+
+- ### Other Changes
+
+  - docs: document stable global launcher (#1525) (smrt-dev-mcp)
+  - @happyvertical/smrt-scanner@0.29.28
+  - @happyvertical/smrt-config@0.29.28
+  - @happyvertical/smrt-types@0.29.28
+
+## 0.29.27
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - patch WHERE identifier SQLi + config credential-URL leak (S5 audit) (#1539) (core,config)
+  - @happyvertical/smrt-scanner@0.29.27
+  - @happyvertical/smrt-config@0.29.27
+  - @happyvertical/smrt-types@0.29.27
+
 ## 0.29.26
 
 ### Patch Changes

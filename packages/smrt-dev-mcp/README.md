@@ -12,7 +12,8 @@ pnpm install @happyvertical/smrt-dev-mcp
 
 ## Usage
 
-Add to your `.mcp.json`, Codex MCP config, or Claude Desktop config:
+Add to your project-local `.mcp.json`, Codex MCP config, or Claude Desktop
+config:
 
 ```json
 {
@@ -24,6 +25,34 @@ Add to your `.mcp.json`, Codex MCP config, or Claude Desktop config:
     }
   }
 }
+```
+
+For global MCP client config, prefer a launcher that does not depend on the
+current working directory. Avoid `command = "pnpm"` with
+`args = ["exec", "smrt-dev-mcp"]` in user-level config: MCP clients can start
+servers from repositories that do not install this package, and pnpm can run
+dependency-status or build-approval checks before the MCP server starts.
+
+Install the package in a stable location and point Codex at the built server:
+
+```toml
+[mcp_servers.smrt-dev-mcp]
+command = "node"
+args = ["/absolute/path/to/node_modules/@happyvertical/smrt-dev-mcp/dist/index.js"]
+```
+
+If your Node runtime is managed by a toolchain, use a tiny absolute wrapper
+instead:
+
+```sh
+#!/usr/bin/env sh
+exec /absolute/path/to/node /absolute/path/to/node_modules/@happyvertical/smrt-dev-mcp/dist/index.js "$@"
+```
+
+```toml
+[mcp_servers.smrt-dev-mcp]
+command = "/absolute/path/to/smrt-dev-mcp-wrapper"
+args = []
 ```
 
 Set `DEBUG=true` in the environment to enable diagnostic logging.
