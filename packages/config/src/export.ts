@@ -39,6 +39,15 @@ const SECRET_PATTERNS = [
   /secret/i,
   /password/i,
   /passwd/i,
+  // Short credential aliases (#1381, codex audit cross-finding): `pass` / `pwd`
+  // keys that `password`/`passwd` don't cover. Segment- or camelCase-anchored
+  // (a capital after a letter/digit) so `smtpPass`/`databasePwd`/`db_pass`/`pwd`
+  // are stripped while `compass`/`bypass`/`passive` are not.
+  /(^|[_-])pass([_-]|$)/i,
+  /(^|[_-])pwd([_-]|$)/i,
+  /[a-z0-9]Pass([_-]|$)/,
+  /[a-z0-9]Pwd([_-]|$)/,
+  /^(pass|pwd)$/i,
   /token/i,
   /credential/i,
   /private/i,
@@ -79,6 +88,20 @@ function isSecretKey(key: string): boolean {
   return SECRET_PATTERNS.some((pattern) => pattern.test(key));
 }
 
+// Credentials embedded in the *value* of an otherwise-benign key — most
+// importantly DB connection strings like `postgres://user:pass@host:5432/db`
+// stored under keys such as `url` / `database.url` that the key-based
+// {@link SECRET_PATTERNS} deliberately don't match (#1381). Key-based redaction
+// alone leaks these into the published SSG artifact. Mask the userinfo
+// (`scheme://user:pass@host` → `scheme://***@host`) while preserving the
+// non-secret host so the value stays diagnosable.
+const CREDENTIAL_URL_RE = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@\s]+@/i;
+
+/** Redact credentials embedded in a string value (URL userinfo). */
+function redactValueSecrets(value: string): string {
+  return value.replace(CREDENTIAL_URL_RE, '$1***@');
+}
+
 /**
  * Deep-clone a config object, removing every key that looks like a secret.
  *
@@ -91,7 +114,10 @@ function isSecretKey(key: string): boolean {
  * assets — see {@link SECRET_PATTERNS} for the full rationale.
  *
  * Nested objects are recursively sanitized; arrays are mapped element-by-element.
- * Primitive values (`string`, `number`, `boolean`) pass through unchanged.
+ * `number` / `boolean` primitives pass through unchanged; `string` values are
+ * additionally run through value-level redaction that masks credentials embedded
+ * in a URL (`scheme://user:pass@host` → `scheme://***@host`), catching secrets
+ * stored under a benign key the key-based patterns don't match.
  *
  * This function is called automatically by {@link exportConfig} unless
  * `includeSecrets: true` is passed.
@@ -137,7 +163,11 @@ export function sanitizeConfig(config: unknown): unknown {
     return result;
   }
 
-  // Primitive values pass through unchanged
+  // String primitives get value-level secret redaction (credentials embedded in
+  // URLs under benign keys, #1381); other primitives pass through unchanged.
+  if (typeof config === 'string') {
+    return redactValueSecrets(config);
+  }
   return config;
 }
 

@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.29.27
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - patch WHERE identifier SQLi + config credential-URL leak (S5 audit) (#1539) (core,config)
+  - @happyvertical/smrt-scanner@0.29.27
+  - @happyvertical/smrt-config@0.29.27
+  - @happyvertical/smrt-types@0.29.27
+
+## 0.29.26
+
+### Patch Changes
+
+- ### Features
+
+  - opt-in read-through cache for collection reads with write + pub/sub invalidation (#1499) (core)
+  - @happyvertical/smrt-scanner@0.29.26
+  - @happyvertical/smrt-config@0.29.26
+  - @happyvertical/smrt-types@0.29.26
+
 ## 0.29.25
 
 ### Patch Changes

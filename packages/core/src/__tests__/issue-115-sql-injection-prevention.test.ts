@@ -317,6 +317,33 @@ describe('Issue #115: SQL Injection Prevention', () => {
         ).rejects.toThrow(/Invalid WHERE clause field/);
       }
     });
+
+    it('should prevent identifier injection via JSON-path dot-notation (#1379)', async () => {
+      // The base column passes the field whitelist, but the JSON-path suffix
+      // smuggles SQL using `/**/` comments in place of blocked whitespace. The
+      // strict identifier guard must reject the whole key before it reaches the
+      // unparameterized field position in the query builder.
+      const payloads = [
+        'metadata.x))/**/UNION/**/SELECT/**/1--',
+        'name.x))/**/OR/**/1=1--',
+        "category.a'))/**/--",
+        'name.x)/**/=/**/1',
+      ];
+      for (const key of payloads) {
+        await expect(
+          collection.list({ where: { [key]: 'value' } }),
+        ).rejects.toThrow(/Invalid WHERE clause field/);
+      }
+    });
+
+    it('should still accept a legitimate JSON-path key', async () => {
+      // metadata isn't a declared column on this class, so it resolves to the
+      // field-whitelist error — NOT the identifier-format error. The point is
+      // the strict guard does not reject well-formed dotted identifiers.
+      await expect(
+        collection.list({ where: { 'metadata.userId': 'value' } }),
+      ).rejects.toThrow(/Field does not exist/);
+    });
   });
 
   describe('Backwards Compatibility', () => {
