@@ -235,7 +235,7 @@ describe('ChatMessage', () => {
       await deletedMsg.save();
       await deletedMsg.softDelete();
 
-      const roomMessages = await messages.getByRoom('room-1');
+      const roomMessages = await messages.getByRoom('room-1', 'tenant-1');
       // Should have 2 root messages (thread and deleted excluded)
       expect(roomMessages).toHaveLength(2);
     });
@@ -269,7 +269,7 @@ describe('ChatMessage', () => {
         })
       ).save();
 
-      const threadMsgs = await messages.getByThread('thread-1');
+      const threadMsgs = await messages.getByThread('thread-1', 'tenant-1');
       expect(threadMsgs).toHaveLength(2);
     });
 
@@ -308,7 +308,11 @@ describe('ChatMessage', () => {
       });
 
       // Unread since msg1 — should be 2 (msg2 + msg3, not thread reply)
-      const unread = await messages.getUnreadCount('room-1', msg1.id as string);
+      const unread = await messages.getUnreadCount(
+        'room-1',
+        'tenant-1',
+        msg1.id as string,
+      );
       expect(unread).toBe(2);
     });
 
@@ -334,7 +338,7 @@ describe('ChatMessage', () => {
         threadId: 'thread-1',
       });
 
-      const unread = await messages.getUnreadCount('room-1', null);
+      const unread = await messages.getUnreadCount('room-1', 'tenant-1', null);
       expect(unread).toBe(2);
     });
 
@@ -362,7 +366,10 @@ describe('ChatMessage', () => {
         content: 'Only in room 2',
       });
 
-      const latest = await messages.getLatestPerRoom(['room-1', 'room-2']);
+      const latest = await messages.getLatestPerRoom(
+        ['room-1', 'room-2'],
+        'tenant-1',
+      );
       expect(latest.size).toBe(2);
       expect(latest.get('room-1')?.content).toBe('Latest in room 1');
       expect(latest.get('room-2')?.content).toBe('Only in room 2');
@@ -393,6 +400,7 @@ describe('ChatMessage', () => {
       });
 
       const withAttResults = await messages.search({
+        tenantId: 'tenant-1',
         roomId: 'room-1',
         hasAttachments: true,
       });
@@ -400,11 +408,91 @@ describe('ChatMessage', () => {
       expect(withAttResults[0].content).toBe('Has attachment');
 
       const noAttResults = await messages.search({
+        tenantId: 'tenant-1',
         roomId: 'room-1',
         hasAttachments: false,
       });
       expect(noAttResults).toHaveLength(1);
       expect(noAttResults[0].content).toBe('No attachment');
+    });
+
+    // Regression (S5 #1392): the attachment predicate MUST be pushed into SQL so
+    // the LIMIT applies to the FILTERED set. Previously the limit truncated the
+    // newest-N window first and the JS attachment filter ran afterwards, so a
+    // room whose newest messages all lacked attachments returned ZERO
+    // attachment-bearing rows even though older ones existed.
+    it('applies limit to the attachment-filtered set, not the raw window', async () => {
+      // One old message WITH an attachment, then many newer ones WITHOUT.
+      const withAtt = await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Old message with attachment',
+      });
+      withAtt.setAttachments([
+        {
+          id: 'att-1',
+          filename: 'file.txt',
+          contentType: 'text/plain',
+          size: 100,
+        },
+      ]);
+      await withAtt.save();
+
+      // 5 newer attachment-free messages so any small limit, applied before the
+      // filter, would consume only these and miss the older bearing row.
+      for (let i = 0; i < 5; i++) {
+        await messages.create({
+          tenantId: 'tenant-1',
+          roomId: 'room-1',
+          senderProfileId: 'p1',
+          content: `Newer message ${i}`,
+        });
+      }
+
+      const results = await messages.search({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        hasAttachments: true,
+        limit: 2,
+      });
+
+      // The single attachment-bearing message must surface despite the limit.
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe('Old message with attachment');
+    });
+
+    it('caps the attachment-filtered result at the requested limit', async () => {
+      // 3 attachment-bearing messages; limit 2 must return exactly 2.
+      for (let i = 0; i < 3; i++) {
+        const m = await messages.create({
+          tenantId: 'tenant-1',
+          roomId: 'room-1',
+          senderProfileId: 'p1',
+          content: `Attachment ${i}`,
+        });
+        m.setAttachments([
+          {
+            id: `att-${i}`,
+            filename: `file-${i}.txt`,
+            contentType: 'text/plain',
+            size: 10,
+          },
+        ]);
+        await m.save();
+      }
+
+      const results = await messages.search({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        hasAttachments: true,
+        limit: 2,
+      });
+
+      expect(results).toHaveLength(2);
+      for (const r of results) {
+        expect(r.hasAttachments()).toBe(true);
+      }
     });
 
     it('should search messages with filters', async () => {
@@ -434,11 +522,132 @@ describe('ChatMessage', () => {
       ).save();
 
       const results = await messages.search({
+        tenantId: 'tenant-1',
         roomId: 'room-1',
         query: 'Alice',
       });
       expect(results).toHaveLength(1);
       expect(results[0].content).toBe('Hello from Alice');
+    });
+  });
+
+  // Regression (S5 #1392): room/thread/session ids are NOT globally unique, so
+  // the read helpers MUST bind tenantId. Two tenants sharing the SAME room id
+  // must never see each other's messages.
+  describe('Tenant-bound reads', () => {
+    async function seedSameRoomTwoTenants() {
+      // Same roomId 'room-shared' in two tenants; same threadId / sessionId too.
+      // Each tenant gets exactly ONE root message (threadId null) plus one
+      // thread reply and one threaded session message so the root-only helpers
+      // (getByRoom / getUnreadCount) see a single root per tenant.
+      await (
+        await messages.create({
+          tenantId: 'tenant-a',
+          roomId: 'room-shared',
+          senderProfileId: 'pa',
+          content: 'A root',
+        })
+      ).save();
+      await (
+        await messages.create({
+          tenantId: 'tenant-a',
+          roomId: 'room-shared',
+          senderProfileId: 'pa',
+          content: 'A thread',
+          threadId: 'thread-shared',
+        })
+      ).save();
+      await (
+        await messages.create({
+          tenantId: 'tenant-a',
+          roomId: 'room-shared',
+          senderProfileId: 'pa',
+          content: 'A session',
+          threadId: 'thread-shared',
+          agentSessionId: 'session-shared',
+        })
+      ).save();
+      await (
+        await messages.create({
+          tenantId: 'tenant-b',
+          roomId: 'room-shared',
+          senderProfileId: 'pb',
+          content: 'B root',
+        })
+      ).save();
+      await (
+        await messages.create({
+          tenantId: 'tenant-b',
+          roomId: 'room-shared',
+          senderProfileId: 'pb',
+          content: 'B thread',
+          threadId: 'thread-shared',
+        })
+      ).save();
+      await (
+        await messages.create({
+          tenantId: 'tenant-b',
+          roomId: 'room-shared',
+          senderProfileId: 'pb',
+          content: 'B session',
+          threadId: 'thread-shared',
+          agentSessionId: 'session-shared',
+        })
+      ).save();
+    }
+
+    it('getByRoom never returns another tenant messages for a same-id room', async () => {
+      await seedSameRoomTwoTenants();
+
+      const aRoom = await messages.getByRoom('room-shared', 'tenant-a');
+      expect(aRoom).toHaveLength(1);
+      expect(aRoom[0].content).toBe('A root');
+
+      const bRoom = await messages.getByRoom('room-shared', 'tenant-b');
+      expect(bRoom).toHaveLength(1);
+      expect(bRoom[0].content).toBe('B root');
+    });
+
+    it('getByThread, getByAgentSession, search, getUnreadCount, getLatestPerRoom are tenant-bound', async () => {
+      await seedSameRoomTwoTenants();
+
+      const aThread = await messages.getByThread('thread-shared', 'tenant-a');
+      expect(aThread.every((m) => m.tenantId === 'tenant-a')).toBe(true);
+      expect(aThread.map((m) => m.content).sort()).toEqual([
+        'A session',
+        'A thread',
+      ]);
+
+      const aSession = await messages.getByAgentSession(
+        'session-shared',
+        'tenant-a',
+      );
+      expect(aSession.map((m) => m.content)).toEqual(['A session']);
+
+      const aSearch = await messages.search({
+        tenantId: 'tenant-a',
+        roomId: 'room-shared',
+      });
+      expect(aSearch.every((m) => m.tenantId === 'tenant-a')).toBe(true);
+      expect(aSearch.map((m) => m.content).sort()).toEqual([
+        'A root',
+        'A session',
+        'A thread',
+      ]);
+
+      // tenant-a has only the single root message (threadId null) in the room
+      const aUnread = await messages.getUnreadCount(
+        'room-shared',
+        'tenant-a',
+        null,
+      );
+      expect(aUnread).toBe(1);
+
+      const latest = await messages.getLatestPerRoom(
+        ['room-shared'],
+        'tenant-b',
+      );
+      expect(latest.get('room-shared')?.content).toBe('B root');
     });
   });
 });

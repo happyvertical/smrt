@@ -1,5 +1,6 @@
 import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import { ChatService } from '@happyvertical/smrt-chat';
+import { sendAgentReply } from '@happyvertical/smrt-chat/internal/agent-runtime';
 import {
   type ResolvedPrompt,
   resolvePrompt,
@@ -34,7 +35,11 @@ export type ContentChatAIConfig = AIClientOptions & {
 
 export interface ContentChatCollectionLike {
   db: DatabaseInterface;
-  get(id: string): Promise<unknown>;
+  // Accepts either a raw id or a bound `{ id, tenantId }` filter so the content
+  // lookup can be tenant-bound at the query level (S5 #1392) rather than doing a
+  // cross-tenant `get(id)` followed only by a post-filter. A real SmrtCollection
+  // satisfies this — its `get` takes `string | Record<string, any>`.
+  get(filter: string | Record<string, unknown>): Promise<unknown>;
 }
 
 export interface ContentChatSessionInput {
@@ -173,6 +178,38 @@ export function contentChatSessionMatchesContent(
   return asNonEmptyString(context.contentId) === contentId;
 }
 
+/**
+ * Stable agent-session key scoping a content-editor session to its content
+ * (S5 #1392).
+ *
+ * `createAgentSession` reuses ANY active session for the same
+ * agent/profile/tenant unless a `sessionKey` is supplied. The content-editor
+ * agent (`content_editor`) opens a distinct conversation per content, so a
+ * keyless create would reuse — and the handler would then REWRITE — a session
+ * created for a different content, returning the other content's room/threads.
+ * Keying the session on the content id makes a new content always create a
+ * distinct session/room.
+ */
+export function contentChatSessionKey(contentId: string): string {
+  return `content:${contentId}`;
+}
+
+/**
+ * Tenant-bound content lookup (S5 #1392).
+ *
+ * Binds `tenantId` (including the `null` "global" scope) into the lookup itself
+ * so a content row from another tenant can never be RESOLVED first and only
+ * rejected after the fact. The `referenceBelongsToTenant` post-filter at every
+ * call site remains as defense-in-depth.
+ */
+function getContentForTenant(
+  contents: ContentChatCollectionLike,
+  tenantScope: string | null,
+  id: string,
+): Promise<unknown> {
+  return contents.get({ id, tenantId: tenantScope });
+}
+
 async function assertContentExistsForTenant(
   contents: ContentChatCollectionLike | undefined,
   tenantScope: string | null,
@@ -182,7 +219,7 @@ async function assertContentExistsForTenant(
     return;
   }
 
-  const content = await contents.get(contentId);
+  const content = await getContentForTenant(contents, tenantScope, contentId);
   if (!content || !referenceBelongsToTenant(content, tenantScope)) {
     throw new Error('Content not found');
   }
@@ -246,12 +283,13 @@ export async function getOrCreateContentEditorChatSession(
 
   let activeSession = null;
   try {
-    const agentSessions = await chatService.agentSessions.list({
-      where: {
-        agentId: CONTENT_EDITOR_AGENT_ID,
-        participantProfileId: profileId,
-        status: 'active',
-      },
+    // Tenant-bound session list via the ChatService facade (S5 #1392): the raw
+    // `agentSessions.list({ where })` reach-in was tenant-UNBOUND and could
+    // surface a session from another tenant before authorization.
+    const agentSessions = await chatService.findActiveAgentSessions({
+      tenantId,
+      agentId: CONTENT_EDITOR_AGENT_ID,
+      participantProfileId: profileId,
     });
     activeSession =
       agentSessions.find((session: unknown) =>
@@ -273,11 +311,16 @@ export async function getOrCreateContentEditorChatSession(
         tenantId,
       },
     );
+    // Scope the session to this content (S5 #1392) so a new contentId can never
+    // reuse — and have its context rewritten over — a session/room created for a
+    // different content. The handler-side `contentChatSessionMatchesContent`
+    // filter above already narrows reads; this binds the create/reuse path too.
     const { session } = await chatService.createAgentSession({
       tenantId,
       agentId: CONTENT_EDITOR_AGENT_ID,
-      participantProfileId: profileId,
+      actorProfileId: profileId,
       systemPrompt: resolvedPrompt.text,
+      sessionKey: contentChatSessionKey(input.contentId),
     });
     await session.updateSessionContext(
       buildContentEditorSessionContext(input.contentId, resolvedPrompt),
@@ -292,9 +335,12 @@ export async function getOrCreateContentEditorChatSession(
     if (!chatRoomId) {
       throw new Error('Agent session is missing a chat room');
     }
-    threads = await chatService.threads.list({
-      where: { roomId: chatRoomId },
-      orderBy: 'createdAt DESC',
+    // Membership- and tenant-gated thread list via the facade (S5 #1392); the
+    // editor (profileId) is the room owner, so the membership check passes.
+    threads = await chatService.listRoomThreads({
+      roomId: chatRoomId,
+      actorProfileId: profileId,
+      tenantId,
     });
   } catch {
     // Threads table may not exist yet.
@@ -321,7 +367,13 @@ export async function createContentEditorChatThread(
     tenantScope,
     input.contentId,
   );
-  const session = await chatService.agentSessions.get(input.sessionId);
+  // Tenant-bound session lookup via the facade (S5 #1392): the raw
+  // `agentSessions.get(id)` was tenant-UNBOUND and could select a session from
+  // another tenant before the ownership/context check below.
+  const session = await chatService.getAgentSession({
+    agentSessionId: input.sessionId,
+    tenantId,
+  });
 
   if (
     !contentChatSessionIsAuthorized(session, {
@@ -349,11 +401,14 @@ export async function createContentEditorChatThread(
     updates = buildContentChatModelUpdates(ctx, input.model, input.model);
   }
 
-  const thread = await chatService.threads.create({
+  // Member-checked thread creation via the facade (S5 #1392): the editor owns
+  // the agent room, so the membership check passes. Replaces the raw
+  // `threads.create(...)` that skipped the facade entirely.
+  const thread = await chatService.startThread({
     tenantId,
     roomId: chatRoomId,
+    actorProfileId: profileId,
     title: input.title,
-    messageCount: 0,
   });
 
   if (updates) {
@@ -380,18 +435,22 @@ export async function listContentEditorChatThreadMessages(
     tenantScope,
     input.contentId,
   );
-  const thread = await chatService.threads.get(input.threadId);
+  // Tenant-bound thread + session lookups via the facade (S5 #1392): the raw
+  // `threads.get(id)` / `agentSessions.list({ where })` reach-ins were
+  // tenant-UNBOUND and could select cross-tenant chat state before authZ.
+  const thread = await chatService.getThread({
+    threadId: input.threadId,
+    tenantId,
+  });
   if (!thread) {
     throw new Error('Thread not found');
   }
 
   const roomId = (thread as { roomId?: string }).roomId;
-  const activeSessions = await chatService.agentSessions.list({
-    where: {
-      agentId: CONTENT_EDITOR_AGENT_ID,
-      participantProfileId: profileId,
-      status: 'active',
-    },
+  const activeSessions = await chatService.findActiveAgentSessions({
+    tenantId,
+    agentId: CONTENT_EDITOR_AGENT_ID,
+    participantProfileId: profileId,
   });
   const authorizedSession = activeSessions.find(
     (session: unknown) =>
@@ -402,16 +461,20 @@ export async function listContentEditorChatThreadMessages(
     throw new Error('Thread not found');
   }
 
-  const messages = await chatService.messages.list({
-    where: { threadId: input.threadId },
-    orderBy: 'createdAt DESC',
+  // Membership- + tenant-gated thread message read via the facade (S5 #1392);
+  // the editor owns the room, so the membership check passes. Returned
+  // chronological (oldest-first) by the facade.
+  const messages = await chatService.getThreadMessages({
+    threadId: input.threadId,
+    actorProfileId: profileId,
+    tenantId,
     limit: 100,
   });
 
   return {
     chatService,
     thread,
-    messages: messages.reverse(),
+    messages,
   };
 }
 
@@ -531,7 +594,10 @@ async function buildReferenceContext(
     ),
   ].slice(0, MAX_REFERENCE_IDS);
   for (const id of ids) {
-    const ref = (await contents.get(id)) as {
+    // Tenant-bound lookup (S5 #1392): bind tenantId into the query rather than
+    // a cross-tenant get(id) + post-filter. The post-filter below stays as
+    // defense-in-depth.
+    const ref = (await getContentForTenant(contents, tenantScope, id)) as {
       title?: string;
       body?: string;
       tenantId?: string;
@@ -573,7 +639,13 @@ export async function sendContentEditorChatThreadMessage(
     input.contentId,
   );
 
-  const session = await chatService.agentSessions.get(input.sessionId);
+  // Tenant-bound session + thread lookups via the facade (S5 #1392): the raw
+  // `agentSessions.get(id)` / `threads.get(id)` reach-ins were tenant-UNBOUND
+  // and could select cross-tenant chat state before the authorization below.
+  const session = await chatService.getAgentSession({
+    agentSessionId: input.sessionId,
+    tenantId,
+  });
   if (
     !contentChatSessionIsAuthorized(session, {
       profileId,
@@ -583,7 +655,10 @@ export async function sendContentEditorChatThreadMessage(
     throw new Error('Active session not found');
   }
 
-  const thread = await chatService.threads.get(input.threadId);
+  const thread = await chatService.getThread({
+    threadId: input.threadId,
+    tenantId,
+  });
   if (
     !thread ||
     (thread as { roomId?: string }).roomId !==
@@ -637,19 +712,21 @@ export async function sendContentEditorChatThreadMessage(
     tenantId,
     roomId: chatRoomId,
     threadId: (thread as { id: string }).id,
-    senderProfileId: profileId,
+    actorProfileId: profileId,
     content: input.content,
-    role: 'user',
     agentSessionId: (session as { id: string }).id,
   });
 
-  const history = await chatService.messages.list({
-    where: { threadId: (thread as { id: string }).id },
-    orderBy: 'createdAt DESC',
+  // Membership- + tenant-gated thread history via the facade (S5 #1392); the
+  // editor owns the room. Returned chronological (oldest-first) by the facade.
+  const history = await chatService.getThreadMessages({
+    threadId: (thread as { id: string }).id,
+    actorProfileId: profileId,
+    tenantId,
     limit: 10,
   });
 
-  const conversation = history.reverse().map((message: unknown) => {
+  const conversation = history.map((message: unknown) => {
     const json = contentChatMessageToJSON(message);
     return {
       role: json.role as 'user' | 'assistant' | 'system',
@@ -674,14 +751,15 @@ export async function sendContentEditorChatThreadMessage(
     maxTokens: resolvedAI.maxTokens ?? 2000,
   });
 
-  const agentMessage = await chatService.sendMessage({
+  // Author the assistant reply AS the session's agent via the trusted internal
+  // agent-runtime surface — never via the public sendMessage (which would force
+  // the message to the caller's identity with role 'user') (S5 #1392).
+  const agentMessage = await sendAgentReply(chatService, {
     tenantId,
-    roomId: chatRoomId,
     agentSessionId: (session as { id: string }).id,
     threadId: (thread as { id: string }).id,
-    senderProfileId: (session as { agentId: string }).agentId,
     content: response.content,
-    role: 'assistant',
+    kind: 'assistant',
   });
 
   const updates = buildContentChatModelUpdates(

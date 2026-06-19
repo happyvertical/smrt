@@ -110,6 +110,16 @@ export class MCPGenerator {
       const config = ObjectRegistry.getConfig(simpleName);
       const mcpConfig = config.mcp;
 
+      // `mcp: false` disables MCP generation entirely for the class. Without
+      // this gate an `include` list still leaked custom-method tools (the
+      // custom-method branch historically only honored `include` when it
+      // listed custom methods), so `false` is the only fully fail-closed
+      // switch. Mirrors rest.ts's `apiConfig === false` short-circuit
+      // (#1540 / #1546).
+      if (mcpConfig === false) {
+        continue;
+      }
+
       // Handle boolean vs object config
       const excluded: string[] =
         typeof mcpConfig === 'object' && mcpConfig?.exclude
@@ -279,18 +289,27 @@ export class MCPGenerator {
           ? mcpConfig.exclude
           : [];
 
-      // Check if include list contains any custom method names (indicates strict mode)
+      // When an `include` list is present it is the COMPLETE allowlist for
+      // this surface: a custom (non-CRUD) method is exposed ONLY if its name
+      // appears in `include`. Without an include list we keep the historical
+      // default of auto-exposing every public method. This closes the leak
+      // where `mcp: { include: ['list', 'get'] }` still emitted custom-method
+      // tools like `payment_recordpayment` because `include` only gated CRUD
+      // verbs (#1540 / #1390).
       const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
       const customMethodsInInclude =
         included?.filter((item) => !crudOperations.includes(item)) || [];
-      const hasCustomMethodsInInclude = customMethodsInInclude.length > 0;
+      // An include list (even one naming only CRUD verbs) switches custom
+      // methods into strict allowlist mode.
+      const hasIncludeList = included !== undefined;
 
       // Try to discover methods from manifest (including inherited methods)
       const methods = await ObjectRegistry.getAllMethods(objectName);
       const methodNames = new Set(Array.from(methods.keys()));
 
-      // If we have an include list with custom methods, validate and generate tools
-      if (hasCustomMethodsInInclude) {
+      // Strict mode: an include list is present, so only the custom methods it
+      // names are generated (may be none, e.g. include: ['list', 'get']).
+      if (hasIncludeList) {
         for (const methodName of customMethodsInInclude) {
           // Skip if explicitly excluded
           if (excluded.includes(methodName)) continue;
@@ -309,6 +328,24 @@ export class MCPGenerator {
             );
             continue;
           }
+
+          // A non-public method must never be exposed as a tool, even when it
+          // is explicitly named in `include`. This keeps strict-include mode
+          // consistent with the non-strict path below, which gates on
+          // `methodDef.isPublic`. Listing a private method in `include` is a
+          // config mistake, not an override of method visibility (#1540).
+          //
+          // The scanner strips private/protected methods from the manifest, so
+          // when a non-public method is named in `include` it is absent from
+          // `methods` and is only resolvable via validateCustomMethod() on the
+          // runtime prototype (TS access modifiers are erased at runtime). Such
+          // a method must NOT be emitted. We still allow methods that are
+          // present on the class but legitimately absent from the manifest
+          // (e.g. inline/dynamically registered classes), so the guard fires
+          // only when there is a public manifest entry to anchor on OR the
+          // method exists solely as a stripped (non-public) manifest method.
+          const methodDef = methods.get(methodName);
+          if (methodDef && !methodDef.isPublic) continue;
 
           // Generate tool for this method
           const toolName = `${lowerName}_${methodName}`.toLowerCase();

@@ -13,10 +13,18 @@ import type {
   OnlineStatus,
 } from '../types.js';
 
+/**
+ * Room membership row. Internal model — membership must be established and
+ * mutated only through the membership/owner-checked {@link ChatService}
+ * (S5 #1392). The generated CRUD surface is read-only (`get`/`list`);
+ * `create`/`update`/`delete` are NOT generated, otherwise an authenticated
+ * caller could POST a ChatParticipant to forge their own membership of any room
+ * (privilege escalation) and bypass every downstream membership check.
+ */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'chat_participants',
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })

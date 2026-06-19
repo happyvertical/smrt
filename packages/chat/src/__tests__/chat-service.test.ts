@@ -7,17 +7,24 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ChatService } from '../services/ChatService.js';
+import { ChatService, sendAgentReply } from '../services/ChatService.js';
+import {
+  getRawChatCollections,
+  type RawChatCollections,
+} from './raw-collections.js';
 
 describe('ChatService', () => {
   let dbPath: string;
   let chat: ChatService;
+  // Raw collections are #private on ChatService; tests resolve them from the
+  // registry to assert persisted state at the data layer (S5 #1392).
+  let raw: RawChatCollections;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-chat-service-test-${Date.now()}.db`);
-    chat = await ChatService.create({
-      db: { type: 'sqlite', url: dbPath },
-    });
+    const options = { db: { type: 'sqlite' as const, url: dbPath } };
+    chat = await ChatService.create(options);
+    raw = await getRawChatCollections(options);
   });
 
   afterEach(() => {
@@ -36,17 +43,19 @@ describe('ChatService', () => {
 
       try {
         await getTestDatabase({ db: sharedDb });
-        const sharedChat = await ChatService.create({ db: sharedDb });
+        const sharedOptions = { db: sharedDb };
+        const sharedChat = await ChatService.create(sharedOptions);
+        const sharedRaw = await getRawChatCollections(sharedOptions);
         const room = await sharedChat.createRoom({
           tenantId: 'tenant-1',
           name: 'Bootstrap',
           roomType: 'public',
-          createdByProfileId: 'profile-1',
+          actorProfileId: 'profile-1',
         });
 
         expect(room.id).toBeDefined();
 
-        const rooms = await sharedChat.rooms.list({
+        const rooms = await sharedRaw.rooms.list({
           where: { tenantId: 'tenant-1' },
         });
         expect(rooms).toHaveLength(1);
@@ -62,16 +71,17 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'General',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       expect(room.name).toBe('General');
       expect(room.roomType).toBe('public');
 
       // Creator should be added as owner participant
-      const membership = await chat.participants.findMembership(
+      const membership = await raw.participants.findMembership(
         room.id as string,
         'profile-1',
+        'tenant-1',
       );
       expect(membership).toBeDefined();
       expect(membership?.role).toBe('owner');
@@ -82,7 +92,7 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Engineering',
         roomType: 'private',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         description: 'Engineering team discussion',
         topic: 'Sprint 42',
       });
@@ -98,13 +108,13 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const message = await chat.sendMessage({
         tenantId: 'tenant-1',
         roomId: room.id as string,
-        senderProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         content: 'Hello, world!',
       });
 
@@ -113,7 +123,7 @@ describe('ChatService', () => {
       expect(message.role).toBe('user');
 
       // Room's lastMessageAt should be updated
-      const updatedRoom = await chat.rooms.get({ id: room.id });
+      const updatedRoom = await raw.rooms.get({ id: room.id });
       expect(updatedRoom?.lastMessageAt).toBeDefined();
     });
 
@@ -122,40 +132,123 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       // Send root message
       const rootMsg = await chat.sendMessage({
         tenantId: 'tenant-1',
         roomId: room.id as string,
-        senderProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         content: 'Root message',
       });
 
-      // Start a thread
+      // Start a thread (owner is an active member of the room)
       const thread = await chat.startThread({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         rootMessageId: rootMsg.id as string,
         title: 'Discussion',
       });
 
       expect(thread.messageCount).toBe(0);
 
+      // profile-2 must be an active member to send (room-membership authz);
+      // the room owner (profile-1) adds them.
+      await chat.addParticipant({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'profile-1',
+        profileId: 'profile-2',
+      });
+
       // Send message in thread
       await chat.sendMessage({
         tenantId: 'tenant-1',
         roomId: room.id as string,
-        senderProfileId: 'profile-2',
+        actorProfileId: 'profile-2',
         content: 'Thread reply',
         threadId: thread.id as string,
       });
 
       // Thread stats should be updated
-      const updatedThread = await chat.threads.get({ id: thread.id });
+      const updatedThread = await raw.threads.get({ id: thread.id });
       expect(updatedThread?.messageCount).toBe(1);
       expect(updatedThread?.lastMessageAt).toBeDefined();
+    });
+
+    // Regression (S5 #1392): a rootless thread must persist rootMessageId as
+    // NULL, never an empty string. `''` is a valid TEXT value on SQLite but is
+    // rejected by native-`uuid` FK columns (Postgres/DuckDB), so the previous
+    // `rootMessageId: ''` default would break those backends.
+    it('startThread with no root persists rootMessageId as null (no empty FK)', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'Rootless Thread Room',
+        roomType: 'agent',
+        actorProfileId: 'profile-1',
+      });
+
+      const thread = await chat.startThread({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'profile-1',
+        title: 'Editor session',
+      });
+
+      expect(thread.rootMessageId).toBeNull();
+
+      // Re-read from the data layer to confirm what was actually persisted.
+      const persisted = await raw.threads.get({
+        id: thread.id,
+        tenantId: 'tenant-1',
+      });
+      expect(persisted?.rootMessageId).toBeNull();
+      expect(persisted?.rootMessageId).not.toBe('');
+    });
+  });
+
+  // Regression (S5 #1392): getRoomMessages threads tenantId through to the
+  // underlying read. A foreign-tenant message row that shares this room's id
+  // must never appear in the result, even though membership is also gated.
+  describe('Tenant-bound room reads', () => {
+    it('getRoomMessages excludes a foreign-tenant message sharing the same room id', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-a',
+        name: 'A room',
+        roomType: 'public',
+        actorProfileId: 'profile-a',
+      });
+      const roomId = room.id as string;
+
+      await chat.sendMessage({
+        tenantId: 'tenant-a',
+        roomId,
+        actorProfileId: 'profile-a',
+        content: 'A secret',
+      });
+
+      // Inject a message row from ANOTHER tenant that reuses this room id (the
+      // roomId column is not tenant-unique). A roomId-only read would surface
+      // it; the tenant-bound read must not.
+      await raw.messages.create({
+        tenantId: 'tenant-b',
+        roomId,
+        senderProfileId: 'profile-b',
+        content: 'B secret',
+        role: 'user',
+        messageType: 'text',
+      });
+
+      const aMessages = await chat.getRoomMessages({
+        roomId,
+        actorProfileId: 'profile-a',
+        tenantId: 'tenant-a',
+      });
+      expect(aMessages).toHaveLength(1);
+      expect(aMessages[0].content).toBe('A secret');
+      expect(aMessages.some((m) => m.content === 'B secret')).toBe(false);
     });
   });
 
@@ -165,12 +258,13 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const participant = await chat.addParticipant({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         profileId: 'profile-2',
       });
 
@@ -183,18 +277,20 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const p1 = await chat.addParticipant({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         profileId: 'profile-2',
       });
 
       const p2 = await chat.addParticipant({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         profileId: 'profile-2',
       });
 
@@ -206,6 +302,7 @@ describe('ChatService', () => {
     it('should get or create a DM room', async () => {
       const room = await chat.getOrCreateDM({
         tenantId: 'tenant-1',
+        actorProfileId: 'profile-a',
         profileId1: 'profile-a',
         profileId2: 'profile-b',
       });
@@ -213,13 +310,15 @@ describe('ChatService', () => {
       expect(room.roomType).toBe('dm');
 
       // Both profiles should be participants
-      const membership1 = await chat.participants.findMembership(
+      const membership1 = await raw.participants.findMembership(
         room.id as string,
         'profile-a',
+        'tenant-1',
       );
-      const membership2 = await chat.participants.findMembership(
+      const membership2 = await raw.participants.findMembership(
         room.id as string,
         'profile-b',
+        'tenant-1',
       );
       expect(membership1).toBeDefined();
       expect(membership2).toBeDefined();
@@ -228,12 +327,14 @@ describe('ChatService', () => {
     it('should return same DM room on repeated calls', async () => {
       const room1 = await chat.getOrCreateDM({
         tenantId: 'tenant-1',
+        actorProfileId: 'profile-a',
         profileId1: 'profile-a',
         profileId2: 'profile-b',
       });
 
       const room2 = await chat.getOrCreateDM({
         tenantId: 'tenant-1',
+        actorProfileId: 'profile-b',
         profileId1: 'profile-a',
         profileId2: 'profile-b',
       });
@@ -247,7 +348,7 @@ describe('ChatService', () => {
       const { session, room } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         allowedTools: ['search', 'calculate'],
         systemPrompt: 'You are a helpful assistant',
       });
@@ -260,9 +361,10 @@ describe('ChatService', () => {
       expect(room.roomType).toBe('agent');
 
       // Profile should be a participant in the room
-      const membership = await chat.participants.findMembership(
+      const membership = await raw.participants.findMembership(
         room.id as string,
         'profile-1',
+        'tenant-1',
       );
       expect(membership).toBeDefined();
       expect(membership?.role).toBe('owner');
@@ -272,13 +374,13 @@ describe('ChatService', () => {
       const result1 = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const result2 = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       // Should return the same session and room (no orphaned rooms)
@@ -286,37 +388,94 @@ describe('ChatService', () => {
       expect(result2.room.id).toBe(result1.room.id);
 
       // Verify only one agent room was created
-      const agentRooms = await chat.rooms.findAgentRooms();
+      const agentRooms = await raw.rooms.findAgentRooms();
       expect(agentRooms).toHaveLength(1);
+    });
+
+    // Regression (S5 #1392): a sessionKey scopes session identity to a subject.
+    // Two distinct keys under the same agent/profile/tenant must NOT collapse
+    // onto one session/room — otherwise a request about subject B would reuse
+    // (and rewrite) subject A's session and surface A's room/threads.
+    it('creates distinct sessions/rooms for distinct sessionKeys', async () => {
+      const a = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:A',
+      });
+      const b = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:B',
+      });
+
+      expect(b.session.id).not.toBe(a.session.id);
+      expect(b.room.id).not.toBe(a.room.id);
+      expect(a.session.getSessionKey()).toBe('content:A');
+      expect(b.session.getSessionKey()).toBe('content:B');
+
+      // Re-requesting subject A returns A's original session/room, never B's.
+      const aAgain = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:A',
+      });
+      expect(aAgain.session.id).toBe(a.session.id);
+      expect(aAgain.room.id).toBe(a.room.id);
+
+      // Two keyed subjects => two distinct agent rooms.
+      const agentRooms = await raw.rooms.findAgentRooms();
+      expect(agentRooms).toHaveLength(2);
+    });
+
+    // Regression (S5 #1392): a keyed create must not reuse a keyless (legacy)
+    // session for the same agent/profile/tenant — distinct subject, distinct
+    // session.
+    it('does not reuse a keyless session for a keyed create', async () => {
+      const keyless = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+      });
+      const keyed = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:A',
+      });
+
+      expect(keyed.session.id).not.toBe(keyless.session.id);
+      expect(keyless.session.getSessionKey()).toBeNull();
+      expect(keyed.session.getSessionKey()).toBe('content:A');
     });
 
     it('should send messages within an agent session', async () => {
       const { session, room } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       // User sends a message
-      const userMsg = await chat.sendAgentMessage({
+      const userMsg = await chat.sendAgentUserMessage({
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
-        senderProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         content: 'What is the weather?',
-        role: 'user',
       });
 
       expect(userMsg.roomId).toBe(room.id);
       expect(userMsg.agentSessionId).toBe(session.id);
       expect(userMsg.role).toBe('user');
 
-      // Agent responds
-      const agentMsg = await chat.sendAgentMessage({
+      // Agent responds (internal reply path, authored as the agent)
+      const agentMsg = await sendAgentReply(chat, {
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
-        senderProfileId: 'agent-1',
         content: 'The weather is sunny.',
-        role: 'assistant',
+        kind: 'assistant',
       });
 
       expect(agentMsg.role).toBe('assistant');
@@ -326,18 +485,17 @@ describe('ChatService', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       await session.close();
 
       await expect(
-        chat.sendAgentMessage({
+        chat.sendAgentUserMessage({
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
-          senderProfileId: 'profile-1',
+          actorProfileId: 'profile-1',
           content: 'Hello',
-          role: 'user',
         }),
       ).rejects.toThrow('Agent session is not active');
     });
@@ -346,7 +504,7 @@ describe('ChatService', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         maxTokens: 10000,
         maxMessages: 20,
       });

@@ -12,11 +12,19 @@ import type {
   ChatMessageType,
 } from '../types.js';
 
+/**
+ * Chat message. Internal model — all mutations must go through the
+ * membership-checked {@link ChatService} (S5 #1392). The generated CRUD surface
+ * is read-only (`get`/`list`); `create`/`update`/`delete` are intentionally NOT
+ * generated so an authenticated caller cannot write into an arbitrary room via
+ * the raw collection routes, bypassing the room-membership authorization in
+ * {@link ChatService.sendMessage}.
+ */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'chat_messages',
-  api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get', 'create'] },
+  api: { include: ['list', 'get'] },
+  mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class ChatMessage extends SmrtObject {

@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.29.31
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - honor mcp:false/api:false + exhaustive include across MCP+OpenAPI generators (S5 #1540) (core)
+  - @happyvertical/smrt-scanner@0.29.31
+  - @happyvertical/smrt-config@0.29.31
+  - @happyvertical/smrt-types@0.29.31
+
+## 0.29.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - tenant-scope DispatchBus + server-derived source (S5 #1398) (core)
+  - @happyvertical/smrt-scanner@0.29.30
+  - @happyvertical/smrt-config@0.29.30
+  - @happyvertical/smrt-types@0.29.30
+
 ## 0.29.29
 
 ### Patch Changes
