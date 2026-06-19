@@ -84,6 +84,14 @@ function generateSchemas(): Record<string, any> {
   for (const [key, classInfo] of registeredClasses) {
     // Issue #951: Use simple name for schema keys, not the qualified map key
     const name = classInfo.name || key;
+    // `api: false` disables REST generation (see rest.ts) and is already
+    // skipped in generatePaths(); mirror that here so component schemas don't
+    // leak the field shape of a surface with no working handlers. Skip ONLY
+    // when api is explicitly false — default (undefined) and
+    // `{ include: [...] }` configs still publish their schema (#1540).
+    if (ObjectRegistry.getConfig(name).api === false) {
+      continue;
+    }
     schemas[name] = generateObjectSchema(name);
     schemas[`${name}List`] = {
       type: 'object',
@@ -198,6 +206,12 @@ function generatePaths(basePath: string): Record<string, any> {
 
     const config = ObjectRegistry.getConfig(name);
     const apiConfig = config.api;
+    // `api: false` disables REST generation (see rest.ts); don't advertise its
+    // paths in the OpenAPI spec either, or the spec leaks the shape of a
+    // surface that has no working handlers (#1540).
+    if (apiConfig === false) {
+      continue;
+    }
     const excluded: string[] =
       typeof apiConfig === 'object' && apiConfig?.exclude
         ? apiConfig.exclude
