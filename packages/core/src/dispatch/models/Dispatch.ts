@@ -24,6 +24,7 @@ export interface DispatchData {
   processed_by: string | null;
   target_subscriber: string | null;
   correlation_id: string | null;
+  tenant_id: string | null;
   metadata: string | null;
   created_at: string;
   updated_at: string;
@@ -72,6 +73,15 @@ export class Dispatch {
   /** Correlation ID for linking request/response dispatch pairs */
   correlationId: string;
 
+  /**
+   * Tenant the dispatch was emitted in (server-derived, untrusted-input-proof).
+   *
+   * Stamped from the active tenant context at emit time — never from caller
+   * options — so it cannot be spoofed. `null` for global / non-tenant
+   * dispatches. Used to isolate reads/claims across tenants (S5 #1398).
+   */
+  tenantId: string | null;
+
   /** Additional metadata */
   metadata: Record<string, unknown>;
 
@@ -92,6 +102,7 @@ export class Dispatch {
     this.processedBy = data.processed_by || '';
     this.targetSubscriber = data.target_subscriber || null;
     this.correlationId = data.correlation_id || '';
+    this.tenantId = data.tenant_id ?? null;
     this.createdAt = data.created_at ? new Date(data.created_at) : new Date();
     this.updatedAt = data.updated_at ? new Date(data.updated_at) : new Date();
     this.processedAt = data.processed_at ? new Date(data.processed_at) : null;
@@ -125,6 +136,7 @@ export class Dispatch {
       processed_by: this.processedBy || null,
       target_subscriber: this.targetSubscriber || null,
       correlation_id: this.correlationId || null,
+      tenant_id: this.tenantId ?? null,
       metadata: JSON.stringify(this.metadata),
       created_at: this.createdAt.toISOString(),
       updated_at: new Date().toISOString(),

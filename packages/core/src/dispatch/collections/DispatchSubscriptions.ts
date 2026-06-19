@@ -32,6 +32,7 @@ export class DispatchSubscriptionCollection {
         handler: row.handler,
         delivery: row.delivery,
         enabled: row.enabled,
+        tenant_id: row.tenant_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
       },

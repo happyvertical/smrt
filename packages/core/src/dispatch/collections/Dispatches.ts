@@ -29,8 +29,8 @@ export class DispatchCollection {
     await db.query(
       `INSERT INTO _smrt_dispatch
         (id, type, source, source_id, payload, status, attempts, last_error,
-         processed_at, processed_by, target_subscriber, correlation_id, metadata, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+         processed_at, processed_by, target_subscriber, correlation_id, tenant_id, metadata, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
       row.id,
       row.type,
       row.source,
@@ -43,6 +43,7 @@ export class DispatchCollection {
       row.processed_by,
       row.target_subscriber,
       row.correlation_id,
+      row.tenant_id,
       row.metadata,
       row.created_at,
       row.updated_at,
@@ -131,6 +132,15 @@ export class DispatchCollection {
       params.push(options.correlationId);
     }
 
+    // Tenant isolation (S5 #1398): when an active tenant is supplied, only that
+    // tenant's dispatches plus global (NULL) dispatches are visible. When
+    // undefined (system/global processing), no tenant filter is applied, so
+    // existing non-tenant behavior is preserved.
+    if (options.tenantId !== undefined && options.tenantId !== null) {
+      conditions.push(`(tenant_id = $${paramIndex++} OR tenant_id IS NULL)`);
+      params.push(options.tenantId);
+    }
+
     let sql = 'SELECT * FROM _smrt_dispatch';
     if (conditions.length > 0) {
       sql += ` WHERE ${conditions.join(' AND ')}`;
@@ -180,12 +190,18 @@ export class DispatchCollection {
    *
    * @param subscriber - When provided, filters to dispatches with no target
    *   or targeted specifically at this subscriber (for fan-out delivery)
+   * @param tenantId - When provided (active tenant context), restricts results
+   *   to that tenant's dispatches plus global (NULL) dispatches, so a
+   *   subscriber in one tenant cannot claim another tenant's dispatch
+   *   (S5 #1398). When undefined, no tenant filter is applied (backward
+   *   compatible for non-tenant deployments).
    */
   static async findPending(
     db: DatabaseInterface,
     signalTypes: string[],
     limit: number = 100,
     subscriber?: string,
+    tenantId?: string | null,
   ): Promise<Dispatch[]> {
     if (signalTypes.length === 0) {
       return [];
@@ -202,6 +218,11 @@ export class DispatchCollection {
     if (subscriber) {
       sql += ` AND (target_subscriber IS NULL OR target_subscriber = $${paramIndex++})`;
       params.push(subscriber);
+    }
+
+    if (tenantId !== undefined && tenantId !== null) {
+      sql += ` AND (tenant_id = $${paramIndex++} OR tenant_id IS NULL)`;
+      params.push(tenantId);
     }
 
     sql += ` ORDER BY created_at ASC LIMIT $${paramIndex}`;

@@ -275,6 +275,10 @@ export async function ensureDispatchSystemTableCompatibility(
     'TEXT',
     typeHint,
   );
+  // Tenant isolation (S5 #1398): dispatches are scoped to the emitting
+  // tenant context so a subscriber in tenant A cannot snoop/claim tenant B's
+  // dispatches. Nullable so non-tenant (global) dispatches keep tenant_id NULL.
+  await addColumnIfMissing(db, '_smrt_dispatch', 'tenant_id', 'TEXT', typeHint);
   await addIndexIfMissing(
     db,
     'idx_smrt_dispatch_target',
@@ -287,6 +291,13 @@ export async function ensureDispatchSystemTableCompatibility(
     'idx_smrt_dispatch_correlation',
     '_smrt_dispatch',
     'correlation_id',
+    typeHint,
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_dispatch_tenant_id',
+    '_smrt_dispatch',
+    'tenant_id',
     typeHint,
   );
 }
@@ -304,6 +315,22 @@ export async function ensureDispatchSubscriptionsSystemTableCompatibility(
     '_smrt_dispatch_subscriptions',
     'delivery',
     "TEXT NOT NULL DEFAULT 'compete'",
+    typeHint,
+  );
+  // Tenant isolation (S5 #1398): records the tenant context a subscription was
+  // registered in. Nullable so global/non-tenant subscriptions keep it NULL.
+  await addColumnIfMissing(
+    db,
+    '_smrt_dispatch_subscriptions',
+    'tenant_id',
+    'TEXT',
+    typeHint,
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_dispatch_subs_tenant_id',
+    '_smrt_dispatch_subscriptions',
+    'tenant_id',
     typeHint,
   );
 }

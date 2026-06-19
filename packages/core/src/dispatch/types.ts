@@ -95,6 +95,16 @@ export interface DispatchListOptions {
   targetSubscriber?: string;
   /** Filter by correlation ID */
   correlationId?: string;
+  /**
+   * Restrict to a tenant's dispatches plus global (NULL) dispatches.
+   *
+   * Supplied by the DispatchBus from the active tenant context (S5 #1398).
+   * When omitted/undefined, no tenant filter is applied — preserving
+   * pre-tenancy behavior for system/global processing and non-tenant
+   * deployments. Treated as untrusted-input-proof: callers cannot widen
+   * visibility beyond the active context (the bus derives it server-side).
+   */
+  tenantId?: string | null;
   /** Maximum results */
   limit?: number;
   /** Offset for pagination */

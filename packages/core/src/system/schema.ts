@@ -183,6 +183,7 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch (
   processed_by TEXT,
   target_subscriber TEXT,
   correlation_id TEXT,
+  tenant_id TEXT,
   metadata TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -190,6 +191,9 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch (
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status
   ON _smrt_dispatch(status);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_tenant_id
+  ON _smrt_dispatch(tenant_id);
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_type
   ON _smrt_dispatch(type);
@@ -219,6 +223,7 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch_subscriptions (
   handler TEXT NOT NULL DEFAULT 'handleDispatch',
   delivery TEXT NOT NULL DEFAULT 'compete',
   enabled INTEGER DEFAULT 1,
+  tenant_id TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(signal_type, subscriber)
@@ -226,6 +231,9 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch_subscriptions (
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_subscriber
   ON _smrt_dispatch_subscriptions(subscriber);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_tenant_id
+  ON _smrt_dispatch_subscriptions(tenant_id);
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_signal_type
   ON _smrt_dispatch_subscriptions(signal_type);
@@ -304,4 +312,4 @@ export const ALL_SYSTEM_TABLES = [
 /**
  * Current SMRT system schema version
  */
-export const SMRT_SCHEMA_VERSION = '1.5.0';
+export const SMRT_SCHEMA_VERSION = '1.6.0';
