@@ -3,7 +3,7 @@
  * @packageDocumentation
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
 import {
   promptMessageOptions,
@@ -61,7 +61,11 @@ export class AnalyticsProperty extends SmrtObject {
 
   /**
    * Provider API secret/token (GA4 API secret, Matomo token_auth)
+   *
+   * Sensitive (#1540): excluded from generated API/MCP responses and rejected
+   * as a `where` filter key so it can't be probed.
    */
+  @field({ sensitive: true })
   apiSecret: string = '';
 
   /**
@@ -101,7 +105,11 @@ export class AnalyticsProperty extends SmrtObject {
 
   /**
    * Metadata from provider (JSON)
+   *
+   * Sensitive (#1540): may carry provider credentials/tokens, so it is excluded
+   * from generated API/MCP responses and rejected as a `where` filter key.
    */
+  @field({ sensitive: true })
   providerMetadata: string = '{}';
 
   constructor(options: any = {}) {

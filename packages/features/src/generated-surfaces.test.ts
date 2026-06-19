@@ -60,6 +60,14 @@ class CollisionRestFixtureCollection extends SmrtCollection<
   static readonly _itemClass = ListOnlyCollisionRestFixture;
 }
 
+// Generated REST routes are fail-closed (#1540). These tests exercise CRUD
+// verb exposure, not auth, so they simulate an authenticated gateway with a
+// pass-through auth middleware. Auth itself is covered by smrt-core tests.
+const passThroughAuth =
+  () =>
+  async (req: Request): Promise<Request | Response> =>
+    req;
+
 describe('smrt-features generated surfaces', () => {
   const closers = new Set<() => Promise<void>>();
 
@@ -102,7 +110,7 @@ describe('smrt-features generated surfaces', () => {
     });
     await override.save();
 
-    const api = new APIGenerator({}, { db });
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
     api.registerCollection('featuredefinition', definitions);
     api.registerCollection('featureoverride', overrides);
     const handler = api.generateHandler();
@@ -198,7 +206,7 @@ describe('smrt-features generated surfaces', () => {
     const collection = await (ListOnlyRestFixtureCollection as any).create({
       db,
     });
-    const api = new APIGenerator({}, { db });
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
     api.registerCollection('listonlyrestfixture', collection);
     const handler = api.generateHandler();
 
@@ -229,7 +237,7 @@ describe('smrt-features generated surfaces', () => {
     const collection = await (CollisionRestFixtureCollection as any).create({
       db,
     });
-    const api = new APIGenerator({}, { db });
+    const api = new APIGenerator({ authMiddleware: passThroughAuth }, { db });
     api.registerCollection('collisionrestfixture', collection);
     const handler = api.generateHandler();
 

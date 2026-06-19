@@ -9,15 +9,16 @@ import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
 // Simple HTTP server using Bun
 const server = Bun.serve({
   port: 3000,
-  hostname: 'localhost',
+  hostname: '127.0.0.1',
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // CORS headers
+    // CORS headers — explicit origin, never `*` (#1540).
     const headers = {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'http://localhost:5173',
+      Vary: 'Origin',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
       'Access-Control-Allow-Headers': 'Content-Type',
       'Content-Type': 'application/json',

@@ -15,9 +15,11 @@ const storage: Record<string, any[]> = {
   categories: [],
 };
 
-// CORS headers
+// CORS headers — scoped to an explicit origin, never `*` (#1540). Demo servers
+// get copied downstream, so they should model the secure default.
 const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': 'http://localhost:5173',
+  Vary: 'Origin',
   'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
   'Content-Type': 'application/json',
