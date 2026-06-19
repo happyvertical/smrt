@@ -17,6 +17,7 @@ export interface DispatchSubscriptionData {
   handler: string;
   delivery: string;
   enabled: number;
+  tenant_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +47,13 @@ export class DispatchSubscription {
   /** Whether subscription is active */
   enabled: boolean;
 
+  /**
+   * Tenant the subscription was registered in (server-derived). `null` for
+   * global / non-tenant subscriptions. Recorded for auditing and per-tenant
+   * subscription separation (S5 #1398).
+   */
+  tenantId: string | null;
+
   /** Creation timestamp */
   createdAt: Date;
 
@@ -59,6 +67,7 @@ export class DispatchSubscription {
     this.handler = data.handler || 'handleDispatch';
     this.delivery = (data.delivery as 'compete' | 'fanout') || 'compete';
     this.enabled = data.enabled !== undefined ? Boolean(data.enabled) : true;
+    this.tenantId = data.tenant_id ?? null;
     this.createdAt = data.created_at ? new Date(data.created_at) : new Date();
     this.updatedAt = data.updated_at ? new Date(data.updated_at) : new Date();
   }
@@ -81,6 +90,7 @@ export class DispatchSubscription {
       handler: this.handler,
       delivery: this.delivery,
       enabled: this.enabled ? 1 : 0,
+      tenant_id: this.tenantId ?? null,
       created_at: this.createdAt.toISOString(),
       updated_at: new Date().toISOString(),
     };

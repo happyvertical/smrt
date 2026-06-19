@@ -39,6 +39,10 @@ import { DispatchCollection } from './collections/Dispatches.js';
 import { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
+import {
+  resolveDispatchTenantId,
+  resolveDispatchTenantScope,
+} from './tenant-resolver.js';
 import type {
   DispatchBusOptions,
   DispatchCleanupOptions,
@@ -110,6 +114,42 @@ export class DispatchBus {
   private initialized: boolean = false;
 
   /**
+   * Reserved subscriber name used internally for in-memory `on()` handlers.
+   * Callers may not register persistent subscriptions under this name, nor
+   * assert it as an emit `source`, so they cannot impersonate the in-memory
+   * pseudo-subscriber (S5 #1398).
+   */
+  private static readonly RESERVED_SUBSCRIBER = '_in_memory_';
+
+  /** Maximum stored length of a caller-asserted dispatch source label. */
+  private static readonly MAX_SOURCE_LENGTH = 256;
+
+  /**
+   * Normalize a caller-asserted `source` into untrusted metadata.
+   *
+   * `source` is a declared label, not an authenticated identity, so it must not
+   * be trusted for authorization. This caps its length and **rejects** the
+   * reserved internal sentinel (`_in_memory_`) by throwing — the contract is
+   * that the sentinel is not an accepted source, so a caller cannot quietly
+   * impersonate the in-memory subscriber pseudo-source (S5 #1398). Empty/missing
+   * values default to `'unknown'` (unchanged behavior).
+   *
+   * @throws Error if `source` is the reserved in-memory sentinel.
+   */
+  private static sanitizeSource(source: string | undefined): string {
+    const raw = (source ?? '').trim();
+    if (!raw) {
+      return 'unknown';
+    }
+    if (raw === DispatchBus.RESERVED_SUBSCRIBER) {
+      throw new Error(
+        `DispatchBus.emit: "${DispatchBus.RESERVED_SUBSCRIBER}" is a reserved source and cannot be asserted`,
+      );
+    }
+    return raw.slice(0, DispatchBus.MAX_SOURCE_LENGTH);
+  }
+
+  /**
    * Create a new DispatchBus (use createDispatchBus factory instead)
    */
   constructor(db: DatabaseInterface) {
@@ -172,9 +212,22 @@ export class DispatchBus {
    *
    * If no subscriptions exist, one dispatch is created for future processing.
    *
+   * **Security (S5 #1398):**
+   * - `tenant_id` is derived **server-side** from the active tenant context and
+   *   is never read from caller options, so it cannot be spoofed. Subscribers in
+   *   a different tenant cannot see or claim this dispatch (see {@link process}).
+   *   When there is no active tenant context (system/global), `tenant_id` is
+   *   `NULL` and the dispatch is visible to all scopes — preserving pre-tenancy
+   *   behavior.
+   * - `options.source` is **caller-asserted, untrusted metadata** — it is a
+   *   declared label only and must not be relied on as an authenticated emitter
+   *   identity. It is length-capped and the reserved internal sentinel
+   *   (`_in_memory_`) is rejected so a caller cannot impersonate the in-memory
+   *   subscriber pseudo-source.
+   *
    * @param type - Signal type string, e.g. `'campaign.completed'` or `'invoice.paid'`
    * @param payload - Any JSON-serializable data to attach to the dispatch
-   * @param options.source - Name of the emitting agent/component (default `'unknown'`)
+   * @param options.source - Declared (untrusted) name of the emitting agent/component (default `'unknown'`)
    * @param options.sourceId - Optional ID of the specific emitting entity
    * @param options.metadata - Optional additional JSON metadata for the dispatch record
    * @returns A persisted `Dispatch` instance (the compete dispatch, or the first fanout copy if fanout-only)
@@ -200,12 +253,24 @@ export class DispatchBus {
   ): Promise<Dispatch> {
     await this.initialize();
 
+    // Derive the tenant scope server-side from the active context. This is the
+    // trust anchor for cross-tenant isolation (S5 #1398) — it is never taken
+    // from caller options, so it cannot be spoofed. `undefined`/`null` means
+    // "no tenant context" → tenant_id stays NULL (global dispatch).
+    const tenantId = resolveDispatchTenantId() ?? null;
+
+    // Treat the caller-asserted source as untrusted metadata.
+    const source = DispatchBus.sanitizeSource(options.source);
+
     // Query subscriptions to determine if fan-out copies are needed.
     // This runs on every emit() — uses SQL-level exact matching with
     // in-memory fallback only for wildcard subscriptions to minimize I/O.
+    // Scoped to the active tenant so emit only fans out to this tenant's
+    // (and, for global emits, global) subscriptions (S5 #1398).
     const matchingSubs = await DispatchSubscriptionCollection.findBySignalType(
       this.db,
       type,
+      resolveDispatchTenantScope(),
     );
 
     // Separate into compete and fanout subscribers
@@ -215,12 +280,13 @@ export class DispatchBus {
     // Create the base dispatch record
     const dispatch = new Dispatch({
       type,
-      source: options.source || 'unknown',
+      source,
       source_id: options.sourceId || null,
       payload: JSON.stringify(payload || {}),
       metadata: JSON.stringify(options.metadata || {}),
       status: 'pending',
       correlation_id: options.correlationId || null,
+      tenant_id: tenantId,
     });
 
     // Track first persisted dispatch to return to caller
@@ -230,13 +296,14 @@ export class DispatchBus {
     for (const sub of fanoutSubs) {
       const fanoutDispatch = new Dispatch({
         type,
-        source: options.source || 'unknown',
+        source,
         source_id: options.sourceId || null,
         payload: JSON.stringify(payload || {}),
         metadata: JSON.stringify(options.metadata || {}),
         status: 'pending',
         target_subscriber: sub.subscriber,
         correlation_id: options.correlationId || null,
+        tenant_id: tenantId,
       });
       await DispatchCollection.insert(this.db, fanoutDispatch);
       // If no compete dispatch will be persisted, return the first fanout copy
@@ -361,12 +428,33 @@ export class DispatchBus {
   async subscribe(options: DispatchSubscribeOptions): Promise<void> {
     await this.initialize();
 
+    // Gate the subscriber namespace (S5 #1398): require a concrete subscriber
+    // name and reject the reserved internal sentinel so callers cannot
+    // register a persistent subscription that masquerades as the in-memory
+    // pseudo-subscriber.
+    const subscriber = (options.subscriber ?? '').trim();
+    if (!subscriber) {
+      throw new Error('DispatchBus.subscribe requires a non-empty subscriber');
+    }
+    if (subscriber === DispatchBus.RESERVED_SUBSCRIBER) {
+      throw new Error(
+        `DispatchBus.subscribe: "${DispatchBus.RESERVED_SUBSCRIBER}" is a reserved subscriber name`,
+      );
+    }
+    const signalType = (options.signalType ?? '').trim();
+    if (!signalType) {
+      throw new Error('DispatchBus.subscribe requires a non-empty signalType');
+    }
+
     const subscription = new DispatchSubscription({
-      signal_type: options.signalType,
-      subscriber: options.subscriber,
+      signal_type: signalType,
+      subscriber,
       handler: options.handler || 'handleDispatch',
       delivery: options.delivery || 'compete',
       enabled: options.enabled !== false ? 1 : 0,
+      // Server-derived tenant scope (never from caller options). NULL when there
+      // is no active tenant context (global subscription).
+      tenant_id: resolveDispatchTenantId() ?? null,
     });
 
     await DispatchSubscriptionCollection.upsert(this.db, subscription);
@@ -380,10 +468,13 @@ export class DispatchBus {
    */
   async unsubscribe(signalType: string, subscriber: string): Promise<void> {
     await this.initialize();
+    // Scoped to the active tenant so one tenant cannot remove another's
+    // subscription (S5 #1398).
     await DispatchSubscriptionCollection.deleteByKey(
       this.db,
       signalType,
       subscriber,
+      resolveDispatchTenantScope(),
     );
   }
 
@@ -426,10 +517,23 @@ export class DispatchBus {
   ): Promise<number> {
     await this.initialize();
 
-    // Get subscriber's subscriptions
+    // Resolve the active tenant scope server-side (S5 #1398). This distinguishes
+    // three states (see resolveDispatchTenantScope):
+    //  - tenancy off → no filter; system/global + non-tenant deployments behave
+    //    exactly as before.
+    //  - active tenant T → only T's dispatches plus global (NULL) dispatches are
+    //    claimable, so a subscriber in tenant A cannot see/claim tenant B's.
+    //  - tenancy on but no active tenant → fail-closed to global (NULL) rows
+    //    only; a missing context never leaks other tenants' dispatches.
+    const tenantScope = resolveDispatchTenantScope();
+
+    // Get subscriber's subscriptions, scoped to the active tenant so a tenant-A
+    // processor only matches tenant-A (and, when global, global) subscriptions.
     const subscriptions = await DispatchSubscriptionCollection.findBySubscriber(
       this.db,
       subscriber,
+      true,
+      tenantScope,
     );
 
     if (subscriptions.length === 0) {
@@ -445,6 +549,21 @@ export class DispatchBus {
 
     // Helper: check if a dispatch should be visible to this subscriber
     const isVisibleToSubscriber = (dispatch: Dispatch): boolean => {
+      // Tenant isolation (defense in depth — the SQL queries below also filter).
+      if (tenantScope.enforced) {
+        if (tenantScope.tenantId === null) {
+          // Tenancy on, no active tenant → only global (NULL) rows are visible.
+          if (dispatch.tenantId !== null) {
+            return false;
+          }
+        } else if (
+          dispatch.tenantId !== null &&
+          dispatch.tenantId !== tenantScope.tenantId
+        ) {
+          // Active tenant → that tenant's rows plus global (NULL) rows only.
+          return false;
+        }
+      }
       if (dispatch.targetSubscriber === subscriber) {
         // Targeted at this subscriber (fanout copy) — always visible
         return true;
@@ -467,6 +586,7 @@ export class DispatchBus {
       const allPending = await DispatchCollection.list(this.db, {
         status: 'pending',
         limit: options.limit || 100,
+        tenantScope,
       });
 
       pendingDispatches = allPending.filter(
@@ -481,6 +601,7 @@ export class DispatchBus {
         signalTypes,
         options.limit || 100,
         subscriber,
+        tenantScope,
       );
       // Post-filter for delivery mode correctness
       pendingDispatches = raw.filter(isVisibleToSubscriber);
@@ -496,9 +617,19 @@ export class DispatchBus {
     let processed = 0;
 
     for (const dispatch of pendingDispatches) {
-      // Mark as processing
-      dispatch.markProcessing();
-      await DispatchCollection.update(this.db, dispatch);
+      // Atomically claim the dispatch (S5 #1398). The conditional UPDATE
+      // (WHERE id = ? AND status = 'pending' [AND tenant predicate]) closes the
+      // TOCTOU window: if a competing worker — or a system-scoped processor —
+      // already moved this row out of 'pending', our claim affects no rows and
+      // we skip it, so a compete/global dispatch is processed at most once.
+      const claimed = await DispatchCollection.claim(
+        this.db,
+        dispatch,
+        tenantScope,
+      );
+      if (!claimed) {
+        continue;
+      }
 
       try {
         // Invoke handler
@@ -555,19 +686,45 @@ export class DispatchBus {
   }
 
   /**
-   * List dispatches with filtering
+   * Lists dispatches, scoped to the active tenant context (S5 #1398).
+   *
+   * The tenant scope is derived **server-side** from the active context and
+   * **overrides any caller-supplied scope** — callers cannot select another
+   * tenant or widen visibility to all tenants. Scoping rules:
+   *
+   * - tenancy off → no tenant filter (pre-tenancy behavior).
+   * - active tenant T → that tenant's dispatches plus global (NULL) dispatches.
+   * - tenancy on but no active tenant → global (NULL) dispatches only
+   *   (fail-closed; never all tenants).
+   *
+   * @param options - Non-tenant list filters (status/type/source/etc.). Any
+   *   `tenantScope` field is ignored and replaced with the server-derived one.
    */
   async list(options: DispatchListOptions = {}): Promise<Dispatch[]> {
     await this.initialize();
-    return DispatchCollection.list(this.db, options);
+    // Strip any caller-supplied scope and inject the server-derived one.
+    const { tenantScope: _ignoredCallerScope, ...safeOptions } = options;
+    return DispatchCollection.list(this.db, {
+      ...safeOptions,
+      tenantScope: resolveDispatchTenantScope(),
+    });
   }
 
   /**
-   * Get a dispatch by ID
+   * Gets a dispatch by ID, enforcing the active tenant scope (S5 #1398).
+   *
+   * Applies the same server-derived tenant predicate as {@link list}: a
+   * subscriber in tenant A cannot fetch tenant B's dispatch by id, and when
+   * tenancy is on with no active tenant only global (NULL) dispatches are
+   * returned. Returns `null` when the dispatch exists but is out of scope.
    */
   async get(id: string): Promise<Dispatch | null> {
     await this.initialize();
-    return DispatchCollection.get(this.db, id);
+    return DispatchCollection.getScoped(
+      this.db,
+      id,
+      resolveDispatchTenantScope(),
+    );
   }
 
   /**
@@ -578,14 +735,19 @@ export class DispatchBus {
   ): Promise<DispatchSubscription[]> {
     await this.initialize();
 
+    // Scoped to the active tenant so listing never leaks another tenant's
+    // subscriptions (S5 #1398).
+    const tenantScope = resolveDispatchTenantScope();
+
     if (subscriber) {
       return DispatchSubscriptionCollection.findBySubscriber(
         this.db,
         subscriber,
         false,
+        tenantScope,
       );
     }
-    return DispatchSubscriptionCollection.list(this.db);
+    return DispatchSubscriptionCollection.list(this.db, false, tenantScope);
   }
 
   /**
