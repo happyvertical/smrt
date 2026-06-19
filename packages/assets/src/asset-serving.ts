@@ -188,6 +188,11 @@ function isBlockedHost(hostname: string): boolean {
   if (host.startsWith('[') && host.endsWith(']')) {
     host = host.slice(1, -1);
   }
+  // Strip terminal dot(s): a FQDN like `localhost.` or
+  // `metadata.google.internal.` is equivalent to the dotless form and would
+  // otherwise sail past the exact-match checks below while still resolving to
+  // loopback/metadata.
+  host = host.replace(/\.+$/, '');
 
   if (host === '' || host === 'localhost' || host.endsWith('.localhost')) {
     return true;
@@ -232,19 +237,116 @@ function isBlockedIpv4(octets: [number, number, number, number]): boolean {
   return false;
 }
 
-function isBlockedIpv6(host: string): boolean {
-  const h = host.toLowerCase();
-  if (h === '::' || h === '::1') return true; // unspecified + loopback
-  if (h.startsWith('fe80')) return true; // link-local
-  if (h.startsWith('fc') || h.startsWith('fd')) return true; // unique-local
-  if (h.startsWith('ff')) return true; // multicast
-  // IPv4-mapped (::ffff:a.b.c.d) — re-check the embedded v4 address.
-  const mapped = h.match(/::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
-  if (mapped?.[1]) {
-    const octets = mapped[1].split('.').map((o) => Number(o));
-    if (octets.some((o) => o > 255)) return true;
-    return isBlockedIpv4(octets as [number, number, number, number]);
+/**
+ * Expand an IPv6 literal (possibly with a `::` run and/or a trailing dotted
+ * IPv4 tail) into its eight 16-bit hextets. Returns `null` when the input
+ * isn't a parseable IPv6 address — callers treat unparseable as "not a
+ * recognised v6 literal" and fall back to blocking via the malformed paths.
+ */
+function expandIpv6(host: string): number[] | null {
+  let h = host.toLowerCase();
+  // Drop a zone id (e.g. `fe80::1%eth0`) — irrelevant for range checks.
+  const pct = h.indexOf('%');
+  if (pct !== -1) h = h.slice(0, pct);
+
+  // A trailing dotted-quad IPv4 tail (`::ffff:127.0.0.1`) becomes two hextets.
+  // Strip it off entirely (colon included) and remember the two hextets it
+  // contributes to the explicit-tail side.
+  let tailHextets: number[] = [];
+  const lastColon = h.lastIndexOf(':');
+  const tail = lastColon === -1 ? '' : h.slice(lastColon + 1);
+  if (tail.includes('.')) {
+    const m = tail.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (!m) return null;
+    const octets = m.slice(1).map((o) => Number(o));
+    if (octets.some((o) => o > 255)) return null;
+    tailHextets = [(octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]];
+    h = h.slice(0, lastColon); // drop ':a.b.c.d' so no dangling empty segment
+    // `h` now ends just before the colon that preceded the dotted quad. If the
+    // address was exactly `::a.b.c.d`, `h` is now `:` (the leading half of the
+    // `::`); normalise that so the `::` detection below still fires.
+    if (h === ':') h = '::';
   }
+
+  const parseHextets = (parts: string[]): number[] | null => {
+    const out: number[] = [];
+    for (const p of parts) {
+      if (p === '' || !/^[0-9a-f]{1,4}$/.test(p)) return null;
+      out.push(Number.parseInt(p, 16));
+    }
+    return out;
+  };
+
+  const doubleColon = h.indexOf('::');
+  let head: number[] | null;
+  let midTail: number[] | null;
+  if (doubleColon !== -1) {
+    if (h.indexOf('::', doubleColon + 1) !== -1) return null; // only one `::`
+    const before = h.slice(0, doubleColon);
+    const after = h.slice(doubleColon + 2);
+    head = parseHextets(before === '' ? [] : before.split(':'));
+    midTail = parseHextets(after === '' ? [] : after.split(':'));
+  } else {
+    head = parseHextets(h === '' ? [] : h.split(':'));
+    midTail = [];
+  }
+  if (head === null || midTail === null) return null;
+
+  const explicit = [...head, ...midTail, ...tailHextets];
+  if (doubleColon !== -1) {
+    if (explicit.length > 7) return null; // `::` must stand for ≥1 hextet
+    const fill = 8 - explicit.length;
+    return [...head, ...new Array(fill).fill(0), ...midTail, ...tailHextets];
+  }
+  if (explicit.length !== 8) return null;
+  return explicit;
+}
+
+function isBlockedIpv6(host: string): boolean {
+  const hextets = expandIpv6(host);
+  if (hextets === null) return true; // unparseable v6 literal → block
+
+  const [h0, h1, h2, h3, h4, h5, h6, h7] = hextets;
+
+  const embeddedV4 = (): [number, number, number, number] => [
+    (h6 >> 8) & 0xff,
+    h6 & 0xff,
+    (h7 >> 8) & 0xff,
+    h7 & 0xff,
+  ];
+
+  // ::/128 unspecified and ::1/128 loopback.
+  if (h0 === 0 && h1 === 0 && h2 === 0 && h3 === 0 && h4 === 0 && h5 === 0) {
+    if (h6 === 0 && h7 === 0) return true; // ::
+    if (h6 === 0 && h7 === 1) return true; // ::1
+    // ::/96 IPv4-compatible (deprecated). Node normalises `::127.0.0.1` to
+    // `::7f00:1`, which lands here — decode and re-check the embedded v4.
+    return isBlockedIpv4(embeddedV4());
+  }
+
+  // ::ffff:0:0/96 — IPv4-mapped. Decode the embedded v4 (covers both the
+  // dotted `::ffff:127.0.0.1` and hex `::ffff:7f00:1` forms, since both expand
+  // to the same hextets) and run it through the v4 blocklist.
+  if (
+    h0 === 0 &&
+    h1 === 0 &&
+    h2 === 0 &&
+    h3 === 0 &&
+    h4 === 0 &&
+    h5 === 0xffff
+  ) {
+    return isBlockedIpv4(embeddedV4());
+  }
+
+  // fe80::/10 link-local (fe80–febf): top 10 bits == 1111111010.
+  if ((h0 & 0xffc0) === 0xfe80) return true;
+  // fec0::/10 site-local (deprecated, but block defensively).
+  if ((h0 & 0xffc0) === 0xfec0) return true;
+  // fc00::/7 unique-local (fc00–fdff): top 7 bits == 1111110.
+  if ((h0 & 0xfe00) === 0xfc00) return true;
+  // ff00::/8 multicast.
+  if ((h0 & 0xff00) === 0xff00) return true;
+
   return false;
 }
 
@@ -525,13 +627,31 @@ export async function serveAsset(
         ? requestedDisposition
         : 'attachment';
 
-    const headers: Record<string, string> = {
-      'Content-Type': contentType,
-      'Content-Length': String(size),
-      'Content-Disposition': buildContentDisposition(disposition, filename),
-      'X-Content-Type-Options': 'nosniff',
-      ...options.headers,
-    };
+    // Spread caller-supplied headers FIRST so the safety headers below always
+    // win. Otherwise a caller could pass `Content-Disposition: inline` or
+    // `X-Content-Type-Options: ` and defeat the forced-attachment + nosniff
+    // protections for an XSS-prone type (S5 #1396 follow-up). HTTP header names
+    // are case-insensitive, so drop any case-variant of a protected name from
+    // the caller's set before applying the canonical ones.
+    const PROTECTED_HEADERS = new Set([
+      'content-type',
+      'content-length',
+      'content-disposition',
+      'x-content-type-options',
+    ]);
+    const headers: Record<string, string> = {};
+    for (const [name, value] of Object.entries(options.headers ?? {})) {
+      if (!PROTECTED_HEADERS.has(name.toLowerCase())) {
+        headers[name] = value;
+      }
+    }
+    headers['Content-Type'] = contentType;
+    headers['Content-Length'] = String(size);
+    headers['Content-Disposition'] = buildContentDisposition(
+      disposition,
+      filename,
+    );
+    headers['X-Content-Type-Options'] = 'nosniff';
 
     // `new Response(body)` accepts Buffer at runtime (it's a Uint8Array
     // subclass), but the strongly-typed `BodyInit` name lives in

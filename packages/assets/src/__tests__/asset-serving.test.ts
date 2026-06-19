@@ -127,6 +127,43 @@ describe('serveAsset', () => {
     expect(disposition.startsWith('inline;')).toBe(true);
   });
 
+  it('does not let caller headers weaken forced-attachment / nosniff', async () => {
+    // A non-safelisted (XSS-prone) type is force-downgraded to attachment +
+    // nosniff. A caller must NOT be able to override those via options.headers
+    // to coerce inline rendering (regression for S5 #1396 header-override).
+    const asset = await runtime.storeSourceAsset(
+      'payload.svg',
+      Buffer.from('<svg onload="alert(1)"></svg>'),
+      { mimeType: 'image/svg+xml', typeSlug: 'document' },
+    );
+
+    const response = await serveAsset({
+      runtime,
+      asset: asset.id!,
+      disposition: 'inline',
+      headers: {
+        // Try both canonical and lowercase header names — HTTP header names
+        // are case-insensitive, so the guard must reject either casing.
+        'Content-Disposition': 'inline',
+        'content-disposition': 'inline; filename="evil.html"',
+        'X-Content-Type-Options': '',
+        'content-type': 'text/html',
+        // A genuinely custom header should still pass through.
+        'X-Custom-Tag': 'keep-me',
+      },
+    });
+
+    expect(response.status).toBe(200);
+    const disposition = response.headers.get('content-disposition') ?? '';
+    expect(disposition.startsWith('attachment;')).toBe(true);
+    expect(disposition).not.toContain('evil.html');
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+    // The forced content-type wins over the caller's text/html.
+    expect(response.headers.get('content-type')).toBe('image/svg+xml');
+    // Non-protected custom headers are preserved.
+    expect(response.headers.get('x-custom-tag')).toBe('keep-me');
+  });
+
   it('returns 404 when the asset id does not resolve', async () => {
     const response = await serveAsset({ runtime, asset: 'missing-id' });
     expect(response.status).toBe(404);
@@ -311,6 +348,22 @@ describe('serveAsset', () => {
         'http://172.16.0.10/svc',
         'http://[::1]/loopback',
         'http://metadata.google.internal/computeMetadata/v1/',
+        // IPv4-mapped IPv6: Node normalises the dotted form to the hex
+        // `::ffff:7f00:1` / `::ffff:a9fe:a9fe`, so the guard must decode the
+        // embedded v4 from BOTH forms (regression for S5 #1396 IPv6 bypass).
+        'http://[::ffff:127.0.0.1]/secret',
+        'http://[::ffff:7f00:1]/secret',
+        'http://[::ffff:169.254.169.254]/meta',
+        // Link-local is fe80::/10 (fe80–febf), not just the fe80 prefix.
+        'http://[fe90::1]/internal',
+        'http://[febf::1]/internal',
+        // Unique-local fc00::/7 and multicast ff00::/8.
+        'http://[fc00::1]/internal',
+        'http://[ff02::1]/internal',
+        // Trailing-dot FQDNs resolve to the same loopback/metadata hosts but
+        // dodge the exact-match checks unless the terminal dot is stripped.
+        'http://localhost./internal',
+        'http://metadata.google.internal./computeMetadata/v1/',
       ];
 
       for (const uri of blocked) {
@@ -340,6 +393,44 @@ describe('serveAsset', () => {
           false,
         );
         expect(response.status, `expected ${uri} to be rejected`).toBe(502);
+      }
+    });
+
+    it('still proxies public IPv6 / mapped-public hosts (no over-blocking)', async () => {
+      // Structural IPv6 parsing must not false-positive on genuinely public
+      // addresses: a global-unicast v6 and an IPv4-mapped public address.
+      const allowed = [
+        'http://[2606:4700:4700::1111]/ok', // Cloudflare DNS (public)
+        'http://[::ffff:8.8.8.8]/ok', // mapped 8.8.8.8 (public)
+      ];
+
+      for (const uri of allowed) {
+        const asset = await runtime.storeSourceAsset(
+          'x.bin',
+          Buffer.from('local'),
+          { mimeType: 'application/octet-stream', typeSlug: 'document' },
+        );
+        asset.sourceUri = uri;
+        await asset.save();
+
+        let fetched = false;
+        const fetchImpl: typeof fetch = async () => {
+          fetched = true;
+          return new Response(Buffer.from('OK') as unknown as BodyInit, {
+            status: 200,
+            headers: { 'content-type': 'application/octet-stream' },
+          });
+        };
+
+        const response = await serveAsset({
+          runtime,
+          asset: asset.id!,
+          remoteMode: 'proxy',
+          fetchImpl,
+        });
+
+        expect(fetched, `expected ${uri} to be allowed through`).toBe(true);
+        expect(response.status, `expected ${uri} to be served`).toBe(200);
       }
     });
 
