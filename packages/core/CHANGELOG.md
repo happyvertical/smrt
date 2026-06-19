@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.29.32
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - room-membership + agent-tool authZ, close generated-CRUD bypass (S5 #1392) (chat)
+  - block serveAsset SSRF, tenant-scope associations, harden serve headers (S5 #1396) (assets)
+  - @happyvertical/smrt-scanner@0.29.32
+  - @happyvertical/smrt-config@0.29.32
+  - @happyvertical/smrt-types@0.29.32
+
 ## 0.29.31
 
 ### Patch Changes
