@@ -35,7 +35,11 @@ export type ContentChatAIConfig = AIClientOptions & {
 
 export interface ContentChatCollectionLike {
   db: DatabaseInterface;
-  get(id: string): Promise<unknown>;
+  // Accepts either a raw id or a bound `{ id, tenantId }` filter so the content
+  // lookup can be tenant-bound at the query level (S5 #1392) rather than doing a
+  // cross-tenant `get(id)` followed only by a post-filter. A real SmrtCollection
+  // satisfies this — its `get` takes `string | Record<string, any>`.
+  get(filter: string | Record<string, unknown>): Promise<unknown>;
 }
 
 export interface ContentChatSessionInput {
@@ -174,6 +178,22 @@ export function contentChatSessionMatchesContent(
   return asNonEmptyString(context.contentId) === contentId;
 }
 
+/**
+ * Tenant-bound content lookup (S5 #1392).
+ *
+ * Binds `tenantId` (including the `null` "global" scope) into the lookup itself
+ * so a content row from another tenant can never be RESOLVED first and only
+ * rejected after the fact. The `referenceBelongsToTenant` post-filter at every
+ * call site remains as defense-in-depth.
+ */
+function getContentForTenant(
+  contents: ContentChatCollectionLike,
+  tenantScope: string | null,
+  id: string,
+): Promise<unknown> {
+  return contents.get({ id, tenantId: tenantScope });
+}
+
 async function assertContentExistsForTenant(
   contents: ContentChatCollectionLike | undefined,
   tenantScope: string | null,
@@ -183,7 +203,7 @@ async function assertContentExistsForTenant(
     return;
   }
 
-  const content = await contents.get(contentId);
+  const content = await getContentForTenant(contents, tenantScope, contentId);
   if (!content || !referenceBelongsToTenant(content, tenantScope)) {
     throw new Error('Content not found');
   }
@@ -553,7 +573,10 @@ async function buildReferenceContext(
     ),
   ].slice(0, MAX_REFERENCE_IDS);
   for (const id of ids) {
-    const ref = (await contents.get(id)) as {
+    // Tenant-bound lookup (S5 #1392): bind tenantId into the query rather than
+    // a cross-tenant get(id) + post-filter. The post-filter below stays as
+    // defense-in-depth.
+    const ref = (await getContentForTenant(contents, tenantScope, id)) as {
       title?: string;
       body?: string;
       tenantId?: string;

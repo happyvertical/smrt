@@ -133,6 +133,48 @@ describe('content chat prompt integration', () => {
     ).toBe(false);
   });
 
+  it('tenant-binds the content lookup so another tenant content is not found (S5 #1392)', async () => {
+    const contents = currentContents;
+    if (!contents) {
+      throw new Error('Test collection not initialized');
+    }
+
+    // Content owned by tenant-b.
+    const foreignContent = await contents.create({
+      tenantId: 'tenant-b',
+      name: 'draft-foreign',
+      title: 'Foreign Draft',
+      body: 'Body',
+    });
+
+    // Spy on the collection's get to assert the lookup itself is tenant-bound
+    // (filter carries tenantId) rather than a cross-tenant get(id) that only
+    // gets rejected by a post-filter afterwards.
+    const getSpy = vi.spyOn(contents, 'get');
+
+    // A caller scoped to tenant-a must NOT be able to drive a content chat
+    // against tenant-b content. The lookup is tenant-bound, so the content is
+    // never resolved for the wrong tenant — the handler rejects up front.
+    await expect(
+      sendContentEditorChatThreadMessage({
+        contents,
+        tenantId: 'tenant-a',
+        profileId: 'profile-a',
+        contentId: foreignContent.id as string,
+        threadId: 'thread-x',
+        content: 'hi',
+        sessionId: 'session-x',
+        referenceIds: [],
+      }),
+    ).rejects.toThrow('Content not found');
+
+    expect(getSpy).toHaveBeenCalledWith({
+      id: foreignContent.id,
+      tenantId: 'tenant-a',
+    });
+    getSpy.mockRestore();
+  });
+
   it('creates tenant-specific content editor sessions from resolved prompts', async () => {
     const content = await currentContents?.create({
       tenantId: 'tenant-a',

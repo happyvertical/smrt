@@ -408,7 +408,7 @@ export class ChatService {
     const thread = await this.#threads.create({
       tenantId: params.tenantId,
       roomId: params.roomId,
-      rootMessageId: params.rootMessageId ?? '',
+      rootMessageId: params.rootMessageId ?? null,
       title: params.title ?? '',
       messageCount: 0,
     });
@@ -906,7 +906,7 @@ export class ChatService {
       params.profileId,
       params.tenantId,
     );
-    return this.#messages.getByRoom(params.roomId, {
+    return this.#messages.getByRoom(params.roomId, params.tenantId, {
       limit: params.limit,
       before: params.before,
     });

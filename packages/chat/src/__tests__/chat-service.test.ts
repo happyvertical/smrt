@@ -177,6 +177,79 @@ describe('ChatService', () => {
       expect(updatedThread?.messageCount).toBe(1);
       expect(updatedThread?.lastMessageAt).toBeDefined();
     });
+
+    // Regression (S5 #1392): a rootless thread must persist rootMessageId as
+    // NULL, never an empty string. `''` is a valid TEXT value on SQLite but is
+    // rejected by native-`uuid` FK columns (Postgres/DuckDB), so the previous
+    // `rootMessageId: ''` default would break those backends.
+    it('startThread with no root persists rootMessageId as null (no empty FK)', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'Rootless Thread Room',
+        roomType: 'agent',
+        actorProfileId: 'profile-1',
+      });
+
+      const thread = await chat.startThread({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'profile-1',
+        title: 'Editor session',
+      });
+
+      expect(thread.rootMessageId).toBeNull();
+
+      // Re-read from the data layer to confirm what was actually persisted.
+      const persisted = await raw.threads.get({
+        id: thread.id,
+        tenantId: 'tenant-1',
+      });
+      expect(persisted?.rootMessageId).toBeNull();
+      expect(persisted?.rootMessageId).not.toBe('');
+    });
+  });
+
+  // Regression (S5 #1392): getRoomMessages threads tenantId through to the
+  // underlying read. A foreign-tenant message row that shares this room's id
+  // must never appear in the result, even though membership is also gated.
+  describe('Tenant-bound room reads', () => {
+    it('getRoomMessages excludes a foreign-tenant message sharing the same room id', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-a',
+        name: 'A room',
+        roomType: 'public',
+        actorProfileId: 'profile-a',
+      });
+      const roomId = room.id as string;
+
+      await chat.sendMessage({
+        tenantId: 'tenant-a',
+        roomId,
+        actorProfileId: 'profile-a',
+        content: 'A secret',
+      });
+
+      // Inject a message row from ANOTHER tenant that reuses this room id (the
+      // roomId column is not tenant-unique). A roomId-only read would surface
+      // it; the tenant-bound read must not.
+      await raw.messages.create({
+        tenantId: 'tenant-b',
+        roomId,
+        senderProfileId: 'profile-b',
+        content: 'B secret',
+        role: 'user',
+        messageType: 'text',
+      });
+
+      const aMessages = await chat.getRoomMessages({
+        roomId,
+        profileId: 'profile-a',
+        tenantId: 'tenant-a',
+      });
+      expect(aMessages).toHaveLength(1);
+      expect(aMessages[0].content).toBe('A secret');
+      expect(aMessages.some((m) => m.content === 'B secret')).toBe(false);
+    });
   });
 
   describe('Participants', () => {

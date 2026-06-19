@@ -37,7 +37,7 @@ export interface ChatRoomOptions extends SmrtObjectOptions {
 export interface ChatThreadOptions extends SmrtObjectOptions {
   tenantId?: string;
   roomId?: string;
-  rootMessageId?: string;
+  rootMessageId?: string | null;
   title?: string;
   isResolved?: boolean;
   messageCount?: number;
