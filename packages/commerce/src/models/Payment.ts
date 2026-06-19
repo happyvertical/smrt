@@ -44,7 +44,12 @@ import {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get', 'recordPayment'] },
+  // NOTE: `recordPayment` is intentionally NOT exposed over MCP. It posts a
+  // balanced journal into smrt-ledgers (moves money in the books) and flips
+  // the payment to COMPLETED — not safe as an unguarded MCP tool that carries
+  // no authz. Financial mutations must go through application code that
+  // enforces permissions. See S5 audit #1390.
+  mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class Payment extends SmrtObject {

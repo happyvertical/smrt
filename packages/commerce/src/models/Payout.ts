@@ -278,6 +278,20 @@ export class Payout extends SmrtObject {
    */
   validateAmounts(): void {
     const EPSILON = 0.01;
+    // Non-negativity guard (S5 audit #1390). A negative operatorFee would let
+    // an operator manufacture a supplierNet larger than the gross it took in
+    // (paying out more than it received); negative gross/net are nonsensical.
+    for (const [field, value] of [
+      ['grossAmount', this.grossAmount],
+      ['operatorFee', this.operatorFee],
+      ['supplierNet', this.supplierNet],
+    ] as const) {
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error(
+          `Payout ${this.id ?? '<new>'}: ${field} must be a non-negative number (got ${value}).`,
+        );
+      }
+    }
     const expectedNet = this.grossAmount - this.operatorFee;
     if (Math.abs(this.supplierNet - expectedNet) > EPSILON) {
       throw new Error(

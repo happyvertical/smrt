@@ -13,6 +13,87 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { InvoiceStatus, type RecognizeRevenueOptions } from '../types/index.js';
 
 /**
+ * Sub-cent rounding tolerance, matching the smrt-ledgers EPSILON. Used when
+ * comparing caller-supplied totals against recomputed line-item totals so
+ * floating-point fuzz doesn't trip the forged-total guard.
+ */
+const INVOICE_EPSILON = 0.01;
+
+/**
+ * Legal status transitions for an Invoice. Keyed by the prior (persisted)
+ * status; the value is the set of statuses it may move to. A status mapping
+ * to itself (no-op re-save) is always permitted and handled separately.
+ *
+ * Forward path: DRAFT → SENT → VIEWED → PARTIAL → PAID, with OVERDUE reachable
+ * from any open status and CANCELLED / WRITTEN_OFF as terminal exits. Payment
+ * progress (SENT/VIEWED ↔ PARTIAL ↔ PAID) is driven by `updatePaymentStatus`,
+ * which can move both forward and backward as allocations change, so those
+ * edges are bidirectional here.
+ */
+const INVOICE_STATUS_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
+  [InvoiceStatus.DRAFT]: [
+    InvoiceStatus.SENT,
+    InvoiceStatus.CANCELLED,
+    InvoiceStatus.WRITTEN_OFF,
+  ],
+  [InvoiceStatus.SENT]: [
+    InvoiceStatus.VIEWED,
+    InvoiceStatus.PARTIAL,
+    InvoiceStatus.PAID,
+    InvoiceStatus.OVERDUE,
+    InvoiceStatus.CANCELLED,
+    InvoiceStatus.WRITTEN_OFF,
+  ],
+  [InvoiceStatus.VIEWED]: [
+    InvoiceStatus.SENT,
+    InvoiceStatus.PARTIAL,
+    InvoiceStatus.PAID,
+    InvoiceStatus.OVERDUE,
+    InvoiceStatus.CANCELLED,
+    InvoiceStatus.WRITTEN_OFF,
+  ],
+  [InvoiceStatus.PARTIAL]: [
+    InvoiceStatus.SENT,
+    InvoiceStatus.VIEWED,
+    InvoiceStatus.PAID,
+    InvoiceStatus.OVERDUE,
+    InvoiceStatus.CANCELLED,
+    InvoiceStatus.WRITTEN_OFF,
+  ],
+  [InvoiceStatus.OVERDUE]: [
+    InvoiceStatus.SENT,
+    InvoiceStatus.VIEWED,
+    InvoiceStatus.PARTIAL,
+    InvoiceStatus.PAID,
+    InvoiceStatus.CANCELLED,
+    InvoiceStatus.WRITTEN_OFF,
+  ],
+  // PAID can fall back to PARTIAL / VIEWED / SENT when a payment allocation is
+  // removed or reversed (handled by updatePaymentStatus). It can also be
+  // written off as bad debt in unusual reconciliation flows.
+  [InvoiceStatus.PAID]: [
+    InvoiceStatus.PARTIAL,
+    InvoiceStatus.VIEWED,
+    InvoiceStatus.SENT,
+    InvoiceStatus.OVERDUE,
+    InvoiceStatus.WRITTEN_OFF,
+  ],
+  // Terminal states: no outbound transitions.
+  [InvoiceStatus.CANCELLED]: [],
+  [InvoiceStatus.WRITTEN_OFF]: [],
+};
+
+/**
+ * Module-scoped record of the status each Invoice instance was loaded with.
+ * Used by the save-time status-transition guard to compare the prior
+ * persisted status against the one being written, without adding a
+ * persisted column. A WeakMap keyed by the instance keeps it out of the
+ * schema and garbage-collects with the instance — same pattern LicenseSale
+ * uses for its rights snapshot.
+ */
+const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
+
+/**
  * Invoice represents a bill sent to a customer for goods or services.
  *
  * Invoices are distinct from Contracts - a Contract is an agreement,
@@ -47,7 +128,13 @@ import { InvoiceStatus, type RecognizeRevenueOptions } from '../types/index.js';
 @TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get', 'send', 'recognizeRevenue'] },
+  // NOTE: `send` and `recognizeRevenue` are intentionally NOT exposed over
+  // MCP. `recognizeRevenue` posts a balanced journal into smrt-ledgers
+  // (i.e. moves money in the books) and `send` transmits a billing document
+  // to a customer — neither is safe as an unauthenticated/unguarded MCP tool.
+  // Generated MCP tools carry no authz; financial mutations must go through
+  // application code that enforces permissions. See S5 audit #1390.
+  mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class Invoice extends SmrtObject {
@@ -264,6 +351,178 @@ export class Invoice extends SmrtObject {
     if (options.customerNotes !== undefined)
       this.customerNotes = options.customerNotes;
     if (options.terms !== undefined) this.terms = options.terms;
+  }
+
+  /**
+   * Capture the persisted status the row was loaded with, so the save-time
+   * transition guard can reject illegal status flips made via raw field
+   * assignment (mass-assignment on a generated update route, a stale caller,
+   * etc.). Only rows that already exist in the database carry a "prior"
+   * status — freshly-constructed (not-yet-saved) invoices have no prior and
+   * may start in any status.
+   */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    if (await this.isSaved()) {
+      loadedInvoiceStatus.set(this, this.status);
+    }
+    return this;
+  }
+
+  // ============================================================================
+  // Save-time financial-integrity guard (S5 audit #1390)
+  // ============================================================================
+
+  /**
+   * Recompute and validate financial fields before every write so forged
+   * totals, negative amounts, and illegal status flips can't be persisted via
+   * raw mass-assignment on the generated CRUD routes.
+   *
+   * Behaviour:
+   *  - **Totals are authoritative from line items.** When the invoice is
+   *    persisted and has line items, `subtotal` / `taxAmount` / `totalAmount`
+   *    are recomputed from those items, overriding whatever the caller sent.
+   *    This blocks "create real line items but claim a tiny total" forgery.
+   *  - **Without line items**, the caller-supplied totals are accepted but the
+   *    `totalAmount === subtotal + taxAmount` arithmetic invariant is enforced.
+   *  - **amountPaid is derived/validated.** When persisted, it is recomputed
+   *    from PaymentAllocations rather than trusted from the caller. It may
+   *    never exceed `totalAmount` (beyond rounding tolerance).
+   *  - **Non-negativity** is enforced on all four amounts.
+   *  - **Status transitions** are validated against the prior persisted status.
+   */
+  override async save(): Promise<this> {
+    const persisted = await this.isSaved();
+
+    await this.recomputeAmountsForSave(persisted);
+    this.assertNonNegativeAmounts();
+    this.assertStatusTransition();
+
+    const result = (await super.save()) as this;
+    // Once written, the current status becomes the new "prior" for the next
+    // save in this instance's lifetime.
+    loadedInvoiceStatus.set(this, this.status);
+    return result;
+  }
+
+  /**
+   * Recompute subtotal/tax/total from line items (when present) and derive
+   * amountPaid from PaymentAllocations. Falls back to the arithmetic invariant
+   * when the invoice has no line items. Tolerant of smrt-ledgers being absent
+   * (the dynamic imports stay inside the package).
+   */
+  private async recomputeAmountsForSave(persisted: boolean): Promise<void> {
+    if (persisted && this.id) {
+      const { InvoiceLineItemCollection } = await import(
+        '../collections/InvoiceLineItemCollection.js'
+      );
+      const lineItemCollection = await (
+        InvoiceLineItemCollection as any
+      ).create(this.options);
+      const lineItems = await lineItemCollection.findByInvoice(this.id);
+
+      if (lineItems.length > 0) {
+        const subtotal = lineItems.reduce(
+          (sum: number, item: any) => sum + item.getSubtotal(),
+          0,
+        );
+        const taxAmount = lineItems.reduce(
+          (sum: number, item: any) => sum + item.getTaxAmount(),
+          0,
+        );
+        // Forged-total guard: refuse a caller-supplied total that disagrees
+        // with the line-item sum beyond rounding tolerance, then snap the
+        // stored values to the authoritative line-item figures.
+        const computedTotal = subtotal + taxAmount;
+        if (Math.abs(this.totalAmount - computedTotal) > INVOICE_EPSILON) {
+          throw new Error(
+            `Invoice ${this.invoiceNumber || this.id}: totalAmount ${this.totalAmount} ` +
+              `does not match line-item total ${computedTotal} (subtotal=${subtotal}, tax=${taxAmount}). ` +
+              'Invoice totals are derived from line items and cannot be set directly.',
+          );
+        }
+        this.subtotal = subtotal;
+        this.taxAmount = taxAmount;
+        this.totalAmount = computedTotal;
+      } else {
+        this.assertTotalArithmetic();
+      }
+
+      // amountPaid is the sum of PaymentAllocations — never trust the caller.
+      const { PaymentAllocationCollection } = await import(
+        '../collections/PaymentAllocationCollection.js'
+      );
+      const allocationCollection = await (
+        PaymentAllocationCollection as any
+      ).create(this.options);
+      const allocated = await allocationCollection.getTotalAllocatedToInvoice(
+        this.id,
+      );
+      this.amountPaid = allocated;
+    } else {
+      // Not-yet-persisted invoice: no line items / allocations exist yet, so
+      // enforce the arithmetic invariant on the caller-supplied totals.
+      this.assertTotalArithmetic();
+    }
+  }
+
+  /**
+   * Enforce `totalAmount === subtotal + taxAmount` (within rounding tolerance).
+   * Used when the invoice has no line items to recompute from.
+   */
+  private assertTotalArithmetic(): void {
+    const expected = this.subtotal + this.taxAmount;
+    if (Math.abs(this.totalAmount - expected) > INVOICE_EPSILON) {
+      throw new Error(
+        `Invoice ${this.invoiceNumber || this.id || '<new>'}: totalAmount ${this.totalAmount} ` +
+          `must equal subtotal + taxAmount (${expected}).`,
+      );
+    }
+  }
+
+  /**
+   * Reject negative financial values and an amountPaid that exceeds the total
+   * (beyond rounding tolerance — overpayment is modelled elsewhere, not by
+   * letting amountPaid float above the invoice total).
+   */
+  private assertNonNegativeAmounts(): void {
+    const label = this.invoiceNumber || this.id || '<new>';
+    for (const [field, value] of [
+      ['subtotal', this.subtotal],
+      ['taxAmount', this.taxAmount],
+      ['totalAmount', this.totalAmount],
+      ['amountPaid', this.amountPaid],
+    ] as const) {
+      if (!Number.isFinite(value) || value < 0) {
+        throw new Error(
+          `Invoice ${label}: ${field} must be a non-negative number (got ${value}).`,
+        );
+      }
+    }
+    if (this.amountPaid - this.totalAmount > INVOICE_EPSILON) {
+      throw new Error(
+        `Invoice ${label}: amountPaid ${this.amountPaid} cannot exceed totalAmount ${this.totalAmount}.`,
+      );
+    }
+  }
+
+  /**
+   * Reject an illegal status flip done via raw field assignment. Compares the
+   * about-to-be-written status against the status the row was loaded with.
+   * No-op transitions (status unchanged) and brand-new rows are always allowed.
+   */
+  private assertStatusTransition(): void {
+    const prior = loadedInvoiceStatus.get(this);
+    if (prior === undefined) return; // new row — any starting status is fine
+    if (prior === this.status) return; // no-op re-save
+    const allowed = INVOICE_STATUS_TRANSITIONS[prior] ?? [];
+    if (!allowed.includes(this.status)) {
+      throw new Error(
+        `Invoice ${this.invoiceNumber || this.id}: illegal status transition ` +
+          `'${prior}' → '${this.status}'. Use the guarded transition helpers ` +
+          '(markSent / markViewed / updatePaymentStatus / cancel / writeOff).',
+      );
+    }
   }
 
   // ============================================================================

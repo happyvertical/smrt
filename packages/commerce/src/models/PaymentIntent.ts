@@ -24,7 +24,25 @@
 
 import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
-import { PaymentIntentStatus, type PaymentOption } from '../types/index.js';
+import {
+  PaymentIntentStatus,
+  type PaymentOption,
+  PaymentStatus,
+} from '../types/index.js';
+
+/**
+ * Sub-cent rounding tolerance for native-amount reconciliation between the
+ * winning PaymentOption and the referenced Payment row.
+ */
+const PAYMENT_INTENT_EPSILON = 0.01;
+
+/**
+ * Module-scoped record of the status each PaymentIntent was loaded with, so
+ * the save-time guard can detect a status being forced to PAID via raw
+ * mass-assignment (bypassing the verified transition path). Same WeakMap
+ * pattern as the rest of the package.
+ */
+const loadedIntentStatus = new WeakMap<PaymentIntent, PaymentIntentStatus>();
 
 /**
  * Default price-lock window — 15 minutes is a reasonable middle ground:
@@ -265,7 +283,94 @@ export class PaymentIntent extends SmrtObject {
         Date.now() + (this.priceLockWindowMs || DEFAULT_PRICE_LOCK_WINDOW_MS),
       );
     }
+    if (await this.isSaved()) {
+      loadedIntentStatus.set(this, this.status);
+    }
     return this;
+  }
+
+  /**
+   * Save-time guard (S5 audit #1390): when a PaymentIntent transitions *into*
+   * `PAID` it must be backed by a real, COMPLETED, amount-matching Payment.
+   *
+   * `status` is mass-assignable on the generated update route and the sync
+   * `markPaid` helper trusts its arguments, so a forged `status: 'paid'` (or a
+   * bare `markPaid` against a bogus paymentId) would otherwise persist an
+   * unbacked PAID intent — falsifying downstream "this was paid for" rights
+   * issuance. We re-run the Payment verification here so the check can't be
+   * bypassed regardless of which path set the status.
+   *
+   * The verification only fires on the *transition into* PAID (prior status
+   * was not PAID, or the row is brand-new and starts PAID). Re-saving an
+   * already-PAID intent (e.g. `markIssued`) does not re-verify.
+   */
+  override async save(): Promise<this> {
+    const prior = loadedIntentStatus.get(this);
+    const transitioningIntoPaid =
+      this.status === PaymentIntentStatus.PAID &&
+      prior !== PaymentIntentStatus.PAID;
+
+    if (transitioningIntoPaid) {
+      await this.assertBackedByCompletedPayment();
+    }
+
+    const result = (await super.save()) as this;
+    loadedIntentStatus.set(this, this.status);
+    return result;
+  }
+
+  /**
+   * Verify the intent's `paidOptionBackendId` / `paymentId` reference a real,
+   * COMPLETED, amount-matching Payment. Throws otherwise. Shared by
+   * {@link verifyAndMarkPaid} (pre-transition) and the save-time guard
+   * (catch-all for raw mass-assignment).
+   */
+  private async assertBackedByCompletedPayment(): Promise<void> {
+    if (!this.paidOptionBackendId) {
+      throw new Error(
+        `PaymentIntent ${this.id}: cannot persist PAID status without a paidOptionBackendId`,
+      );
+    }
+    if (!this.paymentId) {
+      throw new Error(
+        `PaymentIntent ${this.id}: cannot persist PAID status without a paymentId`,
+      );
+    }
+    const option = this.getOption(this.paidOptionBackendId);
+    if (!option) {
+      throw new Error(
+        `PaymentIntent ${this.id}: paidOptionBackendId '${this.paidOptionBackendId}' is not one of the listed options`,
+      );
+    }
+
+    const { PaymentCollection } = await import(
+      '../collections/PaymentCollection.js'
+    );
+    const payments = await (PaymentCollection as any).create(this.options);
+    const payment = await payments.get({ id: this.paymentId });
+    if (!payment) {
+      throw new Error(
+        `PaymentIntent ${this.id}: referenced Payment '${this.paymentId}' does not exist`,
+      );
+    }
+    if (payment.status !== PaymentStatus.COMPLETED) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${this.paymentId}' is not COMPLETED ` +
+          `(status='${payment.status}'); cannot persist PAID intent against it`,
+      );
+    }
+    const paymentNative =
+      typeof payment.nativeAmount === 'number' && payment.nativeAmount > 0
+        ? payment.nativeAmount
+        : payment.amount;
+    if (
+      Math.abs(paymentNative - option.nativeAmount) > PAYMENT_INTENT_EPSILON
+    ) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${this.paymentId}' amount ${paymentNative} ` +
+          `does not match option '${this.paidOptionBackendId}' nativeAmount ${option.nativeAmount}`,
+      );
+    }
   }
 
   // -------- Status helpers --------
@@ -358,6 +463,81 @@ export class PaymentIntent extends SmrtObject {
     this.paidOptionBackendId = args.backendId;
     this.paymentId = args.paymentId ?? '';
     this.paidAt = new Date();
+  }
+
+  /**
+   * Verify-then-transition variant of {@link markPaid} (S5 audit #1390).
+   *
+   * `markPaid` trusts the caller-supplied `paymentId` / `backendId` without
+   * checking the referenced `Payment` actually exists, is `COMPLETED`, or
+   * carries the amount the winning option quoted. That lets a caller mark an
+   * intent PAID against a non-existent or still-pending payment. This method
+   * loads the `Payment` row and enforces:
+   *
+   *  - the Payment exists,
+   *  - it is `COMPLETED` (not pending / failed / cancelled / refunded),
+   *  - and its amount reconciles with the winning option's `nativeAmount`
+   *    (within sub-cent tolerance), falling back to the option vs. the
+   *    Payment's settlement `amount` when no native rail is recorded.
+   *
+   * Only after those pass does it delegate to the sync `markPaid` for the
+   * status-machine invariants.
+   *
+   * @param args.backendId  backendId of the option that was satisfied
+   * @param args.paymentId  id of the Payment row carrying the funds (required)
+   */
+  async verifyAndMarkPaid(args: {
+    backendId: string;
+    paymentId: string;
+  }): Promise<void> {
+    if (!args.paymentId) {
+      throw new Error(
+        `PaymentIntent ${this.id}: verifyAndMarkPaid requires a paymentId`,
+      );
+    }
+    const option = this.paymentOptions.find(
+      (o) => o.backendId === args.backendId,
+    );
+    if (!option) {
+      throw new Error(
+        `PaymentIntent ${this.id}: backendId '${args.backendId}' is not one of the listed options`,
+      );
+    }
+
+    const { PaymentCollection } = await import(
+      '../collections/PaymentCollection.js'
+    );
+    const payments = await (PaymentCollection as any).create(this.options);
+    const payment = await payments.get({ id: args.paymentId });
+    if (!payment) {
+      throw new Error(
+        `PaymentIntent ${this.id}: referenced Payment '${args.paymentId}' does not exist`,
+      );
+    }
+    if (payment.status !== PaymentStatus.COMPLETED) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${args.paymentId}' is not COMPLETED ` +
+          `(status='${payment.status}'); cannot mark intent PAID against it`,
+      );
+    }
+
+    // Reconcile the amount the option quoted against what the payment moved.
+    // Prefer the native-rail figure when present (volatile-currency rails),
+    // otherwise compare against the settlement `amount`.
+    const paymentNative =
+      typeof payment.nativeAmount === 'number' && payment.nativeAmount > 0
+        ? payment.nativeAmount
+        : payment.amount;
+    if (
+      Math.abs(paymentNative - option.nativeAmount) > PAYMENT_INTENT_EPSILON
+    ) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${args.paymentId}' amount ${paymentNative} ` +
+          `does not match option '${args.backendId}' nativeAmount ${option.nativeAmount}`,
+      );
+    }
+
+    this.markPaid({ backendId: args.backendId, paymentId: args.paymentId });
   }
 
   /**

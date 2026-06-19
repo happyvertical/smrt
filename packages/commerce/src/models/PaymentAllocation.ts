@@ -7,6 +7,12 @@ import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 
 /**
+ * Sub-cent rounding tolerance for over-allocation checks, matching the rest
+ * of the package's EPSILON convention.
+ */
+const ALLOCATION_EPSILON = 0.01;
+
+/**
  * PaymentAllocation tracks how payments are applied to invoices.
  *
  * This enables:
@@ -49,7 +55,16 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'delete'] },
+  // NOTE: `create` and `delete` are intentionally NOT exposed over the
+  // generated REST/MCP surface (S5 audit #1390). Allocation rows directly
+  // determine an invoice's amountPaid/status and a payment's remaining funds;
+  // a generated `create` lets a caller forge an allocation that over-applies a
+  // payment, and a generated `delete` lets a caller silently un-apply funds —
+  // both falsify balances with no authz. Allocations must be created/removed
+  // through application code that re-derives invoice status and respects the
+  // payment-amount cap (the cap is also enforced in `save()` as defence in
+  // depth).
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
@@ -104,6 +119,57 @@ export class PaymentAllocation extends SmrtObject {
     if (options.allocatedBy !== undefined)
       this.allocatedBy = options.allocatedBy;
     if (options.notes !== undefined) this.notes = options.notes;
+  }
+
+  /**
+   * Save-time integrity guard (S5 audit #1390):
+   *  - allocation `amount` must be a finite, positive number, and
+   *  - the sum of all allocations against the referenced Payment (this row
+   *    included) must not exceed the Payment's amount — over-applying a
+   *    payment across invoices would falsify both payment and invoice
+   *    balances.
+   *
+   * The Payment-amount cap is enforced against the persisted Payment row; if
+   * the payment can't be loaded (smrt-commerce used without a Payment row, or
+   * an as-yet-unsaved payment) the cap is skipped but the positivity check
+   * still applies.
+   */
+  override async save(): Promise<this> {
+    if (!Number.isFinite(this.amount) || this.amount <= 0) {
+      throw new Error(
+        `PaymentAllocation ${this.id ?? '<new>'}: amount must be a positive number (got ${this.amount}).`,
+      );
+    }
+
+    if (this.paymentId) {
+      const { PaymentCollection } = await import(
+        '../collections/PaymentCollection.js'
+      );
+      const payments = await (PaymentCollection as any).create(this.options);
+      const payment = await payments.get({ id: this.paymentId });
+      if (payment) {
+        const { PaymentAllocationCollection } = await import(
+          '../collections/PaymentAllocationCollection.js'
+        );
+        const allocations = await (PaymentAllocationCollection as any).create(
+          this.options,
+        );
+        const existing = await allocations.findByPayment(this.paymentId);
+        const otherTotal = existing.reduce(
+          (sum: number, alloc: PaymentAllocation) =>
+            alloc.id === this.id ? sum : sum + alloc.amount,
+          0,
+        );
+        if (otherTotal + this.amount - payment.amount > ALLOCATION_EPSILON) {
+          throw new Error(
+            `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-apply ` +
+              `payment '${this.paymentId}' — already allocated ${otherTotal} of ${payment.amount}.`,
+          );
+        }
+      }
+    }
+
+    return super.save() as Promise<this>;
   }
 }
 
