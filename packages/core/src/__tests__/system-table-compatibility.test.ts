@@ -2,6 +2,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { describe, expect, it, vi } from 'vitest';
 import { SmrtObject } from '../object';
 import {
+  ensureDispatchSubscriptionsSystemTableCompatibility,
   ensureJobEventsSystemTableCompatibility,
   ensureJobsSystemTableCompatibility,
 } from '../system/compatibility';
@@ -49,6 +50,63 @@ describe('system table compatibility', () => {
     const indexNames = indexes.rows.map((row: { name: string }) => row.name);
     expect(indexNames).toContain('idx_smrt_dispatch_target');
     expect(indexNames).toContain('idx_smrt_dispatch_correlation');
+  });
+
+  it('migrates legacy dispatch-subscription identity to tenant-scoped (S5 #1398)', async () => {
+    const db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+
+    // Legacy table: identity is (signal_type, subscriber), no tenant_id column.
+    await db.query(`
+      CREATE TABLE _smrt_dispatch_subscriptions (
+        id TEXT PRIMARY KEY,
+        signal_type TEXT NOT NULL,
+        subscriber TEXT NOT NULL,
+        handler TEXT NOT NULL DEFAULT 'handleDispatch',
+        delivery TEXT NOT NULL DEFAULT 'compete',
+        enabled INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(signal_type, subscriber)
+      )
+    `);
+    await db.query(
+      `INSERT INTO _smrt_dispatch_subscriptions (id, signal_type, subscriber) VALUES ('s1', 'order.placed', 'worker')`,
+    );
+
+    await ensureDispatchSubscriptionsSystemTableCompatibility(db);
+
+    // tenant_id column added.
+    const columns = await db.query(
+      `PRAGMA table_info(_smrt_dispatch_subscriptions)`,
+    );
+    const columnNames = columns.rows.map((row: { name: string }) => row.name);
+    expect(columnNames).toContain('tenant_id');
+
+    // The tenant-scoped unique index exists.
+    const idx = await db.query(
+      `SELECT name FROM sqlite_master WHERE type='index' AND name='uq_smrt_dispatch_subs_tenant_signal_subscriber'`,
+    );
+    expect(idx.rows).toHaveLength(1);
+
+    // The legacy (signal_type, subscriber) auto-index was removed: two tenants
+    // can now hold the same (signal_type, subscriber) pair.
+    await db.query(
+      `INSERT INTO _smrt_dispatch_subscriptions (id, signal_type, subscriber, tenant_id) VALUES ('s2', 'order.placed', 'worker', 'tenant-a')`,
+    );
+    await db.query(
+      `INSERT INTO _smrt_dispatch_subscriptions (id, signal_type, subscriber, tenant_id) VALUES ('s3', 'order.placed', 'worker', 'tenant-b')`,
+    );
+    const rows = await db.query(
+      `SELECT COUNT(*) as c FROM _smrt_dispatch_subscriptions WHERE signal_type='order.placed' AND subscriber='worker'`,
+    );
+    expect((rows.rows[0] as { c: number }).c).toBe(3);
+
+    // The new index still enforces per-tenant uniqueness.
+    await expect(
+      db.query(
+        `INSERT INTO _smrt_dispatch_subscriptions (id, signal_type, subscriber, tenant_id) VALUES ('s4', 'order.placed', 'worker', 'tenant-a')`,
+      ),
+    ).rejects.toThrow();
   });
 
   it('upgrades legacy jobs tables before replaying system DDL', async () => {

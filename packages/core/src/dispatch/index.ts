@@ -49,6 +49,14 @@ export {
   DispatchSubscription,
   type DispatchSubscriptionData,
 } from './models/DispatchSubscription.js';
+// Tenant resolver inversion hook (registered by @happyvertical/smrt-tenancy)
+export {
+  type DispatchTenantResolver,
+  type DispatchTenantScope,
+  resolveDispatchTenantId,
+  resolveDispatchTenantScope,
+  setDispatchTenantResolver,
+} from './tenant-resolver.js';
 
 // Types
 export type {

@@ -19,9 +19,11 @@ import {
   type ListOptions,
   type QueryInterceptResult,
   type QueryOptions,
+  setDispatchTenantResolver,
 } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
+  getTenantId,
   isSuperAdminBypass,
   isSystemContext,
   TenantContextError,
@@ -643,6 +645,13 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
 
   registeredInterceptor = createTenantInterceptor(options);
   GlobalInterceptors.register(registeredInterceptor);
+
+  // Wire the DispatchBus tenant-scope resolver (S5 #1398). Core cannot depend
+  // on tenancy, so it reads the active tenant through this injected hook; the
+  // bus stamps/filters dispatches by the active tenant only while tenancy is
+  // enabled. Mirrors the GlobalInterceptors inversion above.
+  setDispatchTenantResolver(() => getTenantId());
+
   isEnabled = true;
 }
 
@@ -674,6 +683,9 @@ export function disableTenancy(): void {
   }
 
   GlobalInterceptors.unregister(registeredInterceptor);
+  // Clear the DispatchBus tenant resolver so the bus reverts to its no-op
+  // (pre-tenancy) behavior when tenancy is disabled.
+  setDispatchTenantResolver(undefined);
   registeredInterceptor = null;
   isEnabled = false;
 }
