@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.30
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - tenant-scope DispatchBus + server-derived source (S5 #1398) (core)
+  - @happyvertical/smrt-scanner@0.29.30
+  - @happyvertical/smrt-config@0.29.30
+  - @happyvertical/smrt-types@0.29.30
+
 ## 0.29.29
 
 ### Patch Changes
