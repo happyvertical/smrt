@@ -308,7 +308,7 @@ export class APIGenerator {
             : await this.handleList(collection, url.searchParams);
 
         case 'POST':
-          return await this.handleCreate(collection, req);
+          return await this.handleCreate(collection, req, objectName);
 
         case 'PUT':
         case 'PATCH':
@@ -318,7 +318,7 @@ export class APIGenerator {
               'Object ID required for update',
             );
           }
-          return await this.handleUpdate(collection, objectId, req);
+          return await this.handleUpdate(collection, objectId, req, objectName);
 
         case 'DELETE':
           if (!objectId) {
@@ -514,8 +514,9 @@ export class APIGenerator {
   private async handleCreate(
     collection: SmrtCollection<any>,
     req: Request,
+    objectName?: string,
   ): Promise<Response> {
-    const data = (await req.json()) as Record<string, any>;
+    const data = this.applyWritablePolicy(objectName, await req.json());
     const object = await collection.create({ ...data, _skipLoad: true });
     await object.save();
     return this.createJsonResponse(this.toPublicData(object), 201);
@@ -528,8 +529,9 @@ export class APIGenerator {
     collection: SmrtCollection<any>,
     id: string,
     req: Request,
+    objectName?: string,
   ): Promise<Response> {
-    const data = await req.json();
+    const data = this.applyWritablePolicy(objectName, await req.json());
     const object = await collection.get(id);
 
     if (!object) {
@@ -574,6 +576,60 @@ export class APIGenerator {
     const collection = this.collections.get(classInfo.name);
     if (!collection) throw new Error(`Collection ${classInfo.name} not found`);
     return collection;
+  }
+
+  /**
+   * Mass-assignment guard (#1540): strip framework/server-managed and
+   * `@field({ readonly: true })` fields from a create/update body, and — when an
+   * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   */
+  private applyWritablePolicy(
+    objectName: string | undefined,
+    data: any,
+  ): Record<string, any> {
+    if (!data || typeof data !== 'object') {
+      return {};
+    }
+
+    const serverManaged = new Set([
+      'id',
+      'tenantId',
+      'tenant_id',
+      'createdAt',
+      'created_at',
+      'updatedAt',
+      'updated_at',
+    ]);
+
+    const readonly = new Set<string>();
+    let writable: string[] | null = null;
+
+    if (objectName) {
+      const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+      if (
+        apiConfig &&
+        typeof apiConfig === 'object' &&
+        Array.isArray((apiConfig as { writable?: unknown }).writable)
+      ) {
+        writable = (apiConfig as { writable: string[] }).writable;
+      }
+
+      for (const [name, def] of ObjectRegistry.getFields(objectName)) {
+        if (def && (def.readonly === true || def._meta?.readonly === true)) {
+          readonly.add(name);
+        }
+      }
+    }
+
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith('_')) continue;
+      if (serverManaged.has(key)) continue;
+      if (readonly.has(key)) continue;
+      if (writable && !writable.includes(key)) continue;
+      result[key] = value;
+    }
+    return result;
   }
 
   /**

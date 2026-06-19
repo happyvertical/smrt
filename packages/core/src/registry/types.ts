@@ -126,6 +126,32 @@ export interface ApiConfig {
    * Useful when item JSON needs async enrichment beyond `transformJSON()`.
    */
   serializers?: ApiSerializersConfig;
+
+  /**
+   * Authorization posture for generated CRUD routes (fail-closed by default).
+   *
+   * Generated REST / MCP / SvelteKit routes require an authenticated principal
+   * on `locals` (e.g. `locals.user` / `locals.session`) unless this opts out:
+   * - `false` (default): every route requires authentication — reads and writes.
+   * - `true`: all routes are public (no auth required). Use only for genuinely
+   *   public data.
+   * - `'read'`: read routes (`list`/`get`) are public, but mutating routes
+   *   (`create`/`update`/`delete`) still require authentication.
+   *
+   * This is a security default: omitting it means the routes are protected.
+   */
+  public?: boolean | 'read';
+
+  /**
+   * Allowlist of field names that may be set from the request body on generated
+   * `create`/`update` routes.
+   *
+   * When set, only these fields are accepted; everything else in the body is
+   * dropped. Regardless of this list, framework/server-managed fields (`id`,
+   * `tenantId`, timestamps, `_`-prefixed) and `@field({ readonly: true })`
+   * fields are always stripped to prevent mass-assignment.
+   */
+  writable?: string[];
 }
 
 /**

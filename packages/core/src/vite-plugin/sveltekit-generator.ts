@@ -169,6 +169,79 @@ function resolveStandardRouteSerializers(
   };
 }
 
+/**
+ * Collect property names marked `@field({ readonly: true })` for an object, so
+ * the generated write surfaces can strip them from request bodies (#1540, 2b).
+ */
+function collectReadonlyFieldNames(objectDef: SmartObjectDefinition): string[] {
+  const fields = objectDef.fields || {};
+  const names: string[] = [];
+  for (const [name, def] of Object.entries(fields)) {
+    const meta = (def as { _meta?: Record<string, unknown> })._meta;
+    if (
+      (def as { readonly?: boolean }).readonly === true ||
+      meta?.readonly === true
+    ) {
+      names.push(name);
+    }
+  }
+  return names;
+}
+
+/**
+ * Resolve the optional `@smrt({ api: { writable: [...] } })` allowlist. When
+ * present, only these fields may be set from a create/update request body.
+ */
+function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
+  const config = getApiConfigObject(apiConfig);
+  return Array.isArray(config?.writable) ? config.writable : null;
+}
+
+/**
+ * Emit the mass-assignment guard helper injected into generated route files
+ * (#1540, 2b). It strips framework/server-managed (`id`, `tenantId`,
+ * timestamps, `_`-prefixed) and `@field({ readonly: true })` fields from
+ * request bodies, and — when a `writable` allowlist is configured — intersects
+ * with it. Applied to every generated `create`/`update` handler.
+ */
+function generateWritablePolicyHelper(
+  objectDef: SmartObjectDefinition,
+): string {
+  const readonly = collectReadonlyFieldNames(objectDef);
+  const writable = getApiWritableAllowlist(objectDef.decoratorConfig?.api);
+
+  return `
+// Mass-assignment guard (#1540): strip framework/server-managed + read-only
+// fields from create/update request bodies before they reach the model.
+const WRITABLE_ALLOWLIST: string[] | null = ${
+    writable ? JSON.stringify(writable) : 'null'
+  };
+const READONLY_FIELDS: string[] = ${JSON.stringify(readonly)};
+const SERVER_MANAGED_FIELDS = [
+  'id',
+  'tenantId',
+  'tenant_id',
+  'createdAt',
+  'created_at',
+  'updatedAt',
+  'updated_at',
+];
+
+function applyWritablePolicy(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== 'object') return {};
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
+    if (key.startsWith('_')) continue;
+    if (SERVER_MANAGED_FIELDS.includes(key)) continue;
+    if (READONLY_FIELDS.includes(key)) continue;
+    if (WRITABLE_ALLOWLIST && !WRITABLE_ALLOWLIST.includes(key)) continue;
+    result[key] = value;
+  }
+  return result;
+}
+`;
+}
+
 function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
   switch (method?.toUpperCase()) {
     case 'GET':
@@ -1362,7 +1435,7 @@ ${
 }import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-`;
+${hasPost ? generateWritablePolicyHelper(objectDef) : ''}`;
 
   const getHandler = hasGet
     ? `
@@ -1394,7 +1467,7 @@ ${
     ? `
 // Create new ${className.toLowerCase()}
 export const POST: RequestHandler = async ({ request }) => {
-  const data = await request.json();
+  const data = applyWritablePolicy(await request.json());
 
 ${generateCollectionLoad(className)}
   const item = await collection.create(data);
@@ -1488,7 +1561,8 @@ function generateItemRouteTemplate(
 
 import { error, json } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
-import type { RequestHandler } from './$types';`;
+import type { RequestHandler } from './$types';
+${hasPut ? generateWritablePolicyHelper(objectDef) : ''}`;
 
   const getHandler = hasGet
     ? `
@@ -1518,7 +1592,7 @@ ${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
 
-  const data = await request.json();
+  const data = applyWritablePolicy(await request.json());
   Object.assign(item, data);
   await item.save();
 ${

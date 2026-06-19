@@ -494,7 +494,12 @@ export class MCPGenerator {
       const collection = await this.getCollection(actualObjectName, classInfo);
 
       // Execute the action
-      const result = await this.executeAction(collection, action, args);
+      const result = await this.executeAction(
+        collection,
+        action,
+        args,
+        actualObjectName,
+      );
 
       return {
         content: [
@@ -569,12 +574,67 @@ export class MCPGenerator {
   }
 
   /**
+   * Mass-assignment guard (#1540): strip framework/server-managed and
+   * `@field({ readonly: true })` fields from a create/update body, and — when an
+   * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   */
+  private applyWritablePolicy(
+    objectName: string | undefined,
+    data: any,
+  ): Record<string, any> {
+    if (!data || typeof data !== 'object') {
+      return {};
+    }
+
+    const serverManaged = new Set([
+      'id',
+      'tenantId',
+      'tenant_id',
+      'createdAt',
+      'created_at',
+      'updatedAt',
+      'updated_at',
+    ]);
+
+    const readonly = new Set<string>();
+    let writable: string[] | null = null;
+
+    if (objectName) {
+      const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+      if (
+        apiConfig &&
+        typeof apiConfig === 'object' &&
+        Array.isArray((apiConfig as { writable?: unknown }).writable)
+      ) {
+        writable = (apiConfig as { writable: string[] }).writable;
+      }
+
+      for (const [name, def] of ObjectRegistry.getFields(objectName)) {
+        if (def && (def.readonly === true || def._meta?.readonly === true)) {
+          readonly.add(name);
+        }
+      }
+    }
+
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith('_')) continue;
+      if (serverManaged.has(key)) continue;
+      if (readonly.has(key)) continue;
+      if (writable && !writable.includes(key)) continue;
+      result[key] = value;
+    }
+    return result;
+  }
+
+  /**
    * Execute action on collection
    */
   private async executeAction(
     collection: SmrtCollection<any>,
     action: string,
     args: any,
+    objectName?: string,
   ): Promise<any> {
     switch (action) {
       case 'list': {
@@ -621,8 +681,12 @@ export class MCPGenerator {
       }
 
       case 'create': {
-        // Add user context if available
-        const createData = { ...args };
+        // Mass-assignment guard (#1540): only writable fields from the caller.
+        const createData: Record<string, any> = this.applyWritablePolicy(
+          objectName,
+          args,
+        );
+        // Server-set ownership context (not caller-controlled).
         if (this.context.user) {
           createData.created_by = this.context.user.id;
           createData.owner_id = this.context.user.id;
@@ -635,7 +699,7 @@ export class MCPGenerator {
       }
 
       case 'update': {
-        const { id, ...updateData } = args;
+        const { id } = args;
         if (!id) {
           throw new Error('ID is required for update');
         }
@@ -645,7 +709,9 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        // Update properties
+        // Mass-assignment guard (#1540): strip server-managed/read-only keys
+        // (incl. `id`) before applying caller-supplied updates.
+        const updateData = this.applyWritablePolicy(objectName, args);
         Object.assign(existing, updateData);
 
         // Add user context
@@ -1016,7 +1082,7 @@ ${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memo
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const newItem = await collection.create(args);
+${indent}  const newItem = await collection.create(applyWritablePolicy('${capitalize(objectName)}', args));
 ${indent}  await newItem.save();
 
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON()) }] };
@@ -1039,7 +1105,7 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  Object.assign(existing, updateData);
+${indent}  Object.assign(existing, applyWritablePolicy('${capitalize(objectName)}', updateData));
 ${indent}  await existing.save();
 
 ${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON()) }] };
@@ -1113,6 +1179,39 @@ ${indent}}`;
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core/registry';
+
+/**
+ * Mass-assignment guard (#1540): strip framework/server-managed and
+ * \`@field({ readonly: true })\` fields from create/update bodies, intersecting
+ * with the optional \`@smrt({ api: { writable: [...] } })\` allowlist.
+ */
+function applyWritablePolicy(objectName, data) {
+  if (!data || typeof data !== 'object') return {};
+  const serverManaged = new Set([
+    'id', 'tenantId', 'tenant_id',
+    'createdAt', 'created_at', 'updatedAt', 'updated_at',
+  ]);
+  const readonly = new Set();
+  let writable = null;
+  const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+  if (apiConfig && typeof apiConfig === 'object' && Array.isArray(apiConfig.writable)) {
+    writable = apiConfig.writable;
+  }
+  for (const [name, def] of ObjectRegistry.getFields(objectName)) {
+    if (def && (def.readonly === true || def._meta?.readonly === true)) {
+      readonly.add(name);
+    }
+  }
+  const result = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (key.startsWith('_')) continue;
+    if (serverManaged.has(key)) continue;
+    if (readonly.has(key)) continue;
+    if (writable && !writable.includes(key)) continue;
+    result[key] = value;
+  }
+  return result;
+}
 
 /**
  * Handle tool call request
