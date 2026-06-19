@@ -15,6 +15,8 @@ import {
 import { TenantContext } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
+import { isBackgroundEligibleMethod } from './background-policy.js';
+import { redactErrorForPersistence } from './error-redaction.js';
 import {
   JobContextLogger,
   type JobEventInput,
@@ -530,6 +532,17 @@ export class TaskRunner extends EventEmitter {
         throw new Error(`Method not found: ${job.objectType}.${job.method}`);
       }
 
+      // Opt-in allowlist: if the target class declares background-eligible
+      // methods, refuse to invoke anything outside that set. Dispatch is already
+      // bounded to existing prototype methods (no eval/dynamic import), but a
+      // class can narrow the reachable surface to an explicit contract
+      // (S5 audit #1402). Classes that don't opt in keep current behaviour.
+      if (!isBackgroundEligibleMethod(ObjectClass, job.method)) {
+        throw new Error(
+          `Method not background-eligible: ${job.objectType}.${job.method}`,
+        );
+      }
+
       const result = await method.call(instance, methodArgs, executionContext);
 
       return { result };
@@ -555,6 +568,15 @@ export class TaskRunner extends EventEmitter {
     const jobId = job.id;
     if (!jobId) return;
 
+    // `last_error` is persisted to the durable `_smrt_jobs` row and is readable
+    // through generated (tenant-scoped) list/get routes. Strip secret-shaped
+    // substrings before persistence so a failing job that echoes a credential
+    // in its message does not turn into a durable leak (S5 audit #1402).
+    // Use the throwable-tolerant wrapper: `error` is typed `Error` but reaches
+    // here via an `as Error` cast at the call site, so a non-Error throwable
+    // (no `.message`) would otherwise persist an empty `last_error`.
+    const safeMessage = redactErrorForPersistence(error);
+
     if (decision.shouldRetry && job.attempts < job.maxAttempts) {
       // Schedule retry
       const nextRunAt = new Date(Date.now() + decision.delay);
@@ -562,7 +584,7 @@ export class TaskRunner extends EventEmitter {
       // Conditional: don't resurrect a row that recovery already failed.
       const applied = await this.writeOwnedJob(jobId, {
         status: 'pending',
-        last_error: error.message,
+        last_error: safeMessage,
         run_at: nextRunAt.toISOString(),
         worker_id: null,
         worker_heartbeat: null,
@@ -571,7 +593,7 @@ export class TaskRunner extends EventEmitter {
       if (!applied) return;
 
       job.status = 'pending';
-      job.lastError = error.message;
+      job.lastError = safeMessage;
       job.runAt = nextRunAt;
       job.workerId = null;
       job.workerHeartbeat = null;
@@ -580,7 +602,7 @@ export class TaskRunner extends EventEmitter {
         type: 'status',
         level: 'warn',
         stage: 'retrying',
-        message: `Retrying job after failure: ${error.message}`,
+        message: `Retrying job after failure: ${safeMessage}`,
         data: { delay: decision.delay, attempts: job.attempts },
       });
       this.emit('job:retrying', job, error, decision.delay);
@@ -590,20 +612,20 @@ export class TaskRunner extends EventEmitter {
       const applied = await this.writeOwnedJob(jobId, {
         status: 'failed',
         completed_at: completedAt.toISOString(),
-        last_error: error.message,
+        last_error: safeMessage,
         updated_at: completedAt.toISOString(),
       });
       if (!applied) return;
 
       job.status = 'failed';
       job.completedAt = completedAt;
-      job.lastError = error.message;
+      job.lastError = safeMessage;
 
       await this.appendJobEvent(job, {
         type: 'error',
         level: 'error',
         stage: 'failed',
-        message: error.message,
+        message: safeMessage,
         data: { attempts: job.attempts },
       });
       this.emit('job:failed', job, error);
@@ -752,9 +774,12 @@ export class TaskRunner extends EventEmitter {
     }
 
     const freshLeaseKeys = await this.workerCollection.freshLeaseWorkerKeys();
+    // Worker-internal cross-tenant recovery scan; SmrtJob is @TenantScoped
+    // (S5 #1402) so this raw read needs an explicit opt-in.
     const running = await this.collection.query(
       `SELECT * FROM _smrt_jobs WHERE status = 'running'`,
       [],
+      { allowRawOnTenantScoped: true },
     );
     if (running.length === 0) return;
 

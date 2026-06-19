@@ -3,6 +3,7 @@ import {
   type RetryStrategy,
   type RetryStrategyConfig,
 } from '@happyvertical/jobs';
+import { clampRetries, DEFAULT_TENANT_JOB_CAP } from './background-policy.js';
 import { JobHandle } from './job-handle.js';
 import type { SmrtJobCollection, TimeoutBehavior } from './smrt-job.js';
 
@@ -82,6 +83,7 @@ export class JobBuilder<T = unknown> {
   private _timeout: number = 300000;
   private _timeoutBehavior: TimeoutBehavior = 'fail';
   private _retryStrategy: RetryStrategy = exponential();
+  private _tenantJobCap: number = DEFAULT_TENANT_JOB_CAP;
 
   constructor(
     private readonly objectType: string,
@@ -117,10 +119,13 @@ export class JobBuilder<T = unknown> {
   }
 
   /**
-   * Set the maximum number of retry attempts
+   * Set the maximum number of retry attempts.
+   *
+   * Clamped to {@link MAX_JOB_RETRIES} so a misconfigured caller cannot pin a
+   * worker on a poison job indefinitely (S5 audit #1402).
    */
   retries(count: number): this {
-    this._retries = count;
+    this._retries = clampRetries(count);
     return this;
   }
 
@@ -157,6 +162,17 @@ export class JobBuilder<T = unknown> {
   }
 
   /**
+   * Override the per-tenant in-flight job cap for this enqueue.
+   *
+   * Defaults to {@link DEFAULT_TENANT_JOB_CAP}. Pass `0` (or a negative value)
+   * to disable the cap for trusted internal callers (S5 audit #1402).
+   */
+  tenantJobCap(max: number): this {
+    this._tenantJobCap = max;
+    return this;
+  }
+
+  /**
    * Enqueue the job and return a handle
    */
   async enqueue(): Promise<JobHandle<T>> {
@@ -167,21 +183,26 @@ export class JobBuilder<T = unknown> {
         ? this._retryStrategy.toConfig()
         : (this._retryStrategy as RetryStrategyConfig);
 
-    const job = await this.collection.create({
-      queue: this._queue,
-      objectType: this.objectType,
-      objectId: this.objectId,
-      method: this.method,
-      args: this.args,
-      runAt,
-      priority: this._priority,
-      maxAttempts: this._retries,
-      timeout: this._timeout,
-      timeoutBehavior: this._timeoutBehavior,
-      retryStrategy: retryConfig,
-    });
-
-    await job.save();
+    // Route through the collection's single creation path so the per-tenant
+    // in-flight cap and the retry ceiling are enforced in one place, shared with
+    // the ScheduleRunner (S5 audit #1402). The cap applies to the ambient tenant
+    // (resolved inside enqueueJob); global (no-context) jobs are exempt.
+    const job = await this.collection.enqueueJob(
+      {
+        queue: this._queue,
+        objectType: this.objectType,
+        objectId: this.objectId,
+        method: this.method,
+        args: this.args,
+        runAt,
+        priority: this._priority,
+        maxAttempts: this._retries,
+        timeout: this._timeout,
+        timeoutBehavior: this._timeoutBehavior,
+        retryStrategy: retryConfig,
+      },
+      { tenantJobCap: this._tenantJobCap },
+    );
 
     const jobId = job.id;
     if (!jobId) {

@@ -7,8 +7,17 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { getTenantId, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import {
+  assertWithinTenantCreationCap,
+  clampRetries,
+  DEFAULT_TENANT_JOB_CAP,
+} from './background-policy.js';
 
 /**
  * Job status type
@@ -37,7 +46,14 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
  */
 @smrt({
   tableName: '_smrt_jobs',
-  api: { include: ['list', 'get'] },
+  // Fail closed: `_smrt_jobs` is an internal operational queue table. Generated
+  // REST/MCP list/get only filter by tenant when a tenant context is active;
+  // reached without context (a tenant-less/admin principal, or any non-SvelteKit
+  // surface) an `optional`-mode class returns UNFILTERED rows, leaking every
+  // tenant's jobs. Workers read this table via the collection directly
+  // (allowRawOnTenantScoped), never through generated routes, so nothing
+  // internal needs the read surface — so we do not generate one (S5 audit #1402).
+  api: false,
   // retry/cancel are operator commands invoked in-process via the CLI;
   // they intentionally aren't exposed over HTTP.
   cli: {
@@ -45,8 +61,13 @@ export type TimeoutBehavior = 'fail' | 'kill' | 'warn';
     skipApiCheck: true,
     http: false,
   },
-  mcp: { include: ['list', 'get'] },
+  mcp: false,
 })
+// Keep the data model tenant-scoped (defense in depth): even without a generated
+// read route, the @tenantId() field alone does NOT make collection reads filter
+// by tenant. `optional` mode preserves global (NULL tenant) jobs while scoping
+// tenant-owned rows for any future tenant-context-required path (S5 audit #1402).
+@TenantScoped({ mode: 'optional' })
 export class SmrtJob extends SmrtObject {
   /** Tenant context captured for this job, if any */
   @tenantId({ nullable: true })
@@ -210,6 +231,18 @@ export interface SmrtJobData {
 }
 
 /**
+ * Options controlling a centralized {@link SmrtJobCollection.enqueueJob} call.
+ */
+export interface EnqueueJobOptions {
+  /**
+   * Per-tenant in-flight cap. Defaults to {@link DEFAULT_TENANT_JOB_CAP}.
+   * `0`/negative disables the cap (trusted internal callers). Global
+   * (no-context / null tenant) jobs are always exempt.
+   */
+  tenantJobCap?: number;
+}
+
+/**
  * Options for listReady
  */
 export interface ListReadyOptions {
@@ -285,9 +318,13 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
 
     params.push(options.limit || 100);
 
+    // Worker-internal scan: the runner intentionally processes ready jobs
+    // across all tenants, so it manages tenant context per-job at execution
+    // time rather than filtering here (SmrtJob is now @TenantScoped, S5 #1402).
     return this.query(
       `SELECT * FROM _smrt_jobs WHERE ${whereConditions.join(' AND ')} ORDER BY priority DESC, run_at ASC LIMIT ?`,
       params,
+      { allowRawOnTenantScoped: true },
     );
   }
 
@@ -337,9 +374,107 @@ export class SmrtJobCollection extends SmrtCollection<SmrtJob> {
           AND status = 'pending'
         RETURNING *`,
       [options.workerId, nowIso, nowIso, nowIso, ...whereParams, limit],
+      // Worker-internal cross-tenant claim; tenant context is restored
+      // per-job at execution (SmrtJob is now @TenantScoped, S5 #1402).
+      { allowRawOnTenantScoped: true },
     );
 
     return claimed.toSorted(compareClaimOrder);
+  }
+
+  /**
+   * Count non-terminal (pending/running) jobs owned by a tenant.
+   *
+   * Used to enforce the per-tenant creation cap so one tenant cannot exhaust
+   * the shared worker pool (S5 audit #1402). Reads `_smrt_jobs` directly so it
+   * works regardless of ambient tenant context.
+   *
+   * @param tenantId - Tenant to count for. `null` counts global (NULL-tenant)
+   *   jobs.
+   */
+  async countInFlightForTenant(tenantId: string | null): Promise<number> {
+    const predicate = tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = ?';
+    const params = tenantId === null ? [] : [tenantId];
+
+    // Use the public `db` accessor (with its init guard), not the protected
+    // `_db` internal — consistent with claimReady()/this.db usage above. This
+    // is a deliberately cross-tenant count (it must see every tenant's rows to
+    // bound a single tenant), so it intentionally bypasses the tenant-scoped
+    // query interceptor rather than routing through this.query().
+    const result = await this.db.query(
+      `SELECT COUNT(*) AS count
+         FROM _smrt_jobs
+        WHERE status IN ('pending', 'running')
+          AND ${predicate}`,
+      ...params,
+    );
+
+    const row = result.rows[0] as { count?: number | string } | undefined;
+    return Number(row?.count ?? 0);
+  }
+
+  /**
+   * The single creation path for queued jobs.
+   *
+   * Centralizes the two creation-time security guards from the S5 audit (#1402)
+   * so every enqueue — the fluent {@link "./job-builder".JobBuilder} *and* the
+   * ScheduleRunner's cron-triggered jobs — goes through one place:
+   *
+   * 1. `maxAttempts` is clamped to {@link MAX_JOB_RETRIES} so a misconfigured
+   *    caller cannot pin a worker on a poison job indefinitely.
+   * 2. A per-tenant in-flight cap bounds how many non-terminal jobs one tenant
+   *    may hold, so one tenant cannot exhaust the shared worker pool
+   *    (cross-tenant denial of service). The cap applies to the row's effective
+   *    tenant (explicit `data.tenantId` or, when absent, the ambient context);
+   *    global (null-tenant) jobs are exempt.
+   *
+   * Atomicity note (best-effort soft cap, by design): the cap is a
+   * count-then-insert, NOT a hard transactional invariant. It is intentionally
+   * left non-atomic. A plain transaction would not help — under the adapters'
+   * default isolation two concurrent same-tenant enqueues would each read the
+   * same COUNT and both insert, so serializing them would require either a
+   * per-tenant lock row (`SELECT ... FOR UPDATE`) or SERIALIZABLE-isolation
+   * retry loops. That cross-process locking is fragile (lock-row contention,
+   * adapter-specific isolation behavior, the `transaction` adapter method being
+   * optional) and out of proportion to the threat: this cap is defense in depth
+   * against runaway/accidental creation exhausting the shared worker pool, not a
+   * billing/quota boundary. So under truly simultaneous enqueues a tenant may
+   * momentarily overshoot by the number of in-flight creators; the bound still
+   * prevents unbounded growth and closes the prior ScheduleRunner bypass. If a
+   * hard guarantee is ever needed, enforce it with a DB CHECK/trigger or a
+   * dedicated counter row, not an application-level lock.
+   */
+  async enqueueJob(
+    data: SmrtJobData,
+    options: EnqueueJobOptions = {},
+  ): Promise<SmrtJob> {
+    const cap = options.tenantJobCap ?? DEFAULT_TENANT_JOB_CAP;
+
+    // Effective tenant: an explicitly provided tenantId wins (ScheduleRunner
+    // passes the schedule's tenant even when no ambient context exists);
+    // otherwise fall back to the ambient context (JobBuilder path).
+    const explicitTenant =
+      typeof data.tenantId === 'string' && data.tenantId.length > 0
+        ? data.tenantId
+        : data.tenantId === null
+          ? null
+          : undefined;
+    const effectiveTenant =
+      explicitTenant !== undefined ? explicitTenant : (getTenantId() ?? null);
+
+    if (effectiveTenant && cap > 0) {
+      const current = await this.countInFlightForTenant(effectiveTenant);
+      assertWithinTenantCreationCap(effectiveTenant, current, cap);
+    }
+
+    const job = await this.create({
+      ...data,
+      // Clamp here so neither the builder nor the schedule runner can bypass the
+      // retry ceiling (S5 audit #1402).
+      maxAttempts: clampRetries(data.maxAttempts ?? 3),
+    });
+    await job.save();
+    return job;
   }
 
   /**

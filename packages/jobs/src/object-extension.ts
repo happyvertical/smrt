@@ -155,6 +155,9 @@ function backgroundImpl<R = unknown>(
     _timeout: 300000,
     _timeoutBehavior: 'fail' as 'fail' | 'kill' | 'warn',
     _retryStrategy: null as unknown,
+    // `undefined` => fall through to JobBuilder's DEFAULT_TENANT_JOB_CAP. A
+    // caller can override (incl. `0` to disable) via tenantJobCap() below.
+    _tenantJobCap: undefined as number | undefined,
 
     queue(name: string) {
       this._queue = name;
@@ -188,6 +191,10 @@ function backgroundImpl<R = unknown>(
       this._timeoutBehavior = behavior;
       return this;
     },
+    tenantJobCap(max: number) {
+      this._tenantJobCap = max;
+      return this;
+    },
     async enqueue(): Promise<JobHandle<R>> {
       const collection = await getJobCollection(db);
       const builder = new JobBuilder<R>(
@@ -204,6 +211,11 @@ function backgroundImpl<R = unknown>(
       builder.priority(this._priority);
       builder.timeout(this._timeout);
       builder.timeoutBehavior(this._timeoutBehavior);
+      // Only forward an explicit override; leaving it unset preserves the
+      // JobBuilder default (DEFAULT_TENANT_JOB_CAP).
+      if (this._tenantJobCap !== undefined) {
+        builder.tenantJobCap(this._tenantJobCap);
+      }
 
       if (this._retryStrategy) {
         builder.retryStrategy(
