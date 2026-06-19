@@ -418,8 +418,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       // column so legitimate filters on unrelated JSON fields (e.g.
       // `metadata.apiSecret` on a non-sensitive `metadata` column) aren't
       // falsely rejected.
+      // Use the NORMALIZED column name so camelCase aliases (`_metaData`,
+      // `metaData`) that also resolve to the `_meta_data` column are scoped in —
+      // checking raw `baseFieldName` here let `_metaData.apiSecret` slip past
+      // the segment check while still resolving to the meta column.
       const baseIsMetaData =
-        baseFieldName === '_meta_data' || baseFieldName === 'meta_data';
+        snakeBaseFieldName === '_meta_data' ||
+        snakeBaseFieldName === 'meta_data';
       const metaPathTargetsSensitive =
         baseIsMetaData &&
         !!jsonPath &&

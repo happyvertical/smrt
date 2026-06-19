@@ -1238,25 +1238,25 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
  * \`@field({ readonly: true })\` fields from create/update bodies, intersecting
  * with the optional \`@smrt({ api: { writable: [...] } })\` allowlist.
  */
-function applyWritablePolicy(objectName, data) {
+function applyWritablePolicy(objectName: string, data: any): Record<string, any> {
   if (!data || typeof data !== 'object') return {};
-  const serverManaged = new Set([
+  const serverManaged = new Set<string>([
     'id', 'tenantId', 'tenant_id',
     'createdAt', 'created_at', 'updatedAt', 'updated_at',
   ]);
-  const readonly = new Set();
-  let writable = null;
-  const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+  const readonly = new Set<string>();
+  let writable: string[] | null = null;
+  const apiConfig = ObjectRegistry.getConfig(objectName)?.api as any;
   if (apiConfig && typeof apiConfig === 'object' && Array.isArray(apiConfig.writable)) {
     writable = apiConfig.writable;
   }
   for (const [name, def] of ObjectRegistry.getFields(objectName)) {
-    if (def && (def.readonly === true || def._meta?.readonly === true)) {
+    if (def && ((def as any).readonly === true || (def as any)._meta?.readonly === true)) {
       readonly.add(name);
     }
   }
-  const result = {};
-  for (const [key, value] of Object.entries(data)) {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
     if (key.startsWith('_')) continue;
     if (serverManaged.has(key)) continue;
     if (readonly.has(key)) continue;
@@ -1271,20 +1271,20 @@ function applyWritablePolicy(objectName, data) {
  * Recurses through arrays and plain objects so nested SmrtObjects are stripped
  * too; non-plain instances (Date, etc.) and primitives pass through. Cycle-safe.
  */
-function toPublicResult(value, seen = new WeakSet()) {
+function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
   if (value === null || typeof value !== 'object') return value;
   if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
   if (Array.isArray(value)) {
     if (seen.has(value)) return value;
     seen.add(value);
-    return value.map((entry) => toPublicResult(entry, seen));
+    return value.map((entry: any) => toPublicResult(entry, seen));
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
   if (seen.has(value)) return value;
   seen.add(value);
-  const out = {};
-  for (const [key, entry] of Object.entries(value)) {
+  const out: Record<string, any> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, any>)) {
     out[key] = toPublicResult(entry, seen);
   }
   return out;

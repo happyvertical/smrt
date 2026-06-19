@@ -309,13 +309,13 @@ function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any 
   if (Array.isArray(value)) {
     if (seen.has(value)) return value;
     seen.add(value);
-    return value.map((entry) => toPublicResult(entry, seen));
+    return value.map((entry: any) => toPublicResult(entry, seen));
   }
   const proto = Object.getPrototypeOf(value);
   if (proto !== Object.prototype && proto !== null) return value;
   if (seen.has(value)) return value;
   seen.add(value);
-  const out = {};
+  const out: Record<string, any> = {};
   for (const [key, entry] of Object.entries(value)) {
     out[key] = toPublicResult(entry, seen);
   }

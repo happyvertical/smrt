@@ -113,4 +113,12 @@ describe('Issue #1540: sensitive field handling', () => {
       collection.list({ where: { 'apiSecret.foo': 'x' } }),
     ).rejects.toThrow(/sensitive/i);
   });
+
+  it('rejects a sensitive meta probe via a camelCase _metaData alias', async () => {
+    // `_metaData` normalizes to the `_meta_data` column, so the meta-path scope
+    // must use the normalized name — otherwise `_metaData.apiSecret` slips past.
+    await expect(
+      collection.list({ where: { '_metaData.apiSecret': 'x' } }),
+    ).rejects.toThrow(/sensitive/i);
+  });
 });
