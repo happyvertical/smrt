@@ -71,9 +71,15 @@ const loadedPayoutStatus = new WeakMap<Payout, PayoutStatus>();
   // `resetFromFailed` helpers. So the generated surface is read-only — this
   // closes the "forged CONFIRMED Payout via api.create" vector (codex HIGH#4)
   // at the surface, not just in the save() guard.
+  //
+  // CLI parity (round 6, codex ROOT INSIGHT): the CLI is an independently
+  // configured write surface. `cli: true` would still generate create/update/
+  // delete commands that set status / the gross-fee-net triple, re-opening the
+  // exact vector closed on api/mcp. The CLI is locked to the same read-only
+  // surface — there is no safe generated payout write on ANY surface.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { include: ['list', 'get'] },
 })
 export class Payout extends SmrtObject {
   /**

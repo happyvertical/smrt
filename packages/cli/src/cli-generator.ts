@@ -1749,10 +1749,18 @@ export class CLIGenerator {
     try {
       let data: any = {};
 
-      if (options.fromFile) {
+      // `parseCliArgs` preserves the registered (kebab-case) option key
+      // (`from-file`), but earlier code read only the camelCase `fromFile`, so
+      // the `--from-file` create path never fired — the file was never read and
+      // (worse) its input never reached `applyWritablePolicy` (round 5's
+      // mass-assignment guard was a no-op on this path). Resolve both spellings
+      // so `--from-file` input is loaded AND policed (#1390 round 6, codex MED).
+      const fromFile = options.fromFile ?? options['from-file'];
+
+      if (fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
-        const content = await fs.readFile(options.fromFile, 'utf-8');
+        const content = await fs.readFile(fromFile, 'utf-8');
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode
@@ -1809,10 +1817,15 @@ export class CLIGenerator {
 
       let data: any = {};
 
-      if (options.fromFile) {
+      // See handleCreate: `parseCliArgs` keeps the kebab-case `from-file` key,
+      // so resolve both spellings — otherwise `--from-file` updates silently
+      // skip the file AND the writable policy (#1390 round 6, codex MED).
+      const fromFile = options.fromFile ?? options['from-file'];
+
+      if (fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
-        const content = await fs.readFile(options.fromFile, 'utf-8');
+        const content = await fs.readFile(fromFile, 'utf-8');
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode with current values

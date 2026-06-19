@@ -1256,6 +1256,48 @@ describe('Generated write surface excludes status + integrity amounts (#1390 rou
 });
 
 // ===========================================================================
+// Round 6 (ROOT INSIGHT): the CLI is a THIRD independently-configured write
+// surface (alongside api + mcp). For the two read-only models a stray
+// `cli: true` would still generate create/update/delete commands that set
+// status / integrity amounts — re-opening the exact vector closed on api/mcp.
+// Assert per-model surface CONSISTENCY across all three surfaces.
+// ===========================================================================
+
+describe('CLI write surface is consistent with api/mcp (#1390 round 6)', () => {
+  function cfgFor(name: string): any {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    return manifest.objects[`@happyvertical/smrt-commerce:${name}`]
+      ?.decoratorConfig;
+  }
+
+  it('Payout: CLI is locked to list/get (no create/update/delete on ANY surface)', () => {
+    const cfg = cfgFor('Payout');
+    expect(cfg?.cli?.include).toEqual(['list', 'get']);
+    expect(cfg?.api?.include).toEqual(['list', 'get']);
+    expect(cfg?.mcp?.include).toEqual(['list', 'get']);
+  });
+
+  it('PaymentAllocation: CLI is locked to list/get (no create/delete on ANY surface)', () => {
+    const cfg = cfgFor('PaymentAllocation');
+    expect(cfg?.cli?.include).toEqual(['list', 'get']);
+    expect(cfg?.api?.include).toEqual(['list', 'get']);
+    expect(cfg?.mcp?.include).toEqual(['list', 'get']);
+  });
+
+  it('Payment/PaymentIntent/Invoice: api.writable allowlist (honored by the CLI via applyWritablePolicy) excludes status', () => {
+    // These three keep generated create/update, but every surface — REST, MCP,
+    // AND CLI — funnels input through applyWritablePolicy(api.writable), so the
+    // single allowlist enforces the same exclusions on all three. `status` is
+    // excluded everywhere.
+    for (const name of ['Payment', 'PaymentIntent', 'Invoice']) {
+      const cfg = cfgFor(name);
+      expect(Array.isArray(cfg?.api?.writable)).toBe(true);
+      expect(cfg.api.writable).not.toContain('status');
+    }
+  });
+});
+
+// ===========================================================================
 // Round 4: authoritative prior-status load. The save()-time guards no longer
 // trust the WeakMap (which is only populated when initialize() hydrated the
 // row); they read the persisted row from the DB, so a create-onto-existing
@@ -1446,5 +1488,136 @@ describe('Payout CONFIRMED requires txref and a SENT predecessor (#1390 round 4)
     await expect(payout.save()).resolves.toBeDefined();
     expect(payout.status).toBe(PayoutStatus.CONFIRMED);
     expect(payout.backendTxRef).toBe('0xsent');
+  });
+});
+
+// ===========================================================================
+// Round 6 (ROOT INSIGHT): a settled (COMPLETED) Payment's monetary fields are
+// frozen at the model level. PaymentIntent's PAID verification binds the
+// winning option's nativeAmount to Payment.amount/nativeAmount, so a settled
+// amount that could later be mutated (on any surface) would silently rewrite
+// the economic value of an already-verified payment. The freeze mirrors the
+// PaymentIntent PAID backing-field freeze and covers every surface.
+// ===========================================================================
+
+describe('Payment settled-amount freeze after COMPLETED (#1390 round 6)', () => {
+  let dbPath: string;
+  let payments: PaymentCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('payment-freeze');
+    payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('rejects mutating amount on a COMPLETED payment (raw update)', async () => {
+    const id = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USD',
+    });
+    const loaded = await payments.get({ id });
+    expect(loaded?.status).toBe(PaymentStatus.COMPLETED);
+
+    (loaded as any).amount = 1;
+    await expect((loaded as any).save()).rejects.toThrow(
+      /'amount' is frozen once the payment is COMPLETED/,
+    );
+
+    const reloaded = await payments.get({ id });
+    expect(reloaded?.amount).toBeCloseTo(199);
+  });
+
+  it('rejects mutating nativeAmount / currency / usd valuation fields after COMPLETED', async () => {
+    const id = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USDC-base',
+      nativeAmount: 199,
+    });
+
+    for (const mutate of [
+      (p: any) => {
+        p.nativeAmount = 5;
+      },
+      (p: any) => {
+        p.currency = 'EUR';
+      },
+      (p: any) => {
+        p.nativeCurrency = 'BTC';
+      },
+      (p: any) => {
+        p.usdAtConfirmation = 99999;
+      },
+    ]) {
+      const loaded = await payments.get({ id });
+      mutate(loaded);
+      await expect((loaded as any).save()).rejects.toThrow(/is frozen/);
+    }
+  });
+
+  it('rejects mutating amount via an un-hydrated create-onto-existing upsert', async () => {
+    const id = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USD',
+    });
+
+    // The _skipLoad upsert produces an instance whose WeakMap entry is absent;
+    // the authoritative DB read still finds the COMPLETED row, so the freeze
+    // holds. (Status is unchanged COMPLETED — a no-op transition — but the
+    // amount differs, which must be rejected.)
+    await expect(
+      payments.create({
+        id,
+        amount: 1,
+        currency: 'USD',
+        status: PaymentStatus.COMPLETED,
+        _skipLoad: true,
+      } as any),
+    ).rejects.toThrow(/is frozen/);
+
+    const reloaded = await payments.get({ id });
+    expect(reloaded?.amount).toBeCloseTo(199);
+  });
+
+  it('allows the legal COMPLETED → REFUNDED transition when the amounts are unchanged', async () => {
+    const id = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USD',
+    });
+    const loaded = await payments.get({ id });
+
+    // A refund reverses funds without rewriting how much they were — status
+    // moves, amounts stay put, so the freeze permits it.
+    (loaded as any).status = PaymentStatus.REFUNDED;
+    await expect((loaded as any).save()).resolves.toBeDefined();
+    expect((loaded as any).status).toBe(PaymentStatus.REFUNDED);
+
+    const reloaded = await payments.get({ id });
+    expect(reloaded?.status).toBe(PaymentStatus.REFUNDED);
+    expect(reloaded?.amount).toBeCloseTo(199);
+  });
+
+  it('allows freely editing monetary fields while still PENDING', async () => {
+    const payment = await payments.create({
+      amount: 50,
+      currency: 'USD',
+      status: PaymentStatus.PENDING,
+    });
+    await payment.save();
+
+    payment.amount = 75;
+    payment.nativeAmount = 75;
+    await expect(payment.save()).resolves.toBeDefined();
+    expect(payment.amount).toBeCloseTo(75);
   });
 });

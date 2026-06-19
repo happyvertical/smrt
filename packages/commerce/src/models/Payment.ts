@@ -359,7 +359,11 @@ export class Payment extends SmrtObject {
    *    must drive it through `recordPayment()` (or start non-COMPLETED).
    */
   override async save(): Promise<this> {
-    const prior = await this.resolvePriorStatus();
+    const priorRow = await this.loadPersistedRow();
+    const prior =
+      priorRow && priorRow.status != null
+        ? (priorRow.status as PaymentStatus)
+        : loadedPaymentStatus.get(this);
     this.assertStatusTransition(prior);
 
     // Reaching COMPLETED is only legal via the verified settlement path,
@@ -378,6 +382,21 @@ export class Payment extends SmrtObject {
           'recordPayment(), which posts a balanced settlement journal. Use ' +
           'recordPayment() instead of setting status directly.',
       );
+    }
+
+    // Freeze the settled monetary fields once the row is already COMPLETED in
+    // the database (S5 audit #1390 round 6 — codex ROOT INSIGHT; mirrors the
+    // PaymentIntent PAID backing-field freeze). A COMPLETED Payment is
+    // settlement proof: its amount was reconciled against a balanced journal
+    // and is trusted downstream — PaymentIntent's PAID verification binds the
+    // winning option's `nativeAmount` to `Payment.amount` / `nativeAmount`. The
+    // only legal exit from COMPLETED is COMPLETED → REFUNDED, and a refund must
+    // NOT alter the settled figures. Closing this at the model level covers
+    // EVERY surface (REST/MCP/CLI/direct), independent of the per-surface
+    // writable allowlist (`amount`/`currency`/`nativeAmount`/... are writable
+    // on a *new* PENDING payment, but must be immutable once settled).
+    if (priorRow && priorRow.status === PaymentStatus.COMPLETED) {
+      this.assertSettledAmountsUnchanged(priorRow);
     }
 
     try {
@@ -409,32 +428,82 @@ export class Payment extends SmrtObject {
   }
 
   /**
-   * Resolve the AUTHORITATIVE prior status (S5 audit #1390 round 4, codex
-   * HIGH#1). The WeakMap is only populated when {@link initialize} loaded the
-   * row from the DB; it is empty for an instance built via
+   * Load the AUTHORITATIVE persisted row (S5 audit #1390 round 4, codex HIGH#1;
+   * extended round 6 to carry the full row, not just `status`). The WeakMap is
+   * only populated when {@link initialize} loaded the row from the DB; it is
+   * empty for an instance built via
    * `collection.create({ id: <existing>, _skipLoad: true })` — the upsert path
    * that lets a caller write onto an existing row without hydrating it. Trusting
    * an empty WeakMap there would treat the write as a brand-new row and skip the
    * transition guard entirely (a poisonable prior-state).
    *
    * So when this instance carries an `id`, read the persisted row straight from
-   * the database and treat its `status` as the prior — a create-onto-existing is
-   * an update. Only when no row exists in the DB (truly new) do we fall back to
-   * the WeakMap (which is also empty then), i.e. `undefined` = genuinely new.
-   * The raw row's `status` column is single-word (no snake_case transform).
+   * the database and use it as the prior — a create-onto-existing is an update.
+   * Returns `undefined` when no row exists (truly new), so callers fall back to
+   * the WeakMap (which is also empty then). Settled-amount columns are
+   * snake_case (`native_amount`, etc.); the `status` column is single-word.
    */
-  private async resolvePriorStatus(): Promise<PaymentStatus | undefined> {
-    if (this.id) {
-      try {
-        const row = await this.db.get(this.tableName, { id: this.id });
-        if (row && row.status != null) {
-          return row.status as PaymentStatus;
-        }
-      } catch {
-        // DB not ready / table absent — fall through to the in-memory record.
+  private async loadPersistedRow(): Promise<Record<string, any> | undefined> {
+    if (!this.id) return undefined;
+    try {
+      const row = await this.db.get(this.tableName, { id: this.id });
+      return row ?? undefined;
+    } catch {
+      // DB not ready / table absent — treat as new (in-memory fallback in save).
+      return undefined;
+    }
+  }
+
+  /**
+   * Reject any change to the settled monetary fields of an already-COMPLETED
+   * Payment (S5 audit #1390 round 6 — codex ROOT INSIGHT). Mirrors the
+   * PaymentIntent PAID backing-field freeze. A COMPLETED Payment's economic
+   * identity is settled: the `amount` was posted into a balanced journal and is
+   * the figure PaymentIntent's PAID verification reconciles against, so it (and
+   * the native/USD valuation fields that describe the same money) must not
+   * drift. The only legal status move out of COMPLETED is REFUNDED, which
+   * reverses the funds without rewriting how much they were. Compared against
+   * the AUTHORITATIVE persisted row so the freeze holds on every surface, even
+   * for an un-hydrated create-onto-existing upsert.
+   */
+  private assertSettledAmountsUnchanged(priorRow: Record<string, any>): void {
+    const frozen: Array<[string, number | string, number | string]> = [
+      ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
+      [
+        'currency',
+        String(priorRow.currency ?? ''),
+        String(this.currency ?? ''),
+      ],
+      [
+        'nativeAmount',
+        Number(priorRow.native_amount ?? 0),
+        Number(this.nativeAmount ?? 0),
+      ],
+      [
+        'nativeCurrency',
+        String(priorRow.native_currency ?? ''),
+        String(this.nativeCurrency ?? ''),
+      ],
+      [
+        'usdAtQuote',
+        Number(priorRow.usd_at_quote ?? 0),
+        Number(this.usdAtQuote ?? 0),
+      ],
+      [
+        'usdAtConfirmation',
+        Number(priorRow.usd_at_confirmation ?? 0),
+        Number(this.usdAtConfirmation ?? 0),
+      ],
+    ];
+    for (const [field, prior, next] of frozen) {
+      if (prior !== next) {
+        throw new Error(
+          `Payment ${this.id}: '${field}' is frozen once the payment is ` +
+            `COMPLETED (was '${prior}', got '${next}'). A settled payment's ` +
+            'monetary fields cannot be mutated — issue a refund instead.',
+        );
       }
     }
-    return loadedPaymentStatus.get(this);
   }
 
   /**

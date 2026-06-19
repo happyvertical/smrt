@@ -64,9 +64,14 @@ const ALLOCATION_EPSILON = 0.01;
   // through application code that re-derives invoice status and respects the
   // payment-amount cap (the cap is also enforced in `save()` as defence in
   // depth).
+  //
+  // CLI parity (round 6, codex ROOT INSIGHT): the CLI is an independently
+  // configured write surface. `cli: true` would still generate create/update/
+  // delete commands that forge or un-apply allocations, re-opening the exact
+  // vector closed on api/mcp. The CLI is locked to the same read-only surface.
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: true,
+  cli: { include: ['list', 'get'] },
 })
 export class PaymentAllocation extends SmrtObject {
   /**

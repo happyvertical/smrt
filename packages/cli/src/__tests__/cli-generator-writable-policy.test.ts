@@ -127,3 +127,113 @@ describe('CLI Generator - api.writable mass-assignment guard (#1390 round 5)', (
     expect(policy('Widget', undefined as any)).toEqual({});
   });
 });
+
+/**
+ * Regression tests for the `--from-file` create/update path (#1390 round 6,
+ * codex MED). `parseCliArgs` preserves the registered kebab-case option key
+ * (`from-file`), but the handler previously read only the camelCase
+ * `options.fromFile`. So `--from-file` never fired: the file was never read AND
+ * (worse) its contents never reached `applyWritablePolicy` — the round-5
+ * mass-assignment guard was a complete no-op on this path. These tests assert
+ * the kebab key is now resolved and that file input is writable-policed.
+ */
+describe('CLI Generator - --from-file input is loaded AND writable-policed (#1390 round 6)', () => {
+  let cli: CLIGenerator;
+  let tmpFile: string;
+  let captured: Record<string, unknown> | undefined;
+
+  beforeEach(async () => {
+    cli = new CLIGenerator({ prompt: false });
+    captured = undefined;
+
+    // api.writable mirrors Payment: amount/currency writable, status is NOT.
+    vi.spyOn(ObjectRegistry, 'getConfig').mockReturnValue({
+      api: { writable: ['amount', 'currency'] },
+    } as any);
+    vi.spyOn(ObjectRegistry, 'getFields').mockReturnValue(new Map());
+
+    // Stub the collection so no DB is needed — capture the policed payload.
+    const fakeRow = { id: 'rec-1', save: async () => {} };
+    vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
+      create: async (data: Record<string, unknown>) => {
+        captured = data;
+        return { ...fakeRow, ...data };
+      },
+      get: async () => ({ ...fakeRow }),
+    });
+    // Silence the spinner.
+    vi.spyOn(cli as any, 'createSpinner').mockReturnValue({
+      succeed: () => {},
+      fail: () => {},
+    });
+
+    const fs = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    tmpFile = path.join(
+      os.tmpdir(),
+      `smrt-from-file-${Date.now()}-${Math.random()}.json`,
+    );
+    await fs.writeFile(
+      tmpFile,
+      JSON.stringify({ amount: 199, status: 'completed', currency: 'USD' }),
+    );
+  });
+
+  afterEach(async () => {
+    const fs = await import('node:fs/promises');
+    try {
+      await fs.unlink(tmpFile);
+    } catch {
+      // ignore
+    }
+    vi.restoreAllMocks();
+  });
+
+  it('handleCreate reads the kebab-case `from-file` key and drops non-writable fields', async () => {
+    // The kebab key is exactly what parseCliArgs produces for `--from-file`.
+    await (cli as any).handleCreate('Payment', {
+      'from-file': tmpFile,
+      quiet: true,
+    });
+
+    expect(captured).toBeDefined();
+    // amount/currency survived (writable); the forged `status` was stripped —
+    // proving the file WAS read AND passed through applyWritablePolicy.
+    expect(captured).toEqual({ amount: 199, currency: 'USD' });
+    expect(captured).not.toHaveProperty('status');
+  });
+
+  it('handleUpdate reads the kebab-case `from-file` key and policies the payload', async () => {
+    const existing: Record<string, unknown> = {
+      id: 'rec-1',
+      amount: 1,
+      currency: 'CAD',
+      status: 'pending',
+      save: async () => {},
+    };
+    vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
+      create: async () => existing,
+      get: async () => existing,
+    });
+
+    await (cli as any).handleUpdate('Payment', 'rec-1', {
+      'from-file': tmpFile,
+      quiet: true,
+    });
+
+    // The forged `status` from the file must NOT have been applied; the
+    // writable fields were. (handleUpdate Object.assign's the policed data.)
+    expect(existing.amount).toBe(199);
+    expect(existing.currency).toBe('USD');
+    expect(existing.status).toBe('pending');
+  });
+
+  it('still honors the camelCase `fromFile` key (back-compat)', async () => {
+    await (cli as any).handleCreate('Payment', {
+      fromFile: tmpFile,
+      quiet: true,
+    });
+    expect(captured).toEqual({ amount: 199, currency: 'USD' });
+  });
+});
