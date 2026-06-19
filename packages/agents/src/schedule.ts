@@ -62,8 +62,13 @@ export class AgentSchedule extends SmrtObject {
   @field({ type: 'text', nullable: true })
   agentId: string | null = null;
 
-  /** Agent configuration to pass when running */
-  @field({ type: 'json', sqlType: 'TEXT' })
+  /**
+   * Agent configuration to pass when running.
+   *
+   * Sensitive (#1540): may carry API keys/credentials, so it is excluded from
+   * generated API/MCP responses and rejected as a `where` filter key.
+   */
+  @field({ type: 'json', sqlType: 'TEXT', sensitive: true })
   agentConfig: Record<string, unknown> = {};
 
   /** Cron expression (e.g., '0 2 * * *' for 2 AM daily) */

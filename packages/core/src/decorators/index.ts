@@ -82,6 +82,27 @@ export interface FieldOptions {
   nullable?: boolean;
   /** Whether the field should be excluded from database */
   transient?: boolean;
+  /**
+   * Marks the field as sensitive (e.g. API secrets, credentials, tax IDs).
+   *
+   * Sensitive fields are still persisted to the database, but the framework:
+   * - excludes them from `toPublicJSON()` (the serializer used by generated
+   *   REST/MCP/SvelteKit routes), so they never appear in API responses; and
+   * - rejects them as `where`-clause filter keys, closing the
+   *   `?secret[like]=...` value-probing oracle.
+   *
+   * Use this for any column that holds a secret value that must never be
+   * read back over a generated network surface.
+   */
+  sensitive?: boolean;
+  /**
+   * Marks the field as read-only over generated write surfaces.
+   *
+   * Read-only fields are stripped from the request body before
+   * `create`/`update` in generated REST/MCP/SvelteKit routes, so callers
+   * cannot mass-assign them. Server-side code can still set them directly.
+   */
+  readonly?: boolean;
   /** Field description */
   description?: string;
   /**

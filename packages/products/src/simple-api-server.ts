@@ -11,8 +11,9 @@ import express from 'express';
 const app = express();
 const port = 3001;
 
-// Enable CORS and JSON parsing
-app.use(cors());
+// Enable CORS and JSON parsing. Scope CORS to an explicit origin, never `*`
+// (#1540) — demo servers get copied downstream.
+app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 
 // In-memory storage for demo

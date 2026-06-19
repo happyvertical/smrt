@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.29
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - harden @smrt() generated routes — authz, sensitive fields, tenant scope (S5 #1540) (core)
+  - @happyvertical/smrt-scanner@0.29.29
+  - @happyvertical/smrt-config@0.29.29
+  - @happyvertical/smrt-types@0.29.29
+
 ## 0.29.28
 
 ### Patch Changes

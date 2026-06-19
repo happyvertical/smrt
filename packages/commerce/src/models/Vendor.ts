@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { VendorStatus } from '../types/index.js';
 
@@ -100,7 +105,11 @@ export class Vendor extends SmrtObject {
    *
    * Use {@link getPayoutAddress} for a `Map.get`-style lookup that returns
    * `undefined` for missing entries; direct property access is also fine.
+   *
+   * Sensitive (#1540): payout destinations are excluded from generated API/MCP
+   * responses and rejected as a `where` filter key.
    */
+  @field({ sensitive: true })
   payoutAddresses: Record<string, string> = {};
 
   constructor(options: any = {}) {
