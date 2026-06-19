@@ -242,6 +242,52 @@ function applyWritablePolicy(data: unknown): Record<string, unknown> {
 `;
 }
 
+/**
+ * Resolve the `@smrt({ api: { public } })` posture (fail-closed default).
+ * - `false`/unset → all routes require an authenticated principal.
+ * - `true` → all routes are public.
+ * - `'read'` → reads are public, mutations still require auth.
+ */
+function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
+  const config = getApiConfigObject(apiConfig);
+  const value = config?.public;
+  if (value === true || value === 'read') {
+    return value;
+  }
+  return false;
+}
+
+/**
+ * Emit the fail-closed authorization guard injected into generated route files
+ * (#1540, 2c). Every generated CRUD/action handler calls `requireRouteAuth`,
+ * which throws 401 unless the route is `public` or `locals` carries an
+ * authenticated principal. Mirrors the knowledge-route `isKnowledgeAdmin`
+ * precedent. Mutating verbs require auth even when reads are public.
+ */
+function generateAuthGuardHelper(objectDef: SmartObjectDefinition): string {
+  const publicAccess = getApiPublicAccess(objectDef.decoratorConfig?.api);
+
+  return `
+// Fail-closed authorization (#1540): generated routes require an authenticated
+// principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
+const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
+
+function hasAuthenticatedPrincipal(locals: unknown): boolean {
+  if (!locals || typeof locals !== 'object') return false;
+  const l = locals as Record<string, unknown>;
+  return Boolean(l.user || l.session || l.smrtAuth || l.auth);
+}
+
+function requireRouteAuth(locals: unknown, mutating: boolean): void {
+  if (PUBLIC_ACCESS === true) return;
+  if (PUBLIC_ACCESS === 'read' && !mutating) return;
+  if (!hasAuthenticatedPrincipal(locals)) {
+    throw error(401, 'Authentication required');
+  }
+}
+`;
+}
+
 function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
   switch (method?.toUpperCase()) {
     case 'GET':
@@ -335,7 +381,9 @@ function buildRouteHandlerArgs(
   includeParams: boolean,
   includeRequest: boolean,
 ): string {
-  const args: string[] = [];
+  // `locals` is always destructured so the fail-closed auth guard (#1540) can
+  // inspect the authenticated principal.
+  const args: string[] = ['locals'];
 
   if (includeParams) {
     args.push('params');
@@ -345,7 +393,7 @@ function buildRouteHandlerArgs(
     args.push('request');
   }
 
-  return args.length > 0 ? `{ ${args.join(', ')} }` : '';
+  return `{ ${args.join(', ')} }`;
 }
 
 function buildPathParamsObjectLiteral(pathParamNames: string[]): string {
@@ -1429,18 +1477,19 @@ function generateCollectionRouteTemplate(
   const imports = `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 
-import { json } from '@sveltejs/kit';
+import { error, json } from '@sveltejs/kit';
 ${
   serializerImports ? `${serializerImports}\n` : ''
 }import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${hasPost ? generateWritablePolicyHelper(objectDef) : ''}`;
+${generateAuthGuardHelper(objectDef)}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}`;
 
   const getHandler = hasGet
     ? `
 // List all ${className.toLowerCase()}s
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async ({ locals, url }) => {
+  requireRouteAuth(locals, false);
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
@@ -1466,7 +1515,8 @@ ${
   const postHandler = hasPost
     ? `
 // Create new ${className.toLowerCase()}
-export const POST: RequestHandler = async ({ request }) => {
+export const POST: RequestHandler = async ({ locals, request }) => {
+  requireRouteAuth(locals, true);
   const data = applyWritablePolicy(await request.json());
 
 ${generateCollectionLoad(className)}
@@ -1562,12 +1612,13 @@ function generateItemRouteTemplate(
 import { error, json } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
-${hasPut ? generateWritablePolicyHelper(objectDef) : ''}`;
+${generateAuthGuardHelper(objectDef)}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}`;
 
   const getHandler = hasGet
     ? `
 // Get single ${simpleClassName.toLowerCase()}
-export const GET: RequestHandler = async ({ params }) => {
+export const GET: RequestHandler = async ({ locals, params }) => {
+  requireRouteAuth(locals, false);
 ${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -1587,7 +1638,8 @@ ${
   const putHandler = hasPut
     ? `
 // Update ${simpleClassName.toLowerCase()}
-export const PUT: RequestHandler = async ({ params, request }) => {
+export const PUT: RequestHandler = async ({ locals, params, request }) => {
+  requireRouteAuth(locals, true);
 ${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -1611,7 +1663,8 @@ ${
   const deleteHandler = hasDelete
     ? `
 // Delete ${simpleClassName.toLowerCase()}
-export const DELETE: RequestHandler = async ({ params }) => {
+export const DELETE: RequestHandler = async ({ locals, params }) => {
+  requireRouteAuth(locals, true);
 ${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -1631,7 +1684,7 @@ ${generateNotFoundError(className)}
 function generateActionRouteTemplate(
   _projectRoot: string,
   routeSpecs: GeneratedActionRouteSpec[],
-  _objectDef: SmartObjectDefinition,
+  objectDef: SmartObjectDefinition,
   _options: SvelteKitOptions,
 ): string {
   if (routeSpecs.length === 0) {
@@ -1684,7 +1737,7 @@ import type { RequestHandler } from './$types';`;
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-
+${generateAuthGuardHelper(objectDef)}
 ${handlers}`;
 }
 
@@ -1696,6 +1749,8 @@ function generateActionRouteHandler(
   hostType: 'item' | 'collection',
 ): string {
   const handlerName = routeConfig.method;
+  // Mutating verbs require auth even when reads are public (#1540).
+  const authGuardLine = `  requireRouteAuth(locals, ${routeConfig.method !== 'GET'});`;
   const hasInput = actionDef.parameters.length > 0;
   const needsRequest = hasInput;
   const invocationArgs = buildActionInvocationArgs(actionDef);
@@ -1741,6 +1796,7 @@ function generateActionRouteHandler(
   if (hostType === 'collection') {
     return `// Custom collection method: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
+${authGuardLine}
 ${generateCollectionLoad(lookupClassName, { generic: true })}
   const typedCollection = collection as any;
 ${generateCollectionNotRegisteredError(lookupClassName)}
@@ -1761,6 +1817,7 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
   if (routeConfig.scope === 'collection') {
     return `// Custom collection action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${collectionHandlerArgs}) => {
+${authGuardLine}
   const registered = ObjectRegistry.getClass('${lookupClassName}');
 ${generateClassNotRegisteredError(lookupClassName)}
 
@@ -1778,6 +1835,7 @@ ${optionsLoad}  const ClassRef = registered.constructor as any;
 
   return `// Custom action: ${actionName}
 export const ${handlerName}: RequestHandler = async (${itemHandlerArgs}) => {
+${authGuardLine}
 ${generateCollectionLoad(lookupClassName, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(lookupClassName)}

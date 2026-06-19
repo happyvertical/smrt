@@ -13,7 +13,9 @@ import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
 import { APIGenerator } from './rest';
 
-@smrt({ api: { include: ['list', 'get', 'create', 'update'] } })
+// `public: true` isolates the mass-assignment (2b) behavior from the
+// fail-closed auth gate (2c), which is covered separately.
+@smrt({ api: { include: ['list', 'get', 'create', 'update'], public: true } })
 class RestWritableWidget extends SmrtObject {
   @field({ type: 'text' })
   name: string = '';
@@ -83,5 +85,85 @@ describe('Issue #1540 (2b): REST runtime mass-assignment guard', () => {
     expect(created[0].tenantId).toBeNull();
     expect(created[0].internalCode).toBe('');
     expect(created[0].name).toBe('legit');
+  });
+});
+
+@smrt({ api: { include: ['list', 'get', 'create'] } })
+class RestPrivateWidget extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+}
+
+class RestPrivateWidgetCollection extends SmrtCollection<RestPrivateWidget> {
+  static readonly _itemClass = RestPrivateWidget;
+}
+
+@smrt({ api: { include: ['list', 'get', 'create'], public: 'read' } })
+class RestReadPublicWidget extends SmrtObject {
+  @field({ type: 'text' })
+  name: string = '';
+}
+
+class RestReadPublicWidgetCollection extends SmrtCollection<RestReadPublicWidget> {
+  static readonly _itemClass = RestReadPublicWidget;
+}
+
+describe('Issue #1540 (2c): REST runtime fail-closed authorization', () => {
+  ObjectRegistry.registerCollection(
+    'RestPrivateWidget',
+    RestPrivateWidgetCollection,
+  );
+  ObjectRegistry.registerCollection(
+    'RestReadPublicWidget',
+    RestReadPublicWidgetCollection,
+  );
+
+  let privateHandler: (req: Request) => Promise<Response>;
+  let readPublicHandler: (req: Request) => Promise<Response>;
+
+  beforeAll(async () => {
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['RestPrivateWidget', 'RestReadPublicWidget'],
+    });
+
+    const privateCollection = await RestPrivateWidgetCollection.create({ db });
+    const privateApi = new APIGenerator({ basePath: '/api/v1' });
+    privateApi.registerCollection('restprivatewidgets', privateCollection);
+    privateHandler = privateApi.generateHandler();
+
+    const readPublicCollection = await RestReadPublicWidgetCollection.create({
+      db,
+    });
+    const readPublicApi = new APIGenerator({ basePath: '/api/v1' });
+    readPublicApi.registerCollection(
+      'restreadpublicwidgets',
+      readPublicCollection,
+    );
+    readPublicHandler = readPublicApi.generateHandler();
+  });
+
+  it('returns 401 for a non-public object with no auth middleware', async () => {
+    const res = await privateHandler(
+      new Request('http://local/api/v1/restprivatewidgets'),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it('allows reads but blocks writes when public is "read"', async () => {
+    const getRes = await readPublicHandler(
+      new Request('http://local/api/v1/restreadpublicwidgets'),
+    );
+    expect(getRes.status).toBe(200);
+
+    const postRes = await readPublicHandler(
+      new Request('http://local/api/v1/restreadpublicwidgets', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'nope' }),
+      }),
+    );
+    expect(postRes.status).toBe(401);
   });
 });

@@ -12,6 +12,12 @@ import { ObjectRegistry } from '../registry';
 export interface APIConfig {
   basePath?: string;
   enableCors?: boolean;
+  /**
+   * Explicit CORS origin allowlist (#1540). Required when `enableCors` is true —
+   * the generator never emits `Access-Control-Allow-Origin: *`. A request's
+   * `Origin` is echoed only when it appears here.
+   */
+  allowedOrigins?: string[];
   customRoutes?: Record<string, (req: Request) => Promise<Response>>;
   authMiddleware?: (
     objectName: string,
@@ -42,9 +48,11 @@ export class APIGenerator {
   constructor(config: APIConfig = {}, context: APIContext = {}) {
     this.config = {
       basePath: '/api/v1',
-      enableCors: true,
+      // Security defaults (#1540): bind to loopback and keep CORS off unless an
+      // explicit origin allowlist is supplied. No `Access-Control-Allow-Origin: *`.
+      enableCors: false,
       port: 3000,
-      hostname: '0.0.0.0',
+      hostname: '127.0.0.1',
       ...config,
     };
     this.context = context;
@@ -164,7 +172,7 @@ export class APIGenerator {
 
     // Handle CORS preflight
     if (req.method === 'OPTIONS' && this.config.enableCors) {
-      return this.createCorsResponse();
+      return this.createCorsResponse(req);
     }
 
     // Handle custom routes first
@@ -172,7 +180,7 @@ export class APIGenerator {
       for (const [path, handler] of Object.entries(this.config.customRoutes)) {
         if (url.pathname === `${this.config.basePath}${path}`) {
           const response = await handler(req);
-          return this.addCorsHeaders(response);
+          return this.addCorsHeaders(response, req);
         }
       }
     }
@@ -180,7 +188,7 @@ export class APIGenerator {
     // Handle object routes
     if (url.pathname.startsWith(this.config.basePath || '')) {
       const response = await this.handleObjectRoute(req, url);
-      return this.addCorsHeaders(response);
+      return this.addCorsHeaders(response, req);
     }
 
     // Not found
@@ -208,10 +216,12 @@ export class APIGenerator {
       const collection = this.collections.get(objectType);
       if (!collection) throw new Error(`Collection ${objectType} not found`);
 
+      const objectName = this.getCollectionObjectName(collection) || objectType;
+
       // Apply auth middleware if configured
       if (this.config.authMiddleware) {
         const authCheck = this.config.authMiddleware(
-          objectType,
+          objectName,
           req.method.toLowerCase(),
         );
         const authResult = await authCheck(req);
@@ -220,6 +230,10 @@ export class APIGenerator {
         }
         // Auth passed, use the potentially modified request
         req = authResult;
+      } else if (!this.isRoutePublic(objectName, req.method)) {
+        // Fail-closed (#1540): no auth middleware wired and the object isn't
+        // marked `@smrt({ api: { public } })` → refuse rather than serve open.
+        return this.createErrorResponse(401, 'Authentication required');
       }
 
       // Use registered collection directly
@@ -228,7 +242,7 @@ export class APIGenerator {
         collection,
         objectId,
         url,
-        this.getCollectionObjectName(collection) || objectType,
+        objectName,
       );
     }
 
@@ -265,6 +279,9 @@ export class APIGenerator {
       }
       // Auth passed, use the potentially modified request
       req = authResult;
+    } else if (!this.isRoutePublic(classInfo.name, req.method)) {
+      // Fail-closed (#1540): see registered-collection branch above.
+      return this.createErrorResponse(401, 'Authentication required');
     }
 
     // Get or create collection
@@ -355,6 +372,26 @@ export class APIGenerator {
       default:
         return null;
     }
+  }
+
+  /**
+   * Fail-closed authorization posture (#1540). Returns true only when the
+   * object opts out of auth via `@smrt({ api: { public } })`:
+   * - `public: true` → all methods are public.
+   * - `public: 'read'` → only safe (GET) methods are public.
+   * Everything else requires an `authMiddleware` to be configured.
+   */
+  private isRoutePublic(
+    objectName: string | undefined,
+    method: string,
+  ): boolean {
+    if (!objectName) return false;
+    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+    if (!apiConfig || typeof apiConfig !== 'object') return false;
+    const publicAccess = (apiConfig as { public?: boolean | 'read' }).public;
+    if (publicAccess === true) return true;
+    if (publicAccess === 'read') return method.toUpperCase() === 'GET';
+    return false;
   }
 
   private isApiActionEnabled(
@@ -667,28 +704,45 @@ export class APIGenerator {
   }
 
   /**
+   * Resolve the allowed `Access-Control-Allow-Origin` for a request (#1540).
+   * Returns the request's `Origin` only when it is in the configured allowlist;
+   * never `*`. Returns null when CORS should not be applied.
+   */
+  private resolveAllowedOrigin(req: Request): string | null {
+    if (!this.config.enableCors) return null;
+    const allowed = this.config.allowedOrigins;
+    if (!allowed || allowed.length === 0) return null;
+    const origin = req.headers.get('origin');
+    return origin && allowed.includes(origin) ? origin : null;
+  }
+
+  /**
    * Create CORS preflight response
    */
-  private createCorsResponse(): Response {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-        'Access-Control-Max-Age': '86400',
-      },
-    });
+  private createCorsResponse(req: Request): Response {
+    const headers: Record<string, string> = {
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Max-Age': '86400',
+    };
+    const origin = this.resolveAllowedOrigin(req);
+    if (origin) {
+      headers['Access-Control-Allow-Origin'] = origin;
+      headers.Vary = 'Origin';
+    }
+    return new Response(null, { status: 200, headers });
   }
 
   /**
    * Add CORS headers to response
    */
-  private addCorsHeaders(response: Response): Response {
-    if (!this.config.enableCors) return response;
+  private addCorsHeaders(response: Response, req: Request): Response {
+    const origin = this.resolveAllowedOrigin(req);
+    if (!origin) return response;
 
     const headers = new Headers(response.headers);
-    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Vary', 'Origin');
     headers.set(
       'Access-Control-Allow-Methods',
       'GET,POST,PUT,PATCH,DELETE,OPTIONS',

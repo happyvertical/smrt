@@ -111,7 +111,9 @@ describe('MCPGenerator with Custom Actions', () => {
   let generator: MCPGenerator;
 
   beforeEach(() => {
-    generator = new MCPGenerator();
+    // Authenticated context so the fail-closed tool-auth gate (#1540) allows
+    // mutating custom actions; auth itself is covered by dedicated tests.
+    generator = new MCPGenerator({}, { user: { id: 'test-user' } });
   });
 
   afterEach(() => {

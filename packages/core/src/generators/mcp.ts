@@ -630,12 +630,40 @@ export class MCPGenerator {
   /**
    * Execute action on collection
    */
+  /**
+   * Fail-closed authorization for tool calls (#1540). Mutating tools
+   * (create/update/delete + custom actions) require an authenticated principal
+   * (`context.user`) unless the object opts out via `@smrt({ api: { public } })`.
+   * Reads are allowed when `public` is `true` or `'read'`.
+   */
+  private requireToolAuth(
+    objectName: string | undefined,
+    mutating: boolean,
+  ): void {
+    const apiConfig = objectName
+      ? ObjectRegistry.getConfig(objectName)?.api
+      : undefined;
+    const publicAccess =
+      apiConfig && typeof apiConfig === 'object'
+        ? (apiConfig as { public?: boolean | 'read' }).public
+        : undefined;
+
+    if (publicAccess === true) return;
+    if (publicAccess === 'read' && !mutating) return;
+    if (!this.context.user) {
+      throw new Error('Authentication required');
+    }
+  }
+
   private async executeAction(
     collection: SmrtCollection<any>,
     action: string,
     args: any,
     objectName?: string,
   ): Promise<any> {
+    const mutating = action !== 'list' && action !== 'get';
+    this.requireToolAuth(objectName, mutating);
+
     switch (action) {
       case 'list': {
         const listOptions: any = {
