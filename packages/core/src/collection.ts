@@ -353,6 +353,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         ? `${snakeBaseFieldName}${jsonPath}`
         : snakeBaseFieldName;
 
+      // Security (#1379): the field identifier — base column plus any
+      // dot-notation JSON-path segments — is interpolated UNPARAMETERIZED into
+      // the SQL field position by the downstream query builder. The manifest
+      // whitelist below only validates the base column, and is skipped entirely
+      // when a class has no registered fields (skipFieldValidation), so without
+      // this guard a crafted key such as
+      // `metadata.x))/**/UNION/**/SELECT/**/secret/**/FROM/**/users--`
+      // (SQL comments substituting for blocked whitespace) injects arbitrary SQL
+      // via the JSON-path suffix — remotely reachable through the generated
+      // REST/MCP `where` surfaces and able to defeat the tenant filter. Enforce
+      // that the whole identifier is a strict dot-separated identifier so no
+      // parens/quotes/operators/whitespace can survive, regardless of whether
+      // the manifest whitelist below runs.
+      if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$/.test(snakeFieldName)) {
+        throw new Error(
+          `Invalid WHERE clause field: '${fieldName}'. ` +
+            `Field names must be identifiers (letters, digits, underscore) ` +
+            `with optional dot-separated JSON-path segments.`,
+        );
+      }
+
       // Auto-detect IN operator when value is an array without explicit operator
       const effectiveOperator =
         operator === '=' && Array.isArray(value) ? 'in' : operator;
