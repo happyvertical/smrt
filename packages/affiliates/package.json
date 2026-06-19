@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-affiliates",
-  "version": "0.29.28",
+  "version": "0.29.29",
   "description": "Affiliate partner and commission tracking models for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",
