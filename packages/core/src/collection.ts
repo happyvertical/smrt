@@ -246,6 +246,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       Object.keys(fields).map((f) => toSnakeCase(f)),
     );
 
+    // Security (#1540): collect snake_case names of `@field({ sensitive: true })`
+    // columns so they can't be used as `where` filter keys. Filtering on a
+    // secret column turns the generated REST/MCP `where` surface into a value
+    // oracle (e.g. `apiSecret[like]=sk-%`), exfiltrating the secret one
+    // character at a time even though it's excluded from serialization.
+    const sensitiveFieldNames = new Set<string>();
+    const collectSensitive = (fieldMap: Record<string, any>) => {
+      for (const [fieldName, def] of Object.entries(fieldMap)) {
+        if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
+          sensitiveFieldNames.add(toSnakeCase(fieldName));
+        }
+      }
+    };
+    collectSensitive(fields);
+
     // Add standard SMRT fields that are always valid
     validFieldNames.add('id');
     validFieldNames.add('slug');
@@ -290,6 +305,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         for (const fieldName of ancestorFields.keys()) {
           validFieldNames.add(toSnakeCase(fieldName));
         }
+        collectSensitive(Object.fromEntries(ancestorFields));
       }
     }
 
@@ -371,6 +387,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           `Invalid WHERE clause field: '${fieldName}'. ` +
             `Field names must be identifiers (letters, digits, underscore) ` +
             `with optional dot-separated JSON-path segments.`,
+        );
+      }
+
+      // Security (#1540): reject filters that target a sensitive column. This
+      // runs before operator/field validation so the secret value-probing
+      // oracle is closed even for otherwise-valid operators.
+      if (sensitiveFieldNames.has(snakeBaseFieldName)) {
+        throw new Error(
+          `Invalid WHERE clause field: '${fieldName}'. ` +
+            `Filtering on sensitive fields is not allowed.`,
         );
       }
 

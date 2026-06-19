@@ -1383,7 +1383,8 @@ ${
 
   return json({ items: serializedItems, count, limit, offset });`
     : `
-  return json({ items, count, limit, offset });`
+  const items_public = items.map((item) => item.toPublicJSON());
+  return json({ items: items_public, count, limit, offset });`
 }
 };
 `
@@ -1405,7 +1406,7 @@ ${
 
   return json(serializedItem, { status: 201 });`
     : `
-  return json(item, { status: 201 });`
+  return json(item.toPublicJSON(), { status: 201 });`
 }
 };
 `
@@ -1503,7 +1504,7 @@ ${
 
   return json(serializedItem);`
     : `
-  return json(item);`
+  return json(item.toPublicJSON());`
 }
 };
 `
@@ -1527,7 +1528,7 @@ ${
 
   return json(serializedItem);`
     : `
-  return json(item);`
+  return json(item.toPublicJSON());`
 }
 };
 `

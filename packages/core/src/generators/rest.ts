@@ -411,7 +411,7 @@ export class APIGenerator {
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
     }
-    return this.createJsonResponse(object);
+    return this.createJsonResponse(this.toPublicData(object));
   }
 
   /**
@@ -462,7 +462,9 @@ export class APIGenerator {
       orderBy,
     });
 
-    return this.createJsonResponse(objects);
+    return this.createJsonResponse(
+      objects.map((object: any) => this.toPublicData(object)),
+    );
   }
 
   /**
@@ -516,7 +518,7 @@ export class APIGenerator {
     const data = (await req.json()) as Record<string, any>;
     const object = await collection.create({ ...data, _skipLoad: true });
     await object.save();
-    return this.createJsonResponse(object, 201);
+    return this.createJsonResponse(this.toPublicData(object), 201);
   }
 
   /**
@@ -538,7 +540,7 @@ export class APIGenerator {
     Object.assign(object, data);
     await object.save();
 
-    return this.createJsonResponse(object);
+    return this.createJsonResponse(this.toPublicData(object));
   }
 
   /**
@@ -572,6 +574,16 @@ export class APIGenerator {
     const collection = this.collections.get(classInfo.name);
     if (!collection) throw new Error(`Collection ${classInfo.name} not found`);
     return collection;
+  }
+
+  /**
+   * Serialize a SmrtObject for a network response, excluding sensitive fields
+   * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
+   */
+  private toPublicData(object: any): any {
+    return typeof object?.toPublicJSON === 'function'
+      ? object.toPublicJSON()
+      : object;
   }
 
   /**

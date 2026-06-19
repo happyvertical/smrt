@@ -559,6 +559,16 @@ export class MCPGenerator {
   }
 
   /**
+   * Serialize a SmrtObject for a tool response, excluding sensitive fields
+   * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
+   */
+  private toPublicData(object: any): any {
+    return typeof object?.toPublicJSON === 'function'
+      ? object.toPublicJSON()
+      : object;
+  }
+
+  /**
    * Execute action on collection
    */
   private async executeAction(
@@ -585,7 +595,7 @@ export class MCPGenerator {
         const total = await collection.count({ where: args.where || {} });
 
         return {
-          data: results,
+          data: results.map((result: any) => this.toPublicData(result)),
           meta: {
             total,
             limit: listOptions.limit,
@@ -607,7 +617,7 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        return item;
+        return this.toPublicData(item);
       }
 
       case 'create': {
@@ -621,7 +631,7 @@ export class MCPGenerator {
         const newItem = await collection.create(createData);
         await newItem.save();
 
-        return newItem;
+        return this.toPublicData(newItem);
       }
 
       case 'update': {
@@ -645,7 +655,7 @@ export class MCPGenerator {
 
         await existing.save();
 
-        return existing;
+        return this.toPublicData(existing);
       }
 
       case 'delete': {
@@ -974,7 +984,8 @@ ${indent}    ai: aiConfig
 ${indent}  });
 
 ${indent}  const items = await collection.list({ where, limit, offset });
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(items) }] };
+${indent}  const itemsPublic = items.map((item) => item.toPublicJSON());
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(itemsPublic) }] };
 ${indent}}`;
 
           case 'get':
@@ -995,7 +1006,7 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(item) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(item.toPublicJSON()) }] };
 ${indent}}`;
 
           case 'create':
@@ -1008,7 +1019,7 @@ ${indent}  });
 ${indent}  const newItem = await collection.create(args);
 ${indent}  await newItem.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON()) }] };
 ${indent}}`;
 
           case 'update':
@@ -1031,7 +1042,7 @@ ${indent}  }
 ${indent}  Object.assign(existing, updateData);
 ${indent}  await existing.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON()) }] };
 ${indent}}`;
 
           case 'delete':
