@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.25
+
+### Patch Changes
+
+- ### Other Changes
+
+  - test: cover design-system primitives toward T2 + fix 2 a11y bugs (S11 #1416) (#1537) (smrt-svelte)
+  - @happyvertical/smrt-scanner@0.29.25
+  - @happyvertical/smrt-config@0.29.25
+  - @happyvertical/smrt-types@0.29.25
+
 ## 0.29.24
 
 ### Patch Changes
