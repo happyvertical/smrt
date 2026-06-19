@@ -165,6 +165,31 @@ describe('sanitizeConfig — secret-key stripping (issue #1357)', () => {
     expect(out.cli.database.url).toBe('postgresql://***@host:5432/db');
   });
 
+  it('strips short credential aliases pass/pwd (#1381 codex cross-finding)', () => {
+    const out = sanitizeConfig({
+      smtp: {
+        user: 'svc',
+        pass: 'x',
+        pwd: 'y',
+        smtpPass: 'z',
+        databasePwd: 'w',
+      },
+    }) as { smtp: Record<string, unknown> };
+    expect(out.smtp).toEqual({ user: 'svc' });
+  });
+
+  it('does not over-redact benign words containing pass/pwd', () => {
+    const out = sanitizeConfig({
+      compass: 'n',
+      bypass: true,
+      passive: false,
+      password_hint_enabled: false,
+    }) as Record<string, unknown>;
+    expect(out).toHaveProperty('compass');
+    expect(out).toHaveProperty('bypass');
+    expect(out).toHaveProperty('passive');
+  });
+
   it('leaves credential-free URLs and :memory: untouched', () => {
     expect(sanitizeConfig('https://api.example.com/v1')).toBe(
       'https://api.example.com/v1',

@@ -39,6 +39,15 @@ const SECRET_PATTERNS = [
   /secret/i,
   /password/i,
   /passwd/i,
+  // Short credential aliases (#1381, codex audit cross-finding): `pass` / `pwd`
+  // keys that `password`/`passwd` don't cover. Segment- or camelCase-anchored
+  // (a capital after a letter/digit) so `smtpPass`/`databasePwd`/`db_pass`/`pwd`
+  // are stripped while `compass`/`bypass`/`passive` are not.
+  /(^|[_-])pass([_-]|$)/i,
+  /(^|[_-])pwd([_-]|$)/i,
+  /[a-z0-9]Pass([_-]|$)/,
+  /[a-z0-9]Pwd([_-]|$)/,
+  /^(pass|pwd)$/i,
   /token/i,
   /credential/i,
   /private/i,
