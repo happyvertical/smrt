@@ -4,7 +4,7 @@
  * Common fields shared across email, Slack, Twitter accounts, etc.
  */
 
-import { SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AccountOptions, MessageSenderInterface } from '../types';
 
@@ -28,6 +28,10 @@ export class Account extends SmrtObject {
   credentialSecretId: string | null = null;
   isActive = true;
   lastSyncAt: Date | null = null;
+  // JSON. Sensitive (#1540): may hold a plaintext credential fallback, so it is
+  // excluded from generated API/MCP responses and rejected as a `where` filter
+  // key.
+  @field({ sensitive: true })
   settings = ''; // JSON
 
   // Timestamps

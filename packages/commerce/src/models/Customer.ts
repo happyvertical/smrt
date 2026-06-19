@@ -3,7 +3,12 @@
  * @packageDocumentation
  */
 
-import { crossPackageRef, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import {
+  crossPackageRef,
+  field,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { type Address, CustomerStatus, CustomerType } from '../types/index.js';
 
@@ -60,7 +65,11 @@ export class Customer extends SmrtObject {
 
   /**
    * Tax identification number
+   *
+   * Sensitive (#1540): PII excluded from generated API/MCP responses and
+   * rejected as a `where` filter key.
    */
+  @field({ sensitive: true })
   taxId: string = '';
 
   /**

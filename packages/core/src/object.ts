@@ -1189,6 +1189,80 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Collects the property names of fields marked `@field({ sensitive: true })`
+   * for this instance's class (and, under STI, every member of its hierarchy,
+   * since `toJSON()` merges sibling fields into the serialized payload).
+   *
+   * Reads both the first-class `sensitive` flag and the `_meta.sensitive`
+   * mirror so it works regardless of whether the field metadata came from the
+   * AST manifest or a runtime `@field()` decorator registration.
+   */
+  private getSensitiveFieldNames(): Set<string> {
+    const className = this.getResolvedClassName();
+    const registered = ObjectRegistry.getClass(className);
+    const fieldMaps: Map<string, any>[] = [
+      registered?.inheritedFields || ObjectRegistry.getFields(className),
+    ];
+
+    const tableStrategy = ObjectRegistry.getTableStrategy(
+      this.getResolvedQualifiedName(),
+    );
+    if (tableStrategy === 'sti') {
+      const descendants = getSTIHierarchyMembers(
+        this.getResolvedQualifiedName(),
+      );
+      for (const descendant of descendants) {
+        fieldMaps.push(
+          ObjectRegistry.getClass(descendant)?.inheritedFields ||
+            ObjectRegistry.getFields(descendant),
+        );
+      }
+    }
+
+    const sensitive = new Set<string>();
+    for (const fields of fieldMaps) {
+      for (const [key, def] of fields) {
+        if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
+          sensitive.add(key);
+        }
+      }
+    }
+    return sensitive;
+  }
+
+  /**
+   * Public-safe serialization for network surfaces.
+   *
+   * Returns the same shape as `toJSON()` but with every `sensitive` field
+   * removed (including STI meta fields nested under `_meta_data`). This is the
+   * serializer used by the generated REST / MCP / SvelteKit routes so that
+   * secret columns (API secrets, credentials, tax IDs) are never returned over
+   * the wire, while `toJSON()` continues to carry them for database persistence.
+   *
+   * @returns A plain object safe to send to API consumers.
+   */
+  toPublicJSON(): Record<string, unknown> {
+    const json = this.toJSON() as Record<string, unknown>;
+    const sensitiveFields = this.getSensitiveFieldNames();
+    if (sensitiveFields.size === 0) {
+      return json;
+    }
+
+    const metaData =
+      json._meta_data && typeof json._meta_data === 'object'
+        ? (json._meta_data as Record<string, unknown>)
+        : null;
+
+    for (const name of sensitiveFields) {
+      delete json[name];
+      if (metaData) {
+        delete metaData[name];
+      }
+    }
+    return json;
+  }
+
+  /**
    * Gets or generates a unique ID for this object
    *
    * @returns Promise resolving to the object's ID

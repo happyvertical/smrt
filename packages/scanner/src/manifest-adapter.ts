@@ -46,6 +46,10 @@ interface FieldDefinition {
   description?: string;
   _meta?: Record<string, any>;
   transient?: boolean;
+  /** Sensitive value — excluded from public serialization + where filtering. */
+  sensitive?: boolean;
+  /** Read-only over generated write surfaces — stripped from create/update bodies. */
+  readonly?: boolean;
 }
 
 type FieldDecoratorOptions = {
@@ -73,6 +77,10 @@ type FieldDecoratorOptions = {
   targetKey?: string;
   /** meta opt-in JSON-path index */
   indexed?: boolean;
+  /** sensitive value — excluded from public serialization + where filtering */
+  sensitive?: boolean;
+  /** read-only over generated write surfaces */
+  readonly?: boolean;
   [key: string]: unknown;
 };
 
@@ -564,6 +572,17 @@ export class ManifestAdapter {
 
     if (fieldDecoratorOptions.transient === true) {
       definition.transient = true;
+    }
+
+    // Promote security markers to first-class manifest metadata (also retained
+    // in `_meta` via the spread above). Honored by `toPublicJSON()` and the
+    // collection `where` builder at runtime.
+    if (fieldDecoratorOptions.sensitive === true) {
+      definition.sensitive = true;
+    }
+
+    if (fieldDecoratorOptions.readonly === true) {
+      definition.readonly = true;
     }
 
     return definition;
