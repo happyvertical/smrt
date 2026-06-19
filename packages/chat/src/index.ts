@@ -25,10 +25,12 @@
  *   createdByProfileId: 'profile-1',
  * });
  *
+ * // actorProfileId is the authenticated principal injected by the route;
+ * // the message is always authored as that actor with role 'user'.
  * await chat.sendMessage({
  *   tenantId: 'tenant-1',
  *   roomId: room.id,
- *   senderProfileId: 'profile-1',
+ *   actorProfileId: 'profile-1',
  *   content: 'Hello, world!',
  * });
  * ```

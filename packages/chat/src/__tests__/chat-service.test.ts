@@ -72,6 +72,7 @@ describe('ChatService', () => {
       const membership = await chat.participants.findMembership(
         room.id as string,
         'profile-1',
+        'tenant-1',
       );
       expect(membership).toBeDefined();
       expect(membership?.role).toBe('owner');
@@ -104,7 +105,7 @@ describe('ChatService', () => {
       const message = await chat.sendMessage({
         tenantId: 'tenant-1',
         roomId: room.id as string,
-        senderProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         content: 'Hello, world!',
       });
 
@@ -129,24 +130,27 @@ describe('ChatService', () => {
       const rootMsg = await chat.sendMessage({
         tenantId: 'tenant-1',
         roomId: room.id as string,
-        senderProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         content: 'Root message',
       });
 
-      // Start a thread
+      // Start a thread (owner is an active member of the room)
       const thread = await chat.startThread({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         rootMessageId: rootMsg.id as string,
         title: 'Discussion',
       });
 
       expect(thread.messageCount).toBe(0);
 
-      // profile-2 must be an active member to send (room-membership authz)
+      // profile-2 must be an active member to send (room-membership authz);
+      // the room owner (profile-1) adds them.
       await chat.addParticipant({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         profileId: 'profile-2',
       });
 
@@ -154,7 +158,7 @@ describe('ChatService', () => {
       await chat.sendMessage({
         tenantId: 'tenant-1',
         roomId: room.id as string,
-        senderProfileId: 'profile-2',
+        actorProfileId: 'profile-2',
         content: 'Thread reply',
         threadId: thread.id as string,
       });
@@ -178,6 +182,7 @@ describe('ChatService', () => {
       const participant = await chat.addParticipant({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         profileId: 'profile-2',
       });
 
@@ -196,12 +201,14 @@ describe('ChatService', () => {
       const p1 = await chat.addParticipant({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         profileId: 'profile-2',
       });
 
       const p2 = await chat.addParticipant({
         tenantId: 'tenant-1',
         roomId: room.id as string,
+        actorProfileId: 'profile-1',
         profileId: 'profile-2',
       });
 
@@ -213,6 +220,7 @@ describe('ChatService', () => {
     it('should get or create a DM room', async () => {
       const room = await chat.getOrCreateDM({
         tenantId: 'tenant-1',
+        actorProfileId: 'profile-a',
         profileId1: 'profile-a',
         profileId2: 'profile-b',
       });
@@ -223,10 +231,12 @@ describe('ChatService', () => {
       const membership1 = await chat.participants.findMembership(
         room.id as string,
         'profile-a',
+        'tenant-1',
       );
       const membership2 = await chat.participants.findMembership(
         room.id as string,
         'profile-b',
+        'tenant-1',
       );
       expect(membership1).toBeDefined();
       expect(membership2).toBeDefined();
@@ -235,12 +245,14 @@ describe('ChatService', () => {
     it('should return same DM room on repeated calls', async () => {
       const room1 = await chat.getOrCreateDM({
         tenantId: 'tenant-1',
+        actorProfileId: 'profile-a',
         profileId1: 'profile-a',
         profileId2: 'profile-b',
       });
 
       const room2 = await chat.getOrCreateDM({
         tenantId: 'tenant-1',
+        actorProfileId: 'profile-b',
         profileId1: 'profile-a',
         profileId2: 'profile-b',
       });
@@ -270,6 +282,7 @@ describe('ChatService', () => {
       const membership = await chat.participants.findMembership(
         room.id as string,
         'profile-1',
+        'tenant-1',
       );
       expect(membership).toBeDefined();
       expect(membership?.role).toBe('owner');

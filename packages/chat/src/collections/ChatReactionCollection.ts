@@ -31,7 +31,14 @@ export class ChatReactionCollection extends SmrtCollection<ChatReaction> {
     return counts;
   }
 
-  /** Toggle a reaction: add if not present, remove if already reacted */
+  /**
+   * Toggle a reaction: add if not present, remove if already reacted.
+   *
+   * `tenantId` is bound into the existence lookup (S5 #1392) so the toggle can
+   * never match or delete a reaction row belonging to another tenant. Prefer the
+   * membership-checked {@link ChatService.addReaction}/{@link ChatService.removeReaction}
+   * for request-driven flows; this low-level helper performs no membership check.
+   */
   async toggle(
     messageId: string,
     profileId: string,
@@ -39,7 +46,7 @@ export class ChatReactionCollection extends SmrtCollection<ChatReaction> {
     tenantId: string,
   ): Promise<{ added: boolean }> {
     const existing = await this.list({
-      where: { messageId, profileId, emoji },
+      where: { messageId, profileId, emoji, tenantId },
     });
 
     if (existing.length > 0) {

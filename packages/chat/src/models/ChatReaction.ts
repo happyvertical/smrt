@@ -8,10 +8,19 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ChatReactionOptions } from '../types.js';
 
+/**
+ * Message reaction. Internal model — reactions must be added/removed only
+ * through the membership-checked {@link ChatService} (S5 #1392). The generated
+ * CRUD surface is read-only (`list`); `create`/`update`/`delete` are NOT
+ * generated, otherwise a caller could POST a reaction (forging a `profileId`)
+ * onto a message in a room they do not belong to, or DELETE another member's
+ * reaction, via the raw collection routes — bypassing the room-membership
+ * authorization in {@link ChatService.addReaction}/{@link ChatService.removeReaction}.
+ */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'chat_reactions',
-  api: { include: ['list', 'create', 'delete'] },
+  api: { include: ['list'] },
   mcp: { include: ['list'] },
   cli: false,
 })

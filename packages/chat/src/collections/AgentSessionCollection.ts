@@ -13,17 +13,27 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
     return sessions.filter((s) => s.isActive());
   }
 
+  /**
+   * Resolve the active agent session for an (agent, participant) pair within a
+   * tenant (S5 #1392).
+   *
+   * `tenantId` is REQUIRED and always bound into the WHERE clause — including the
+   * `null` (untenanted) case — so the lookup can never silently drop its tenant
+   * predicate and resolve a session from another tenant. AgentSession uses
+   * optional tenancy, so `null` is a legitimate, explicitly-bound scope rather
+   * than "any tenant".
+   */
   async findActiveSession(
     agentId: string,
     participantProfileId: string,
-    tenantId?: string | null,
+    tenantId: string | null,
   ): Promise<AgentSession | null> {
     const where: Record<string, unknown> = {
       agentId,
       participantProfileId,
       status: 'active',
+      tenantId,
     };
-    if (tenantId !== undefined) where.tenantId = tenantId;
     const sessions = await this.list({ where });
     const active = sessions.find((s) => s.isActive());
     return active ?? null;
@@ -32,7 +42,7 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
   async findOrCreate(params: {
     agentId: string;
     participantProfileId: string;
-    tenantId?: string | null;
+    tenantId: string | null;
     allowedTools?: string[];
     chatRoomId?: string | null;
     systemPrompt?: string;
