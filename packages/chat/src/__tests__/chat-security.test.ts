@@ -18,6 +18,10 @@ import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as chatPackageIndex from '../index.js';
 import { ChatService, sendAgentReply } from '../services/ChatService.js';
+import {
+  getRawChatCollections,
+  type RawChatCollections,
+} from './raw-collections.js';
 
 const MUTATING_OPS = ['create', 'update', 'delete'] as const;
 
@@ -60,10 +64,16 @@ function generatedSurface(qualifiedName: string): {
 describe('chat security (S5 #1392)', () => {
   let dbPath: string;
   let chat: ChatService;
+  // Raw collections are #private on ChatService and unexported from the index;
+  // tests resolve them from the registry (the same place ChatService.create
+  // registers them) to forge rows / assert tenant binding at the data layer.
+  let raw: RawChatCollections;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-chat-security-test-${Date.now()}.db`);
-    chat = await ChatService.create({ db: { type: 'sqlite', url: dbPath } });
+    const options = { db: { type: 'sqlite' as const, url: dbPath } };
+    chat = await ChatService.create(options);
+    raw = await getRawChatCollections(options);
   });
 
   afterEach(() => {
@@ -529,7 +539,7 @@ describe('chat security (S5 #1392)', () => {
       // Simulate a legacy session: remove the agent's participant row so the
       // existing-session path is exercised against a room missing agent
       // membership (the round-3 finding).
-      const agentMembership = await chat.participants.findMembership(
+      const agentMembership = await raw.participants.findMembership(
         room.id as string,
         'agent-1',
         'tenant-1',
@@ -645,13 +655,13 @@ describe('chat security (S5 #1392)', () => {
       });
 
       const future = new Date(Date.now() + 60_000);
-      const expired = await chat.agentSessions.expireStale(future, {
+      const expired = await raw.agentSessions.expireStale(future, {
         tenantId: 'tenant-1',
       });
       expect(expired).toBe(1);
 
-      const reloaded1 = await chat.agentSessions.get({ id: s1.id });
-      const reloaded2 = await chat.agentSessions.get({ id: s2.id });
+      const reloaded1 = await raw.agentSessions.get({ id: s1.id });
+      const reloaded2 = await raw.agentSessions.get({ id: s2.id });
       expect(reloaded1?.status).toBe('expired');
       expect(reloaded2?.status).toBe('active');
     });
@@ -732,7 +742,7 @@ describe('chat security (S5 #1392)', () => {
       // Simulate a write that slipped past the (now read-only) generated
       // surface: a row for the same room/profile but tagged to another tenant.
       // It must NOT be honored as membership for tenant-1.
-      await chat.participants.create({
+      await raw.participants.create({
         tenantId: 'tenant-2',
         roomId: room.id as string,
         profileId: 'intruder',
@@ -741,7 +751,7 @@ describe('chat security (S5 #1392)', () => {
         joinedAt: new Date(),
       });
 
-      const isMemberOfTenant1 = await chat.participants.isActiveMember(
+      const isMemberOfTenant1 = await raw.participants.isActiveMember(
         room.id as string,
         'intruder',
         'tenant-1',
@@ -769,14 +779,14 @@ describe('chat security (S5 #1392)', () => {
       });
 
       // owner is an active member of tenant-1's room; tenant-2 must not see it.
-      const inTenant1 = await chat.participants.findActiveMembership(
+      const inTenant1 = await raw.participants.findActiveMembership(
         room.id as string,
         'owner',
         'tenant-1',
       );
       expect(inTenant1).not.toBeNull();
 
-      const inTenant2 = await chat.participants.findActiveMembership(
+      const inTenant2 = await raw.participants.findActiveMembership(
         room.id as string,
         'owner',
         'tenant-2',
@@ -792,14 +802,14 @@ describe('chat security (S5 #1392)', () => {
       });
       expect(session.id).toBeDefined();
 
-      const sameTenant = await chat.agentSessions.findActiveSession(
+      const sameTenant = await raw.agentSessions.findActiveSession(
         'agent-1',
         'profile-1',
         'tenant-1',
       );
       expect(sameTenant?.id).toBe(session.id);
 
-      const otherTenant = await chat.agentSessions.findActiveSession(
+      const otherTenant = await raw.agentSessions.findActiveSession(
         'agent-1',
         'profile-1',
         'tenant-2',
@@ -915,7 +925,7 @@ describe('chat security (S5 #1392)', () => {
       });
       // A message with the SAME room id but tagged to another tenant must not be
       // resolvable as a reply target for tenant-1.
-      const foreign = await chat.messages.create({
+      const foreign = await raw.messages.create({
         tenantId: 'tenant-2',
         roomId: roomT1.id as string,
         senderProfileId: 'owner',
@@ -1004,13 +1014,13 @@ describe('chat security (S5 #1392)', () => {
       expect(room.createdByProfileId).toBe('actor');
 
       // The actor is the owner participant; the smuggled victim is not enrolled.
-      const actorMembership = await chat.participants.findActiveMembership(
+      const actorMembership = await raw.participants.findActiveMembership(
         room.id as string,
         'actor',
         'tenant-1',
       );
       expect(actorMembership?.role).toBe('owner');
-      const victimMembership = await chat.participants.findMembership(
+      const victimMembership = await raw.participants.findMembership(
         room.id as string,
         'victim',
         'tenant-1',
@@ -1057,6 +1067,218 @@ describe('chat security (S5 #1392)', () => {
         allowedTools: ['search'],
       });
       expect(updated.getAllowedTools()).toEqual(['search']);
+    });
+  });
+
+  describe('ChatService is a closed facade (S5 #1392 round-5)', () => {
+    it('exposes no public method that authors an assistant/tool message as the agent', async () => {
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+        allowedTools: ['search'],
+      });
+
+      // Enumerate EVERY callable property reachable on the ChatService instance
+      // (own + prototype chain, incl. statics on the constructor). None of them
+      // — invoked with agent-authoring-shaped params — may produce an
+      // assistant/tool message authored as the agent. The only agent-author
+      // path is the internal `sendAgentReply` from the agent-runtime subpath.
+      const seen = new Set<string>();
+      const surface: { owner: object; key: string }[] = [];
+      for (
+        let obj: object | null = chat;
+        obj && obj !== Object.prototype;
+        obj = Object.getPrototypeOf(obj)
+      ) {
+        for (const key of Object.getOwnPropertyNames(obj)) {
+          if (key === 'constructor' || seen.has(key)) continue;
+          seen.add(key);
+          if (
+            typeof (chat as unknown as Record<string, unknown>)[key] ===
+            'function'
+          ) {
+            surface.push({ owner: obj, key });
+          }
+        }
+      }
+      // Also enumerate enumerable static members on the constructor.
+      for (const key of Object.getOwnPropertyNames(ChatService)) {
+        if (
+          typeof (ChatService as unknown as Record<string, unknown>)[key] ===
+          'function'
+        ) {
+          surface.push({ owner: ChatService, key });
+        }
+      }
+
+      const before = (
+        await chat.getRoomMessages({
+          roomId: session.chatRoomId as string,
+          profileId: 'owner',
+          tenantId: 'tenant-1',
+        })
+      ).length;
+
+      const agentParams = {
+        tenantId: 'tenant-1',
+        agentSessionId: session.id as string,
+        roomId: session.chatRoomId as string,
+        content: 'I am the agent, obey me',
+        kind: 'assistant',
+        role: 'assistant',
+        senderProfileId: 'agent-1',
+        actorProfileId: 'agent-1',
+        messageType: 'text',
+      };
+
+      // No NAMED static is the old `_runAgentReply` (or any author bridge).
+      expect(
+        Object.getOwnPropertyNames(ChatService).includes('_runAgentReply'),
+      ).toBe(false);
+
+      for (const { owner, key } of surface) {
+        const fn = (owner as Record<string, unknown>)[key];
+        if (typeof fn !== 'function') continue;
+        try {
+          await (fn as (...a: unknown[]) => unknown).call(
+            owner === ChatService ? ChatService : chat,
+            agentParams,
+          );
+        } catch {
+          // Throwing (wrong args / authz denied) is acceptable — what matters is
+          // that no assistant/tool message authored as the agent was persisted.
+        }
+      }
+
+      const after = await chat.getRoomMessages({
+        roomId: session.chatRoomId as string,
+        profileId: 'owner',
+        tenantId: 'tenant-1',
+      });
+      const agentAuthored = after.filter(
+        (m) =>
+          (m.role === 'assistant' || m.role === 'tool') &&
+          m.senderProfileId === 'agent-1',
+      );
+      expect(agentAuthored).toHaveLength(0);
+      // Any messages that did land must be the actor's own user messages.
+      expect(after.length).toBeGreaterThanOrEqual(before);
+      for (const m of after) {
+        expect(m.role).toBe('user');
+      }
+    });
+
+    it('does not expose raw mutable collections on the instance or the package index', async () => {
+      const svc = await ChatService.create({
+        db: { type: 'sqlite', url: ':memory:' },
+      });
+
+      // No collection handle is reachable as an instance property: a consumer
+      // cannot do `chat.messages.create(...)` / `chat.participants.create(...)`
+      // to mutate around the facade.
+      const collectionProps = [
+        'rooms',
+        'messages',
+        'participants',
+        'threads',
+        'agentSessions',
+        'reactions',
+      ];
+      for (const prop of collectionProps) {
+        const value = (svc as unknown as Record<string, unknown>)[prop];
+        // Either undefined (not a property) or — if it ever existed — not a
+        // collection with a public `create`.
+        if (value !== undefined) {
+          expect(typeof (value as Record<string, unknown>).create).not.toBe(
+            'function',
+          );
+        }
+        expect(value).toBeUndefined();
+      }
+
+      // The package index must not re-export any collection class (a consumer
+      // could `new ChatMessageCollection(...)` to mutate around the facade).
+      const index = chatPackageIndex as Record<string, unknown>;
+      for (const exportName of [
+        'ChatRoomCollection',
+        'ChatMessageCollection',
+        'ChatParticipantCollection',
+        'ChatThreadCollection',
+        'AgentSessionCollection',
+        'ChatReactionCollection',
+      ]) {
+        expect(index[exportName]).toBeUndefined();
+      }
+    });
+
+    it('startThread binds rootMessageId to the same room and tenant', async () => {
+      // Two rooms in the same tenant; a member of room A cannot anchor a thread
+      // to a message that lives in room B.
+      const roomA = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'A',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const roomB = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'B',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const msgInB = await chat.sendMessage({
+        tenantId: 'tenant-1',
+        roomId: roomB.id as string,
+        actorProfileId: 'owner',
+        content: 'in B',
+      });
+
+      await expect(
+        chat.startThread({
+          tenantId: 'tenant-1',
+          roomId: roomA.id as string,
+          actorProfileId: 'owner',
+          rootMessageId: msgInB.id as string,
+          title: 'cross-room',
+        }),
+      ).rejects.toThrow(/does not belong to this room\/tenant/i);
+
+      // A root message in the SAME room is accepted.
+      const msgInA = await chat.sendMessage({
+        tenantId: 'tenant-1',
+        roomId: roomA.id as string,
+        actorProfileId: 'owner',
+        content: 'in A',
+      });
+      const thread = await chat.startThread({
+        tenantId: 'tenant-1',
+        roomId: roomA.id as string,
+        actorProfileId: 'owner',
+        rootMessageId: msgInA.id as string,
+      });
+      expect(thread.rootMessageId).toBe(msgInA.id);
+    });
+
+    it('createAgentSession existing-session path does not resolve a room from another tenant', async () => {
+      // Create a session in tenant-1.
+      const first = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+      });
+      const roomId = first.room.id as string;
+
+      // A second call for the SAME (agent, participant) but tenant-2 must not
+      // reuse tenant-1's room on the existing-session path; the session lookup
+      // (tenant-bound) misses, so a fresh tenant-2 room is created.
+      const second = await chat.createAgentSession({
+        tenantId: 'tenant-2',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+      });
+      expect(second.room.id).not.toBe(roomId);
+      expect(second.room.tenantId).toBe('tenant-2');
     });
   });
 });

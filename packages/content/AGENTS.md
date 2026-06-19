@@ -115,6 +115,13 @@ support `onAssistantContextChange`. The callback receives a serializable
 `sendContentEditorChatThreadMessage` helpers for app-specific tenancy/auth/AI
 route wiring.
 
+These handlers go exclusively through the tenant-bound `ChatService` facade
+(S5 #1392) — `getAgentSession`/`findActiveAgentSessions`/`getThread`/
+`listRoomThreads`/`getThreadMessages` for reads and `startThread`/`sendMessage`/
+`sendAgentReply` (internal agent-runtime subpath) for writes. They never reach
+into the now-`#private` chat collections, so cross-tenant chat state can no
+longer be selected by raw id before authorization.
+
 ## Relationship Models
 
 - **ContentReference**: SMRT junction model backing `content_references` for content-to-content links

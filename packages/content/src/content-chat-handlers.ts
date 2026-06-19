@@ -247,12 +247,13 @@ export async function getOrCreateContentEditorChatSession(
 
   let activeSession = null;
   try {
-    const agentSessions = await chatService.agentSessions.list({
-      where: {
-        agentId: CONTENT_EDITOR_AGENT_ID,
-        participantProfileId: profileId,
-        status: 'active',
-      },
+    // Tenant-bound session list via the ChatService facade (S5 #1392): the raw
+    // `agentSessions.list({ where })` reach-in was tenant-UNBOUND and could
+    // surface a session from another tenant before authorization.
+    const agentSessions = await chatService.findActiveAgentSessions({
+      tenantId,
+      agentId: CONTENT_EDITOR_AGENT_ID,
+      participantProfileId: profileId,
     });
     activeSession =
       agentSessions.find((session: unknown) =>
@@ -293,9 +294,12 @@ export async function getOrCreateContentEditorChatSession(
     if (!chatRoomId) {
       throw new Error('Agent session is missing a chat room');
     }
-    threads = await chatService.threads.list({
-      where: { roomId: chatRoomId },
-      orderBy: 'createdAt DESC',
+    // Membership- and tenant-gated thread list via the facade (S5 #1392); the
+    // editor (profileId) is the room owner, so the membership check passes.
+    threads = await chatService.listRoomThreads({
+      roomId: chatRoomId,
+      actorProfileId: profileId,
+      tenantId,
     });
   } catch {
     // Threads table may not exist yet.
@@ -322,7 +326,13 @@ export async function createContentEditorChatThread(
     tenantScope,
     input.contentId,
   );
-  const session = await chatService.agentSessions.get(input.sessionId);
+  // Tenant-bound session lookup via the facade (S5 #1392): the raw
+  // `agentSessions.get(id)` was tenant-UNBOUND and could select a session from
+  // another tenant before the ownership/context check below.
+  const session = await chatService.getAgentSession({
+    agentSessionId: input.sessionId,
+    tenantId,
+  });
 
   if (
     !contentChatSessionIsAuthorized(session, {
@@ -350,11 +360,14 @@ export async function createContentEditorChatThread(
     updates = buildContentChatModelUpdates(ctx, input.model, input.model);
   }
 
-  const thread = await chatService.threads.create({
+  // Member-checked thread creation via the facade (S5 #1392): the editor owns
+  // the agent room, so the membership check passes. Replaces the raw
+  // `threads.create(...)` that skipped the facade entirely.
+  const thread = await chatService.startThread({
     tenantId,
     roomId: chatRoomId,
+    actorProfileId: profileId,
     title: input.title,
-    messageCount: 0,
   });
 
   if (updates) {
@@ -381,18 +394,22 @@ export async function listContentEditorChatThreadMessages(
     tenantScope,
     input.contentId,
   );
-  const thread = await chatService.threads.get(input.threadId);
+  // Tenant-bound thread + session lookups via the facade (S5 #1392): the raw
+  // `threads.get(id)` / `agentSessions.list({ where })` reach-ins were
+  // tenant-UNBOUND and could select cross-tenant chat state before authZ.
+  const thread = await chatService.getThread({
+    threadId: input.threadId,
+    tenantId,
+  });
   if (!thread) {
     throw new Error('Thread not found');
   }
 
   const roomId = (thread as { roomId?: string }).roomId;
-  const activeSessions = await chatService.agentSessions.list({
-    where: {
-      agentId: CONTENT_EDITOR_AGENT_ID,
-      participantProfileId: profileId,
-      status: 'active',
-    },
+  const activeSessions = await chatService.findActiveAgentSessions({
+    tenantId,
+    agentId: CONTENT_EDITOR_AGENT_ID,
+    participantProfileId: profileId,
   });
   const authorizedSession = activeSessions.find(
     (session: unknown) =>
@@ -403,16 +420,20 @@ export async function listContentEditorChatThreadMessages(
     throw new Error('Thread not found');
   }
 
-  const messages = await chatService.messages.list({
-    where: { threadId: input.threadId },
-    orderBy: 'createdAt DESC',
+  // Membership- + tenant-gated thread message read via the facade (S5 #1392);
+  // the editor owns the room, so the membership check passes. Returned
+  // chronological (oldest-first) by the facade.
+  const messages = await chatService.getThreadMessages({
+    threadId: input.threadId,
+    actorProfileId: profileId,
+    tenantId,
     limit: 100,
   });
 
   return {
     chatService,
     thread,
-    messages: messages.reverse(),
+    messages,
   };
 }
 
@@ -574,7 +595,13 @@ export async function sendContentEditorChatThreadMessage(
     input.contentId,
   );
 
-  const session = await chatService.agentSessions.get(input.sessionId);
+  // Tenant-bound session + thread lookups via the facade (S5 #1392): the raw
+  // `agentSessions.get(id)` / `threads.get(id)` reach-ins were tenant-UNBOUND
+  // and could select cross-tenant chat state before the authorization below.
+  const session = await chatService.getAgentSession({
+    agentSessionId: input.sessionId,
+    tenantId,
+  });
   if (
     !contentChatSessionIsAuthorized(session, {
       profileId,
@@ -584,7 +611,10 @@ export async function sendContentEditorChatThreadMessage(
     throw new Error('Active session not found');
   }
 
-  const thread = await chatService.threads.get(input.threadId);
+  const thread = await chatService.getThread({
+    threadId: input.threadId,
+    tenantId,
+  });
   if (
     !thread ||
     (thread as { roomId?: string }).roomId !==
@@ -643,13 +673,16 @@ export async function sendContentEditorChatThreadMessage(
     agentSessionId: (session as { id: string }).id,
   });
 
-  const history = await chatService.messages.list({
-    where: { threadId: (thread as { id: string }).id },
-    orderBy: 'createdAt DESC',
+  // Membership- + tenant-gated thread history via the facade (S5 #1392); the
+  // editor owns the room. Returned chronological (oldest-first) by the facade.
+  const history = await chatService.getThreadMessages({
+    threadId: (thread as { id: string }).id,
+    actorProfileId: profileId,
+    tenantId,
     limit: 10,
   });
 
-  const conversation = history.reverse().map((message: unknown) => {
+  const conversation = history.map((message: unknown) => {
     const json = contentChatMessageToJSON(message);
     return {
       role: json.role as 'user' | 'assistant' | 'system',

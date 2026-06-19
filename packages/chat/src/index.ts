@@ -45,15 +45,16 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
-// Collections
-export {
-  AgentSessionCollection,
-  ChatMessageCollection,
-  ChatParticipantCollection,
-  ChatReactionCollection,
-  ChatRoomCollection,
-  ChatThreadCollection,
-} from './collections/index.js';
+// Collections are intentionally NOT exported (S5 #1392). The raw
+// SmrtCollection handles (ChatRoomCollection, ChatMessageCollection,
+// ChatParticipantCollection, ChatThreadCollection, AgentSessionCollection,
+// ChatReactionCollection) can author/mutate any row with NO actor/membership
+// authorization. Exposing them let a consumer call e.g.
+// `messages.create({ senderProfileId, role })` or `participants.create(...)` to
+// bypass the entire ChatService facade. All reads/writes now go through the
+// authorized ChatService methods; legitimate reads have dedicated facade
+// methods (getAgentSession, findActiveAgentSessions, getThread, listRoomThreads,
+// getThreadMessages, getRoomMessages, getRoomForMember, ...).
 
 // Models
 export {

@@ -165,12 +165,10 @@ describe('content chat prompt integration', () => {
     expect(tenantAData.session).toBeDefined();
 
     const tenantAChat = await ChatService.create({ tenantId: 'tenant-a', db });
-    const tenantASessions = await tenantAChat.agentSessions.list({
-      where: {
-        agentId: 'content_editor',
-        participantProfileId: 'profile-a',
-        status: 'active',
-      },
+    const tenantASessions = await tenantAChat.findActiveAgentSessions({
+      tenantId: 'tenant-a',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-a',
     });
 
     expect(tenantASessions).toHaveLength(1);
@@ -204,12 +202,10 @@ describe('content chat prompt integration', () => {
     expect(tenantBResponse.status).toBe(200);
 
     const tenantBChat = await ChatService.create({ tenantId: 'tenant-b', db });
-    const tenantBSessions = await tenantBChat.agentSessions.list({
-      where: {
-        agentId: 'content_editor',
-        participantProfileId: 'profile-b',
-        status: 'active',
-      },
+    const tenantBSessions = await tenantBChat.findActiveAgentSessions({
+      tenantId: 'tenant-b',
+      agentId: 'content_editor',
+      participantProfileId: 'profile-b',
     });
 
     expect(tenantBSessions).toHaveLength(1);
@@ -289,11 +285,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     await expect(
@@ -340,7 +336,10 @@ describe('content chat prompt integration', () => {
     expect(response.status).toBe(200);
     expect(data.session.id).toBe(session.id);
 
-    const persisted = await chatService.agentSessions.get(session.id as string);
+    const persisted = await chatService.getAgentSession({
+      agentSessionId: session.id as string,
+      tenantId: 'tenant-a',
+    });
     expect(persisted?.systemPrompt).toBe('Manual session prompt');
   });
 
@@ -385,7 +384,10 @@ describe('content chat prompt integration', () => {
 
     expect(response.status).toBe(200);
 
-    const updated = await chatService.agentSessions.get(session.id as string);
+    const updated = await chatService.getAgentSession({
+      agentSessionId: session.id as string,
+      tenantId: 'tenant-a',
+    });
     expect(updated?.getSessionContext()).toMatchObject({
       contentId: content.id,
       model: 'claude-3-5-haiku-latest',
@@ -438,8 +440,10 @@ describe('content chat prompt integration', () => {
       error: 'AI model is not allowed for content chat',
     });
 
-    const createdThreads = await chatService.threads.list({
-      where: { roomId: session.chatRoomId },
+    const createdThreads = await chatService.listRoomThreads({
+      roomId: session.chatRoomId,
+      actorProfileId: 'profile-a',
+      tenantId: 'tenant-a',
     });
     expect(createdThreads).toHaveLength(0);
   });
@@ -484,7 +488,10 @@ describe('content chat prompt integration', () => {
 
     expect(response.status).toBe(200);
 
-    const updated = await chatService.agentSessions.get(session.id as string);
+    const updated = await chatService.getAgentSession({
+      agentSessionId: session.id as string,
+      tenantId: 'tenant-a',
+    });
     expect(updated?.getSessionContext()).toMatchObject({
       contentId: content.id,
       model: 'gpt-4o',
@@ -521,11 +528,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     getAIMock.mockResolvedValue({
@@ -597,11 +604,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     const chatMock = vi.fn(async () => ({ content: 'Assistant reply' }));
@@ -683,11 +690,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     const chatMock = vi.fn(async () => ({ content: 'Assistant reply' }));
@@ -768,11 +775,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     const chatMock = vi.fn(async () => ({ content: 'Assistant reply' }));
@@ -838,11 +845,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     getAIMock.mockResolvedValue({
@@ -872,7 +879,10 @@ describe('content chat prompt integration', () => {
 
     expect(response.status).toBe(200);
 
-    const updated = await chatService.agentSessions.get(session.id as string);
+    const updated = await chatService.getAgentSession({
+      agentSessionId: session.id as string,
+      tenantId: 'tenant-a',
+    });
     expect(updated?.getSessionContext()).toMatchObject({
       contentId: content.id,
       model: 'claude-3-5-haiku-latest',
@@ -908,11 +918,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     getAIMock.mockResolvedValue({
@@ -946,10 +956,15 @@ describe('content chat prompt integration', () => {
     });
     expect(getAIMock).not.toHaveBeenCalled();
 
-    const persistedMessages = await chatService.messages.list({
-      where: { threadId: thread.id },
+    const persistedMessages = await chatService.getThreadMessages({
+      threadId: thread.id as string,
+      actorProfileId: 'profile-a',
+      tenantId: 'tenant-a',
     });
-    const updatedThread = await chatService.threads.get(thread.id as string);
+    const updatedThread = await chatService.getThread({
+      threadId: thread.id as string,
+      tenantId: 'tenant-a',
+    });
     expect(persistedMessages).toHaveLength(0);
     expect(Number(updatedThread?.messageCount)).toBe(0);
   });
@@ -987,11 +1002,11 @@ describe('content chat prompt integration', () => {
       throw new Error('Expected content editor session to create a chat room');
     }
 
-    const thread = await chatService.threads.create({
+    const thread = await chatService.startThread({
       tenantId: 'tenant-a',
       roomId: chatRoomId,
+      actorProfileId: 'profile-a',
       title: 'General',
-      messageCount: 0,
     });
 
     const chatMock = vi.fn(async () => ({ content: 'Assistant reply' }));
@@ -1040,7 +1055,10 @@ describe('content chat prompt integration', () => {
       }),
     );
 
-    const updated = await chatService.agentSessions.get(session.id as string);
+    const updated = await chatService.getAgentSession({
+      agentSessionId: session.id as string,
+      tenantId: 'tenant-a',
+    });
     expect(updated?.getSessionContext()).toMatchObject({
       contentId: content.id,
       model: 'bifrost-editor',

@@ -8,6 +8,9 @@ import { ChatParticipantCollection } from '../collections/ChatParticipantCollect
 import { ChatReactionCollection } from '../collections/ChatReactionCollection.js';
 import { ChatRoomCollection } from '../collections/ChatRoomCollection.js';
 import { ChatThreadCollection } from '../collections/ChatThreadCollection.js';
+import type { AgentSession } from '../models/AgentSession.js';
+import type { ChatMessage } from '../models/ChatMessage.js';
+import type { ChatThread } from '../models/ChatThread.js';
 import type {
   ChatMessageRole,
   ChatMessageType,
@@ -55,13 +58,45 @@ export interface AgentReplyParams {
   threadId?: string | null;
 }
 
+/** Tenant-bound agent session lookup descriptor for the read facade. */
+export interface AgentSessionLookup {
+  agentSessionId: string;
+  tenantId: string | null;
+}
+
+/** Tenant-bound thread lookup descriptor for the read facade. */
+export interface ThreadLookup {
+  threadId: string;
+  tenantId: string;
+}
+
+/**
+ * Module-private bridge key for the agent-reply path (S5 #1392).
+ *
+ * The agent-authoring path is reachable only through the {@link sendAgentReply}
+ * function (re-exported solely from `./internal/agent-runtime`). To let that
+ * module-local function reach the `private` {@link ChatService.emitAgentReply}
+ * without widening the class's PUBLIC surface, the class exposes a single
+ * symbol-keyed static. A symbol key is not a named member: it does not appear on
+ * the `ChatService` type, is not enumerable, and is callable only by code that
+ * holds this non-exported symbol. This replaces the previous public
+ * `_runAgentReply` static, which any consumer of the root-exported `ChatService`
+ * could call to author messages as the agent.
+ */
+const RUN_AGENT_REPLY = Symbol('smrt-chat.runAgentReply');
+
 export class ChatService {
-  readonly rooms: ChatRoomCollection;
-  readonly messages: ChatMessageCollection;
-  readonly participants: ChatParticipantCollection;
-  readonly threads: ChatThreadCollection;
-  readonly agentSessions: AgentSessionCollection;
-  readonly reactions: ChatReactionCollection;
+  // Raw persistence collections are PRIVATE (S5 #1392). They can author/mutate
+  // any row with no actor/membership check, so they must NOT appear on the
+  // public `ChatService` type, and the package index no longer re-exports the
+  // collection classes for direct construction around the service. Every
+  // external read/write goes through the authorized facade methods below.
+  readonly #rooms: ChatRoomCollection;
+  readonly #messages: ChatMessageCollection;
+  readonly #participants: ChatParticipantCollection;
+  readonly #threads: ChatThreadCollection;
+  readonly #agentSessions: AgentSessionCollection;
+  readonly #reactions: ChatReactionCollection;
 
   private constructor(
     rooms: ChatRoomCollection,
@@ -71,12 +106,12 @@ export class ChatService {
     agentSessions: AgentSessionCollection,
     reactions: ChatReactionCollection,
   ) {
-    this.rooms = rooms;
-    this.messages = messages;
-    this.participants = participants;
-    this.threads = threads;
-    this.agentSessions = agentSessions;
-    this.reactions = reactions;
+    this.#rooms = rooms;
+    this.#messages = messages;
+    this.#participants = participants;
+    this.#threads = threads;
+    this.#agentSessions = agentSessions;
+    this.#reactions = reactions;
   }
 
   static async create(options: SmrtObjectOptions): Promise<ChatService> {
@@ -142,12 +177,12 @@ export class ChatService {
 
   /** Initialize all underlying collections (table creation) */
   async initialize(): Promise<void> {
-    await this.rooms.initialize();
-    await this.messages.initialize();
-    await this.participants.initialize();
-    await this.threads.initialize();
-    await this.agentSessions.initialize();
-    await this.reactions.initialize();
+    await this.#rooms.initialize();
+    await this.#messages.initialize();
+    await this.#participants.initialize();
+    await this.#threads.initialize();
+    await this.#agentSessions.initialize();
+    await this.#reactions.initialize();
   }
 
   /**
@@ -166,7 +201,7 @@ export class ChatService {
     description?: string;
     topic?: string;
   }) {
-    const room = await this.rooms.create({
+    const room = await this.#rooms.create({
       tenantId: params.tenantId,
       name: params.name,
       roomType: params.roomType,
@@ -176,7 +211,7 @@ export class ChatService {
       status: 'active',
     });
 
-    await this.enrollParticipant({
+    await this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
       profileId: params.actorProfileId,
@@ -211,7 +246,7 @@ export class ChatService {
     agentSessionId?: string | null;
     replyToMessageId?: string | null;
   }) {
-    return this.writeMessage({
+    return this.#writeMessage({
       tenantId: params.tenantId,
       roomId: params.roomId,
       senderProfileId: params.actorProfileId,
@@ -233,9 +268,9 @@ export class ChatService {
    * Membership is enforced unless `skipMembershipCheck` is set, which only the
    * in-class system-authored callers may do.
    */
-  private async writeMessage(write: InternalMessageWrite) {
+  async #writeMessage(write: InternalMessageWrite) {
     if (!write.skipMembershipCheck) {
-      const isMember = await this.participants.isActiveMember(
+      const isMember = await this.#participants.isActiveMember(
         write.roomId,
         write.senderProfileId,
         write.tenantId,
@@ -255,7 +290,7 @@ export class ChatService {
     // reject any mismatch. The validated rows are reused below for stat updates,
     // so there is no second, tenant-UNBOUND lookup.
     const thread = write.threadId
-      ? await this.threads.get({
+      ? await this.#threads.get({
           id: write.threadId,
           roomId: write.roomId,
           tenantId: write.tenantId,
@@ -268,7 +303,7 @@ export class ChatService {
     }
 
     const session = write.agentSessionId
-      ? await this.agentSessions.get({
+      ? await this.#agentSessions.get({
           id: write.agentSessionId,
           chatRoomId: write.roomId,
           tenantId: write.tenantId,
@@ -281,7 +316,7 @@ export class ChatService {
     }
 
     if (write.replyToMessageId) {
-      const replyTo = await this.messages.get({
+      const replyTo = await this.#messages.get({
         id: write.replyToMessageId,
         roomId: write.roomId,
         tenantId: write.tenantId,
@@ -293,7 +328,7 @@ export class ChatService {
       }
     }
 
-    const message = await this.messages.create({
+    const message = await this.#messages.create({
       tenantId: write.tenantId,
       roomId: write.roomId,
       senderProfileId: write.senderProfileId,
@@ -309,7 +344,7 @@ export class ChatService {
     });
 
     // Update room's lastMessageAt
-    const room = await this.rooms.get({
+    const room = await this.#rooms.get({
       id: write.roomId,
       tenantId: write.tenantId,
     });
@@ -334,28 +369,46 @@ export class ChatService {
   }
 
   /**
-   * Start a thread from a message (S5 #1392).
+   * Start a thread in a room (S5 #1392).
    *
    * The acting identity is the server-supplied `actorProfileId`, which must be
    * an active member of the room. Generated thread `create` is disabled, so this
    * is the only path to create a thread.
+   *
+   * When a `rootMessageId` is supplied it is bound to `{ id, roomId, tenantId }`
+   * and rejected unless it belongs to the SAME room and tenant — without this a
+   * member of one room could anchor a thread to a message from another
+   * room/tenant. `rootMessageId` is optional (a thread can be opened without a
+   * root message, e.g. an agent-editor thread).
    */
   async startThread(params: {
     tenantId: string;
     roomId: string;
     actorProfileId: string;
-    rootMessageId: string;
+    rootMessageId?: string | null;
     title?: string;
   }) {
-    await this.requireActiveMembership(
+    await this.#requireActiveMembership(
       params.roomId,
       params.actorProfileId,
       params.tenantId,
     );
-    const thread = await this.threads.create({
+    if (params.rootMessageId) {
+      const rootMessage = await this.#messages.get({
+        id: params.rootMessageId,
+        roomId: params.roomId,
+        tenantId: params.tenantId,
+      });
+      if (!rootMessage) {
+        throw new Error(
+          'rootMessageId does not belong to this room/tenant (authorization denied)',
+        );
+      }
+    }
+    const thread = await this.#threads.create({
       tenantId: params.tenantId,
       roomId: params.roomId,
-      rootMessageId: params.rootMessageId,
+      rootMessageId: params.rootMessageId ?? '',
       title: params.title ?? '',
       messageCount: 0,
     });
@@ -378,12 +431,12 @@ export class ChatService {
     profileId: string;
     role?: ChatParticipantRole;
   }) {
-    await this.requireRoomAdmin(
+    await this.#requireRoomAdmin(
       params.roomId,
       params.actorProfileId,
       params.tenantId,
     );
-    return this.enrollParticipant({
+    return this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: params.roomId,
       profileId: params.profileId,
@@ -397,13 +450,13 @@ export class ChatService {
    * and the owner-checked {@link ChatService.addParticipant} call this. Not
    * exposed publicly so a route cannot enroll an arbitrary profile.
    */
-  private async enrollParticipant(params: {
+  async #enrollParticipant(params: {
     tenantId: string;
     roomId: string;
     profileId: string;
     role?: ChatParticipantRole;
   }) {
-    const existing = await this.participants.findMembership(
+    const existing = await this.#participants.findMembership(
       params.roomId,
       params.profileId,
       params.tenantId,
@@ -417,7 +470,7 @@ export class ChatService {
       return existing;
     }
 
-    const participant = await this.participants.create({
+    const participant = await this.#participants.create({
       tenantId: params.tenantId,
       roomId: params.roomId,
       profileId: params.profileId,
@@ -441,7 +494,7 @@ export class ChatService {
     actorProfileId: string;
     profileId: string;
   }) {
-    const target = await this.participants.findMembership(
+    const target = await this.#participants.findMembership(
       params.roomId,
       params.profileId,
       params.tenantId,
@@ -450,7 +503,7 @@ export class ChatService {
 
     const isSelf = params.actorProfileId === params.profileId;
     if (!isSelf) {
-      const actor = await this.participants.findActiveMembership(
+      const actor = await this.#participants.findActiveMembership(
         params.roomId,
         params.actorProfileId,
         params.tenantId,
@@ -489,12 +542,12 @@ export class ChatService {
     avatarUrl?: string;
     status?: ChatRoomStatus;
   }) {
-    await this.requireRoomAdmin(
+    await this.#requireRoomAdmin(
       params.roomId,
       params.actorProfileId,
       params.tenantId,
     );
-    const room = await this.rooms.get({
+    const room = await this.#rooms.get({
       id: params.roomId,
       tenantId: params.tenantId,
     });
@@ -524,19 +577,19 @@ export class ChatService {
     actorProfileId: string;
     emoji: string;
   }) {
-    const message = await this.messages.get({
+    const message = await this.#messages.get({
       id: params.messageId,
       tenantId: params.tenantId,
     });
     if (!message) throw new Error('Message not found');
 
-    await this.requireActiveMembership(
+    await this.#requireActiveMembership(
       message.roomId,
       params.actorProfileId,
       params.tenantId,
     );
 
-    const existing = await this.reactions.list({
+    const existing = await this.#reactions.list({
       where: {
         tenantId: params.tenantId,
         messageId: params.messageId,
@@ -547,7 +600,7 @@ export class ChatService {
     });
     if (existing[0]) return existing[0];
 
-    return this.reactions.create({
+    return this.#reactions.create({
       tenantId: params.tenantId,
       messageId: params.messageId,
       profileId: params.actorProfileId,
@@ -568,7 +621,7 @@ export class ChatService {
     actorProfileId: string;
     emoji: string;
   }): Promise<boolean> {
-    const existing = await this.reactions.list({
+    const existing = await this.#reactions.list({
       where: {
         tenantId: params.tenantId,
         messageId: params.messageId,
@@ -607,19 +660,19 @@ export class ChatService {
       );
     }
 
-    const room = await this.rooms.findOrCreateDM(
+    const room = await this.#rooms.findOrCreateDM(
       params.profileId1,
       params.profileId2,
       params.tenantId,
-      this.participants,
+      this.#participants,
     );
 
-    await this.enrollParticipant({
+    await this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
       profileId: params.profileId1,
     });
-    await this.enrollParticipant({
+    await this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
       profileId: params.profileId2,
@@ -647,28 +700,31 @@ export class ChatService {
   }) {
     const participantProfileId = params.actorProfileId;
     // Check for existing active session first to avoid orphaned rooms
-    const existingSession = await this.agentSessions.findActiveSession(
+    const existingSession = await this.#agentSessions.findActiveSession(
       params.agentId,
       participantProfileId,
       params.tenantId,
     );
     if (existingSession && existingSession.tenantId === params.tenantId) {
       if (existingSession.chatRoomId) {
-        const existingRoom = await this.rooms.get({
+        // Tenant-bind the room lookup (S5 #1392): the session's chatRoomId must
+        // resolve a room within the SAME tenant, never one from another tenant.
+        const existingRoom = await this.#rooms.get({
           id: existingSession.chatRoomId,
+          tenantId: params.tenantId,
         });
         if (existingRoom) {
           // Ensure both the participant and the agent are enrolled even on the
           // existing-session path. Legacy sessions created before the agent was
           // enrolled as a member would otherwise fail sendAgentReply's
           // membership check (S5 #1392). enrollParticipant is idempotent.
-          await this.enrollParticipant({
+          await this.#enrollParticipant({
             tenantId: params.tenantId,
             roomId: existingRoom.id as string,
             profileId: participantProfileId,
             role: 'owner',
           });
-          await this.enrollParticipant({
+          await this.#enrollParticipant({
             tenantId: params.tenantId,
             roomId: existingRoom.id as string,
             profileId: params.agentId,
@@ -682,7 +738,7 @@ export class ChatService {
     }
 
     // Create an agent-type room for this session
-    const room = await this.rooms.create({
+    const room = await this.#rooms.create({
       tenantId: params.tenantId,
       name: '',
       roomType: 'agent',
@@ -692,7 +748,7 @@ export class ChatService {
     });
 
     // Add participant
-    await this.enrollParticipant({
+    await this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
       profileId: participantProfileId,
@@ -701,7 +757,7 @@ export class ChatService {
 
     // Add the agent itself as a member so its assistant/tool messages pass the
     // room-membership authorization check in sendMessage (S5 #1392).
-    await this.enrollParticipant({
+    await this.#enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
       profileId: params.agentId,
@@ -709,7 +765,7 @@ export class ChatService {
     });
 
     // Create session
-    const session = await this.agentSessions.findOrCreate({
+    const session = await this.#agentSessions.findOrCreate({
       agentId: params.agentId,
       participantProfileId,
       tenantId: params.tenantId,
@@ -742,7 +798,7 @@ export class ChatService {
     content: string;
     messageType?: ChatMessageType;
   }) {
-    const session = await this.loadActiveSession(
+    const session = await this.#loadActiveSession(
       params.agentSessionId,
       params.tenantId,
     );
@@ -753,7 +809,7 @@ export class ChatService {
       );
     }
 
-    return this.writeMessage({
+    return this.#writeMessage({
       tenantId: params.tenantId,
       roomId: session.chatRoomId as string,
       senderProfileId: session.participantProfileId,
@@ -779,8 +835,8 @@ export class ChatService {
    * bridge in this module, which is deliberately not re-exported from
    * `src/index.ts`, so a route/consumer can never author a message as the agent.
    */
-  private async emitAgentReply(params: AgentReplyParams) {
-    const session = await this.loadActiveSession(
+  async #emitAgentReply(params: AgentReplyParams) {
+    const session = await this.#loadActiveSession(
       params.agentSessionId,
       params.tenantId,
     );
@@ -795,7 +851,7 @@ export class ChatService {
       role === 'tool' ||
       params.toolCallData
     ) {
-      const toolName = ChatService.extractToolName(params.toolCallData);
+      const toolName = ChatService.#extractToolName(params.toolCallData);
       if (!toolName) {
         throw new Error('Tool call is missing a tool name');
       }
@@ -806,7 +862,7 @@ export class ChatService {
       }
     }
 
-    return this.writeMessage({
+    return this.#writeMessage({
       tenantId: params.tenantId,
       roomId: session.chatRoomId as string,
       senderProfileId: session.agentId,
@@ -820,8 +876,8 @@ export class ChatService {
   }
 
   /** Load an active agent session by id, tenant-bound, or throw. */
-  private async loadActiveSession(agentSessionId: string, tenantId: string) {
-    const session = await this.agentSessions.get({
+  async #loadActiveSession(agentSessionId: string, tenantId: string) {
+    const session = await this.#agentSessions.get({
       id: agentSessionId,
       tenantId,
     });
@@ -845,12 +901,12 @@ export class ChatService {
     limit?: number;
     before?: string;
   }) {
-    await this.requireActiveMembership(
+    await this.#requireActiveMembership(
       params.roomId,
       params.profileId,
       params.tenantId,
     );
-    return this.messages.getByRoom(params.roomId, {
+    return this.#messages.getByRoom(params.roomId, {
       limit: params.limit,
       before: params.before,
     });
@@ -864,10 +920,129 @@ export class ChatService {
    * gate are always tenant-scoped.
    */
   async getRoomForMember(roomId: string, profileId: string, tenantId: string) {
-    const room = await this.rooms.get({ id: roomId, tenantId });
+    const room = await this.#rooms.get({ id: roomId, tenantId });
     if (!room) return null;
-    await this.requireActiveMembership(roomId, profileId, tenantId);
+    await this.#requireActiveMembership(roomId, profileId, tenantId);
     return room;
+  }
+
+  /**
+   * Tenant-bound read of a single agent session (S5 #1392).
+   *
+   * The lookup ALWAYS binds `tenantId` (including the `null`/untenanted scope),
+   * so a caller can never resolve a session belonging to another tenant by id.
+   * Returns `null` when no session matches the id within the tenant. Replaces
+   * direct `agentSessions.get(id)` reach-ins in package consumers; consumers
+   * still apply their own ownership/context authorization on the returned row.
+   */
+  async getAgentSession(
+    lookup: AgentSessionLookup,
+  ): Promise<AgentSession | null> {
+    const session = await this.#agentSessions.get({
+      id: lookup.agentSessionId,
+      tenantId: lookup.tenantId,
+    });
+    return session ?? null;
+  }
+
+  /**
+   * Tenant-bound list of ACTIVE agent sessions for an (agent, participant) pair
+   * (S5 #1392).
+   *
+   * Binds `tenantId` into the query so the result can never include a session
+   * from another tenant. Replaces direct `agentSessions.list({ where })`
+   * reach-ins; consumers apply their own per-session context authorization.
+   */
+  async findActiveAgentSessions(params: {
+    tenantId: string | null;
+    agentId: string;
+    participantProfileId: string;
+  }): Promise<AgentSession[]> {
+    const sessions = await this.#agentSessions.list({
+      where: {
+        tenantId: params.tenantId,
+        agentId: params.agentId,
+        participantProfileId: params.participantProfileId,
+        status: 'active',
+      },
+    });
+    return sessions.filter((s) => s.isActive());
+  }
+
+  /**
+   * Tenant-bound read of a single thread (S5 #1392).
+   *
+   * Binds `tenantId` into the lookup so a thread from another tenant can never
+   * be resolved by id. Returns `null` when no thread matches within the tenant.
+   * Replaces direct `threads.get(id)` reach-ins.
+   */
+  async getThread(lookup: ThreadLookup): Promise<ChatThread | null> {
+    const thread = await this.#threads.get({
+      id: lookup.threadId,
+      tenantId: lookup.tenantId,
+    });
+    return thread ?? null;
+  }
+
+  /**
+   * List a room's threads, gated on the caller's active membership (S5 #1392).
+   *
+   * Tenant- and membership-scoped: throws if `actorProfileId` is not an active
+   * participant of `roomId`. Replaces direct `threads.list({ where: { roomId } })`
+   * reach-ins that returned threads without a membership/tenant gate.
+   */
+  async listRoomThreads(params: {
+    roomId: string;
+    actorProfileId: string;
+    tenantId: string;
+  }): Promise<ChatThread[]> {
+    await this.#requireActiveMembership(
+      params.roomId,
+      params.actorProfileId,
+      params.tenantId,
+    );
+    return this.#threads.list({
+      where: { tenantId: params.tenantId, roomId: params.roomId },
+      orderBy: 'createdAt DESC',
+    });
+  }
+
+  /**
+   * Read messages within a thread, tenant- and membership-bound (S5 #1392).
+   *
+   * The thread is resolved tenant-bound; the caller must be an active member of
+   * the thread's room. Messages are returned oldest-first (chronological).
+   * Replaces direct `messages.list({ where: { threadId } })` reach-ins that
+   * could read another tenant's/room's thread history by raw id.
+   */
+  async getThreadMessages(params: {
+    threadId: string;
+    actorProfileId: string;
+    tenantId: string;
+    limit?: number;
+  }): Promise<ChatMessage[]> {
+    const thread = await this.#threads.get({
+      id: params.threadId,
+      tenantId: params.tenantId,
+    });
+    if (!thread) {
+      throw new Error('Thread not found');
+    }
+    await this.#requireActiveMembership(
+      thread.roomId,
+      params.actorProfileId,
+      params.tenantId,
+    );
+    const messages = await this.#messages.list({
+      where: {
+        tenantId: params.tenantId,
+        threadId: params.threadId,
+        isDeleted: false,
+      },
+      orderBy: 'created_at DESC',
+      limit: params.limit,
+    });
+    return messages.reverse();
   }
 
   /**
@@ -889,7 +1064,7 @@ export class ChatService {
     // AgentSession tenancy is optional, so `null` is the explicit "no tenant"
     // scope — never "any tenant". This prevents mutating allowedTools /
     // systemPrompt on a session belonging to another tenant via an unbound get.
-    const session = await this.agentSessions.get({
+    const session = await this.#agentSessions.get({
       id: params.agentSessionId,
       tenantId: params.tenantId,
     });
@@ -913,12 +1088,12 @@ export class ChatService {
   }
 
   /** Throw unless the profile is an active participant of the room. */
-  private async requireActiveMembership(
+  async #requireActiveMembership(
     roomId: string,
     profileId: string,
     tenantId: string,
   ): Promise<void> {
-    const isMember = await this.participants.isActiveMember(
+    const isMember = await this.#participants.isActiveMember(
       roomId,
       profileId,
       tenantId,
@@ -931,12 +1106,12 @@ export class ChatService {
   }
 
   /** Throw unless the profile is an active owner/admin of the room. */
-  private async requireRoomAdmin(
+  async #requireRoomAdmin(
     roomId: string,
     profileId: string,
     tenantId: string,
   ): Promise<void> {
-    const actor = await this.participants.findActiveMembership(
+    const actor = await this.#participants.findActiveMembership(
       roomId,
       profileId,
       tenantId,
@@ -949,7 +1124,7 @@ export class ChatService {
   }
 
   /** Extract a tool name from tool-call payload data, if present. */
-  private static extractToolName(
+  static #extractToolName(
     data: Record<string, unknown> | null | undefined,
   ): string | null {
     if (!data || typeof data !== 'object') return null;
@@ -963,34 +1138,36 @@ export class ChatService {
   }
 
   /**
-   * Internal bridge to the `private` {@link ChatService.emitAgentReply} for the
-   * module-local {@link sendAgentReply} function (S5 #1392). A static method may
-   * reach a private instance member of its own class, so this is the sanctioned
-   * "friend" access without widening the public instance surface. Marked with a
-   * leading underscore to signal internal use; it is not part of the documented
-   * facade and is unreachable from the package index.
+   * Symbol-keyed bridge to the `private` {@link ChatService.emitAgentReply} for
+   * the module-local {@link sendAgentReply} function (S5 #1392). A static member
+   * may reach a private instance member of its own class, so this is the
+   * sanctioned "friend" access without widening the public instance surface.
+   *
+   * Keyed on the module-private {@link RUN_AGENT_REPLY} symbol — NOT a named
+   * static — so it does not appear on the `ChatService` type, is not enumerable,
+   * and is callable only by code holding the (non-exported) symbol. This is the
+   * sole path the agent-runtime bridge uses to author a message as the agent.
    */
-  static _runAgentReply(service: AgentReplyService, params: AgentReplyParams) {
+  static [RUN_AGENT_REPLY](
+    service: AgentReplyService,
+    params: AgentReplyParams,
+  ) {
     // The structural param lets this bridge be called across pnpm
     // module-instance boundaries (src vs dist). Any real instance is a
     // ChatService, so reaching the private `emitAgentReply` here is safe.
-    return (service as ChatService).emitAgentReply(params);
+    return (service as ChatService).#emitAgentReply(params);
   }
 }
 
 /**
- * Structural ChatService surface accepted by {@link sendAgentReply}. Using a
- * structural type (not the nominal `ChatService` class) keeps the function
- * callable across module-instance boundaries — in a pnpm workspace a consumer's
- * `ChatService` type may resolve to the package source while this function
- * resolves to dist, and the nominal `private` members would otherwise make the
- * two declarations incompatible. The shape below is satisfied by any real
- * ChatService instance.
+ * Structural ChatService surface accepted by {@link sendAgentReply}. The chat
+ * collections are `#private`, so they cannot appear in a `Pick`; this opaque
+ * marker type keeps the agent-runtime bridge callable across module-instance
+ * boundaries (in a pnpm workspace a consumer's `ChatService` type may resolve to
+ * the package source while this function resolves to dist) without naming any
+ * private member. Any real ChatService instance satisfies it.
  */
-export type AgentReplyService = Pick<
-  ChatService,
-  'rooms' | 'messages' | 'participants' | 'threads' | 'agentSessions'
->;
+export type AgentReplyService = Pick<ChatService, 'initialize'>;
 
 /**
  * Internal agent-runtime entry point: emit an ASSISTANT/TOOL message authored
@@ -1003,12 +1180,12 @@ export type AgentReplyService = Pick<
  * sender/role, and tool calls are gated fail-closed against `allowedTools`.
  *
  * Because this lives in the same module as {@link ChatService}, reaching the
- * `private` method is the owning module's sanctioned "friend" access, not an
- * external private reach-in.
+ * symbol-keyed bridge (and through it the `private` method) is the owning
+ * module's sanctioned "friend" access, not an external private reach-in.
  */
 export function sendAgentReply(
   service: AgentReplyService,
   params: AgentReplyParams,
 ) {
-  return ChatService._runAgentReply(service, params);
+  return ChatService[RUN_AGENT_REPLY](service, params);
 }

@@ -8,16 +8,23 @@ import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ChatService, sendAgentReply } from '../services/ChatService.js';
+import {
+  getRawChatCollections,
+  type RawChatCollections,
+} from './raw-collections.js';
 
 describe('ChatService', () => {
   let dbPath: string;
   let chat: ChatService;
+  // Raw collections are #private on ChatService; tests resolve them from the
+  // registry to assert persisted state at the data layer (S5 #1392).
+  let raw: RawChatCollections;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-chat-service-test-${Date.now()}.db`);
-    chat = await ChatService.create({
-      db: { type: 'sqlite', url: dbPath },
-    });
+    const options = { db: { type: 'sqlite' as const, url: dbPath } };
+    chat = await ChatService.create(options);
+    raw = await getRawChatCollections(options);
   });
 
   afterEach(() => {
@@ -36,7 +43,9 @@ describe('ChatService', () => {
 
       try {
         await getTestDatabase({ db: sharedDb });
-        const sharedChat = await ChatService.create({ db: sharedDb });
+        const sharedOptions = { db: sharedDb };
+        const sharedChat = await ChatService.create(sharedOptions);
+        const sharedRaw = await getRawChatCollections(sharedOptions);
         const room = await sharedChat.createRoom({
           tenantId: 'tenant-1',
           name: 'Bootstrap',
@@ -46,7 +55,7 @@ describe('ChatService', () => {
 
         expect(room.id).toBeDefined();
 
-        const rooms = await sharedChat.rooms.list({
+        const rooms = await sharedRaw.rooms.list({
           where: { tenantId: 'tenant-1' },
         });
         expect(rooms).toHaveLength(1);
@@ -69,7 +78,7 @@ describe('ChatService', () => {
       expect(room.roomType).toBe('public');
 
       // Creator should be added as owner participant
-      const membership = await chat.participants.findMembership(
+      const membership = await raw.participants.findMembership(
         room.id as string,
         'profile-1',
         'tenant-1',
@@ -114,7 +123,7 @@ describe('ChatService', () => {
       expect(message.role).toBe('user');
 
       // Room's lastMessageAt should be updated
-      const updatedRoom = await chat.rooms.get({ id: room.id });
+      const updatedRoom = await raw.rooms.get({ id: room.id });
       expect(updatedRoom?.lastMessageAt).toBeDefined();
     });
 
@@ -164,7 +173,7 @@ describe('ChatService', () => {
       });
 
       // Thread stats should be updated
-      const updatedThread = await chat.threads.get({ id: thread.id });
+      const updatedThread = await raw.threads.get({ id: thread.id });
       expect(updatedThread?.messageCount).toBe(1);
       expect(updatedThread?.lastMessageAt).toBeDefined();
     });
@@ -228,12 +237,12 @@ describe('ChatService', () => {
       expect(room.roomType).toBe('dm');
 
       // Both profiles should be participants
-      const membership1 = await chat.participants.findMembership(
+      const membership1 = await raw.participants.findMembership(
         room.id as string,
         'profile-a',
         'tenant-1',
       );
-      const membership2 = await chat.participants.findMembership(
+      const membership2 = await raw.participants.findMembership(
         room.id as string,
         'profile-b',
         'tenant-1',
@@ -279,7 +288,7 @@ describe('ChatService', () => {
       expect(room.roomType).toBe('agent');
 
       // Profile should be a participant in the room
-      const membership = await chat.participants.findMembership(
+      const membership = await raw.participants.findMembership(
         room.id as string,
         'profile-1',
         'tenant-1',
@@ -306,7 +315,7 @@ describe('ChatService', () => {
       expect(result2.room.id).toBe(result1.room.id);
 
       // Verify only one agent room was created
-      const agentRooms = await chat.rooms.findAgentRooms();
+      const agentRooms = await raw.rooms.findAgentRooms();
       expect(agentRooms).toHaveLength(1);
     });
 
