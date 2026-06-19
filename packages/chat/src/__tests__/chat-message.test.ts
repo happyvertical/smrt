@@ -416,6 +416,85 @@ describe('ChatMessage', () => {
       expect(noAttResults[0].content).toBe('No attachment');
     });
 
+    // Regression (S5 #1392): the attachment predicate MUST be pushed into SQL so
+    // the LIMIT applies to the FILTERED set. Previously the limit truncated the
+    // newest-N window first and the JS attachment filter ran afterwards, so a
+    // room whose newest messages all lacked attachments returned ZERO
+    // attachment-bearing rows even though older ones existed.
+    it('applies limit to the attachment-filtered set, not the raw window', async () => {
+      // One old message WITH an attachment, then many newer ones WITHOUT.
+      const withAtt = await messages.create({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        senderProfileId: 'p1',
+        content: 'Old message with attachment',
+      });
+      withAtt.setAttachments([
+        {
+          id: 'att-1',
+          filename: 'file.txt',
+          contentType: 'text/plain',
+          size: 100,
+        },
+      ]);
+      await withAtt.save();
+
+      // 5 newer attachment-free messages so any small limit, applied before the
+      // filter, would consume only these and miss the older bearing row.
+      for (let i = 0; i < 5; i++) {
+        await messages.create({
+          tenantId: 'tenant-1',
+          roomId: 'room-1',
+          senderProfileId: 'p1',
+          content: `Newer message ${i}`,
+        });
+      }
+
+      const results = await messages.search({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        hasAttachments: true,
+        limit: 2,
+      });
+
+      // The single attachment-bearing message must surface despite the limit.
+      expect(results).toHaveLength(1);
+      expect(results[0].content).toBe('Old message with attachment');
+    });
+
+    it('caps the attachment-filtered result at the requested limit', async () => {
+      // 3 attachment-bearing messages; limit 2 must return exactly 2.
+      for (let i = 0; i < 3; i++) {
+        const m = await messages.create({
+          tenantId: 'tenant-1',
+          roomId: 'room-1',
+          senderProfileId: 'p1',
+          content: `Attachment ${i}`,
+        });
+        m.setAttachments([
+          {
+            id: `att-${i}`,
+            filename: `file-${i}.txt`,
+            contentType: 'text/plain',
+            size: 10,
+          },
+        ]);
+        await m.save();
+      }
+
+      const results = await messages.search({
+        tenantId: 'tenant-1',
+        roomId: 'room-1',
+        hasAttachments: true,
+        limit: 2,
+      });
+
+      expect(results).toHaveLength(2);
+      for (const r of results) {
+        expect(r.hasAttachments()).toBe(true);
+      }
+    });
+
     it('should search messages with filters', async () => {
       await (
         await messages.create({

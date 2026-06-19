@@ -86,9 +86,18 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
    * All structural filters (tenant/room/thread/sender/type/role/date/text) are
    * pushed into SQL instead of loading the full message set and filtering in JS
    * (S5 #1392, DoS hardening). `tenantId` is REQUIRED and always bound so the
-   * search can never cross a tenant boundary. `hasAttachments` remains a
-   * post-filter since it is a computed property on the model rather than a
-   * stored column.
+   * search can never cross a tenant boundary.
+   *
+   * `hasAttachments` is derived from the stored `attachments` JSON column and is
+   * pushed into SQL as a `!=`/`=` pre-filter against the empty-array sentinel
+   * (`'[]'`, the column default) so the `LIMIT` applies to the ALREADY-FILTERED
+   * set, not the raw window (S5 #1392). Previously the limit truncated the
+   * newest-N window first and the JS filter ran afterwards, so a room whose
+   * newest messages lacked attachments could return fewer (or zero)
+   * attachment-bearing rows than existed. A precise JS pass on
+   * `hasAttachments()` still runs to reject any malformed/empty column value the
+   * coarse SQL sentinel can't distinguish, and the requested `limit` is enforced
+   * on the filtered result.
    */
   async search(
     filters: ChatMessageSearchFilters & { tenantId: string; limit?: number },
@@ -107,16 +116,31 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
     if (filters.sinceDate) where['created_at >='] = filters.sinceDate;
     if (filters.beforeDate) where['created_at <'] = filters.beforeDate;
 
-    let messages = await this.list({
+    const limit = filters.limit ?? 100;
+
+    // Push the attachment predicate into SQL against the empty-array sentinel so
+    // the LIMIT applies to the filtered set, not the raw window. `'[]'` is the
+    // ChatMessage.attachments column default, so `!= '[]'` keeps rows carrying a
+    // non-empty attachment array and `= '[]'` keeps the rest.
+    if (filters.hasAttachments === true) {
+      where['attachments !='] = '[]';
+    } else if (filters.hasAttachments === false) {
+      where.attachments = '[]';
+    }
+
+    const messages = await this.list({
       where,
       orderBy: 'created_at DESC',
-      limit: filters.limit ?? 100,
+      limit,
     });
 
+    // The SQL sentinel can't tell a malformed/empty column (e.g. '', whitespace)
+    // from a genuinely-empty array, so re-apply the precise computed predicate
+    // and enforce the limit on the filtered result.
     if (filters.hasAttachments !== undefined) {
-      messages = messages.filter(
-        (m) => m.hasAttachments() === filters.hasAttachments,
-      );
+      return messages
+        .filter((m) => m.hasAttachments() === filters.hasAttachments)
+        .slice(0, limit);
     }
 
     return messages;
