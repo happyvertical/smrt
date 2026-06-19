@@ -110,6 +110,16 @@ export class MCPGenerator {
       const config = ObjectRegistry.getConfig(simpleName);
       const mcpConfig = config.mcp;
 
+      // `mcp: false` disables MCP generation entirely for the class. Without
+      // this gate an `include` list still leaked custom-method tools (the
+      // custom-method branch historically only honored `include` when it
+      // listed custom methods), so `false` is the only fully fail-closed
+      // switch. Mirrors rest.ts's `apiConfig === false` short-circuit
+      // (#1540 / #1546).
+      if (mcpConfig === false) {
+        continue;
+      }
+
       // Handle boolean vs object config
       const excluded: string[] =
         typeof mcpConfig === 'object' && mcpConfig?.exclude
@@ -279,18 +289,27 @@ export class MCPGenerator {
           ? mcpConfig.exclude
           : [];
 
-      // Check if include list contains any custom method names (indicates strict mode)
+      // When an `include` list is present it is the COMPLETE allowlist for
+      // this surface: a custom (non-CRUD) method is exposed ONLY if its name
+      // appears in `include`. Without an include list we keep the historical
+      // default of auto-exposing every public method. This closes the leak
+      // where `mcp: { include: ['list', 'get'] }` still emitted custom-method
+      // tools like `payment_recordpayment` because `include` only gated CRUD
+      // verbs (#1540 / #1390).
       const crudOperations = ['list', 'get', 'create', 'update', 'delete'];
       const customMethodsInInclude =
         included?.filter((item) => !crudOperations.includes(item)) || [];
-      const hasCustomMethodsInInclude = customMethodsInInclude.length > 0;
+      // An include list (even one naming only CRUD verbs) switches custom
+      // methods into strict allowlist mode.
+      const hasIncludeList = included !== undefined;
 
       // Try to discover methods from manifest (including inherited methods)
       const methods = await ObjectRegistry.getAllMethods(objectName);
       const methodNames = new Set(Array.from(methods.keys()));
 
-      // If we have an include list with custom methods, validate and generate tools
-      if (hasCustomMethodsInInclude) {
+      // Strict mode: an include list is present, so only the custom methods it
+      // names are generated (may be none, e.g. include: ['list', 'get']).
+      if (hasIncludeList) {
         for (const methodName of customMethodsInInclude) {
           // Skip if explicitly excluded
           if (excluded.includes(methodName)) continue;
