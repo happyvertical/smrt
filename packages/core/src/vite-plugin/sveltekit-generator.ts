@@ -324,6 +324,62 @@ function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any 
 `;
 }
 
+/**
+ * Whether an object is `@TenantScoped` (carries a `tenantScoped` config in its
+ * `@smrt()`/`@TenantScoped()` decorator). Drives tenant-context establishment in
+ * generated routes (#1540, facet 2).
+ */
+function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
+  return !!objectDef.decoratorConfig?.tenantScoped;
+}
+
+/**
+ * Emit the tenant-context establishment helper for `@TenantScoped` objects
+ * (#1540, facet 2). Generated handlers call `establishTenantContext(locals)`
+ * after the auth guard so every collection query runs inside the tenant context
+ * derived from the authenticated principal — engaging the `@TenantScoped`
+ * interceptors that auto-filter by tenant.
+ *
+ * Without this, an `optional`-mode scoped object queried over a generated route
+ * with no active context returns rows from ALL tenants (the interceptor only
+ * hard-fails `required` mode). We read the canonical `locals.tenantId` set by
+ * the smrt-users auth hook (with `user`/`session` fallbacks). It is a no-op when
+ * a context is already active (e.g. an upstream tenancy handle) or when the
+ * principal carries no tenant (global/admin — preserving optional-mode global
+ * access). Imported only for tenant-scoped routes, which already depend on
+ * `@happyvertical/smrt-tenancy`.
+ */
+function generateTenantContextHelper(): string {
+  return `
+import { enterTenantContext, hasTenantContext } from '@happyvertical/smrt-tenancy';
+
+function establishTenantContext(locals: unknown): void {
+  if (hasTenantContext()) return;
+  if (!locals || typeof locals !== 'object') return;
+  const l = locals as Record<string, any>;
+  const tenantId = l.tenantId ?? l.user?.tenantId ?? l.session?.tenantId;
+  if (typeof tenantId === 'string' && tenantId) {
+    enterTenantContext({ tenantId });
+  }
+}
+`;
+}
+
+/**
+ * The per-handler guard preamble: the fail-closed auth check (#1540 2c) plus, for
+ * tenant-scoped objects, tenant-context establishment (#1540 facet 2).
+ */
+function routeGuardPreamble(
+  objectDef: SmartObjectDefinition,
+  mutating: boolean,
+): string {
+  const lines = [`  requireRouteAuth(locals, ${mutating});`];
+  if (isTenantScoped(objectDef)) {
+    lines.push('  establishTenantContext(locals);');
+  }
+  return lines.join('\n');
+}
+
 function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
   switch (method?.toUpperCase()) {
     case 'GET':
@@ -1519,13 +1575,13 @@ ${
 }import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef)}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}`;
+${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPost ? generateWritablePolicyHelper(objectDef) : ''}`;
 
   const getHandler = hasGet
     ? `
 // List all ${className.toLowerCase()}s
 export const GET: RequestHandler = async ({ locals, url }) => {
-  requireRouteAuth(locals, false);
+${routeGuardPreamble(objectDef, false)}
   const limit = Number(url.searchParams.get('limit')) || 50;
   const offset = Number(url.searchParams.get('offset')) || 0;
 
@@ -1552,7 +1608,7 @@ ${
     ? `
 // Create new ${className.toLowerCase()}
 export const POST: RequestHandler = async ({ locals, request }) => {
-  requireRouteAuth(locals, true);
+${routeGuardPreamble(objectDef, true)}
   const data = applyWritablePolicy(await request.json());
 
 ${generateCollectionLoad(className)}
@@ -1648,13 +1704,13 @@ function generateItemRouteTemplate(
 import { error, json } from '@sveltejs/kit';
 ${serializerImports ? `${serializerImports}\n` : ''}import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';
-${generateAuthGuardHelper(objectDef)}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}`;
+${generateAuthGuardHelper(objectDef)}${isTenantScoped(objectDef) ? generateTenantContextHelper() : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}`;
 
   const getHandler = hasGet
     ? `
 // Get single ${simpleClassName.toLowerCase()}
 export const GET: RequestHandler = async ({ locals, params }) => {
-  requireRouteAuth(locals, false);
+${routeGuardPreamble(objectDef, false)}
 ${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -1675,7 +1731,7 @@ ${
     ? `
 // Update ${simpleClassName.toLowerCase()}
 export const PUT: RequestHandler = async ({ locals, params, request }) => {
-  requireRouteAuth(locals, true);
+${routeGuardPreamble(objectDef, true)}
 ${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -1700,7 +1756,7 @@ ${
     ? `
 // Delete ${simpleClassName.toLowerCase()}
 export const DELETE: RequestHandler = async ({ locals, params }) => {
-  requireRouteAuth(locals, true);
+${routeGuardPreamble(objectDef, true)}
 ${generateCollectionLoad(className, { generic: true })}
   const item = await collection.get(params.id);
 ${generateNotFoundError(className)}
@@ -1757,6 +1813,7 @@ import type { RequestHandler } from './$types';`
 import { getCollection } from '$lib/server/smrt';
 import type { RequestHandler } from './$types';`;
 
+  const tenantScoped = isTenantScoped(objectDef);
   const handlers = routeSpecs
     .map((spec) =>
       generateActionRouteHandler(
@@ -1765,6 +1822,7 @@ import type { RequestHandler } from './$types';`;
         spec.actionDef,
         spec.routeConfig,
         spec.hostType,
+        tenantScoped,
       ),
     )
     .join('\n');
@@ -1773,7 +1831,7 @@ import type { RequestHandler } from './$types';`;
 // DO NOT EDIT - changes will be overwritten
 
 ${importBlock}
-${generateAuthGuardHelper(objectDef)}
+${generateAuthGuardHelper(objectDef)}${tenantScoped ? generateTenantContextHelper() : ''}
 ${handlers}`;
 }
 
@@ -1783,10 +1841,18 @@ function generateActionRouteHandler(
   actionDef: any,
   routeConfig: ResolvedApiActionRouteConfig,
   hostType: 'item' | 'collection',
+  tenantScoped: boolean,
 ): string {
   const handlerName = routeConfig.method;
-  // Mutating verbs require auth even when reads are public (#1540).
-  const authGuardLine = `  requireRouteAuth(locals, ${routeConfig.method !== 'GET'});`;
+  // Mutating verbs require auth even when reads are public (#1540). Tenant-scoped
+  // objects also establish tenant context so the action runs filtered.
+  const guardLines = [
+    `  requireRouteAuth(locals, ${routeConfig.method !== 'GET'});`,
+  ];
+  if (tenantScoped) {
+    guardLines.push('  establishTenantContext(locals);');
+  }
+  const authGuardLine = guardLines.join('\n');
   const hasInput = actionDef.parameters.length > 0;
   const needsRequest = hasInput;
   const invocationArgs = buildActionInvocationArgs(actionDef);
