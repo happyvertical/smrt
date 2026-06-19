@@ -485,17 +485,16 @@ export class Invoice extends SmrtObject {
           (sum: number, item: any) => sum + item.getTaxAmount(),
           0,
         );
-        // Forged-total guard: refuse a caller-supplied total that disagrees
-        // with the line-item sum beyond rounding tolerance, then snap the
-        // stored values to the authoritative line-item figures.
+        // Totals are AUTHORITATIVE from the line items (S5 audit #1390). Any
+        // caller-supplied subtotal / tax / total is ignored and overwritten —
+        // that is the security goal (a forged total can never be persisted)
+        // AND it self-heals a stale stored total (e.g. one left behind after a
+        // line item changed). We deliberately do NOT throw on a caller
+        // mismatch: throwing blocked legitimate self-heal of stale totals, and
+        // since the values are overwritten regardless, the throw added no
+        // protection. Non-negativity is still enforced downstream by
+        // assertNonNegativeAmounts().
         const computedTotal = subtotal + taxAmount;
-        if (Math.abs(this.totalAmount - computedTotal) > INVOICE_EPSILON) {
-          throw new Error(
-            `Invoice ${this.invoiceNumber || this.id}: totalAmount ${this.totalAmount} ` +
-              `does not match line-item total ${computedTotal} (subtotal=${subtotal}, tax=${taxAmount}). ` +
-              'Invoice totals are derived from line items and cannot be set directly.',
-          );
-        }
         this.subtotal = subtotal;
         this.taxAmount = taxAmount;
         this.totalAmount = computedTotal;

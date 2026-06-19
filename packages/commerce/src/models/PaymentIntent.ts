@@ -532,16 +532,67 @@ export class PaymentIntent extends SmrtObject {
           `(status='${payment.status}'); cannot persist PAID intent against it`,
       );
     }
+    this.reconcilePaymentWithOption(payment, option, this.paymentId);
+  }
+
+  /**
+   * Reconcile a COMPLETED Payment against the winning {@link PaymentOption}
+   * (S5 audit #1390). Beyond the amount check, the Payment must have arrived on
+   * the SAME rail and currency the option quoted — otherwise an unrelated
+   * completed payment that merely shares a numeric amount (e.g. a USD 199
+   * payment) could satisfy a different option (e.g. a `base-usdc` 199 option),
+   * marking the intent paid on the wrong rail with no matching funds. Compares
+   * the Payment's `backendId` (rail) and native currency (falling back to its
+   * settlement currency) against the option's `backendId` / `currency`, then
+   * the native amount.
+   *
+   * Shared by {@link verifyAndMarkPaid} (pre-transition) and
+   * {@link assertBackedByCompletedPayment} (save-time catch-all) so both gates
+   * enforce the identical invariant.
+   */
+  private reconcilePaymentWithOption(
+    payment: {
+      backendId?: string;
+      nativeCurrency?: string;
+      currency?: string;
+      nativeAmount?: number;
+      amount?: number;
+    },
+    option: PaymentOption,
+    paymentIdLabel: string,
+  ): void {
+    // Only enforce the rail check when the Payment actually recorded a backend
+    // (PaymentBackend-routed flows). Manually-recorded payments may carry no
+    // backendId; the amount + currency checks still apply.
+    if (payment.backendId && payment.backendId !== option.backendId) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${paymentIdLabel}' arrived on rail ` +
+          `'${payment.backendId}' but option '${option.backendId}' expects rail ` +
+          `'${option.backendId}' — cannot mark paid on a mismatched rail`,
+      );
+    }
+    // The option's `currency` is the native-rail-qualified code (e.g.
+    // `USDC-base`), which lines up with the Payment's `nativeCurrency`. Fall
+    // back to the settlement `currency` when no native currency was recorded.
+    const paymentCurrency = payment.nativeCurrency || payment.currency || '';
+    if (paymentCurrency && paymentCurrency !== option.currency) {
+      throw new Error(
+        `PaymentIntent ${this.id}: Payment '${paymentIdLabel}' currency ` +
+          `'${paymentCurrency}' does not match option '${option.backendId}' ` +
+          `currency '${option.currency}'`,
+      );
+    }
     const paymentNative =
       typeof payment.nativeAmount === 'number' && payment.nativeAmount > 0
         ? payment.nativeAmount
         : payment.amount;
     if (
+      typeof paymentNative !== 'number' ||
       Math.abs(paymentNative - option.nativeAmount) > PAYMENT_INTENT_EPSILON
     ) {
       throw new Error(
-        `PaymentIntent ${this.id}: Payment '${this.paymentId}' amount ${paymentNative} ` +
-          `does not match option '${this.paidOptionBackendId}' nativeAmount ${option.nativeAmount}`,
+        `PaymentIntent ${this.id}: Payment '${paymentIdLabel}' amount ${paymentNative} ` +
+          `does not match option '${option.backendId}' nativeAmount ${option.nativeAmount}`,
       );
     }
   }
@@ -649,6 +700,9 @@ export class PaymentIntent extends SmrtObject {
    *
    *  - the Payment exists,
    *  - it is `COMPLETED` (not pending / failed / cancelled / refunded),
+   *  - it arrived on the same rail (`backendId`) and currency the option
+   *    quoted (so an unrelated completed payment that merely shares a numeric
+   *    amount can't satisfy a different option),
    *  - and its amount reconciles with the winning option's `nativeAmount`
    *    (within sub-cent tolerance), falling back to the option vs. the
    *    Payment's settlement `amount` when no native rail is recorded.
@@ -694,21 +748,9 @@ export class PaymentIntent extends SmrtObject {
       );
     }
 
-    // Reconcile the amount the option quoted against what the payment moved.
-    // Prefer the native-rail figure when present (volatile-currency rails),
-    // otherwise compare against the settlement `amount`.
-    const paymentNative =
-      typeof payment.nativeAmount === 'number' && payment.nativeAmount > 0
-        ? payment.nativeAmount
-        : payment.amount;
-    if (
-      Math.abs(paymentNative - option.nativeAmount) > PAYMENT_INTENT_EPSILON
-    ) {
-      throw new Error(
-        `PaymentIntent ${this.id}: Payment '${args.paymentId}' amount ${paymentNative} ` +
-          `does not match option '${args.backendId}' nativeAmount ${option.nativeAmount}`,
-      );
-    }
+    // Reconcile the payment against the winning option — same rail, currency,
+    // and amount (shared with the save-time guard so both gates agree).
+    this.reconcilePaymentWithOption(payment, option, args.paymentId);
 
     this.markPaid({ backendId: args.backendId, paymentId: args.paymentId });
   }

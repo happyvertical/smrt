@@ -25,7 +25,23 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const manifestPath = join(here, '..', '..', 'dist', 'manifest.json');
+const packageRoot = join(here, '..', '..');
+
+/**
+ * Resolve the generated manifest from the standard candidate locations rather
+ * than hardcoding `dist/`. In a clean checkout `dist/manifest.json` does not
+ * exist — `smrtVitestPlugin()` writes the manifest to `.smrt/manifest.json` at
+ * vitest startup — so the dist-only path failed before any build. Prefer the
+ * dev/runtime `.smrt/manifest.json`, then fall back to the published
+ * `dist/manifest.json`.
+ */
+const manifestPath = (() => {
+  const candidates = [
+    join(packageRoot, '.smrt', 'manifest.json'),
+    join(packageRoot, 'dist', 'manifest.json'),
+  ];
+  return candidates.find((p) => existsSync(p)) ?? candidates[0];
+})();
 
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { InvoiceCollection } from '../collections/InvoiceCollection.js';
@@ -62,7 +78,13 @@ function tmpDb(tag: string): string {
 async function seedCompletedPayment(
   payments: PaymentCollection,
   dbPath: string,
-  fields: { amount: number; currency: string; nativeAmount?: number },
+  fields: {
+    amount: number;
+    currency: string;
+    nativeAmount?: number;
+    nativeCurrency?: string;
+    backendId?: string;
+  },
 ): Promise<string> {
   const { AccountCollection } = await import('@happyvertical/smrt-ledgers');
   const accounts = await AccountCollection.create({
@@ -85,7 +107,8 @@ async function seedCompletedPayment(
     amount: fields.amount,
     currency: fields.currency,
     nativeAmount: fields.nativeAmount ?? fields.amount,
-    nativeCurrency: fields.currency,
+    nativeCurrency: fields.nativeCurrency ?? fields.currency,
+    backendId: fields.backendId ?? '',
     status: PaymentStatus.PENDING,
   });
   await payment.save();
@@ -162,7 +185,7 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     expect(invoice.totalAmount).toBeCloseTo(210);
   });
 
-  it('rejects a forged total that disagrees with the line items', async () => {
+  it('overwrites a forged total with the authoritative line-item total (no throw, self-heals)', async () => {
     const invoice = await invoices.create({
       invoiceNumber: 'INV-FORGED',
       totalAmount: 0,
@@ -179,8 +202,47 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     await li.save();
 
     // Attacker claims the invoice is only worth $1 despite $1000 of line items.
+    // Totals are authoritative from line items: the forged value is ignored and
+    // overwritten rather than throwing (which also self-heals stale totals).
     invoice.totalAmount = 1;
-    await expect(invoice.save()).rejects.toThrow(/does not match line-item/);
+    await invoice.save();
+    expect(invoice.totalAmount).toBeCloseTo(1000);
+    expect(invoice.subtotal).toBeCloseTo(1000);
+
+    // And the persisted row reflects the authoritative total, not the forgery.
+    const reloaded = await invoices.get({ id: invoice.id });
+    expect(reloaded?.totalAmount).toBeCloseTo(1000);
+  });
+
+  it('self-heals a stale stored total when a line item changes (no throw)', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-SELFHEAL',
+      totalAmount: 0,
+    });
+    await invoice.save();
+
+    const li = await lineItems.create({
+      invoiceId: invoice.id,
+      description: 'Service',
+      quantity: 1,
+      unitPrice: 100,
+    });
+    li.amount = li.calculateAmount();
+    await li.save();
+
+    // First save snaps the total to the current line-item sum (100).
+    await invoice.save();
+    expect(invoice.totalAmount).toBeCloseTo(100);
+
+    // The line item is revised upward; the invoice still carries the old 100.
+    li.unitPrice = 250;
+    li.amount = li.calculateAmount();
+    await li.save();
+
+    // Re-saving the (legitimately) stale invoice must NOT throw — it recomputes
+    // and overwrites to the new authoritative total.
+    await invoice.save();
+    expect(invoice.totalAmount).toBeCloseTo(250);
   });
 
   it('rejects negative amounts', async () => {
@@ -245,6 +307,78 @@ describe('Invoice save-time financial-integrity guard (#1390)', () => {
     // DRAFT → PAID is not a legal direct transition.
     invoice.status = InvoiceStatus.PAID;
     await expect(invoice.save()).rejects.toThrow(/illegal status transition/);
+  });
+
+  it('rejects SENT → PAID when no allocations cover the total (#1390 PAID requires covering allocations)', async () => {
+    // SENT → PAID is a structurally legal edge, but the payment-status
+    // consistency guard must additionally require the derived amountPaid (from
+    // PaymentAllocations) to COVER totalAmount. A zero-allocation invoice flipped
+    // to PAID must be rejected.
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-PAID-NOALLOC',
+      subtotal: 100,
+      taxAmount: 0,
+      totalAmount: 100,
+    });
+    await invoice.save();
+    invoice.markSent();
+    await invoice.save();
+
+    // No PaymentAllocations exist → derived amountPaid is 0, which does not
+    // cover the 100 total.
+    invoice.status = InvoiceStatus.PAID;
+    await expect(invoice.save()).rejects.toThrow(/does not cover totalAmount/);
+  });
+
+  it('rejects SENT → PAID when allocations only partially cover the total (#1390)', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-PAID-PARTIAL',
+      subtotal: 100,
+      taxAmount: 0,
+      totalAmount: 100,
+    });
+    await invoice.save();
+    invoice.markSent();
+    await invoice.save();
+
+    const payment = await payments.create({ amount: 40, currency: 'USD' });
+    await payment.save();
+    const alloc = await allocations.create({
+      paymentId: payment.id,
+      invoiceId: invoice.id,
+      amount: 40,
+    });
+    await alloc.save();
+
+    // Only 40 of 100 allocated → cannot be PAID.
+    invoice.status = InvoiceStatus.PAID;
+    await expect(invoice.save()).rejects.toThrow(/does not cover totalAmount/);
+  });
+
+  it('accepts PAID once allocations fully cover the total (#1390)', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-PAID-FULL',
+      subtotal: 100,
+      taxAmount: 0,
+      totalAmount: 100,
+    });
+    await invoice.save();
+    invoice.markSent();
+    await invoice.save();
+
+    const payment = await payments.create({ amount: 100, currency: 'USD' });
+    await payment.save();
+    const alloc = await allocations.create({
+      paymentId: payment.id,
+      invoiceId: invoice.id,
+      amount: 100,
+    });
+    await alloc.save();
+
+    invoice.status = InvoiceStatus.PAID;
+    await expect(invoice.save()).resolves.toBeDefined();
+    expect(invoice.amountPaid).toBeCloseTo(100);
+    expect(invoice.status).toBe(InvoiceStatus.PAID);
   });
 
   it('allows the guarded markSent transition (DRAFT → SENT)', async () => {
@@ -364,6 +498,67 @@ describe('PaymentIntent PAID requires a verified Payment (#1390)', () => {
     });
     intent.markPaid({ backendId: 'base-usdc', paymentId: wrongId });
     await expect(intent.save()).rejects.toThrow(/does not match option/);
+  });
+
+  it('rejects a COMPLETED Payment whose currency does not match the option (#1390 currency match)', async () => {
+    // An unrelated USD payment for 199 must NOT satisfy a base-usdc 199 option
+    // just because the numeric amount lines up.
+    const intent = await newIntent();
+    const usdId = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USD',
+      nativeAmount: 199,
+      nativeCurrency: 'USD',
+    });
+    intent.markPaid({ backendId: 'base-usdc', paymentId: usdId });
+    await expect(intent.save()).rejects.toThrow(/currency/i);
+  });
+
+  it('rejects a COMPLETED Payment that arrived on a different rail than the option (#1390 rail match)', async () => {
+    // Same amount + currency, but the payment was routed through the `stripe`
+    // backend while the option quoted `base-usdc` — a mismatched rail.
+    const intent = await newIntent();
+    const wrongRailId = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USDC-base',
+      nativeAmount: 199,
+      nativeCurrency: 'USDC-base',
+      backendId: 'stripe',
+    });
+    intent.markPaid({ backendId: 'base-usdc', paymentId: wrongRailId });
+    await expect(intent.save()).rejects.toThrow(/rail/i);
+  });
+
+  it('verifyAndMarkPaid rejects a currency/rail-mismatched Payment before mutating status (#1390)', async () => {
+    const intent = await newIntent();
+    const usdId = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USD',
+      nativeAmount: 199,
+      nativeCurrency: 'USD',
+    });
+    await expect(
+      intent.verifyAndMarkPaid({ backendId: 'base-usdc', paymentId: usdId }),
+    ).rejects.toThrow(/currency/i);
+    expect(intent.status).toBe(PaymentIntentStatus.AWAITING_PAYMENT);
+    expect(intent.paymentId).toBe('');
+  });
+
+  it('accepts a COMPLETED Payment on the matching rail and currency (#1390)', async () => {
+    const intent = await newIntent();
+    const goodId = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USDC-base',
+      nativeAmount: 199,
+      nativeCurrency: 'USDC-base',
+      backendId: 'base-usdc',
+    });
+    await intent.verifyAndMarkPaid({
+      backendId: 'base-usdc',
+      paymentId: goodId,
+    });
+    await expect(intent.save()).resolves.toBeDefined();
+    expect(intent.status).toBe(PaymentIntentStatus.PAID);
   });
 
   it('accepts a PAID intent backed by a real, COMPLETED, matching Payment', async () => {
@@ -1155,7 +1350,7 @@ describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => 
     }
   });
 
-  it('rejects recognizing revenue off a forged total before posting any journal', async () => {
+  it('recognizes revenue off the authoritative line-item total, not a forged in-memory total', async () => {
     const invoice = await invoices.create({
       invoiceNumber: 'INV-REV-FORGED',
       totalAmount: 0,
@@ -1171,18 +1366,43 @@ describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => 
     li.amount = li.calculateAmount();
     await li.save();
 
-    // Forge a tiny total in memory, then try to recognize revenue. The
-    // pre-journal recompute must reject it, and no arJournalId is set.
-    invoice.totalAmount = 1;
-    await expect(invoice.recognizeRevenue({} as any)).rejects.toThrow(
-      /does not match line-item/,
-    );
-    expect(invoice.arJournalId).toBe('');
+    // Set up real ledger accounts so revenue recognition can actually post.
+    const { AccountCollection } = await import('@happyvertical/smrt-ledgers');
+    const accounts = await AccountCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const arAcct = await accounts.create({
+      number: '1200',
+      name: 'Accounts Receivable',
+      type: 'asset',
+    });
+    await arAcct.save();
+    const revAcct = await accounts.create({
+      number: '4000',
+      name: 'Revenue',
+      type: 'revenue',
+    });
+    await revAcct.save();
 
-    // The persisted invoice carries no journal reference (NULL deserializes as
-    // null or empty string depending on the column default).
+    // Forge a tiny total in memory, then recognize revenue. The pre-journal
+    // recompute is authoritative: it overwrites the forged total with the
+    // line-item sum BEFORE any journal is built, so the books can never receive
+    // the forged figure.
+    invoice.totalAmount = 1;
+    const journal = await invoice.recognizeRevenue({
+      arAccountId: arAcct.id!,
+      revenueAccountId: revAcct.id!,
+    } as any);
+
+    // The forged total was overwritten to the authoritative line-item total,
+    // and the posted journal reflects 1000 — never the forged 1.
+    expect(invoice.totalAmount).toBeCloseTo(1000);
+    const entries = await journal.getEntries();
+    const arEntry = entries.find((e: any) => e.debit > 0);
+    expect(arEntry?.debit).toBeCloseTo(1000);
+
     const reloaded = await invoices.get({ id: invoice.id });
-    expect(reloaded?.arJournalId || '').toBe('');
+    expect(reloaded?.totalAmount).toBeCloseTo(1000);
   });
 });
 

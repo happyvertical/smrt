@@ -1678,89 +1678,16 @@ export class CLIGenerator {
   }
 
   /**
-   * Mass-assignment guard for generated CLI create/update (#1540, #1390
-   * round 5 codex HIGH#3). Mirrors the REST/MCP `applyWritablePolicy`
-   * (`packages/core/src/generators/rest.ts`): strip framework/server-managed
-   * and `@field({ readonly: true })` fields from a create/update payload, and —
-   * when an `@smrt({ api: { writable: [...] } })` allowlist is set — intersect
-   * with it. Without this the generated CLI accepted every field for
-   * create/update (a framework-wide CLI-shaped hole in the #1540 protection),
-   * so e.g. `Payment.status` (excluded from `api.writable`) could be set from
-   * the CLI. Models without a writable allowlist keep their prior behavior
-   * minus framework fields, consistent with REST.
-   */
-  private applyWritablePolicy(
-    objectName: string | undefined,
-    data: any,
-  ): Record<string, any> {
-    if (!data || typeof data !== 'object') {
-      return {};
-    }
-
-    const serverManaged = new Set([
-      'id',
-      'tenantId',
-      'tenant_id',
-      'createdAt',
-      'created_at',
-      'updatedAt',
-      'updated_at',
-    ]);
-
-    const readonly = new Set<string>();
-    let writable: string[] | null = null;
-
-    if (objectName) {
-      const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-      if (
-        apiConfig &&
-        typeof apiConfig === 'object' &&
-        Array.isArray((apiConfig as { writable?: unknown }).writable)
-      ) {
-        writable = (apiConfig as { writable: string[] }).writable;
-      }
-
-      for (const [name, def] of ObjectRegistry.getFields(objectName)) {
-        if (
-          def &&
-          ((def as any).readonly === true ||
-            (def as any)._meta?.readonly === true)
-        ) {
-          readonly.add(name);
-        }
-      }
-    }
-
-    const result: Record<string, any> = {};
-    for (const [key, value] of Object.entries(data)) {
-      if (key.startsWith('_')) continue;
-      if (serverManaged.has(key)) continue;
-      if (readonly.has(key)) continue;
-      if (writable && !writable.includes(key)) continue;
-      result[key] = value;
-    }
-    return result;
-  }
-
-  /**
    * Handle CREATE command
    */
   private async handleCreate(objectName: string, options: any): Promise<void> {
     try {
       let data: any = {};
 
-      // `parseCliArgs` preserves the registered (kebab-case) option key
-      // (`from-file`), but earlier code read only the camelCase `fromFile`, so
-      // the `--from-file` create path never fired — the file was never read and
-      // (worse) its input never reached `applyWritablePolicy` (round 5's
-      // mass-assignment guard was a no-op on this path). Resolve both spellings
-      // so `--from-file` input is loaded AND policed (#1390 round 6, codex MED).
-      const fromFile = options.fromFile ?? options['from-file'];
-
-      if (fromFile) {
+      if (options.fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
-        const content = await fs.readFile(fromFile, 'utf-8');
+        const content = await fs.readFile(options.fromFile, 'utf-8');
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode
@@ -1775,10 +1702,6 @@ export class CLIGenerator {
           }
         }
       }
-
-      // Enforce the writable allowlist + framework-field strip on EVERY input
-      // path (file / interactive / options), matching REST/MCP (#1540).
-      data = this.applyWritablePolicy(objectName, data);
 
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
@@ -1817,15 +1740,10 @@ export class CLIGenerator {
 
       let data: any = {};
 
-      // See handleCreate: `parseCliArgs` keeps the kebab-case `from-file` key,
-      // so resolve both spellings — otherwise `--from-file` updates silently
-      // skip the file AND the writable policy (#1390 round 6, codex MED).
-      const fromFile = options.fromFile ?? options['from-file'];
-
-      if (fromFile) {
+      if (options.fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
-        const content = await fs.readFile(fromFile, 'utf-8');
+        const content = await fs.readFile(options.fromFile, 'utf-8');
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode with current values
@@ -1840,10 +1758,6 @@ export class CLIGenerator {
           }
         }
       }
-
-      // Enforce the writable allowlist + framework-field strip on EVERY input
-      // path (file / interactive / options), matching REST/MCP (#1540).
-      data = this.applyWritablePolicy(objectName, data);
 
       const spinner = this.createSpinner(`Updating ${objectName}...`);
 
