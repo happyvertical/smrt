@@ -273,7 +273,8 @@ export class Contract extends SmrtObject {
    * rights-immutability guard on top via `super.save()`. See S5 audit #1390.
    */
   override async save(): Promise<this> {
-    this.assertContractStatusTransition();
+    const prior = await this.resolvePriorStatus();
+    this.assertContractStatusTransition(prior);
     const result = (await super.save()) as this;
     loadedContractStatus.set(this, this.status);
     return result;
@@ -283,8 +284,9 @@ export class Contract extends SmrtObject {
    * Reject an illegal status flip done via raw assignment. No-op transitions
    * and brand-new rows are always allowed.
    */
-  protected assertContractStatusTransition(): void {
-    const prior = loadedContractStatus.get(this);
+  protected assertContractStatusTransition(
+    prior: ContractStatus | undefined,
+  ): void {
     if (prior === undefined) return; // new row — any starting status is fine
     if (prior === this.status) return; // no-op re-save
     const allowed = CONTRACT_STATUS_TRANSITIONS[prior] ?? [];
@@ -294,6 +296,36 @@ export class Contract extends SmrtObject {
           `'${prior}' → '${this.status}'.`,
       );
     }
+  }
+
+  /**
+   * Resolve the AUTHORITATIVE prior status (S5 audit #1390 round 5, codex
+   * MEDIUM#2). The WeakMap is only populated when {@link initialize} loaded the
+   * row from the DB; it is empty for an instance built via
+   * `collection.create({ id: <existing>, _skipLoad: true })` — the upsert path
+   * that lets a caller write onto an existing row without hydrating it. Trusting
+   * an empty WeakMap there would treat the write as a brand-new row and skip the
+   * transition guard entirely (a poisonable prior-state). Mirrors the
+   * authoritative-prior-load applied to Payment/PaymentIntent/Invoice/Payout.
+   *
+   * So when this instance carries an `id`, read the persisted row straight from
+   * the database and treat its `status` as the prior — a create-onto-existing is
+   * an update. Only when no row exists in the DB (truly new) do we fall back to
+   * the WeakMap (which is also empty then), i.e. `undefined` = genuinely new.
+   * The raw row's `status` column is single-word (no snake_case transform).
+   */
+  protected async resolvePriorStatus(): Promise<ContractStatus | undefined> {
+    if (this.id) {
+      try {
+        const row = await this.db.get(this.tableName, { id: this.id });
+        if (row && row.status != null) {
+          return row.status as ContractStatus;
+        }
+      } catch {
+        // DB not ready / table absent — fall through to the in-memory record.
+      }
+    }
+    return loadedContractStatus.get(this);
   }
 }
 

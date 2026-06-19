@@ -344,32 +344,37 @@ export class Payment extends SmrtObject {
    *
    * This guard enforces two things:
    *  - **Transitions must be legal** per {@link PAYMENT_STATUS_TRANSITIONS}.
-   *  - **Promoting an existing row into COMPLETED requires the verified
-   *    settlement path.** Only `recordPayment()` (which posts a balanced
-   *    journal and links `journalId`) may flip an already-persisted,
-   *    not-yet-completed Payment to COMPLETED; it announces itself via
-   *    {@link settlementInProgress}. A raw `status: 'completed'`
-   *    mass-assignment on the generated update route is rejected — that is the
-   *    exact path a forged COMPLETED would take to satisfy PaymentIntent's
-   *    PAID verification without any money having moved.
-   *
-   * Brand-new rows created directly as COMPLETED (import / migration / test
-   * fixtures) are permitted — they aren't a privilege-escalation on an
-   * existing PENDING row — but they still don't carry a `journalId`, and
-   * consumers that need settlement proof should rely on `recordPayment()`.
+   *  - **Reaching COMPLETED requires the verified settlement path — on
+   *    creation AND on update.** Only `recordPayment()` (which posts a
+   *    balanced journal and links `journalId`) may write a Payment into
+   *    COMPLETED; it announces itself via {@link settlementInProgress}. A raw
+   *    `status: 'completed'` is rejected whether the row is brand-new (a
+   *    GENESIS `create({ status: 'completed' })`) or already persisted — that
+   *    is the exact path a forged COMPLETED would take to satisfy
+   *    PaymentIntent's PAID verification without any money having moved (codex
+   *    HIGH#1, #1390 round 5). There is deliberately NO import/fixture
+   *    carve-out: a COMPLETED Payment is settlement proof downstream, so it is
+   *    only ever reachable through `recordPayment()`, on every surface
+   *    (REST/MCP/CLI/direct). Fixtures/migrations that need a completed payment
+   *    must drive it through `recordPayment()` (or start non-COMPLETED).
    */
   override async save(): Promise<this> {
     const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
 
-    const promotingExistingRowIntoCompleted =
+    // Reaching COMPLETED is only legal via the verified settlement path,
+    // regardless of whether this is a create (no persisted prior) or an
+    // update of an existing row. A GENESIS create with status: COMPLETED would
+    // otherwise forge settlement proof, so we close it here at the model level
+    // — this covers EVERY surface (REST/MCP/CLI/direct), independent of any
+    // writable-allowlist gap on a given surface.
+    const reachingCompleted =
       this.status === PaymentStatus.COMPLETED &&
-      prior !== undefined &&
       prior !== PaymentStatus.COMPLETED;
-    if (promotingExistingRowIntoCompleted && !settlementInProgress.has(this)) {
+    if (reachingCompleted && !settlementInProgress.has(this)) {
       throw new Error(
-        `Payment ${this.id || '<new>'}: cannot promote an existing payment to ` +
-          'COMPLETED via raw assignment — a Payment is only completed through ' +
+        `Payment ${this.id || '<new>'}: cannot set status to COMPLETED via ` +
+          'raw assignment — a Payment is only completed through ' +
           'recordPayment(), which posts a balanced settlement journal. Use ' +
           'recordPayment() instead of setting status directly.',
       );

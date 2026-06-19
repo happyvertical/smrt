@@ -51,6 +51,52 @@ function tmpDb(tag: string): string {
   );
 }
 
+/**
+ * Seed a genuinely-COMPLETED Payment by driving it through the verified
+ * `recordPayment()` settlement path (round 5, codex HIGH#1). A COMPLETED
+ * Payment is now ONLY reachable that way — `create({ status: COMPLETED })` is
+ * rejected on every surface, including direct — so these fixtures post a
+ * balanced settlement journal via real ledger accounts instead of forging the
+ * status. Returns the persisted payment id.
+ */
+async function seedCompletedPayment(
+  payments: PaymentCollection,
+  dbPath: string,
+  fields: { amount: number; currency: string; nativeAmount?: number },
+): Promise<string> {
+  const { AccountCollection } = await import('@happyvertical/smrt-ledgers');
+  const accounts = await AccountCollection.create({
+    db: { type: 'sqlite', url: dbPath },
+  });
+  const cash = await accounts.create({
+    number: '1000',
+    name: 'Cash',
+    type: 'asset',
+  });
+  await cash.save();
+  const ar = await accounts.create({
+    number: '1200',
+    name: 'Accounts Receivable',
+    type: 'asset',
+  });
+  await ar.save();
+
+  const payment = await payments.create({
+    amount: fields.amount,
+    currency: fields.currency,
+    nativeAmount: fields.nativeAmount ?? fields.amount,
+    nativeCurrency: fields.currency,
+    status: PaymentStatus.PENDING,
+  });
+  await payment.save();
+  await payment.recordPayment({
+    ledgerId: '',
+    cashAccountId: cash.id!,
+    receivablesAccountId: ar.id!,
+  });
+  return payment.id;
+}
+
 // ---------------------------------------------------------------------------
 // Finding 1 + 6 (Invoice): totals recomputed; non-negativity; status guard
 // ---------------------------------------------------------------------------
@@ -311,31 +357,25 @@ describe('PaymentIntent PAID requires a verified Payment (#1390)', () => {
 
   it('rejects saving a PAID intent whose Payment amount does not match the option', async () => {
     const intent = await newIntent();
-    const wrong = await payments.create({
+    const wrongId = await seedCompletedPayment(payments, dbPath, {
       amount: 5,
       currency: 'USDC-base',
       nativeAmount: 5, // option quoted 199
-      nativeCurrency: 'USDC-base',
-      status: PaymentStatus.COMPLETED,
     });
-    await wrong.save();
-    intent.markPaid({ backendId: 'base-usdc', paymentId: wrong.id });
+    intent.markPaid({ backendId: 'base-usdc', paymentId: wrongId });
     await expect(intent.save()).rejects.toThrow(/does not match option/);
   });
 
   it('accepts a PAID intent backed by a real, COMPLETED, matching Payment', async () => {
     const intent = await newIntent();
-    const good = await payments.create({
+    const goodId = await seedCompletedPayment(payments, dbPath, {
       amount: 199,
       currency: 'USDC-base',
       nativeAmount: 199,
-      nativeCurrency: 'USDC-base',
-      status: PaymentStatus.COMPLETED,
     });
-    await good.save();
     await intent.verifyAndMarkPaid({
       backendId: 'base-usdc',
-      paymentId: good.id,
+      paymentId: goodId,
     });
     await expect(intent.save()).resolves.toBeDefined();
     expect(intent.status).toBe(PaymentIntentStatus.PAID);
@@ -606,6 +646,39 @@ describe('Contract status-transition guard (#1390)', () => {
       await expect(contract.save()).resolves.toBeDefined();
     }
   });
+
+  it('create-onto-existing (un-hydrated _skipLoad upsert) cannot bypass the transition guard (round 5, codex MEDIUM#2)', async () => {
+    // Drive a contract to a terminal COMPLETED state.
+    const contract = await contracts.create({
+      contractType: ContractType.ORDER,
+      status: ContractStatus.DRAFT,
+      totalAmount: 100,
+    });
+    await contract.save();
+    contract.status = ContractStatus.ACCEPTED;
+    await contract.save();
+    contract.status = ContractStatus.COMPLETED;
+    await contract.save();
+
+    // Build a FRESH, un-hydrated instance carrying the existing id via the
+    // _skipLoad upsert path — its WeakMap entry is absent, so the old
+    // WeakMap-only guard would treat this as a brand-new row and skip the
+    // check. The authoritative DB read makes it an update of a terminal
+    // COMPLETED row, so reviving it to DRAFT is illegal. (collection.create()
+    // saves internally, so the guard fires there.)
+    await expect(
+      contracts.create({
+        id: contract.id,
+        contractType: ContractType.ORDER,
+        status: ContractStatus.DRAFT,
+        totalAmount: 100,
+        _skipLoad: true,
+      } as any),
+    ).rejects.toThrow(/illegal status transition/);
+
+    const reloaded = await contracts.get({ id: contract.id });
+    expect(reloaded?.status).toBe(ContractStatus.COMPLETED);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -649,12 +722,52 @@ describe('Payment COMPLETED settlement guard (#1390 round 2)', () => {
     expect(loaded).toBeTruthy();
     (loaded as any).status = PaymentStatus.COMPLETED;
     await expect((loaded as any).save()).rejects.toThrow(
-      /cannot promote an existing payment to COMPLETED/,
+      /cannot set status to COMPLETED/,
     );
 
     // The persisted row is untouched.
     const reloaded = await payments.get({ id: payment.id });
     expect(reloaded?.status).toBe(PaymentStatus.PENDING);
+  });
+
+  it('rejects a GENESIS create with status COMPLETED (round 5, codex HIGH#1)', async () => {
+    // The round-4 gate only fired when a persisted prior existed, so a
+    // brand-new `create({ status: COMPLETED })` slipped through and forged
+    // settlement proof for PaymentIntent's PAID verification. COMPLETED is now
+    // ONLY reachable via recordPayment() — even on creation, on every surface.
+    await expect(
+      payments.create({
+        amount: 199,
+        currency: 'USD',
+        status: PaymentStatus.COMPLETED,
+      }),
+    ).rejects.toThrow(/cannot set status to COMPLETED/);
+  });
+
+  it('rejects a GENESIS create with status COMPLETED via an explicit id (#1390 round 5)', async () => {
+    // Even a caller-supplied id (the create-onto-(non-existent) path) cannot
+    // mint a COMPLETED row directly.
+    await expect(
+      payments.create({
+        id: 'forged-completed-genesis',
+        amount: 199,
+        currency: 'USD',
+        status: PaymentStatus.COMPLETED,
+      } as any),
+    ).rejects.toThrow(/cannot set status to COMPLETED/);
+
+    // Nothing was persisted.
+    const reloaded = await payments.get({ id: 'forged-completed-genesis' });
+    expect(reloaded).toBeFalsy();
+  });
+
+  it('still allows COMPLETED through the verified recordPayment() settlement path', async () => {
+    const id = await seedCompletedPayment(payments, dbPath, {
+      amount: 199,
+      currency: 'USD',
+    });
+    const reloaded = await payments.get({ id });
+    expect(reloaded?.status).toBe(PaymentStatus.COMPLETED);
   });
 
   it('rejects an illegal status transition on an existing payment', async () => {
@@ -720,20 +833,17 @@ describe('PaymentIntent repoint / issued guard (#1390 round 2)', () => {
       paymentOptions: [usdcOption],
     });
     await intent.save();
-    const good = await payments.create({
+    const goodId = await seedCompletedPayment(payments, dbPath, {
       amount: 199,
       currency: 'USDC-base',
       nativeAmount: 199,
-      nativeCurrency: 'USDC-base',
-      status: PaymentStatus.COMPLETED,
     });
-    await good.save();
     await intent.verifyAndMarkPaid({
       backendId: 'base-usdc',
-      paymentId: good.id,
+      paymentId: goodId,
     });
     await intent.save();
-    return { intent, good };
+    return { intent, goodId };
   }
 
   it('rejects repointing an already-PAID intent to a different Payment', async () => {
@@ -754,15 +864,12 @@ describe('PaymentIntent repoint / issued guard (#1390 round 2)', () => {
     // The round-3 hole: swap paymentId to a different completed Payment AND edit
     // the winning option's nativeAmount so the reconciliation still passes. With
     // the option frozen, both the option edit and the paymentId swap are caught.
-    const other = await payments.create({
+    const otherId = await seedCompletedPayment(payments, dbPath, {
       amount: 5,
       currency: 'USDC-base',
       nativeAmount: 5,
-      nativeCurrency: 'USDC-base',
-      status: PaymentStatus.COMPLETED,
     });
-    await other.save();
-    intent.paymentId = other.id;
+    intent.paymentId = otherId;
     intent.paymentOptions = [{ ...usdcOption, nativeAmount: 5 }];
     await expect(intent.save()).rejects.toThrow(/frozen/);
   });
