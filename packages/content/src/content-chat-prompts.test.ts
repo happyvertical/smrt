@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   contentChatSessionIsAuthorized,
   contentChatSessionMatchesContent,
+  createContentEditorChatThread,
+  getOrCreateContentEditorChatSession,
   listContentEditorChatThreadMessages,
   sendContentEditorChatThreadMessage,
 } from './content-chat-handlers';
@@ -263,6 +265,97 @@ describe('content chat prompt integration', () => {
       'provider',
     );
     expect(tenantBSessions[0].getSessionContext()).not.toHaveProperty('model');
+  });
+
+  // Regression (S5 #1392): two contents under the same agent/profile/tenant must
+  // get DISTINCT sessions/rooms. Before the fix, the content-editor session was
+  // created keyless, so createAgentSession reused content A's session for a
+  // request about content B — the handler then rewrote A's context to B and
+  // returned A's room/threads on B's route, mixing the two conversations.
+  it("gives a new contentId a distinct session and never another content's threads", async () => {
+    const contents = currentContents;
+    if (!contents) {
+      throw new Error('Test collection not initialized');
+    }
+
+    const contentA = await contents.create({
+      tenantId: 'tenant-a',
+      name: 'draft-a',
+      title: 'Draft A',
+      body: 'Body A',
+    });
+    const contentB = await contents.create({
+      tenantId: 'tenant-a',
+      name: 'draft-b',
+      title: 'Draft B',
+      body: 'Body B',
+    });
+
+    // Open a session for content A and create a thread in it.
+    const sessionA = await getOrCreateContentEditorChatSession({
+      db,
+      contents,
+      tenantId: 'tenant-a',
+      profileId: 'profile-a',
+      contentId: contentA.id as string,
+    });
+    const threadA = await createContentEditorChatThread({
+      db,
+      contents,
+      tenantId: 'tenant-a',
+      profileId: 'profile-a',
+      contentId: contentA.id as string,
+      sessionId: (sessionA.session as { id: string }).id,
+      title: 'A thread',
+    });
+
+    // Now open a session for content B (same agent/profile/tenant).
+    const sessionB = await getOrCreateContentEditorChatSession({
+      db,
+      contents,
+      tenantId: 'tenant-a',
+      profileId: 'profile-a',
+      contentId: contentB.id as string,
+    });
+
+    const sessionAId = (sessionA.session as { id: string }).id;
+    const sessionBId = (sessionB.session as { id: string }).id;
+    const roomAId = (sessionA.session as { chatRoomId?: string }).chatRoomId;
+    const roomBId = (sessionB.session as { chatRoomId?: string }).chatRoomId;
+
+    // Distinct content => distinct session and room.
+    expect(sessionBId).not.toBe(sessionAId);
+    expect(roomBId).not.toBe(roomAId);
+
+    // Content A's session is still bound to A (not rewritten to B).
+    expect(
+      contentChatSessionMatchesContent(sessionA.session, contentA.id as string),
+    ).toBe(true);
+    expect(
+      contentChatSessionMatchesContent(sessionB.session, contentB.id as string),
+    ).toBe(true);
+
+    // Content B's session never surfaces content A's thread.
+    expect(sessionB.threads).toHaveLength(0);
+    const threadAId = (threadA.thread as { id: string }).id;
+    expect(
+      sessionB.threads.some((t) => (t as { id?: string }).id === threadAId),
+    ).toBe(false);
+
+    // Re-requesting content A returns A's original session, never B's.
+    const sessionAAgain = await getOrCreateContentEditorChatSession({
+      db,
+      contents,
+      tenantId: 'tenant-a',
+      profileId: 'profile-a',
+      contentId: contentA.id as string,
+    });
+    expect((sessionAAgain.session as { id: string }).id).toBe(sessionAId);
+    expect(
+      sessionAAgain.threads.some(
+        (t) => (t as { id?: string }).id === threadAId,
+      ),
+    ).toBe(true);
   });
 
   it('keeps no-tenant content separate from the literal global tenant', async () => {

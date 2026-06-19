@@ -243,7 +243,7 @@ describe('ChatService', () => {
 
       const aMessages = await chat.getRoomMessages({
         roomId,
-        profileId: 'profile-a',
+        actorProfileId: 'profile-a',
         tenantId: 'tenant-a',
       });
       expect(aMessages).toHaveLength(1);
@@ -390,6 +390,65 @@ describe('ChatService', () => {
       // Verify only one agent room was created
       const agentRooms = await raw.rooms.findAgentRooms();
       expect(agentRooms).toHaveLength(1);
+    });
+
+    // Regression (S5 #1392): a sessionKey scopes session identity to a subject.
+    // Two distinct keys under the same agent/profile/tenant must NOT collapse
+    // onto one session/room — otherwise a request about subject B would reuse
+    // (and rewrite) subject A's session and surface A's room/threads.
+    it('creates distinct sessions/rooms for distinct sessionKeys', async () => {
+      const a = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:A',
+      });
+      const b = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:B',
+      });
+
+      expect(b.session.id).not.toBe(a.session.id);
+      expect(b.room.id).not.toBe(a.room.id);
+      expect(a.session.getSessionKey()).toBe('content:A');
+      expect(b.session.getSessionKey()).toBe('content:B');
+
+      // Re-requesting subject A returns A's original session/room, never B's.
+      const aAgain = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:A',
+      });
+      expect(aAgain.session.id).toBe(a.session.id);
+      expect(aAgain.room.id).toBe(a.room.id);
+
+      // Two keyed subjects => two distinct agent rooms.
+      const agentRooms = await raw.rooms.findAgentRooms();
+      expect(agentRooms).toHaveLength(2);
+    });
+
+    // Regression (S5 #1392): a keyed create must not reuse a keyless (legacy)
+    // session for the same agent/profile/tenant — distinct subject, distinct
+    // session.
+    it('does not reuse a keyless session for a keyed create', async () => {
+      const keyless = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+      });
+      const keyed = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'content_editor',
+        actorProfileId: 'profile-1',
+        sessionKey: 'content:A',
+      });
+
+      expect(keyed.session.id).not.toBe(keyless.session.id);
+      expect(keyless.session.getSessionKey()).toBeNull();
+      expect(keyed.session.getSessionKey()).toBe('content:A');
     });
 
     it('should send messages within an agent session', async () => {

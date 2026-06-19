@@ -25,6 +25,18 @@ import type { AgentSessionOptions, AgentSessionStatus } from '../types.js';
   cli: true,
 })
 export class AgentSession extends SmrtObject {
+  /**
+   * Reserved `sessionContext` key that scopes a session's identity to a caller-
+   * supplied conversation subject (e.g. a content id) (S5 #1392).
+   *
+   * `createAgentSession`'s reuse path keys on `(agentId, participantProfileId,
+   * tenantId)`; without a discriminator a session opened for subject A would be
+   * reused (and its context rewritten) for a request about subject B, returning
+   * A's room/threads on B's route. Storing the key here lets the reuse lookup
+   * require an exact match so distinct subjects get distinct sessions.
+   */
+  static readonly SESSION_KEY_CONTEXT_FIELD = '__sessionKey';
+
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
@@ -159,6 +171,18 @@ export class AgentSession extends SmrtObject {
 
   setSessionContext(ctx: Record<string, unknown>): void {
     this.sessionContext = JSON.stringify(ctx);
+  }
+
+  /**
+   * Stable identity key that scopes this session to a conversation subject
+   * (S5 #1392). Returns `null` when the session is not subject-scoped. Used by
+   * the reuse lookup so a session opened for one subject is never reused for a
+   * request about a different subject.
+   */
+  getSessionKey(): string | null {
+    const value =
+      this.getSessionContext()[AgentSession.SESSION_KEY_CONTEXT_FIELD];
+    return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
   async updateSessionContext(updates: Record<string, unknown>): Promise<void> {

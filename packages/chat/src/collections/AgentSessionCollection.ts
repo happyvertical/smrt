@@ -22,11 +22,19 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
    * predicate and resolve a session from another tenant. AgentSession uses
    * optional tenancy, so `null` is a legitimate, explicitly-bound scope rather
    * than "any tenant".
+   *
+   * When `sessionKey` is supplied the result is additionally narrowed to the
+   * session whose stored {@link AgentSession.getSessionKey} matches EXACTLY
+   * (S5 #1392). This binds session identity to a conversation subject (e.g. a
+   * content id) so a session opened for one subject is never reused for another;
+   * `sessionContext` is a JSON blob so the discriminator is matched in memory
+   * after the tenant-bound SQL filter.
    */
   async findActiveSession(
     agentId: string,
     participantProfileId: string,
     tenantId: string | null,
+    sessionKey?: string | null,
   ): Promise<AgentSession | null> {
     const where: Record<string, unknown> = {
       agentId,
@@ -35,7 +43,12 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
       tenantId,
     };
     const sessions = await this.list({ where });
-    const active = sessions.find((s) => s.isActive());
+    const active = sessions.find(
+      (s) =>
+        s.isActive() &&
+        (sessionKey === undefined ||
+          s.getSessionKey() === (sessionKey ?? null)),
+    );
     return active ?? null;
   }
 
@@ -46,13 +59,27 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
     allowedTools?: string[];
     chatRoomId?: string | null;
     systemPrompt?: string;
+    /**
+     * Optional subject-scoping key (S5 #1392). When set, an existing active
+     * session is reused only if its stored session key matches, and the created
+     * session records the key so future lookups stay subject-scoped.
+     */
+    sessionKey?: string | null;
   }): Promise<AgentSession> {
     const existing = await this.findActiveSession(
       params.agentId,
       params.participantProfileId,
       params.tenantId,
+      params.sessionKey,
     );
     if (existing) return existing;
+
+    const sessionContext =
+      params.sessionKey != null
+        ? JSON.stringify({
+            [AgentSession.SESSION_KEY_CONTEXT_FIELD]: params.sessionKey,
+          })
+        : undefined;
 
     const session = await this.create({
       agentId: params.agentId,
@@ -62,6 +89,7 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
       chatRoomId: params.chatRoomId ?? null,
       systemPrompt: params.systemPrompt ?? '',
       status: 'active',
+      ...(sessionContext !== undefined ? { sessionContext } : {}),
     });
     return session;
   }

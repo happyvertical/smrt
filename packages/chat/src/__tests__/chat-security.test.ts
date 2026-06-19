@@ -176,7 +176,7 @@ describe('chat security (S5 #1392)', () => {
 
       const msgs = await chat.getRoomMessages({
         roomId: room.id as string,
-        profileId: 'owner',
+        actorProfileId: 'owner',
         tenantId: 'tenant-1',
       });
       expect(msgs).toHaveLength(1);
@@ -200,7 +200,7 @@ describe('chat security (S5 #1392)', () => {
       await expect(
         chat.getRoomMessages({
           roomId: room.id as string,
-          profileId: 'intruder',
+          actorProfileId: 'intruder',
           tenantId: 'tenant-1',
         }),
       ).rejects.toThrow(/not an active member/i);
@@ -225,6 +225,55 @@ describe('chat security (S5 #1392)', () => {
         'tenant-1',
       );
       expect(loaded?.id).toBe(room.id);
+    });
+
+    // Regression (S5 #1392): confused-deputy hardening. The room reads authorize
+    // the AUTHENTICATED actor (`actorProfileId`), never a separate caller-
+    // supplied subject id. There is no parameter a route can populate from
+    // untrusted input to read a room as some OTHER member — the only identity
+    // considered is the actor, and a non-member actor is always rejected even
+    // when the room has members whose ids the caller might know.
+    it('authorizes only the actor — a non-member actor cannot read a populated room', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'Room',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      await chat.addParticipant({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'owner',
+        profileId: 'member',
+      });
+      await chat.sendMessage({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'owner',
+        content: 'members only',
+      });
+
+      // The intruder knows real member ids ('owner'/'member') but can only act
+      // as themselves; the read gates on the actor, so it is denied.
+      await expect(
+        chat.getRoomMessages({
+          roomId: room.id as string,
+          actorProfileId: 'intruder',
+          tenantId: 'tenant-1',
+        }),
+      ).rejects.toThrow(/not an active member/i);
+      await expect(
+        chat.getRoomForMember(room.id as string, 'intruder', 'tenant-1'),
+      ).rejects.toThrow(/not an active member/i);
+
+      // A genuine member actor reads the same room fine.
+      const msgs = await chat.getRoomMessages({
+        roomId: room.id as string,
+        actorProfileId: 'member',
+        tenantId: 'tenant-1',
+      });
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0].content).toBe('members only');
     });
   });
 
@@ -1115,7 +1164,7 @@ describe('chat security (S5 #1392)', () => {
       const before = (
         await chat.getRoomMessages({
           roomId: session.chatRoomId as string,
-          profileId: 'owner',
+          actorProfileId: 'owner',
           tenantId: 'tenant-1',
         })
       ).length;
@@ -1153,7 +1202,7 @@ describe('chat security (S5 #1392)', () => {
 
       const after = await chat.getRoomMessages({
         roomId: session.chatRoomId as string,
-        profileId: 'owner',
+        actorProfileId: 'owner',
         tenantId: 'tenant-1',
       });
       const agentAuthored = after.filter(

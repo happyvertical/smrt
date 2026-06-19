@@ -179,6 +179,22 @@ export function contentChatSessionMatchesContent(
 }
 
 /**
+ * Stable agent-session key scoping a content-editor session to its content
+ * (S5 #1392).
+ *
+ * `createAgentSession` reuses ANY active session for the same
+ * agent/profile/tenant unless a `sessionKey` is supplied. The content-editor
+ * agent (`content_editor`) opens a distinct conversation per content, so a
+ * keyless create would reuse — and the handler would then REWRITE — a session
+ * created for a different content, returning the other content's room/threads.
+ * Keying the session on the content id makes a new content always create a
+ * distinct session/room.
+ */
+export function contentChatSessionKey(contentId: string): string {
+  return `content:${contentId}`;
+}
+
+/**
  * Tenant-bound content lookup (S5 #1392).
  *
  * Binds `tenantId` (including the `null` "global" scope) into the lookup itself
@@ -295,11 +311,16 @@ export async function getOrCreateContentEditorChatSession(
         tenantId,
       },
     );
+    // Scope the session to this content (S5 #1392) so a new contentId can never
+    // reuse — and have its context rewritten over — a session/room created for a
+    // different content. The handler-side `contentChatSessionMatchesContent`
+    // filter above already narrows reads; this binds the create/reuse path too.
     const { session } = await chatService.createAgentSession({
       tenantId,
       agentId: CONTENT_EDITOR_AGENT_ID,
       actorProfileId: profileId,
       systemPrompt: resolvedPrompt.text,
+      sessionKey: contentChatSessionKey(input.contentId),
     });
     await session.updateSessionContext(
       buildContentEditorSessionContext(input.contentId, resolvedPrompt),

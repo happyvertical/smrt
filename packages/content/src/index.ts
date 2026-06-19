@@ -45,6 +45,7 @@ export type {
 export {
   contentChatMessageToJSON,
   contentChatSessionIsAuthorized,
+  contentChatSessionKey,
   contentChatSessionMatchesContent,
   createContentEditorChatThread,
   getOrCreateContentEditorChatSession,

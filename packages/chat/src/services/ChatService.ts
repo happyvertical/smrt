@@ -688,6 +688,17 @@ export class ChatService {
    * ALWAYS created for that actor as the owning participant. A caller cannot
    * supply a `participantProfileId` to open (and own) a session on behalf of
    * another profile.
+   *
+   * `sessionKey` scopes the session's identity to a conversation subject (e.g. a
+   * content id) (S5 #1392). The reuse lookup keys on `(agentId,
+   * participantProfileId, tenantId)`, which is too coarse for callers that open
+   * separate conversations for distinct subjects under one agent/profile/tenant:
+   * without a key, a session opened for subject A would be reused for a request
+   * about subject B, returning A's room/threads on B's route. When `sessionKey`
+   * is set, an existing session is reused ONLY if its key matches exactly, and a
+   * newly created session records the key; distinct keys therefore get distinct
+   * sessions and rooms. When omitted, behavior is unchanged (single session per
+   * agent/profile/tenant).
    */
   async createAgentSession(params: {
     tenantId: string;
@@ -697,13 +708,18 @@ export class ChatService {
     systemPrompt?: string;
     maxTokens?: number;
     maxMessages?: number;
+    sessionKey?: string | null;
   }) {
     const participantProfileId = params.actorProfileId;
-    // Check for existing active session first to avoid orphaned rooms
+    const sessionKey = params.sessionKey ?? null;
+    // Check for existing active session first to avoid orphaned rooms. When a
+    // sessionKey is supplied the reuse lookup is narrowed to a matching key so a
+    // session opened for a different subject is never reused/rewritten here.
     const existingSession = await this.#agentSessions.findActiveSession(
       params.agentId,
       participantProfileId,
       params.tenantId,
+      sessionKey,
     );
     if (existingSession && existingSession.tenantId === params.tenantId) {
       if (existingSession.chatRoomId) {
@@ -764,7 +780,8 @@ export class ChatService {
       role: 'member',
     });
 
-    // Create session
+    // Create session (subject-scoped when a sessionKey is supplied, so the key
+    // is persisted on the new session and future reuse lookups stay scoped).
     const session = await this.#agentSessions.findOrCreate({
       agentId: params.agentId,
       participantProfileId,
@@ -772,6 +789,7 @@ export class ChatService {
       allowedTools: params.allowedTools,
       chatRoomId: room.id as string,
       systemPrompt: params.systemPrompt,
+      sessionKey,
     });
 
     if (params.maxTokens) session.maxTokens = params.maxTokens;
@@ -888,22 +906,27 @@ export class ChatService {
   }
 
   /**
-   * Read messages in a room, gated on the caller's active membership (S5 #1392).
+   * Read messages in a room, gated on the AUTHENTICATED CALLER's active
+   * membership (S5 #1392).
    *
-   * Prevents a tenant member from reading any room they do not belong to. Throws
-   * if `profileId` is not an active participant of `roomId`. `tenantId` is
-   * required so the membership gate is always tenant-scoped.
+   * The acting identity is the server-supplied `actorProfileId` (the
+   * authenticated principal the route injects), NOT a caller-controlled
+   * `profileId`. Authorizing a supplied `profileId` would make a route a
+   * confused deputy: any caller could read a room by smuggling some member's
+   * profile id. Throws if `actorProfileId` is not an active participant of
+   * `roomId`. `tenantId` is required so the membership gate is always
+   * tenant-scoped.
    */
   async getRoomMessages(params: {
     roomId: string;
-    profileId: string;
+    actorProfileId: string;
     tenantId: string;
     limit?: number;
     before?: string;
   }) {
     await this.#requireActiveMembership(
       params.roomId,
-      params.profileId,
+      params.actorProfileId,
       params.tenantId,
     );
     return this.#messages.getByRoom(params.roomId, params.tenantId, {
@@ -913,16 +936,22 @@ export class ChatService {
   }
 
   /**
-   * Load a room only if the caller is an active member (S5 #1392).
+   * Load a room only if the AUTHENTICATED CALLER is an active member (S5 #1392).
    *
-   * Returns null when the room does not exist; throws when the caller is not an
-   * active participant. `tenantId` is required so the lookup and the membership
-   * gate are always tenant-scoped.
+   * The acting identity is the server-supplied `actorProfileId`, never a
+   * caller-controlled `profileId` (confused-deputy avoidance — see
+   * {@link ChatService.getRoomMessages}). Returns null when the room does not
+   * exist; throws when the actor is not an active participant. `tenantId` is
+   * required so the lookup and the membership gate are always tenant-scoped.
    */
-  async getRoomForMember(roomId: string, profileId: string, tenantId: string) {
+  async getRoomForMember(
+    roomId: string,
+    actorProfileId: string,
+    tenantId: string,
+  ) {
     const room = await this.#rooms.get({ id: roomId, tenantId });
     if (!room) return null;
-    await this.#requireActiveMembership(roomId, profileId, tenantId);
+    await this.#requireActiveMembership(roomId, actorProfileId, tenantId);
     return room;
   }
 
