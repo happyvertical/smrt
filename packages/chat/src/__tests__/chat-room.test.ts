@@ -6,17 +6,21 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ChatParticipantCollection } from '../collections/ChatParticipantCollection.js';
 import { ChatRoomCollection } from '../collections/ChatRoomCollection.js';
 
 describe('ChatRoom', () => {
   let dbPath: string;
   let rooms: ChatRoomCollection;
+  let participants: ChatParticipantCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-chat-room-test-${Date.now()}.db`);
-    rooms = (await ChatRoomCollection.create({
-      db: { type: 'sqlite', url: dbPath },
-    })) as ChatRoomCollection;
+    const db = { type: 'sqlite' as const, url: dbPath };
+    rooms = (await ChatRoomCollection.create({ db })) as ChatRoomCollection;
+    participants = (await ChatParticipantCollection.create({
+      db,
+    })) as ChatParticipantCollection;
   });
 
   afterEach(() => {
@@ -221,19 +225,35 @@ describe('ChatRoom', () => {
       expect(results[0].name).toBe('Engineering');
     });
 
-    it('should find or create DM room', async () => {
+    it('should find or create DM room (identity derived from participants)', async () => {
+      const attach = async (roomId: string, profileId: string) => {
+        await participants.create({
+          tenantId: 'tenant-1',
+          roomId,
+          profileId,
+          role: 'member',
+          status: 'active',
+          joinedAt: new Date(),
+        });
+      };
+
       const dm1 = await rooms.findOrCreateDM(
         'profile-a',
         'profile-b',
         'tenant-1',
+        participants,
       );
       expect(dm1.roomType).toBe('dm');
+      // Membership is established via the join (as ChatService.getOrCreateDM does).
+      await attach(dm1.id as string, 'profile-a');
+      await attach(dm1.id as string, 'profile-b');
 
       // Should return existing on second call
       const dm2 = await rooms.findOrCreateDM(
         'profile-a',
         'profile-b',
         'tenant-1',
+        participants,
       );
       expect(dm2.id).toBe(dm1.id);
 
@@ -242,6 +262,7 @@ describe('ChatRoom', () => {
         'profile-b',
         'profile-a',
         'tenant-1',
+        participants,
       );
       expect(dm3.id).toBe(dm1.id);
     });

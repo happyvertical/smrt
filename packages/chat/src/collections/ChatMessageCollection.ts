@@ -5,42 +5,37 @@ import type { ChatMessageSearchFilters } from '../types.js';
 export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
   static readonly _itemClass = ChatMessage;
 
-  /** Get messages for a room (newest first), excluding threads and deleted */
+  /**
+   * Get messages for a room (newest first), excluding threads and deleted.
+   *
+   * Filtering, ordering and pagination are pushed into SQL rather than loading
+   * the full room history into memory (S5 #1392, DoS hardening). Thread replies
+   * are excluded via `threadId IS NULL` (the WHERE API maps a `null` value to
+   * `IS NULL`).
+   */
   async getByRoom(
     roomId: string,
     options?: { limit?: number; before?: string },
   ): Promise<ChatMessage[]> {
-    const messages = await this.list({
-      where: { roomId, isDeleted: false },
-    });
+    const where: Record<string, unknown> = {
+      roomId,
+      isDeleted: false,
+      threadId: null,
+    };
 
-    // Filter out thread messages (only show root messages in room view)
-    let filtered = messages.filter((m) => !m.threadId);
-
-    // Cursor-based pagination: messages before a given ID
+    // Cursor-based pagination: only messages older than the cursor message.
     if (options?.before) {
-      const cursorMsg = filtered.find((m) => m.id === options.before);
-      if (cursorMsg) {
-        filtered = filtered.filter(
-          (m) =>
-            m.id !== cursorMsg.id &&
-            new Date(m.created_at ?? 0) < new Date(cursorMsg.created_at ?? 0),
-        );
+      const cursorMsg = await this.get({ id: options.before });
+      if (cursorMsg?.created_at) {
+        where['created_at <'] = cursorMsg.created_at;
       }
     }
 
-    // Sort newest first
-    filtered.sort(
-      (a, b) =>
-        new Date(b.created_at ?? 0).getTime() -
-        new Date(a.created_at ?? 0).getTime(),
-    );
-
-    if (options?.limit) {
-      filtered = filtered.slice(0, options.limit);
-    }
-
-    return filtered;
+    return this.list({
+      where,
+      orderBy: 'created_at DESC',
+      limit: options?.limit,
+    });
   }
 
   /** Get messages in a thread */
@@ -53,8 +48,17 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
     return this.list({ where: { agentSessionId, isDeleted: false } });
   }
 
-  /** Search messages with filters */
-  async search(filters: ChatMessageSearchFilters): Promise<ChatMessage[]> {
+  /**
+   * Search messages with filters.
+   *
+   * All structural filters (room/thread/sender/type/role/date/text) are pushed
+   * into SQL instead of loading the full message set and filtering in JS
+   * (S5 #1392, DoS hardening). `hasAttachments` remains a post-filter since it
+   * is a computed property on the model rather than a stored column.
+   */
+  async search(
+    filters: ChatMessageSearchFilters & { limit?: number },
+  ): Promise<ChatMessage[]> {
     const where: Record<string, unknown> = { isDeleted: false };
     if (filters.roomId) where.roomId = filters.roomId;
     if (filters.threadId) where.threadId = filters.threadId;
@@ -62,27 +66,15 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
       where.senderProfileId = filters.senderProfileId;
     if (filters.messageType) where.messageType = filters.messageType;
     if (filters.role) where.role = filters.role;
+    if (filters.query) where['content like'] = `%${filters.query}%`;
+    if (filters.sinceDate) where['created_at >='] = filters.sinceDate;
+    if (filters.beforeDate) where['created_at <'] = filters.beforeDate;
 
-    let messages = await this.list({ where });
-
-    if (filters.query) {
-      const lower = filters.query.toLowerCase();
-      messages = messages.filter((m) =>
-        m.content.toLowerCase().includes(lower),
-      );
-    }
-
-    if (filters.sinceDate) {
-      messages = messages.filter(
-        (m) => new Date(m.created_at ?? 0) >= (filters.sinceDate as Date),
-      );
-    }
-
-    if (filters.beforeDate) {
-      messages = messages.filter(
-        (m) => new Date(m.created_at ?? 0) < (filters.beforeDate as Date),
-      );
-    }
+    let messages = await this.list({
+      where,
+      orderBy: 'created_at DESC',
+      limit: filters.limit ?? 100,
+    });
 
     if (filters.hasAttachments !== undefined) {
       messages = messages.filter(
@@ -93,46 +85,44 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
     return messages;
   }
 
-  /** Get unread count for a participant in a room (excludes thread replies) */
+  /**
+   * Get unread count for a participant in a room (excludes thread replies).
+   *
+   * Counting is pushed into SQL via `count()` rather than loading the whole
+   * room history into memory (S5 #1392, DoS hardening).
+   */
   async getUnreadCount(
     roomId: string,
     lastReadMessageId: string | null,
   ): Promise<number> {
-    const allMessages = await this.list({
-      where: { roomId, isDeleted: false },
+    const base = { roomId, isDeleted: false, threadId: null };
+
+    if (!lastReadMessageId) return this.count({ where: base });
+
+    const lastReadMsg = await this.get({ id: lastReadMessageId });
+    if (!lastReadMsg?.created_at) return this.count({ where: base });
+
+    return this.count({
+      where: { ...base, 'created_at >': lastReadMsg.created_at },
     });
-
-    // Only count root messages (not thread replies)
-    const messages = allMessages.filter((m) => !m.threadId);
-
-    if (!lastReadMessageId) return messages.length;
-
-    const lastReadMsg = messages.find((m) => m.id === lastReadMessageId);
-    if (!lastReadMsg) return messages.length;
-
-    return messages.filter(
-      (m) =>
-        new Date(m.created_at ?? 0) > new Date(lastReadMsg.created_at ?? 0),
-    ).length;
   }
 
-  /** Get most recent message for each room (for room list preview) */
+  /**
+   * Get most recent root message for each room (for room list preview).
+   *
+   * Each room is fetched with `orderBy created_at DESC, limit 1` so we never
+   * load the full per-room history into memory (S5 #1392, DoS hardening).
+   */
   async getLatestPerRoom(roomIds: string[]): Promise<Map<string, ChatMessage>> {
     const result = new Map<string, ChatMessage>();
     for (const roomId of roomIds) {
-      const messages = await this.list({
-        where: { roomId, isDeleted: false },
+      const latest = await this.list({
+        where: { roomId, isDeleted: false, threadId: null },
+        orderBy: 'created_at DESC',
+        limit: 1,
       });
-
-      const rootMessages = messages.filter((m) => !m.threadId);
-      rootMessages.sort(
-        (a, b) =>
-          new Date(b.created_at ?? 0).getTime() -
-          new Date(a.created_at ?? 0).getTime(),
-      );
-
-      if (rootMessages.length > 0) {
-        result.set(roomId, rootMessages[0]);
+      if (latest.length > 0) {
+        result.set(roomId, latest[0]);
       }
     }
     return result;

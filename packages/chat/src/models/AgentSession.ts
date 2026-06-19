@@ -88,7 +88,10 @@ export class AgentSession extends SmrtObject {
 
   getAllowedTools(): string[] {
     try {
-      return JSON.parse(this.allowedTools);
+      const parsed = JSON.parse(this.allowedTools);
+      return Array.isArray(parsed)
+        ? parsed.filter((t): t is string => typeof t === 'string')
+        : [];
     } catch {
       return [];
     }
@@ -96,6 +99,19 @@ export class AgentSession extends SmrtObject {
 
   setAllowedTools(tools: string[]): void {
     this.allowedTools = JSON.stringify(tools);
+  }
+
+  /**
+   * Fail-closed authorization check for an agent tool call (S5 #1392).
+   *
+   * A tool may only be invoked when it appears in this session's allow-list.
+   * If the allow-list is empty or unparseable, NO tools are permitted. This is
+   * deliberately conservative: an empty whitelist means "no tools", never
+   * "all tools".
+   */
+  isToolAllowed(toolName: string): boolean {
+    if (typeof toolName !== 'string' || toolName.length === 0) return false;
+    return this.getAllowedTools().includes(toolName);
   }
 
   isActive(): boolean {

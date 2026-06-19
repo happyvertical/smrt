@@ -143,6 +143,13 @@ describe('ChatService', () => {
 
       expect(thread.messageCount).toBe(0);
 
+      // profile-2 must be an active member to send (room-membership authz)
+      await chat.addParticipant({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        profileId: 'profile-2',
+      });
+
       // Send message in thread
       await chat.sendMessage({
         tenantId: 'tenant-1',

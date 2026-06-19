@@ -54,20 +54,45 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
     return this.list({ where: { agentId } });
   }
 
-  async expireStale(olderThan: Date): Promise<number> {
-    const sessions = await this.list({ where: { status: 'active' } });
+  /**
+   * Expire active sessions whose last activity predates `olderThan`.
+   *
+   * Caller-scoping (S5 #1392): pass `scope` to restrict the sweep to a single
+   * tenant and/or agent. Without a scope this expires stale sessions across the
+   * whole (tenant-filtered) collection — only safe for trusted maintenance
+   * callers, never for a per-tenant request handler.
+   *
+   * The candidate set is narrowed in SQL (status + activity timestamp) rather
+   * than loading every active session into memory and filtering in JS
+   * (DoS hardening). `lastMessageAt < olderThan` is applied server-side; rows
+   * that never recorded a message fall back to `created_at`.
+   */
+  async expireStale(
+    olderThan: Date,
+    scope?: { tenantId?: string | null; agentId?: string },
+  ): Promise<number> {
+    const baseWhere: Record<string, unknown> = { status: 'active' };
+    if (scope?.tenantId !== undefined) baseWhere.tenantId = scope.tenantId;
+    if (scope?.agentId !== undefined) baseWhere.agentId = scope.agentId;
+
+    // Sessions stale by their last message timestamp.
+    const byLastMessage = await this.list({
+      where: { ...baseWhere, 'lastMessageAt <': olderThan },
+    });
+
+    // Sessions that never recorded a message: judge by creation time.
+    const neverMessaged = await this.list({
+      where: { ...baseWhere, lastMessageAt: null, 'created_at <': olderThan },
+    });
+
+    const seen = new Set<string>();
     let expired = 0;
-    for (const session of sessions) {
-      // Use lastMessageAt if available, otherwise fall back to created_at
-      const sessionAge = session.lastMessageAt
-        ? new Date(session.lastMessageAt)
-        : session.created_at
-          ? new Date(session.created_at)
-          : null;
-      if (sessionAge && sessionAge < olderThan) {
-        await session.expire();
-        expired++;
-      }
+    for (const session of [...byLastMessage, ...neverMessaged]) {
+      const id = session.id as string;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      await session.expire();
+      expired++;
     }
     return expired;
   }
