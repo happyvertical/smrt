@@ -37,6 +37,24 @@ interface InternalMessageWrite {
   skipMembershipCheck?: boolean;
 }
 
+/**
+ * Parameters for emitting an agent-authored (assistant/tool) message. Used only
+ * by the internal {@link sendAgentReply} bridge below — NOT a public surface.
+ */
+export interface AgentReplyParams {
+  tenantId: string;
+  agentSessionId: string;
+  content: string;
+  kind?: 'assistant' | 'tool';
+  messageType?: ChatMessageType;
+  toolCallData?: Record<string, unknown> | null;
+  /**
+   * Optional thread to attach the agent reply to. It MUST belong to the same
+   * room/tenant as the session (validated in {@link ChatService.writeMessage}).
+   */
+  threadId?: string | null;
+}
+
 export class ChatService {
   readonly rooms: ChatRoomCollection;
   readonly messages: ChatMessageCollection;
@@ -132,12 +150,19 @@ export class ChatService {
     await this.reactions.initialize();
   }
 
-  /** Create a room and add the creator as owner */
+  /**
+   * Create a room and add the creating actor as owner (S5 #1392).
+   *
+   * The acting identity is the server-supplied `actorProfileId` (the
+   * authenticated principal the route injects). The creator/owner is ALWAYS the
+   * actor — a caller cannot supply a `createdByProfileId` to attribute the room
+   * to (and enroll as owner) some other profile.
+   */
   async createRoom(params: {
     tenantId: string;
     name: string;
     roomType: ChatRoomType;
-    createdByProfileId: string;
+    actorProfileId: string;
     description?: string;
     topic?: string;
   }) {
@@ -145,7 +170,7 @@ export class ChatService {
       tenantId: params.tenantId,
       name: params.name,
       roomType: params.roomType,
-      createdByProfileId: params.createdByProfileId,
+      createdByProfileId: params.actorProfileId,
       description: params.description ?? '',
       topic: params.topic ?? '',
       status: 'active',
@@ -154,7 +179,7 @@ export class ChatService {
     await this.enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
-      profileId: params.createdByProfileId,
+      profileId: params.actorProfileId,
       role: 'owner',
     });
 
@@ -222,6 +247,52 @@ export class ChatService {
       }
     }
 
+    // Every supplied reference (thread / agent session / reply-to message) MUST
+    // belong to the SAME room AND tenant as the message being written (S5
+    // #1392). Without this, an active member of one room could attach a message
+    // to — or pull in/mutate the stats of — an unrelated thread/session/message
+    // from another room or tenant. Bind roomId + tenantId into each lookup and
+    // reject any mismatch. The validated rows are reused below for stat updates,
+    // so there is no second, tenant-UNBOUND lookup.
+    const thread = write.threadId
+      ? await this.threads.get({
+          id: write.threadId,
+          roomId: write.roomId,
+          tenantId: write.tenantId,
+        })
+      : null;
+    if (write.threadId && !thread) {
+      throw new Error(
+        'threadId does not belong to this room/tenant (authorization denied)',
+      );
+    }
+
+    const session = write.agentSessionId
+      ? await this.agentSessions.get({
+          id: write.agentSessionId,
+          chatRoomId: write.roomId,
+          tenantId: write.tenantId,
+        })
+      : null;
+    if (write.agentSessionId && !session) {
+      throw new Error(
+        'agentSessionId does not belong to this room/tenant (authorization denied)',
+      );
+    }
+
+    if (write.replyToMessageId) {
+      const replyTo = await this.messages.get({
+        id: write.replyToMessageId,
+        roomId: write.roomId,
+        tenantId: write.tenantId,
+      });
+      if (!replyTo) {
+        throw new Error(
+          'replyToMessageId does not belong to this room/tenant (authorization denied)',
+        );
+      }
+    }
+
     const message = await this.messages.create({
       tenantId: write.tenantId,
       roomId: write.roomId,
@@ -238,30 +309,25 @@ export class ChatService {
     });
 
     // Update room's lastMessageAt
-    const room = await this.rooms.get({ id: write.roomId });
+    const room = await this.rooms.get({
+      id: write.roomId,
+      tenantId: write.tenantId,
+    });
     if (room) {
       room.lastMessageAt = new Date();
       await room.save();
     }
 
-    // Update thread stats if threaded
-    if (write.threadId) {
-      const thread = await this.threads.get({ id: write.threadId });
-      if (thread) {
-        thread.messageCount++;
-        thread.lastMessageAt = new Date();
-        await thread.save();
-      }
+    // Update thread stats if threaded (reuse the validated row)
+    if (thread) {
+      thread.messageCount++;
+      thread.lastMessageAt = new Date();
+      await thread.save();
     }
 
-    // Record on agent session if applicable
-    if (write.agentSessionId) {
-      const session = await this.agentSessions.get({
-        id: write.agentSessionId,
-      });
-      if (session) {
-        await session.recordMessage();
-      }
+    // Record on agent session if applicable (reuse the validated row)
+    if (session) {
+      await session.recordMessage();
     }
 
     return message;
@@ -562,20 +628,28 @@ export class ChatService {
     return room;
   }
 
-  /** Create an agent conversation session with a linked chat room */
+  /**
+   * Create an agent conversation session with a linked chat room (S5 #1392).
+   *
+   * The acting identity is the server-supplied `actorProfileId`; the session is
+   * ALWAYS created for that actor as the owning participant. A caller cannot
+   * supply a `participantProfileId` to open (and own) a session on behalf of
+   * another profile.
+   */
   async createAgentSession(params: {
     tenantId: string;
     agentId: string;
-    participantProfileId: string;
+    actorProfileId: string;
     allowedTools?: string[];
     systemPrompt?: string;
     maxTokens?: number;
     maxMessages?: number;
   }) {
+    const participantProfileId = params.actorProfileId;
     // Check for existing active session first to avoid orphaned rooms
     const existingSession = await this.agentSessions.findActiveSession(
       params.agentId,
-      params.participantProfileId,
+      participantProfileId,
       params.tenantId,
     );
     if (existingSession && existingSession.tenantId === params.tenantId) {
@@ -591,7 +665,7 @@ export class ChatService {
           await this.enrollParticipant({
             tenantId: params.tenantId,
             roomId: existingRoom.id as string,
-            profileId: params.participantProfileId,
+            profileId: participantProfileId,
             role: 'owner',
           });
           await this.enrollParticipant({
@@ -612,7 +686,7 @@ export class ChatService {
       tenantId: params.tenantId,
       name: '',
       roomType: 'agent',
-      createdByProfileId: params.participantProfileId,
+      createdByProfileId: participantProfileId,
       status: 'active',
       maxParticipants: 2,
     });
@@ -621,7 +695,7 @@ export class ChatService {
     await this.enrollParticipant({
       tenantId: params.tenantId,
       roomId: room.id as string,
-      profileId: params.participantProfileId,
+      profileId: participantProfileId,
       role: 'owner',
     });
 
@@ -637,7 +711,7 @@ export class ChatService {
     // Create session
     const session = await this.agentSessions.findOrCreate({
       agentId: params.agentId,
-      participantProfileId: params.participantProfileId,
+      participantProfileId,
       tenantId: params.tenantId,
       allowedTools: params.allowedTools,
       chatRoomId: room.id as string,
@@ -699,15 +773,13 @@ export class ChatService {
    * fail-closed against the session's allow-list. Intended for the trusted
    * agent-runtime, never a per-tenant request handler driven by client-supplied
    * role/sender.
+   *
+   * This is a `private` method and is NOT exported from the package index. The
+   * in-process agent runtime reaches it through the {@link sendAgentReply}
+   * bridge in this module, which is deliberately not re-exported from
+   * `src/index.ts`, so a route/consumer can never author a message as the agent.
    */
-  async sendAgentReply(params: {
-    tenantId: string;
-    agentSessionId: string;
-    content: string;
-    kind?: 'assistant' | 'tool';
-    messageType?: ChatMessageType;
-    toolCallData?: Record<string, unknown> | null;
-  }) {
+  private async emitAgentReply(params: AgentReplyParams) {
     const session = await this.loadActiveSession(
       params.agentSessionId,
       params.tenantId,
@@ -741,6 +813,7 @@ export class ChatService {
       content: params.content,
       role,
       messageType: params.messageType ?? 'text',
+      threadId: params.threadId ?? null,
       agentSessionId: params.agentSessionId,
       toolCallData: params.toolCallData ?? null,
     });
@@ -808,15 +881,18 @@ export class ChatService {
   async updateAgentSessionConfig(params: {
     agentSessionId: string;
     actorProfileId: string;
-    tenantId?: string;
+    tenantId: string | null;
     allowedTools?: string[];
     systemPrompt?: string;
   }) {
-    const session = await this.agentSessions.get(
-      params.tenantId !== undefined
-        ? { id: params.agentSessionId, tenantId: params.tenantId }
-        : { id: params.agentSessionId },
-    );
+    // `tenantId` is mandatory and ALWAYS bound into the lookup (S5 #1392).
+    // AgentSession tenancy is optional, so `null` is the explicit "no tenant"
+    // scope — never "any tenant". This prevents mutating allowedTools /
+    // systemPrompt on a session belonging to another tenant via an unbound get.
+    const session = await this.agentSessions.get({
+      id: params.agentSessionId,
+      tenantId: params.tenantId,
+    });
     if (!session) throw new Error('Agent session not found');
 
     const isOwner = params.actorProfileId === session.participantProfileId;
@@ -885,4 +961,54 @@ export class ChatService {
       ? candidate
       : null;
   }
+
+  /**
+   * Internal bridge to the `private` {@link ChatService.emitAgentReply} for the
+   * module-local {@link sendAgentReply} function (S5 #1392). A static method may
+   * reach a private instance member of its own class, so this is the sanctioned
+   * "friend" access without widening the public instance surface. Marked with a
+   * leading underscore to signal internal use; it is not part of the documented
+   * facade and is unreachable from the package index.
+   */
+  static _runAgentReply(service: AgentReplyService, params: AgentReplyParams) {
+    // The structural param lets this bridge be called across pnpm
+    // module-instance boundaries (src vs dist). Any real instance is a
+    // ChatService, so reaching the private `emitAgentReply` here is safe.
+    return (service as ChatService).emitAgentReply(params);
+  }
+}
+
+/**
+ * Structural ChatService surface accepted by {@link sendAgentReply}. Using a
+ * structural type (not the nominal `ChatService` class) keeps the function
+ * callable across module-instance boundaries — in a pnpm workspace a consumer's
+ * `ChatService` type may resolve to the package source while this function
+ * resolves to dist, and the nominal `private` members would otherwise make the
+ * two declarations incompatible. The shape below is satisfied by any real
+ * ChatService instance.
+ */
+export type AgentReplyService = Pick<
+  ChatService,
+  'rooms' | 'messages' | 'participants' | 'threads' | 'agentSessions'
+>;
+
+/**
+ * Internal agent-runtime entry point: emit an ASSISTANT/TOOL message authored
+ * as the session's agent (S5 #1392).
+ *
+ * NOT re-exported from `src/index.ts`. Only in-process, trusted agent-runtime
+ * code that imports this module path directly can author messages as the agent;
+ * route handlers and package consumers (which import from the package index)
+ * cannot. The author is always `session.agentId`, never a caller-supplied
+ * sender/role, and tool calls are gated fail-closed against `allowedTools`.
+ *
+ * Because this lives in the same module as {@link ChatService}, reaching the
+ * `private` method is the owning module's sanctioned "friend" access, not an
+ * external private reach-in.
+ */
+export function sendAgentReply(
+  service: AgentReplyService,
+  params: AgentReplyParams,
+) {
+  return ChatService._runAgentReply(service, params);
 }

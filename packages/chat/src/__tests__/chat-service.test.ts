@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ChatService } from '../services/ChatService.js';
+import { ChatService, sendAgentReply } from '../services/ChatService.js';
 
 describe('ChatService', () => {
   let dbPath: string;
@@ -41,7 +41,7 @@ describe('ChatService', () => {
           tenantId: 'tenant-1',
           name: 'Bootstrap',
           roomType: 'public',
-          createdByProfileId: 'profile-1',
+          actorProfileId: 'profile-1',
         });
 
         expect(room.id).toBeDefined();
@@ -62,7 +62,7 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'General',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       expect(room.name).toBe('General');
@@ -83,7 +83,7 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Engineering',
         roomType: 'private',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         description: 'Engineering team discussion',
         topic: 'Sprint 42',
       });
@@ -99,7 +99,7 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const message = await chat.sendMessage({
@@ -123,7 +123,7 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       // Send root message
@@ -176,7 +176,7 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const participant = await chat.addParticipant({
@@ -195,7 +195,7 @@ describe('ChatService', () => {
         tenantId: 'tenant-1',
         name: 'Test Room',
         roomType: 'public',
-        createdByProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const p1 = await chat.addParticipant({
@@ -266,7 +266,7 @@ describe('ChatService', () => {
       const { session, room } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         allowedTools: ['search', 'calculate'],
         systemPrompt: 'You are a helpful assistant',
       });
@@ -292,13 +292,13 @@ describe('ChatService', () => {
       const result1 = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       const result2 = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       // Should return the same session and room (no orphaned rooms)
@@ -314,7 +314,7 @@ describe('ChatService', () => {
       const { session, room } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       // User sends a message
@@ -330,7 +330,7 @@ describe('ChatService', () => {
       expect(userMsg.role).toBe('user');
 
       // Agent responds (internal reply path, authored as the agent)
-      const agentMsg = await chat.sendAgentReply({
+      const agentMsg = await sendAgentReply(chat, {
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
         content: 'The weather is sunny.',
@@ -344,7 +344,7 @@ describe('ChatService', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       await session.close();
@@ -363,7 +363,7 @@ describe('ChatService', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         maxTokens: 10000,
         maxMessages: 20,
       });

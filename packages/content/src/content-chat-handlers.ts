@@ -1,5 +1,6 @@
 import { type AIClientOptions, getAI } from '@happyvertical/ai';
 import { ChatService } from '@happyvertical/smrt-chat';
+import { sendAgentReply } from '@happyvertical/smrt-chat/internal/agent-runtime';
 import {
   type ResolvedPrompt,
   resolvePrompt,
@@ -276,7 +277,7 @@ export async function getOrCreateContentEditorChatSession(
     const { session } = await chatService.createAgentSession({
       tenantId,
       agentId: CONTENT_EDITOR_AGENT_ID,
-      participantProfileId: profileId,
+      actorProfileId: profileId,
       systemPrompt: resolvedPrompt.text,
     });
     await session.updateSessionContext(
@@ -637,9 +638,8 @@ export async function sendContentEditorChatThreadMessage(
     tenantId,
     roomId: chatRoomId,
     threadId: (thread as { id: string }).id,
-    senderProfileId: profileId,
+    actorProfileId: profileId,
     content: input.content,
-    role: 'user',
     agentSessionId: (session as { id: string }).id,
   });
 
@@ -674,14 +674,15 @@ export async function sendContentEditorChatThreadMessage(
     maxTokens: resolvedAI.maxTokens ?? 2000,
   });
 
-  const agentMessage = await chatService.sendMessage({
+  // Author the assistant reply AS the session's agent via the trusted internal
+  // agent-runtime surface — never via the public sendMessage (which would force
+  // the message to the caller's identity with role 'user') (S5 #1392).
+  const agentMessage = await sendAgentReply(chatService, {
     tenantId,
-    roomId: chatRoomId,
     agentSessionId: (session as { id: string }).id,
     threadId: (thread as { id: string }).id,
-    senderProfileId: (session as { agentId: string }).agentId,
     content: response.content,
-    role: 'assistant',
+    kind: 'assistant',
   });
 
   const updates = buildContentChatModelUpdates(

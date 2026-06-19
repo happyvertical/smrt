@@ -19,35 +19,41 @@ const chat = await ChatService.create({
   persistence: { type: 'sql', url: 'chat.db' },
 });
 
-// Create a public room (creator is added as owner)
+// `actorProfileId` is the authenticated principal the route injects. Every
+// write takes it explicitly; the caller never supplies a `senderProfileId`,
+// `role`, or `createdByProfileId` (S5 #1392).
+
+// Create a public room (the acting actor becomes the owner)
 const room = await chat.createRoom({
   tenantId: 'tenant-1',
   name: 'General',
   roomType: 'public',
-  createdByProfileId: 'profile-1',
+  actorProfileId: 'profile-1',
 });
 
-// Send a message
-await chat.sendMessage({
+// Send a message (always authored as the actor with role 'user')
+const message = await chat.sendMessage({
   tenantId: 'tenant-1',
   roomId: room.id,
-  senderProfileId: 'profile-1',
+  actorProfileId: 'profile-1',
   content: 'Hello, world!',
 });
 
-// Start a threaded conversation from a message
+// Start a threaded conversation from a message (member-checked)
 const thread = await chat.startThread({
   tenantId: 'tenant-1',
   roomId: room.id,
+  actorProfileId: 'profile-1',
   rootMessageId: message.id,
   title: 'Follow-up discussion',
 });
 
-// Reply within the thread
+// Reply within the thread. The thread (and any reply-to message) must belong
+// to the same room and tenant, or the write is rejected.
 await chat.sendMessage({
   tenantId: 'tenant-1',
   roomId: room.id,
-  senderProfileId: 'profile-2',
+  actorProfileId: 'profile-2',
   content: 'Great point!',
   threadId: thread.id,
 });
@@ -56,11 +62,13 @@ await chat.sendMessage({
 ### Agent sessions with tool whitelisting
 
 ```typescript
-// Create an agent session (auto-creates an agent-type room)
+// Create an agent session (auto-creates an agent-type room). The acting actor
+// becomes the owning participant; the caller cannot open a session for someone
+// else by supplying a participant id.
 const { session, room } = await chat.createAgentSession({
   tenantId: 'tenant-1',
   agentId: 'agent-summarizer',
-  participantProfileId: 'profile-1',
+  actorProfileId: 'profile-1',
   allowedTools: ['web-search', 'summarize'],
   systemPrompt: 'You are a research assistant.',
   maxMessages: 100,
@@ -75,9 +83,15 @@ await chat.sendAgentUserMessage({
   content: 'Summarize the latest news',
 });
 
-// Emit the agent's reply (internal trusted path, authored as the agent).
-// Tool calls are gated fail-closed against the session's allowedTools.
-await chat.sendAgentReply({
+// Emit the agent's reply. This is the INTERNAL trusted authority that authors
+// a message AS the agent, so it is intentionally NOT a public ChatService
+// method and NOT on the package index. It is reachable only via the dedicated
+// `./internal/agent-runtime` subpath, which a normal route/consumer importing
+// from '@happyvertical/smrt-chat' cannot reach. Opting into this subpath
+// signals the importer IS the trusted in-process agent runtime. Tool calls are
+// gated fail-closed against the session's allowedTools.
+import { sendAgentReply } from '@happyvertical/smrt-chat/internal/agent-runtime';
+await sendAgentReply(chat, {
   tenantId: 'tenant-1',
   agentSessionId: session.id,
   content: 'Here is the summary...',
@@ -93,9 +107,11 @@ if (session.isActive()) {
 ### Direct messages
 
 ```typescript
-// Get or create a DM room between two profiles
+// Get or create a DM room between two profiles. The acting actor must be one
+// of the two DM participants.
 const dmRoom = await chat.getOrCreateDM({
   tenantId: 'tenant-1',
+  actorProfileId: 'profile-1',
   profileId1: 'profile-1',
   profileId2: 'profile-2',
 });
@@ -129,7 +145,7 @@ const dmRoom = await chat.getOrCreateDM({
 
 | Export | Description |
 |--------|------------|
-| `ChatService` | Facade: `createRoom()`, `sendMessage()`, `startThread()`, `addParticipant()`, `getOrCreateDM()`, `createAgentSession()`, `sendAgentUserMessage()`, `sendAgentReply()`, `updateAgentSessionConfig()` |
+| `ChatService` | Facade: `createRoom()`, `sendMessage()`, `startThread()`, `addParticipant()`, `removeParticipant()`, `updateRoom()`, `addReaction()`, `removeReaction()`, `getOrCreateDM()`, `createAgentSession()`, `sendAgentUserMessage()`, `getRoomMessages()`, `getRoomForMember()`, `updateAgentSessionConfig()`. Every write takes a server-supplied `actorProfileId`. The agent-authored reply path (`sendAgentReply`) is intentionally NOT on this facade or the package index — it is an internal function in `services/ChatService.ts` for the trusted in-process agent runtime only (S5 #1392). |
 
 ### Types
 

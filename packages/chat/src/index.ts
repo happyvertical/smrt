@@ -18,11 +18,13 @@
  *   persistence: { type: 'sql', url: 'chat.db' }
  * });
  *
+ * // actorProfileId is the authenticated principal injected by the route; the
+ * // acting actor becomes the room owner.
  * const room = await chat.createRoom({
  *   tenantId: 'tenant-1',
  *   name: 'General',
  *   roomType: 'public',
- *   createdByProfileId: 'profile-1',
+ *   actorProfileId: 'profile-1',
  * });
  *
  * // actorProfileId is the authenticated principal injected by the route;

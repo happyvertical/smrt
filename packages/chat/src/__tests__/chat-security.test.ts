@@ -16,7 +16,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { ChatService } from '../services/ChatService.js';
+import * as chatPackageIndex from '../index.js';
+import { ChatService, sendAgentReply } from '../services/ChatService.js';
 
 const MUTATING_OPS = ['create', 'update', 'delete'] as const;
 
@@ -81,7 +82,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'General',
         roomType: 'public',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       const msg = await chat.sendMessage({
@@ -98,7 +99,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Private',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       await expect(
@@ -116,7 +117,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
       const participant = await chat.addParticipant({
         tenantId: 'tenant-1',
@@ -154,7 +155,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
       await chat.sendMessage({
         tenantId: 'tenant-1',
@@ -177,7 +178,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
       await chat.sendMessage({
         tenantId: 'tenant-1',
@@ -200,7 +201,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       await expect(
@@ -222,11 +223,11 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         allowedTools: ['search'],
       });
 
-      const msg = await chat.sendAgentReply({
+      const msg = await sendAgentReply(chat, {
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
         content: 'searching',
@@ -241,12 +242,12 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         allowedTools: ['search'],
       });
 
       await expect(
-        chat.sendAgentReply({
+        sendAgentReply(chat, {
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
           content: 'rm -rf',
@@ -261,14 +262,14 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         // no allowedTools => empty whitelist
       });
       expect(session.getAllowedTools()).toEqual([]);
       expect(session.isToolAllowed('search')).toBe(false);
 
       await expect(
-        chat.sendAgentReply({
+        sendAgentReply(chat, {
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
           content: 'searching',
@@ -283,12 +284,12 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         allowedTools: ['search'],
       });
 
       await expect(
-        chat.sendAgentReply({
+        sendAgentReply(chat, {
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
           content: 'no name',
@@ -303,7 +304,7 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         // empty whitelist must NOT block plain text messages
       });
 
@@ -315,7 +316,7 @@ describe('chat security (S5 #1392)', () => {
       });
       expect(userMsg.role).toBe('user');
 
-      const agentMsg = await chat.sendAgentReply({
+      const agentMsg = await sendAgentReply(chat, {
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
         content: 'hi there',
@@ -331,7 +332,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       // The public signature has no senderProfileId/role. Simulate an attacker
@@ -359,7 +360,7 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
 
       // A non-participant (e.g. the agent id itself) cannot post a user message.
@@ -390,7 +391,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       await expect(
@@ -408,7 +409,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
       await chat.addParticipant({
         tenantId: 'tenant-1',
@@ -432,7 +433,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       const p = await chat.addParticipant({
@@ -451,7 +452,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
       const msg = await chat.sendMessage({
         tenantId: 'tenant-1',
@@ -475,7 +476,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'public',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
       const msg = await chat.sendMessage({
         tenantId: 'tenant-1',
@@ -521,7 +522,7 @@ describe('chat security (S5 #1392)', () => {
       const { session, room } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         allowedTools: ['search'],
       });
 
@@ -543,12 +544,12 @@ describe('chat security (S5 #1392)', () => {
       const again = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
       expect(again.session.id).toBe(session.id);
       expect(again.room.id).toBe(room.id);
 
-      const reply = await chat.sendAgentReply({
+      const reply = await sendAgentReply(chat, {
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
         content: 'searching',
@@ -565,12 +566,13 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       const updated = await chat.updateAgentSessionConfig({
         agentSessionId: session.id as string,
         actorProfileId: 'owner',
+        tenantId: 'tenant-1',
         allowedTools: ['search', 'calc'],
         systemPrompt: 'be helpful',
       });
@@ -582,13 +584,14 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       await expect(
         chat.updateAgentSessionConfig({
           agentSessionId: session.id as string,
           actorProfileId: 'attacker',
+          tenantId: 'tenant-1',
           allowedTools: ['exec_shell'],
         }),
       ).rejects.toThrow(/authorization denied/i);
@@ -633,12 +636,12 @@ describe('chat security (S5 #1392)', () => {
       const { session: s1 } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'p1',
+        actorProfileId: 'p1',
       });
       const { session: s2 } = await chat.createAgentSession({
         tenantId: 'tenant-2',
         agentId: 'agent-2',
-        participantProfileId: 'p2',
+        actorProfileId: 'p2',
       });
 
       const future = new Date(Date.now() + 60_000);
@@ -723,7 +726,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Private',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       // Simulate a write that slipped past the (now read-only) generated
@@ -762,7 +765,7 @@ describe('chat security (S5 #1392)', () => {
         tenantId: 'tenant-1',
         name: 'Room',
         roomType: 'private',
-        createdByProfileId: 'owner',
+        actorProfileId: 'owner',
       });
 
       // owner is an active member of tenant-1's room; tenant-2 must not see it.
@@ -785,7 +788,7 @@ describe('chat security (S5 #1392)', () => {
       const { session } = await chat.createAgentSession({
         tenantId: 'tenant-1',
         agentId: 'agent-1',
-        participantProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
       });
       expect(session.id).toBeDefined();
 
@@ -802,6 +805,258 @@ describe('chat security (S5 #1392)', () => {
         'tenant-2',
       );
       expect(otherTenant).toBeNull();
+    });
+  });
+
+  // ---- Round-4 convergence regressions (S5 #1392) ----
+
+  describe('writeMessage rejects cross-room/cross-tenant references', () => {
+    it('rejects attaching a message to a thread from another room', async () => {
+      const roomA = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'A',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const roomB = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'B',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const rootInB = await chat.sendMessage({
+        tenantId: 'tenant-1',
+        roomId: roomB.id as string,
+        actorProfileId: 'owner',
+        content: 'root',
+      });
+      const threadInB = await chat.startThread({
+        tenantId: 'tenant-1',
+        roomId: roomB.id as string,
+        actorProfileId: 'owner',
+        rootMessageId: rootInB.id as string,
+      });
+
+      // owner is an active member of roomA but tries to attach the message to a
+      // thread that lives in roomB — it must be rejected.
+      await expect(
+        chat.sendMessage({
+          tenantId: 'tenant-1',
+          roomId: roomA.id as string,
+          actorProfileId: 'owner',
+          content: 'smuggled into B thread',
+          threadId: threadInB.id as string,
+        }),
+      ).rejects.toThrow(/does not belong to this room\/tenant/i);
+    });
+
+    it('rejects attaching a message to an agent session from another room', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'Room',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+      });
+
+      // The agent session belongs to its own auto-created room, not `room`.
+      await expect(
+        chat.sendMessage({
+          tenantId: 'tenant-1',
+          roomId: room.id as string,
+          actorProfileId: 'owner',
+          content: 'pulling in foreign session',
+          agentSessionId: session.id as string,
+        }),
+      ).rejects.toThrow(/does not belong to this room\/tenant/i);
+    });
+
+    it('rejects replying to a message from another room', async () => {
+      const roomA = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'A',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const roomB = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'B',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const msgInB = await chat.sendMessage({
+        tenantId: 'tenant-1',
+        roomId: roomB.id as string,
+        actorProfileId: 'owner',
+        content: 'in B',
+      });
+
+      await expect(
+        chat.sendMessage({
+          tenantId: 'tenant-1',
+          roomId: roomA.id as string,
+          actorProfileId: 'owner',
+          content: 'reply across rooms',
+          replyToMessageId: msgInB.id as string,
+        }),
+      ).rejects.toThrow(/does not belong to this room\/tenant/i);
+    });
+
+    it('rejects a reply-to message owned by another tenant', async () => {
+      const roomT1 = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'T1',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      // A message with the SAME room id but tagged to another tenant must not be
+      // resolvable as a reply target for tenant-1.
+      const foreign = await chat.messages.create({
+        tenantId: 'tenant-2',
+        roomId: roomT1.id as string,
+        senderProfileId: 'owner',
+        content: 'foreign-tenant message',
+        role: 'user',
+        messageType: 'text',
+      });
+
+      await expect(
+        chat.sendMessage({
+          tenantId: 'tenant-1',
+          roomId: roomT1.id as string,
+          actorProfileId: 'owner',
+          content: 'reply across tenants',
+          replyToMessageId: foreign.id as string,
+        }),
+      ).rejects.toThrow(/does not belong to this room\/tenant/i);
+    });
+
+    it('allows a valid same-room/same-tenant thread + reply', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'Room',
+        roomType: 'private',
+        actorProfileId: 'owner',
+      });
+      const root = await chat.sendMessage({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'owner',
+        content: 'root',
+      });
+      const thread = await chat.startThread({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'owner',
+        rootMessageId: root.id as string,
+      });
+
+      const reply = await chat.sendMessage({
+        tenantId: 'tenant-1',
+        roomId: room.id as string,
+        actorProfileId: 'owner',
+        content: 'in-thread reply',
+        threadId: thread.id as string,
+        replyToMessageId: root.id as string,
+      });
+      expect(reply.threadId).toBe(thread.id);
+      expect(reply.replyToMessageId).toBe(root.id);
+    });
+  });
+
+  describe('sendAgentReply is not reachable from the public package exports', () => {
+    it('is absent from the package index surface', () => {
+      // The agent-reply authority must only be reachable by in-process runtime
+      // code importing the service module directly — never via the package
+      // entry point a route/consumer imports.
+      expect(
+        (chatPackageIndex as Record<string, unknown>).sendAgentReply,
+      ).toBeUndefined();
+    });
+
+    it('is not a public method on ChatService instances', async () => {
+      const svc = await ChatService.create({
+        db: { type: 'sqlite', url: ':memory:' },
+      });
+      expect(
+        (svc as unknown as Record<string, unknown>).sendAgentReply,
+      ).toBeUndefined();
+    });
+  });
+
+  describe('createRoom / createAgentSession derive identity from the actor', () => {
+    it('createRoom owns the room as the actor, not a caller-supplied creator', async () => {
+      // Smuggle a createdByProfileId via an untyped body; it must be ignored and
+      // the room owned by the actor.
+      const tampered = {
+        tenantId: 'tenant-1',
+        name: 'Room',
+        roomType: 'private',
+        actorProfileId: 'actor',
+        createdByProfileId: 'victim',
+      } as unknown as Parameters<typeof chat.createRoom>[0];
+
+      const room = await chat.createRoom(tampered);
+      expect(room.createdByProfileId).toBe('actor');
+
+      // The actor is the owner participant; the smuggled victim is not enrolled.
+      const actorMembership = await chat.participants.findActiveMembership(
+        room.id as string,
+        'actor',
+        'tenant-1',
+      );
+      expect(actorMembership?.role).toBe('owner');
+      const victimMembership = await chat.participants.findMembership(
+        room.id as string,
+        'victim',
+        'tenant-1',
+      );
+      expect(victimMembership).toBeNull();
+    });
+
+    it('createAgentSession owns the session as the actor, not a caller-supplied participant', async () => {
+      const tampered = {
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'actor',
+        participantProfileId: 'victim',
+      } as unknown as Parameters<typeof chat.createAgentSession>[0];
+
+      const { session } = await chat.createAgentSession(tampered);
+      expect(session.participantProfileId).toBe('actor');
+    });
+  });
+
+  describe('updateAgentSessionConfig is tenant-bound', () => {
+    it('does not resolve a session from another tenant', async () => {
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        actorProfileId: 'owner',
+      });
+
+      // Correct owner but WRONG tenant: the tenant-bound lookup must miss.
+      await expect(
+        chat.updateAgentSessionConfig({
+          agentSessionId: session.id as string,
+          actorProfileId: 'owner',
+          tenantId: 'tenant-2',
+          allowedTools: ['exec_shell'],
+        }),
+      ).rejects.toThrow(/not found/i);
+
+      // Binding the correct tenant succeeds.
+      const updated = await chat.updateAgentSessionConfig({
+        agentSessionId: session.id as string,
+        actorProfileId: 'owner',
+        tenantId: 'tenant-1',
+        allowedTools: ['search'],
+      });
+      expect(updated.getAllowedTools()).toEqual(['search']);
     });
   });
 });

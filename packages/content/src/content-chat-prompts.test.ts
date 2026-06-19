@@ -281,7 +281,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Manual session prompt',
     });
     const chatRoomId = session.chatRoomId;
@@ -321,7 +321,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Manual session prompt',
     });
     await session.updateSessionContext({
@@ -358,7 +358,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Manual session prompt',
     });
     await session.updateSessionContext({
@@ -408,7 +408,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Manual session prompt',
     });
     await session.updateSessionContext({
@@ -458,7 +458,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Manual session prompt',
     });
     await session.updateSessionContext({
@@ -506,7 +506,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Provider-aware prompt',
     });
     await session.updateSessionContext({
@@ -583,7 +583,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Provider-aware prompt',
     });
     await session.updateSessionContext({
@@ -669,7 +669,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Provider-aware prompt',
     });
     await session.updateSessionContext({
@@ -754,7 +754,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Provider-aware prompt',
     });
     await session.updateSessionContext({
@@ -822,7 +822,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Provider-aware prompt',
     });
     await session.updateSessionContext({
@@ -895,7 +895,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Provider-aware prompt',
     });
     await session.updateSessionContext({
@@ -973,7 +973,7 @@ describe('content chat prompt integration', () => {
     const { session } = await chatService.createAgentSession({
       tenantId: 'tenant-a',
       agentId: 'content_editor',
-      participantProfileId: 'profile-a',
+      actorProfileId: 'profile-a',
       systemPrompt: 'Provider-aware prompt',
     });
     await session.updateSessionContext({
