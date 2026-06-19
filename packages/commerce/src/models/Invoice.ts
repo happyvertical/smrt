@@ -397,6 +397,7 @@ export class Invoice extends SmrtObject {
     await this.recomputeAmountsForSave(persisted);
     this.assertNonNegativeAmounts();
     this.assertStatusTransition();
+    this.assertPaymentStatusConsistent();
 
     const result = (await super.save()) as this;
     // Once written, the current status becomes the new "prior" for the next
@@ -463,6 +464,73 @@ export class Invoice extends SmrtObject {
       // Not-yet-persisted invoice: no line items / allocations exist yet, so
       // enforce the arithmetic invariant on the caller-supplied totals.
       this.assertTotalArithmetic();
+
+      // A brand-new invoice cannot already be paid: there are no
+      // PaymentAllocations behind it yet, so a caller-supplied amountPaid (or a
+      // PAID/PARTIAL starting status) would be unbacked money. Force it to
+      // start unpaid; payment progress is only ever driven by allocations via
+      // updatePaymentStatus(). (Re-derive on the first persisted save once
+      // allocations exist.)
+      this.amountPaid = 0;
+      if (
+        this.status === InvoiceStatus.PAID ||
+        this.status === InvoiceStatus.PARTIAL
+      ) {
+        throw new Error(
+          `Invoice ${this.invoiceNumber || '<new>'}: a new invoice cannot start ` +
+            `in status '${this.status}' — payment status is derived from ` +
+            'PaymentAllocations, not set at creation. Create the invoice unpaid ' +
+            '(DRAFT / SENT) and record payments via allocations.',
+        );
+      }
+    }
+  }
+
+  /**
+   * After amounts are recomputed and amountPaid is re-derived from allocations,
+   * assert the persisted `status` is consistent with the derived
+   * amountPaid-vs-totalAmount relationship. This blocks the raw
+   * `SENT → PAID with amountPaid=0` flip (and its inverse, claiming PARTIAL/SENT
+   * while fully allocated) that the status-transition map alone permits because
+   * SENT → PAID is a structurally legal edge.
+   *
+   * Only enforced for the payment-derived statuses (PAID / PARTIAL and the
+   * unpaid open states SENT / VIEWED). Lifecycle statuses that aren't a
+   * function of amountPaid — DRAFT, OVERDUE, CANCELLED, WRITTEN_OFF — are left
+   * to their own transition rules.
+   */
+  private assertPaymentStatusConsistent(): void {
+    const label = this.invoiceNumber || this.id || '<new>';
+    const fullyPaid = this.amountPaid - this.totalAmount >= -INVOICE_EPSILON;
+    const partiallyPaid = this.amountPaid > INVOICE_EPSILON && !fullyPaid;
+
+    if (this.status === InvoiceStatus.PAID && !fullyPaid) {
+      throw new Error(
+        `Invoice ${label}: status is PAID but derived amountPaid ${this.amountPaid} ` +
+          `does not cover totalAmount ${this.totalAmount}. Payment status is ` +
+          'derived from PaymentAllocations — use updatePaymentStatus().',
+      );
+    }
+    if (this.status === InvoiceStatus.PARTIAL && !partiallyPaid) {
+      throw new Error(
+        `Invoice ${label}: status is PARTIAL but derived amountPaid ${this.amountPaid} ` +
+          `is not a partial payment of totalAmount ${this.totalAmount}. Payment ` +
+          'status is derived from PaymentAllocations — use updatePaymentStatus().',
+      );
+    }
+    // Claiming an unpaid open status (SENT / VIEWED) while the invoice is in
+    // fact fully covered by allocations is also inconsistent.
+    if (
+      (this.status === InvoiceStatus.SENT ||
+        this.status === InvoiceStatus.VIEWED) &&
+      this.totalAmount > INVOICE_EPSILON &&
+      fullyPaid
+    ) {
+      throw new Error(
+        `Invoice ${label}: status is '${this.status}' but derived amountPaid ` +
+          `${this.amountPaid} fully covers totalAmount ${this.totalAmount}. ` +
+          'Use updatePaymentStatus() so the status reflects the allocations.',
+      );
     }
   }
 
@@ -694,6 +762,17 @@ export class Invoice extends SmrtObject {
       );
     }
 
+    // Recompute/validate the invoice's authoritative totals BEFORE building any
+    // journal (S5 audit #1390 round 2). Round 1 built and posted the journal
+    // off stale/forged in-memory totals, then called save() — which recomputes
+    // from line items and could throw, leaving an orphaned posted journal with
+    // the wrong amount already in the books. Recomputing first means the
+    // journal is built from the same authoritative figures save() would accept,
+    // and a forged total is rejected before any ledger mutation happens.
+    const persisted = await this.isSaved();
+    await this.recomputeAmountsForSave(persisted);
+    this.assertNonNegativeAmounts();
+
     if (this.totalAmount <= 0) {
       throw new Error(
         `Cannot recognize revenue for invoice ${this.invoiceNumber} with non-positive total: ${this.totalAmount}`,
@@ -713,7 +792,7 @@ export class Invoice extends SmrtObject {
       this.options,
     );
 
-    // Build entries array
+    // Build entries array from the now-authoritative totals.
     const entries: any[] = [
       // Debit AR (assets increase)
       {
@@ -746,12 +825,26 @@ export class Invoice extends SmrtObject {
       entries,
     });
 
-    // Post the journal
+    // Post the journal, then link + persist the invoice as one logical unit. If
+    // the invoice save fails after the journal is posted, void the journal so
+    // the books don't retain a posted-but-unlinked entry (compensating action —
+    // smrt-ledgers has no cross-row transaction primitive, and a posted journal
+    // is immutable except via void()).
     await journal.post();
-
-    // Update invoice record
     this.arJournalId = journal.id;
-    await this.save();
+    try {
+      await this.save();
+    } catch (err) {
+      try {
+        await journal.void(
+          `Reverted: invoice ${this.invoiceNumber} save failed during revenue recognition`,
+        );
+      } catch {
+        // Best-effort compensation; surface the original failure regardless.
+      }
+      this.arJournalId = '';
+      throw err;
+    }
 
     return journal;
   }

@@ -37,6 +37,37 @@ import {
 const PAYMENT_INTENT_EPSILON = 0.01;
 
 /**
+ * Legal status transitions for a PaymentIntent, keyed by the prior persisted
+ * status. Mirrors the state machine documented on {@link PaymentIntentStatus}
+ * and enforced by the dedicated helpers, so a raw `status` mass-assignment on
+ * the generated update route can't skip steps (e.g. `awaiting_payment →
+ * issued`) or revive a terminal state.
+ *
+ * `awaiting_payment → paid → (issued | retired)`, with `expired` / `cancelled`
+ * as alternate terminal exits from `awaiting_payment`. `issued` may still be
+ * `retired` (a reversal after rights were issued).
+ */
+const PAYMENT_INTENT_STATUS_TRANSITIONS: Record<
+  PaymentIntentStatus,
+  PaymentIntentStatus[]
+> = {
+  [PaymentIntentStatus.AWAITING_PAYMENT]: [
+    PaymentIntentStatus.PAID,
+    PaymentIntentStatus.EXPIRED,
+    PaymentIntentStatus.CANCELLED,
+  ],
+  [PaymentIntentStatus.PAID]: [
+    PaymentIntentStatus.ISSUED,
+    PaymentIntentStatus.RETIRED,
+  ],
+  [PaymentIntentStatus.ISSUED]: [PaymentIntentStatus.RETIRED],
+  // Terminal states.
+  [PaymentIntentStatus.RETIRED]: [],
+  [PaymentIntentStatus.EXPIRED]: [],
+  [PaymentIntentStatus.CANCELLED]: [],
+};
+
+/**
  * Module-scoped record of the status each PaymentIntent was loaded with, so
  * the save-time guard can detect a status being forced to PAID via raw
  * mass-assignment (bypassing the verified transition path). Same WeakMap
@@ -290,33 +321,67 @@ export class PaymentIntent extends SmrtObject {
   }
 
   /**
-   * Save-time guard (S5 audit #1390): when a PaymentIntent transitions *into*
-   * `PAID` it must be backed by a real, COMPLETED, amount-matching Payment.
+   * Save-time state-machine guard (S5 audit #1390 round 2).
    *
-   * `status` is mass-assignable on the generated update route and the sync
-   * `markPaid` helper trusts its arguments, so a forged `status: 'paid'` (or a
-   * bare `markPaid` against a bogus paymentId) would otherwise persist an
-   * unbacked PAID intent — falsifying downstream "this was paid for" rights
-   * issuance. We re-run the Payment verification here so the check can't be
-   * bypassed regardless of which path set the status.
+   * `status`, `paymentId`, and `paidOptionBackendId` are all mass-assignable on
+   * the generated update route, and the sync `markPaid` helper trusts its
+   * arguments. Two distinct attacks follow:
    *
-   * The verification only fires on the *transition into* PAID (prior status
-   * was not PAID, or the row is brand-new and starts PAID). Re-saving an
-   * already-PAID intent (e.g. `markIssued`) does not re-verify.
+   *  1. **Forge a PAID intent** — set `status: 'paid'` (or call bare `markPaid`)
+   *     against a bogus / pending / non-matching Payment. This falsifies
+   *     downstream "this was paid for" rights issuance.
+   *  2. **Repoint an already-PAID intent** — leave `status: 'paid'` but swap
+   *     `paymentId` / `paidOptionBackendId` to a bogus Payment after the fact.
+   *     Round 1 only verified the *transition into* PAID, so an already-PAID
+   *     row could be silently repointed with no re-verify. Likewise an intent
+   *     forced straight to `ISSUED` (the terminal happy-path that gates rights
+   *     issuance) was never required to have been backed by a real Payment.
+   *
+   * This guard therefore:
+   *  - validates the status transition is legal (no `awaiting_payment → issued`
+   *    skips, no reviving terminal states);
+   *  - re-verifies the backing Payment on **every** save where the persisted
+   *    status is PAID or ISSUED — not just the transition edge — so a repoint
+   *    of the paid backing fields is caught.
+   *
+   * Re-verifying an unchanged PAID/ISSUED row is cheap (one Payment load) and
+   * closes the repoint hole; freezing the backing fields would instead block
+   * legitimate corrections, so we re-verify.
    */
   override async save(): Promise<this> {
     const prior = loadedIntentStatus.get(this);
-    const transitioningIntoPaid =
-      this.status === PaymentIntentStatus.PAID &&
-      prior !== PaymentIntentStatus.PAID;
+    this.assertStatusTransition(prior);
 
-    if (transitioningIntoPaid) {
+    const persistingPaidOrIssued =
+      this.status === PaymentIntentStatus.PAID ||
+      this.status === PaymentIntentStatus.ISSUED;
+
+    if (persistingPaidOrIssued) {
       await this.assertBackedByCompletedPayment();
     }
 
     const result = (await super.save()) as this;
     loadedIntentStatus.set(this, this.status);
     return result;
+  }
+
+  /**
+   * Reject an illegal status flip done via raw field assignment. Compares the
+   * about-to-be-written status against the status the row was loaded with.
+   * No-op re-saves (status unchanged) and brand-new rows are allowed (the
+   * backing-Payment verification still runs separately for PAID/ISSUED).
+   */
+  private assertStatusTransition(prior: PaymentIntentStatus | undefined): void {
+    if (prior === undefined) return; // new row
+    if (prior === this.status) return; // no-op re-save
+    const allowed = PAYMENT_INTENT_STATUS_TRANSITIONS[prior] ?? [];
+    if (!allowed.includes(this.status)) {
+      throw new Error(
+        `PaymentIntent ${this.id}: illegal status transition '${prior}' → ` +
+          `'${this.status}'. Use the guarded transition helpers ` +
+          '(verifyAndMarkPaid / markIssued / expire / cancel / retire).',
+      );
+    }
   }
 
   /**

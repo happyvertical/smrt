@@ -41,6 +41,7 @@ import {
   PaymentIntentStatus,
   type PaymentOption,
   PaymentStatus,
+  PayoutStatus,
 } from '../types/index.js';
 
 function tmpDb(tag: string): string {
@@ -597,5 +598,452 @@ describe('Contract status-transition guard (#1390)', () => {
       contract.status = next;
       await expect(contract.save()).resolves.toBeDefined();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 2, Finding 1 (Payment): COMPLETED is settlement-gated; an existing
+// row cannot be raw-promoted to COMPLETED, so a forged COMPLETED Payment can't
+// satisfy PaymentIntent's PAID verification.
+// ---------------------------------------------------------------------------
+
+describe('Payment COMPLETED settlement guard (#1390 round 2)', () => {
+  let dbPath: string;
+  let payments: PaymentCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('payment-complete');
+    payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('rejects raw-promoting a persisted PENDING payment to COMPLETED', async () => {
+    const payment = await payments.create({
+      amount: 199,
+      currency: 'USD',
+      status: PaymentStatus.PENDING,
+    });
+    await payment.save();
+
+    // Reload so the instance carries a persisted prior status of PENDING (the
+    // exact shape a generated REST update mutates).
+    const loaded = await payments.get({ id: payment.id });
+    expect(loaded).toBeTruthy();
+    (loaded as any).status = PaymentStatus.COMPLETED;
+    await expect((loaded as any).save()).rejects.toThrow(
+      /cannot promote an existing payment to COMPLETED/,
+    );
+
+    // The persisted row is untouched.
+    const reloaded = await payments.get({ id: payment.id });
+    expect(reloaded?.status).toBe(PaymentStatus.PENDING);
+  });
+
+  it('rejects an illegal status transition on an existing payment', async () => {
+    const payment = await payments.create({
+      amount: 50,
+      currency: 'USD',
+      status: PaymentStatus.PENDING,
+    });
+    await payment.save();
+    payment.markFailed('card declined');
+    await payment.save();
+
+    // FAILED is terminal — forcing it back to PENDING must throw.
+    payment.status = PaymentStatus.PENDING;
+    await expect(payment.save()).rejects.toThrow(/illegal status transition/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 2, Finding 2 (PaymentIntent): an already-PAID intent cannot be
+// repointed to a bogus Payment, and ISSUED must stay backed.
+// ---------------------------------------------------------------------------
+
+describe('PaymentIntent repoint / issued guard (#1390 round 2)', () => {
+  let dbPath: string;
+  let intents: PaymentIntentCollection;
+  let payments: PaymentCollection;
+
+  const usdcOption: PaymentOption = {
+    backendId: 'base-usdc',
+    currency: 'USDC-base',
+    chain: 'base',
+    payTo: '0xabc0000000000000000000000000000000000002',
+    nativeAmount: 199.0,
+  };
+
+  beforeEach(async () => {
+    dbPath = tmpDb('intent-repoint');
+    intents = await PaymentIntentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  async function paidIntent() {
+    const intent = await intents.create({
+      offeringRef: 'sku-repoint',
+      licenseeEmail: 'c@example.test',
+      idempotencyKey: `idem-${Math.random()}`,
+      usdPriceLocked: 199,
+      paymentOptions: [usdcOption],
+    });
+    await intent.save();
+    const good = await payments.create({
+      amount: 199,
+      currency: 'USDC-base',
+      nativeAmount: 199,
+      nativeCurrency: 'USDC-base',
+      status: PaymentStatus.COMPLETED,
+    });
+    await good.save();
+    await intent.verifyAndMarkPaid({
+      backendId: 'base-usdc',
+      paymentId: good.id,
+    });
+    await intent.save();
+    return { intent, good };
+  }
+
+  it('rejects repointing an already-PAID intent to a non-existent Payment', async () => {
+    const { intent } = await paidIntent();
+    expect(intent.status).toBe(PaymentIntentStatus.PAID);
+
+    // Status stays PAID (a no-op transition) but the backing paymentId is
+    // swapped to a bogus row — round 1 only verified the transition edge, so
+    // this previously slipped through. It must now be rejected.
+    intent.paymentId = 'totally-bogus';
+    await expect(intent.save()).rejects.toThrow(/does not exist/);
+  });
+
+  it('keeps ISSUED backed by the original verified Payment', async () => {
+    const { intent } = await paidIntent();
+    intent.markIssued();
+    await expect(intent.save()).resolves.toBeDefined();
+    expect(intent.status).toBe(PaymentIntentStatus.ISSUED);
+
+    // Now repoint the ISSUED intent at a bogus payment — must be rejected.
+    intent.paymentId = 'nope';
+    await expect(intent.save()).rejects.toThrow(/does not exist/);
+  });
+
+  it('rejects an illegal status skip (awaiting_payment → issued)', async () => {
+    const intent = await intents.create({
+      offeringRef: 'sku-skip',
+      licenseeEmail: 'd@example.test',
+      idempotencyKey: `idem-${Math.random()}`,
+      usdPriceLocked: 199,
+      paymentOptions: [usdcOption],
+    });
+    await intent.save();
+
+    // Force the status straight to ISSUED, skipping PAID entirely.
+    intent.status = PaymentIntentStatus.ISSUED;
+    await expect(intent.save()).rejects.toThrow(/illegal status transition/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 2, Finding 3 (Invoice): status reconciled against derived amountPaid;
+// new invoices can't start PAID.
+// ---------------------------------------------------------------------------
+
+describe('Invoice payment-status reconciliation (#1390 round 2)', () => {
+  let dbPath: string;
+  let invoices: InvoiceCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('invoice-reconcile');
+    invoices = await InvoiceCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('rejects a raw SENT → PAID flip with no allocations (amountPaid stays 0)', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-SENT-PAID',
+      subtotal: 100,
+      taxAmount: 0,
+      totalAmount: 100,
+    });
+    await invoice.save();
+    invoice.markSent();
+    await invoice.save();
+
+    // No PaymentAllocations exist, so derived amountPaid is 0 — claiming PAID
+    // is inconsistent and must be rejected.
+    invoice.status = InvoiceStatus.PAID;
+    await expect(invoice.save()).rejects.toThrow(
+      /status is PAID but derived amountPaid/,
+    );
+  });
+
+  it('rejects a new invoice that starts PAID', async () => {
+    await expect(
+      invoices.create({
+        invoiceNumber: 'INV-NEW-PAID',
+        subtotal: 100,
+        taxAmount: 0,
+        totalAmount: 100,
+        amountPaid: 100,
+        status: InvoiceStatus.PAID,
+      }),
+    ).rejects.toThrow(/a new invoice cannot start/);
+  });
+
+  it('forces a new invoice to start with amountPaid = 0', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-NEW-UNPAID',
+      subtotal: 100,
+      taxAmount: 0,
+      totalAmount: 100,
+      amountPaid: 75, // caller-supplied — must be ignored on create
+    });
+    expect(invoice.amountPaid).toBe(0);
+    expect(invoice.status).toBe(InvoiceStatus.DRAFT);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 2, Finding 4 (Payout): state-machine transitions + source-payment cap.
+// ---------------------------------------------------------------------------
+
+describe('Payout state-machine + cap guard (#1390 round 2)', () => {
+  let dbPath: string;
+  let payouts: PayoutCollection;
+  let payments: PaymentCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('payout-sm');
+    payouts = await PayoutCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('rejects a raw pending → confirmed skip on an existing payout', async () => {
+    const payout = await payouts.create({
+      paymentId: 'pmt-skip-confirm',
+      vendorId: 'vendor-skip',
+      grossAmount: 100,
+      operatorFee: 10,
+      supplierNet: 90,
+      currency: 'USD',
+      backendId: 'stripe',
+    });
+    await payout.save();
+
+    // Raw mass-assign straight to CONFIRMED, skipping SENT.
+    payout.status = PayoutStatus.CONFIRMED;
+    await expect(payout.save()).rejects.toThrow(/illegal status transition/);
+  });
+
+  it('rejects a SENT payout without a backendTxRef', async () => {
+    const payout = await payouts.create({
+      paymentId: 'pmt-sent-notx',
+      vendorId: 'vendor-sent',
+      grossAmount: 100,
+      operatorFee: 10,
+      supplierNet: 90,
+      currency: 'USD',
+      backendId: 'stripe',
+    });
+    await payout.save();
+
+    // Force SENT without going through markSent() (which would require a ref).
+    payout.status = PayoutStatus.SENT;
+    await expect(payout.save()).rejects.toThrow(/requires a backendTxRef/);
+  });
+
+  it('caps grossAmount against the source Payment funded amount', async () => {
+    const payment = await payments.create({
+      amount: 100,
+      currency: 'USD',
+    });
+    await payment.save();
+
+    // Payout claims to remit 500 against a payment that only brought in 100.
+    await expect(
+      payouts.create({
+        paymentId: payment.id,
+        vendorId: 'vendor-over',
+        grossAmount: 500,
+        operatorFee: 50,
+        supplierNet: 450,
+        currency: 'USD',
+        backendId: 'stripe',
+      }),
+    ).rejects.toThrow(/exceeds the source Payment/);
+  });
+
+  it('allows a payout within the source Payment funded amount', async () => {
+    const payment = await payments.create({ amount: 100, currency: 'USD' });
+    await payment.save();
+    const payout = await payouts.create({
+      paymentId: payment.id,
+      vendorId: 'vendor-ok',
+      grossAmount: 100,
+      operatorFee: 10,
+      supplierNet: 90,
+      currency: 'USD',
+      backendId: 'stripe',
+    });
+    await expect(payout.save()).resolves.toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 2, Finding 6 (PaymentAllocation): missing Payment is a hard error.
+// ---------------------------------------------------------------------------
+
+describe('PaymentAllocation missing-Payment hard error (#1390 round 2)', () => {
+  let dbPath: string;
+  let allocations: PaymentAllocationCollection;
+  let invoices: InvoiceCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('alloc-missing');
+    allocations = await PaymentAllocationCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    invoices = await InvoiceCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('rejects an allocation whose referenced Payment does not exist', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-ALLOC-MISSING',
+      subtotal: 100,
+      taxAmount: 0,
+      totalAmount: 100,
+    });
+    await invoice.save();
+
+    // No Payment row exists for this id — the cap can't be enforced, so the
+    // allocation must be rejected outright rather than silently skipping it.
+    await expect(
+      allocations.create({
+        paymentId: 'no-such-payment',
+        invoiceId: invoice.id,
+        amount: 100,
+      }),
+    ).rejects.toThrow(/does not exist/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 2, Finding 5 (Invoice.recognizeRevenue): fresh totals + rollback.
+// ---------------------------------------------------------------------------
+
+describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => {
+  let dbPath: string;
+  let invoices: InvoiceCollection;
+  let lineItems: InvoiceLineItemCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('recognize');
+    invoices = await InvoiceCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    lineItems = await InvoiceLineItemCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('rejects recognizing revenue off a forged total before posting any journal', async () => {
+    const invoice = await invoices.create({
+      invoiceNumber: 'INV-REV-FORGED',
+      totalAmount: 0,
+    });
+    await invoice.save();
+
+    const li = await lineItems.create({
+      invoiceId: invoice.id,
+      description: 'Service',
+      quantity: 10,
+      unitPrice: 100, // line total 1000
+    });
+    li.amount = li.calculateAmount();
+    await li.save();
+
+    // Forge a tiny total in memory, then try to recognize revenue. The
+    // pre-journal recompute must reject it, and no arJournalId is set.
+    invoice.totalAmount = 1;
+    await expect(invoice.recognizeRevenue({} as any)).rejects.toThrow(
+      /does not match line-item/,
+    );
+    expect(invoice.arJournalId).toBe('');
+
+    // The persisted invoice carries no journal reference (NULL deserializes as
+    // null or empty string depending on the column default).
+    const reloaded = await invoices.get({ id: invoice.id });
+    expect(reloaded?.arJournalId || '').toBe('');
   });
 });

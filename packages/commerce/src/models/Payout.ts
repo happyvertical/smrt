@@ -27,6 +27,38 @@ import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { PayoutStatus } from '../types/index.js';
 import { Vendor } from './Vendor.js';
 
+/**
+ * Sub-cent rounding tolerance, matching the rest of the package's EPSILON
+ * convention.
+ */
+const PAYOUT_EPSILON = 0.01;
+
+/**
+ * Legal status transitions for a Payout, keyed by the prior persisted status.
+ * Mirrors the state machine enforced by `markSent` / `markConfirmed` /
+ * `markFailed` / `resetFromFailed`, so a raw `status` mass-assignment on the
+ * generated update route can't skip steps (e.g. `pending → confirmed`) or
+ * revive a terminal-ish state outside the dedicated reset path.
+ *
+ * `pending → sent → confirmed`, with `failed` reachable from `pending` / `sent`
+ * and `failed → pending` allowed only via `resetFromFailed()`.
+ */
+const PAYOUT_STATUS_TRANSITIONS: Record<PayoutStatus, PayoutStatus[]> = {
+  [PayoutStatus.PENDING]: [PayoutStatus.SENT, PayoutStatus.FAILED],
+  [PayoutStatus.SENT]: [PayoutStatus.CONFIRMED, PayoutStatus.FAILED],
+  [PayoutStatus.CONFIRMED]: [],
+  // FAILED is resettable to PENDING via resetFromFailed().
+  [PayoutStatus.FAILED]: [PayoutStatus.PENDING],
+};
+
+/**
+ * Module-scoped record of the status each Payout instance was loaded with, so
+ * the save-time transition guard can compare the prior persisted status
+ * against the one being written. WeakMap keeps it out of the schema and GCs
+ * with the instance — same pattern as the other commerce models.
+ */
+const loadedPayoutStatus = new WeakMap<Payout, PayoutStatus>();
+
 @TenantScoped({ mode: 'optional' })
 @smrt({
   api: { include: ['list', 'get', 'create', 'update'] },
@@ -172,6 +204,9 @@ export class Payout extends SmrtObject {
     this.sentAt = Payout.coerceDate(this.sentAt);
     this.confirmedAt = Payout.coerceDate(this.confirmedAt);
     this.failedAt = Payout.coerceDate(this.failedAt);
+    if (await this.isSaved()) {
+      loadedPayoutStatus.set(this, this.status);
+    }
     return this;
   }
 
@@ -303,13 +338,109 @@ export class Payout extends SmrtObject {
   }
 
   /**
-   * Save with an amount-invariant guard, so a bad gross/fee/net triple
-   * can't slip into the persisted row. Direct field manipulation
-   * bypasses the helpers — this is the catch-all.
+   * Save-time state-machine + settlement guard (S5 audit #1390 round 2).
+   *
+   * `status`, `backendTxRef`, and the amount triple are all mass-assignable on
+   * the generated create/update routes. The amount invariant alone (round 1)
+   * still let a caller raw-flip a persisted payout to `CONFIRMED` / `SENT`
+   * (skipping the chain steps) or remit a `grossAmount` larger than the source
+   * Payment actually brought in — money that never arrived.
+   *
+   * This guard adds:
+   *  - **Transitions on an existing row must be legal** per
+   *    {@link PAYOUT_STATUS_TRANSITIONS} (no `pending → confirmed` skip on a
+   *    raw update, no reviving a CONFIRMED payout). Brand-new rows may be
+   *    created in any status (collection/import/query fixtures), but advancing
+   *    a persisted row is constrained to the legal edges the helpers enforce.
+   *  - **SENT requires a backendTxRef** (matches `markSent`'s invariant) so a
+   *    sent payout is always traceable, regardless of how the status was set.
+   *  - **grossAmount is capped by the source Payment** when that Payment
+   *    resolves: a payout can never remit more than the funding Payment
+   *    settled. A `paymentId` that doesn't resolve (synthetic id, Payment-less
+   *    deployment) skips the cap — the source Payment is a plain-string,
+   *    cross-model reference by design and may legitimately be a manually
+   *    recorded (non-COMPLETED) row, so the cap is best-effort rather than a
+   *    hard existence requirement.
+   *
+   * The amount-invariant check (`validateAmounts`) still runs first as the
+   * arithmetic floor.
    */
   override async save(): Promise<this> {
     this.validateAmounts();
-    return super.save() as Promise<this>;
+
+    const prior = loadedPayoutStatus.get(this);
+    this.assertStatusTransition(prior);
+
+    if (this.status === PayoutStatus.SENT && !this.backendTxRef) {
+      throw new Error(
+        `Payout ${this.id ?? '<new>'}: a SENT payout requires a backendTxRef ` +
+          '(use markSent()).',
+      );
+    }
+
+    await this.assertCappedBySourcePayment();
+
+    const result = (await super.save()) as this;
+    loadedPayoutStatus.set(this, this.status);
+    return result;
+  }
+
+  /**
+   * Reject an illegal status flip on an existing row. Brand-new payouts (no
+   * prior) may start in any status — collection imports and query fixtures
+   * legitimately seed SENT / CONFIRMED rows — but advancing a *persisted* row
+   * is constrained to the legal edges the helpers enforce, so a raw update
+   * can't skip `pending → confirmed` or revive a terminal CONFIRMED.
+   */
+  private assertStatusTransition(prior: PayoutStatus | undefined): void {
+    if (prior === undefined) return; // new row
+    if (prior === this.status) return; // no-op re-save
+    const allowed = PAYOUT_STATUS_TRANSITIONS[prior] ?? [];
+    if (!allowed.includes(this.status)) {
+      throw new Error(
+        `Payout ${this.id}: illegal status transition '${prior}' → ` +
+          `'${this.status}'. Use the guarded helpers (markSent / markConfirmed ` +
+          '/ markFailed / resetFromFailed).',
+      );
+    }
+  }
+
+  /**
+   * Cap `grossAmount` by the source {@link Payment}'s settled funds when that
+   * Payment resolves. A payout that remits more than the Payment that funded
+   * it brought in is money the operator never received.
+   *
+   * Best-effort by design: `paymentId` is a plain-string cross-model reference
+   * (it may be a synthetic id in tests, a Payment-less deployment, or a
+   * manually recorded fiat row). When the Payment resolves we enforce the cap;
+   * when it doesn't, we skip silently rather than block legitimate
+   * configurations. The COMPLETED-settlement requirement lives on
+   * PaymentIntent (which gates rights issuance); a payout may legitimately
+   * front a manually recorded, not-yet-COMPLETED payment.
+   */
+  private async assertCappedBySourcePayment(): Promise<void> {
+    if (!this.paymentId) return;
+
+    const { PaymentCollection } = await import(
+      '../collections/PaymentCollection.js'
+    );
+    const payments = await (PaymentCollection as any).create(this.options);
+    const payment = await payments.get({ id: this.paymentId });
+    if (!payment) return; // synthetic / Payment-less — nothing to cap against
+
+    // Cap against the payment's funds. Prefer the native-rail figure when
+    // present (volatile-currency rails), otherwise the settlement amount —
+    // mirrors the PaymentIntent reconciliation convention.
+    const settled =
+      typeof payment.nativeAmount === 'number' && payment.nativeAmount > 0
+        ? payment.nativeAmount
+        : payment.amount;
+    if (this.grossAmount - settled > PAYOUT_EPSILON) {
+      throw new Error(
+        `Payout ${this.id ?? '<new>'}: grossAmount ${this.grossAmount} exceeds the ` +
+          `source Payment '${this.paymentId}' funded amount ${settled}.`,
+      );
+    }
   }
 
   private static coerceDate(value: unknown): Date | null {

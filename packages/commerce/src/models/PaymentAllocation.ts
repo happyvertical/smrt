@@ -129,10 +129,13 @@ export class PaymentAllocation extends SmrtObject {
    *    payment across invoices would falsify both payment and invoice
    *    balances.
    *
-   * The Payment-amount cap is enforced against the persisted Payment row; if
-   * the payment can't be loaded (smrt-commerce used without a Payment row, or
-   * an as-yet-unsaved payment) the cap is skipped but the positivity check
-   * still applies.
+   * The Payment-amount cap is enforced against the persisted Payment row. An
+   * allocation always carries a `@foreignKey('Payment')` paymentId, so a
+   * `paymentId` that doesn't resolve to a real Payment is a **hard error** (S5
+   * audit #1390 round 2): previously a missing Payment silently skipped the cap
+   * entirely, letting a caller over-apply (or fabricate) funds simply by
+   * pointing at a non-existent payment. An empty `paymentId` is still rejected
+   * by the underlying FK requirement; the positivity check always applies.
    */
   override async save(): Promise<this> {
     if (!Number.isFinite(this.amount) || this.amount <= 0) {
@@ -147,25 +150,30 @@ export class PaymentAllocation extends SmrtObject {
       );
       const payments = await (PaymentCollection as any).create(this.options);
       const payment = await payments.get({ id: this.paymentId });
-      if (payment) {
-        const { PaymentAllocationCollection } = await import(
-          '../collections/PaymentAllocationCollection.js'
+      if (!payment) {
+        throw new Error(
+          `PaymentAllocation ${this.id ?? '<new>'}: referenced Payment ` +
+            `'${this.paymentId}' does not exist — refusing to allocate against a ` +
+            'missing payment (the payment-amount cap cannot be enforced otherwise).',
         );
-        const allocations = await (PaymentAllocationCollection as any).create(
-          this.options,
+      }
+      const { PaymentAllocationCollection } = await import(
+        '../collections/PaymentAllocationCollection.js'
+      );
+      const allocations = await (PaymentAllocationCollection as any).create(
+        this.options,
+      );
+      const existing = await allocations.findByPayment(this.paymentId);
+      const otherTotal = existing.reduce(
+        (sum: number, alloc: PaymentAllocation) =>
+          alloc.id === this.id ? sum : sum + alloc.amount,
+        0,
+      );
+      if (otherTotal + this.amount - payment.amount > ALLOCATION_EPSILON) {
+        throw new Error(
+          `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-apply ` +
+            `payment '${this.paymentId}' — already allocated ${otherTotal} of ${payment.amount}.`,
         );
-        const existing = await allocations.findByPayment(this.paymentId);
-        const otherTotal = existing.reduce(
-          (sum: number, alloc: PaymentAllocation) =>
-            alloc.id === this.id ? sum : sum + alloc.amount,
-          0,
-        );
-        if (otherTotal + this.amount - payment.amount > ALLOCATION_EPSILON) {
-          throw new Error(
-            `PaymentAllocation ${this.id ?? '<new>'}: allocating ${this.amount} would over-apply ` +
-              `payment '${this.paymentId}' — already allocated ${otherTotal} of ${payment.amount}.`,
-          );
-        }
       }
     }
 
