@@ -75,8 +75,12 @@ export class AgentConfig extends SmrtObject {
 
   /**
    * Configuration data stored as JSON
+   *
+   * Sensitive (#1540): agent config blobs routinely carry API keys/credentials,
+   * so this is excluded from generated API/MCP responses and rejected as a
+   * `where` filter key.
    */
-  @field({ type: 'json' })
+  @field({ type: 'json', sensitive: true })
   configData: Record<string, any> = {};
 
   /**

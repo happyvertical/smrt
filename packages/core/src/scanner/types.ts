@@ -42,6 +42,17 @@ export interface FieldDefinition {
   _meta?: Record<string, any>;
   transient?: boolean; // Field not persisted to database
   /**
+   * Sensitive value (API secrets, credentials, tax IDs). Still persisted, but
+   * excluded from `toPublicJSON()` (generated REST/MCP/SvelteKit responses) and
+   * rejected as a `where` filter key.
+   */
+  sensitive?: boolean;
+  /**
+   * Read-only over generated write surfaces. Stripped from create/update
+   * request bodies so callers cannot mass-assign it.
+   */
+  readonly?: boolean;
+  /**
    * Controls whether the field is included in JSON exports.
    * - `true`: Always exported (unless site explicitly excludes it)
    * - `false`: Never exported (cannot be overridden by site config)

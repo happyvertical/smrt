@@ -12,6 +12,12 @@ import { ObjectRegistry } from '../registry';
 export interface APIConfig {
   basePath?: string;
   enableCors?: boolean;
+  /**
+   * Explicit CORS origin allowlist (#1540). Required when `enableCors` is true —
+   * the generator never emits `Access-Control-Allow-Origin: *`. A request's
+   * `Origin` is echoed only when it appears here.
+   */
+  allowedOrigins?: string[];
   customRoutes?: Record<string, (req: Request) => Promise<Response>>;
   authMiddleware?: (
     objectName: string,
@@ -42,9 +48,11 @@ export class APIGenerator {
   constructor(config: APIConfig = {}, context: APIContext = {}) {
     this.config = {
       basePath: '/api/v1',
-      enableCors: true,
+      // Security defaults (#1540): bind to loopback and keep CORS off unless an
+      // explicit origin allowlist is supplied. No `Access-Control-Allow-Origin: *`.
+      enableCors: false,
       port: 3000,
-      hostname: '0.0.0.0',
+      hostname: '127.0.0.1',
       ...config,
     };
     this.context = context;
@@ -164,7 +172,7 @@ export class APIGenerator {
 
     // Handle CORS preflight
     if (req.method === 'OPTIONS' && this.config.enableCors) {
-      return this.createCorsResponse();
+      return this.createCorsResponse(req);
     }
 
     // Handle custom routes first
@@ -172,7 +180,7 @@ export class APIGenerator {
       for (const [path, handler] of Object.entries(this.config.customRoutes)) {
         if (url.pathname === `${this.config.basePath}${path}`) {
           const response = await handler(req);
-          return this.addCorsHeaders(response);
+          return this.addCorsHeaders(response, req);
         }
       }
     }
@@ -180,7 +188,7 @@ export class APIGenerator {
     // Handle object routes
     if (url.pathname.startsWith(this.config.basePath || '')) {
       const response = await this.handleObjectRoute(req, url);
-      return this.addCorsHeaders(response);
+      return this.addCorsHeaders(response, req);
     }
 
     // Not found
@@ -208,10 +216,12 @@ export class APIGenerator {
       const collection = this.collections.get(objectType);
       if (!collection) throw new Error(`Collection ${objectType} not found`);
 
+      const objectName = this.getCollectionObjectName(collection) || objectType;
+
       // Apply auth middleware if configured
       if (this.config.authMiddleware) {
         const authCheck = this.config.authMiddleware(
-          objectType,
+          objectName,
           req.method.toLowerCase(),
         );
         const authResult = await authCheck(req);
@@ -220,6 +230,10 @@ export class APIGenerator {
         }
         // Auth passed, use the potentially modified request
         req = authResult;
+      } else if (!this.isRoutePublic(objectName, req.method)) {
+        // Fail-closed (#1540): no auth middleware wired and the object isn't
+        // marked `@smrt({ api: { public } })` → refuse rather than serve open.
+        return this.createErrorResponse(401, 'Authentication required');
       }
 
       // Use registered collection directly
@@ -228,7 +242,7 @@ export class APIGenerator {
         collection,
         objectId,
         url,
-        this.getCollectionObjectName(collection) || objectType,
+        objectName,
       );
     }
 
@@ -265,6 +279,9 @@ export class APIGenerator {
       }
       // Auth passed, use the potentially modified request
       req = authResult;
+    } else if (!this.isRoutePublic(classInfo.name, req.method)) {
+      // Fail-closed (#1540): see registered-collection branch above.
+      return this.createErrorResponse(401, 'Authentication required');
     }
 
     // Get or create collection
@@ -308,7 +325,7 @@ export class APIGenerator {
             : await this.handleList(collection, url.searchParams);
 
         case 'POST':
-          return await this.handleCreate(collection, req);
+          return await this.handleCreate(collection, req, objectName);
 
         case 'PUT':
         case 'PATCH':
@@ -318,7 +335,7 @@ export class APIGenerator {
               'Object ID required for update',
             );
           }
-          return await this.handleUpdate(collection, objectId, req);
+          return await this.handleUpdate(collection, objectId, req, objectName);
 
         case 'DELETE':
           if (!objectId) {
@@ -355,6 +372,26 @@ export class APIGenerator {
       default:
         return null;
     }
+  }
+
+  /**
+   * Fail-closed authorization posture (#1540). Returns true only when the
+   * object opts out of auth via `@smrt({ api: { public } })`:
+   * - `public: true` → all methods are public.
+   * - `public: 'read'` → only safe (GET) methods are public.
+   * Everything else requires an `authMiddleware` to be configured.
+   */
+  private isRoutePublic(
+    objectName: string | undefined,
+    method: string,
+  ): boolean {
+    if (!objectName) return false;
+    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+    if (!apiConfig || typeof apiConfig !== 'object') return false;
+    const publicAccess = (apiConfig as { public?: boolean | 'read' }).public;
+    if (publicAccess === true) return true;
+    if (publicAccess === 'read') return method.toUpperCase() === 'GET';
+    return false;
   }
 
   private isApiActionEnabled(
@@ -411,7 +448,7 @@ export class APIGenerator {
     if (!object) {
       return this.createErrorResponse(404, 'Object not found');
     }
-    return this.createJsonResponse(object);
+    return this.createJsonResponse(this.toPublicData(object));
   }
 
   /**
@@ -462,7 +499,9 @@ export class APIGenerator {
       orderBy,
     });
 
-    return this.createJsonResponse(objects);
+    return this.createJsonResponse(
+      objects.map((object: any) => this.toPublicData(object)),
+    );
   }
 
   /**
@@ -512,11 +551,12 @@ export class APIGenerator {
   private async handleCreate(
     collection: SmrtCollection<any>,
     req: Request,
+    objectName?: string,
   ): Promise<Response> {
-    const data = (await req.json()) as Record<string, any>;
+    const data = this.applyWritablePolicy(objectName, await req.json());
     const object = await collection.create({ ...data, _skipLoad: true });
     await object.save();
-    return this.createJsonResponse(object, 201);
+    return this.createJsonResponse(this.toPublicData(object), 201);
   }
 
   /**
@@ -526,8 +566,9 @@ export class APIGenerator {
     collection: SmrtCollection<any>,
     id: string,
     req: Request,
+    objectName?: string,
   ): Promise<Response> {
-    const data = await req.json();
+    const data = this.applyWritablePolicy(objectName, await req.json());
     const object = await collection.get(id);
 
     if (!object) {
@@ -538,7 +579,7 @@ export class APIGenerator {
     Object.assign(object, data);
     await object.save();
 
-    return this.createJsonResponse(object);
+    return this.createJsonResponse(this.toPublicData(object));
   }
 
   /**
@@ -575,6 +616,70 @@ export class APIGenerator {
   }
 
   /**
+   * Mass-assignment guard (#1540): strip framework/server-managed and
+   * `@field({ readonly: true })` fields from a create/update body, and — when an
+   * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   */
+  private applyWritablePolicy(
+    objectName: string | undefined,
+    data: any,
+  ): Record<string, any> {
+    if (!data || typeof data !== 'object') {
+      return {};
+    }
+
+    const serverManaged = new Set([
+      'id',
+      'tenantId',
+      'tenant_id',
+      'createdAt',
+      'created_at',
+      'updatedAt',
+      'updated_at',
+    ]);
+
+    const readonly = new Set<string>();
+    let writable: string[] | null = null;
+
+    if (objectName) {
+      const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+      if (
+        apiConfig &&
+        typeof apiConfig === 'object' &&
+        Array.isArray((apiConfig as { writable?: unknown }).writable)
+      ) {
+        writable = (apiConfig as { writable: string[] }).writable;
+      }
+
+      for (const [name, def] of ObjectRegistry.getFields(objectName)) {
+        if (def && (def.readonly === true || def._meta?.readonly === true)) {
+          readonly.add(name);
+        }
+      }
+    }
+
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith('_')) continue;
+      if (serverManaged.has(key)) continue;
+      if (readonly.has(key)) continue;
+      if (writable && !writable.includes(key)) continue;
+      result[key] = value;
+    }
+    return result;
+  }
+
+  /**
+   * Serialize a SmrtObject for a network response, excluding sensitive fields
+   * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
+   */
+  private toPublicData(object: any): any {
+    return typeof object?.toPublicJSON === 'function'
+      ? object.toPublicJSON()
+      : object;
+  }
+
+  /**
    * Create JSON response with proper headers
    */
   private createJsonResponse(data: any, status = 200): Response {
@@ -599,28 +704,45 @@ export class APIGenerator {
   }
 
   /**
+   * Resolve the allowed `Access-Control-Allow-Origin` for a request (#1540).
+   * Returns the request's `Origin` only when it is in the configured allowlist;
+   * never `*`. Returns null when CORS should not be applied.
+   */
+  private resolveAllowedOrigin(req: Request): string | null {
+    if (!this.config.enableCors) return null;
+    const allowed = this.config.allowedOrigins;
+    if (!allowed || allowed.length === 0) return null;
+    const origin = req.headers.get('origin');
+    return origin && allowed.includes(origin) ? origin : null;
+  }
+
+  /**
    * Create CORS preflight response
    */
-  private createCorsResponse(): Response {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type,Authorization',
-        'Access-Control-Max-Age': '86400',
-      },
-    });
+  private createCorsResponse(req: Request): Response {
+    const headers: Record<string, string> = {
+      'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type,Authorization',
+      'Access-Control-Max-Age': '86400',
+    };
+    const origin = this.resolveAllowedOrigin(req);
+    if (origin) {
+      headers['Access-Control-Allow-Origin'] = origin;
+      headers.Vary = 'Origin';
+    }
+    return new Response(null, { status: 200, headers });
   }
 
   /**
    * Add CORS headers to response
    */
-  private addCorsHeaders(response: Response): Response {
-    if (!this.config.enableCors) return response;
+  private addCorsHeaders(response: Response, req: Request): Response {
+    const origin = this.resolveAllowedOrigin(req);
+    if (!origin) return response;
 
     const headers = new Headers(response.headers);
-    headers.set('Access-Control-Allow-Origin', '*');
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Vary', 'Origin');
     headers.set(
       'Access-Control-Allow-Methods',
       'GET,POST,PUT,PATCH,DELETE,OPTIONS',
