@@ -494,7 +494,12 @@ export class MCPGenerator {
       const collection = await this.getCollection(actualObjectName, classInfo);
 
       // Execute the action
-      const result = await this.executeAction(collection, action, args);
+      const result = await this.executeAction(
+        collection,
+        action,
+        args,
+        actualObjectName,
+      );
 
       return {
         content: [
@@ -559,13 +564,122 @@ export class MCPGenerator {
   }
 
   /**
+   * Serialize a tool-response payload, excluding sensitive fields (#1540).
+   * Recurses through arrays and plain objects so a SmrtObject nested inside a
+   * custom-action result (e.g. `{ item }`) is also stripped — `JSON.stringify`
+   * would otherwise call its `toJSON()`. Non-plain instances (Date, etc.) and
+   * primitives pass through unchanged; a cycle guard prevents infinite loops.
+   */
+  private toPublicData(value: any, seen: WeakSet<object> = new WeakSet()): any {
+    if (value === null || typeof value !== 'object') return value;
+    if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+    if (Array.isArray(value)) {
+      if (seen.has(value)) return value;
+      seen.add(value);
+      return value.map((entry) => this.toPublicData(entry, seen));
+    }
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return value;
+    if (seen.has(value)) return value;
+    seen.add(value);
+    const out: Record<string, any> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      out[key] = this.toPublicData(entry, seen);
+    }
+    return out;
+  }
+
+  /**
+   * Mass-assignment guard (#1540): strip framework/server-managed and
+   * `@field({ readonly: true })` fields from a create/update body, and — when an
+   * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   */
+  private applyWritablePolicy(
+    objectName: string | undefined,
+    data: any,
+  ): Record<string, any> {
+    if (!data || typeof data !== 'object') {
+      return {};
+    }
+
+    const serverManaged = new Set([
+      'id',
+      'tenantId',
+      'tenant_id',
+      'createdAt',
+      'created_at',
+      'updatedAt',
+      'updated_at',
+    ]);
+
+    const readonly = new Set<string>();
+    let writable: string[] | null = null;
+
+    if (objectName) {
+      const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+      if (
+        apiConfig &&
+        typeof apiConfig === 'object' &&
+        Array.isArray((apiConfig as { writable?: unknown }).writable)
+      ) {
+        writable = (apiConfig as { writable: string[] }).writable;
+      }
+
+      for (const [name, def] of ObjectRegistry.getFields(objectName)) {
+        if (def && (def.readonly === true || def._meta?.readonly === true)) {
+          readonly.add(name);
+        }
+      }
+    }
+
+    const result: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (key.startsWith('_')) continue;
+      if (serverManaged.has(key)) continue;
+      if (readonly.has(key)) continue;
+      if (writable && !writable.includes(key)) continue;
+      result[key] = value;
+    }
+    return result;
+  }
+
+  /**
    * Execute action on collection
    */
+  /**
+   * Fail-closed authorization for tool calls (#1540). Mutating tools
+   * (create/update/delete + custom actions) require an authenticated principal
+   * (`context.user`) unless the object opts out via `@smrt({ api: { public } })`.
+   * Reads are allowed when `public` is `true` or `'read'`.
+   */
+  private requireToolAuth(
+    objectName: string | undefined,
+    mutating: boolean,
+  ): void {
+    const apiConfig = objectName
+      ? ObjectRegistry.getConfig(objectName)?.api
+      : undefined;
+    const publicAccess =
+      apiConfig && typeof apiConfig === 'object'
+        ? (apiConfig as { public?: boolean | 'read' }).public
+        : undefined;
+
+    if (publicAccess === true) return;
+    if (publicAccess === 'read' && !mutating) return;
+    if (!this.context.user) {
+      throw new Error('Authentication required');
+    }
+  }
+
   private async executeAction(
     collection: SmrtCollection<any>,
     action: string,
     args: any,
+    objectName?: string,
   ): Promise<any> {
+    const mutating = action !== 'list' && action !== 'get';
+    this.requireToolAuth(objectName, mutating);
+
     switch (action) {
       case 'list': {
         const listOptions: any = {
@@ -585,7 +699,7 @@ export class MCPGenerator {
         const total = await collection.count({ where: args.where || {} });
 
         return {
-          data: results,
+          data: results.map((result: any) => this.toPublicData(result)),
           meta: {
             total,
             limit: listOptions.limit,
@@ -607,12 +721,16 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        return item;
+        return this.toPublicData(item);
       }
 
       case 'create': {
-        // Add user context if available
-        const createData = { ...args };
+        // Mass-assignment guard (#1540): only writable fields from the caller.
+        const createData: Record<string, any> = this.applyWritablePolicy(
+          objectName,
+          args,
+        );
+        // Server-set ownership context (not caller-controlled).
         if (this.context.user) {
           createData.created_by = this.context.user.id;
           createData.owner_id = this.context.user.id;
@@ -621,11 +739,11 @@ export class MCPGenerator {
         const newItem = await collection.create(createData);
         await newItem.save();
 
-        return newItem;
+        return this.toPublicData(newItem);
       }
 
       case 'update': {
-        const { id, ...updateData } = args;
+        const { id } = args;
         if (!id) {
           throw new Error('ID is required for update');
         }
@@ -635,7 +753,9 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        // Update properties
+        // Mass-assignment guard (#1540): strip server-managed/read-only keys
+        // (incl. `id`) before applying caller-supplied updates.
+        const updateData = this.applyWritablePolicy(objectName, args);
         Object.assign(existing, updateData);
 
         // Add user context
@@ -645,7 +765,7 @@ export class MCPGenerator {
 
         await existing.save();
 
-        return existing;
+        return this.toPublicData(existing);
       }
 
       case 'delete': {
@@ -663,9 +783,12 @@ export class MCPGenerator {
         return { success: true, message: 'Object deleted successfully' };
       }
 
-      default:
-        // Handle custom actions
-        return this.executeCustomAction(collection, action, args);
+      default: {
+        // Handle custom actions. The method may return a SmrtObject (or array),
+        // so serialize through toPublicData to strip sensitive fields (#1540).
+        const result = await this.executeCustomAction(collection, action, args);
+        return this.toPublicData(result);
+      }
     }
   }
 
@@ -974,7 +1097,8 @@ ${indent}    ai: aiConfig
 ${indent}  });
 
 ${indent}  const items = await collection.list({ where, limit, offset });
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(items) }] };
+${indent}  const itemsPublic = items.map((item) => item.toPublicJSON());
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(itemsPublic) }] };
 ${indent}}`;
 
           case 'get':
@@ -995,7 +1119,7 @@ ${indent}  if (!item) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(item) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(item.toPublicJSON()) }] };
 ${indent}}`;
 
           case 'create':
@@ -1005,10 +1129,10 @@ ${indent}    persistence: { type: 'sql', url: process.env.DATABASE_URL || ':memo
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const newItem = await collection.create(args);
+${indent}  const newItem = await collection.create(applyWritablePolicy('${capitalize(objectName)}', args));
 ${indent}  await newItem.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(newItem.toPublicJSON()) }] };
 ${indent}}`;
 
           case 'update':
@@ -1028,10 +1152,10 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  Object.assign(existing, updateData);
+${indent}  Object.assign(existing, applyWritablePolicy('${capitalize(objectName)}', updateData));
 ${indent}  await existing.save();
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(existing.toPublicJSON()) }] };
 ${indent}}`;
 
           case 'delete':
@@ -1081,7 +1205,7 @@ ${indent}  }
 ${indent}  const methodArgs = Object.keys(options).length > 0 ? options : directArgs;
 ${indent}  const result = await object['${action}'](methodArgs);
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(toPublicResult(result)) }] };
 ${indent}}`;
         }
       })
@@ -1099,9 +1223,72 @@ ${indent}}`;
     return `/**
  * MCP Tool Call Handlers
  * Auto-generated from SMRT objects
+ *
+ * SECURITY (#1540): responses exclude @field({ sensitive }) fields and
+ * create/update bodies are mass-assignment guarded. This handler has no
+ * per-call authentication principal — the generated stdio MCP server's trust
+ * boundary is the host process / MCP client. Run it only in a trusted context
+ * or behind an authenticated gateway.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core/registry';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
+
+/**
+ * Mass-assignment guard (#1540): strip framework/server-managed and
+ * \`@field({ readonly: true })\` fields from create/update bodies, intersecting
+ * with the optional \`@smrt({ api: { writable: [...] } })\` allowlist.
+ */
+function applyWritablePolicy(objectName: string, data: any): Record<string, any> {
+  if (!data || typeof data !== 'object') return {};
+  const serverManaged = new Set<string>([
+    'id', 'tenantId', 'tenant_id',
+    'createdAt', 'created_at', 'updatedAt', 'updated_at',
+  ]);
+  const readonly = new Set<string>();
+  let writable: string[] | null = null;
+  const apiConfig = ObjectRegistry.getConfig(objectName)?.api as any;
+  if (apiConfig && typeof apiConfig === 'object' && Array.isArray(apiConfig.writable)) {
+    writable = apiConfig.writable;
+  }
+  for (const [name, def] of ObjectRegistry.getFields(objectName)) {
+    if (def && ((def as any).readonly === true || (def as any)._meta?.readonly === true)) {
+      readonly.add(name);
+    }
+  }
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(data as Record<string, any>)) {
+    if (key.startsWith('_')) continue;
+    if (serverManaged.has(key)) continue;
+    if (readonly.has(key)) continue;
+    if (writable && !writable.includes(key)) continue;
+    result[key] = value;
+  }
+  return result;
+}
+
+/**
+ * Sensitive-field-safe serialization for custom-action results (#1540).
+ * Recurses through arrays and plain objects so nested SmrtObjects are stripped
+ * too; non-plain instances (Date, etc.) and primitives pass through. Cycle-safe.
+ */
+function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
+  if (value === null || typeof value !== 'object') return value;
+  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+    return value.map((entry: any) => toPublicResult(entry, seen));
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  const out: Record<string, any> = {};
+  for (const [key, entry] of Object.entries(value as Record<string, any>)) {
+    out[key] = toPublicResult(entry, seen);
+  }
+  return out;
+}
 
 /**
  * Handle tool call request

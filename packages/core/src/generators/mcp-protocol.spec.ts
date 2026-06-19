@@ -53,6 +53,8 @@ describe('MCP Protocol Compliance', () => {
       },
       {
         db,
+        // Authenticated context for the fail-closed tool-auth gate (#1540).
+        user: { id: 'test-user' },
       },
     );
   });

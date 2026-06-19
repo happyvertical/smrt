@@ -246,6 +246,29 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       Object.keys(fields).map((f) => toSnakeCase(f)),
     );
 
+    // Security (#1540): collect snake_case names of `@field({ sensitive: true })`
+    // columns so they can't be used as `where` filter keys. Filtering on a
+    // secret column turns the generated REST/MCP `where` surface into a value
+    // oracle (e.g. `apiSecret[like]=sk-%`), exfiltrating the secret one
+    // character at a time even though it's excluded from serialization.
+    const sensitiveFieldNames = new Set<string>();
+    const collectSensitive = (
+      fieldMap: Record<string, any> | Map<string, any>,
+    ) => {
+      const entries =
+        fieldMap instanceof Map ? fieldMap.entries() : Object.entries(fieldMap);
+      for (const [fieldName, def] of entries) {
+        if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
+          // Store both the snake_case column form and the raw property name so
+          // STI `@meta` fields probed via `_meta_data.<prop>` JSON paths (which
+          // keep the camelCase key) are also rejected.
+          sensitiveFieldNames.add(toSnakeCase(fieldName));
+          sensitiveFieldNames.add(fieldName);
+        }
+      }
+    };
+    collectSensitive(fields);
+
     // Add standard SMRT fields that are always valid
     validFieldNames.add('id');
     validFieldNames.add('slug');
@@ -289,6 +312,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         const ancestorFields = ObjectRegistry.getFields(ancestorName);
         for (const fieldName of ancestorFields.keys()) {
           validFieldNames.add(toSnakeCase(fieldName));
+        }
+        collectSensitive(ancestorFields);
+      }
+
+      // Security (#1540): a base collection serializes (and so must protect)
+      // STI descendant fields too — a child's `@meta` sensitive field lives in
+      // `_meta_data` and would otherwise be probe-able via `_meta_data.<prop>`
+      // from the base collection. Mirror toJSON()/getSensitiveFieldNames().
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase) {
+        for (const descendant of ObjectRegistry.getDescendants(stiBase)) {
+          collectSensitive(ObjectRegistry.getFields(descendant));
         }
       }
     }
@@ -371,6 +406,43 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
           `Invalid WHERE clause field: '${fieldName}'. ` +
             `Field names must be identifiers (letters, digits, underscore) ` +
             `with optional dot-separated JSON-path segments.`,
+        );
+      }
+
+      // Security (#1540): reject filters that target a sensitive column. This
+      // runs before operator/field validation so the secret value-probing
+      // oracle is closed even for otherwise-valid operators. We reject when the
+      // base column itself is sensitive, OR when an STI `@meta` sensitive field
+      // is probed via a `_meta_data.<prop>` JSON path (the prop keeps its
+      // camelCase name). The JSON-path check is scoped to the `_meta_data`
+      // column so legitimate filters on unrelated JSON fields (e.g.
+      // `metadata.apiSecret` on a non-sensitive `metadata` column) aren't
+      // falsely rejected.
+      // Use the NORMALIZED column name so camelCase aliases (`_metaData`,
+      // `metaData`) that also resolve to the `_meta_data` column are scoped in —
+      // checking raw `baseFieldName` here let `_metaData.apiSecret` slip past
+      // the segment check while still resolving to the meta column.
+      const baseIsMetaData =
+        snakeBaseFieldName === '_meta_data' ||
+        snakeBaseFieldName === 'meta_data';
+      const metaPathTargetsSensitive =
+        baseIsMetaData &&
+        !!jsonPath &&
+        jsonPath
+          .split('.')
+          .filter(Boolean)
+          .some(
+            (segment) =>
+              sensitiveFieldNames.has(segment) ||
+              sensitiveFieldNames.has(toSnakeCase(segment)),
+          );
+      if (
+        sensitiveFieldNames.has(snakeBaseFieldName) ||
+        metaPathTargetsSensitive
+      ) {
+        throw new Error(
+          `Invalid WHERE clause field: '${fieldName}'. ` +
+            `Filtering on sensitive fields is not allowed.`,
         );
       }
 
@@ -2041,8 +2113,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async count(options: { where?: Record<string, any> } = {}) {
     await this.ensureStorageReady();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const itemClassName = this.getResolvedItemClassName();
 
-    let { where } = options;
+    // Security (#1540): count() is a list-shaped read, so run the same
+    // `beforeList` interceptors (tenant filtering, etc.). Without this, count()
+    // bypasses tenant scoping and returns a cross-tenant total even when the
+    // matching list() is correctly filtered — leaking row counts across tenants.
+    const interceptorContext = createInterceptorContext(
+      itemClassName,
+      'list',
+      this.constructor.name,
+    );
+    const interceptedOptions =
+      (await GlobalInterceptors.executeBeforeList(
+        itemClassName,
+        options as InterceptorListOptions,
+        interceptorContext,
+      )) ??
+      (options as InterceptorListOptions | undefined) ??
+      {};
+
+    let { where } = interceptedOptions;
 
     // Fix for issue #386: Add _meta_type filter for STI child collections.
     // R5-canon: qualified-key lookup throughout — pass `itemQualifiedName`
