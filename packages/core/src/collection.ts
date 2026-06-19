@@ -2,6 +2,17 @@ import { createLogger } from '@happyvertical/logger';
 import { buildWhere } from '@happyvertical/sql';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
+import {
+  buildQueryCacheKey,
+  type CollectionCacheConfig,
+  ensureCacheInvalidationListener,
+  getCachedRows,
+  getCacheGeneration,
+  invalidateCollectionCache,
+  registerCrossProcessCacheInterest,
+  resolveDbCacheKey,
+  setCachedRows,
+} from './collection-cache';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import {
@@ -341,6 +352,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       const snakeFieldName = jsonPath
         ? `${snakeBaseFieldName}${jsonPath}`
         : snakeBaseFieldName;
+
+      // Security (#1379): the field identifier — base column plus any
+      // dot-notation JSON-path segments — is interpolated UNPARAMETERIZED into
+      // the SQL field position by the downstream query builder. The manifest
+      // whitelist below only validates the base column, and is skipped entirely
+      // when a class has no registered fields (skipFieldValidation), so without
+      // this guard a crafted key such as
+      // `metadata.x))/**/UNION/**/SELECT/**/secret/**/FROM/**/users--`
+      // (SQL comments substituting for blocked whitespace) injects arbitrary SQL
+      // via the JSON-path suffix — remotely reachable through the generated
+      // REST/MCP `where` surfaces and able to defeat the tenant filter. Enforce
+      // that the whole identifier is a strict dot-separated identifier so no
+      // parens/quotes/operators/whitespace can survive, regardless of whether
+      // the manifest whitelist below runs.
+      if (!/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z0-9_]+)*$/.test(snakeFieldName)) {
+        throw new Error(
+          `Invalid WHERE clause field: '${fieldName}'. ` +
+            `Field names must be identifiers (letters, digits, underscore) ` +
+            `with optional dot-separated JSON-path segments.`,
+        );
+      }
 
       // Auto-detect IN operator when value is an array without explicit operator
       const effectiveOperator =
@@ -730,6 +762,76 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   }
 
   /**
+   * Resolve the effective cache config for a read (issue #1498).
+   *
+   * Per-call options win: `false` forces a fresh read, `{ ttl }` enables
+   * caching for this call. Otherwise falls back to the model-level
+   * `@smrt({ cache })` config (inheritance-aware). Returns undefined when
+   * the read should go straight to the database — the default.
+   */
+  private resolveReadCacheConfig(
+    perCall?: CollectionCacheConfig | false,
+  ): CollectionCacheConfig | undefined {
+    if (perCall === false) return undefined;
+    if (perCall) return perCall.ttl > 0 ? perCall : undefined;
+    return ObjectRegistry.resolveCollectionCacheConfig(
+      this.getResolvedItemQualifiedName(),
+    );
+  }
+
+  /**
+   * Execute a SELECT, optionally through the collection read cache.
+   *
+   * The cache key is the final SQL + bound parameters — computed after
+   * interceptors (tenancy filters) and STI discriminators are applied, so
+   * differently-scoped queries can never share an entry. Cached values are
+   * raw rows; hydration and read interceptors still run on every call.
+   */
+  private async queryRowsWithCache(
+    sql: string,
+    params: unknown[],
+    cacheConfig: CollectionCacheConfig | undefined,
+  ): Promise<Record<string, any>[]> {
+    if (!cacheConfig) {
+      const result = await this.db.query(sql, ...params);
+      return result.rows;
+    }
+
+    const dbKey = resolveDbCacheKey(this.db);
+    const queryKey = buildQueryCacheKey(sql, params);
+
+    // Start consuming peer invalidations before the first cached read so
+    // a remote write can't go unseen for longer than necessary, and record
+    // table-scoped interest so this process's own writes broadcast even
+    // when the crossProcess opt-in only exists at the call site.
+    if (cacheConfig.crossProcess) {
+      ensureCacheInvalidationListener(this.db);
+      registerCrossProcessCacheInterest(dbKey, this.tableName);
+    }
+
+    const cached = getCachedRows(dbKey, this.tableName, queryKey);
+    if (cached) {
+      return cached;
+    }
+
+    // Capture the table's invalidation generation BEFORE the round-trip; if a
+    // concurrent write invalidates while this SELECT is in flight, setCachedRows
+    // sees the bumped generation and drops the now-stale result instead of
+    // caching it for the full TTL.
+    const generation = getCacheGeneration(dbKey, this.tableName);
+    const result = await this.db.query(sql, ...params);
+    setCachedRows(
+      dbKey,
+      this.tableName,
+      queryKey,
+      result.rows,
+      cacheConfig.ttl,
+      generation,
+    );
+    return result.rows;
+  }
+
+  /**
    * Retrieves a single object from the collection by ID, slug, or a custom filter.
    *
    * Filter resolution:
@@ -743,6 +845,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Runs `beforeGet` / `afterGet` interceptors (used by multi-tenancy, etc.).
    *
    * @param filter - UUID string, slug string, or a WHERE conditions object
+   * @param options.cache - Opt-in read-through cache for this call
+   *   (`{ ttl }` in milliseconds), or `false` to force a fresh read when the
+   *   model opted in via `@smrt({ cache })`. Defaults to the model config.
    * @returns The matching object instance, or `null` if not found
    *
    * @example
@@ -755,6 +860,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * // By custom filter
    * const product = await products.get({ sku: 'WID-001' });
+   *
+   * // Cached read (memoized for 60s, invalidated on writes)
+   * const product = await products.get('my-widget', { cache: { ttl: 60_000 } });
    * ```
    *
    * @see {@link list} for multiple results
@@ -762,6 +870,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    */
   public async get(
     filter: string | Record<string, any>,
+    options: { cache?: CollectionCacheConfig | false } = {},
   ): Promise<ModelType | null> {
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
@@ -812,7 +921,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const { sql: whereSql, values: whereValues } = buildWhere(convertedWhere);
 
     const fullSQL = `SELECT * FROM ${this.tableName} ${whereSql}`;
-    const { rows } = await this.db.query(fullSQL, ...whereValues);
+    const rows = await this.queryRowsWithCache(
+      fullSQL,
+      whereValues,
+      this.resolveReadCacheConfig(options.cache),
+    );
 
     if (!rows?.[0]) {
       // Execute afterGet with null result
@@ -893,6 +1006,24 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
        * ```
        */
       include?: string[];
+      /**
+       * Opt-in read-through cache for this call (issue #1498).
+       *
+       * Pass `{ ttl }` (milliseconds) to memoize the result rows keyed by
+       * the final query shape. Mutations through SMRT invalidate the
+       * table's entries automatically. Pass `false` to force a fresh read
+       * when the model opted in via `@smrt({ cache })`. Defaults to the
+       * model-level config; uncached when neither is set.
+       *
+       * @example
+       * ```typescript
+       * const published = await resumes.list({
+       *   where: { status: 'published' },
+       *   cache: { ttl: 60_000 },
+       * });
+       * ```
+       */
+      cache?: CollectionCacheConfig | false;
     } = {},
   ): Promise<ModelType[]> {
     await this.ensureStorageReady();
@@ -985,15 +1116,22 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const sql = `SELECT * FROM ${this.tableName} ${whereSql} ${orderBySql} ${limitOffsetSql}`;
     const params = [...whereValues, ...limitOffsetValues];
 
-    const result = await this.db.query(sql, ...params);
+    // Resolve the cache preference from the post-interceptor options —
+    // beforeList interceptors may legally set or clear `cache` (e.g. force
+    // read-through on admin paths, enable caching per tenant).
+    const rows = await this.queryRowsWithCache(
+      sql,
+      params,
+      this.resolveReadCacheConfig(
+        (interceptedOptions as { cache?: CollectionCacheConfig | false }).cache,
+      ),
+    );
     const fields = this.getFieldsSync();
 
     // STI: Hydrate instances polymorphically based on _meta_type
     // Reuse tableStrategy and isSTI from earlier in the function
     const instances = await Promise.all(
-      result.rows.map((item: any) =>
-        this.hydrateResultRow(item, fields, isSTI),
-      ),
+      rows.map((item: any) => this.hydrateResultRow(item, fields, isSTI)),
     );
 
     // Eager load specified relationships
@@ -1572,7 +1710,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     } else {
       where = logicalData;
     }
-    const existing = await this.get(where);
+    // Force a fresh read: this probe decides create-vs-update, so a stale cache
+    // hit could update a row that no longer exists or miss one that does.
+    const existing = await this.get(where, { cache: false });
     if (existing) {
       const diff = this.getDiffSync(existing, diffData);
       if (diff) {
@@ -1854,8 +1994,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Ensure manifest is loaded for external packages
     await ObjectRegistry.ensureManifestLoaded(this.getResolvedItemClassName());
 
-    // Load the object first - if it doesn't exist, return false immediately
-    const instance = await this.get(id);
+    // Load the object first - if it doesn't exist, return false immediately.
+    // Force a fresh read: this probe gates a mutation and decides the return
+    // value, so a stale cache hit could delete a phantom (returning true for a
+    // row another process already removed) or skip a real delete.
+    const instance = await this.get(id, { cache: false });
     if (!instance) {
       return false;
     }
@@ -1877,6 +2020,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Executes a `SELECT COUNT(*)` query with the same WHERE conversion as
    * `list()` (camelCase field names, operator suffixes, STI auto-filtering).
    * `limit`, `offset`, and `orderBy` are not applicable and are ignored.
+   *
+   * Note: `count()` is never served from the read cache (issue #1498) — only
+   * `list()`/`get()` are. On a page that caches `list()`, a `count()` issued
+   * in the same request reflects the live database and may briefly diverge
+   * from the cached rows within the TTL window.
    *
    * @param options.where - Filter conditions (same syntax as `list()`)
    * @returns Total count of matching records as an integer
@@ -1987,6 +2135,21 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       interceptedQuery.sql,
       ...interceptedQuery.params,
     );
+
+    // query() is a raw escape hatch documented for SELECTs, but it can run any
+    // SQL. A write issued through it bypasses the save()/delete() invalidation
+    // hooks, so conservatively bust this table's cache when the statement looks
+    // like a mutation (issue #1498). The word-boundary match ignores column
+    // names like `updated_at`/`deleted_at`; a false positive (e.g. SELECT ...
+    // FOR UPDATE) only costs a cache miss, never a stale read.
+    if (
+      /\b(?:insert|update|delete|merge|truncate|replace)\b/i.test(
+        interceptedQuery.sql,
+      )
+    ) {
+      invalidateCollectionCache(resolveDbCacheKey(this.db), this.tableName);
+    }
+
     const fields = this.getFieldsSync();
 
     // STI: Check if we need polymorphic hydration.

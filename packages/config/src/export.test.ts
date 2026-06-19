@@ -156,6 +156,50 @@ describe('sanitizeConfig — secret-key stripping (issue #1357)', () => {
     expect(out.db.url).toBe(':memory:');
   });
 
+  it('redacts credentials embedded in a URL value under a benign key (#1381)', () => {
+    // Key-based redaction misses a DSN stored under a benign `url` key; the
+    // value-level pass masks the userinfo while keeping the host diagnosable.
+    const out = sanitizeConfig({
+      cli: { database: { url: 'postgresql://user:pass@host:5432/db' } },
+    }) as { cli: { database: { url: string } } };
+    expect(out.cli.database.url).toBe('postgresql://***@host:5432/db');
+  });
+
+  it('strips short credential aliases pass/pwd (#1381 codex cross-finding)', () => {
+    const out = sanitizeConfig({
+      smtp: {
+        user: 'svc',
+        pass: 'x',
+        pwd: 'y',
+        smtpPass: 'z',
+        databasePwd: 'w',
+      },
+    }) as { smtp: Record<string, unknown> };
+    expect(out.smtp).toEqual({ user: 'svc' });
+  });
+
+  it('does not over-redact benign words containing pass/pwd', () => {
+    const out = sanitizeConfig({
+      compass: 'n',
+      bypass: true,
+      passive: false,
+      password_hint_enabled: false,
+    }) as Record<string, unknown>;
+    expect(out).toHaveProperty('compass');
+    expect(out).toHaveProperty('bypass');
+    expect(out).toHaveProperty('passive');
+  });
+
+  it('leaves credential-free URLs and :memory: untouched', () => {
+    expect(sanitizeConfig('https://api.example.com/v1')).toBe(
+      'https://api.example.com/v1',
+    );
+    expect(sanitizeConfig(':memory:')).toBe(':memory:');
+    expect(sanitizeConfig('redis://cache.internal:6379')).toBe(
+      'redis://cache.internal:6379',
+    );
+  });
+
   it('returns null/undefined unchanged', () => {
     expect(sanitizeConfig(null)).toBeNull();
     expect(sanitizeConfig(undefined)).toBeUndefined();

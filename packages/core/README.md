@@ -50,6 +50,55 @@ const isExpensive = await product.is('costs more than the average product');
 const description = await product.do('Write a short marketing description');
 ```
 
+### Opt-In Read Cache
+
+SSR apps that re-query read-heavy / write-rare collections on every request
+can memoize `list()` and `get()` results with an opt-in TTL. Defaults are
+off — nothing is cached unless a call or model opts in.
+
+```typescript
+// Per call
+const published = await resumes.list({
+  where: { status: 'published' },
+  cache: { ttl: 60_000 },
+});
+
+// Per model — list()/get() on this collection cache by default
+@smrt({ cache: { ttl: 60_000 } })
+class Resume extends SmrtObject {}
+
+// Force a fresh read on hot paths that must read through
+const latest = await resumes.list({ cache: false });
+```
+
+Because SMRT owns every mutation path (`save()`, `delete()`,
+`collection.create()`, `getOrUpsert()`, junction attach/detach), any write
+automatically invalidates the affected table's cached entries in-process —
+including STI siblings sharing the table. Cached values are raw rows:
+hydration and read interceptors (tenancy, audit) still run on every call.
+
+Caches are per-process. For multi-replica deployments, add
+`crossProcess: true` to broadcast invalidations over the database adapter's
+notification capability (e.g. Postgres LISTEN/NOTIFY) so peers drop their
+entries immediately instead of waiting out the TTL:
+
+```typescript
+@smrt({ cache: { ttl: 60_000, crossProcess: true } })
+class Resume extends SmrtObject {}
+```
+
+Model-level config is the reliable cross-process opt-in: every process
+writing the model knows to broadcast, and STI children writing the shared
+table broadcast even if they opted out of caching their own reads. As a
+per-call option (`list({ cache: { ttl, crossProcess: true } })`), writes
+broadcast only from processes that have already performed such a read —
+typical for homogeneous replicas running the same routes, but a
+write-only process never learns about a call-site opt-in.
+
+Writes that bypass SMRT (raw SQL, external processes without
+`crossProcess`) are only bounded by the TTL — pick one that matches how
+stale the data may be.
+
 ### Bundled Runtimes And External Manifests
 
 Long-lived bundled runtimes such as SvelteKit servers, background workers, and
