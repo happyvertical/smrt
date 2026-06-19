@@ -72,6 +72,7 @@ export interface AssetOptions extends SmrtObjectOptions {
 export interface AssetAssociationOptions
   extends SmrtPolymorphicAssociationOptions {
   assetId?: string;
+  tenantId?: string | null;
 }
 
 /**

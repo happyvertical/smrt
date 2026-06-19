@@ -74,13 +74,19 @@ export interface ServeAssetOptions {
    * How to handle assets whose `sourceUri` is an `http(s)` URL rather
    * than a store-backed path.
    *
-   * - `'proxy'` (default): fetch the bytes via `globalThis.fetch` and
-   *   return them inline. Keeps the origin URL hidden from the client
-   *   and preserves the same tenant/access checks the local path gets.
+   * - `'error'` (default): treat a remote URI as an error (`500`). This
+   *   is the safe default — `sourceUri` is attacker-settable on many
+   *   asset-creation paths, so proxying it blindly is an SSRF vector
+   *   (fetching `169.254.169.254` cloud metadata, internal services,
+   *   etc.). Opt into `'proxy'` only for trusted sources.
+   * - `'proxy'`: fetch the bytes via `globalThis.fetch` and return them
+   *   inline. Keeps the origin URL hidden from the client and preserves
+   *   the same tenant/access checks the local path gets. Guarded against
+   *   SSRF: the host must resolve to a public IP (private, loopback,
+   *   link-local, and cloud-metadata ranges are rejected), only
+   *   `http(s)` is allowed, and redirects are re-validated.
    * - `'redirect'`: return a `302` to `sourceUri` instead of fetching.
    *   Skips the byte round-trip but exposes the origin URL.
-   * - `'error'`: treat a remote URI as an error (`500`). Use this when
-   *   you expect every asset to live in the local store.
    *
    * Anything that does not look like `http://` or `https://` is read
    * through the store as usual.
@@ -94,6 +100,21 @@ export interface ServeAssetOptions {
   fetchImpl?: typeof fetch;
 
   /**
+   * Maximum number of bytes to buffer when `remoteMode: 'proxy'` fetches
+   * a remote asset. Protects against memory-exhaustion DoS from a hostile
+   * (or compromised) origin streaming an unbounded body. Defaults to
+   * {@link DEFAULT_REMOTE_MAX_BYTES} (50 MiB).
+   */
+  remoteMaxBytes?: number;
+
+  /**
+   * Timeout in milliseconds for the `remoteMode: 'proxy'` fetch. Defaults
+   * to {@link DEFAULT_REMOTE_TIMEOUT_MS} (10s). Prevents a slow/hung
+   * origin from pinning the request indefinitely.
+   */
+  remoteTimeoutMs?: number;
+
+  /**
    * Custom `Response`-like constructor, for runtimes that don't have
    * a global `Response` (pre-Node-18, workers with a custom shim).
    * Defaults to `globalThis.Response`.
@@ -103,8 +124,243 @@ export interface ServeAssetOptions {
 
 type ResponseConstructor = typeof Response;
 
+/** Default cap (50 MiB) on bytes buffered from a proxied remote asset. */
+export const DEFAULT_REMOTE_MAX_BYTES = 50 * 1024 * 1024;
+
+/** Default timeout (10s) for a proxied remote-asset fetch. */
+export const DEFAULT_REMOTE_TIMEOUT_MS = 10_000;
+
+/** Maximum number of redirects to follow during a proxied fetch. */
+const MAX_REMOTE_REDIRECTS = 5;
+
+/**
+ * MIME types safe to serve `inline`. Anything else is forced to
+ * `attachment` so a browser won't render attacker-controlled content
+ * (HTML/SVG/XML) in the serving origin's context (stored XSS).
+ */
+const INLINE_SAFE_MIME_TYPES = new Set<string>([
+  'application/json',
+  'application/pdf',
+  'audio/aac',
+  'audio/mpeg',
+  'audio/ogg',
+  'audio/wav',
+  'audio/webm',
+  'image/avif',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/csv',
+  'text/plain',
+  'video/mp4',
+  'video/ogg',
+  'video/webm',
+]);
+
+/** Parse the bare type (drop parameters like `; charset=...`) and lowercase. */
+function normalizeMimeType(raw: string): string {
+  return (raw.split(';')[0] ?? '').trim().toLowerCase();
+}
+
+/** Whether a MIME type is on the inline-safe safelist. */
+function isInlineSafeMimeType(contentType: string): boolean {
+  return INLINE_SAFE_MIME_TYPES.has(normalizeMimeType(contentType));
+}
+
 function isRemoteUri(uri: string): boolean {
   return /^https?:\/\//i.test(uri);
+}
+
+/**
+ * Reject hostnames/IPs that point at private, loopback, link-local, or
+ * cloud-metadata ranges — the core SSRF guard for proxied fetches.
+ *
+ * This is a literal-IP check; it does NOT perform DNS resolution, so a
+ * hostname that resolves to a private IP is not caught here. Treat
+ * `remoteMode: 'proxy'` as trusted-source-only and keep the default at
+ * `'error'`; this guard is defense-in-depth for the literal-IP and obvious
+ * cloud-metadata cases that make up the bulk of real SSRF payloads.
+ */
+function isBlockedHost(hostname: string): boolean {
+  let host = hostname.trim().toLowerCase();
+  // Strip IPv6 brackets if present (URL.hostname keeps them off, but be safe).
+  if (host.startsWith('[') && host.endsWith(']')) {
+    host = host.slice(1, -1);
+  }
+
+  if (host === '' || host === 'localhost' || host.endsWith('.localhost')) {
+    return true;
+  }
+
+  // Cloud metadata endpoints (AWS/GCP/Azure/OpenStack link-local + alibaba).
+  if (
+    host === '169.254.169.254' ||
+    host === 'metadata.google.internal' ||
+    host === 'metadata' ||
+    host === '100.100.100.200'
+  ) {
+    return true;
+  }
+
+  // IPv4 literal?
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (ipv4) {
+    const octets = ipv4.slice(1).map((o) => Number(o));
+    if (octets.some((o) => o > 255)) return true; // malformed → block
+    return isBlockedIpv4(octets as [number, number, number, number]);
+  }
+
+  // IPv6 literal?
+  if (host.includes(':')) {
+    return isBlockedIpv6(host);
+  }
+
+  return false;
+}
+
+function isBlockedIpv4(octets: [number, number, number, number]): boolean {
+  const [a, b] = octets;
+  if (a === 0) return true; // 0.0.0.0/8
+  if (a === 10) return true; // 10.0.0.0/8 private
+  if (a === 127) return true; // loopback
+  if (a === 169 && b === 254) return true; // link-local + metadata
+  if (a === 172 && b >= 16 && b <= 31) return true; // 172.16.0.0/12 private
+  if (a === 192 && b === 168) return true; // 192.168.0.0/16 private
+  if (a === 100 && b >= 64 && b <= 127) return true; // 100.64.0.0/10 CGNAT
+  if (a >= 224) return true; // multicast + reserved
+  return false;
+}
+
+function isBlockedIpv6(host: string): boolean {
+  const h = host.toLowerCase();
+  if (h === '::' || h === '::1') return true; // unspecified + loopback
+  if (h.startsWith('fe80')) return true; // link-local
+  if (h.startsWith('fc') || h.startsWith('fd')) return true; // unique-local
+  if (h.startsWith('ff')) return true; // multicast
+  // IPv4-mapped (::ffff:a.b.c.d) — re-check the embedded v4 address.
+  const mapped = h.match(/::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mapped?.[1]) {
+    const octets = mapped[1].split('.').map((o) => Number(o));
+    if (octets.some((o) => o > 255)) return true;
+    return isBlockedIpv4(octets as [number, number, number, number]);
+  }
+  return false;
+}
+
+/**
+ * Validate a remote URL for proxying: only `http(s)` and only public hosts.
+ * Throws `AssetServeError(502)` on a rejected target (kept opaque so the
+ * client can't probe internal reachability via status differences).
+ */
+function assertSafeRemoteUrl(rawUrl: string): URL {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    throw new AssetServeError('Invalid remote asset URL', 502);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new AssetServeError('Unsupported remote asset scheme', 502);
+  }
+  if (isBlockedHost(url.hostname)) {
+    throw new AssetServeError('Remote asset host not allowed', 502);
+  }
+  return url;
+}
+
+/**
+ * Fetch a remote asset with SSRF protection, a byte cap, and a timeout.
+ *
+ * Redirects are followed manually (`redirect: 'manual'`) so each hop's
+ * `Location` is re-validated through {@link assertSafeRemoteUrl} — otherwise
+ * a public host could 302 to `169.254.169.254`.
+ */
+async function fetchRemoteAsset(
+  startUrl: string,
+  fetchImpl: typeof fetch,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<{ data: Buffer; contentType: string | undefined }> {
+  let current = assertSafeRemoteUrl(startUrl);
+
+  for (let hop = 0; hop <= MAX_REMOTE_REDIRECTS; hop++) {
+    const response = await fetchImpl(current.toString(), {
+      redirect: 'manual',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    // Manual redirect handling — re-validate each Location hop.
+    if (response.status >= 300 && response.status < 400) {
+      const location = response.headers.get('location');
+      if (!location) {
+        throw new AssetServeError(
+          'Remote asset redirect missing Location',
+          502,
+        );
+      }
+      current = assertSafeRemoteUrl(new URL(location, current).toString());
+      continue;
+    }
+
+    if (!response.ok) {
+      throw new AssetServeError(
+        `Remote asset returned ${response.status}`,
+        502,
+      );
+    }
+
+    const data = await readBodyWithCap(response, maxBytes);
+    return {
+      data,
+      contentType: response.headers.get('content-type') ?? undefined,
+    };
+  }
+
+  throw new AssetServeError('Too many remote asset redirects', 502);
+}
+
+/**
+ * Read a response body into a Buffer, aborting if it exceeds `maxBytes`.
+ * Streams when possible so an oversized body is rejected without first
+ * buffering the whole thing; falls back to a post-hoc length check when the
+ * response exposes no readable stream (e.g. test doubles).
+ */
+async function readBodyWithCap(
+  response: Response,
+  maxBytes: number,
+): Promise<Buffer> {
+  const declared = response.headers.get('content-length');
+  if (declared && Number(declared) > maxBytes) {
+    throw new AssetServeError('Remote asset exceeds size limit', 502);
+  }
+
+  const body = response.body;
+  if (body && typeof body.getReader === 'function') {
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => {});
+          throw new AssetServeError('Remote asset exceeds size limit', 502);
+        }
+        chunks.push(value);
+      }
+    }
+    return Buffer.concat(chunks.map((c) => Buffer.from(c)));
+  }
+
+  // No stream available — buffer then enforce the cap.
+  const buf = Buffer.from(await response.arrayBuffer());
+  if (buf.byteLength > maxBytes) {
+    throw new AssetServeError('Remote asset exceeds size limit', 502);
+  }
+  return buf;
 }
 
 /**
@@ -150,7 +406,10 @@ export async function resolveAssetForServing(
     }
   }
 
-  const remoteMode = options.remoteMode ?? 'proxy';
+  // Default to 'error': `sourceUri` is attacker-settable on many
+  // asset-creation paths, so proxying it blindly is an SSRF vector. Callers
+  // serving trusted sources opt into 'proxy' explicitly (S5 #1396).
+  const remoteMode = options.remoteMode ?? 'error';
   let data: Buffer;
   let remoteContentType: string | undefined;
 
@@ -161,7 +420,8 @@ export async function resolveAssetForServing(
     if (remoteMode === 'redirect') {
       throw new RedirectToSourceUri(asset.sourceUri);
     }
-    // Proxy — fetch the bytes from the origin URL.
+    // Proxy — fetch the bytes from the origin URL with SSRF guards,
+    // a byte cap, and a timeout.
     const fetchImpl = options.fetchImpl ?? globalThis.fetch;
     if (!fetchImpl) {
       throw new AssetServeError(
@@ -169,16 +429,17 @@ export async function resolveAssetForServing(
         500,
       );
     }
+    const maxBytes = options.remoteMaxBytes ?? DEFAULT_REMOTE_MAX_BYTES;
+    const timeoutMs = options.remoteTimeoutMs ?? DEFAULT_REMOTE_TIMEOUT_MS;
     try {
-      const response = await fetchImpl(asset.sourceUri);
-      if (!response.ok) {
-        throw new AssetServeError(
-          `Remote asset returned ${response.status}`,
-          502,
-        );
-      }
-      data = Buffer.from(await response.arrayBuffer());
-      remoteContentType = response.headers.get('content-type') ?? undefined;
+      const result = await fetchRemoteAsset(
+        asset.sourceUri,
+        fetchImpl,
+        maxBytes,
+        timeoutMs,
+      );
+      data = result.data;
+      remoteContentType = result.contentType;
     } catch (err) {
       if (err instanceof AssetServeError) throw err;
       // Log the underlying error so operators can debug without
@@ -252,13 +513,23 @@ export async function serveAsset(
     const { data, contentType, filename, size } =
       await resolveAssetForServing(options);
 
+    // Force `attachment` for any type not on the inline-safe safelist so a
+    // browser won't render attacker-controlled HTML/SVG/XML in the serving
+    // origin's context (stored XSS). An explicit `disposition: 'attachment'`
+    // is always honoured; a requested `'inline'` is downgraded for unsafe
+    // types. Pair with `X-Content-Type-Options: nosniff` so the browser
+    // can't MIME-sniff a safelisted type into something executable (S5 #1396).
+    const requestedDisposition = options.disposition ?? 'inline';
+    const disposition =
+      requestedDisposition === 'attachment' || isInlineSafeMimeType(contentType)
+        ? requestedDisposition
+        : 'attachment';
+
     const headers: Record<string, string> = {
       'Content-Type': contentType,
       'Content-Length': String(size),
-      'Content-Disposition': buildContentDisposition(
-        options.disposition ?? 'inline',
-        filename,
-      ),
+      'Content-Disposition': buildContentDisposition(disposition, filename),
+      'X-Content-Type-Options': 'nosniff',
       ...options.headers,
     };
 
