@@ -305,25 +305,23 @@ describe('ChatService', () => {
       });
 
       // User sends a message
-      const userMsg = await chat.sendAgentMessage({
+      const userMsg = await chat.sendAgentUserMessage({
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
-        senderProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         content: 'What is the weather?',
-        role: 'user',
       });
 
       expect(userMsg.roomId).toBe(room.id);
       expect(userMsg.agentSessionId).toBe(session.id);
       expect(userMsg.role).toBe('user');
 
-      // Agent responds
-      const agentMsg = await chat.sendAgentMessage({
+      // Agent responds (internal reply path, authored as the agent)
+      const agentMsg = await chat.sendAgentReply({
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
-        senderProfileId: 'agent-1',
         content: 'The weather is sunny.',
-        role: 'assistant',
+        kind: 'assistant',
       });
 
       expect(agentMsg.role).toBe('assistant');
@@ -339,12 +337,11 @@ describe('ChatService', () => {
       await session.close();
 
       await expect(
-        chat.sendAgentMessage({
+        chat.sendAgentUserMessage({
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
-          senderProfileId: 'profile-1',
+          actorProfileId: 'profile-1',
           content: 'Hello',
-          role: 'user',
         }),
       ).rejects.toThrow('Agent session is not active');
     });

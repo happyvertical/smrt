@@ -16,10 +16,15 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
   async findActiveSession(
     agentId: string,
     participantProfileId: string,
+    tenantId?: string | null,
   ): Promise<AgentSession | null> {
-    const sessions = await this.list({
-      where: { agentId, participantProfileId, status: 'active' },
-    });
+    const where: Record<string, unknown> = {
+      agentId,
+      participantProfileId,
+      status: 'active',
+    };
+    if (tenantId !== undefined) where.tenantId = tenantId;
+    const sessions = await this.list({ where });
     const active = sessions.find((s) => s.isActive());
     return active ?? null;
   }
@@ -35,6 +40,7 @@ export class AgentSessionCollection extends SmrtCollection<AgentSession> {
     const existing = await this.findActiveSession(
       params.agentId,
       params.participantProfileId,
+      params.tenantId,
     );
     if (existing) return existing;
 

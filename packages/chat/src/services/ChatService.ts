@@ -152,6 +152,7 @@ export class ChatService {
       const isMember = await this.participants.isActiveMember(
         params.roomId,
         params.senderProfileId,
+        params.tenantId,
       );
       if (!isMember) {
         throw new Error(
@@ -232,6 +233,7 @@ export class ChatService {
     const existing = await this.participants.findMembership(
       params.roomId,
       params.profileId,
+      params.tenantId,
     );
     if (existing) {
       if (existing.status !== 'active') {
@@ -294,6 +296,7 @@ export class ChatService {
     const existingSession = await this.agentSessions.findActiveSession(
       params.agentId,
       params.participantProfileId,
+      params.tenantId,
     );
     if (existingSession && existingSession.tenantId === params.tenantId) {
       if (existingSession.chatRoomId) {
@@ -352,29 +355,75 @@ export class ChatService {
     return { session, room };
   }
 
-  /** Send a message within an agent session */
-  async sendAgentMessage(params: {
+  /**
+   * Send a USER message within an agent session (S5 #1392).
+   *
+   * The authenticated caller (`actorProfileId`) must be the session's owning
+   * participant. The message is always authored as `session.participantProfileId`
+   * — the caller cannot supply a `senderProfileId`, a `role`, or tool-call data,
+   * so this path can never be used to post as the agent (`assistant`/`tool`) or
+   * to impersonate another profile. Agent replies go through the internal
+   * {@link ChatService.sendAgentReply}.
+   */
+  async sendAgentUserMessage(params: {
     tenantId: string;
     agentSessionId: string;
-    senderProfileId?: string;
+    actorProfileId: string;
     content: string;
-    role: ChatMessageRole;
+    messageType?: ChatMessageType;
+  }) {
+    const session = await this.loadActiveSession(
+      params.agentSessionId,
+      params.tenantId,
+    );
+
+    if (params.actorProfileId !== session.participantProfileId) {
+      throw new Error(
+        'Only the session participant may post user messages in this agent session (authorization denied)',
+      );
+    }
+
+    return this.sendMessage({
+      tenantId: params.tenantId,
+      roomId: session.chatRoomId as string,
+      senderProfileId: session.participantProfileId,
+      content: params.content,
+      role: 'user',
+      messageType: params.messageType ?? 'text',
+      agentSessionId: params.agentSessionId,
+    });
+  }
+
+  /**
+   * Emit an ASSISTANT or TOOL message authored by the agent (S5 #1392).
+   *
+   * INTERNAL: this is the only path that authors a message as the agent, and it
+   * is not reachable with a caller-supplied `senderProfileId`/`role`. The author
+   * is always `session.agentId`. Tool calls are gated fail-closed against the
+   * session's allow-list. Intended for the trusted agent-runtime, never a
+   * per-tenant request handler driven by client-supplied role/sender.
+   */
+  async sendAgentReply(params: {
+    tenantId: string;
+    agentSessionId: string;
+    content: string;
+    kind?: 'assistant' | 'tool';
     messageType?: ChatMessageType;
     toolCallData?: Record<string, unknown> | null;
   }) {
-    const session = await this.agentSessions.get({
-      id: params.agentSessionId,
-    });
-    if (!session) throw new Error('Agent session not found');
-    if (!session.isActive()) throw new Error('Agent session is not active');
-    if (!session.chatRoomId) throw new Error('Agent session has no chat room');
+    const session = await this.loadActiveSession(
+      params.agentSessionId,
+      params.tenantId,
+    );
+
+    const role: ChatMessageRole = params.kind === 'tool' ? 'tool' : 'assistant';
 
     // Enforce the per-session tool allow-list, fail-closed (S5 #1392). A tool
     // call carries its tool name in toolCallData.name (or .tool); any call to a
     // tool not on the session's whitelist is rejected.
     if (
       params.messageType === 'tool_call' ||
-      params.role === 'tool' ||
+      role === 'tool' ||
       params.toolCallData
     ) {
       const toolName = ChatService.extractToolName(params.toolCallData);
@@ -388,29 +437,28 @@ export class ChatService {
       }
     }
 
-    // Default senderProfileId to session's agentId for assistant/tool roles.
-    // For all other roles, senderProfileId must be explicitly provided.
-    let senderProfileId = params.senderProfileId;
-    if (!senderProfileId) {
-      if (params.role === 'assistant' || params.role === 'tool') {
-        senderProfileId = session.agentId;
-      } else {
-        throw new Error(
-          'senderProfileId is required for non-assistant/tool roles in agent sessions',
-        );
-      }
-    }
-
     return this.sendMessage({
       tenantId: params.tenantId,
-      roomId: session.chatRoomId,
-      senderProfileId,
+      roomId: session.chatRoomId as string,
+      senderProfileId: session.agentId,
       content: params.content,
-      role: params.role,
+      role,
       messageType: params.messageType ?? 'text',
       agentSessionId: params.agentSessionId,
       toolCallData: params.toolCallData ?? null,
     });
+  }
+
+  /** Load an active agent session by id, tenant-bound, or throw. */
+  private async loadActiveSession(agentSessionId: string, tenantId: string) {
+    const session = await this.agentSessions.get({
+      id: agentSessionId,
+      tenantId,
+    });
+    if (!session) throw new Error('Agent session not found');
+    if (!session.isActive()) throw new Error('Agent session is not active');
+    if (!session.chatRoomId) throw new Error('Agent session has no chat room');
+    return session;
   }
 
   /**
@@ -422,10 +470,15 @@ export class ChatService {
   async getRoomMessages(params: {
     roomId: string;
     profileId: string;
+    tenantId?: string;
     limit?: number;
     before?: string;
   }) {
-    await this.requireActiveMembership(params.roomId, params.profileId);
+    await this.requireActiveMembership(
+      params.roomId,
+      params.profileId,
+      params.tenantId,
+    );
     return this.messages.getByRoom(params.roomId, {
       limit: params.limit,
       before: params.before,
@@ -438,10 +491,12 @@ export class ChatService {
    * Returns null when the room does not exist; throws when the caller is not an
    * active participant.
    */
-  async getRoomForMember(roomId: string, profileId: string) {
-    const room = await this.rooms.get({ id: roomId });
+  async getRoomForMember(roomId: string, profileId: string, tenantId?: string) {
+    const room = await this.rooms.get(
+      tenantId !== undefined ? { id: roomId, tenantId } : { id: roomId },
+    );
     if (!room) return null;
-    await this.requireActiveMembership(roomId, profileId);
+    await this.requireActiveMembership(roomId, profileId, tenantId);
     return room;
   }
 
@@ -456,12 +511,15 @@ export class ChatService {
   async updateAgentSessionConfig(params: {
     agentSessionId: string;
     actorProfileId: string;
+    tenantId?: string;
     allowedTools?: string[];
     systemPrompt?: string;
   }) {
-    const session = await this.agentSessions.get({
-      id: params.agentSessionId,
-    });
+    const session = await this.agentSessions.get(
+      params.tenantId !== undefined
+        ? { id: params.agentSessionId, tenantId: params.tenantId }
+        : { id: params.agentSessionId },
+    );
     if (!session) throw new Error('Agent session not found');
 
     const isOwner = params.actorProfileId === session.participantProfileId;
@@ -485,8 +543,13 @@ export class ChatService {
   private async requireActiveMembership(
     roomId: string,
     profileId: string,
+    tenantId?: string,
   ): Promise<void> {
-    const isMember = await this.participants.isActiveMember(roomId, profileId);
+    const isMember = await this.participants.isActiveMember(
+      roomId,
+      profileId,
+      tenantId,
+    );
     if (!isMember) {
       throw new Error(
         'Caller is not an active member of the room (authorization denied)',

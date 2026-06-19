@@ -66,13 +66,22 @@ const { session, room } = await chat.createAgentSession({
   maxMessages: 100,
 });
 
-// Send a message within the agent session
-await chat.sendAgentMessage({
+// Send a USER message within the agent session. The caller must be the
+// session participant; the message is always authored as that participant.
+await chat.sendAgentUserMessage({
   tenantId: 'tenant-1',
   agentSessionId: session.id,
-  senderProfileId: 'profile-1',
+  actorProfileId: 'profile-1',
   content: 'Summarize the latest news',
-  role: 'user',
+});
+
+// Emit the agent's reply (internal trusted path, authored as the agent).
+// Tool calls are gated fail-closed against the session's allowedTools.
+await chat.sendAgentReply({
+  tenantId: 'tenant-1',
+  agentSessionId: session.id,
+  content: 'Here is the summary...',
+  kind: 'assistant',
 });
 
 // Check session limits before allowing more messages
@@ -120,7 +129,7 @@ const dmRoom = await chat.getOrCreateDM({
 
 | Export | Description |
 |--------|------------|
-| `ChatService` | Facade: `createRoom()`, `sendMessage()`, `startThread()`, `addParticipant()`, `getOrCreateDM()`, `createAgentSession()`, `sendAgentMessage()` |
+| `ChatService` | Facade: `createRoom()`, `sendMessage()`, `startThread()`, `addParticipant()`, `getOrCreateDM()`, `createAgentSession()`, `sendAgentUserMessage()`, `sendAgentReply()`, `updateAgentSessionConfig()` |
 
 ### Types
 

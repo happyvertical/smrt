@@ -8,10 +8,19 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AgentSessionOptions, AgentSessionStatus } from '../types.js';
 
+/**
+ * Agent conversation session. Internal model — sessions must be created via
+ * {@link ChatService.createAgentSession} and their security-relevant config
+ * (`allowedTools` / `systemPrompt` / `chatRoomId` / `participantProfileId`)
+ * mutated only via the owner-checked {@link ChatService.updateAgentSessionConfig}
+ * (S5 #1392). The generated CRUD surface is read-only (`get`/`list`);
+ * `create`/`update`/`delete` are NOT generated, otherwise a `PUT` could rewrite
+ * the tool allow-list or system prompt and bypass the owner check.
+ */
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'agent_sessions',
-  api: { include: ['list', 'get', 'create', 'update'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })

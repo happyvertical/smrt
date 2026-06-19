@@ -15,8 +15,11 @@ export class ChatParticipantCollection extends SmrtCollection<ChatParticipant> {
   async findMembership(
     roomId: string,
     profileId: string,
+    tenantId?: string,
   ): Promise<ChatParticipant | null> {
-    const results = await this.list({ where: { roomId, profileId } });
+    const where: Record<string, unknown> = { roomId, profileId };
+    if (tenantId !== undefined) where.tenantId = tenantId;
+    const results = await this.list({ where });
     return results[0] ?? null;
   }
 
@@ -24,21 +27,35 @@ export class ChatParticipantCollection extends SmrtCollection<ChatParticipant> {
    * Returns the participant row only if the profile is an ACTIVE member of the
    * room (not left/kicked/banned). Used by ChatService to gate sends and reads
    * on room membership (S5 #1392, IDOR hardening).
+   *
+   * `tenantId` is bound into the WHERE clause so a membership lookup can never
+   * resolve a row belonging to another tenant, even when no ALS tenant context
+   * is active to drive the tenancy interceptor (defense in depth).
    */
   async findActiveMembership(
     roomId: string,
     profileId: string,
+    tenantId?: string,
   ): Promise<ChatParticipant | null> {
-    const results = await this.list({
-      where: { roomId, profileId, status: 'active' },
-      limit: 1,
-    });
+    const where: Record<string, unknown> = {
+      roomId,
+      profileId,
+      status: 'active',
+    };
+    if (tenantId !== undefined) where.tenantId = tenantId;
+    const results = await this.list({ where, limit: 1 });
     return results[0] ?? null;
   }
 
   /** True when the profile is an active member of the room. */
-  async isActiveMember(roomId: string, profileId: string): Promise<boolean> {
-    return (await this.findActiveMembership(roomId, profileId)) !== null;
+  async isActiveMember(
+    roomId: string,
+    profileId: string,
+    tenantId?: string,
+  ): Promise<boolean> {
+    return (
+      (await this.findActiveMembership(roomId, profileId, tenantId)) !== null
+    );
   }
 
   async getOnlineInRoom(roomId: string): Promise<ChatParticipant[]> {

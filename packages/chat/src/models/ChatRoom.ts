@@ -21,12 +21,18 @@ type ChatRoomMetadata = Record<string, unknown>;
  * {@link ChatService.createAgentSession} with `maxParticipants: 2`. DM rooms are
  * found-or-created via {@link ChatService.getOrCreateDM}. Threads are tracked via
  * {@link ChatThread} linked by `roomId`. Tenant-scoped (required).
+ *
+ * Internal model — room creation and mutation must go through the
+ * membership/owner-checked {@link ChatService} (S5 #1392). The generated CRUD
+ * surface is read-only (`get`/`list`); `create`/`update`/`delete` are NOT
+ * generated, so a caller cannot forge a room or mutate room state via the raw
+ * collection routes, skipping the ChatService authorization paths.
  */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'chat_rooms',
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
-  mcp: { include: ['list', 'get', 'create'] },
+  api: { include: ['list', 'get'] },
+  mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class ChatRoom extends SmrtObject {

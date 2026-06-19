@@ -6,13 +6,46 @@
  *  - fail-closed agent tool-call whitelist enforcement
  *  - DM identity derived from the chat_participants join (not client metadata)
  *  - caller-scoped expireStale
+ *  - generated CRUD surface cannot mutate internal chat models (the membership/
+ *    owner checks live in ChatService, so generated create/update/delete on the
+ *    raw collection routes would bypass them entirely)
  */
 
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ChatService } from '../services/ChatService.js';
+
+const MUTATING_OPS = ['create', 'update', 'delete'] as const;
+
+/**
+ * Resolve the registered `@smrt()` surface (`api` / `mcp` include lists) for a
+ * chat model. Mirrors how the REST/MCP generators read the config: a list with
+ * explicit `include` only emits those operations.
+ */
+function generatedSurface(qualifiedName: string): {
+  api: string[] | null;
+  mcp: string[] | null;
+} {
+  const registered = ObjectRegistry.getClass(qualifiedName);
+  if (!registered) {
+    throw new Error(`Model not registered: ${qualifiedName}`);
+  }
+  const config = registered.config as {
+    api?: boolean | { include?: string[] };
+    mcp?: boolean | { include?: string[] };
+  };
+  const toInclude = (
+    surface: boolean | { include?: string[] } | undefined,
+  ): string[] | null => {
+    if (surface === false || surface === undefined) return [];
+    if (surface === true) return null; // generates the full CRUD surface
+    return surface.include ?? null;
+  };
+  return { api: toInclude(config.api), mcp: toInclude(config.mcp) };
+}
 
 describe('chat security (S5 #1392)', () => {
   let dbPath: string;
@@ -177,11 +210,11 @@ describe('chat security (S5 #1392)', () => {
         allowedTools: ['search'],
       });
 
-      const msg = await chat.sendAgentMessage({
+      const msg = await chat.sendAgentReply({
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
         content: 'searching',
-        role: 'tool',
+        kind: 'tool',
         messageType: 'tool_call',
         toolCallData: { name: 'search', args: { q: 'x' } },
       });
@@ -197,11 +230,11 @@ describe('chat security (S5 #1392)', () => {
       });
 
       await expect(
-        chat.sendAgentMessage({
+        chat.sendAgentReply({
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
           content: 'rm -rf',
-          role: 'tool',
+          kind: 'tool',
           messageType: 'tool_call',
           toolCallData: { name: 'exec_shell', args: {} },
         }),
@@ -219,11 +252,11 @@ describe('chat security (S5 #1392)', () => {
       expect(session.isToolAllowed('search')).toBe(false);
 
       await expect(
-        chat.sendAgentMessage({
+        chat.sendAgentReply({
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
           content: 'searching',
-          role: 'tool',
+          kind: 'tool',
           messageType: 'tool_call',
           toolCallData: { name: 'search' },
         }),
@@ -239,11 +272,11 @@ describe('chat security (S5 #1392)', () => {
       });
 
       await expect(
-        chat.sendAgentMessage({
+        chat.sendAgentReply({
           tenantId: 'tenant-1',
           agentSessionId: session.id as string,
           content: 'no name',
-          role: 'tool',
+          kind: 'tool',
           messageType: 'tool_call',
           toolCallData: { args: {} },
         }),
@@ -258,20 +291,19 @@ describe('chat security (S5 #1392)', () => {
         // empty whitelist must NOT block plain text messages
       });
 
-      const userMsg = await chat.sendAgentMessage({
+      const userMsg = await chat.sendAgentUserMessage({
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
-        senderProfileId: 'profile-1',
+        actorProfileId: 'profile-1',
         content: 'hello',
-        role: 'user',
       });
       expect(userMsg.role).toBe('user');
 
-      const agentMsg = await chat.sendAgentMessage({
+      const agentMsg = await chat.sendAgentReply({
         tenantId: 'tenant-1',
         agentSessionId: session.id as string,
         content: 'hi there',
-        role: 'assistant',
+        kind: 'assistant',
       });
       expect(agentMsg.role).toBe('assistant');
     });
@@ -365,6 +397,126 @@ describe('chat security (S5 #1392)', () => {
       const reloaded2 = await chat.agentSessions.get({ id: s2.id });
       expect(reloaded1?.status).toBe('expired');
       expect(reloaded2?.status).toBe('active');
+    });
+  });
+
+  describe('generated CRUD surface cannot bypass ChatService', () => {
+    // The membership / owner / tool-whitelist checks all live in ChatService.
+    // If the @smrt()-generated REST/MCP routes emitted create/update/delete on
+    // these internal models, an authenticated caller could POST a message into
+    // any room, forge a ChatParticipant row to grant themselves membership, or
+    // PUT an AgentSession to rewrite its tool allow-list — bypassing every
+    // service-layer check. These models must therefore expose READ ops only.
+    const internals = [
+      '@happyvertical/smrt-chat:ChatMessage',
+      '@happyvertical/smrt-chat:ChatParticipant',
+      '@happyvertical/smrt-chat:ChatRoom',
+      '@happyvertical/smrt-chat:AgentSession',
+    ];
+
+    for (const qualifiedName of internals) {
+      it(`does not generate mutating api/mcp ops for ${qualifiedName}`, () => {
+        const { api, mcp } = generatedSurface(qualifiedName);
+
+        // A `null` include means the full CRUD surface is generated — which
+        // would expose mutations. The fix pins each model to an explicit
+        // read-only include list.
+        expect(api).not.toBeNull();
+        expect(mcp).not.toBeNull();
+
+        for (const op of MUTATING_OPS) {
+          expect(api).not.toContain(op);
+          expect(mcp).not.toContain(op);
+        }
+      });
+    }
+  });
+
+  describe('forged ChatParticipant cannot grant cross-tenant membership', () => {
+    it('a participant row in another tenant does not satisfy the membership check', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'Private',
+        roomType: 'private',
+        createdByProfileId: 'owner',
+      });
+
+      // Simulate a write that slipped past the (now read-only) generated
+      // surface: a row for the same room/profile but tagged to another tenant.
+      // It must NOT be honored as membership for tenant-1.
+      await chat.participants.create({
+        tenantId: 'tenant-2',
+        roomId: room.id as string,
+        profileId: 'intruder',
+        role: 'owner',
+        status: 'active',
+        joinedAt: new Date(),
+      });
+
+      const isMemberOfTenant1 = await chat.participants.isActiveMember(
+        room.id as string,
+        'intruder',
+        'tenant-1',
+      );
+      expect(isMemberOfTenant1).toBe(false);
+
+      await expect(
+        chat.sendMessage({
+          tenantId: 'tenant-1',
+          roomId: room.id as string,
+          senderProfileId: 'intruder',
+          content: 'forged membership',
+        }),
+      ).rejects.toThrow(/not an active member/i);
+    });
+  });
+
+  describe('tenant-bound lookups do not cross tenants', () => {
+    it('findActiveMembership is scoped to the requested tenant', async () => {
+      const room = await chat.createRoom({
+        tenantId: 'tenant-1',
+        name: 'Room',
+        roomType: 'private',
+        createdByProfileId: 'owner',
+      });
+
+      // owner is an active member of tenant-1's room; tenant-2 must not see it.
+      const inTenant1 = await chat.participants.findActiveMembership(
+        room.id as string,
+        'owner',
+        'tenant-1',
+      );
+      expect(inTenant1).not.toBeNull();
+
+      const inTenant2 = await chat.participants.findActiveMembership(
+        room.id as string,
+        'owner',
+        'tenant-2',
+      );
+      expect(inTenant2).toBeNull();
+    });
+
+    it('findActiveSession is scoped to the requested tenant', async () => {
+      const { session } = await chat.createAgentSession({
+        tenantId: 'tenant-1',
+        agentId: 'agent-1',
+        participantProfileId: 'profile-1',
+      });
+      expect(session.id).toBeDefined();
+
+      const sameTenant = await chat.agentSessions.findActiveSession(
+        'agent-1',
+        'profile-1',
+        'tenant-1',
+      );
+      expect(sameTenant?.id).toBe(session.id);
+
+      const otherTenant = await chat.agentSessions.findActiveSession(
+        'agent-1',
+        'profile-1',
+        'tenant-2',
+      );
+      expect(otherTenant).toBeNull();
     });
   });
 });

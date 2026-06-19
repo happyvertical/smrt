@@ -24,8 +24,16 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
     };
 
     // Cursor-based pagination: only messages older than the cursor message.
+    // The cursor must belong to the SAME root-message set of the SAME room
+    // (S5 #1392); a cursor id from another room/thread is silently ignored
+    // rather than allowing it to influence this room's window.
     if (options?.before) {
-      const cursorMsg = await this.get({ id: options.before });
+      const cursorMsg = await this.get({
+        id: options.before,
+        roomId,
+        isDeleted: false,
+        threadId: null,
+      });
       if (cursorMsg?.created_at) {
         where['created_at <'] = cursorMsg.created_at;
       }
@@ -99,7 +107,15 @@ export class ChatMessageCollection extends SmrtCollection<ChatMessage> {
 
     if (!lastReadMessageId) return this.count({ where: base });
 
-    const lastReadMsg = await this.get({ id: lastReadMessageId });
+    // The read-cursor must belong to the same room's root-message set; a cursor
+    // from another room/thread is ignored rather than skewing the count
+    // (S5 #1392).
+    const lastReadMsg = await this.get({
+      id: lastReadMessageId,
+      roomId,
+      isDeleted: false,
+      threadId: null,
+    });
     if (!lastReadMsg?.created_at) return this.count({ where: base });
 
     return this.count({
