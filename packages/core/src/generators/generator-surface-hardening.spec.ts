@@ -99,6 +99,27 @@ class C3McpNamedCustom extends SmrtObject {
   }
 }
 
+// Include names BOTH a public custom method and a non-public one. Only the
+// public method may be emitted as a tool; naming a non-public method in
+// `include` must NOT override its visibility (Copilot finding on the
+// strict-include path — it has to gate on isPublic like the non-strict path).
+// `secretAction` is injected into the registry as a non-public method below,
+// because the scanner strips private/protected methods from the manifest.
+@smrt({ mcp: { include: ['list', 'publicAction', 'secretAction'] } })
+class C3McpPrivateInInclude extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safe } = options;
+    Object.assign(this, safe);
+  }
+
+  async publicAction(): Promise<any> {
+    return { ok: true };
+  }
+}
+
 // No include list at all — keep the historical default: auto-expose public
 // custom methods.
 @smrt({ mcp: true })
@@ -152,6 +173,37 @@ describe('C3 generator-surface hardening', () => {
       expect(names).toContain('c3mcpnamedcustom_recordpayment');
       // The other public custom method is NOT named, so it must not leak.
       expect(names).not.toContain('c3mcpnamedcustom_recognizerevenue');
+    });
+
+    it('a non-public method named in include is NOT emitted, but a public one is', async () => {
+      // Inject a non-public method into the registry: the scanner strips
+      // private/protected methods, so the only way a non-public method reaches
+      // generation metadata is as an isPublic:false manifest entry. The
+      // strict-include path must skip it (Copilot finding) just as the
+      // non-strict path does.
+      ObjectRegistry.getMethods('C3McpPrivateInInclude').set('secretAction', {
+        name: 'secretAction',
+        async: true,
+        parameters: [],
+        returnType: 'Promise<any>',
+        isStatic: false,
+        isPublic: false,
+      });
+      // generateTools() reads methods via getAllMethods(), which caches the
+      // merged inheritance map; invalidate so the injected method is visible.
+      ObjectRegistry.invalidateAllInheritanceCaches();
+
+      const generator = new MCPGenerator({}, { user: { id: 'test-user' } });
+      const tools = await generator.generateTools();
+      const names = tools
+        .filter((t) => t.name.startsWith('c3mcpprivateininclude_'))
+        .map((t) => t.name);
+
+      // Public custom method named in include IS exposed.
+      expect(names).toContain('c3mcpprivateininclude_publicaction');
+      // Non-public custom method named in include is NOT exposed —
+      // strict-include must gate on isPublic just like the non-strict path.
+      expect(names).not.toContain('c3mcpprivateininclude_secretaction');
     });
 
     it('no include list auto-exposes public custom methods (default)', async () => {

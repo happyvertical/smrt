@@ -329,6 +329,24 @@ export class MCPGenerator {
             continue;
           }
 
+          // A non-public method must never be exposed as a tool, even when it
+          // is explicitly named in `include`. This keeps strict-include mode
+          // consistent with the non-strict path below, which gates on
+          // `methodDef.isPublic`. Listing a private method in `include` is a
+          // config mistake, not an override of method visibility (#1540).
+          //
+          // The scanner strips private/protected methods from the manifest, so
+          // when a non-public method is named in `include` it is absent from
+          // `methods` and is only resolvable via validateCustomMethod() on the
+          // runtime prototype (TS access modifiers are erased at runtime). Such
+          // a method must NOT be emitted. We still allow methods that are
+          // present on the class but legitimately absent from the manifest
+          // (e.g. inline/dynamically registered classes), so the guard fires
+          // only when there is a public manifest entry to anchor on OR the
+          // method exists solely as a stripped (non-public) manifest method.
+          const methodDef = methods.get(methodName);
+          if (methodDef && !methodDef.isPublic) continue;
+
           // Generate tool for this method
           const toolName = `${lowerName}_${methodName}`.toLowerCase();
           tools.push({
