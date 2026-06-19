@@ -2113,8 +2113,27 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
   public async count(options: { where?: Record<string, any> } = {}) {
     await this.ensureStorageReady();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
+    const itemClassName = this.getResolvedItemClassName();
 
-    let { where } = options;
+    // Security (#1540): count() is a list-shaped read, so run the same
+    // `beforeList` interceptors (tenant filtering, etc.). Without this, count()
+    // bypasses tenant scoping and returns a cross-tenant total even when the
+    // matching list() is correctly filtered — leaking row counts across tenants.
+    const interceptorContext = createInterceptorContext(
+      itemClassName,
+      'list',
+      this.constructor.name,
+    );
+    const interceptedOptions =
+      (await GlobalInterceptors.executeBeforeList(
+        itemClassName,
+        options as InterceptorListOptions,
+        interceptorContext,
+      )) ??
+      (options as InterceptorListOptions | undefined) ??
+      {};
+
+    let { where } = interceptedOptions;
 
     // Fix for issue #386: Add _meta_type filter for STI child collections.
     // R5-canon: qualified-key lookup throughout — pass `itemQualifiedName`

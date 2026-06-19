@@ -598,6 +598,37 @@ describe('Interceptor integration with Collection and Object', () => {
     expect(results[0].name).toBe('Product 1');
   });
 
+  it('should apply the beforeList tenant filter to count() too (#1540)', async () => {
+    // Regression: count() previously bypassed interceptors, so a tenant user
+    // got filtered list() rows but a cross-tenant total from count().
+    const p1 = await collection.create({
+      name: 'Product 1',
+      tenantId: 'tenant-1',
+    });
+    await p1.save();
+    const p2 = await collection.create({
+      name: 'Product 2',
+      tenantId: 'tenant-2',
+    });
+    await p2.save();
+
+    GlobalInterceptors.register({
+      name: 'tenant-filter',
+      beforeList(className, options) {
+        return {
+          ...options,
+          where: { ...options.where, tenantId: 'tenant-1' },
+        };
+      },
+    });
+
+    // Both list() and count() must reflect the injected tenant filter.
+    const results = await collection.list({ where: {} });
+    const total = await collection.count({ where: {} });
+    expect(results).toHaveLength(1);
+    expect(total).toBe(1);
+  });
+
   it('should allow interceptor to block save with validation error', async () => {
     // First create a product without the interceptor
     const product = await collection.create({ name: 'Test', price: 9.99 });
