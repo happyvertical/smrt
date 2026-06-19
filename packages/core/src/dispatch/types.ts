@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import type { DispatchTenantScope } from './tenant-resolver.js';
 
 /**
  * Dispatch message status
@@ -95,6 +96,21 @@ export interface DispatchListOptions {
   targetSubscriber?: string;
   /** Filter by correlation ID */
   correlationId?: string;
+  /**
+   * Active tenant scope used to filter results (S5 #1398).
+   *
+   * Supplied by the DispatchBus from the server-derived tenant context — never
+   * from external/caller input, so visibility cannot be widened beyond the
+   * active scope. Semantics:
+   *
+   * - omitted / `enforced: false` → no tenant filter (pre-tenancy behavior).
+   * - `enforced: true`, `tenantId: T` → `(tenant_id = T OR tenant_id IS NULL)`.
+   * - `enforced: true`, `tenantId: null` → `tenant_id IS NULL` only (fail-closed
+   *   global scope when tenancy is on but no tenant context is active).
+   *
+   * @see {@link DispatchTenantScope}
+   */
+  tenantScope?: DispatchTenantScope;
   /** Maximum results */
   limit?: number;
   /** Offset for pagination */
