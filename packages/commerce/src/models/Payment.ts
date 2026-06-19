@@ -86,12 +86,47 @@ const settlementInProgress = new WeakSet<Payment>();
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
+  // ROOT FIX (S5 audit #1390 round 4): restrict the generated create/update
+  // write surface so privileged / settlement-derived fields can NEVER be set
+  // by a generated REST/MCP route — closing the status-mass-assignment vector
+  // at the surface rather than relying solely on the save()-time guard.
+  //
+  // `writable` is an allowlist: only these fields survive applyWritablePolicy()
+  // on BOTH create and update (#1540). Deliberately EXCLUDED:
+  //  - `status` — a COMPLETED Payment is settlement proof downstream
+  //    (PaymentIntent's PAID verification trusts it). It is only ever set by
+  //    the verified `recordPayment()` settlement path, never by a caller. This
+  //    closes the "forged COMPLETED Payment via api.create" vector (codex HIGH#1).
+  //  - `journalId` / `paidAt` — settlement-derived, written by recordPayment().
+  //  - `syncedAt` — provider-sync bookkeeping, written by the sync path.
+  api: {
+    include: ['list', 'get', 'create', 'update'],
+    writable: [
+      'contractId',
+      'customerId',
+      'amount',
+      'currency',
+      'method',
+      'transactionId',
+      'reference',
+      'notes',
+      'externalId',
+      'externalProvider',
+      'backendId',
+      'backendTxRef',
+      'nativeAmount',
+      'nativeCurrency',
+      'usdAtQuote',
+      'usdAtConfirmation',
+    ],
+  },
   // NOTE: `recordPayment` is intentionally NOT exposed over MCP. It posts a
   // balanced journal into smrt-ledgers (moves money in the books) and flips
   // the payment to COMPLETED — not safe as an unguarded MCP tool that carries
   // no authz. Financial mutations must go through application code that
-  // enforces permissions. See S5 audit #1390.
+  // enforces permissions. The MCP create/update tools honor the same
+  // `api.writable` allowlist above, so `status` is unsettable over MCP too.
+  // See S5 audit #1390.
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
@@ -324,7 +359,7 @@ export class Payment extends SmrtObject {
    * consumers that need settlement proof should rely on `recordPayment()`.
    */
   override async save(): Promise<this> {
-    const prior = loadedPaymentStatus.get(this);
+    const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
 
     const promotingExistingRowIntoCompleted =
@@ -366,6 +401,35 @@ export class Payment extends SmrtObject {
           'Use the guarded helpers (recordPayment / markFailed / cancel).',
       );
     }
+  }
+
+  /**
+   * Resolve the AUTHORITATIVE prior status (S5 audit #1390 round 4, codex
+   * HIGH#1). The WeakMap is only populated when {@link initialize} loaded the
+   * row from the DB; it is empty for an instance built via
+   * `collection.create({ id: <existing>, _skipLoad: true })` — the upsert path
+   * that lets a caller write onto an existing row without hydrating it. Trusting
+   * an empty WeakMap there would treat the write as a brand-new row and skip the
+   * transition guard entirely (a poisonable prior-state).
+   *
+   * So when this instance carries an `id`, read the persisted row straight from
+   * the database and treat its `status` as the prior — a create-onto-existing is
+   * an update. Only when no row exists in the DB (truly new) do we fall back to
+   * the WeakMap (which is also empty then), i.e. `undefined` = genuinely new.
+   * The raw row's `status` column is single-word (no snake_case transform).
+   */
+  private async resolvePriorStatus(): Promise<PaymentStatus | undefined> {
+    if (this.id) {
+      try {
+        const row = await this.db.get(this.tableName, { id: this.id });
+        if (row && row.status != null) {
+          return row.status as PaymentStatus;
+        }
+      } catch {
+        // DB not ready / table absent — fall through to the in-memory record.
+      }
+    }
+    return loadedPaymentStatus.get(this);
   }
 
   /**

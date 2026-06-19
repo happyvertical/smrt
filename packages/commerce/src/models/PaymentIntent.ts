@@ -95,7 +95,28 @@ const DEFAULT_PRICE_LOCK_WINDOW_MS = 15 * 60 * 1000;
     'licensee_email',
     'idempotency_key',
   ],
-  api: { include: ['list', 'get', 'create', 'update'] },
+  // ROOT FIX (S5 audit #1390 round 4): the generated create/update surface may
+  // only set the quote-definition fields. The PAID-state backing fields
+  // (`status`, `paymentId`, `paidOptionBackendId`) are EXCLUDED — they are set
+  // exclusively by the verified `verifyAndMarkPaid()` / `markIssued()` path, so
+  // a caller can never forge a PAID intent (or repoint one) through a generated
+  // route. `paymentOptions` IS writable (a quote may be re-priced while
+  // AWAITING_PAYMENT) but is frozen by `save()` once the intent is PAID/ISSUED
+  // (codex HIGH#2). Timestamps + priceLockExpiresAt are derived and excluded.
+  api: {
+    include: ['list', 'get', 'create', 'update'],
+    writable: [
+      'skuId',
+      'offeringRef',
+      'licenseeEmail',
+      'customerId',
+      'paymentOptions',
+      'usdPriceLocked',
+      'priceLockWindowMs',
+      'idempotencyKey',
+      'notes',
+    ],
+  },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
@@ -349,8 +370,28 @@ export class PaymentIntent extends SmrtObject {
    * legitimate corrections, so we re-verify.
    */
   override async save(): Promise<this> {
-    const prior = loadedIntentStatus.get(this);
+    const priorRow = await this.loadPersistedRow();
+    const prior = priorRow
+      ? (priorRow.status as PaymentIntentStatus)
+      : loadedIntentStatus.get(this);
     this.assertStatusTransition(prior);
+
+    // Freeze the backing fields once the intent is already PAID/ISSUED in the
+    // database (codex HIGH#2). Round 3 re-verified the backing Payment but did
+    // so against the *mutable* in-memory `paymentOptions`, so a caller could
+    // swap `paymentId` to a different completed Payment AND edit the matching
+    // option's `nativeAmount` so the reconciliation still passed — silently
+    // repointing a settled intent at unrelated funds. A PAID/ISSUED intent's
+    // economic identity (paymentId + paidOptionBackendId + usdPriceLocked +
+    // paymentOptions) is settled and must not change; corrections go through
+    // `retire()` + a fresh intent.
+    if (
+      priorRow &&
+      (priorRow.status === PaymentIntentStatus.PAID ||
+        priorRow.status === PaymentIntentStatus.ISSUED)
+    ) {
+      this.assertBackingFieldsUnchanged(priorRow);
+    }
 
     const persistingPaidOrIssued =
       this.status === PaymentIntentStatus.PAID ||
@@ -363,6 +404,73 @@ export class PaymentIntent extends SmrtObject {
     const result = (await super.save()) as this;
     loadedIntentStatus.set(this, this.status);
     return result;
+  }
+
+  /**
+   * Load the authoritative persisted row for this intent (S5 audit #1390 round
+   * 4). Returns `undefined` when the intent has no `id` or no row exists yet
+   * (truly new). Reading the DB directly — rather than trusting the
+   * {@link loadedIntentStatus} WeakMap, which is only populated when
+   * {@link initialize} hydrated the row — defeats the poisonable-prior-state
+   * vector where `create({ id: <existing>, _skipLoad: true })` produces an
+   * un-hydrated instance whose WeakMap entry is missing. A create-onto-existing
+   * is thus correctly treated as an update.
+   */
+  private async loadPersistedRow(): Promise<Record<string, any> | undefined> {
+    if (!this.id) return undefined;
+    try {
+      const row = await this.db.get(this.tableName, { id: this.id });
+      return row ?? undefined;
+    } catch {
+      // DB not ready / table absent — treat as new (in-memory fallback in save).
+      return undefined;
+    }
+  }
+
+  /**
+   * Reject any change to the settled backing fields of an already-PAID/ISSUED
+   * intent (codex HIGH#2). `paymentOptions` is compared structurally because
+   * the winning option's `nativeAmount` is exactly what the reconciliation in
+   * {@link assertBackedByCompletedPayment} binds against — letting it drift
+   * would let a repointed `paymentId` match a doctored option.
+   */
+  private assertBackingFieldsUnchanged(priorRow: Record<string, any>): void {
+    const frozen: Array<[string, unknown, unknown]> = [
+      ['paymentId', priorRow.payment_id ?? '', this.paymentId],
+      [
+        'paidOptionBackendId',
+        priorRow.paid_option_backend_id ?? '',
+        this.paidOptionBackendId,
+      ],
+      [
+        'usdPriceLocked',
+        Number(priorRow.usd_price_locked ?? 0),
+        Number(this.usdPriceLocked ?? 0),
+      ],
+    ];
+    for (const [field, prior, next] of frozen) {
+      if (prior !== next) {
+        throw new Error(
+          `PaymentIntent ${this.id}: '${field}' is frozen once the intent is ` +
+            `PAID/ISSUED (was '${prior}', got '${next}'). A settled intent's ` +
+            'backing fields cannot be repointed — retire() it and issue a new intent.',
+        );
+      }
+    }
+
+    const priorOptions = PaymentIntent.normalizePaymentOptions(
+      priorRow.payment_options as unknown,
+    );
+    const nextOptions = PaymentIntent.normalizePaymentOptions(
+      this.paymentOptions as unknown,
+    );
+    if (JSON.stringify(priorOptions) !== JSON.stringify(nextOptions)) {
+      throw new Error(
+        `PaymentIntent ${this.id}: 'paymentOptions' is frozen once the intent ` +
+          'is PAID/ISSUED — the winning option backs the verified Payment ' +
+          'reconciliation and cannot change. retire() it and issue a new intent.',
+      );
+    }
   }
 
   /**

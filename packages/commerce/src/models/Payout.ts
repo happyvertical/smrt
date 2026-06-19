@@ -61,7 +61,17 @@ const loadedPayoutStatus = new WeakMap<Payout, PayoutStatus>();
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
+  // ROOT FIX (S5 audit #1390 round 4): a Payout has NO safe generated write.
+  // Its status drives an outgoing remittance and its amount triple
+  // (grossAmount / operatorFee / supplierNet) is the integrity core — none may
+  // be set by a caller. The only legitimate way to mint a payout is the
+  // verified `PayoutCollection.createFromPayment()` domain path (which derives
+  // the amounts from the source Payment and starts PENDING), and the only legal
+  // status moves are the guarded `markSent` / `markConfirmed` / `markFailed` /
+  // `resetFromFailed` helpers. So the generated surface is read-only — this
+  // closes the "forged CONFIRMED Payout via api.create" vector (codex HIGH#4)
+  // at the surface, not just in the save() guard.
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
@@ -368,13 +378,33 @@ export class Payout extends SmrtObject {
   override async save(): Promise<this> {
     this.validateAmounts();
 
-    const prior = loadedPayoutStatus.get(this);
+    const prior = await this.resolvePriorStatus();
     this.assertStatusTransition(prior);
 
-    if (this.status === PayoutStatus.SENT && !this.backendTxRef) {
+    // SENT *and* CONFIRMED both require a backendTxRef (S5 audit #1390 round 4):
+    // a confirmed payout that carries no outgoing-transaction reference is
+    // untraceable and indistinguishable from a forged confirmation. Round 3
+    // only required it for SENT, leaving a raw CONFIRMED-with-no-txref hole.
+    if (
+      (this.status === PayoutStatus.SENT ||
+        this.status === PayoutStatus.CONFIRMED) &&
+      !this.backendTxRef
+    ) {
       throw new Error(
-        `Payout ${this.id ?? '<new>'}: a SENT payout requires a backendTxRef ` +
-          '(use markSent()).',
+        `Payout ${this.id ?? '<new>'}: a ${this.status} payout requires a ` +
+          'backendTxRef (use markSent()).',
+      );
+    }
+
+    // CONFIRMED is only ever reachable from SENT (codex HIGH#4 / HIGH#3): an
+    // existing row's transition is checked by assertStatusTransition, but a
+    // brand-new row (no prior) would otherwise be allowed to start CONFIRMED.
+    // A confirmation means the chain/gateway acknowledged a previously-sent tx,
+    // so it can never be the genesis state.
+    if (this.status === PayoutStatus.CONFIRMED && prior !== PayoutStatus.SENT) {
+      throw new Error(
+        `Payout ${this.id ?? '<new>'}: CONFIRMED is only reachable from SENT ` +
+          '(use markConfirmed() after markSent()).',
       );
     }
 
@@ -383,6 +413,30 @@ export class Payout extends SmrtObject {
     const result = (await super.save()) as this;
     loadedPayoutStatus.set(this, this.status);
     return result;
+  }
+
+  /**
+   * Resolve the AUTHORITATIVE prior status from the database (S5 audit #1390
+   * round 4). The {@link loadedPayoutStatus} WeakMap is only populated when
+   * {@link initialize} hydrated the row, so a `create({ id: <existing>,
+   * _skipLoad: true })` upsert produces an instance with a missing WeakMap
+   * entry — trusting it would treat the write as a brand-new row and skip the
+   * transition + CONFIRMED-genesis guards. Reading the persisted row directly
+   * makes a create-onto-existing behave as an update. `undefined` means no row
+   * exists (genuinely new).
+   */
+  private async resolvePriorStatus(): Promise<PayoutStatus | undefined> {
+    if (this.id) {
+      try {
+        const row = await this.db.get(this.tableName, { id: this.id });
+        if (row && row.status != null) {
+          return row.status as PayoutStatus;
+        }
+      } catch {
+        // DB not ready — fall through to the in-memory record.
+      }
+    }
+    return loadedPayoutStatus.get(this);
   }
 
   /**
@@ -406,27 +460,39 @@ export class Payout extends SmrtObject {
   }
 
   /**
-   * Cap `grossAmount` by the source {@link Payment}'s settled funds when that
-   * Payment resolves. A payout that remits more than the Payment that funded
-   * it brought in is money the operator never received.
+   * Cap `grossAmount` by the source {@link Payment}'s settled funds. A payout
+   * that remits more than the Payment that funded it brought in is money the
+   * operator never received.
    *
-   * Best-effort by design: `paymentId` is a plain-string cross-model reference
-   * (it may be a synthetic id in tests, a Payment-less deployment, or a
-   * manually recorded fiat row). When the Payment resolves we enforce the cap;
-   * when it doesn't, we skip silently rather than block legitimate
-   * configurations. The COMPLETED-settlement requirement lives on
-   * PaymentIntent (which gates rights issuance); a payout may legitimately
-   * front a manually recorded, not-yet-COMPLETED payment.
+   * HARD requirement (S5 audit #1390 round 4, codex HIGH#3): the source Payment
+   * MUST resolve. Round 3 made the cap best-effort — a `paymentId` that didn't
+   * resolve silently skipped the cap, so a caller could remit an arbitrary
+   * `grossAmount` simply by pointing at a non-existent (or empty) payment.
+   * A payout's whole purpose is to remit funds that *arrived* via a Payment;
+   * without a resolvable source there is no funded amount to cap against, so we
+   * reject rather than skip. `PayoutCollection.createFromPayment()` always wires
+   * a real `paymentId`, so this never blocks the supported creation path.
    */
   private async assertCappedBySourcePayment(): Promise<void> {
-    if (!this.paymentId) return;
+    if (!this.paymentId) {
+      throw new Error(
+        `Payout ${this.id ?? '<new>'}: a paymentId is required — a payout must ` +
+          'reference the source Payment that funded it (use createFromPayment()).',
+      );
+    }
 
     const { PaymentCollection } = await import(
       '../collections/PaymentCollection.js'
     );
     const payments = await (PaymentCollection as any).create(this.options);
     const payment = await payments.get({ id: this.paymentId });
-    if (!payment) return; // synthetic / Payment-less — nothing to cap against
+    if (!payment) {
+      throw new Error(
+        `Payout ${this.id ?? '<new>'}: referenced source Payment ` +
+          `'${this.paymentId}' does not exist — refusing to remit against a ` +
+          'missing payment (the gross-amount cap cannot be enforced otherwise).',
+      );
+    }
 
     // Cap against the payment's funds. Prefer the native-rail figure when
     // present (volatile-currency rails), otherwise the settlement amount —

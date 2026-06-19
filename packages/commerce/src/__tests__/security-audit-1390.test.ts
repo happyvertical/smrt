@@ -461,10 +461,14 @@ describe('PaymentAllocation integrity guard (#1390)', () => {
 describe('Payout non-negativity guard (#1390)', () => {
   let dbPath: string;
   let payouts: PayoutCollection;
+  let payments: PaymentCollection;
 
   beforeEach(async () => {
     dbPath = tmpDb('payout');
     payouts = await PayoutCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -511,8 +515,11 @@ describe('Payout non-negativity guard (#1390)', () => {
   });
 
   it('still accepts a valid non-negative split', async () => {
+    // The source Payment must resolve now (round 4, codex HIGH#3).
+    const payment = await payments.create({ amount: 100, currency: 'USD' });
+    await payment.save();
     const payout = await payouts.create({
-      paymentId: 'pmt-ok',
+      paymentId: payment.id,
       vendorId: 'vendor-ok',
       grossAmount: 100,
       operatorFee: 10,
@@ -729,15 +736,35 @@ describe('PaymentIntent repoint / issued guard (#1390 round 2)', () => {
     return { intent, good };
   }
 
-  it('rejects repointing an already-PAID intent to a non-existent Payment', async () => {
+  it('rejects repointing an already-PAID intent to a different Payment', async () => {
     const { intent } = await paidIntent();
     expect(intent.status).toBe(PaymentIntentStatus.PAID);
 
     // Status stays PAID (a no-op transition) but the backing paymentId is
-    // swapped to a bogus row — round 1 only verified the transition edge, so
-    // this previously slipped through. It must now be rejected.
+    // swapped to another row. Round 4 (codex HIGH#2) freezes the backing fields
+    // of a PAID/ISSUED intent against the AUTHORITATIVE persisted row, so the
+    // repoint is rejected before any re-verify — a settled intent's economic
+    // identity cannot drift, even to a real Payment.
     intent.paymentId = 'totally-bogus';
-    await expect(intent.save()).rejects.toThrow(/does not exist/);
+    await expect(intent.save()).rejects.toThrow(/frozen/);
+  });
+
+  it('rejects editing a winning option to match a repointed Payment (HIGH#2)', async () => {
+    const { intent } = await paidIntent();
+    // The round-3 hole: swap paymentId to a different completed Payment AND edit
+    // the winning option's nativeAmount so the reconciliation still passes. With
+    // the option frozen, both the option edit and the paymentId swap are caught.
+    const other = await payments.create({
+      amount: 5,
+      currency: 'USDC-base',
+      nativeAmount: 5,
+      nativeCurrency: 'USDC-base',
+      status: PaymentStatus.COMPLETED,
+    });
+    await other.save();
+    intent.paymentId = other.id;
+    intent.paymentOptions = [{ ...usdcOption, nativeAmount: 5 }];
+    await expect(intent.save()).rejects.toThrow(/frozen/);
   });
 
   it('keeps ISSUED backed by the original verified Payment', async () => {
@@ -746,9 +773,9 @@ describe('PaymentIntent repoint / issued guard (#1390 round 2)', () => {
     await expect(intent.save()).resolves.toBeDefined();
     expect(intent.status).toBe(PaymentIntentStatus.ISSUED);
 
-    // Now repoint the ISSUED intent at a bogus payment — must be rejected.
+    // Now repoint the ISSUED intent at a different payment — frozen, rejected.
     intent.paymentId = 'nope';
-    await expect(intent.save()).rejects.toThrow(/does not exist/);
+    await expect(intent.save()).rejects.toThrow(/frozen/);
   });
 
   it('rejects an illegal status skip (awaiting_payment → issued)', async () => {
@@ -868,8 +895,10 @@ describe('Payout state-machine + cap guard (#1390 round 2)', () => {
   });
 
   it('rejects a raw pending → confirmed skip on an existing payout', async () => {
+    const payment = await payments.create({ amount: 100, currency: 'USD' });
+    await payment.save();
     const payout = await payouts.create({
-      paymentId: 'pmt-skip-confirm',
+      paymentId: payment.id,
       vendorId: 'vendor-skip',
       grossAmount: 100,
       operatorFee: 10,
@@ -885,8 +914,10 @@ describe('Payout state-machine + cap guard (#1390 round 2)', () => {
   });
 
   it('rejects a SENT payout without a backendTxRef', async () => {
+    const payment = await payments.create({ amount: 100, currency: 'USD' });
+    await payment.save();
     const payout = await payouts.create({
-      paymentId: 'pmt-sent-notx',
+      paymentId: payment.id,
       vendorId: 'vendor-sent',
       grossAmount: 100,
       operatorFee: 10,
@@ -1045,5 +1076,268 @@ describe('Invoice.recognizeRevenue freshness + rollback (#1390 round 2)', () => 
     // null or empty string depending on the column default).
     const reloaded = await invoices.get({ id: invoice.id });
     expect(reloaded?.arJournalId || '').toBe('');
+  });
+});
+
+// ===========================================================================
+// Round 4 (ROOT FIX): the generated WRITE surface cannot set privileged status
+// or derived/integrity amount fields. Asserted against the manifest's
+// decoratorConfig.api.writable allowlist — the same data the framework's
+// applyWritablePolicy() (#1540) consumes on BOTH create and update to strip any
+// field absent from the list. If a field is not in `writable`, a POSTed value
+// for it is dropped before it reaches the model.
+// ===========================================================================
+
+describe('Generated write surface excludes status + integrity amounts (#1390 round 4)', () => {
+  function writableFor(name: string): string[] | undefined {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const obj = manifest.objects[`@happyvertical/smrt-commerce:${name}`];
+    return obj?.decoratorConfig?.api?.writable;
+  }
+
+  function apiIncludeFor(name: string): string[] {
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const obj = manifest.objects[`@happyvertical/smrt-commerce:${name}`];
+    return obj?.decoratorConfig?.api?.include ?? [];
+  }
+
+  it('Payment: status is not in the writable allowlist (forged COMPLETED via create is impossible)', () => {
+    const writable = writableFor('Payment');
+    expect(writable).toBeDefined();
+    expect(writable).not.toContain('status');
+    // Settlement-derived fields are server-managed too.
+    expect(writable).not.toContain('journalId');
+    expect(writable).not.toContain('paidAt');
+    // …but the genuinely caller-settable money fields remain.
+    expect(writable).toContain('amount');
+    expect(writable).toContain('currency');
+  });
+
+  it('PaymentIntent: status + PAID backing fields are not writable', () => {
+    const writable = writableFor('PaymentIntent');
+    expect(writable).toBeDefined();
+    for (const forbidden of ['status', 'paymentId', 'paidOptionBackendId']) {
+      expect(writable).not.toContain(forbidden);
+    }
+  });
+
+  it('Invoice: status + derived/integrity amounts are not writable', () => {
+    const writable = writableFor('Invoice');
+    expect(writable).toBeDefined();
+    for (const forbidden of [
+      'status',
+      'subtotal',
+      'taxAmount',
+      'totalAmount',
+      'amountPaid',
+      'arJournalId',
+      'revenueJournalId',
+    ]) {
+      expect(writable).not.toContain(forbidden);
+    }
+    // Safe descriptors stay writable.
+    expect(writable).toContain('customerId');
+    expect(writable).toContain('dueDate');
+  });
+
+  it('Payout: has no generated write surface at all (read-only api/mcp)', () => {
+    // A payout has no safe generated write — status + the gross/fee/net triple
+    // are all integrity-critical — so create/update are not exposed.
+    expect(apiIncludeFor('Payout')).toEqual(['list', 'get']);
+    expect(writableFor('Payout')).toBeUndefined();
+  });
+});
+
+// ===========================================================================
+// Round 4: authoritative prior-status load. The save()-time guards no longer
+// trust the WeakMap (which is only populated when initialize() hydrated the
+// row); they read the persisted row from the DB, so a create-onto-existing
+// upsert (the _skipLoad path) is correctly treated as an update and the
+// transition guard still fires. (Defense-in-depth behind the writable ROOT FIX.)
+// ===========================================================================
+
+describe('Authoritative prior-status load defeats WeakMap poisoning (#1390 round 4)', () => {
+  let dbPath: string;
+  let payments: PaymentCollection;
+  let payouts: PayoutCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('authoritative-prior');
+    payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payouts = await PayoutCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  it('Payment: create-onto-existing (un-hydrated instance) is treated as an update, not a new row', async () => {
+    const payment = await payments.create({
+      amount: 100,
+      currency: 'USD',
+      status: PaymentStatus.PENDING,
+    });
+    await payment.save();
+    payment.markFailed('declined');
+    await payment.save();
+    expect(payment.status).toBe(PaymentStatus.FAILED);
+
+    // Build a FRESH, un-hydrated instance carrying the existing id via the
+    // _skipLoad upsert path — its WeakMap entry is absent, so a naive guard
+    // would treat this as a brand-new row. The authoritative DB read makes it
+    // an update of a terminal FAILED row, so reviving it to PENDING is illegal.
+    // (collection.create() saves internally, so the guard fires there.)
+    await expect(
+      payments.create({
+        id: payment.id,
+        amount: 100,
+        currency: 'USD',
+        status: PaymentStatus.PENDING,
+        _skipLoad: true,
+      } as any),
+    ).rejects.toThrow(/illegal status transition/);
+
+    const reloaded = await payments.get({ id: payment.id });
+    expect(reloaded?.status).toBe(PaymentStatus.FAILED);
+  });
+
+  it('Payout: create-onto-existing cannot raw-skip an existing PENDING row to CONFIRMED', async () => {
+    const payment = await payments.create({ amount: 100, currency: 'USD' });
+    await payment.save();
+    const payout = await payouts.create({
+      paymentId: payment.id,
+      vendorId: 'vendor-poison',
+      grossAmount: 100,
+      operatorFee: 10,
+      supplierNet: 90,
+      currency: 'USD',
+      backendId: 'stripe',
+    });
+    await payout.save();
+    expect(payout.status).toBe(PayoutStatus.PENDING);
+
+    // collection.create() saves internally, so the authoritative-prior guard
+    // fires there — the un-hydrated upsert is treated as an update of the
+    // PENDING row and the pending → confirmed skip is rejected.
+    await expect(
+      payouts.create({
+        id: payout.id,
+        paymentId: payment.id,
+        vendorId: 'vendor-poison',
+        grossAmount: 100,
+        operatorFee: 10,
+        supplierNet: 90,
+        currency: 'USD',
+        backendId: 'stripe',
+        backendTxRef: '0xforged',
+        status: PayoutStatus.CONFIRMED,
+        _skipLoad: true,
+      } as any),
+    ).rejects.toThrow(/illegal status transition/);
+  });
+});
+
+// ===========================================================================
+// Round 4: Payout CONFIRMED hardening — requires a backendTxRef and is only
+// reachable from SENT (codex HIGH#3 / HIGH#4).
+// ===========================================================================
+
+describe('Payout CONFIRMED requires txref and a SENT predecessor (#1390 round 4)', () => {
+  let dbPath: string;
+  let payments: PaymentCollection;
+  let payouts: PayoutCollection;
+
+  beforeEach(async () => {
+    dbPath = tmpDb('payout-confirm-hardening');
+    payments = await PaymentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payouts = await PayoutCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+  });
+
+  afterEach(() => {
+    if (existsSync(dbPath)) {
+      try {
+        rmSync(dbPath, { force: true });
+      } catch {
+        // ignore
+      }
+    }
+  });
+
+  async function pendingPayout(): Promise<{ payout: any; paymentId: string }> {
+    const payment = await payments.create({ amount: 100, currency: 'USD' });
+    await payment.save();
+    const payout = await payouts.create({
+      paymentId: payment.id,
+      vendorId: 'vendor-c',
+      grossAmount: 100,
+      operatorFee: 10,
+      supplierNet: 90,
+      currency: 'USD',
+      backendId: 'stripe',
+    });
+    await payout.save();
+    return { payout, paymentId: payment.id };
+  }
+
+  it('rejects CONFIRMED on a SENT row that somehow lost its backendTxRef', async () => {
+    const { payout } = await pendingPayout();
+    payout.markSent('0xsent');
+    await payout.save();
+
+    // Raw-clear the txref then raw-flip to CONFIRMED — must be rejected.
+    payout.backendTxRef = '';
+    payout.status = PayoutStatus.CONFIRMED;
+    await expect(payout.save()).rejects.toThrow(/requires a\s+backendTxRef/);
+  });
+
+  it('rejects CONFIRMED that did not come from SENT (genesis confirmation)', async () => {
+    const { payout } = await pendingPayout();
+    // Raw-flip a PENDING row straight to CONFIRMED (with a txref so the
+    // txref guard passes) — the SENT-predecessor guard must still reject it.
+    payout.backendTxRef = '0xforged';
+    payout.status = PayoutStatus.CONFIRMED;
+    await expect(payout.save()).rejects.toThrow(
+      /illegal status transition|only reachable from SENT/,
+    );
+  });
+
+  it('rejects remitting against a non-existent source Payment (hard error)', async () => {
+    // No Payment exists for this id — the gross cap cannot be enforced, so the
+    // payout is rejected outright rather than silently skipping the cap.
+    await expect(
+      payouts.create({
+        paymentId: 'no-such-payment',
+        vendorId: 'vendor-missing',
+        grossAmount: 100,
+        operatorFee: 10,
+        supplierNet: 90,
+        currency: 'USD',
+        backendId: 'stripe',
+      }),
+    ).rejects.toThrow(/does not exist/);
+  });
+
+  it('allows the full legal pending → sent → confirmed walk', async () => {
+    const { payout } = await pendingPayout();
+    payout.markSent('0xsent');
+    await payout.save();
+    payout.markConfirmed();
+    await expect(payout.save()).resolves.toBeDefined();
+    expect(payout.status).toBe(PayoutStatus.CONFIRMED);
+    expect(payout.backendTxRef).toBe('0xsent');
   });
 });

@@ -127,13 +127,41 @@ const loadedInvoiceStatus = new WeakMap<Invoice, InvoiceStatus>();
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
+  // ROOT FIX (S5 audit #1390 round 4): the generated create/update surface may
+  // only set the billing-document descriptors (who/when/identifiers). The
+  // derived/integrity amounts (`subtotal`, `taxAmount`, `totalAmount`,
+  // `amountPaid`) and `status` are EXCLUDED — totals are derived from line
+  // items, amountPaid from PaymentAllocations, and status from
+  // updatePaymentStatus()/the lifecycle helpers. A caller can therefore create
+  // a DRAFT invoice (customer / dueDate / line-item refs) but can never forge a
+  // total, an amountPaid, or a PAID status through a generated route. Ledger
+  // journal refs and communication timestamps are server-managed too.
+  api: {
+    include: ['list', 'get', 'create', 'update'],
+    writable: [
+      'customerId',
+      'contractId',
+      'invoiceNumber',
+      'reference',
+      'issueDate',
+      'dueDate',
+      'currency',
+      'notes',
+      'customerNotes',
+      'terms',
+      'externalId',
+      'customerExternalId',
+      'externalProvider',
+    ],
+  },
   // NOTE: `send` and `recognizeRevenue` are intentionally NOT exposed over
   // MCP. `recognizeRevenue` posts a balanced journal into smrt-ledgers
   // (i.e. moves money in the books) and `send` transmits a billing document
   // to a customer — neither is safe as an unauthenticated/unguarded MCP tool.
   // Generated MCP tools carry no authz; financial mutations must go through
-  // application code that enforces permissions. See S5 audit #1390.
+  // application code that enforces permissions. MCP create/update honor the
+  // same `api.writable` allowlist, so status/amounts are unsettable over MCP
+  // too. See S5 audit #1390.
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
@@ -393,10 +421,11 @@ export class Invoice extends SmrtObject {
    */
   override async save(): Promise<this> {
     const persisted = await this.isSaved();
+    const prior = await this.resolvePriorStatus(persisted);
 
     await this.recomputeAmountsForSave(persisted);
     this.assertNonNegativeAmounts();
-    this.assertStatusTransition();
+    this.assertStatusTransition(prior);
     this.assertPaymentStatusConsistent();
 
     const result = (await super.save()) as this;
@@ -404,6 +433,31 @@ export class Invoice extends SmrtObject {
     // save in this instance's lifetime.
     loadedInvoiceStatus.set(this, this.status);
     return result;
+  }
+
+  /**
+   * Resolve the AUTHORITATIVE prior status (S5 audit #1390 round 4). The
+   * {@link loadedInvoiceStatus} WeakMap is only populated when {@link initialize}
+   * hydrated the row, so a `create({ id: <existing>, _skipLoad: true })` upsert
+   * yields an instance whose WeakMap entry is missing — trusting it would treat
+   * the write as a brand-new row and skip the transition guard entirely. Read
+   * the persisted row's status directly so a create-onto-existing is correctly
+   * treated as an update. `undefined` means no row exists (genuinely new).
+   */
+  private async resolvePriorStatus(
+    persisted: boolean,
+  ): Promise<InvoiceStatus | undefined> {
+    if (persisted && this.id) {
+      try {
+        const row = await this.db.get(this.tableName, { id: this.id });
+        if (row && row.status != null) {
+          return row.status as InvoiceStatus;
+        }
+      } catch {
+        // DB not ready — fall through to the in-memory record.
+      }
+    }
+    return loadedInvoiceStatus.get(this);
   }
 
   /**
@@ -579,8 +633,7 @@ export class Invoice extends SmrtObject {
    * about-to-be-written status against the status the row was loaded with.
    * No-op transitions (status unchanged) and brand-new rows are always allowed.
    */
-  private assertStatusTransition(): void {
-    const prior = loadedInvoiceStatus.get(this);
+  private assertStatusTransition(prior: InvoiceStatus | undefined): void {
     if (prior === undefined) return; // new row — any starting status is fine
     if (prior === this.status) return; // no-op re-save
     const allowed = INVOICE_STATUS_TRANSITIONS[prior] ?? [];

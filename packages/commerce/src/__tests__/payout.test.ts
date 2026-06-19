@@ -47,6 +47,16 @@ describe('Payout', () => {
     }
   });
 
+  // A payout now requires a resolvable source Payment (S5 audit #1390 round 4,
+  // codex HIGH#3) — synthetic paymentIds no longer save. This mints a real
+  // Payment whose funded amount covers any payout gross the tests use, and
+  // returns its id.
+  async function fundedPaymentId(amount = 1000): Promise<string> {
+    const payment = await payments.create({ amount, currency: 'USDC-base' });
+    await payment.save();
+    return payment.id;
+  }
+
   it('creates a pending payout from a source payment', async () => {
     const payment = await payments.create({
       contractId: 'contract-1',
@@ -143,7 +153,7 @@ describe('Payout', () => {
 
   it('walks the happy-path status machine: pending → sent → confirmed', async () => {
     const payout = await payouts.create({
-      paymentId: 'pmt-x',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-x',
       grossAmount: 100,
       operatorFee: 10,
@@ -171,7 +181,7 @@ describe('Payout', () => {
 
   it('refuses to skip states', async () => {
     const payout = await payouts.create({
-      paymentId: 'pmt-skip',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-skip',
       grossAmount: 100,
       operatorFee: 10,
@@ -204,7 +214,7 @@ describe('Payout', () => {
 
   it('moves to failed from pending or sent, but not from confirmed', async () => {
     const a = await payouts.create({
-      paymentId: 'pmt-fail-a',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-fail',
       grossAmount: 10,
       operatorFee: 1,
@@ -220,7 +230,7 @@ describe('Payout', () => {
     expect(a.failureReason).toBe('rail offline');
 
     const b = await payouts.create({
-      paymentId: 'pmt-fail-b',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-fail',
       grossAmount: 10,
       operatorFee: 1,
@@ -237,7 +247,7 @@ describe('Payout', () => {
 
   it('allows operator-driven reset from failed back to pending', async () => {
     const payout = await payouts.create({
-      paymentId: 'pmt-reset',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-reset',
       grossAmount: 10,
       operatorFee: 1,
@@ -269,7 +279,7 @@ describe('Payout', () => {
 
   it('refuses to reset from any non-failed status', async () => {
     const payout = await payouts.create({
-      paymentId: 'pmt-no-reset',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-no-reset',
       grossAmount: 10,
       operatorFee: 1,
@@ -289,7 +299,7 @@ describe('Payout', () => {
     // fee/net combo via direct field assignment, bypassing
     // `createFromPayment`'s computed split.
     const payout = await payouts.create({
-      paymentId: 'pmt-bad-math',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-bad-math',
       grossAmount: 100,
       operatorFee: 10,
@@ -307,7 +317,7 @@ describe('Payout', () => {
     // fuzz; the model tolerates up to 1¢ of drift before flagging it
     // as a real invariant violation.
     const payout = await payouts.create({
-      paymentId: 'pmt-rounding',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-rounding',
       grossAmount: 0.3,
       operatorFee: 0.1,
@@ -320,7 +330,7 @@ describe('Payout', () => {
 
   it('re-coerces ISO-string timestamps after collection initialization', async () => {
     const payout = await payouts.create({
-      paymentId: 'pmt-date-strings',
+      paymentId: await fundedPaymentId(),
       vendorId: 'vendor-date-strings',
       grossAmount: 100,
       operatorFee: 10,
@@ -345,10 +355,14 @@ describe('Payout', () => {
 describe('PayoutCollection — queries', () => {
   let dbPath: string;
   let payouts: PayoutCollection;
+  let payments: PaymentCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-payout-queries-${Date.now()}.db`);
     payouts = await PayoutCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -363,6 +377,11 @@ describe('PayoutCollection — queries', () => {
     }
   });
 
+  // A payout now requires a resolvable source Payment (S5 audit #1390 round 4,
+  // codex HIGH#3) and CONFIRMED is only reachable by driving the status machine
+  // (pending → sent → confirmed). This helper mints a real backing Payment and
+  // advances the payout through the legal transitions to reach the requested
+  // status, so query fixtures match the production state shapes.
   async function makePayout(
     fields: Partial<{
       paymentId: string;
@@ -374,32 +393,61 @@ describe('PayoutCollection — queries', () => {
       backendId: string;
       status: PayoutStatus;
       backendTxRef: string;
-    }>,
+    }> = {},
   ): Promise<Payout> {
+    const { status, backendTxRef, paymentId, ...rest } = fields;
+    let resolvedPaymentId = paymentId;
+    if (!resolvedPaymentId) {
+      const payment = await payments.create({
+        amount: 1000,
+        currency: 'USDC-base',
+      });
+      await payment.save();
+      resolvedPaymentId = payment.id;
+    }
     const p = await payouts.create({
-      paymentId: 'pmt-default',
+      paymentId: resolvedPaymentId,
       vendorId: 'vendor-default',
       grossAmount: 10,
       operatorFee: 1,
       supplierNet: 9,
       currency: 'USDC-base',
       backendId: 'base-usdc',
-      status: PayoutStatus.PENDING,
-      ...fields,
+      ...rest,
     });
     await p.save();
+
+    // Advance through the legal status machine to reach the requested state.
+    if (status === PayoutStatus.SENT || status === PayoutStatus.CONFIRMED) {
+      p.markSent(backendTxRef || `tx-${Math.random()}`);
+      await p.save();
+    }
+    if (status === PayoutStatus.CONFIRMED) {
+      p.markConfirmed();
+      await p.save();
+    }
     return p;
   }
 
+  // Map a logical payment label to a stable real Payment id so multiple payouts
+  // can share a source payment (for findByPayment grouping assertions).
+  async function sharedPayment(amount = 1000): Promise<string> {
+    const payment = await payments.create({ amount, currency: 'USDC-base' });
+    await payment.save();
+    return payment.id;
+  }
+
   it('finds by vendor and by payment', async () => {
-    const a = await makePayout({ vendorId: 'v-1', paymentId: 'pmt-A' });
-    await makePayout({ vendorId: 'v-1', paymentId: 'pmt-B' });
-    await makePayout({ vendorId: 'v-2', paymentId: 'pmt-A' });
+    const pmtA = await sharedPayment();
+    const pmtB = await sharedPayment();
+    const a = await makePayout({ vendorId: 'v-1', paymentId: pmtA });
+    await makePayout({ vendorId: 'v-1', paymentId: pmtB });
+    await makePayout({ vendorId: 'v-2', paymentId: pmtA });
 
     const byVendor = await payouts.findByVendor('v-1');
     expect(byVendor).toHaveLength(2);
 
-    const byPayment = await payouts.findByPayment('pmt-A');
+    const byPayment = await payouts.findByPayment(pmtA);
     expect(byPayment).toHaveLength(2);
     expect(byPayment.some((p) => p.id === a.id)).toBe(true);
   });
