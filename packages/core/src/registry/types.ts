@@ -9,6 +9,7 @@
 
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import type { SmrtCollection } from '../collection';
+import type { CollectionCacheConfig } from '../collection-cache';
 import type { SmrtObject } from '../object';
 import type {
   QualifiedClassName,
@@ -205,6 +206,33 @@ export interface SmartObjectConfig {
    * ```
    */
   conflictColumns?: string[];
+
+  /**
+   * Opt-in read-through cache for collection reads (issue #1498).
+   *
+   * When set, `collection.list()` and `collection.get()` memoize result
+   * rows for `ttl` milliseconds. Mutations through SMRT (`save()`,
+   * `delete()`, `collection.create()`, `getOrUpsert()`, junction
+   * attach/detach) automatically invalidate the table's cached entries
+   * in-process. With `crossProcess: true`, invalidations also broadcast to
+   * peer replicas via the database adapter's notification capability
+   * (e.g. Postgres LISTEN/NOTIFY) when the adapter provides one.
+   *
+   * Defaults to off — caching is opinionated and silently serving stale
+   * rows would be a footgun. Children inherit the nearest ancestor's
+   * setting; set `cache: false` on a child to opt back out. Per-call
+   * options override this: `list({ cache: false })` forces a fresh read,
+   * `list({ cache: { ttl } })` enables caching for that call only.
+   *
+   * @example
+   * ```typescript
+   * @smrt({ cache: { ttl: 60_000 } })
+   * class Product extends SmrtObject {
+   *   name: string = '';
+   * }
+   * ```
+   */
+  cache?: CollectionCacheConfig | false;
 
   /**
    * Visibility control for manifest inclusion and cross-package access

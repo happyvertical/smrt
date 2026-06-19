@@ -31,6 +31,7 @@
 import { createLogger } from '@happyvertical/logger';
 import { applyOneToManyChildAccessors } from './child-accessors';
 import { SmrtCollection } from './collection';
+import type { CollectionCacheConfig } from './collection-cache';
 import { applyPendingDecoratorRegistrations } from './decorators/compatibility.js';
 import type {
   ClassEmbeddingConfig,
@@ -47,13 +48,14 @@ import {
   loadExternalManifestSyncWithNode,
 } from './manifest/store.js';
 import type { SmrtObject } from './object';
+// ── Extracted modules (Issue #1006) ──────────────────────────────────────
+import { resolveCollectionCacheConfig as _resolveCollectionCacheConfig } from './registry/cache-config';
 import {
   invalidateInheritanceEntries as _invalidateInheritanceEntries,
   register as _register,
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
 } from './registry/class-registration';
-// ── Extracted modules (Issue #1006) ──────────────────────────────────────
 import {
   clearRegistryDiagnostics,
   flushRegistryDiagnostics,
@@ -3285,6 +3287,21 @@ export class ObjectRegistry {
     className: string,
   ): ResolvedEmbeddingConfig | undefined {
     return _resolveEmbeddingConfig(className);
+  }
+
+  /**
+   * Resolve the effective collection read-cache config for a class (issue #1498)
+   *
+   * Walks the inheritance chain nearest-first so an STI base class opt-in
+   * covers its children, while a child can opt back out with `cache: false`.
+   *
+   * @param className - Simple or qualified class name
+   * @returns Effective cache config, or undefined when caching is not opted in
+   */
+  static resolveCollectionCacheConfig(
+    className: string,
+  ): CollectionCacheConfig | undefined {
+    return _resolveCollectionCacheConfig(className);
   }
 }
 
