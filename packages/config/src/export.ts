@@ -114,7 +114,10 @@ function redactValueSecrets(value: string): string {
  * assets — see {@link SECRET_PATTERNS} for the full rationale.
  *
  * Nested objects are recursively sanitized; arrays are mapped element-by-element.
- * Primitive values (`string`, `number`, `boolean`) pass through unchanged.
+ * `number` / `boolean` primitives pass through unchanged; `string` values are
+ * additionally run through value-level redaction that masks credentials embedded
+ * in a URL (`scheme://user:pass@host` → `scheme://***@host`), catching secrets
+ * stored under a benign key the key-based patterns don't match.
  *
  * This function is called automatically by {@link exportConfig} unless
  * `includeSecrets: true` is passed.
