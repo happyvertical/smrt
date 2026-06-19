@@ -252,10 +252,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // oracle (e.g. `apiSecret[like]=sk-%`), exfiltrating the secret one
     // character at a time even though it's excluded from serialization.
     const sensitiveFieldNames = new Set<string>();
-    const collectSensitive = (fieldMap: Record<string, any>) => {
-      for (const [fieldName, def] of Object.entries(fieldMap)) {
+    const collectSensitive = (
+      fieldMap: Record<string, any> | Map<string, any>,
+    ) => {
+      const entries =
+        fieldMap instanceof Map ? fieldMap.entries() : Object.entries(fieldMap);
+      for (const [fieldName, def] of entries) {
         if (def && (def.sensitive === true || def._meta?.sensitive === true)) {
+          // Store both the snake_case column form and the raw property name so
+          // STI `@meta` fields probed via `_meta_data.<prop>` JSON paths (which
+          // keep the camelCase key) are also rejected.
           sensitiveFieldNames.add(toSnakeCase(fieldName));
+          sensitiveFieldNames.add(fieldName);
         }
       }
     };
@@ -305,7 +313,18 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         for (const fieldName of ancestorFields.keys()) {
           validFieldNames.add(toSnakeCase(fieldName));
         }
-        collectSensitive(Object.fromEntries(ancestorFields));
+        collectSensitive(ancestorFields);
+      }
+
+      // Security (#1540): a base collection serializes (and so must protect)
+      // STI descendant fields too — a child's `@meta` sensitive field lives in
+      // `_meta_data` and would otherwise be probe-able via `_meta_data.<prop>`
+      // from the base collection. Mirror toJSON()/getSensitiveFieldNames().
+      const stiBase = ObjectRegistry.getSTIBase(itemQualifiedName);
+      if (stiBase) {
+        for (const descendant of ObjectRegistry.getDescendants(stiBase)) {
+          collectSensitive(ObjectRegistry.getFields(descendant));
+        }
       }
     }
 
@@ -392,8 +411,16 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       // Security (#1540): reject filters that target a sensitive column. This
       // runs before operator/field validation so the secret value-probing
-      // oracle is closed even for otherwise-valid operators.
-      if (sensitiveFieldNames.has(snakeBaseFieldName)) {
+      // oracle is closed even for otherwise-valid operators. Every dot-path
+      // segment is checked (in raw and snake_case form) so an STI `@meta`
+      // sensitive field probed via `_meta_data.<prop>` is also blocked.
+      const fieldSegments = fieldName.split('.');
+      const targetsSensitive = fieldSegments.some(
+        (segment) =>
+          sensitiveFieldNames.has(segment) ||
+          sensitiveFieldNames.has(toSnakeCase(segment)),
+      );
+      if (sensitiveFieldNames.has(snakeBaseFieldName) || targetsSensitive) {
         throw new Error(
           `Invalid WHERE clause field: '${fieldName}'. ` +
             `Filtering on sensitive fields is not allowed.`,

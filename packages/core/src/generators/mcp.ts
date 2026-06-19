@@ -564,10 +564,14 @@ export class MCPGenerator {
   }
 
   /**
-   * Serialize a SmrtObject for a tool response, excluding sensitive fields
-   * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
+   * Serialize a SmrtObject (or array of them) for a tool response, excluding
+   * sensitive fields (#1540). Falls back to the value unchanged for
+   * non-SmrtObject payloads (e.g. primitive/plain-object custom-action results).
    */
   private toPublicData(object: any): any {
+    if (Array.isArray(object)) {
+      return object.map((entry) => this.toPublicData(entry));
+    }
     return typeof object?.toPublicJSON === 'function'
       ? object.toPublicJSON()
       : object;
@@ -767,9 +771,12 @@ export class MCPGenerator {
         return { success: true, message: 'Object deleted successfully' };
       }
 
-      default:
-        // Handle custom actions
-        return this.executeCustomAction(collection, action, args);
+      default: {
+        // Handle custom actions. The method may return a SmrtObject (or array),
+        // so serialize through toPublicData to strip sensitive fields (#1540).
+        const result = await this.executeCustomAction(collection, action, args);
+        return this.toPublicData(result);
+      }
     }
   }
 
@@ -1186,7 +1193,7 @@ ${indent}  }
 ${indent}  const methodArgs = Object.keys(options).length > 0 ? options : directArgs;
 ${indent}  const result = await object['${action}'](methodArgs);
 
-${indent}  return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+${indent}  return { content: [{ type: 'text', text: JSON.stringify(toPublicResult(result)) }] };
 ${indent}}`;
         }
       })
@@ -1204,6 +1211,12 @@ ${indent}}`;
     return `/**
  * MCP Tool Call Handlers
  * Auto-generated from SMRT objects
+ *
+ * SECURITY (#1540): responses exclude @field({ sensitive }) fields and
+ * create/update bodies are mass-assignment guarded. This handler has no
+ * per-call authentication principal — the generated stdio MCP server's trust
+ * boundary is the host process / MCP client. Run it only in a trusted context
+ * or behind an authenticated gateway.
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core/registry';
@@ -1239,6 +1252,16 @@ function applyWritablePolicy(objectName, data) {
     result[key] = value;
   }
   return result;
+}
+
+/**
+ * Sensitive-field-safe serialization for custom-action results (#1540): a custom
+ * method may return a SmrtObject (or array of them).
+ */
+function toPublicResult(value) {
+  if (Array.isArray(value)) return value.map(toPublicResult);
+  if (value && typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+  return value;
 }
 
 /**

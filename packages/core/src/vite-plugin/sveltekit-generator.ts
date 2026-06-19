@@ -275,7 +275,14 @@ const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
 function hasAuthenticatedPrincipal(locals: unknown): boolean {
   if (!locals || typeof locals !== 'object') return false;
   const l = locals as Record<string, unknown>;
-  return Boolean(l.user || l.session || l.smrtAuth || l.auth);
+  // Only data-shaped principals count. We intentionally do NOT treat
+  // \`locals.auth\` as a signal: Auth.js/SvelteKit put a callable \`auth()\`
+  // helper on every request (including anonymous ones), so honoring it would
+  // fail OPEN. A resolved user/session object (or our explicit smrtAuth marker)
+  // is required.
+  const isPrincipal = (v: unknown) =>
+    typeof v === 'object' && v !== null ? true : v === true;
+  return isPrincipal(l.user) || isPrincipal(l.session) || l.smrtAuth === true;
 }
 
 function requireRouteAuth(locals: unknown, mutating: boolean): void {
@@ -284,6 +291,17 @@ function requireRouteAuth(locals: unknown, mutating: boolean): void {
   if (!hasAuthenticatedPrincipal(locals)) {
     throw error(401, 'Authentication required');
   }
+}
+
+// Sensitive-field-safe serialization for custom-action results (#1540): a
+// custom method may return a SmrtObject (or array of them), so route the value
+// through toPublicJSON() rather than letting JSON.stringify call toJSON().
+function toPublicResult(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(toPublicResult);
+  if (value && typeof (value as { toPublicJSON?: unknown }).toPublicJSON === 'function') {
+    return (value as { toPublicJSON: () => unknown }).toPublicJSON();
+  }
+  return value;
 }
 `;
 }
@@ -1809,7 +1827,7 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
       invocationArgs,
     )};
 
-  return json({ action: '${actionName}', result });
+  return json({ action: '${actionName}', result: toPublicResult(result) });
 };
 `;
   }
@@ -1828,7 +1846,7 @@ ${optionsLoad}  const ClassRef = registered.constructor as any;
     invocationArgs,
   )};
 
-  return json({ action: '${actionName}', result });
+  return json({ action: '${actionName}', result: toPublicResult(result) });
 };
 `;
   }
@@ -1846,7 +1864,7 @@ ${optionsLoad}  const result = ${buildActionInvocationExpression(
     invocationArgs,
   )};
 
-  return json({ action: '${actionName}', result });
+  return json({ action: '${actionName}', result: toPublicResult(result) });
 };
 `;
 }

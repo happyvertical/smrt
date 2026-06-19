@@ -93,6 +93,9 @@ describe('Issue #1540 (2c): fail-closed auth on generated routes', () => {
     expect(collectionRoute).toContain(
       "throw error(401, 'Authentication required');",
     );
+    // Must NOT fail open on a callable `locals.auth` (Auth.js puts an `auth()`
+    // helper on every request, including anonymous ones).
+    expect(collectionRoute).not.toContain('l.auth');
   });
 
   it('honors api.public === true (all routes public)', async () => {

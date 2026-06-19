@@ -73,6 +73,14 @@ export interface ApiCustomRouteConfig {
 
 export interface ApiSerializersConfig {
   /**
+   * Custom serializers REPLACE the framework's default `toPublicJSON()`
+   * serialization on generated routes. Security (#1540): when you supply a
+   * serializer you are responsible for excluding `@field({ sensitive: true })`
+   * fields — a serializer that returns `item.toJSON()` (or spreads all fields)
+   * will leak secrets that the default path would have stripped.
+   */
+
+  /**
    * Serializer used for standard item responses (`get`, `create`, `update`).
    */
   item?: ApiSerializerReference;

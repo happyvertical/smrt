@@ -102,7 +102,15 @@ describe('Issue #1540: sensitive field handling', () => {
 
   it('rejects a sensitive-field where filter even with a like operator', async () => {
     await expect(
-      collection.list({ where: { 'apiSecret like': 'sk-%' } }),
+      collection.list({ where: { 'apiSecret like': 'secret-%' } }),
+    ).rejects.toThrow(/sensitive/i);
+  });
+
+  it('rejects a sensitive field probed via a JSON-path segment', async () => {
+    // Guards against the `_meta_data.<sensitiveProp>` STI oracle: any dot-path
+    // segment matching a sensitive field is rejected.
+    await expect(
+      collection.list({ where: { 'apiSecret.foo': 'x' } }),
     ).rejects.toThrow(/sensitive/i);
   });
 });
