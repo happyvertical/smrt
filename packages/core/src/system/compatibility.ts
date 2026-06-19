@@ -253,6 +253,166 @@ async function addIndexIfMissing(
   }
 }
 
+async function addUniqueIndexIfMissing(
+  db: DatabaseInterface,
+  indexName: string,
+  tableName: string,
+  columns: string,
+  typeHint?: string,
+): Promise<void> {
+  if (await indexExists(db, indexName, typeHint)) {
+    return;
+  }
+
+  try {
+    await db.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS ${indexName} ON ${tableName}(${columns})`,
+    );
+  } catch (error) {
+    if (isDuplicateIndexRaceError(error, indexName)) {
+      if (await indexExists(db, indexName, typeHint)) {
+        return;
+      }
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Migrate the legacy `UNIQUE(signal_type, subscriber)` subscription identity to
+ * the tenant-scoped `UNIQUE(tenant_id, signal_type, subscriber)` (S5 #1398).
+ *
+ * The old identity let any tenant overwrite/delete/enable another tenant's
+ * subscription because the natural key ignored the tenant. This:
+ *   1. Creates the tenant-scoped unique index used by upsert conflict handling.
+ *   2. Drops the legacy 2-column unique constraint:
+ *      - **SQLite**: inline `UNIQUE(...)` constraints can't be dropped in place,
+ *        so the table is rebuilt without it (data preserved). The legacy
+ *        constraint surfaces as an auto-created `sqlite_autoindex_*` index.
+ *      - **Postgres**: the inline constraint is dropped by its conventional
+ *        name if present.
+ *
+ * Additive and idempotent: re-running is a no-op once migrated.
+ */
+async function migrateDispatchSubscriptionsIdentity(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  const engine = getDatabaseEngine(db, typeHint);
+
+  // 1. Tenant-scoped unique index (used by upsert's ON CONFLICT target).
+  await addUniqueIndexIfMissing(
+    db,
+    'uq_smrt_dispatch_subs_tenant_signal_subscriber',
+    '_smrt_dispatch_subscriptions',
+    'tenant_id, signal_type, subscriber',
+    typeHint,
+  );
+
+  // 2. Drop the legacy (signal_type, subscriber) uniqueness.
+  if (engine === 'postgres') {
+    // Inline table-level UNIQUE constraints get a conventional name. Drop it if
+    // present; ignore if it was never created under that name.
+    try {
+      await db.query(
+        'ALTER TABLE _smrt_dispatch_subscriptions DROP CONSTRAINT IF EXISTS _smrt_dispatch_subscriptions_signal_type_subscriber_key',
+      );
+    } catch {
+      // Best-effort: a differently-named legacy constraint is left in place; the
+      // tenant-scoped index above still enforces correct per-tenant identity.
+    }
+    return;
+  }
+
+  // SQLite: detect a legacy auto-index over exactly (signal_type, subscriber)
+  // and, if found, rebuild the table without the inline UNIQUE.
+  if (engine !== 'sqlite') {
+    return;
+  }
+
+  let legacyAutoIndex: string | null = null;
+  try {
+    const result = await db.query(
+      `SELECT name FROM sqlite_master
+         WHERE type = 'index'
+           AND tbl_name = '_smrt_dispatch_subscriptions'
+           AND name LIKE 'sqlite_autoindex_%'`,
+    );
+    for (const row of getQueryRows(result)) {
+      const indexName = String(row.name);
+      const info = await db.query(`PRAGMA index_info(${indexName})`);
+      const cols = getQueryRows(info)
+        .map((r) => String(r.name))
+        .sort();
+      if (
+        cols.length === 2 &&
+        cols[0] === 'signal_type' &&
+        cols[1] === 'subscriber'
+      ) {
+        legacyAutoIndex = indexName;
+        break;
+      }
+    }
+  } catch {
+    // Unable to introspect → assume no legacy constraint (fresh tables created
+    // from the new schema have none).
+    legacyAutoIndex = null;
+  }
+
+  if (!legacyAutoIndex) {
+    return;
+  }
+
+  // Rebuild the table without the inline UNIQUE(signal_type, subscriber).
+  // System table is small; this runs once per legacy database.
+  await db.query('PRAGMA foreign_keys=OFF');
+  try {
+    await db.query(`
+      CREATE TABLE _smrt_dispatch_subscriptions_new (
+        id TEXT PRIMARY KEY,
+        signal_type TEXT NOT NULL,
+        subscriber TEXT NOT NULL,
+        handler TEXT NOT NULL DEFAULT 'handleDispatch',
+        delivery TEXT NOT NULL DEFAULT 'compete',
+        enabled INTEGER DEFAULT 1,
+        tenant_id TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    await db.query(`
+      INSERT INTO _smrt_dispatch_subscriptions_new
+        (id, signal_type, subscriber, handler, delivery, enabled, tenant_id, created_at, updated_at)
+      SELECT id, signal_type, subscriber, handler, delivery, enabled, tenant_id, created_at, updated_at
+        FROM _smrt_dispatch_subscriptions
+    `);
+    await db.query('DROP TABLE _smrt_dispatch_subscriptions');
+    await db.query(
+      'ALTER TABLE _smrt_dispatch_subscriptions_new RENAME TO _smrt_dispatch_subscriptions',
+    );
+    // Recreate the secondary indexes (the rebuild dropped them) plus the
+    // tenant-scoped unique index.
+    await db.query(
+      'CREATE UNIQUE INDEX IF NOT EXISTS uq_smrt_dispatch_subs_tenant_signal_subscriber ON _smrt_dispatch_subscriptions(tenant_id, signal_type, subscriber)',
+    );
+    await db.query(
+      'CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_subscriber ON _smrt_dispatch_subscriptions(subscriber)',
+    );
+    await db.query(
+      'CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_tenant_id ON _smrt_dispatch_subscriptions(tenant_id)',
+    );
+    await db.query(
+      'CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_signal_type ON _smrt_dispatch_subscriptions(signal_type)',
+    );
+    await db.query(
+      'CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_subs_enabled ON _smrt_dispatch_subscriptions(enabled)',
+    );
+  } finally {
+    await db.query('PRAGMA foreign_keys=ON');
+  }
+}
+
 export async function ensureDispatchSystemTableCompatibility(
   db: DatabaseInterface,
   typeHint?: string,
@@ -333,6 +493,9 @@ export async function ensureDispatchSubscriptionsSystemTableCompatibility(
     'tenant_id',
     typeHint,
   );
+  // Migrate the subscription natural key to (tenant_id, signal_type, subscriber)
+  // so tenants can't clobber each other's subscriptions (S5 #1398).
+  await migrateDispatchSubscriptionsIdentity(db, typeHint);
 }
 
 export async function ensureJobsSystemTableCompatibility(

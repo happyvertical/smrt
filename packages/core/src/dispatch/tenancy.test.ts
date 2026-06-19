@@ -167,22 +167,104 @@ describe('DispatchBus tenant isolation (S5 #1398)', () => {
       expect(seen).toEqual([{ id: 'x' }]);
     });
 
-    it('a no-context processor sees all tenants (system/global scope)', async () => {
-      activeTenant = 'tenant-a';
-      await bus.subscribe({
-        signalType: 'order.placed',
-        subscriber: 'sysworker',
-      });
-      await bus.emit('order.placed', { id: 'a' }, { source: 'orders' });
+    it('processes global (NULL) dispatches when no resolver is registered', async () => {
+      setDispatchTenantResolver(undefined);
+      await bus.subscribe({ signalType: 'order.placed', subscriber: 'worker' });
+      await bus.emit('order.placed', { id: 'g' }, { source: 'orders' });
 
-      // No active context → system scope sees the dispatch.
-      activeTenant = undefined;
       const seen: unknown[] = [];
-      const processed = await bus.process('sysworker', async (payload) => {
+      const processed = await bus.process('worker', async (payload) => {
         seen.push(payload);
       });
       expect(processed).toBe(1);
-      expect(seen).toEqual([{ id: 'a' }]);
+      expect(seen).toEqual([{ id: 'g' }]);
+    });
+  });
+
+  describe('fail-closed when tenancy is on but no active tenant (S5 #1398)', () => {
+    it('a tenancy-enabled processor with no active tenant sees only global rows', async () => {
+      // Resolver IS registered (tenancy on) but returns no active tenant.
+      activeTenant = 'tenant-a';
+      await bus.subscribe({
+        signalType: 'order.placed',
+        subscriber: 'worker',
+      });
+      await bus.emit('order.placed', { id: 'a' }, { source: 'orders' });
+
+      // A global subscription + global dispatch in the no-tenant scope.
+      activeTenant = undefined;
+      await bus.subscribe({
+        signalType: 'order.placed',
+        subscriber: 'worker',
+      });
+      await bus.emit('order.placed', { id: 'global' }, { source: 'orders' });
+
+      // Tenancy is enabled but no tenant is active → fail closed to global
+      // (NULL) rows only. Must NOT see tenant-a's dispatch.
+      const seen: unknown[] = [];
+      const processed = await bus.process('worker', async (payload) => {
+        seen.push(payload);
+      });
+      expect(processed).toBe(1);
+      expect(seen).toEqual([{ id: 'global' }]);
+    });
+
+    it('get() with no active tenant cannot fetch a tenant-scoped dispatch', async () => {
+      activeTenant = 'tenant-a';
+      const dispatch = await bus.emit(
+        'order.placed',
+        { id: 'a' },
+        { source: 'orders' },
+      );
+
+      // Tenancy on, no active tenant → only global rows are fetchable.
+      activeTenant = undefined;
+      const fetched = await bus.get(dispatch.id);
+      expect(fetched).toBeNull();
+    });
+  });
+
+  describe('bus.list()/get() ignore caller-supplied tenant scope (S5 #1398)', () => {
+    it('list({}) does not see all tenants under an active tenant', async () => {
+      activeTenant = 'tenant-a';
+      await bus.emit('order.placed', { id: 'a' }, { source: 'orders' });
+      activeTenant = 'tenant-b';
+      await bus.emit('order.placed', { id: 'b' }, { source: 'orders' });
+
+      activeTenant = 'tenant-a';
+      const listed = await bus.list({});
+      const ids = listed.map((d) => (d.payload as { id: string }).id).sort();
+      // Only tenant-a's dispatch (no global rows emitted here).
+      expect(ids).toEqual(['a']);
+    });
+
+    it('a caller-supplied tenantScope cannot widen visibility to another tenant', async () => {
+      activeTenant = 'tenant-a';
+      await bus.emit('order.placed', { id: 'a' }, { source: 'orders' });
+      activeTenant = 'tenant-b';
+      await bus.emit('order.placed', { id: 'b' }, { source: 'orders' });
+
+      activeTenant = 'tenant-a';
+      // Attempt to pick tenant-b by supplying a scope — must be ignored: the
+      // bus strips any caller scope and re-derives it server-side.
+      const listed = await bus.list({
+        tenantScope: { enforced: true, tenantId: 'tenant-b' },
+      });
+      const ids = listed.map((d) => (d.payload as { id: string }).id).sort();
+      expect(ids).toEqual(['a']);
+    });
+
+    it("get() cannot fetch another tenant's dispatch by id", async () => {
+      activeTenant = 'tenant-b';
+      const bDispatch = await bus.emit(
+        'order.placed',
+        { id: 'b' },
+        { source: 'orders' },
+      );
+
+      activeTenant = 'tenant-a';
+      const fetched = await bus.get(bDispatch.id);
+      expect(fetched).toBeNull();
     });
   });
 
@@ -203,15 +285,11 @@ describe('DispatchBus tenant isolation (S5 #1398)', () => {
     });
 
     it('rejects the reserved in-memory sentinel as an emit source', async () => {
-      const dispatch = await bus.emit(
-        'order.placed',
-        { id: '1' },
-        {
-          source: '_in_memory_',
-        },
-      );
-      // Impersonation of the in-memory pseudo-source is neutralized.
-      expect(dispatch.source).toBe('unknown');
+      // The contract is "rejected" — impersonating the in-memory pseudo-source
+      // throws rather than being silently rewritten (S5 #1398).
+      await expect(
+        bus.emit('order.placed', { id: '1' }, { source: '_in_memory_' }),
+      ).rejects.toThrow(/reserved source/i);
     });
 
     it('rejects subscribing under the reserved in-memory subscriber name', async () => {
@@ -227,6 +305,83 @@ describe('DispatchBus tenant isolation (S5 #1398)', () => {
       await expect(
         bus.subscribe({ signalType: 'order.placed', subscriber: '  ' }),
       ).rejects.toThrow(/non-empty subscriber/i);
+    });
+  });
+
+  describe('subscription identity is tenant-scoped (S5 #1398)', () => {
+    it('tenant B cannot clobber tenant A subscription, and A keeps processing', async () => {
+      // Tenant A subscribes with compete delivery (default).
+      activeTenant = 'tenant-a';
+      await bus.subscribe({ signalType: 'order.placed', subscriber: 'worker' });
+
+      // Tenant B registers the SAME (signal_type, subscriber) — must be an
+      // independent row, not an overwrite of A's. Use fanout to make the
+      // delivery mode observably different if rows were shared.
+      activeTenant = 'tenant-b';
+      await bus.subscribe({
+        signalType: 'order.placed',
+        subscriber: 'worker',
+        delivery: 'fanout',
+      });
+
+      // Both tenants' subscriptions coexist (2 rows total, scoped per tenant).
+      activeTenant = 'tenant-a';
+      const aSubs = await bus.listSubscriptions('worker');
+      expect(aSubs).toHaveLength(1);
+      expect(aSubs[0].delivery).toBe('compete');
+
+      activeTenant = 'tenant-b';
+      const bSubs = await bus.listSubscriptions('worker');
+      expect(bSubs).toHaveLength(1);
+      expect(bSubs[0].delivery).toBe('fanout');
+
+      // Tenant A's dispatch is still claimable by tenant A's worker.
+      activeTenant = 'tenant-a';
+      await bus.emit('order.placed', { id: 'a-1' }, { source: 'orders' });
+      const seenByA: unknown[] = [];
+      const processedByA = await bus.process('worker', async (payload) => {
+        seenByA.push(payload);
+      });
+      expect(processedByA).toBe(1);
+      expect(seenByA).toEqual([{ id: 'a-1' }]);
+    });
+
+    it('tenant B cannot unsubscribe tenant A subscription', async () => {
+      activeTenant = 'tenant-a';
+      await bus.subscribe({ signalType: 'order.placed', subscriber: 'worker' });
+
+      // Tenant B attempts to remove the (signal_type, subscriber) pair.
+      activeTenant = 'tenant-b';
+      await bus.unsubscribe('order.placed', 'worker');
+
+      // Tenant A's subscription survives.
+      activeTenant = 'tenant-a';
+      const aSubs = await bus.listSubscriptions('worker');
+      expect(aSubs).toHaveLength(1);
+    });
+  });
+
+  describe('atomic claim prevents double processing (S5 #1398)', () => {
+    it('a single global dispatch is processed at most once across concurrent processors', async () => {
+      // No tenancy → both processors share the same global compete dispatch.
+      setDispatchTenantResolver(undefined);
+      await bus.subscribe({ signalType: 'order.placed', subscriber: 'worker' });
+      await bus.emit('order.placed', { id: 'once' }, { source: 'orders' });
+
+      // Two concurrent process() calls race for the same pending row. The
+      // atomic conditional claim must let exactly one win.
+      const seen: unknown[] = [];
+      const [a, b] = await Promise.all([
+        bus.process('worker', async (payload) => {
+          seen.push(payload);
+        }),
+        bus.process('worker', async (payload) => {
+          seen.push(payload);
+        }),
+      ]);
+
+      expect(a + b).toBe(1);
+      expect(seen).toEqual([{ id: 'once' }]);
     });
   });
 });

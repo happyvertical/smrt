@@ -6,6 +6,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { Dispatch, type DispatchData } from '../models/Dispatch.js';
+import type { DispatchTenantScope } from '../tenant-resolver.js';
 import type {
   DispatchCleanupOptions,
   DispatchCleanupResult,
@@ -13,6 +14,39 @@ import type {
   DispatchRetryOptions,
   DispatchStatus,
 } from '../types.js';
+
+/**
+ * Build the SQL tenant predicate for the active scope (S5 #1398).
+ *
+ * Appends a parameterized condition to `conditions` (and the corresponding
+ * value to `params`) based on the resolved {@link DispatchTenantScope}:
+ *
+ *  - tenancy off / no scope → no predicate (pre-tenancy behavior)
+ *  - `enforced` + active tenant T → `(tenant_id = ? OR tenant_id IS NULL)`
+ *  - `enforced` + no active tenant → `tenant_id IS NULL` (fail-closed global)
+ *
+ * @param placeholder - Engine-specific positional placeholder (e.g. `$3`) used
+ *   when a tenant id value is bound. Ignored for the no-value branches.
+ * @returns `true` when a value placeholder was consumed (so the caller can
+ *   advance its param index), `false` otherwise.
+ */
+function pushTenantPredicate(
+  conditions: string[],
+  params: unknown[],
+  scope: DispatchTenantScope | undefined,
+  placeholder: string,
+): boolean {
+  if (!scope?.enforced) {
+    return false;
+  }
+  if (scope.tenantId !== null) {
+    conditions.push(`(tenant_id = ${placeholder} OR tenant_id IS NULL)`);
+    params.push(scope.tenantId);
+    return true;
+  }
+  conditions.push('tenant_id IS NULL');
+  return false;
+}
 
 /**
  * Storage operations for dispatches in _smrt_dispatch table
@@ -82,7 +116,11 @@ export class DispatchCollection {
   }
 
   /**
-   * Get a dispatch by ID
+   * Get a dispatch by ID (unscoped).
+   *
+   * Internal/system use only — applies no tenant filter. Public reads go
+   * through the DispatchBus, which uses {@link getScoped} so a caller cannot
+   * fetch another tenant's dispatch by id (S5 #1398).
    */
   static async get(
     db: DatabaseInterface,
@@ -94,6 +132,32 @@ export class DispatchCollection {
 
     if (!result) return null;
     return Dispatch.fromRow(result as DispatchData);
+  }
+
+  /**
+   * Get a dispatch by ID, enforcing the active tenant scope (S5 #1398).
+   *
+   * Applies the same tenant predicate as {@link list}/{@link findPending}, so a
+   * cross-tenant or out-of-scope id lookup returns `null` rather than leaking
+   * the row. The scope is derived server-side by the DispatchBus.
+   */
+  static async getScoped(
+    db: DatabaseInterface,
+    id: string,
+    tenantScope?: DispatchTenantScope,
+  ): Promise<Dispatch | null> {
+    const conditions: string[] = ['id = $1'];
+    const params: unknown[] = [id];
+
+    pushTenantPredicate(conditions, params, tenantScope, '$2');
+
+    const { rows } = await db.query(
+      `SELECT * FROM _smrt_dispatch WHERE ${conditions.join(' AND ')} LIMIT 1`,
+      ...params,
+    );
+
+    if (rows.length === 0) return null;
+    return Dispatch.fromRow(rows[0] as unknown as DispatchData);
   }
 
   /**
@@ -132,13 +196,17 @@ export class DispatchCollection {
       params.push(options.correlationId);
     }
 
-    // Tenant isolation (S5 #1398): when an active tenant is supplied, only that
-    // tenant's dispatches plus global (NULL) dispatches are visible. When
-    // undefined (system/global processing), no tenant filter is applied, so
-    // existing non-tenant behavior is preserved.
-    if (options.tenantId !== undefined && options.tenantId !== null) {
-      conditions.push(`(tenant_id = $${paramIndex++} OR tenant_id IS NULL)`);
-      params.push(options.tenantId);
+    // Tenant isolation (S5 #1398). Scope is derived server-side by the bus;
+    // callers cannot widen it. See DispatchListOptions.tenantScope.
+    if (
+      pushTenantPredicate(
+        conditions,
+        params,
+        options.tenantScope,
+        `$${paramIndex}`,
+      )
+    ) {
+      paramIndex++;
     }
 
     let sql = 'SELECT * FROM _smrt_dispatch';
@@ -190,18 +258,18 @@ export class DispatchCollection {
    *
    * @param subscriber - When provided, filters to dispatches with no target
    *   or targeted specifically at this subscriber (for fan-out delivery)
-   * @param tenantId - When provided (active tenant context), restricts results
-   *   to that tenant's dispatches plus global (NULL) dispatches, so a
-   *   subscriber in one tenant cannot claim another tenant's dispatch
-   *   (S5 #1398). When undefined, no tenant filter is applied (backward
-   *   compatible for non-tenant deployments).
+   * @param tenantScope - Active tenant scope (S5 #1398). Derived server-side by
+   *   the bus; restricts results so a subscriber in one tenant cannot see
+   *   another tenant's dispatch. See {@link pushTenantPredicate} for the exact
+   *   semantics (off → no filter; active tenant → that tenant + global; on but
+   *   no tenant → global only).
    */
   static async findPending(
     db: DatabaseInterface,
     signalTypes: string[],
     limit: number = 100,
     subscriber?: string,
-    tenantId?: string | null,
+    tenantScope?: DispatchTenantScope,
   ): Promise<Dispatch[]> {
     if (signalTypes.length === 0) {
       return [];
@@ -209,23 +277,28 @@ export class DispatchCollection {
 
     let paramIndex = 1;
     const placeholders = signalTypes.map(() => `$${paramIndex++}`).join(', ');
-    let sql = `SELECT * FROM _smrt_dispatch
-       WHERE status = 'pending'
-       AND type IN (${placeholders})`;
-
+    const conditions: string[] = [
+      "status = 'pending'",
+      `type IN (${placeholders})`,
+    ];
     const params: unknown[] = [...signalTypes];
 
     if (subscriber) {
-      sql += ` AND (target_subscriber IS NULL OR target_subscriber = $${paramIndex++})`;
+      conditions.push(
+        `(target_subscriber IS NULL OR target_subscriber = $${paramIndex++})`,
+      );
       params.push(subscriber);
     }
 
-    if (tenantId !== undefined && tenantId !== null) {
-      sql += ` AND (tenant_id = $${paramIndex++} OR tenant_id IS NULL)`;
-      params.push(tenantId);
+    if (
+      pushTenantPredicate(conditions, params, tenantScope, `$${paramIndex}`)
+    ) {
+      paramIndex++;
     }
 
-    sql += ` ORDER BY created_at ASC LIMIT $${paramIndex}`;
+    const sql = `SELECT * FROM _smrt_dispatch
+       WHERE ${conditions.join(' AND ')}
+       ORDER BY created_at ASC LIMIT $${paramIndex}`;
     params.push(limit);
 
     const { rows } = await db.query(sql, ...params);
@@ -233,6 +306,56 @@ export class DispatchCollection {
     return rows.map((row: Record<string, unknown>) =>
       Dispatch.fromRow(row as unknown as DispatchData),
     );
+  }
+
+  /**
+   * Atomically claim a pending dispatch for processing (S5 #1398).
+   *
+   * Performs a conditional `UPDATE ... WHERE id = ? AND status = 'pending'`
+   * (plus the tenant predicate for the active scope) and reports whether the
+   * row was claimed by THIS call. Only the caller whose update affected a row
+   * may run the handler, which closes the claim TOCTOU window where a `process`
+   * filter-then-update could let two workers (or a tenant-scoped and a
+   * system-scoped processor) both pick up the same compete/global dispatch.
+   *
+   * On a successful claim the dispatch's status/attempts/updated_at are
+   * advanced in the DB; the in-memory `dispatch` instance is updated to match
+   * so the caller can proceed to `update()` it to completed/failed.
+   *
+   * @returns `true` if this call claimed the dispatch, `false` if another
+   *   worker already moved it out of `pending` (or it is not visible in scope).
+   */
+  static async claim(
+    db: DatabaseInterface,
+    dispatch: Dispatch,
+    tenantScope?: DispatchTenantScope,
+  ): Promise<boolean> {
+    dispatch.markProcessing();
+    const row = dispatch.toRow();
+
+    const conditions: string[] = ['id = $4', "status = 'pending'"];
+    const params: unknown[] = [
+      row.status,
+      row.attempts,
+      row.updated_at,
+      row.id,
+    ];
+    let paramIndex = 5;
+
+    if (
+      pushTenantPredicate(conditions, params, tenantScope, `$${paramIndex}`)
+    ) {
+      paramIndex++;
+    }
+
+    const { rowCount } = await db.query(
+      `UPDATE _smrt_dispatch
+         SET status = $1, attempts = $2, updated_at = $3
+       WHERE ${conditions.join(' AND ')}`,
+      ...params,
+    );
+
+    return (rowCount ?? 0) > 0;
   }
 
   /**
