@@ -393,6 +393,18 @@ describe('serveAsset', () => {
           false,
         );
         expect(response.status, `expected ${uri} to be rejected`).toBe(502);
+
+        // The body must be a single generic message for ALL SSRF-class
+        // rejections — it must NOT reveal WHY the target was rejected
+        // (host vs scheme vs invalid URL), or the host/scheme itself, which
+        // would give clients an SSRF oracle (S5 #1396, Copilot review).
+        const body = await response.text();
+        expect(body, `expected opaque body for ${uri}`).toBe('Bad gateway');
+        expect(body).not.toContain('host');
+        expect(body).not.toContain('scheme');
+        // Pull the hostname out of the URI and assert it never leaks.
+        const host = new URL(uri).hostname;
+        expect(body).not.toContain(host);
       }
     });
 
@@ -554,6 +566,51 @@ describe('serveAsset', () => {
       });
 
       expect(response.status).toBe(502);
+
+      // The opaque 502 body must NOT echo the upstream origin status (404),
+      // which would let a client probe origin state (S5 #1396, Copilot
+      // review). It must be the generic gateway message.
+      const body = await response.text();
+      expect(body).toBe('Bad gateway');
+      expect(body).not.toContain('404');
+      expect(body).not.toContain('returned');
+    });
+
+    it('aborts a slow proxied fetch via the AbortController timeout path', async () => {
+      const asset = await runtime.storeSourceAsset(
+        'slow.bin',
+        Buffer.from('ignored'),
+        { mimeType: 'application/octet-stream', typeSlug: 'document' },
+      );
+      asset.sourceUri = 'https://example.com/slow.bin';
+      await asset.save();
+
+      // A fetch impl that hangs until the passed AbortSignal fires. This
+      // exercises the AbortController + setTimeout path (not
+      // AbortSignal.timeout), which must work on older runtimes too
+      // (S5 #1396, Copilot review).
+      const fetchImpl: typeof fetch = (_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            signal.addEventListener('abort', () => {
+              reject(new DOMException('Aborted', 'AbortError'));
+            });
+          }
+        });
+
+      const response = await serveAsset({
+        runtime,
+        asset: asset.id!,
+        remoteMode: 'proxy',
+        remoteTimeoutMs: 10,
+        fetchImpl,
+      });
+
+      // The abort surfaces as a fetch failure → generic opaque 502.
+      expect(response.status).toBe(502);
+      const body = await response.text();
+      expect(body).toBe('Bad gateway');
     });
 
     it('treats remote URIs as errors when remoteMode is error', async () => {

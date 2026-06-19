@@ -352,8 +352,10 @@ function isBlockedIpv6(host: string): boolean {
 
 /**
  * Validate a remote URL for proxying: only `http(s)` and only public hosts.
- * Throws `AssetServeError(502)` on a rejected target (kept opaque so the
- * client can't probe internal reachability via status differences).
+ * Throws `AssetServeError(502)` on a rejected target. The distinct `message`s
+ * (invalid URL vs unsupported scheme vs blocked host) are server-side only —
+ * `serveAsset` returns a single generic 502 body for all of them so the client
+ * can't probe internal reachability via status OR body differences (S5 #1396).
  */
 function assertSafeRemoteUrl(rawUrl: string): URL {
   let url: URL;
@@ -387,10 +389,22 @@ async function fetchRemoteAsset(
   let current = assertSafeRemoteUrl(startUrl);
 
   for (let hop = 0; hop <= MAX_REMOTE_REDIRECTS; hop++) {
-    const response = await fetchImpl(current.toString(), {
-      redirect: 'manual',
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    // Use AbortController + setTimeout rather than AbortSignal.timeout():
+    // this helper deliberately supports pre-Node-18 runtimes via
+    // `responseCtor`/`fetchImpl`, where AbortSignal.timeout() may be missing
+    // (S5 #1396, Copilot review). Clear the timer in `finally` so it never
+    // leaks past the fetch.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    let response: Response;
+    try {
+      response = await fetchImpl(current.toString(), {
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
 
     // Manual redirect handling — re-validate each Location hop.
     if (response.status >= 300 && response.status < 400) {
@@ -406,8 +420,11 @@ async function fetchRemoteAsset(
     }
 
     if (!response.ok) {
+      // Keep the upstream status in `message` for server-side logs only; the
+      // client gets the generic opaque 502 body so the origin's status can't
+      // leak through the response (S5 #1396, Copilot review).
       throw new AssetServeError(
-        `Remote asset returned ${response.status}`,
+        `Remote asset upstream returned ${response.status}`,
         502,
       );
     }
@@ -554,7 +571,12 @@ export async function resolveAssetForServing(
       data = await runtime.store.read(asset);
     } catch (err) {
       console.error('serveAsset: store read failed', err);
-      throw new AssetServeError('Failed to read asset bytes', 500);
+      // Generic, non-leaking client body (no paths/bucket names).
+      throw new AssetServeError(
+        'Failed to read asset bytes',
+        500,
+        'Failed to read asset bytes',
+      );
     }
   }
 
@@ -673,7 +695,14 @@ export async function serveAsset(
       });
     }
     if (err instanceof AssetServeError) {
-      return new Ctor(err.message, {
+      // Return the opaque, status-keyed body — never `err.message`, which can
+      // carry the specific rejection reason (SSRF cause, upstream status) and
+      // would give clients an oracle about WHY a target was rejected
+      // (S5 #1396, Copilot review). The specific reason is logged below.
+      if (err.status >= 500) {
+        console.error('serveAsset: request failed', err.status, err.message);
+      }
+      return new Ctor(err.clientMessage, {
         status: err.status,
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       });
@@ -689,16 +718,47 @@ export async function serveAsset(
 }
 
 /**
+ * Generic, status-keyed client-facing bodies. The `message` of an
+ * {@link AssetServeError} can carry a specific reason for server-side logs,
+ * but the body returned to the HTTP client is one of these opaque strings so
+ * a caller can't probe internal reachability or upstream state via the
+ * response text — e.g. distinguishing "blocked host" from "bad scheme", or
+ * reading the upstream origin's status (S5 #1396, Copilot review).
+ */
+function defaultClientMessage(status: number): string {
+  switch (status) {
+    case 403:
+      return 'Forbidden';
+    case 404:
+      return 'Not found';
+    case 502:
+      return 'Bad gateway';
+    default:
+      return 'Internal error serving asset';
+  }
+}
+
+/**
  * Error raised by `resolveAssetForServing()` with the HTTP status
  * callers should use when rendering their own response.
+ *
+ * `message` is the specific, server-side reason — safe to log, never sent to
+ * the client. `clientMessage` is the opaque body {@link serveAsset} returns to
+ * the HTTP client; it defaults to a generic, status-keyed string so the
+ * specific reason can't leak (SSRF rejection cause, upstream status, etc.).
  */
 export class AssetServeError extends Error {
+  /** Opaque body safe to return to the HTTP client. */
+  public readonly clientMessage: string;
+
   constructor(
     message: string,
     public readonly status: number,
+    clientMessage?: string,
   ) {
     super(message);
     this.name = 'AssetServeError';
+    this.clientMessage = clientMessage ?? defaultClientMessage(status);
   }
 }
 
