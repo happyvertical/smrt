@@ -2,10 +2,18 @@ import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { ChatThreadOptions } from '../types.js';
 
+/**
+ * Conversation thread. Internal model — threads must be created/mutated only
+ * through the membership-checked {@link ChatService} (S5 #1392). The generated
+ * CRUD surface is read-only (`get`/`list`); `create`/`update`/`delete` are NOT
+ * generated, otherwise a caller could POST a thread rooted in an arbitrary room
+ * (or mutate `messageCount`/`isResolved`) via the raw collection routes,
+ * bypassing the room-membership authorization in {@link ChatService.startThread}.
+ */
 @TenantScoped({ mode: 'required' })
 @smrt({
   tableName: 'chat_threads',
-  api: { include: ['list', 'get', 'create'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
@@ -15,8 +23,12 @@ export class ChatThread extends SmrtObject {
 
   @foreignKey('ChatRoom', { required: true })
   roomId: string = '';
-  @foreignKey('ChatMessage')
-  rootMessageId: string = '';
+  // Nullable FK (S5 #1392): a thread can be opened WITHOUT a root message (e.g.
+  // a content/agent-editor thread). The previous `= ''` default wrote an empty
+  // string into this FK column, which breaks native-`uuid` DBs (Postgres/DuckDB
+  // reject `''` as a uuid). `null` is the correct "no root" value.
+  @foreignKey('ChatMessage', { nullable: true })
+  rootMessageId: string | null = null;
   @field()
   title: string = '';
   @field()

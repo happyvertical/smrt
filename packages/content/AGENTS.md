@@ -115,6 +115,21 @@ support `onAssistantContextChange`. The callback receives a serializable
 `sendContentEditorChatThreadMessage` helpers for app-specific tenancy/auth/AI
 route wiring.
 
+These handlers go exclusively through the tenant-bound `ChatService` facade
+(S5 #1392) — `getAgentSession`/`findActiveAgentSessions`/`getThread`/
+`listRoomThreads`/`getThreadMessages` for reads and `startThread`/`sendMessage`/
+`sendAgentReply` (internal agent-runtime subpath) for writes. They never reach
+into the now-`#private` chat collections, so cross-tenant chat state can no
+longer be selected by raw id before authorization.
+
+The content-editor session is created with a content-scoped `sessionKey`
+(`contentChatSessionKey(contentId)` → `content:<id>`, S5 #1392). Without it,
+`createAgentSession` reuses ANY active `content_editor` session for the same
+profile/tenant, so a request about a new content id would reuse — and the
+handler would rewrite — a session created for a different content and return the
+other content's room/threads. Keying on the content id makes each content get a
+distinct session/room.
+
 ## Relationship Models
 
 - **ContentReference**: SMRT junction model backing `content_references` for content-to-content links

@@ -8,14 +8,35 @@ import {
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import type { AgentSessionOptions, AgentSessionStatus } from '../types.js';
 
+/**
+ * Agent conversation session. Internal model — sessions must be created via
+ * {@link ChatService.createAgentSession} and their security-relevant config
+ * (`allowedTools` / `systemPrompt` / `chatRoomId` / `participantProfileId`)
+ * mutated only via the owner-checked {@link ChatService.updateAgentSessionConfig}
+ * (S5 #1392). The generated CRUD surface is read-only (`get`/`list`);
+ * `create`/`update`/`delete` are NOT generated, otherwise a `PUT` could rewrite
+ * the tool allow-list or system prompt and bypass the owner check.
+ */
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'agent_sessions',
-  api: { include: ['list', 'get', 'create', 'update'] },
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class AgentSession extends SmrtObject {
+  /**
+   * Reserved `sessionContext` key that scopes a session's identity to a caller-
+   * supplied conversation subject (e.g. a content id) (S5 #1392).
+   *
+   * `createAgentSession`'s reuse path keys on `(agentId, participantProfileId,
+   * tenantId)`; without a discriminator a session opened for subject A would be
+   * reused (and its context rewritten) for a request about subject B, returning
+   * A's room/threads on B's route. Storing the key here lets the reuse lookup
+   * require an exact match so distinct subjects get distinct sessions.
+   */
+  static readonly SESSION_KEY_CONTEXT_FIELD = '__sessionKey';
+
   @tenantId({ nullable: true })
   tenantId: string | null = null;
 
@@ -88,7 +109,10 @@ export class AgentSession extends SmrtObject {
 
   getAllowedTools(): string[] {
     try {
-      return JSON.parse(this.allowedTools);
+      const parsed = JSON.parse(this.allowedTools);
+      return Array.isArray(parsed)
+        ? parsed.filter((t): t is string => typeof t === 'string')
+        : [];
     } catch {
       return [];
     }
@@ -96,6 +120,19 @@ export class AgentSession extends SmrtObject {
 
   setAllowedTools(tools: string[]): void {
     this.allowedTools = JSON.stringify(tools);
+  }
+
+  /**
+   * Fail-closed authorization check for an agent tool call (S5 #1392).
+   *
+   * A tool may only be invoked when it appears in this session's allow-list.
+   * If the allow-list is empty or unparseable, NO tools are permitted. This is
+   * deliberately conservative: an empty whitelist means "no tools", never
+   * "all tools".
+   */
+  isToolAllowed(toolName: string): boolean {
+    if (typeof toolName !== 'string' || toolName.length === 0) return false;
+    return this.getAllowedTools().includes(toolName);
   }
 
   isActive(): boolean {
@@ -134,6 +171,18 @@ export class AgentSession extends SmrtObject {
 
   setSessionContext(ctx: Record<string, unknown>): void {
     this.sessionContext = JSON.stringify(ctx);
+  }
+
+  /**
+   * Stable identity key that scopes this session to a conversation subject
+   * (S5 #1392). Returns `null` when the session is not subject-scoped. Used by
+   * the reuse lookup so a session opened for one subject is never reused for a
+   * request about a different subject.
+   */
+  getSessionKey(): string | null {
+    const value =
+      this.getSessionContext()[AgentSession.SESSION_KEY_CONTEXT_FIELD];
+    return typeof value === 'string' && value.length > 0 ? value : null;
   }
 
   async updateSessionContext(updates: Record<string, unknown>): Promise<void> {

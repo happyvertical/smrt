@@ -18,17 +18,21 @@
  *   persistence: { type: 'sql', url: 'chat.db' }
  * });
  *
+ * // actorProfileId is the authenticated principal injected by the route; the
+ * // acting actor becomes the room owner.
  * const room = await chat.createRoom({
  *   tenantId: 'tenant-1',
  *   name: 'General',
  *   roomType: 'public',
- *   createdByProfileId: 'profile-1',
+ *   actorProfileId: 'profile-1',
  * });
  *
+ * // actorProfileId is the authenticated principal injected by the route;
+ * // the message is always authored as that actor with role 'user'.
  * await chat.sendMessage({
  *   tenantId: 'tenant-1',
  *   roomId: room.id,
- *   senderProfileId: 'profile-1',
+ *   actorProfileId: 'profile-1',
  *   content: 'Hello, world!',
  * });
  * ```
@@ -41,15 +45,16 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
-// Collections
-export {
-  AgentSessionCollection,
-  ChatMessageCollection,
-  ChatParticipantCollection,
-  ChatReactionCollection,
-  ChatRoomCollection,
-  ChatThreadCollection,
-} from './collections/index.js';
+// Collections are intentionally NOT exported (S5 #1392). The raw
+// SmrtCollection handles (ChatRoomCollection, ChatMessageCollection,
+// ChatParticipantCollection, ChatThreadCollection, AgentSessionCollection,
+// ChatReactionCollection) can author/mutate any row with NO actor/membership
+// authorization. Exposing them let a consumer call e.g.
+// `messages.create({ senderProfileId, role })` or `participants.create(...)` to
+// bypass the entire ChatService facade. All reads/writes now go through the
+// authorized ChatService methods; legitimate reads have dedicated facade
+// methods (getAgentSession, findActiveAgentSessions, getThread, listRoomThreads,
+// getThreadMessages, getRoomMessages, getRoomForMember, ...).
 
 // Models
 export {

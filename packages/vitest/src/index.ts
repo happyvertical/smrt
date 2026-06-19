@@ -269,6 +269,12 @@ export function getWorkspaceViteAliases(
       `${packageName}/manifest.json`,
       join(packageRoot, 'src/manifest/manifest.json'),
     );
+    // smrt-chat exposes an internal trusted agent-runtime subpath (S5 #1392).
+    addAliasIfPresent(
+      aliases,
+      `${packageName}/internal/agent-runtime`,
+      join(packageRoot, 'src/internal/agent-runtime.ts'),
+    );
 
     if (packageName === '@happyvertical/smrt-core') {
       addAliasIfPresent(
