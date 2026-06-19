@@ -564,17 +564,29 @@ export class MCPGenerator {
   }
 
   /**
-   * Serialize a SmrtObject (or array of them) for a tool response, excluding
-   * sensitive fields (#1540). Falls back to the value unchanged for
-   * non-SmrtObject payloads (e.g. primitive/plain-object custom-action results).
+   * Serialize a tool-response payload, excluding sensitive fields (#1540).
+   * Recurses through arrays and plain objects so a SmrtObject nested inside a
+   * custom-action result (e.g. `{ item }`) is also stripped — `JSON.stringify`
+   * would otherwise call its `toJSON()`. Non-plain instances (Date, etc.) and
+   * primitives pass through unchanged; a cycle guard prevents infinite loops.
    */
-  private toPublicData(object: any): any {
-    if (Array.isArray(object)) {
-      return object.map((entry) => this.toPublicData(entry));
+  private toPublicData(value: any, seen: WeakSet<object> = new WeakSet()): any {
+    if (value === null || typeof value !== 'object') return value;
+    if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+    if (Array.isArray(value)) {
+      if (seen.has(value)) return value;
+      seen.add(value);
+      return value.map((entry) => this.toPublicData(entry, seen));
     }
-    return typeof object?.toPublicJSON === 'function'
-      ? object.toPublicJSON()
-      : object;
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return value;
+    if (seen.has(value)) return value;
+    seen.add(value);
+    const out: Record<string, any> = {};
+    for (const [key, entry] of Object.entries(value)) {
+      out[key] = this.toPublicData(entry, seen);
+    }
+    return out;
   }
 
   /**
@@ -1219,7 +1231,7 @@ ${indent}}`;
  * or behind an authenticated gateway.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core/registry';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and
@@ -1255,13 +1267,27 @@ function applyWritablePolicy(objectName, data) {
 }
 
 /**
- * Sensitive-field-safe serialization for custom-action results (#1540): a custom
- * method may return a SmrtObject (or array of them).
+ * Sensitive-field-safe serialization for custom-action results (#1540).
+ * Recurses through arrays and plain objects so nested SmrtObjects are stripped
+ * too; non-plain instances (Date, etc.) and primitives pass through. Cycle-safe.
  */
-function toPublicResult(value) {
-  if (Array.isArray(value)) return value.map(toPublicResult);
-  if (value && typeof value.toPublicJSON === 'function') return value.toPublicJSON();
-  return value;
+function toPublicResult(value, seen = new WeakSet()) {
+  if (value === null || typeof value !== 'object') return value;
+  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+    return value.map((entry) => toPublicResult(entry, seen));
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  const out = {};
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = toPublicResult(entry, seen);
+  }
+  return out;
 }
 
 /**

@@ -222,7 +222,7 @@ import {
   type CallToolRequest,
   type ListToolsRequest,
 } from '@modelcontextprotocol/sdk/types.js';
-import { ObjectRegistry } from '@happyvertical/smrt-core/registry';
+import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { config } from '@happyvertical/smrt-config';
 
 // Server configuration
@@ -268,13 +268,27 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
 }
 
 /**
- * Sensitive-field-safe serialization for custom-action results (#1540): a
- * custom method may return a SmrtObject (or array of them).
+ * Sensitive-field-safe serialization for custom-action results (#1540).
+ * Recurses through arrays and plain objects so nested SmrtObjects are stripped
+ * too; non-plain instances (Date, etc.) and primitives pass through. Cycle-safe.
  */
-function toPublicResult(value: any): any {
-  if (Array.isArray(value)) return value.map(toPublicResult);
-  if (value && typeof value.toPublicJSON === 'function') return value.toPublicJSON();
-  return value;
+function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
+  if (value === null || typeof value !== 'object') return value;
+  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+    return value.map((entry: any) => toPublicResult(entry, seen));
+  }
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  const out: Record<string, any> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = toPublicResult(entry, seen);
+  }
+  return out;
 }
 
 /**

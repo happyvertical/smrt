@@ -275,14 +275,19 @@ const PUBLIC_ACCESS: boolean | 'read' = ${JSON.stringify(publicAccess)};
 function hasAuthenticatedPrincipal(locals: unknown): boolean {
   if (!locals || typeof locals !== 'object') return false;
   const l = locals as Record<string, unknown>;
-  // Only data-shaped principals count. We intentionally do NOT treat
-  // \`locals.auth\` as a signal: Auth.js/SvelteKit put a callable \`auth()\`
-  // helper on every request (including anonymous ones), so honoring it would
-  // fail OPEN. A resolved user/session object (or our explicit smrtAuth marker)
-  // is required.
-  const isPrincipal = (v: unknown) =>
-    typeof v === 'object' && v !== null ? true : v === true;
-  return isPrincipal(l.user) || isPrincipal(l.session) || l.smrtAuth === true;
+  // Only a resolved, object-shaped principal counts. We intentionally do NOT
+  // treat \`locals.auth\` as a signal: Auth.js/SvelteKit put a callable
+  // \`auth()\` helper on every request (including anonymous ones), so honoring
+  // it would fail OPEN. Booleans don't count either (no convention sets
+  // \`locals.user = true\`); the only boolean accepted is the explicit
+  // \`smrtAuth\` opt-in marker.
+  const isResolvedPrincipal = (v: unknown) =>
+    typeof v === 'object' && v !== null;
+  return (
+    isResolvedPrincipal(l.user) ||
+    isResolvedPrincipal(l.session) ||
+    l.smrtAuth === true
+  );
 }
 
 function requireRouteAuth(locals: unknown, mutating: boolean): void {
@@ -294,14 +299,27 @@ function requireRouteAuth(locals: unknown, mutating: boolean): void {
 }
 
 // Sensitive-field-safe serialization for custom-action results (#1540): a
-// custom method may return a SmrtObject (or array of them), so route the value
-// through toPublicJSON() rather than letting JSON.stringify call toJSON().
-function toPublicResult(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(toPublicResult);
-  if (value && typeof (value as { toPublicJSON?: unknown }).toPublicJSON === 'function') {
-    return (value as { toPublicJSON: () => unknown }).toPublicJSON();
+// custom method may return a SmrtObject (or one nested in an array/plain
+// object), so recurse and route each through toPublicJSON() rather than letting
+// JSON.stringify call toJSON(). Non-plain instances (Date, etc.) and primitives
+// pass through; a cycle guard prevents infinite loops.
+function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
+  if (value === null || typeof value !== 'object') return value;
+  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON();
+  if (Array.isArray(value)) {
+    if (seen.has(value)) return value;
+    seen.add(value);
+    return value.map((entry) => toPublicResult(entry, seen));
   }
-  return value;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  if (seen.has(value)) return value;
+  seen.add(value);
+  const out = {};
+  for (const [key, entry] of Object.entries(value)) {
+    out[key] = toPublicResult(entry, seen);
+  }
+  return out;
 }
 `;
 }

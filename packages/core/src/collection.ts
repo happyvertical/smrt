@@ -411,16 +411,30 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
       // Security (#1540): reject filters that target a sensitive column. This
       // runs before operator/field validation so the secret value-probing
-      // oracle is closed even for otherwise-valid operators. Every dot-path
-      // segment is checked (in raw and snake_case form) so an STI `@meta`
-      // sensitive field probed via `_meta_data.<prop>` is also blocked.
-      const fieldSegments = fieldName.split('.');
-      const targetsSensitive = fieldSegments.some(
-        (segment) =>
-          sensitiveFieldNames.has(segment) ||
-          sensitiveFieldNames.has(toSnakeCase(segment)),
-      );
-      if (sensitiveFieldNames.has(snakeBaseFieldName) || targetsSensitive) {
+      // oracle is closed even for otherwise-valid operators. We reject when the
+      // base column itself is sensitive, OR when an STI `@meta` sensitive field
+      // is probed via a `_meta_data.<prop>` JSON path (the prop keeps its
+      // camelCase name). The JSON-path check is scoped to the `_meta_data`
+      // column so legitimate filters on unrelated JSON fields (e.g.
+      // `metadata.apiSecret` on a non-sensitive `metadata` column) aren't
+      // falsely rejected.
+      const baseIsMetaData =
+        baseFieldName === '_meta_data' || baseFieldName === 'meta_data';
+      const metaPathTargetsSensitive =
+        baseIsMetaData &&
+        !!jsonPath &&
+        jsonPath
+          .split('.')
+          .filter(Boolean)
+          .some(
+            (segment) =>
+              sensitiveFieldNames.has(segment) ||
+              sensitiveFieldNames.has(toSnakeCase(segment)),
+          );
+      if (
+        sensitiveFieldNames.has(snakeBaseFieldName) ||
+        metaPathTargetsSensitive
+      ) {
         throw new Error(
           `Invalid WHERE clause field: '${fieldName}'. ` +
             `Filtering on sensitive fields is not allowed.`,

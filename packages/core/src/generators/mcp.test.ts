@@ -107,6 +107,32 @@ class ExcludedActionAgent extends SmrtObject {
   }
 }
 
+// Custom action returning a payload that NESTS a sensitive object (#1540).
+@smrt({
+  mcp: {
+    include: ['wrap'],
+  },
+})
+class MCPNestedResultAgent extends SmrtObject {
+  name = '';
+
+  constructor(options: any) {
+    super(options);
+    const { db, ai, fs, ...safeOptions } = options;
+    Object.assign(this, safeOptions);
+  }
+
+  async wrap(): Promise<any> {
+    // A SmrtObject-like value nested inside a plain object — its toPublicJSON()
+    // must be invoked rather than JSON.stringify calling toJSON().
+    const sensitiveChild = {
+      secret: 'LEAK-VALUE',
+      toPublicJSON: () => ({ secret: '[redacted]' }),
+    };
+    return { wrapped: sensitiveChild, items: [sensitiveChild] };
+  }
+}
+
 describe('MCPGenerator with Custom Actions', () => {
   let generator: MCPGenerator;
 
@@ -181,6 +207,36 @@ describe('MCPGenerator with Custom Actions', () => {
   });
 
   describe('Custom Action Execution', () => {
+    it('strips a sensitive object nested inside a custom-action result (#1540)', async () => {
+      const mockObject = new MCPNestedResultAgent({
+        db: null,
+        ai: null,
+        fs: null,
+        id: 'nested-id',
+      });
+      const mockCollection = { get: vi.fn().mockResolvedValue(mockObject) };
+      (generator as any).getCollection = vi
+        .fn()
+        .mockReturnValue(mockCollection);
+      (generator as any).collections = new Map([
+        ['MCPNestedResultAgent', mockCollection],
+      ]);
+
+      const response = await generator.handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'mcpnestedresultagent_wrap',
+          arguments: { id: 'nested-id' },
+        },
+      });
+
+      const text = response.content[0].text;
+      // Nested object (in a plain object AND in an array) routed through
+      // toPublicJSON(), not toJSON() — secret value never serialized.
+      expect(text).not.toContain('LEAK-VALUE');
+      expect(text).toContain('[redacted]');
+    });
+
     it('should execute custom actions on object instances', async () => {
       // Mock collection and object
       const mockObject = new MCPTestAgent({
