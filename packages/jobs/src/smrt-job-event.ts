@@ -10,7 +10,11 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
-import { getTenantId, tenantId } from '@happyvertical/smrt-tenancy';
+import {
+  getTenantId,
+  TenantScoped,
+  tenantId,
+} from '@happyvertical/smrt-tenancy';
 
 export type SmrtJobEventType = 'status' | 'progress' | 'log' | 'error' | string;
 
@@ -59,10 +63,24 @@ const JOB_EVENT_STORAGE_COLUMNS = [
 
 @smrt({
   tableName: '_smrt_job_events',
-  api: { include: ['list', 'get'] },
-  cli: { include: ['list', 'get'], http: false },
-  mcp: { include: ['list', 'get'] },
+  // Fail closed: same reasoning as SmrtJob. `_smrt_job_events` carries job
+  // progress/log/error payloads for every tenant; an `optional`-mode generated
+  // read reached without tenant context returns UNFILTERED rows. Consumers read
+  // events through the collection's tenant-aware methods (listByJob /
+  // listSinceCursor, which require an explicit tenantId or ambient context), not
+  // through generated routes — so we do not generate a read surface here
+  // (S5 audit #1402).
+  api: false,
+  // In-process operator commands only (http: false). skipApiCheck acknowledges
+  // that these CLI reads intentionally have no HTTP/API route now that api is
+  // disabled (S5 audit #1402).
+  cli: { include: ['list', 'get'], http: false, skipApiCheck: true },
+  mcp: false,
 })
+// Keep the data model tenant-scoped (defense in depth); the @tenantId() field
+// alone does not make collection reads filter by tenant. `optional` keeps global
+// (NULL tenant) events working (S5 audit #1402).
+@TenantScoped({ mode: 'optional' })
 export class SmrtJobEvent extends SmrtObject {
   @tenantId({ nullable: true })
   tenantId: string | null | undefined = undefined;

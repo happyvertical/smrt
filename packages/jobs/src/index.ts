@@ -37,6 +37,25 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Background-job policy controls (retry ceiling, per-tenant cap, opt-in
+// method allowlist). Shared with the agents package (S5 audit #1402).
+export {
+  assertWithinTenantCreationCap,
+  type BackgroundEligibleClass,
+  backgroundEligible,
+  clampRetries,
+  DEFAULT_TENANT_JOB_CAP,
+  getBackgroundEligibleMethods,
+  isBackgroundEligibleMethod,
+  MAX_JOB_RETRIES,
+  markBackgroundEligible,
+  TenantJobCapExceededError,
+} from './background-policy.js';
+// Error-message redaction for durable job error persistence.
+export {
+  redactErrorForPersistence,
+  redactErrorMessage,
+} from './error-redaction.js';
 // Fluent job builder and utilities
 export {
   JobBuilder,
@@ -80,6 +99,7 @@ export {
   ScheduleRunner,
   type ScheduleRunnerConfig,
   type ScheduleRunnerEvents,
+  validateCronExpression,
 } from './schedule-runner.js';
 // Core job model
 export {

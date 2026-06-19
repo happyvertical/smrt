@@ -3,6 +3,10 @@ import { createLogger } from '@happyvertical/logger';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { createId } from '@happyvertical/utils';
+import {
+  redactErrorForPersistence,
+  redactErrorMessage,
+} from './error-redaction.js';
 import { SmrtJobCollection } from './smrt-job.js';
 import { SmrtWorkerCollection } from './smrt-worker.js';
 import { DEFAULT_TASK_HEARTBEAT_INTERVAL_MS } from './stale-recovery.js';
@@ -178,6 +182,12 @@ export class ScheduleRunner extends EventEmitter {
   ): Promise<void> {
     if (!this.db) return;
 
+    // `last_error` is persisted to a durable schedule row; strip secret-shaped
+    // substrings the same way the job runner does (S5 audit #1402).
+    const safeErrorMessage = redactErrorMessage(
+      errorMessage ?? 'Unknown error',
+    );
+
     try {
       if (success) {
         await this.db.query(
@@ -204,14 +214,10 @@ export class ScheduleRunner extends EventEmitter {
                failure_count = COALESCE(failure_count, 0) + 1
            WHERE id = ?`,
           new Date().toISOString(),
-          errorMessage ?? 'Unknown error',
+          safeErrorMessage,
           scheduleId,
         );
-        this.emit(
-          'schedule:failed',
-          scheduleId,
-          errorMessage ?? 'Unknown error',
-        );
+        this.emit('schedule:failed', scheduleId, safeErrorMessage);
       }
     } catch (err) {
       this.logger.error('Failed to update schedule after job completion', {
@@ -512,7 +518,12 @@ export class ScheduleRunner extends EventEmitter {
         args._agentConfig = agentConfig;
       }
 
-      const job = await this.jobCollection.create({
+      // Route scheduled jobs through the same centralized creation path as the
+      // fluent builder so the per-tenant in-flight cap and retry ceiling apply
+      // here too — previously this direct create() bypassed both (S5 audit
+      // #1402). The schedule's own tenant is passed explicitly so the cap is
+      // enforced for the owning tenant even with no ambient context.
+      const job = await this.jobCollection.enqueueJob({
         tenantId:
           typeof schedule.tenant_id === 'string' &&
           schedule.tenant_id.length > 0
@@ -527,8 +538,6 @@ export class ScheduleRunner extends EventEmitter {
         maxAttempts: 3,
         timeout: (schedule.timeout as number) || 3600000,
       });
-
-      await job.save();
 
       this.emit('schedule:triggered', scheduleInfo);
       this.logger.info('Schedule triggered', {
@@ -545,7 +554,9 @@ export class ScheduleRunner extends EventEmitter {
              status = 'error',
              last_error = ?
          WHERE id = ?`,
-        (error as Error).message,
+        // Tolerate non-Error throwables: a thrown string/object has no
+        // `.message`, which would otherwise persist an empty `last_error`.
+        redactErrorForPersistence(error),
         schedule.id,
       );
 
@@ -576,15 +587,102 @@ interface ScheduleRow {
 // --- Cron helpers (self-contained, no external dependency) ---
 
 /**
- * Parse a cron expression and get the next run date.
- * Supports standard 5-field cron: minute hour day-of-month month day-of-week
- *
- * Limitations:
- * - Numeric values only (no abbreviated names like JAN, MON)
- * - No field range validation (e.g., minute=70 won't error, just won't match)
- * - Day-of-week accepts 0-7 where both 0 and 7 represent Sunday
+ * Inclusive valid range for each cron field, by position.
+ * minute, hour, day-of-month, month, day-of-week.
+ * Day-of-week accepts 0-7 where both 0 and 7 represent Sunday.
  */
-function getNextCronDate(cron: string): Date {
+const CRON_FIELD_RANGES: ReadonlyArray<{
+  name: string;
+  min: number;
+  max: number;
+}> = [
+  { name: 'minute', min: 0, max: 59 },
+  { name: 'hour', min: 0, max: 23 },
+  { name: 'day-of-month', min: 1, max: 31 },
+  { name: 'month', min: 1, max: 12 },
+  { name: 'day-of-week', min: 0, max: 7 },
+];
+
+/**
+ * Validate that every numeric component of a single cron field falls within
+ * the field's inclusive range. Rejects malformed values up front so an
+ * out-of-range field (e.g. `minute=70`) fails fast at schedule-trigger time
+ * instead of silently scanning ~525k candidate minutes and never matching
+ * (S5 audit #1402).
+ */
+function validateCronField(
+  expr: string,
+  range: { name: string; min: number; max: number },
+): void {
+  if (expr === '*') return;
+
+  const reject = (detail: string): never => {
+    throw new Error(
+      `Invalid cron expression: ${range.name} field "${expr}" ${detail} ` +
+        `(valid range ${range.min}-${range.max})`,
+    );
+  };
+
+  const assertInRange = (value: number): void => {
+    if (!Number.isInteger(value) || value < range.min || value > range.max) {
+      reject('is out of range');
+    }
+  };
+
+  for (const term of expr.split(',')) {
+    if (term === '') reject('contains an empty value');
+
+    let body = term;
+    if (body.includes('/')) {
+      // Exactly one '/' is valid (`base/step`). `1/2/3` must be rejected, not
+      // silently parsed as `1/2` by dropping the trailing segment.
+      const stepParts = body.split('/');
+      if (stepParts.length !== 2) {
+        reject('has malformed step syntax');
+      }
+      const [rangePart, stepStr] = stepParts;
+      const step = Number(stepStr);
+      if (!Number.isInteger(step) || step <= 0) {
+        reject('has an invalid step');
+      }
+      body = rangePart;
+      if (body === '*') continue;
+    }
+
+    if (body.includes('-')) {
+      // Exactly one '-' is valid (`start-end`). `1-2-3` must be rejected, not
+      // silently parsed as `1-2` by dropping the trailing segment.
+      const rangeParts = body.split('-');
+      if (rangeParts.length !== 2) {
+        reject('has malformed range syntax');
+      }
+      const [startStr, endStr] = rangeParts;
+      if (startStr === '' || endStr === '') {
+        reject('has an empty range part');
+      }
+      const start = Number(startStr);
+      const end = Number(endStr);
+      assertInRange(start);
+      assertInRange(end);
+      if (start > end) reject('has an inverted range');
+    } else {
+      assertInRange(Number(body));
+    }
+  }
+}
+
+/**
+ * Validate a standard 5-field cron expression: field count plus per-field
+ * value ranges. Throws a descriptive `Error` on the first invalid field.
+ *
+ * Exposed so callers (and the agents package, which owns schedule creation)
+ * can reject a bad cron at write time rather than letting an out-of-range
+ * field silently never match (S5 audit #1402).
+ *
+ * @param cron - The cron expression to validate.
+ * @returns The trimmed, whitespace-split fields when valid.
+ */
+export function validateCronExpression(cron: string): string[] {
   const parts = cron.trim().split(/\s+/);
   if (parts.length !== 5) {
     throw new Error(
@@ -592,7 +690,26 @@ function getNextCronDate(cron: string): Date {
     );
   }
 
-  const [minuteExpr, hourExpr, dayExpr, monthExpr, dowExpr] = parts;
+  parts.forEach((field, index) => {
+    validateCronField(field, CRON_FIELD_RANGES[index]);
+  });
+
+  return parts;
+}
+
+/**
+ * Parse a cron expression and get the next run date.
+ * Supports standard 5-field cron: minute hour day-of-month month day-of-week
+ *
+ * Limitations:
+ * - Numeric values only (no abbreviated names like JAN, MON)
+ * - Day-of-week accepts 0-7 where both 0 and 7 represent Sunday
+ *
+ * Out-of-range fields are rejected eagerly (see {@link validateCronExpression}).
+ */
+function getNextCronDate(cron: string): Date {
+  const [minuteExpr, hourExpr, dayExpr, monthExpr, dowExpr] =
+    validateCronExpression(cron);
 
   const now = new Date();
   const candidate = new Date(now);

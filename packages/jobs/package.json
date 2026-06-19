@@ -65,8 +65,6 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "catalog:",
-    "@google-cloud/tasks": "catalog:",
     "@happyvertical/jobs": "catalog:",
     "@happyvertical/logger": "catalog:",
     "@happyvertical/smrt-config": "workspace:*",
@@ -74,9 +72,7 @@
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/sql": "catalog:",
-    "@happyvertical/utils": "catalog:",
-    "bull": "catalog:",
-    "bullmq": "catalog:"
+    "@happyvertical/utils": "catalog:"
   },
   "devDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
