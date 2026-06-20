@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { DataStreamStatus, DataStreamType } from '../types/index.js';
 
 /**
@@ -20,6 +21,7 @@ import { DataStreamStatus, DataStreamType } from '../types/index.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
@@ -27,6 +29,17 @@ import { DataStreamStatus, DataStreamType } from '../types/index.js';
   cli: true,
 })
 export class AnalyticsDataStream extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy isolation (#1410).
+   *
+   * Data streams expose tenant-private platform configuration (measurement
+   * IDs, Firebase app IDs, bundle/package names, default URIs). Without tenant
+   * scoping the generated `list`/`get` API returns every tenant's streams.
+   * `@TenantScoped` auto-filters reads and binds writes to the active tenant.
+   */
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /**
    * Parent property ID (references AnalyticsProperty)
    */
@@ -85,6 +98,7 @@ export class AnalyticsDataStream extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;
     if (options.displayName !== undefined)
       this.displayName = options.displayName;
