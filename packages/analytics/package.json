@@ -49,6 +49,7 @@
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*"
   },
   "peerDependencies": {
@@ -65,7 +66,6 @@
   },
   "devDependencies": {
     "@happyvertical/smrt-svelte": "workspace:*",
-    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.7",

@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import { TrackingEventStatus } from '../types/index.js';
 
 /**
@@ -20,6 +21,7 @@ import { TrackingEventStatus } from '../types/index.js';
  * await event.send();
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create'] },
@@ -27,6 +29,18 @@ import { TrackingEventStatus } from '../types/index.js';
   cli: true,
 })
 export class AnalyticsEvent extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy isolation (#1410).
+   *
+   * Analytics events carry end-user PII (`userId`, `clientId`, `ipAddress`,
+   * `userAgent`, `sessionId`). Without tenant scoping the generated
+   * `list`/`get` API leaks every tenant's visitor data, and `create` lets a
+   * caller write events bound to another tenant's `propertyId`. `@TenantScoped`
+   * auto-filters reads and binds writes to the active tenant context.
+   */
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /**
    * Parent property ID (references AnalyticsProperty)
    */
@@ -110,6 +124,7 @@ export class AnalyticsEvent extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;
     if (options.eventName !== undefined) this.eventName = options.eventName;
     if (options.clientId !== undefined) this.clientId = options.clientId;

@@ -11,6 +11,8 @@ GA4/Plausible/Matomo analytics integration with server-side event tracking and A
 
 All models use STI (`tableStrategy: 'sti'`).
 
+All four persisted models are `@TenantScoped({ mode: 'optional' })` with a nullable `tenantId` (#1410), matching the framework convention used by sibling domain packages (ads/jobs/commerce). **When a tenant context is active**, the interceptor auto-filters `list`/`get`/raw reads and binds `create`/`save` writes to that tenant, keeping one tenant's properties, data streams, events (end-user PII), and cached report rows from reaching another. Because the mode is `optional`, the interceptor intentionally passes **through unfiltered when no tenant context is established** — so a surface is only safe insofar as it establishes tenant context first. Generated SvelteKit routes do this (#1540); the CLI/MCP code paths do not yet, which is a known framework-level residual (fail-closed tenant context for CLI/MCP) tracked outside this package, not an analytics-specific gap.
+
 ## Key Collection Methods
 
 `findByExternalId()`, `findByProvider()`, `findNeedingSync()`, `findGA4Properties()`, `findPlausibleSites()`, `findMatomoSites()`
@@ -59,7 +61,7 @@ const StatCard = ModuleUIRegistry.get('@happyvertical/smrt-analytics', 'stat-car
 
 ## Gotchas
 
-- **Tokens stored plaintext**: GA4 API secrets in DB — no encryption yet
+- **`apiSecret` / `providerMetadata` stripped from API/MCP**: marked `@field({ sensitive: true })` (#1540) so they never appear in generated responses or `where` filters. They are still stored at rest **unencrypted** — envelope encryption via `@happyvertical/smrt-secrets` is a separate, breaking follow-up (tracked, not done here).
 - **Event retry at model level**: no background job integration
 - **JSON fields**: params, dimensions, metrics use string storage with getter/setter helpers
 - **Measurement IDs differ per platform**: G-XXXXXX (GA4 web) vs Firebase app ID (mobile)
