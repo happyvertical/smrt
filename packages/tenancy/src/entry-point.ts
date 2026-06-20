@@ -77,8 +77,10 @@ export interface TenantEntryPointOptions {
  *
  * Resolution order (tenant-scoped models only):
  * 1. A context is already active (e.g. an upstream tenancy handle) → reuse it.
- * 2. An explicit `tenantId` was provided → run inside that tenant.
- * 3. `allowCrossTenant` was explicitly set → run in system context.
+ * 2. `allowCrossTenant` was explicitly set → run in system context. Checked
+ *    before `tenantId` so an explicit cross-tenant opt-in wins over a default
+ *    principal/host tenant rather than being silently scoped.
+ * 3. An explicit `tenantId` was provided → run inside that tenant.
  * 4. Tenancy is enabled but none of the above → **throw** `TenantContextError`
  *    (the fail-closed branch — never silently read across tenants).
  * 5. Tenancy is disabled (single-/no-tenant deployment) → pass through.
@@ -116,14 +118,16 @@ export async function runTenantScopedEntryPoint<T>(
   if (!scoped) return fn();
   if (hasTenantContext()) return fn();
 
-  // Explicit tenant selector wins.
-  if (typeof tenantId === 'string' && tenantId) {
-    return withTenant({ tenantId }, fn);
-  }
-
-  // Explicit operator opt-in to cross-tenant access.
+  // Explicit operator opt-in to cross-tenant access. Checked before the tenant
+  // selector so a deliberate `--all-tenants` / `allowCrossTenant` overrides a
+  // default host/principal tenant instead of being silently scoped to it.
   if (allowCrossTenant) {
     return withSystemContext(fn);
+  }
+
+  // Explicit tenant selector.
+  if (typeof tenantId === 'string' && tenantId) {
+    return withTenant({ tenantId }, fn);
   }
 
   // Fail closed: tenancy is on but the caller gave us nothing to scope by.

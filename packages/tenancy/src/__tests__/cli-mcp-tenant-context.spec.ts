@@ -157,4 +157,46 @@ describe('Generated CLI/MCP fail-closed tenant context (#1554)', () => {
       expect(text).toContain('B-One');
     });
   });
+
+  // The emitted stdio MCP servers are separate processes that don't run the
+  // host's bootstrap, so they must self-enable tenancy AND wrap tenant-scoped
+  // tools in the gate — otherwise the gate is a no-op and the interceptor never
+  // filters (codex P1 on #1557).
+  describe('emitted MCP server hardening', () => {
+    async function generateInto(modular: boolean): Promise<string> {
+      const { mkdtemp } = await import('node:fs/promises');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const dir = await mkdtemp(join(tmpdir(), 'mcp-emit-'));
+      const gen = new MCPGenerator(
+        { name: 'emit-test', version: '1.0.0' },
+        { db },
+      );
+      await gen.generateServer({ outputPath: join(dir, 'index.js'), modular });
+      return dir;
+    }
+
+    it('single-file server enables tenancy and gates tenant-scoped tools', async () => {
+      const { readFile } = await import('node:fs/promises');
+      const { join } = await import('node:path');
+      const dir = await generateInto(false);
+      const code = await readFile(join(dir, 'index.js'), 'utf-8');
+      expect(code).toContain('enableTenancy()');
+      expect(code).toContain('runTenantScopedEntryPoint');
+      expect(code).toContain('tenantdoc');
+    });
+
+    it('modular server enables tenancy and gates tenant-scoped tools', async () => {
+      const { readFile } = await import('node:fs/promises');
+      const { join } = await import('node:path');
+      const dir = await generateInto(true);
+      const handlers = await readFile(
+        join(dir, 'handlers', 'index.ts'),
+        'utf-8',
+      );
+      expect(handlers).toContain('enableTenancy()');
+      expect(handlers).toContain('runTenantScopedEntryPoint');
+      expect(handlers).toContain('tenantdoc');
+    });
+  });
 });
