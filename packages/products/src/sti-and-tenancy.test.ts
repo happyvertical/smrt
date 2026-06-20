@@ -63,6 +63,42 @@ describe('Product STI subtypes', () => {
       // not appear in Product's STI hierarchy.
       expect(ObjectRegistry.getSTIBase('ProductVariant')).toBeFalsy();
     });
+
+    it('restricts Material generation surface to match Product (S5 #1406)', () => {
+      // @smrt() generation config is registered PER CONCRETE CLASS and is
+      // NOT inherited from the STI parent. Before the fix Material used an
+      // empty @smrt(), so getConfig('Material').api/.mcp resolved to
+      // `undefined` — which the REST + MCP generators treat as "expose
+      // everything", silently opening delete / create / update tools on
+      // an STI child whose Product base deliberately forbids them. This
+      // asserts the child re-declares the parent's restricted posture.
+      const productApi = ObjectRegistry.getConfig('Product').api;
+      const materialApi = ObjectRegistry.getConfig('Material').api;
+      const productMcp = ObjectRegistry.getConfig('Product').mcp;
+      const materialMcp = ObjectRegistry.getConfig('Material').mcp;
+
+      // Must be an explicit object config, never `undefined` (= wide open).
+      expect(typeof materialApi).toBe('object');
+      expect(typeof materialMcp).toBe('object');
+
+      // REST: same allowlist as Product — CRUD without delete.
+      expect((materialApi as { include?: string[] }).include).toEqual(
+        (productApi as { include?: string[] }).include,
+      );
+      expect((materialApi as { include?: string[] }).include).not.toContain(
+        'delete',
+      );
+
+      // MCP: read-only, same as Product. No create/update/delete AI tools.
+      expect((materialMcp as { include?: string[] }).include).toEqual(
+        (productMcp as { include?: string[] }).include,
+      );
+      for (const writeAction of ['create', 'update', 'delete']) {
+        expect((materialMcp as { include?: string[] }).include).not.toContain(
+          writeAction,
+        );
+      }
+    });
   });
 
   describe('_meta_type discriminator', () => {
