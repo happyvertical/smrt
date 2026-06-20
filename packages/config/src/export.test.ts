@@ -242,6 +242,155 @@ describe('sanitizeConfig — secret-key stripping (issue #1357)', () => {
   });
 });
 
+describe('sanitizeConfig — value-level secret-token redaction (#1381)', () => {
+  // A secret pasted into the VALUE of a benign key is not caught by key-based
+  // patterns and would leak verbatim into the published SSG artifact.
+  it('redacts an OpenAI sk- key embedded in a benign string value', () => {
+    const out = sanitizeConfig({
+      note: `my key is sk${'-proj-'}abcdEFGH1234567890abcdEFGH keep safe`,
+    }) as { note: string };
+    expect(out.note).not.toContain(`sk${'-proj-'}abcdEFGH1234567890abcdEFGH`);
+    expect(out.note).toContain('***');
+    // Surrounding prose is preserved.
+    expect(out.note).toContain('my key is');
+    expect(out.note).toContain('keep safe');
+  });
+
+  it('redacts sk-ant- and bare sk- tokens', () => {
+    const out = sanitizeConfig({
+      a: `sk${'-ant-'}api03-ABCdefGHIjklMNOpqrSTUvwx`,
+      b: `sk${'-'}ABCdefGHIjklMNOpqrSTUvwx12`,
+    }) as Record<string, string>;
+    expect(out.a).toBe('***');
+    expect(out.b).toBe('***');
+  });
+
+  it('redacts AWS access key IDs in values', () => {
+    const out = sanitizeConfig({
+      example: 'AKIAIOSFODNN7EXAMPLE',
+      temp: 'ASIAIOSFODNN7EXAMPLE',
+    }) as Record<string, string>;
+    expect(out.example).toBe('***');
+    expect(out.temp).toBe('***');
+  });
+
+  it('redacts GitHub, Slack, Google, and Stripe tokens in values', () => {
+    // Build fixtures from split prefixes so this file does not embed any
+    // contiguous live-key literal that trips push-protection secret scanning.
+    // The runtime string still carries the full prefix the redactor matches.
+    const ghToken = `gh${'p'}_0123456789abcdef0123456789abcdef0123`;
+    const slackToken = `xo${'xb'}-1234567890-abcdefghijklmnop`;
+    const googleKey = `AI${'za'}SyA1234567890abcdefghijklmnopqrstuv`;
+    const stripeKey = `sk${'_live_'}0123456789abcdefABCDEFGH`;
+    const out = sanitizeConfig({
+      gh: ghToken,
+      slack: slackToken,
+      google: googleKey,
+      stripe: stripeKey,
+    }) as Record<string, string>;
+    expect(out.gh).toBe('***');
+    expect(out.slack).toBe('***');
+    expect(out.google).toBe('***');
+    expect(out.stripe).toBe('***');
+  });
+
+  it('masks Bearer authorization values pasted into benign keys', () => {
+    const out = sanitizeConfig({
+      defaultHeader:
+        'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature',
+    }) as { defaultHeader: string };
+    expect(out.defaultHeader).toBe('Bearer ***');
+  });
+
+  it('masks lowercase/mixed-case bearer headers (review #1549)', () => {
+    const out = sanitizeConfig({
+      a: 'bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature',
+      b: 'BEARER eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature',
+    }) as Record<string, string>;
+    // Redaction normalizes any casing to the canonical `Bearer ***`.
+    expect(out.a).toBe('Bearer ***');
+    expect(out.b).toBe('Bearer ***');
+  });
+
+  it('masks URL userinfo mid-string and for multiple URLs (review #1549)', () => {
+    const out = sanitizeConfig({
+      dsn: 'primary postgres://user:pass@db1/app then redis://u2:p2@cache:6379',
+    }) as { dsn: string };
+    expect(out.dsn).not.toContain('user:pass');
+    expect(out.dsn).not.toContain('u2:p2');
+    expect(out.dsn).toContain('postgres://***@db1/app');
+    expect(out.dsn).toContain('redis://***@cache:6379');
+  });
+
+  it('redacts PEM private-key blocks embedded in values', () => {
+    const pem =
+      '-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQ\nfoo==\n-----END PRIVATE KEY-----';
+    // Use a benign key name so we exercise value-level (not key-based) redaction.
+    const out = sanitizeConfig({ instructions: pem }) as {
+      instructions: string;
+    };
+    expect(out.instructions).not.toContain('MIIEvQ');
+    expect(out.instructions).toContain('***REDACTED PRIVATE KEY***');
+  });
+
+  it('leaves benign string values untouched', () => {
+    const out = sanitizeConfig({
+      model: 'gpt-4o-mini',
+      endpoint: 'https://api.example.com/v1',
+      note: 'no secrets here, just a sentence about keys generally',
+    }) as Record<string, string>;
+    expect(out.model).toBe('gpt-4o-mini');
+    expect(out.endpoint).toBe('https://api.example.com/v1');
+    expect(out.note).toBe(
+      'no secrets here, just a sentence about keys generally',
+    );
+  });
+
+  it('redacts secret tokens nested in arrays and objects', () => {
+    const tok = `sk${'-proj-'}ABCDEFGHIJKLMNOPQRSTUV`;
+    const out = sanitizeConfig({
+      items: [{ label: 'a', blob: `token ${tok}` }],
+    }) as { items: Array<{ label: string; blob: string }> };
+    expect(out.items[0].label).toBe('a');
+    expect(out.items[0].blob).not.toContain(tok);
+    expect(out.items[0].blob).toContain('***');
+  });
+});
+
+describe('sanitizeConfig — prototype pollution guard (#1381)', () => {
+  it('does not reassign the prototype of the sanitized result via __proto__', () => {
+    // A DB-backed config round-tripped through JSON.parse can carry a
+    // `__proto__` own key. Copying it via `result[key] = ...` would invoke the
+    // proto setter and reassign the cloned object's prototype.
+    const malicious = JSON.parse('{"__proto__": {"polluted": true}, "a": 1}');
+    const out = sanitizeConfig(malicious) as Record<string, unknown>;
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+    expect(out.a).toBe(1);
+    // Assert on the OWN key specifically — `'__proto__' in out` /
+    // toHaveProperty would be true via Object.prototype even when the own key
+    // was dropped (review #1549).
+    expect(Object.hasOwn(out, '__proto__')).toBe(false);
+  });
+
+  it('drops constructor / prototype own keys from the output', () => {
+    const input = JSON.parse(
+      '{"constructor": {"x": 1}, "prototype": {"y": 2}, "keep": 3}',
+    );
+    const out = sanitizeConfig(input) as Record<string, unknown>;
+    expect(out.keep).toBe(3);
+    // Own-key assertions: every object inherits `constructor`, so toHaveProperty
+    // would be misleading — check own-keys explicitly (review #1549).
+    expect(Object.hasOwn(out, 'constructor')).toBe(false);
+    expect(Object.hasOwn(out, 'prototype')).toBe(false);
+  });
+
+  it('global Object.prototype is never polluted through export', () => {
+    const malicious = JSON.parse('{"__proto__": {"pwned": true}}');
+    sanitizeConfig(malicious);
+    expect(({} as Record<string, unknown>).pwned).toBeUndefined();
+  });
+});
+
 describe('exportConfig — secret handling', () => {
   it('strips secrets by default', () => {
     const json = exportConfig({ apiKey: 'sk-secret', name: 'svc' });

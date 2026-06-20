@@ -94,12 +94,69 @@ function isSecretKey(key: string): boolean {
 // {@link SECRET_PATTERNS} deliberately don't match (#1381). Key-based redaction
 // alone leaks these into the published SSG artifact. Mask the userinfo
 // (`scheme://user:pass@host` → `scheme://***@host`) while preserving the
-// non-secret host so the value stays diagnosable.
-const CREDENTIAL_URL_RE = /^([a-z][a-z0-9+.-]*:\/\/)[^/?#@\s]+@/i;
+// non-secret host so the value stays diagnosable. Not anchored/global so it
+// also catches a credential URL embedded mid-string (e.g. `dsn: postgres://u:p@h`)
+// or multiple URLs in one value (review #1549).
+const CREDENTIAL_URL_RE = /([a-z][a-z0-9+.-]*:\/\/)[^/?#@\s]+@/gi;
 
-/** Redact credentials embedded in a string value (URL userinfo). */
+/**
+ * High-confidence secret *token* shapes that can appear in the value of an
+ * otherwise-benign key (#1381). Key-based {@link SECRET_PATTERNS} only catch a
+ * secret when the *key* is named like one — a provider token pasted into a
+ * `note`, `header`, `instructions`, or `defaultModel`-adjacent field leaks
+ * verbatim into the published SSG artifact. These patterns match the
+ * distinctive prefixes/structures of real credentials so we can mask the token
+ * while leaving surrounding prose intact. They are intentionally specific
+ * (prefix- or structure-anchored) to avoid mangling benign config values.
+ *
+ * Coverage:
+ * - OpenAI / Anthropic style `sk-...` and `sk-proj-...` (and `sk-ant-...`)
+ * - GitHub PATs / app tokens: `ghp_ gho_ ghu_ ghs_ ghr_` + fine-grained `github_pat_`
+ * - Slack tokens: `xox[abprs]-...`
+ * - Google API keys: `AIza...`
+ * - AWS access key IDs: `AKIA`/`ASIA` + 16 uppercase alnum
+ * - Stripe live/test keys: `sk_live_` / `sk_test_` / `rk_live_` / `rk_test_`
+ * - `Bearer <token>` Authorization header values
+ * - PEM private-key blocks
+ */
+const VALUE_SECRET_PATTERNS: Array<{ re: RegExp; replace: string }> = [
+  // PEM private key block (multi-line) — collapse the whole block.
+  {
+    re: /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z ]+ )?PRIVATE KEY-----/g,
+    replace: '***REDACTED PRIVATE KEY***',
+  },
+  // OpenAI / Anthropic secret keys: sk-, sk-proj-, sk-ant-...
+  { re: /\bsk-(?:proj-|ant-)?[A-Za-z0-9_-]{16,}/g, replace: '***' },
+  // Stripe-style prefixed keys.
+  { re: /\b[sr]k_(?:live|test)_[A-Za-z0-9]{16,}/g, replace: '***' },
+  // GitHub tokens.
+  { re: /\bgh[pousr]_[A-Za-z0-9]{20,}/g, replace: '***' },
+  { re: /\bgithub_pat_[A-Za-z0-9_]{22,}/g, replace: '***' },
+  // Slack tokens.
+  { re: /\bxox[abprs]-[A-Za-z0-9-]{10,}/g, replace: '***' },
+  // Google API keys.
+  { re: /\bAIza[A-Za-z0-9_-]{35}/g, replace: '***' },
+  // AWS access key IDs.
+  { re: /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, replace: '***' },
+  // Bearer / JWT authorization values (header strings pasted into config).
+  // Case-insensitive: HTTP auth schemes are case-insensitive and clients often
+  // emit lowercase `bearer ` (review #1549).
+  {
+    re: /\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi,
+    replace: 'Bearer ***',
+  },
+];
+
+/**
+ * Redact credentials embedded in a string value: URL userinfo plus any
+ * high-confidence secret-token shape (see {@link VALUE_SECRET_PATTERNS}).
+ */
 function redactValueSecrets(value: string): string {
-  return value.replace(CREDENTIAL_URL_RE, '$1***@');
+  let out = value.replace(CREDENTIAL_URL_RE, '$1***@');
+  for (const { re, replace } of VALUE_SECRET_PATTERNS) {
+    out = out.replace(re, replace);
+  }
+  return out;
 }
 
 /**
@@ -116,8 +173,14 @@ function redactValueSecrets(value: string): string {
  * Nested objects are recursively sanitized; arrays are mapped element-by-element.
  * `number` / `boolean` primitives pass through unchanged; `string` values are
  * additionally run through value-level redaction that masks credentials embedded
- * in a URL (`scheme://user:pass@host` → `scheme://***@host`), catching secrets
+ * in a URL (`scheme://user:pass@host` → `scheme://***@host`) as well as
+ * high-confidence secret-token shapes pasted into otherwise-benign keys
+ * (OpenAI/Anthropic `sk-...`, AWS `AKIA...` access key IDs, GitHub/Slack/Google
+ * tokens, `Bearer ...` headers, and PEM private-key blocks) — catching secrets
  * stored under a benign key the key-based patterns don't match.
+ *
+ * Own `__proto__` / `constructor` / `prototype` keys are dropped to prevent the
+ * cloned result's prototype from being reassigned via the `__proto__` setter.
  *
  * This function is called automatically by {@link exportConfig} unless
  * `includeSecrets: true` is passed.
@@ -151,6 +214,16 @@ export function sanitizeConfig(config: unknown): unknown {
     const result: Record<string, unknown> = {};
 
     for (const [key, value] of Object.entries(config)) {
+      // Guard against prototype pollution: a `__proto__` own-key (e.g. from a
+      // DB-backed config round-tripped through JSON.parse) would, via the
+      // `result[key] = ...` setter, silently reassign the prototype of the
+      // sanitized object we hand back to callers. `constructor`/`prototype`
+      // are harmless as plain keys but dropped for parity with the merge
+      // guards (deepMerge / mergeExportedConfig). See #1381.
+      if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+        continue;
+      }
+
       // Skip keys that match secret patterns
       if (isSecretKey(key)) {
         continue;
