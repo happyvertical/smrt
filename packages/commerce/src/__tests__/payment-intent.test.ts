@@ -17,10 +17,65 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { AccountCollection } from '@happyvertical/smrt-ledgers';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { PaymentCollection } from '../collections/PaymentCollection.js';
 import { PaymentIntentCollection } from '../collections/PaymentIntentCollection.js';
 import { PaymentIntent } from '../models/PaymentIntent.js';
-import { PaymentIntentStatus, type PaymentOption } from '../types/index.js';
+import {
+  PaymentIntentStatus,
+  type PaymentOption,
+  PaymentStatus,
+} from '../types/index.js';
+
+/**
+ * Create a genuinely-COMPLETED Payment row whose native amount matches the
+ * given option, so a PaymentIntent can legally transition to PAID against it
+ * under the save-time verification guard (S5 audit #1390).
+ *
+ * COMPLETED is only reachable through the verified `recordPayment()` settlement
+ * path (codex HIGH#1, #1390 round 5) — there is no `create({ status:
+ * COMPLETED })` carve-out — so the helper posts a balanced settlement journal
+ * via real ledger accounts rather than forging the status. The payment starts
+ * PENDING and is driven to COMPLETED by `recordPayment()`.
+ */
+async function seedCompletedPayment(
+  payments: PaymentCollection,
+  dbConfig: { db: { type: 'sqlite'; url: string } },
+  option: PaymentOption,
+  overrides: Record<string, unknown> = {},
+): Promise<string> {
+  const accounts = await AccountCollection.create(dbConfig);
+  const cashAccount = await accounts.create({
+    number: '1000',
+    name: 'Cash',
+    type: 'asset',
+  });
+  await cashAccount.save();
+  const arAccount = await accounts.create({
+    number: '1200',
+    name: 'Accounts Receivable',
+    type: 'asset',
+  });
+  await arAccount.save();
+
+  const payment = await payments.create({
+    amount: option.nativeAmount,
+    currency: option.currency,
+    nativeAmount: option.nativeAmount,
+    nativeCurrency: option.currency,
+    backendId: option.backendId,
+    status: PaymentStatus.PENDING,
+    ...overrides,
+  });
+  await payment.save();
+  await payment.recordPayment({
+    ledgerId: '',
+    cashAccountId: cashAccount.id!,
+    receivablesAccountId: arAccount.id!,
+  });
+  return payment.id;
+}
 
 const usdcOption: PaymentOption = {
   backendId: 'base-usdc',
@@ -41,10 +96,14 @@ const btcOption: PaymentOption = {
 describe('PaymentIntent', () => {
   let dbPath: string;
   let intents: PaymentIntentCollection;
+  let payments: PaymentCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-payment-intent-${Date.now()}.db`);
     intents = await PaymentIntentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -174,13 +233,18 @@ describe('PaymentIntent', () => {
     });
     await intent.save();
 
-    intent.markPaid({ backendId: 'base-usdc', paymentId: 'pmt-single-1' });
+    const paymentId = await seedCompletedPayment(
+      payments,
+      { db: { type: 'sqlite', url: dbPath } },
+      usdcOption,
+    );
+    intent.markPaid({ backendId: 'base-usdc', paymentId });
     await intent.save();
 
     const loaded = await intents.get({ id: intent.id });
     expect(loaded?.status).toBe(PaymentIntentStatus.PAID);
     expect(loaded?.paidOptionBackendId).toBe('base-usdc');
-    expect(loaded?.paymentId).toBe('pmt-single-1');
+    expect(loaded?.paymentId).toBe(paymentId);
     expect(loaded?.paidAt).toBeInstanceOf(Date);
   });
 
@@ -194,7 +258,12 @@ describe('PaymentIntent', () => {
     });
     await intent.save();
 
-    intent.markPaid({ backendId: 'base-usdc', paymentId: 'pmt-multi-1' });
+    const paymentId = await seedCompletedPayment(
+      payments,
+      { db: { type: 'sqlite', url: dbPath } },
+      usdcOption,
+    );
+    intent.markPaid({ backendId: 'base-usdc', paymentId });
     await intent.save();
 
     expect(intent.isPaid()).toBe(true);
@@ -339,10 +408,14 @@ describe('PaymentIntent', () => {
 describe('PaymentIntentCollection — idempotency', () => {
   let dbPath: string;
   let intents: PaymentIntentCollection;
+  let payments: PaymentCollection;
 
   beforeEach(async () => {
     dbPath = join(tmpdir(), `smrt-payment-intent-idem-${Date.now()}.db`);
     intents = await PaymentIntentCollection.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    payments = await PaymentCollection.create({
       db: { type: 'sqlite', url: dbPath },
     });
   });
@@ -377,7 +450,12 @@ describe('PaymentIntentCollection — idempotency', () => {
 
     // And a third call after the original was mutated still hands back
     // the persisted row — replays must never roll back a paid intent.
-    first.intent.markPaid({ backendId: 'base-usdc', paymentId: 'pmt' });
+    const paymentId = await seedCompletedPayment(
+      payments,
+      { db: { type: 'sqlite', url: dbPath } },
+      usdcOption,
+    );
+    first.intent.markPaid({ backendId: 'base-usdc', paymentId });
     await first.intent.save();
     const third = await intents.getOrCreateByIdempotencyKey(seed);
     expect(third.created).toBe(false);

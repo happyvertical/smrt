@@ -19,7 +19,41 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ContractCollection } from '../collections/ContractCollection.js';
 import { CustomerCollection } from '../collections/CustomerCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
+import type { Payment } from '../models/Payment.js';
 import { PaymentMethod, PaymentStatus } from '../types/index.js';
+
+/**
+ * Drive a payment to COMPLETED through the verified `recordPayment()`
+ * settlement path. COMPLETED is no longer reachable via
+ * `create({ status: COMPLETED })` on any surface (round 5, codex HIGH#1), so
+ * fixtures that need a genuinely-completed payment must settle it with a
+ * balanced journal against real ledger accounts.
+ */
+async function settleToCompleted(
+  payment: Payment,
+  dbPath: string,
+): Promise<void> {
+  const accounts = await AccountCollection.create({
+    db: { type: 'sqlite', url: dbPath },
+  });
+  const cash = await accounts.create({
+    number: `1000-${Math.random()}`,
+    name: 'Cash',
+    type: 'asset',
+  });
+  await cash.save();
+  const ar = await accounts.create({
+    number: `1200-${Math.random()}`,
+    name: 'Accounts Receivable',
+    type: 'asset',
+  });
+  await ar.save();
+  await payment.recordPayment({
+    ledgerId: '',
+    cashAccountId: cash.id!,
+    receivablesAccountId: ar.id!,
+  });
+}
 
 describe('Payment', () => {
   let dbPath: string;
@@ -128,8 +162,10 @@ describe('Payment', () => {
         contractId: contract.id,
         customerId: customer.id,
         amount: 200,
-        status: PaymentStatus.COMPLETED,
+        status: PaymentStatus.PENDING,
       });
+      await completed.save();
+      await settleToCompleted(completed, dbPath);
 
       expect(pending.isPending()).toBe(true);
       expect(pending.isCompleted()).toBe(false);
@@ -192,8 +228,10 @@ describe('Payment', () => {
         contractId: contract.id,
         customerId: customer.id,
         amount: 100,
-        status: PaymentStatus.COMPLETED,
+        status: PaymentStatus.PENDING,
       });
+      await payment.save();
+      await settleToCompleted(payment, dbPath);
 
       expect(() => payment.cancel()).toThrow(
         'Cannot cancel a completed payment',
@@ -283,22 +321,22 @@ describe('Payment', () => {
       });
       await contract.save();
 
-      await (
-        await payments.create({
-          contractId: contract.id,
-          customerId: customer.id,
-          amount: 300,
-          status: PaymentStatus.COMPLETED,
-        })
-      ).save();
-      await (
-        await payments.create({
-          contractId: contract.id,
-          customerId: customer.id,
-          amount: 200,
-          status: PaymentStatus.COMPLETED,
-        })
-      ).save();
+      const p1 = await payments.create({
+        contractId: contract.id,
+        customerId: customer.id,
+        amount: 300,
+        status: PaymentStatus.PENDING,
+      });
+      await p1.save();
+      await settleToCompleted(p1, dbPath);
+      const p2 = await payments.create({
+        contractId: contract.id,
+        customerId: customer.id,
+        amount: 200,
+        status: PaymentStatus.PENDING,
+      });
+      await p2.save();
+      await settleToCompleted(p2, dbPath);
       await (
         await payments.create({
           contractId: contract.id,

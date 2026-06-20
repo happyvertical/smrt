@@ -17,6 +17,49 @@ import {
 } from '../types/index.js';
 
 /**
+ * Legal status transitions for a Payment, keyed by the prior persisted status.
+ * A status mapping to itself (no-op re-save) is always permitted and handled
+ * separately. Transitioning *into* COMPLETED is additionally gated on the
+ * verified `recordPayment()` settlement path (see {@link Payment.save}) — it is
+ * never reachable by raw mass-assignment even though it appears here as a
+ * structurally legal edge out of PENDING.
+ *
+ * Forward path: PENDING → COMPLETED, with FAILED / CANCELLED as alternate
+ * terminal exits from PENDING and REFUNDED reachable from COMPLETED.
+ */
+const PAYMENT_STATUS_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
+  [PaymentStatus.PENDING]: [
+    PaymentStatus.COMPLETED,
+    PaymentStatus.FAILED,
+    PaymentStatus.CANCELLED,
+  ],
+  // A completed payment can only be reversed via refund.
+  [PaymentStatus.COMPLETED]: [PaymentStatus.REFUNDED],
+  // Terminal states.
+  [PaymentStatus.FAILED]: [],
+  [PaymentStatus.REFUNDED]: [],
+  [PaymentStatus.CANCELLED]: [],
+};
+
+/**
+ * Module-scoped record of the status each Payment instance was loaded with,
+ * so the save-time transition guard can compare the prior persisted status
+ * against the one being written without adding a persisted column. WeakMap
+ * keeps it out of the schema and GCs with the instance — same pattern as the
+ * other commerce models.
+ */
+const loadedPaymentStatus = new WeakMap<Payment, PaymentStatus>();
+
+/**
+ * Marks instances whose transition into COMPLETED is being driven by the
+ * verified `recordPayment()` settlement path (which posts a balanced journal
+ * before flipping the status). The save-time guard consults this set so that
+ * COMPLETED can only be reached through that path, never via raw
+ * mass-assignment on the generated update route. Cleared after the save runs.
+ */
+const settlementInProgress = new WeakSet<Payment>();
+
+/**
  * Payment represents a financial transaction against a contract.
  *
  * Payments can be integrated with smrt-ledgers to automatically
@@ -43,8 +86,48 @@ import {
  */
 @TenantScoped({ mode: 'optional' })
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
-  mcp: { include: ['list', 'get', 'recordPayment'] },
+  // ROOT FIX (S5 audit #1390 round 4): restrict the generated create/update
+  // write surface so privileged / settlement-derived fields can NEVER be set
+  // by a generated REST/MCP route — closing the status-mass-assignment vector
+  // at the surface rather than relying solely on the save()-time guard.
+  //
+  // `writable` is an allowlist: only these fields survive applyWritablePolicy()
+  // on BOTH create and update (#1540). Deliberately EXCLUDED:
+  //  - `status` — a COMPLETED Payment is settlement proof downstream
+  //    (PaymentIntent's PAID verification trusts it). It is only ever set by
+  //    the verified `recordPayment()` settlement path, never by a caller. This
+  //    closes the "forged COMPLETED Payment via api.create" vector (codex HIGH#1).
+  //  - `journalId` / `paidAt` — settlement-derived, written by recordPayment().
+  //  - `syncedAt` — provider-sync bookkeeping, written by the sync path.
+  api: {
+    include: ['list', 'get', 'create', 'update'],
+    writable: [
+      'contractId',
+      'customerId',
+      'amount',
+      'currency',
+      'method',
+      'transactionId',
+      'reference',
+      'notes',
+      'externalId',
+      'externalProvider',
+      'backendId',
+      'backendTxRef',
+      'nativeAmount',
+      'nativeCurrency',
+      'usdAtQuote',
+      'usdAtConfirmation',
+    ],
+  },
+  // NOTE: `recordPayment` is intentionally NOT exposed over MCP. It posts a
+  // balanced journal into smrt-ledgers (moves money in the books) and flips
+  // the payment to COMPLETED — not safe as an unguarded MCP tool that carries
+  // no authz. Financial mutations must go through application code that
+  // enforces permissions. The MCP create/update tools honor the same
+  // `api.writable` allowlist above, so `status` is unsettable over MCP too.
+  // See S5 audit #1390.
+  mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class Payment extends SmrtObject {
@@ -237,6 +320,193 @@ export class Payment extends SmrtObject {
   }
 
   /**
+   * Capture the persisted status the row was loaded with, so the save-time
+   * transition guard can reject illegal status flips made via raw field
+   * assignment (mass-assignment on the generated update route, a stale caller,
+   * etc.). Freshly-constructed (not-yet-saved) payments have no prior status.
+   */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    if (await this.isSaved()) {
+      loadedPaymentStatus.set(this, this.status);
+    }
+    return this;
+  }
+
+  /**
+   * Save-time state-machine guard (S5 audit #1390).
+   *
+   * `status` is mass-assignable on the generated update/create routes, and a
+   * COMPLETED Payment is treated as settlement proof downstream — e.g.
+   * {@link PaymentIntent}'s PAID verification trusts a COMPLETED Payment row.
+   * A forged `status: 'completed'` (with arbitrary amounts and no journal)
+   * would therefore satisfy that check without any money having moved.
+   *
+   * This guard enforces two things:
+   *  - **Transitions must be legal** per {@link PAYMENT_STATUS_TRANSITIONS}.
+   *  - **Reaching COMPLETED requires the verified settlement path — on
+   *    creation AND on update.** Only `recordPayment()` (which posts a
+   *    balanced journal and links `journalId`) may write a Payment into
+   *    COMPLETED; it announces itself via {@link settlementInProgress}. A raw
+   *    `status: 'completed'` is rejected whether the row is brand-new (a
+   *    GENESIS `create({ status: 'completed' })`) or already persisted — that
+   *    is the exact path a forged COMPLETED would take to satisfy
+   *    PaymentIntent's PAID verification without any money having moved (codex
+   *    HIGH#1, #1390 round 5). There is deliberately NO import/fixture
+   *    carve-out: a COMPLETED Payment is settlement proof downstream, so it is
+   *    only ever reachable through `recordPayment()`, on every surface
+   *    (REST/MCP/CLI/direct). Fixtures/migrations that need a completed payment
+   *    must drive it through `recordPayment()` (or start non-COMPLETED).
+   */
+  override async save(): Promise<this> {
+    const priorRow = await this.loadPersistedRow();
+    const prior =
+      priorRow && priorRow.status != null
+        ? (priorRow.status as PaymentStatus)
+        : loadedPaymentStatus.get(this);
+    this.assertStatusTransition(prior);
+
+    // Reaching COMPLETED is only legal via the verified settlement path,
+    // regardless of whether this is a create (no persisted prior) or an
+    // update of an existing row. A GENESIS create with status: COMPLETED would
+    // otherwise forge settlement proof, so we close it here at the model level
+    // — this covers EVERY surface (REST/MCP/CLI/direct), independent of any
+    // writable-allowlist gap on a given surface.
+    const reachingCompleted =
+      this.status === PaymentStatus.COMPLETED &&
+      prior !== PaymentStatus.COMPLETED;
+    if (reachingCompleted && !settlementInProgress.has(this)) {
+      throw new Error(
+        `Payment ${this.id || '<new>'}: cannot set status to COMPLETED via ` +
+          'raw assignment — a Payment is only completed through ' +
+          'recordPayment(), which posts a balanced settlement journal. Use ' +
+          'recordPayment() instead of setting status directly.',
+      );
+    }
+
+    // Freeze the settled monetary fields once the row is already COMPLETED in
+    // the database (S5 audit #1390 round 6 — codex ROOT INSIGHT; mirrors the
+    // PaymentIntent PAID backing-field freeze). A COMPLETED Payment is
+    // settlement proof: its amount was reconciled against a balanced journal
+    // and is trusted downstream — PaymentIntent's PAID verification binds the
+    // winning option's `nativeAmount` to `Payment.amount` / `nativeAmount`. The
+    // only legal exit from COMPLETED is COMPLETED → REFUNDED, and a refund must
+    // NOT alter the settled figures. Closing this at the model level covers
+    // EVERY surface (REST/MCP/CLI/direct), independent of the per-surface
+    // writable allowlist (`amount`/`currency`/`nativeAmount`/... are writable
+    // on a *new* PENDING payment, but must be immutable once settled).
+    if (priorRow && priorRow.status === PaymentStatus.COMPLETED) {
+      this.assertSettledAmountsUnchanged(priorRow);
+    }
+
+    try {
+      const result = (await super.save()) as this;
+      loadedPaymentStatus.set(this, this.status);
+      return result;
+    } finally {
+      settlementInProgress.delete(this);
+    }
+  }
+
+  /**
+   * Reject an illegal status flip. Compares the about-to-be-written status
+   * against the status the row was loaded with. No-op transitions (status
+   * unchanged) and brand-new rows (no prior) are always allowed — the
+   * COMPLETED-specific settlement requirement is enforced separately in
+   * {@link save}.
+   */
+  private assertStatusTransition(prior: PaymentStatus | undefined): void {
+    if (prior === undefined) return; // new row — any starting status (subject to the COMPLETED gate)
+    if (prior === this.status) return; // no-op re-save
+    const allowed = PAYMENT_STATUS_TRANSITIONS[prior] ?? [];
+    if (!allowed.includes(this.status)) {
+      throw new Error(
+        `Payment ${this.id}: illegal status transition '${prior}' → '${this.status}'. ` +
+          'Use the guarded helpers (recordPayment / markFailed / cancel).',
+      );
+    }
+  }
+
+  /**
+   * Load the AUTHORITATIVE persisted row (S5 audit #1390 round 4, codex HIGH#1;
+   * extended round 6 to carry the full row, not just `status`). The WeakMap is
+   * only populated when {@link initialize} loaded the row from the DB; it is
+   * empty for an instance built via
+   * `collection.create({ id: <existing>, _skipLoad: true })` — the upsert path
+   * that lets a caller write onto an existing row without hydrating it. Trusting
+   * an empty WeakMap there would treat the write as a brand-new row and skip the
+   * transition guard entirely (a poisonable prior-state).
+   *
+   * So when this instance carries an `id`, read the persisted row straight from
+   * the database and use it as the prior — a create-onto-existing is an update.
+   * Returns `undefined` when no row exists (truly new), so callers fall back to
+   * the WeakMap (which is also empty then). Settled-amount columns are
+   * snake_case (`native_amount`, etc.); the `status` column is single-word.
+   */
+  private async loadPersistedRow(): Promise<Record<string, any> | undefined> {
+    if (!this.id) return undefined;
+    try {
+      const row = await this.db.get(this.tableName, { id: this.id });
+      return row ?? undefined;
+    } catch {
+      // DB not ready / table absent — treat as new (in-memory fallback in save).
+      return undefined;
+    }
+  }
+
+  /**
+   * Reject any change to the settled monetary fields of an already-COMPLETED
+   * Payment (S5 audit #1390 round 6 — codex ROOT INSIGHT). Mirrors the
+   * PaymentIntent PAID backing-field freeze. A COMPLETED Payment's economic
+   * identity is settled: the `amount` was posted into a balanced journal and is
+   * the figure PaymentIntent's PAID verification reconciles against, so it (and
+   * the native/USD valuation fields that describe the same money) must not
+   * drift. The only legal status move out of COMPLETED is REFUNDED, which
+   * reverses the funds without rewriting how much they were. Compared against
+   * the AUTHORITATIVE persisted row so the freeze holds on every surface, even
+   * for an un-hydrated create-onto-existing upsert.
+   */
+  private assertSettledAmountsUnchanged(priorRow: Record<string, any>): void {
+    const frozen: Array<[string, number | string, number | string]> = [
+      ['amount', Number(priorRow.amount ?? 0), Number(this.amount ?? 0)],
+      [
+        'currency',
+        String(priorRow.currency ?? ''),
+        String(this.currency ?? ''),
+      ],
+      [
+        'nativeAmount',
+        Number(priorRow.native_amount ?? 0),
+        Number(this.nativeAmount ?? 0),
+      ],
+      [
+        'nativeCurrency',
+        String(priorRow.native_currency ?? ''),
+        String(this.nativeCurrency ?? ''),
+      ],
+      [
+        'usdAtQuote',
+        Number(priorRow.usd_at_quote ?? 0),
+        Number(this.usdAtQuote ?? 0),
+      ],
+      [
+        'usdAtConfirmation',
+        Number(priorRow.usd_at_confirmation ?? 0),
+        Number(this.usdAtConfirmation ?? 0),
+      ],
+    ];
+    for (const [field, prior, next] of frozen) {
+      if (prior !== next) {
+        throw new Error(
+          `Payment ${this.id}: '${field}' is frozen once the payment is ` +
+            `COMPLETED (was '${prior}', got '${next}'). A settled payment's ` +
+            'monetary fields cannot be mutated — issue a refund instead.',
+        );
+      }
+    }
+  }
+
+  /**
    * USD drift between quote time and confirmation time — what the
    * operator gained (positive) or lost (negative) by accepting a
    * volatile-currency payment. Returns `0` when either side of the
@@ -333,10 +603,13 @@ export class Payment extends SmrtObject {
     // Post the journal (validates balance and finalizes)
     await journal.post();
 
-    // Update payment record
+    // Update payment record. Announce the verified settlement to the save-time
+    // guard so the COMPLETED transition is accepted (the guard rejects any
+    // other route into COMPLETED).
     this.journalId = journal.id;
     this.status = PaymentStatus.COMPLETED;
     this.paidAt = new Date();
+    settlementInProgress.add(this);
     await this.save();
 
     return journal;

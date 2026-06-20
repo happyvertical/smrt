@@ -15,6 +15,45 @@ import { Customer } from './Customer.js';
 import { Vendor } from './Vendor.js';
 
 /**
+ * Legal status transitions for a Contract (and all its STI subtypes), keyed by
+ * the prior persisted status. A status re-saved unchanged (no-op) and a
+ * brand-new row are always permitted; this map governs *changes* only.
+ *
+ * Flow: DRAFT → SENT → (ACCEPTED | DECLINED); ACCEPTED → (COMPLETED |
+ * CANCELLED). An estimate/order may also be cancelled directly from DRAFT/SENT.
+ * DECLINED / COMPLETED / CANCELLED are terminal. This guards against raw
+ * mass-assignment forcing, e.g., a DECLINED contract back to ACCEPTED or a
+ * COMPLETED one back to DRAFT. See S5 audit #1390.
+ */
+const CONTRACT_STATUS_TRANSITIONS: Record<ContractStatus, ContractStatus[]> = {
+  [ContractStatus.DRAFT]: [
+    ContractStatus.SENT,
+    ContractStatus.ACCEPTED,
+    ContractStatus.DECLINED,
+    ContractStatus.CANCELLED,
+  ],
+  [ContractStatus.SENT]: [
+    ContractStatus.ACCEPTED,
+    ContractStatus.DECLINED,
+    ContractStatus.CANCELLED,
+  ],
+  [ContractStatus.ACCEPTED]: [
+    ContractStatus.COMPLETED,
+    ContractStatus.CANCELLED,
+  ],
+  [ContractStatus.DECLINED]: [],
+  [ContractStatus.COMPLETED]: [],
+  [ContractStatus.CANCELLED]: [],
+};
+
+/**
+ * Module-scoped record of the status each Contract instance was loaded with,
+ * for the save-time transition guard. WeakMap keeps it out of the schema and
+ * GCs with the instance — same pattern as the other commerce models.
+ */
+const loadedContractStatus = new WeakMap<Contract, ContractStatus>();
+
+/**
  * Contract is the base class for all commercial agreements.
  *
  * Uses Single Table Inheritance (STI) to support different contract types:
@@ -211,6 +250,82 @@ export class Contract extends SmrtObject {
     // This would typically query ContractLineItems and sum them
     // For now, just ensure totalAmount = subtotal + taxAmount
     this.totalAmount = this.subtotal + this.taxAmount;
+  }
+
+  /**
+   * Capture the status the row was loaded with so the save-time transition
+   * guard can reject illegal status flips made via raw field assignment
+   * (mass-assignment on the generated update route, a stale caller, etc.).
+   * Only persisted rows carry a prior status.
+   */
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    if (await this.isSaved()) {
+      loadedContractStatus.set(this, this.status);
+    }
+    return this;
+  }
+
+  /**
+   * Validate the status transition before persisting, then save. Inherited by
+   * every STI subtype (Estimate/Order/Lease/.../LicenseSale), so a forged
+   * `status` on any of them is caught here. LicenseSale layers its own
+   * rights-immutability guard on top via `super.save()`. See S5 audit #1390.
+   */
+  override async save(): Promise<this> {
+    const prior = await this.resolvePriorStatus();
+    this.assertContractStatusTransition(prior);
+    const result = (await super.save()) as this;
+    loadedContractStatus.set(this, this.status);
+    return result;
+  }
+
+  /**
+   * Reject an illegal status flip done via raw assignment. No-op transitions
+   * and brand-new rows are always allowed.
+   */
+  protected assertContractStatusTransition(
+    prior: ContractStatus | undefined,
+  ): void {
+    if (prior === undefined) return; // new row — any starting status is fine
+    if (prior === this.status) return; // no-op re-save
+    const allowed = CONTRACT_STATUS_TRANSITIONS[prior] ?? [];
+    if (!allowed.includes(this.status)) {
+      throw new Error(
+        `Contract ${this.reference || this.id}: illegal status transition ` +
+          `'${prior}' → '${this.status}'.`,
+      );
+    }
+  }
+
+  /**
+   * Resolve the AUTHORITATIVE prior status (S5 audit #1390 round 5, codex
+   * MEDIUM#2). The WeakMap is only populated when {@link initialize} loaded the
+   * row from the DB; it is empty for an instance built via
+   * `collection.create({ id: <existing>, _skipLoad: true })` — the upsert path
+   * that lets a caller write onto an existing row without hydrating it. Trusting
+   * an empty WeakMap there would treat the write as a brand-new row and skip the
+   * transition guard entirely (a poisonable prior-state). Mirrors the
+   * authoritative-prior-load applied to Payment/PaymentIntent/Invoice/Payout.
+   *
+   * So when this instance carries an `id`, read the persisted row straight from
+   * the database and treat its `status` as the prior — a create-onto-existing is
+   * an update. Only when no row exists in the DB (truly new) do we fall back to
+   * the WeakMap (which is also empty then), i.e. `undefined` = genuinely new.
+   * The raw row's `status` column is single-word (no snake_case transform).
+   */
+  protected async resolvePriorStatus(): Promise<ContractStatus | undefined> {
+    if (this.id) {
+      try {
+        const row = await this.db.get(this.tableName, { id: this.id });
+        if (row && row.status != null) {
+          return row.status as ContractStatus;
+        }
+      } catch {
+        // DB not ready / table absent — fall through to the in-memory record.
+      }
+    }
+    return loadedContractStatus.get(this);
   }
 }
 
