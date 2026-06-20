@@ -1919,8 +1919,8 @@ async function generateCLIModule(
 import { CLIGenerator } from '@happyvertical/smrt-core/generators/cli';
 
 /**
- * @typedef {import('@smrt/core/generators/cli').CLIConfig} CLIConfig
- * @typedef {import('@smrt/core/generators/cli').CLIContext} CLIContext
+ * @typedef {import('@happyvertical/smrt-core/generators/cli').CLIConfig} CLIConfig
+ * @typedef {import('@happyvertical/smrt-core/generators/cli').CLIContext} CLIContext
  */
 
 ${objectImports.join('\n')}

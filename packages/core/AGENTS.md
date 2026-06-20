@@ -86,7 +86,7 @@ admin auth.
 | Generator | Location | Output |
 |-----------|----------|--------|
 | REST API | `src/generators/rest.ts` | OpenAPI-compliant CRUD endpoints |
-| CLI | `src/generators/cli.ts` | Commander commands with auto-help |
+| CLI | `src/generators/cli.ts` | `objectname:action` admin commands — writable allowlist, exhaustive-include, `--from-file`, fail-closed tenant context |
 | MCP Server | `src/generators/mcp.ts` | Model Context Protocol tools |
 
 ## Child Accessors (R10)

@@ -20,6 +20,7 @@ import {
   type QueryInterceptResult,
   type QueryOptions,
   setDispatchTenantResolver,
+  setTenantEntryPointRunner,
 } from '@happyvertical/smrt-core';
 import {
   getCurrentTenant,
@@ -29,6 +30,7 @@ import {
   TenantContextError,
   TenantIsolationError,
 } from './context.js';
+import { runTenantScopedEntryPoint } from './entry-point.js';
 import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
 
 const logger = createLogger({ level: 'info' });
@@ -652,6 +654,11 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // enabled. Mirrors the GlobalInterceptors inversion above.
   setDispatchTenantResolver(() => getTenantId());
 
+  // Wire the fail-closed tenant gate for generated CLI/MCP entry points (#1554).
+  // Core invokes this runner around tenant-scoped CLI/MCP execution; without it
+  // (tenancy disabled) those surfaces pass through unchanged.
+  setTenantEntryPointRunner(runTenantScopedEntryPoint);
+
   isEnabled = true;
 }
 
@@ -686,6 +693,8 @@ export function disableTenancy(): void {
   // Clear the DispatchBus tenant resolver so the bus reverts to its no-op
   // (pre-tenancy) behavior when tenancy is disabled.
   setDispatchTenantResolver(undefined);
+  // Clear the CLI/MCP tenant gate so those surfaces pass through (#1554).
+  setTenantEntryPointRunner(undefined);
   registeredInterceptor = null;
   isEnabled = false;
 }

@@ -50,6 +50,11 @@
       "import": "./dist/generators/rest.js",
       "default": "./dist/generators/rest.js"
     },
+    "./generators/cli": {
+      "types": "./dist/generators/cli.d.ts",
+      "import": "./dist/generators/cli.js",
+      "default": "./dist/generators/cli.js"
+    },
     "./generators/mcp": {
       "types": "./dist/generators/mcp.d.ts",
       "import": "./dist/generators/mcp.js",
