@@ -16,6 +16,7 @@ import {
   generateRuntimeBootstrap,
   type RuntimeOptions,
 } from './mcp-runtime-template.js';
+import { runWithTenantGate } from './tenant-gate.js';
 
 export interface MCPConfig {
   name?: string;
@@ -34,6 +35,19 @@ export interface MCPContext {
     id: string;
     roles?: string[];
   };
+  /**
+   * Tenant the calling principal is scoped to (#1554). When set, tenant-scoped
+   * tools run inside this tenant's context. Hosts that authenticate a principal
+   * (e.g. `@happyvertical/smrt-app-mcp`) should derive it from the principal —
+   * the MCP analogue of the SvelteKit auth hook setting `locals.tenantId`.
+   */
+  tenantId?: string;
+  /**
+   * Explicit operator opt-in to cross-tenant access for tenant-scoped tools
+   * (#1554). Only set for trusted operator/admin callers. Without a `tenantId`
+   * or this flag, tenant-scoped tool calls fail closed when tenancy is enabled.
+   */
+  allowCrossTenant?: boolean;
 }
 
 export interface MCPTool {
@@ -717,6 +731,75 @@ export class MCPGenerator {
     const mutating = action !== 'list' && action !== 'get';
     this.requireToolAuth(objectName, mutating);
 
+    // Fail-closed tenant context (#1554). For tenant-scoped objects, establish
+    // the context from the principal's tenant (or an explicit cross-tenant
+    // opt-in); without either, this throws when tenancy is enabled rather than
+    // letting an optional-scoped read range across all tenants. Tenant-scoping
+    // is resolved inside tenancy by class name so it matches the interceptor.
+    return runWithTenantGate(
+      {
+        className: objectName,
+        tenantId: this.context.tenantId,
+        allowCrossTenant: this.context.allowCrossTenant,
+        surface: 'MCP',
+      },
+      () => this.runAction(collection, action, args, objectName),
+    );
+  }
+
+  /**
+   * Derive the set of tenant-scoped object names (lowercased simple names) from
+   * a generated tool list, for the emitted runtime template's tenant gate
+   * (#1554). Tool names are `objectname_action`.
+   *
+   * Detection unions the tenancy registry (`isTenantScopedClass` — authoritative
+   * for `@TenantScoped`, matches the interceptor) with core's `isTenantScoped`
+   * (covers `@smrt({ tenantScoped })`). Tenancy is consulted via an optional
+   * dynamic import so this stays correct for apps that use either pattern, and
+   * a no-op for apps without tenancy.
+   */
+  private async tenantScopedObjectNames(tools: MCPTool[]): Promise<string[]> {
+    let isTenantScopedClass: ((name: string) => boolean) | undefined;
+    try {
+      const tenancy = (await import(
+        /* @vite-ignore */ '@happyvertical/smrt-tenancy'
+      )) as { isTenantScopedClass?: (name: string) => boolean };
+      isTenantScopedClass = tenancy.isTenantScopedClass;
+    } catch {
+      isTenantScopedClass = undefined;
+    }
+
+    const scoped = new Set<string>();
+    for (const tool of tools) {
+      const [objectName] = tool.name.split('_');
+      if (!objectName) continue;
+      // Resolve the registered simple name (case-insensitive) and test scoping.
+      for (const [key, info] of ObjectRegistry.getAllClasses()) {
+        const simpleName = info.name || key;
+        if (simpleName.toLowerCase() === objectName.toLowerCase()) {
+          if (
+            ObjectRegistry.isTenantScoped(simpleName) ||
+            isTenantScopedClass?.(simpleName)
+          ) {
+            scoped.add(simpleName.toLowerCase());
+          }
+          break;
+        }
+      }
+    }
+    return Array.from(scoped);
+  }
+
+  /**
+   * Execute a resolved MCP action (CRUD or custom) against a collection. Always
+   * invoked inside the tenant gate established by {@link executeAction}.
+   */
+  private async runAction(
+    collection: SmrtCollection<any>,
+    action: string,
+    args: any,
+    objectName?: string,
+  ): Promise<any> {
     switch (action) {
       case 'list': {
         const listOptions: any = {
@@ -979,6 +1062,7 @@ export class MCPGenerator {
         context: this.context,
         debug,
         tools,
+        tenantScopedObjects: await this.tenantScopedObjectNames(tools),
       };
 
       const serverCode = generateRuntimeBootstrap(runtimeOptions);

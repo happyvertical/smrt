@@ -44,6 +44,15 @@ export interface RuntimeOptions {
     description: string;
     inputSchema: any;
   }>;
+
+  /**
+   * Lowercased simple names of objects that are `@TenantScoped` (#1554). When
+   * non-empty, the generated server imports the tenancy fail-closed gate and
+   * wraps tenant-scoped tool calls so a stdio invocation cannot read across all
+   * tenants. The tenant is sourced from `SMRT_MCP_TENANT_ID` /
+   * `SMRT_MCP_ALLOW_CROSS_TENANT` env vars (this server has no auth principal).
+   */
+  tenantScopedObjects?: string[];
 }
 
 /**
@@ -59,10 +68,19 @@ export function generateRuntimeBootstrap(options: RuntimeOptions = {}): string {
     description = 'Auto-generated MCP server from SMRT objects',
     debug = false,
     tools = [],
+    tenantScopedObjects = [],
   } = options;
 
   // Generate static tool array as TypeScript code
   const toolsCode = tools.length > 0 ? JSON.stringify(tools, null, 2) : '[]';
+
+  // Fail-closed tenant context (#1554): only wire the tenancy gate when at
+  // least one exposed object is tenant-scoped, so apps without tenancy never
+  // get a dangling import.
+  const tenantScopedSet = Array.from(
+    new Set(tenantScopedObjects.map((n) => n.toLowerCase())),
+  );
+  const hasTenantScoped = tenantScopedSet.length > 0;
 
   // Generate static switch cases using shared helper
   const generateSwitchCases = (indent: string) => {
@@ -224,7 +242,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { config } from '@happyvertical/smrt-config';
-
+${hasTenantScoped ? "import { runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
 const SERVER_NAME = ${JSON.stringify(name)};
 const SERVER_VERSION = ${JSON.stringify(version)};
@@ -233,6 +251,19 @@ const DEBUG = ${debug};
 
 // Static tool definitions (generated at build time)
 const TOOLS = ${toolsCode};
+${
+  hasTenantScoped
+    ? `
+// Fail-closed tenant context (#1554): tenant-scoped objects must run inside a
+// tenant. This stdio server has no auth principal, so the tenant is taken from
+// the environment; without it (and with tenancy enabled) tenant-scoped tools
+// throw rather than reading across all tenants.
+const TENANT_SCOPED = new Set(${JSON.stringify(tenantScopedSet)});
+const MCP_TENANT_ID = process.env.SMRT_MCP_TENANT_ID || undefined;
+const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true';
+`
+    : ''
+}
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and
@@ -344,14 +375,29 @@ async function main() {
 
       try {
         // Static switch statement for tool execution
-        let result;
-
-        switch (toolName) {
+        const runToolBody = async () => {
+          switch (toolName) {
 ${switchCases}
 
-          default:
-            throw new Error(\`Unknown tool: \${toolName}\`);
-        }
+            default:
+              throw new Error(\`Unknown tool: \${toolName}\`);
+          }
+        };
+${
+  hasTenantScoped
+    ? `
+        // Fail-closed tenant context for tenant-scoped tools (#1554).
+        const [toolObject] = toolName.split('_');
+        const result =
+          toolObject && TENANT_SCOPED.has(toolObject.toLowerCase())
+            ? await runTenantScopedEntryPoint(
+                { tenantScoped: true, tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, surface: 'MCP' },
+                runToolBody,
+              )
+            : await runToolBody();`
+    : `
+        const result = await runToolBody();`
+}
 
         if (DEBUG) {
           console.error(\`[MCP] Tool executed successfully: \${toolName}\`);

@@ -2,6 +2,9 @@
  * @smrt/core generators - Create REST APIs and MCP servers from SMRT objects
  */
 
+export type { CLIConfig, CLIContext } from './cli';
+// CLI Generator
+export { CLIGenerator, getCLIHandler, setupCLI } from './cli';
 export type {
   MCPConfig,
   MCPContext,
@@ -20,3 +23,10 @@ export {
   generateOpenAPISpec,
   setupSwaggerUI,
 } from './swagger';
+// Tenant entry-point gate (dependency-inversion hook filled by smrt-tenancy)
+export {
+  runWithTenantGate,
+  setTenantEntryPointRunner,
+  type TenantEntryPointRunner,
+  type TenantGateOptions,
+} from './tenant-gate';

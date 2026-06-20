@@ -91,7 +91,13 @@ export {
   // Property decorator (preferred)
   tenantId,
 } from './decorators.js';
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Fail-closed entry-point gate for generated CLI/MCP surfaces (#1554)
+// ─────────────────────────────────────────────────────────────────────────────
+export {
+  runTenantScopedEntryPoint,
+  type TenantEntryPointOptions,
+} from './entry-point.js';
 // ─────────────────────────────────────────────────────────────────────────────
 // Field Types and Utilities
 // ─────────────────────────────────────────────────────────────────────────────
