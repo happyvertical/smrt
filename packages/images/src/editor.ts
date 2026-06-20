@@ -14,9 +14,24 @@ import { readFile, unlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { AIClientOptions } from '@happyvertical/ai';
+import type { ImageFormat } from '@happyvertical/images';
 import type { AssetStore } from '@happyvertical/smrt-assets';
 import type { Image } from './image';
 import type { ImageCollection } from './images';
+
+/**
+ * Output formats `convert()` accepts. Mirrors the `ImageFormat` union from
+ * `@happyvertical/images`. Used as a runtime allowlist so a caller-supplied
+ * `format` string can never escape this set.
+ */
+const ALLOWED_CONVERT_FORMATS = new Set<ImageFormat>([
+  'jpeg',
+  'png',
+  'webp',
+  'avif',
+  'gif',
+  'tiff',
+]);
 
 export class ImageEditor {
   constructor(
@@ -114,25 +129,41 @@ export class ImageEditor {
    * @returns New derivative Image
    */
   async convert(image: Image, format: string): Promise<Image> {
+    // Validate against a fixed allowlist BEFORE the value is interpolated into
+    // a filesystem path. `format` is caller-controlled (e.g. an HTTP request
+    // body via `ImageConvertRequest`) and is appended as the output temp
+    // file's extension; an unchecked value like `../../../etc/cron.d/x` would
+    // escape `tmpdir()` and let an attacker write the converted bytes to an
+    // arbitrary location (path-traversal write). The static `as ImageFormat`
+    // cast below gives zero runtime protection, so guard explicitly here.
+    const normalizedFormat = format.trim().toLowerCase();
+    if (!ALLOWED_CONVERT_FORMATS.has(normalizedFormat as ImageFormat)) {
+      throw new Error(
+        `Unsupported image format: ${JSON.stringify(format)}. ` +
+          `Allowed formats: ${[...ALLOWED_CONVERT_FORMATS].join(', ')}`,
+      );
+    }
+    const safeFormat = normalizedFormat as ImageFormat;
+
     const { convertFormat } = await import('@happyvertical/images');
     const sourceData = await this.store.read(image);
-    const mimeType = `image/${format}`;
+    const mimeType = `image/${safeFormat}`;
 
     const inputPath = join(tmpdir(), `smrt-conv-in-${randomUUID()}.bin`);
     const outputPath = join(
       tmpdir(),
-      `smrt-conv-out-${randomUUID()}.${format}`,
+      `smrt-conv-out-${randomUUID()}.${safeFormat}`,
     );
 
     try {
       await writeFile(inputPath, sourceData);
       await convertFormat(inputPath, outputPath, {
-        format: format as import('@happyvertical/images').ImageFormat,
+        format: safeFormat,
       });
       const converted = await readFile(outputPath);
 
       return this.createDerivative(image, converted, {
-        name: `${image.name}.${format}`,
+        name: `${image.name}.${safeFormat}`,
         mimeType,
         description: `Converted from ${image.mimeType} to ${mimeType}`,
       });
