@@ -242,7 +242,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import { ObjectRegistry } from '@happyvertical/smrt-core';
 import { config } from '@happyvertical/smrt-config';
-${hasTenantScoped ? "import { runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
+${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
 const SERVER_NAME = ${JSON.stringify(name)};
 const SERVER_VERSION = ${JSON.stringify(version)};
@@ -330,7 +330,18 @@ async function main() {
     if (DEBUG) {
       console.error(\`[MCP] Starting server: \${SERVER_NAME} v\${SERVER_VERSION}\`);
     }
-
+${
+  hasTenantScoped
+    ? `
+    // Fail-closed tenant context (#1554): install the tenancy interceptor so
+    // tenant-scoped tools are actually filtered, and so the entry-point gate
+    // throws (rather than passing through) when no tenant is supplied. Without
+    // this, a tenant set via SMRT_MCP_TENANT_ID would only set async context
+    // with no interceptor to enforce it.
+    enableTenancy();
+`
+    : ''
+}
     // Load configuration from environment and .smrt.config files
     const appConfig = await config.load();
     const aiConfig = appConfig?.ai || {};

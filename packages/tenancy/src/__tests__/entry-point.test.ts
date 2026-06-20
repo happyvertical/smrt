@@ -80,6 +80,28 @@ describe('runTenantScopedEntryPoint (#1554)', () => {
       expect(bypass).toBe(false);
     });
 
+    it('cross-tenant opt-in wins over an explicit tenantId (e.g. a default host tenant)', async () => {
+      // A host may set a default principal tenant while the operator passes
+      // --all-tenants; the explicit cross-tenant opt-in must not be silently
+      // scoped to the default tenant (codex P2).
+      let system = false;
+      let observed: string | undefined = 'unset';
+      await runTenantScopedEntryPoint(
+        {
+          tenantScoped: true,
+          tenantId: 'default-tenant',
+          allowCrossTenant: true,
+          surface: 'CLI',
+        },
+        async () => {
+          system = isSystemContext();
+          observed = getTenantId();
+        },
+      );
+      expect(system).toBe(true);
+      expect(observed).toBeUndefined();
+    });
+
     it('reuses an already-active context instead of failing', async () => {
       let observed: string | undefined;
       await withTenant({ tenantId: 'outer' }, async () => {

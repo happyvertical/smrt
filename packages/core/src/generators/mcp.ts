@@ -1140,7 +1140,10 @@ export class MCPGenerator {
 
     // Generate handlers/index.ts with tool call handlers
     const handlersPath = resolve(handlersDir, 'index.ts');
-    const handlersCode = await this.generateHandlersFile();
+    const tenantScopedObjects = await this.tenantScopedObjectNames(
+      await this.generateTools(),
+    );
+    const handlersCode = await this.generateHandlersFile(tenantScopedObjects);
     await writeFile(handlersPath, handlersCode, 'utf-8');
     console.log(`✅ Generated handlers: ${handlersPath}`);
 
@@ -1338,8 +1341,14 @@ ${indent}}`;
   /**
    * Generate handlers file for modular server
    */
-  private async generateHandlersFile(): Promise<string> {
-    const switchCases = await this.generateToolSwitchCases('      ');
+  private async generateHandlersFile(
+    tenantScopedObjects: string[] = [],
+  ): Promise<string> {
+    const switchCases = await this.generateToolSwitchCases('        ');
+    const tenantScopedSet = Array.from(
+      new Set(tenantScopedObjects.map((n) => n.toLowerCase())),
+    );
+    const hasTenantScoped = tenantScopedSet.length > 0;
 
     return `/**
  * MCP Tool Call Handlers
@@ -1350,9 +1359,25 @@ ${indent}}`;
  * per-call authentication principal — the generated stdio MCP server's trust
  * boundary is the host process / MCP client. Run it only in a trusted context
  * or behind an authenticated gateway.
+ *
+ * SECURITY (#1554): tenant-scoped tools run inside a fail-closed tenant gate;
+ * the tenant is taken from SMRT_MCP_TENANT_ID (this server has no auth
+ * principal) and tenancy is enabled so the interceptor enforces filtering.
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
+  hasTenantScoped
+    ? `
+// Install the tenancy interceptor so tenant-scoped tools are filtered and the
+// gate fail-closes when no tenant is supplied (#1554).
+enableTenancy();
+const TENANT_SCOPED = new Set(${JSON.stringify(tenantScopedSet)});
+const MCP_TENANT_ID = process.env.SMRT_MCP_TENANT_ID || undefined;
+const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true';
+`
+    : ''
+}
 
 /**
  * Mass-assignment guard (#1540): strip framework/server-managed and
@@ -1420,15 +1445,31 @@ export async function handleToolCall(
   aiConfig: any = {}
 ) {
   try {
-    let result;
     const args = arguments;
 
-    switch (name) {
+    const runToolBody = async () => {
+      switch (name) {
 ${switchCases}
 
-      default:
-        throw new Error(\`Unknown tool: \${name}\`);
-    }
+        default:
+          throw new Error(\`Unknown tool: \${name}\`);
+      }
+    };
+${
+  hasTenantScoped
+    ? `
+    // Fail-closed tenant context for tenant-scoped tools (#1554).
+    const [toolObject] = name.split('_');
+    const result =
+      toolObject && TENANT_SCOPED.has(toolObject.toLowerCase())
+        ? await runTenantScopedEntryPoint(
+            { tenantScoped: true, tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, surface: 'MCP' },
+            runToolBody,
+          )
+        : await runToolBody();`
+    : `
+    const result = await runToolBody();`
+}
 
     return result;
   } catch (error) {
