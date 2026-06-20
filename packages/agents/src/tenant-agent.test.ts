@@ -515,4 +515,42 @@ describe('TenantAgentCollection', () => {
       expect(praeco.permissions['manage:sources']).toBe(true);
     });
   });
+
+  describe('config field exposure (S5 #1398)', () => {
+    it('excludes the credential-bearing config blob from toPublicJSON()', async () => {
+      const tid = tenantId('config-sensitive');
+      const entry = await collection.create({
+        tenantId: tid,
+        agentClass: 'Praeco',
+        status: 'active',
+        config: { apiKey: 'sk-live-should-not-leak', region: 'us-east-1' },
+      });
+      await entry.save();
+
+      const publicJson = entry.toPublicJSON() as Record<string, unknown>;
+      // Sensitive override blob must not be serialized to API/MCP responses.
+      expect('config' in publicJson).toBe(false);
+      expect(JSON.stringify(publicJson)).not.toContain(
+        'sk-live-should-not-leak',
+      );
+
+      // Non-sensitive metadata is still present.
+      expect(publicJson.agentClass).toBe('Praeco');
+
+      // Server-side reads (e.g. serializeResolvedAgent) still see the value.
+      const loaded = await collection.list({ where: { tenantId: tid } });
+      expect(loaded[0].config?.apiKey).toBe('sk-live-should-not-leak');
+    });
+
+    it('rejects config as a WHERE filter key (no value probing) (review #1552)', async () => {
+      // The other half of the @field({ sensitive }) contract: a sensitive field
+      // must not be usable as a WHERE filter, else its value could be probed via
+      // the generated list/get surfaces. Core's convertWhereKeys throws.
+      await expect(
+        collection.list({
+          where: { config: { apiKey: 'sk-live-should-not-leak' } },
+        }),
+      ).rejects.toThrow(/sensitive fields is not allowed/i);
+    });
+  });
 });
