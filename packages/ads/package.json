@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-ads",
-  "version": "0.29.34",
+  "version": "0.29.35",
   "description": "Advertising delivery and tracking models for SMRT framework",
   "type": "module",
   "main": "./dist/index.js",

@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.29.35
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - hide optional tenancy import from DTS resolution (codex review #1557) (core)
+  - make revived CLI work for default collections + class-name commands (codex review #1557) (core)
+  - address Copilot review on #1557 (tenancy)
+  - enable tenancy + gate emitted MCP servers (codex review #1557) (core)
+  - fail-closed tenant context for generated CLI/MCP (S5 #1554, #1556) (core)
+
+  ### Other Changes
+
+  - test: cover adapters + test utilities to clear the T1 coverage floor (#1554) (tenancy)
+  - @happyvertical/smrt-scanner@0.29.35
+  - @happyvertical/smrt-config@0.29.35
+  - @happyvertical/smrt-types@0.29.35
+
 ## 0.29.34
 
 ### Patch Changes
