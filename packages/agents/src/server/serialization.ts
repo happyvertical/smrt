@@ -84,6 +84,6 @@ export function serializeResolvedAgent(
     permissions: resolved.permissions,
     icon: manifest?.icon,
     // Secret-sanitize before the blob crosses into the client payload (#1553).
-    config: sanitizeConfig(resolved.config) as Record<string, any> | undefined,
+    config: sanitizeConfig(resolved.config) as SerializedAgent['config'],
   };
 }
