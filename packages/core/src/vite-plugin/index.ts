@@ -1863,8 +1863,12 @@ async function generateCLIModule(
         return true;
       };
 
-      // Get collection name
+      // Collection name (metadata) and the command segment. Commands are keyed
+      // by the simple class name (e.g. `document:list`) to match what
+      // `CLIGenerator` resolves and the dev `smrt` CLI convention — NOT the
+      // plural collection name, which the runtime resolver does not accept.
       const collectionName = objectDef.collection;
+      const commandName = (objectDef.className || className).toLowerCase();
 
       // Generate import statement for the object class
       objectImports.push(
@@ -1876,15 +1880,14 @@ async function generateCLIModule(
 
       // Standard CRUD commands
       if (shouldInclude('list'))
-        availableCommands.push(`'${collectionName}:list'`);
-      if (shouldInclude('get'))
-        availableCommands.push(`'${collectionName}:get'`);
+        availableCommands.push(`'${commandName}:list'`);
+      if (shouldInclude('get')) availableCommands.push(`'${commandName}:get'`);
       if (shouldInclude('create'))
-        availableCommands.push(`'${collectionName}:create'`);
+        availableCommands.push(`'${commandName}:create'`);
       if (shouldInclude('update'))
-        availableCommands.push(`'${collectionName}:update'`);
+        availableCommands.push(`'${commandName}:update'`);
       if (shouldInclude('delete'))
-        availableCommands.push(`'${collectionName}:delete'`);
+        availableCommands.push(`'${commandName}:delete'`);
 
       // Custom action methods
       for (const [methodName, _method] of Object.entries(objectDef.methods)) {
@@ -1898,7 +1901,7 @@ async function generateCLIModule(
           continue;
 
         if (shouldInclude(methodName)) {
-          availableCommands.push(`'${collectionName}:${methodName}'`);
+          availableCommands.push(`'${commandName}:${methodName}'`);
         }
       }
 

@@ -103,6 +103,19 @@ class CliWritableWidgetCollection extends SmrtCollection<CliWritableWidget> {
   static readonly _itemClass = CliWritableWidget;
 }
 
+// A plain model with NO hand-written/registered collection class — the CLI must
+// still work via the registry's default-collection factory (codex P2 on #1557).
+@smrt({ cli: true })
+class CliPlainModel extends SmrtObject {
+  @field({ type: 'text' })
+  name = '';
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.name !== undefined) this.name = options.name;
+  }
+}
+
 describe('CLI generator hardening (#1556 / #1554)', () => {
   ObjectRegistry.registerCollection(
     'CliWritableWidget',
@@ -248,6 +261,34 @@ describe('CLI generator hardening (#1556 / #1554)', () => {
       await expect(
         gen.run(['cliwritablewidget:list']),
       ).resolves.toBeUndefined();
+      await db?.close?.();
+    });
+  });
+
+  describe('default-collection models', () => {
+    it('create + list work for a plain @smrt() model with no collection class', async () => {
+      const db = await getTestDatabase({
+        type: 'sqlite',
+        url: ':memory:',
+        classes: ['CliPlainModel'],
+      });
+      const gen = new CLIGenerator({}, { db });
+
+      // Both must succeed via the registry's default-collection factory, even
+      // though CliPlainModel has no hand-written collection class.
+      await gen.run(['cliplainmodel:create', '--name', 'Plain One']);
+
+      const logs: string[] = [];
+      const original = console.log;
+      console.log = (...args: unknown[]) => {
+        logs.push(args.map(String).join(' '));
+      };
+      try {
+        await gen.run(['cliplainmodel:list']);
+      } finally {
+        console.log = original;
+      }
+      expect(logs.join('\n')).toContain('Plain One');
       await db?.close?.();
     });
   });
