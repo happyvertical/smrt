@@ -764,9 +764,14 @@ export class MCPGenerator {
   private async tenantScopedObjectNames(tools: MCPTool[]): Promise<string[]> {
     let isTenantScopedClass: ((name: string) => boolean) | undefined;
     try {
-      const tenancy = (await import(
-        /* @vite-ignore */ '@happyvertical/smrt-tenancy'
-      )) as { isTenantScopedClass?: (name: string) => boolean };
+      // Held in a variable so neither TypeScript's declaration emit (TS2307 —
+      // core deliberately does not depend on tenancy) nor the bundler tries to
+      // statically resolve this optional sibling package. Same pattern as
+      // `tenant-gate.ts` / `embeddings/provider.ts`.
+      const tenancySpecifier = '@happyvertical/smrt-tenancy';
+      const tenancy = (await import(/* @vite-ignore */ tenancySpecifier)) as {
+        isTenantScopedClass?: (name: string) => boolean;
+      };
       isTenantScopedClass = tenancy.isTenantScopedClass;
     } catch {
       isTenantScopedClass = undefined;
