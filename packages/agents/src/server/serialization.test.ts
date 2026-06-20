@@ -53,7 +53,9 @@ describe('serializeResolvedAgent', () => {
       permissions: { read: true, write: false },
       agentId: 'agent-123',
       manifest,
-      config: { key: 'value' },
+      // Non-secret key — survives sanitizeConfig (#1553). A bare `key` would be
+      // stripped as secret-shaped; secret handling is covered by its own test.
+      config: { setting: 'value' },
     };
 
     const result = serializeResolvedAgent(resolved);
@@ -67,7 +69,7 @@ describe('serializeResolvedAgent', () => {
     expect(result.sourceTenantId).toBe('tenant-1');
     expect(result.permissions).toEqual({ read: true, write: false });
     expect(result.icon).toBe('newspaper');
-    expect(result.config).toEqual({ key: 'value' });
+    expect(result.config).toEqual({ setting: 'value' });
   });
 
   it('should include slots from manifest', () => {
@@ -172,6 +174,50 @@ describe('serializeResolvedAgent', () => {
     const result = serializeResolvedAgent(resolved);
 
     expect(result.config).toBeUndefined();
+  });
+
+  it('secret-sanitizes config before it reaches the client (#1553)', () => {
+    const resolved: ResolvedAgentAvailability = {
+      agentClass: 'Praeco',
+      agentType: PRAECO_TYPE,
+      status: 'active',
+      source: 'explicit',
+      sourceTenantId: 'tenant-1',
+      permissions: {},
+      config: {
+        // Non-secret keys must survive for the admin UI to display.
+        endpoint: 'https://api.example.com',
+        model: 'sonnet',
+        nested: { region: 'us-east', password: 'hunter2' },
+        // Secret-shaped keys must be dropped.
+        apiKey: 'sk-ant-abc123',
+        authToken: 'super-secret',
+        // Secret-shaped value under a benign key must be masked.
+        note: 'use sk-ant-deadbeefdeadbeefdeadbeef for access',
+      },
+    };
+
+    const result = serializeResolvedAgent(resolved);
+    const config = result.config as Record<string, any>;
+
+    // Non-secret keys preserved.
+    expect(config.endpoint).toBe('https://api.example.com');
+    expect(config.model).toBe('sonnet');
+    expect(config.nested.region).toBe('us-east');
+
+    // Secret-shaped keys stripped (top-level and nested).
+    expect(config.apiKey).toBeUndefined();
+    expect(config.authToken).toBeUndefined();
+    expect(config.nested.password).toBeUndefined();
+
+    // Secret-shaped value masked, not passed through verbatim.
+    expect(config.note).not.toContain('sk-ant-deadbeefdeadbeefdeadbeef');
+
+    // No raw secret material anywhere in the serialized payload.
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('super-secret');
+    expect(serialized).not.toContain('hunter2');
+    expect(serialized).not.toContain('sk-ant-abc123');
   });
 
   it('should handle empty permissions', () => {

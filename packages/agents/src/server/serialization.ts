@@ -7,6 +7,7 @@
  * @module @happyvertical/smrt-agents/server
  */
 
+import { sanitizeConfig } from '@happyvertical/smrt-config';
 import type { ResolvedAgentAvailability } from '../tenant-agent.js';
 import type { AgentAdminRoute, AgentUISlots } from '../ui.js';
 
@@ -40,17 +41,21 @@ export interface SerializedAgent {
   /** Agent icon from manifest */
   icon?: string;
   /**
-   * Tenant-level config overrides.
+   * Tenant-level config overrides, **secret-sanitized** for client transport.
    *
-   * SECURITY (review #1552): this is the tenant's own override blob, carried
-   * verbatim into the client payload. The model field `TenantAgent.config` is
-   * `@field({ sensitive: true })`, which strips it from the generated CRUD
-   * api/mcp surfaces — but this hand-written admin serialization deliberately
-   * bypasses that for the authorized admin UI. Do NOT store raw secrets (API
-   * keys, tokens) in tenant config; reference them by id via
-   * `@happyvertical/smrt-secrets` so only an opaque handle reaches the browser.
-   * Dropping this field outright is a breaking change to a public API consumed
-   * downstream and is tracked as a separate follow-up.
+   * SECURITY (#1553, follow-up to #1552): the raw `TenantAgent.config` is the
+   * tenant's own override blob and is `@field({ sensitive: true })` (stripped
+   * from the generated CRUD api/mcp surfaces). This hand-written admin
+   * serialization runs it through `sanitizeConfig()` from
+   * `@happyvertical/smrt-config` before it leaves the server, so secret-shaped
+   * keys (apiKey/token/password/…) are dropped and secret-shaped values
+   * (`sk-…`, `AKIA…`, `Bearer …`, URL credentials, PEM blocks) are masked —
+   * non-secret config still reaches the authorized admin UI for display.
+   *
+   * This is **display-only**: do not edit-round-trip it back to the server
+   * (a masked value would overwrite the real secret). Best practice remains to
+   * reference secrets by id via `@happyvertical/smrt-secrets` so only an opaque
+   * handle is ever stored in tenant config.
    */
   config?: Record<string, any>;
 }
@@ -78,6 +83,7 @@ export function serializeResolvedAgent(
     sourceTenantId: resolved.sourceTenantId,
     permissions: resolved.permissions,
     icon: manifest?.icon,
-    config: resolved.config,
+    // Secret-sanitize before the blob crosses into the client payload (#1553).
+    config: sanitizeConfig(resolved.config) as Record<string, any> | undefined,
   };
 }
