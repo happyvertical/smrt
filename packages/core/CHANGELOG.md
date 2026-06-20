@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.29.33
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - enforce invoice/payment financial integrity (S5 #1390) (commerce)
+  - tenant-scope job tables + redact errors + cap creation (S5 #1402) (jobs)
+  - @happyvertical/smrt-scanner@0.29.33
+  - @happyvertical/smrt-config@0.29.33
+  - @happyvertical/smrt-types@0.29.33
+
 ## 0.29.32
 
 ### Patch Changes
