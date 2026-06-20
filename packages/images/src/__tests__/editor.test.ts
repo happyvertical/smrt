@@ -295,6 +295,50 @@ describe('ImageEditor', () => {
       expect(Buffer.from(storedData).equals(CONVERT_BYTES)).toBe(true);
       expect(storedOpts.mimeType).toBe('image/png');
     });
+
+    it('normalizes a mixed-case format before use', async () => {
+      const editor = makeEditor();
+      const result = await editor.convert(source, 'WEBP');
+
+      // Format is lowercased so paths/mime/name stay canonical.
+      expect(result.mimeType).toBe('image/webp');
+      expect(result.name).toBe('photo.webp');
+      const [, , opts] = mockedConvertFormat.mock.calls[0];
+      expect(opts).toEqual({ format: 'webp' });
+    });
+
+    // Regression: a caller-controlled `format` is interpolated into the
+    // output temp-file path. Before the allowlist guard, a value containing
+    // path separators (`../`) escaped tmpdir() and let an attacker write the
+    // converted bytes to an arbitrary location (path-traversal write).
+    it('rejects a path-traversal format without touching the filesystem', async () => {
+      const editor = makeEditor();
+
+      await expect(
+        editor.convert(source, '../../../../tmp/pwned'),
+      ).rejects.toThrow(/Unsupported image format/);
+
+      // No source read, no processor invocation, no derivative stored.
+      expect(readMock).not.toHaveBeenCalled();
+      expect(mockedConvertFormat).not.toHaveBeenCalled();
+      expect(storeFileMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects an absolute-path format', async () => {
+      const editor = makeEditor();
+      await expect(editor.convert(source, '/etc/cron.d/evil')).rejects.toThrow(
+        /Unsupported image format/,
+      );
+      expect(mockedConvertFormat).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown format token', async () => {
+      const editor = makeEditor();
+      await expect(editor.convert(source, 'exe')).rejects.toThrow(
+        /Unsupported image format/,
+      );
+      expect(mockedConvertFormat).not.toHaveBeenCalled();
+    });
   });
 
   // -------------------------------------------------------------------------
