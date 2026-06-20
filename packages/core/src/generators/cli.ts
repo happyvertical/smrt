@@ -19,7 +19,7 @@
  *   enabled) the command throws rather than ranging across all tenants.
  */
 
-import { SmrtCollection } from '../collection';
+import type { SmrtCollection } from '../collection';
 import { ObjectRegistry } from '../registry';
 import { runWithTenantGate } from './tenant-gate.js';
 
@@ -100,7 +100,6 @@ interface ParsedInvocation {
 export class CLIGenerator {
   private config: CLIConfig;
   private context: CLIContext;
-  private collections = new Map<string, SmrtCollection<any>>();
 
   constructor(config: CLIConfig = {}, context: CLIContext = {}) {
     this.config = {
@@ -172,7 +171,7 @@ export class CLIGenerator {
     const result = await runWithTenantGate(
       { className: objectName, tenantId, allowCrossTenant, surface: 'CLI' },
       async () => {
-        const collection = await this.getCollection(objectName, classInfo);
+        const collection = await this.getCollection(objectName);
         return this.executeAction(collection, objectName, parsed);
       },
     );
@@ -305,41 +304,19 @@ export class CLIGenerator {
   }
 
   /**
-   * Get or create the collection for an object (mirrors the MCP generator).
+   * Get the collection for an object via the registry factory. Uses
+   * `ObjectRegistry.getCollection`, which caches, initializes, and — for plain
+   * `@smrt()` models without a hand-written collection class — auto-creates the
+   * default collection. (A bare `collectionConstructor` check would wrongly
+   * throw for those models even though CRUD is advertised.)
    */
   private async getCollection(
     objectName: string,
-    classInfo: any,
   ): Promise<SmrtCollection<any>> {
-    if (!this.collections.has(objectName)) {
-      if (
-        !classInfo.collectionConstructor ||
-        typeof classInfo.collectionConstructor !== 'function'
-      ) {
-        throw new Error(
-          `No valid collection constructor found for ${objectName}`,
-        );
-      }
-
-      const collection = new classInfo.collectionConstructor({
-        ai: this.context.ai,
-        db: this.context.db,
-      });
-
-      if (!(collection instanceof SmrtCollection)) {
-        throw new Error(
-          `Collection for ${objectName} must extend SmrtCollection`,
-        );
-      }
-
-      await collection.initialize();
-      this.collections.set(objectName, collection);
-    }
-    const collection = this.collections.get(objectName);
-    if (!collection) {
-      throw new Error(`Collection for ${objectName} not found`);
-    }
-    return collection;
+    return ObjectRegistry.getCollection(objectName, {
+      ai: this.context.ai,
+      db: this.context.db,
+    });
   }
 
   /**
