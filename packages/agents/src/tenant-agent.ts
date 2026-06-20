@@ -95,8 +95,17 @@ export class TenantAgent extends SmrtObject {
   @field({ type: 'json', nullable: true })
   permissions: Record<string, boolean> | null = null;
 
-  /** Tenant-level agent config overrides (JSON) */
-  @field({ type: 'json', nullable: true })
+  /**
+   * Tenant-level agent config overrides (JSON).
+   *
+   * Sensitive (S5 #1398): like {@link AgentConfig.configData} and
+   * {@link AgentSchedule.agentConfig} (both marked sensitive in #1540), these
+   * per-tenant override blobs routinely carry API keys/credentials. Exclude
+   * them from generated API/MCP responses and reject them as a `where` filter
+   * key. Server-side helpers (e.g. `serializeResolvedAgent`) still read the
+   * property directly, so the admin dashboard flow is unaffected.
+   */
+  @field({ type: 'json', nullable: true, sensitive: true })
   config: Record<string, any> | null = null;
 }
 
