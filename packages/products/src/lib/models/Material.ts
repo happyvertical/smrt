@@ -28,7 +28,28 @@ export interface MaterialOptions extends ProductOptions {
 // + auto-populate. Repeat the decorator here so material rows
 // participate in the same tenant isolation as their Product parent.
 @TenantScoped({ mode: 'optional' })
-@smrt()
+// SECURITY (S5 #1406): @smrt() generation config is ALSO registered per
+// concrete class and is NOT inherited from the STI parent. An empty
+// `@smrt()` here would resolve `getConfig('Material').api/.mcp` to
+// `undefined`, which the REST + MCP generators treat as "expose
+// EVERYTHING" — including `delete`, `create`, and `update` MCP tools —
+// even though the `Product` base deliberately restricts itself to CRUD
+// (no delete) over REST and read-only (`list`/`get`) over MCP. The
+// products `mcp.ts` generator enumerates the whole registry, so a
+// silently-wide-open Material surface ships the moment the package's own
+// server is generated. Re-declare the parent's restricted posture so the
+// STI child matches its base — and so consumers copying this canonical
+// subtype example (apparel `Style`/`Makeup`, automotive `Model`/`Trim`,
+// …) inherit the secure pattern instead of an accidental open surface.
+@smrt({
+  api: {
+    include: ['list', 'get', 'create', 'update'], // no delete, matches Product
+  },
+  mcp: {
+    include: ['list', 'get'], // read-only AI tools, matches Product
+  },
+  cli: true,
+})
 export class Material extends Product {
   override productType: ProductType = ProductType.MATERIAL;
 
