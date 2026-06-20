@@ -6,7 +6,9 @@ import {
   createDispatchBus,
   type DispatchBus,
   type DispatchMetadata,
+  type DispatchTenantScope,
   ObjectRegistry,
+  resolveDispatchTenantScope,
   type SmrtCollection,
   SmrtObject,
   type SmrtObjectOptions,
@@ -687,6 +689,18 @@ export abstract class Agent extends SmrtObject {
       await dispatch.unsubscribe(subscription.signalType, legacySubscriber);
     }
 
+    // Tenant isolation (S5 #1398): the bus's subscribe/unsubscribe calls above
+    // are tenant-scoped server-side, but this raw UPDATE reaches around the bus
+    // directly into `_smrt_dispatch`. Without a tenant predicate it would
+    // rewrite the target/processor of EVERY tenant's dispatch rows matching the
+    // legacy subscriber name, letting an agent under one tenant retarget another
+    // tenant's pending dispatches. Derive the active scope server-side (never
+    // from caller input) and restrict the UPDATE to the rows the bus would let
+    // this scope read/claim.
+    const [tenantClause, tenantParams] = buildDispatchTenantUpdatePredicate(
+      resolveDispatchTenantScope(),
+    );
+
     await this._db.query(
       `UPDATE _smrt_dispatch
        SET target_subscriber = CASE
@@ -697,13 +711,14 @@ export abstract class Agent extends SmrtObject {
              WHEN processed_by = ? THEN ?
              ELSE processed_by
            END
-       WHERE target_subscriber = ? OR processed_by = ?`,
+       WHERE (target_subscriber = ? OR processed_by = ?)${tenantClause}`,
       legacySubscriber,
       canonicalSubscriber,
       legacySubscriber,
       canonicalSubscriber,
       legacySubscriber,
       legacySubscriber,
+      ...tenantParams,
     );
   }
 
@@ -1134,4 +1149,31 @@ export abstract class Agent extends SmrtObject {
       return 0;
     });
   }
+}
+
+/**
+ * Build the SQL tenant predicate (clause + params) for a raw `_smrt_dispatch`
+ * write under the active {@link DispatchTenantScope} (S5 #1398).
+ *
+ * Mirrors core's `pushTenantPredicate` read/claim semantics so a raw migration
+ * UPDATE only ever touches the rows the DispatchBus would let this scope
+ * read/claim:
+ *
+ * - tenancy off (`enforced: false`) → no predicate (pre-tenancy behavior).
+ * - active tenant `T` → `(tenant_id = ? OR tenant_id IS NULL)` (own + global).
+ * - tenancy on, no active tenant → `tenant_id IS NULL` (fail-closed to global).
+ *
+ * The returned clause is prefixed with ` AND ` (or empty) so it can be appended
+ * directly to an existing `WHERE (...)`.
+ */
+function buildDispatchTenantUpdatePredicate(
+  scope: DispatchTenantScope,
+): [clause: string, params: string[]] {
+  if (!scope.enforced) {
+    return ['', []];
+  }
+  if (scope.tenantId !== null) {
+    return [' AND (tenant_id = ? OR tenant_id IS NULL)', [scope.tenantId]];
+  }
+  return [' AND tenant_id IS NULL', []];
 }

@@ -39,7 +39,19 @@ export interface SerializedAgent {
   permissions?: Record<string, boolean>;
   /** Agent icon from manifest */
   icon?: string;
-  /** Tenant-level config overrides */
+  /**
+   * Tenant-level config overrides.
+   *
+   * SECURITY (review #1552): this is the tenant's own override blob, carried
+   * verbatim into the client payload. The model field `TenantAgent.config` is
+   * `@field({ sensitive: true })`, which strips it from the generated CRUD
+   * api/mcp surfaces — but this hand-written admin serialization deliberately
+   * bypasses that for the authorized admin UI. Do NOT store raw secrets (API
+   * keys, tokens) in tenant config; reference them by id via
+   * `@happyvertical/smrt-secrets` so only an opaque handle reaches the browser.
+   * Dropping this field outright is a breaking change to a public API consumed
+   * downstream and is tracked as a separate follow-up.
+   */
   config?: Record<string, any>;
 }
 
