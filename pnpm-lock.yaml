@@ -299,6 +299,9 @@ importers:
       '@happyvertical/smrt-prompts':
         specifier: workspace:*
         version: link:../prompts
+      '@happyvertical/smrt-tenancy':
+        specifier: workspace:*
+        version: link:../tenancy
       '@happyvertical/smrt-types':
         specifier: workspace:*
         version: link:../types
@@ -306,9 +309,6 @@ importers:
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte
-      '@happyvertical/smrt-tenancy':
-        specifier: workspace:*
-        version: link:../tenancy
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

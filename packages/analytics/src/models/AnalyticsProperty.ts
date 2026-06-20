@@ -5,6 +5,7 @@
 
 import { field, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { resolvePrompt } from '@happyvertical/smrt-prompts';
+import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy';
 import {
   promptMessageOptions,
   smrtAnalyticsAnalyzePerformancePrompt,
@@ -26,6 +27,7 @@ import { AnalyticsPropertyStatus, AnalyticsProvider } from '../types/index.js';
  * });
  * ```
  */
+@TenantScoped({ mode: 'optional' })
 @smrt({
   tableStrategy: 'sti',
   api: { include: ['list', 'get', 'create', 'update'] },
@@ -33,6 +35,18 @@ import { AnalyticsPropertyStatus, AnalyticsProvider } from '../types/index.js';
   cli: true,
 })
 export class AnalyticsProperty extends SmrtObject {
+  /**
+   * Tenant ID for multi-tenancy isolation (#1410).
+   *
+   * Without tenant scoping the generated `list`/`get` API and any raw query
+   * return every tenant's properties — including the `@field({ sensitive })`
+   * `apiSecret` / `providerMetadata` credentials. `@TenantScoped` registers
+   * this class with the tenant interceptor so reads are auto-filtered and
+   * writes are bound to the active tenant context.
+   */
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
   /**
    * Internal name/identifier
    */
@@ -114,6 +128,7 @@ export class AnalyticsProperty extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.name !== undefined) this.name = options.name;
     if (options.displayName !== undefined)
       this.displayName = options.displayName;
@@ -209,13 +224,13 @@ export class AnalyticsProperty extends SmrtObject {
     // than silently falling through.
     const db = this.options.db ?? this.options.persistence;
 
-    // `AnalyticsProperty` does not declare a `tenantId` field (the model is
-    // intentionally not `@TenantScoped`), but consumers commonly invoke it
-    // inside a `withTenant(...)` block. We deliberately OMIT `tenantId` from
-    // the resolvePrompt options so that the resolver falls back to the
-    // AsyncLocalStorage tenancy context via `getTenantId()`. Passing
-    // `tenantId: null` explicitly would short-circuit that fallback and
-    // silently ignore tenant-specific prompt overrides.
+    // This model is `@TenantScoped` and declares a `tenantId` field, but we
+    // still deliberately OMIT `tenantId` from the resolvePrompt options so the
+    // resolver falls back to the AsyncLocalStorage tenancy context via
+    // `getTenantId()`. Passing `this.tenantId` (which may be null for
+    // tenant-agnostic rows) explicitly would short-circuit that fallback and
+    // silently ignore tenant-specific prompt overrides active in the
+    // surrounding `withTenant(...)` block.
     const resolvedPrompt = await resolvePrompt(
       smrtAnalyticsAnalyzePerformancePrompt.key,
       {
