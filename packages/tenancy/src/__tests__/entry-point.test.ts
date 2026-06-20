@@ -11,6 +11,7 @@ import {
   isSuperAdminBypass,
   isSystemContext,
   TenantContextError,
+  withSystemContext,
   withTenant,
 } from '../context';
 import { runTenantScopedEntryPoint } from '../entry-point';
@@ -100,6 +101,22 @@ describe('runTenantScopedEntryPoint (#1554)', () => {
       );
       expect(system).toBe(true);
       expect(observed).toBeUndefined();
+    });
+
+    it('honors an active system-context bypass instead of failing closed', async () => {
+      // runAsSystem() / migration scripts enter withSystemContext(); the gate
+      // must pass through (the interceptor honors the system marker) rather than
+      // throwing for lack of a tenant selector (codex P2).
+      let ran = false;
+      await withSystemContext(async () => {
+        await runTenantScopedEntryPoint(
+          { tenantScoped: true, surface: 'CLI' },
+          async () => {
+            ran = true;
+          },
+        );
+      });
+      expect(ran).toBe(true);
     });
 
     it('reuses an already-active context instead of failing', async () => {
