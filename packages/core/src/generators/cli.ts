@@ -7,12 +7,13 @@
  *
  * Security parity with the REST/MCP generators (#1540, #1547, #1554, #1556):
  * - **Mass-assignment guard** — create/update bodies are filtered through the
- *   `@smrt({ api: { writable: [...] } })` allowlist with server-managed and
- *   `@field({ readonly }) `/`sensitive` fields stripped ({@link CLIGenerator.applyWritablePolicy}).
+ *   `@smrt({ api: { writable: [...] } })` allowlist, dropping server-managed and
+ *   `@field({ readonly })` fields ({@link CLIGenerator.applyWritablePolicy}).
  * - **Exhaustive include** — an `include` list is the COMPLETE allowlist for the
  *   surface; custom methods are gated on `isPublic`.
- * - **Sensitive redaction** — command output is serialized through
- *   {@link CLIGenerator.toPublicData} so `@field({ sensitive })` values never print.
+ * - **Sensitive redaction** — command *output* is serialized through
+ *   {@link CLIGenerator.toPublicData} so `@field({ sensitive })` values never
+ *   print (input bodies are guarded by the writable allowlist above).
  * - **Fail-closed tenant context** — tenant-scoped reads/writes run inside the
  *   tenancy gate; without `--tenant <id>` / `--all-tenants` (and with tenancy
  *   enabled) the command throws rather than ranging across all tenants.

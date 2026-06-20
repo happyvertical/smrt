@@ -752,11 +752,14 @@ export class MCPGenerator {
    * a generated tool list, for the emitted runtime template's tenant gate
    * (#1554). Tool names are `objectname_action`.
    *
-   * Detection unions the tenancy registry (`isTenantScopedClass` — authoritative
-   * for `@TenantScoped`, matches the interceptor) with core's `isTenantScoped`
-   * (covers `@smrt({ tenantScoped })`). Tenancy is consulted via an optional
-   * dynamic import so this stays correct for apps that use either pattern, and
-   * a no-op for apps without tenancy.
+   * Detection uses ONLY tenancy's `isTenantScopedClass` (the authoritative
+   * source the interceptor uses; covers `@TenantScoped`), consulted via an
+   * optional dynamic import. We deliberately do NOT fall back to core's
+   * `ObjectRegistry.isTenantScoped`: a `@smrt({ tenantScoped })` model can exist
+   * in an app that has NOT installed `@happyvertical/smrt-tenancy`, and emitting
+   * the static `import { runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy'`
+   * gate for it would crash the generated server at import time. When tenancy is
+   * absent there is also nothing to enforce, so emitting no gate is correct.
    */
   private async tenantScopedObjectNames(tools: MCPTool[]): Promise<string[]> {
     let isTenantScopedClass: ((name: string) => boolean) | undefined;
@@ -769,6 +772,9 @@ export class MCPGenerator {
       isTenantScopedClass = undefined;
     }
 
+    // No tenancy package installed → no gate can run, emit none.
+    if (typeof isTenantScopedClass !== 'function') return [];
+
     const scoped = new Set<string>();
     for (const tool of tools) {
       const [objectName] = tool.name.split('_');
@@ -777,10 +783,7 @@ export class MCPGenerator {
       for (const [key, info] of ObjectRegistry.getAllClasses()) {
         const simpleName = info.name || key;
         if (simpleName.toLowerCase() === objectName.toLowerCase()) {
-          if (
-            ObjectRegistry.isTenantScoped(simpleName) ||
-            isTenantScopedClass?.(simpleName)
-          ) {
+          if (isTenantScopedClass(simpleName)) {
             scoped.add(simpleName.toLowerCase());
           }
           break;

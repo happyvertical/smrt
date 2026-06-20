@@ -30,6 +30,7 @@ import {
   TenantContextError,
   TenantIsolationError,
 } from './context.js';
+import { isTenancyEnabled, setTenancyEnabled } from './enabled-state.js';
 import { runTenantScopedEntryPoint } from './entry-point.js';
 import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
 
@@ -614,7 +615,9 @@ export function createTenantInterceptor(
 // Registration Functions
 // ─────────────────────────────────────────────────────────────────────────────
 
-let isEnabled = false;
+// The enabled flag lives in `enabled-state.ts` (a leaf module) so `entry-point.ts`
+// can read it without importing this module — breaking the otherwise-circular
+// interceptor ↔ entry-point dependency.
 let registeredInterceptor: CollectionInterceptor | null = null;
 
 /**
@@ -638,7 +641,7 @@ let registeredInterceptor: CollectionInterceptor | null = null;
  * ```
  */
 export function enableTenancy(options: TenantInterceptorOptions = {}): void {
-  if (isEnabled) {
+  if (isTenancyEnabled()) {
     logger.warn(
       '[smrt-tenancy] Tenancy is already enabled. Call disableTenancy() first to reconfigure.',
     );
@@ -659,7 +662,7 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // (tenancy disabled) those surfaces pass through unchanged.
   setTenantEntryPointRunner(runTenantScopedEntryPoint);
 
-  isEnabled = true;
+  setTenancyEnabled(true);
 }
 
 /**
@@ -685,7 +688,7 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
  * @see resetTenancy
  */
 export function disableTenancy(): void {
-  if (!isEnabled || !registeredInterceptor) {
+  if (!isTenancyEnabled() || !registeredInterceptor) {
     return;
   }
 
@@ -696,20 +699,17 @@ export function disableTenancy(): void {
   // Clear the CLI/MCP tenant gate so those surfaces pass through (#1554).
   setTenantEntryPointRunner(undefined);
   registeredInterceptor = null;
-  isEnabled = false;
+  setTenancyEnabled(false);
 }
 
 /**
  * Return `true` if tenant enforcement is currently active.
  *
- * Reflects whether `enableTenancy()` has been called and the interceptor
- * has not yet been removed by `disableTenancy()`.
- *
- * @returns `true` when the tenant interceptor is registered, `false` otherwise.
+ * Reflects whether `enableTenancy()` has been called and the interceptor has not
+ * yet been removed by `disableTenancy()`. Re-exported from `enabled-state.ts`
+ * (the shared leaf module) so the public API surface is unchanged.
  *
  * @see enableTenancy
  * @see disableTenancy
  */
-export function isTenancyEnabled(): boolean {
-  return isEnabled;
-}
+export { isTenancyEnabled };

@@ -16,11 +16,12 @@
 
 import {
   hasTenantContext,
+  isSystemContext,
   TenantContextError,
   withSystemContext,
   withTenant,
 } from './context.js';
-import { isTenancyEnabled } from './interceptor.js';
+import { isTenancyEnabled } from './enabled-state.js';
 import { isTenantScopedClass } from './registry.js';
 
 /**
@@ -76,7 +77,8 @@ export interface TenantEntryPointOptions {
  * be established.
  *
  * Resolution order (tenant-scoped models only):
- * 1. A context is already active (e.g. an upstream tenancy handle) → reuse it.
+ * 1. A tenant context is already active, or an explicit `withSystemContext()`
+ *    bypass is in effect (e.g. `runAsSystem()`, migrations) → run as-is.
  * 2. `allowCrossTenant` was explicitly set → run in system context. Checked
  *    before `tenantId` so an explicit cross-tenant opt-in wins over a default
  *    principal/host tenant rather than being silently scoped.
@@ -114,9 +116,12 @@ export async function runTenantScopedEntryPoint<T>(
         ? isTenantScopedClass(className)
         : false;
 
-  // Non-scoped models, or an already-established context, run as-is.
+  // Non-scoped models run as-is. So do calls already inside a tenant context
+  // (an upstream handle) or an explicit system-context bypass — the interceptor
+  // honors `withSystemContext()` (migrations, `runAsSystem()`), so the gate must
+  // not fail-close over it (hasTenantContext() is false for the system marker).
   if (!scoped) return fn();
-  if (hasTenantContext()) return fn();
+  if (hasTenantContext() || isSystemContext()) return fn();
 
   // Explicit operator opt-in to cross-tenant access. Checked before the tenant
   // selector so a deliberate `--all-tenants` / `allowCrossTenant` overrides a
