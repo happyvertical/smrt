@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.29.34
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - tenant-scope all persisted analytics models (S5 #1410) (analytics)
+  - tenant-scope legacy dispatch migration + mark TenantAgent.config sensitive (S5 #1398) (agents)
+  - redact secret-token values + proto-pollution guard in sanitizeConfig (S5 #1381) (config)
+  - restrict Material STI generation surface to match Product (S5 #1406) (products)
+  - block path-traversal write via convert() format (S5 #1408) (images)
+  - @happyvertical/smrt-scanner@0.29.34
+  - @happyvertical/smrt-config@0.29.34
+  - @happyvertical/smrt-types@0.29.34
+
 ## 0.29.33
 
 ### Patch Changes

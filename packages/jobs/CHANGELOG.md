@@ -1,5 +1,16 @@
 # @happyvertical/smrt-jobs
 
+## 0.29.34
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.29.34
+  - @happyvertical/smrt-tenancy@0.29.34
+  - @happyvertical/smrt-svelte@0.29.34
+  - @happyvertical/smrt-config@0.29.34
+  - @happyvertical/smrt-types@0.29.34
+
 ## 0.29.33
 
 ### Patch Changes
