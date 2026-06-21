@@ -278,6 +278,50 @@ describe('git:merge-json', () => {
       expect(result.b).toBe('value');
       expect(result.c).toBe('other');
     });
+
+    it('should not pollute prototypes from untrusted merge input', () => {
+      // The merge driver runs over untrusted incoming branch content
+      // (`%B` / "theirs"). A malicious data file could carry
+      // `__proto__`/`constructor`/`prototype` keys. JSON.parse is used to
+      // mimic how the handler reads the on-disk files so the keys arrive as
+      // own enumerable properties (the actual attacker payload shape).
+      const base = JSON.parse('{}');
+      const ours = JSON.parse('{"safe":1}');
+      const theirs = JSON.parse(
+        '{"__proto__":{"polluted":"yes"},"constructor":{"x":1},"prototype":{"y":2},"nested":{"__proto__":{"deep":true}}}',
+      );
+
+      const before = ({} as Record<string, unknown>).polluted;
+      const result = mergeObjects(base, ours, theirs);
+
+      // No global prototype pollution.
+      expect(({} as Record<string, unknown>).polluted).toBe(before);
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+      // Dangerous keys are dropped, not written into the merged output.
+      expect(Object.keys(result)).not.toContain('__proto__');
+      expect(Object.keys(result)).not.toContain('constructor');
+      expect(Object.keys(result)).not.toContain('prototype');
+      expect(Object.keys(result.nested ?? {})).not.toContain('__proto__');
+
+      // The result is a clean plain object with only the safe data preserved.
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+      expect(result.safe).toBe(1);
+      expect((result as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
+    it('sanitizes ours on the theirs-is-null early-return path (review #1560)', () => {
+      // When `theirs` is null/non-object, mergeObjects returns `ours` directly.
+      // `ours` can still carry prototype-polluting keys (both sides come from
+      // untracked branch content), so the early return must sanitize too.
+      const ours = JSON.parse('{"__proto__": {"polluted": true}, "safe": 1}');
+      const result = mergeObjects({}, ours, null) as Record<string, unknown>;
+
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+      expect(Object.keys(result)).not.toContain('__proto__');
+      expect((result as Record<string, unknown>).polluted).toBeUndefined();
+      expect(result.safe).toBe(1);
+    });
   });
 
   describe('merge-json integration scenarios', () => {
