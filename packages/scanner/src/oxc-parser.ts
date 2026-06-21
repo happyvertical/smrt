@@ -625,6 +625,33 @@ export function parseSource(
 // ============================================================================
 
 /**
+ * Property keys that must never be assigned onto a plain object built from
+ * parsed source. Assigning `obj['__proto__'] = value` mutates the object's
+ * prototype rather than adding an own property, which is a prototype-pollution
+ * vector. `constructor` / `prototype` are blocked for defense-in-depth.
+ *
+ * Scanner input is developer-authored source consumed at build time (trusted),
+ * so this is a hardening guard, not a fix for a remotely reachable bug: a class
+ * field, decorator-config property, or type alias literally named `__proto__`
+ * would otherwise silently corrupt the metadata object it is collected into.
+ */
+const FORBIDDEN_OBJECT_KEYS = new Set([
+  '__proto__',
+  'constructor',
+  'prototype',
+]);
+
+/**
+ * Whether a key is safe to assign as an own property on a plain object built
+ * from parsed AST. See {@link FORBIDDEN_OBJECT_KEYS}.
+ *
+ * @internal Exported for testing.
+ */
+export function isSafeObjectKey(key: string): boolean {
+  return !FORBIDDEN_OBJECT_KEYS.has(key);
+}
+
+/**
  * Extract import aliases from program body.
  * Maps local alias names to their original imported names.
  * e.g., `import { Performer as PerformerBase }` → Map { "PerformerBase" → "Performer" }
@@ -751,7 +778,7 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
       const resolved = node.typeAnnotation
         ? extractTypeName(node.typeAnnotation)
         : null;
-      if (name && resolved) aliases[name] = resolved;
+      if (name && resolved && isSafeObjectKey(name)) aliases[name] = resolved;
     }
     // Also check `export type X = ...` (ExportNamedDeclaration wrapping)
     if (
@@ -763,7 +790,7 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
       const resolved = decl.typeAnnotation
         ? extractTypeName(decl.typeAnnotation)
         : null;
-      if (name && resolved) aliases[name] = resolved;
+      if (name && resolved && isSafeObjectKey(name)) aliases[name] = resolved;
     }
 
     // Extract enum declarations as string union types
@@ -780,7 +807,7 @@ export function extractTypeAliases(body: Statement[]): Record<string, string> {
       const name = enumDecl.id?.name;
       // OXC wraps members in a TSEnumBody node: enumDecl.body.members
       const members = enumDecl.body?.members ?? enumDecl.members;
-      if (name && members?.length > 0) {
+      if (name && isSafeObjectKey(name) && members?.length > 0) {
         const values = members
           .map((m: any) => {
             if (m.initializer?.type === 'Literal') {
@@ -964,7 +991,10 @@ function extractObjectLiteral(
   for (const prop of node.properties) {
     if (prop.type === 'Property' && !prop.computed) {
       const key = getPropertyKey(prop.key);
-      if (key) {
+      // Skip prototype-pollution keys (__proto__/constructor/prototype) so a
+      // decorator-config property of that name cannot mutate the metadata
+      // object's prototype.
+      if (key && isSafeObjectKey(key)) {
         result[key] = extractValue(prop.value, sourceText);
       }
     }
@@ -1347,6 +1377,11 @@ function extractPropertyDefinition(
 
   const name = getPropertyKey(node.key);
   if (!name) return null;
+  // Reject prototype-polluting field names before they become manifest map keys
+  // (a field literally named `__proto__`/`constructor`/`prototype`). The
+  // type-alias/enum/object-literal extractors already gate on this; field
+  // definitions must too (review #1559).
+  if (!isSafeObjectKey(name)) return null;
 
   // Get type annotation
   const typeAnnotation = node.typeAnnotation

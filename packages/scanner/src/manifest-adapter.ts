@@ -5,6 +5,7 @@
  * Ensures compatibility with existing manifest consumers.
  */
 
+import { isSafeObjectKey } from './oxc-parser.js';
 import type {
   FieldTypeInference,
   InferredFieldType,
@@ -165,11 +166,54 @@ interface SmartObjectManifest {
 // ============================================================================
 
 /**
+ * Property keys that must never appear as own properties on a manifest object.
+ * Object literals authored as `{ constructor: ... }` or `{ prototype: ... }`
+ * produce real own keys; spreading such a parsed object into a manifest
+ * `_meta` / `staticProperties` entry (or assigning it under a class field name)
+ * would carry a prototype-pollution gadget into the emitted JSON.
+ */
+/**
+ * Recursively strip prototype-pollution keys (via the shared
+ * {@link isSafeObjectKey} guard — single source of truth with oxc-parser) from a
+ * value parsed out of source. Returns a new plain object/array; primitives and
+ * built-in objects pass through unchanged.
+ */
+function sanitizeParsed(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (value === null || typeof value !== 'object') return value;
+
+  const isArray = Array.isArray(value);
+  // Preserve built-ins (Date, RegExp, Map, …) intact. They carry no
+  // attacker-controlled own keys, and iterating their enumerable keys would
+  // silently turn e.g. `@field({ default: new Date() })` into `{}` (review #1559).
+  const proto = Object.getPrototypeOf(value);
+  if (!isArray && proto !== Object.prototype && proto !== null) return value;
+
+  // Cycle guard: a cyclic literal (e.g. an IIFE returning a self-referential
+  // object) would otherwise recurse forever and hang the build (review #1559).
+  if (seen.has(value as object)) return undefined;
+  seen.add(value as object);
+
+  if (isArray) {
+    return (value as unknown[]).map((item) => sanitizeParsed(item, seen));
+  }
+  const clean: Record<string, unknown> = {};
+  for (const key of Object.keys(value as Record<string, unknown>)) {
+    if (!isSafeObjectKey(key)) continue;
+    clean[key] = sanitizeParsed((value as Record<string, unknown>)[key], seen);
+  }
+  return clean;
+}
+
+/**
  * Parse a JavaScript literal (object or array) from source text.
  *
  * Uses the Function constructor to evaluate literal syntax at build time.
  * This is intentional — AST-based extraction can't handle computed keys,
  * template literals, or spread syntax that may appear in static initializers.
+ *
+ * The parsed result is run through {@link sanitizeParsed} to strip
+ * prototype-pollution keys (`__proto__` / `constructor` / `prototype`) before
+ * it is merged into a manifest object.
  *
  * WARNING: This executes the source text. It is only safe when scanning
  * your own trusted codebase at build time. Never run the scanner against
@@ -186,7 +230,10 @@ function parseLiteralInitializer(
     // This runs at build time only, on trusted source code from our own codebase
     // The existing pattern (unchanged) uses Function constructor for object literal parsing
     // eslint-disable-next-line no-new-func
-    return new Function(`return (${source})`)() as Record<string, any>;
+    const parsed = new Function(`return (${source})`)() as
+      | Record<string, any>
+      | any[];
+    return sanitizeParsed(parsed) as Record<string, any> | any[];
   } catch {
     return null;
   }
