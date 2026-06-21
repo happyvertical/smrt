@@ -54,7 +54,9 @@ export function normalizeEmail(email: string): string {
  * ```
  */
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update'] },
+  // #1400: read-only generated surface — User is auth identity (email/status/
+  // profileId), provisioned via OIDC/magic-link, not arbitrary authed POST/PUT.
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })

@@ -31,7 +31,9 @@ import { OverrideEffect } from '../types/index.js';
  * ```
  */
 @smrt({
-  api: { include: ['list', 'get', 'create', 'delete'] },
+  // #1400: read-only generated surface — RBAC/identity writes go through
+  // permission-gated services, not auth-only generated CRUD.
+  api: { include: ['list', 'get'] },
   cli: true,
 })
 export class MembershipOverride extends SmrtObject {

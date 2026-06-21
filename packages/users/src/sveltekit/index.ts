@@ -440,19 +440,28 @@ export async function destroySessionCookie(
 /**
  * Helper to switch tenant context for the current session.
  *
+ * Returns `false` without switching when there is no session, or — fail-closed
+ * (#1400) — when the session's user is not an active member of `tenantId`. The
+ * target tenant id is therefore safe to take straight from untrusted form data,
+ * but callers MUST honour the boolean result rather than assuming success.
+ *
  * @example
  * ```typescript
  * // +page.server.ts
  * import { switchSessionTenant } from '@happyvertical/smrt-users/sveltekit';
+ * import { fail } from '@sveltejs/kit';
  *
  * export const actions = {
  *   switchTenant: async (event) => {
  *     const data = await event.request.formData();
  *     const tenantId = data.get('tenantId') as string;
  *
- *     await switchSessionTenant(event, tenantId, {
+ *     const switched = await switchSessionTenant(event, tenantId, {
  *       db: { type: 'sqlite', url: 'app.db' }
  *     });
+ *     if (!switched) {
+ *       return fail(403, { error: 'Not a member of that tenant.' });
+ *     }
  *
  *     return { success: true };
  *   }

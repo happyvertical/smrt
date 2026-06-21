@@ -22,7 +22,9 @@ import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
  * ```
  */
 @smrt({
-  api: { include: ['list', 'get', 'create', 'delete'] },
+  // #1400: read-only generated surface — RBAC/identity writes go through
+  // permission-gated services, not auth-only generated CRUD.
+  api: { include: ['list', 'get'] },
   cli: true,
 })
 export class GroupRole extends SmrtObject {

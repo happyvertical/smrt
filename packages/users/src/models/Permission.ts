@@ -68,7 +68,9 @@ export function isValidPermissionSlug(slug: string): boolean {
  * ```
  */
 @smrt({
-  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+  // #1400: read-only generated surface — RBAC/identity writes go through
+  // permission-gated services, not auth-only generated CRUD.
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })

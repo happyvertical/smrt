@@ -49,6 +49,33 @@ await destroySessionCookie(event, { db });
 await switchSessionTenant(event, tenantId, { db });
 ```
 
+## Security (S5 #1400)
+
+- **Generated REST/MCP surface is READ-ONLY for every RBAC/identity model.**
+  User, Tenant, Group, Membership, MembershipOverride, Role, Permission,
+  RolePermission, GroupRole, GroupMember, and TenantPermissionOverride generate
+  `list`/`get` only — `create`/`update`/`delete` are intentionally NOT
+  generated. The merged `requireRouteAuth` gate (#1540) enforces *authentication*,
+  not *authorization*, and these models are not `@TenantScoped`, so an
+  auto-generated mutating route would let any authenticated user self-grant a
+  role/permission, flip a tenant's cascade flags, or change another user's auth
+  identity. Mutate them through the permission-gated services (`TenantService`,
+  collection helpers) or consumer-owned, permission-checked handlers. A
+  structural regression test (`security-audit-1400.test.ts`) enumerates the
+  registry to assert no authority model exposes a mutating op. (`cli` stays
+  enabled — local-operator surface, outside the network/agent threat model.)
+- **`switchTenant` is fail-closed.** `SessionService.switchTenant` /
+  `switchSessionTenant` verify the session's user has an ACTIVE membership in the
+  target tenant before writing `session.tenantId` (the tenant-isolation key for
+  every `@TenantScoped` query). A non-member switch returns `false` without
+  mutating the session; `null` clears the context and is always allowed. The
+  low-level `SessionCollection.setSessionTenant` is the UNGUARDED primitive —
+  never call it with an untrusted tenant id.
+- **OIDC `email_verified` is enforced.** `UserCollection.getOrCreateFromOidc`
+  refuses to provision a user when the IdP explicitly returns
+  `email_verified: false` (opt out with `{ allowUnverifiedEmail: true }`). An
+  absent claim makes no assertion and is not enforced.
+
 ## Gotchas
 
 - **seedSystemRoles() required**: call `RoleCollection.seedSystemRoles()` at app init (creates owner/admin/member/viewer)
