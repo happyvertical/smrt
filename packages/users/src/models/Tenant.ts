@@ -63,7 +63,10 @@ export const MAX_TENANT_HIERARCHY_DEPTH = 10;
  */
 @smrt({
   tableStrategy: 'sti',
-  api: { include: ['list', 'get', 'create', 'update'] },
+  // #1400: read-only generated surface — tenant create/update (incl. the
+  // cascadePermissions/inheritPermissions flags that drive the permission
+  // cascade) goes through TenantService, not auth-only generated CRUD.
+  api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: true,
 })

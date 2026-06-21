@@ -520,6 +520,18 @@ describe('SessionService', () => {
     const tenant2 = await tenants.create({ name: 'Org 2' });
     await tenant2.save();
 
+    // #1400: switchTenant fail-closes on missing membership, so the user must
+    // be an active member of the tenant they switch into.
+    const role = await roles.create({ name: 'Member' });
+    await role.save();
+    await (
+      await memberships.create({
+        userId: user.id!,
+        tenantId: tenant2.id!,
+        roleId: role.id!,
+      })
+    ).save();
+
     const sessionService = await SessionService.create({
       db: { type: 'sqlite', url: dbPath },
     });
@@ -531,7 +543,8 @@ describe('SessionService', () => {
     expect(context?.tenantId).toBe(tenant1.id);
 
     // Switch tenant
-    await sessionService.switchTenant(sessionId, tenant2.id!);
+    const switched = await sessionService.switchTenant(sessionId, tenant2.id!);
+    expect(switched).toBe(true);
 
     // Check new tenant
     context = await sessionService.loadSessionContext(sessionId);

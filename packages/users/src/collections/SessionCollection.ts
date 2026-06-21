@@ -169,33 +169,20 @@ export class SessionCollection extends SmrtCollection<Session> {
    * Returns the number of deleted sessions
    */
   async deleteExpired(): Promise<number> {
-    // Get all expired or revoked sessions
-    const now = new Date();
-    const sessions = await this.list({
-      where: {
-        'expiresAt <': now.toISOString(),
-      },
-    });
+    // #1400: a single atomic DELETE. The previous two-pass version listed
+    // expired-by-time and revoked sessions separately, so a session that was
+    // both got delete()'d twice — the second delete could throw and abort the
+    // cleanup job mid-run, leaving expired sessions un-reaped. One statement
+    // also avoids hydrating every row just to delete it.
+    const now = new Date().toISOString();
+    const { rowCount } = await this.db.query(
+      `DELETE FROM ${this.tableName}
+       WHERE expires_at < ? OR status = ?`,
+      now,
+      SessionStatus.REVOKED,
+    );
 
-    let count = 0;
-    for (const session of sessions) {
-      await session.delete();
-      count++;
-    }
-
-    // Also delete revoked sessions that are old
-    const revokedSessions = await this.list({
-      where: {
-        status: SessionStatus.REVOKED,
-      },
-    });
-
-    for (const session of revokedSessions) {
-      await session.delete();
-      count++;
-    }
-
-    return count;
+    return rowCount ?? 0;
   }
 
   /**
@@ -207,7 +194,13 @@ export class SessionCollection extends SmrtCollection<Session> {
   }
 
   /**
-   * Update tenant context for a session
+   * Update tenant context for a session (low-level primitive).
+   *
+   * SECURITY (#1400): this does NOT verify that the session's user is a member
+   * of `tenantId` — it is the unguarded storage primitive. Application/route
+   * code must go through {@link SessionService.switchTenant}, which fail-closes
+   * on a missing/inactive membership before calling this. Calling it directly
+   * with an untrusted `tenantId` reintroduces the cross-tenant access bug.
    */
   async setSessionTenant(
     sessionId: string,

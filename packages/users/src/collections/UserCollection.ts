@@ -46,6 +46,14 @@ export interface OidcIdentityResult {
 export interface GetOrCreateFromOidcOptions {
   /** If false, skip recording login timestamp (default: true) */
   recordLogin?: boolean;
+  /**
+   * Provision a user even when the IdP explicitly reported the email as
+   * unverified (`email_verified: false`). Default false (#1400): refuse to
+   * create/resolve a user from a known-unverified address. Has no effect when
+   * the claim is absent — an IdP that omits `email_verified` makes no
+   * assertion, so it cannot be enforced.
+   */
+  allowUnverifiedEmail?: boolean;
 }
 
 /**
@@ -173,6 +181,16 @@ export class UserCollection extends SmrtCollection<User> {
     if (!claims.email) {
       throw new Error(
         'OIDC claims missing required "email" for user creation.',
+      );
+    }
+
+    // #1400: refuse an email the IdP explicitly marked unverified. Only an
+    // explicit `email_verified === false` hard-fails; an absent claim makes no
+    // assertion and cannot be enforced. Opt out with allowUnverifiedEmail.
+    const allowUnverified = options?.allowUnverifiedEmail === true;
+    if (claims.email_verified === false && !allowUnverified) {
+      throw new Error(
+        'OIDC claims report an unverified email; refusing to provision a user.',
       );
     }
 

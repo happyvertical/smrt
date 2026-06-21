@@ -31,7 +31,11 @@ import { OverrideEffect } from '../types/index.js';
  * ```
  */
 @smrt({
-  api: { include: ['list', 'get', 'create', 'delete'] },
+  // #1400: read-only generated REST + MCP surface — RBAC/identity writes go
+  // through permission-gated services, not auth-only generated CRUD. mcp must
+  // be explicit: an omitted mcp config generates the FULL tool surface.
+  api: { include: ['list', 'get'] },
+  mcp: { include: ['list', 'get'] },
   cli: true,
 })
 export class MembershipOverride extends SmrtObject {

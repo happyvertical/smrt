@@ -4,6 +4,7 @@
  */
 
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import { MembershipCollection } from '../collections/MembershipCollection.js';
 import {
   type CreateSessionOptions,
   SessionCollection,
@@ -70,6 +71,7 @@ export class SessionService {
   private options: SessionServiceOptions;
   private sessionCollection!: SessionCollection;
   private userCollection!: UserCollection;
+  private membershipCollection!: MembershipCollection;
   private permissionResolver!: PermissionResolver;
   private defaultTTL: number;
   private autoExtend: boolean;
@@ -88,6 +90,9 @@ export class SessionService {
       this.options,
     );
     this.userCollection = await (UserCollection as any).create(this.options);
+    this.membershipCollection = await (MembershipCollection as any).create(
+      this.options,
+    );
     this.permissionResolver = await PermissionResolver.create(this.options);
   }
 
@@ -185,12 +190,33 @@ export class SessionService {
   }
 
   /**
-   * Switch tenant context for a session
+   * Switch tenant context for a session.
+   *
+   * A session's `tenantId` is the tenant-isolation key for every `@TenantScoped`
+   * query, so it must never be set to a tenant the session's user is not an
+   * active member of — otherwise a caller could read/write another tenant's data
+   * by feeding an arbitrary id here (e.g. straight from untrusted form data).
+   * Fail-closed (#1400): returns `false` without switching when the session is
+   * unknown or the user has no active membership in the target tenant. Passing
+   * `null` clears the tenant context and is always allowed.
    */
   async switchTenant(
     sessionId: string,
     tenantId: string | null,
   ): Promise<boolean> {
+    const session = await this.sessionCollection.findValidSession(sessionId);
+    if (!session) return false;
+
+    if (tenantId !== null) {
+      const membership = await this.membershipCollection.findByUserAndTenant(
+        session.userId,
+        tenantId,
+      );
+      if (!membership || !membership.isActive()) {
+        return false;
+      }
+    }
+
     return this.sessionCollection.setSessionTenant(sessionId, tenantId);
   }
 
