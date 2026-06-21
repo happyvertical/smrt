@@ -16,6 +16,11 @@ import {
   loadPersistedContentGovernanceDefinitions,
   resolveEffectiveContentGovernance,
 } from './content-governance';
+import {
+  type ResolveHostname,
+  redactUrlCredentials,
+  resolveSafeFinalUrl,
+} from './safe-remote-url';
 import { serializeContent, serializeFact } from './serialization';
 import type {
   ThumbnailOptions,
@@ -278,27 +283,47 @@ export class Contents extends SmrtCollection<Content> {
     url: string;
     mirrorDir?: string;
     context?: string;
+    /**
+     * Skip the SSRF host-blocking checks. Only set this for fully trusted,
+     * operator-supplied URLs (e.g. local development), never for URLs that
+     * originate from end users or external content.
+     */
+    allowPrivateNetworkHosts?: boolean;
+    /** Injectable DNS resolver (primarily for tests). */
+    resolveHostname?: ResolveHostname;
+    /** Injectable fetch for redirect resolution (primarily for tests). */
+    fetchImpl?: typeof fetch;
   }) {
     if (!options.url) {
       throw new Error('No URL provided');
     }
+    // Validate the URL AND block private/loopback/link-local/metadata hosts
+    // before fetching — `mirror()` fetches an arbitrary caller-supplied URL,
+    // which is a classic SSRF sink (e.g. http://169.254.169.254/ metadata).
+    // `fetchDocument` follows redirects on its own, so we resolve the redirect
+    // chain ourselves first — re-validating every hop — and hand it the
+    // already-validated terminal URL, closing the public-host-30x-to-internal
+    // bypass (S5 #1388 / review #1562).
     let url: URL;
     try {
-      // const url = new URL(options.url);
-      // const existing = await this.db
-      //   .oO`SELECT * FROM contents WHERE url = ${options.url}`;
-      url = new URL(options.url); // validate url
+      url = await resolveSafeFinalUrl(options.url, {
+        allowPrivateNetworkHosts: options.allowPrivateNetworkHosts,
+        resolveHostname: options.resolveHostname,
+        fetchImpl: options.fetchImpl,
+      });
     } catch (error) {
-      logger.error('Invalid URL provided', { error, url: options.url });
-      throw new Error(`Invalid URL provided: ${options.url}`);
+      // Never echo the raw URL — it may carry userinfo credentials (review #1562).
+      const safeUrl = redactUrlCredentials(options.url);
+      logger.error('Refusing to mirror unsafe URL', { error, url: safeUrl });
+      throw new Error(`Invalid URL provided: ${safeUrl}`);
     }
     const existing = await this.get({ url: options.url });
     if (existing) {
       return existing;
     }
 
-    // Fetch and process the document using @happyvertical/documents
-    const doc = await fetchDocument(options.url, {
+    // Fetch and process the document via the already-validated terminal URL.
+    const doc = await fetchDocument(url.toString(), {
       cacheDir: options?.mirrorDir,
     });
 
@@ -376,6 +401,22 @@ export class Contents extends SmrtCollection<Content> {
     ].filter(Boolean); // remove empty strings
 
     const outputFile = path.join(...(pathParts as string[]));
+
+    // `context` and `slug` are persisted, caller-influenced fields. Without a
+    // guard, a value like `../../etc/cron.d/x` escapes `contentDir` and lets an
+    // export overwrite arbitrary files (path traversal). Confirm the joined
+    // path still lives under the resolved content directory (S5 #1388).
+    const resolvedDir = path.resolve(contentDir);
+    const resolvedFile = path.resolve(outputFile);
+    if (
+      resolvedFile !== resolvedDir &&
+      !resolvedFile.startsWith(resolvedDir + path.sep)
+    ) {
+      throw new Error(
+        'Refusing to write content file outside of the content directory',
+      );
+    }
+
     await ensureDirectoryExists(path.dirname(outputFile));
     await writeFile(outputFile, output);
   }

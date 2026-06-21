@@ -159,6 +159,88 @@ describe('syncContentFeedSource', () => {
     expect(source.lastError).toContain('public network address');
   });
 
+  it('re-validates redirect targets and blocks a redirect to a private host (S5 #1388)', async () => {
+    const source = createSource();
+    // The initial public host passes validation, then 302s to a loopback
+    // address. With default redirect-following this SSRF would succeed; the
+    // manual-redirect guard must re-run the host check on the Location target.
+    const fetch = vi.fn(async () => {
+      return new Response(null, {
+        status: 302,
+        headers: { location: 'http://127.0.0.1:6379/internal.xml' },
+      });
+    });
+
+    await expect(
+      syncContentFeedSource(source, {
+        fetch,
+        now: () => FIXED_NOW,
+        // First (public) host resolves public; the redirect target is a literal
+        // IP, so it never hits the resolver and is rejected by isBlockedAddress.
+        resolveHostname: PUBLIC_RESOLVER,
+      }),
+    ).rejects.toThrow('public network address');
+
+    // Only the first hop was fetched; the redirect target was rejected before
+    // any request to the internal host.
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(source.status).toBe('error');
+  });
+
+  it('follows a redirect to another public host (S5 #1388)', async () => {
+    const source = createSource();
+    const resolveHostname = vi.fn(async () => [
+      { address: '93.184.216.34', family: 4 },
+    ]);
+    const fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 301,
+          headers: { location: 'https://mirror.example.test/rss.xml' },
+        }),
+      )
+      .mockResolvedValueOnce(new Response(createRssFeed(), { status: 200 }));
+    vi.spyOn(Contents, 'create').mockResolvedValue({
+      query: vi.fn(async () => []),
+    } as unknown as Contents);
+
+    const result = await syncContentFeedSource(source, {
+      fetch,
+      now: () => FIXED_NOW,
+      resolveHostname,
+    });
+
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][0].toString()).toBe(
+      'https://mirror.example.test/rss.xml',
+    );
+    expect(result.fetched).toBe(true);
+  });
+
+  it('rejects feeds that exceed the redirect limit (S5 #1388)', async () => {
+    const source = createSource();
+    const resolveHostname = vi.fn(async () => [
+      { address: '93.184.216.34', family: 4 },
+    ]);
+    let hop = 0;
+    const fetch = vi.fn(async () => {
+      hop += 1;
+      return new Response(null, {
+        status: 302,
+        headers: { location: `https://hop-${hop}.example.test/rss.xml` },
+      });
+    });
+
+    await expect(
+      syncContentFeedSource(source, {
+        fetch,
+        now: () => FIXED_NOW,
+        resolveHostname,
+      }),
+    ).rejects.toThrow('maximum number of redirects');
+  });
+
   it('caps feed response bodies before parsing', async () => {
     const source = createSource();
     const fetch = vi.fn(
