@@ -17,12 +17,11 @@ import { createSmrtServer } from './index.js';
 import type { SmrtServerOptions } from './types.js';
 
 // SmrtServer is not re-exported from runtime/index, so build it via the factory.
-// handleRequest is private; we reach it through a typed cast — a test-only seam,
-// since there is no public in-process dispatch entry point.
+// dispatch() is the supported public in-process entry point (no socket bound).
 function makeServer(options?: SmrtServerOptions) {
   const server = createSmrtServer(options);
   const dispatch = (request: Request): Promise<Response> =>
-    (server as any).handleRequest(request);
+    server.dispatch(request);
   return { server, dispatch };
 }
 
