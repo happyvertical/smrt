@@ -1,5 +1,19 @@
 # @happyvertical/smrt-core
 
+## 0.29.37
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - close XSS sanitizer bypass + SSRF/path-traversal in fetch paths (S5 #1388) (content)
+  - patch vulnerable tar + proto-pollution guard in merge-json (S5 #1386) (cli)
+  - guard manifest extraction against prototype pollution (S5 #1384) (scanner)
+  - lock RBAC/identity CRUD (REST+MCP) read-only + fail-close tenant switch (S5 #1400) (users)
+  - @happyvertical/smrt-scanner@0.29.37
+  - @happyvertical/smrt-config@0.29.37
+  - @happyvertical/smrt-types@0.29.37
+
 ## 0.29.36
 
 ### Patch Changes
