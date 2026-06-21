@@ -20,10 +20,34 @@ export const DEFAULT_CONTENT_BODY_FORMAT: ContentBodyFormat = 'html';
 
 const HTML_TAG_PATTERN =
   /<\/?(?:article|aside|blockquote|br|div|figure|figcaption|h[1-6]|hr|img|li|ol|p|pre|section|span|strong|em|b|i|u|a|ul|table|tbody|td|th|thead|tr)(?:\s[^>]*)?>/i;
-const URL_ATTRIBUTE_PATTERN =
-  /\s+(href|src|xlink:href|formaction|action|poster)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi;
-const SRCSET_ATTRIBUTE_PATTERN =
-  /\s+srcset\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+// HTML attribute boundary: the HTML5 tree builder starts a new attribute after
+// whitespace, `/`, OR the closing quote/backtick of the previous value. A naive
+// `\s+`-only boundary lets `src="x"onerror="..."` survive sanitization because
+// `onerror` is glued to the preceding `"` — the browser still parses it as a
+// separate (executing) attribute. Match either runs of whitespace/`/`
+// (captured in group 1 and consumed) OR a non-consuming lookbehind for a
+// quote/backtick (group 1 undefined; the char is the previous value's own
+// closing delimiter and must stay). `reemitSeparator()` turns the captured
+// group back into a single separating space when one was consumed (S5 #1388).
+const ATTR_BOUNDARY = '(?:([\\s/]+)|(?<=["\'`]))';
+
+// Re-emit an attribute separator after a removed/rewritten attribute. When the
+// boundary consumed whitespace/`/` (group 1 present), emit one space so the
+// rebuilt attribute doesn't glue onto the tag name or previous attribute. When
+// the boundary was a non-consumed quote/backtick (group 1 undefined), that
+// delimiter already separates the attributes, so emit nothing.
+function reemitSeparator(consumed: string | undefined): string {
+  return consumed ? ' ' : '';
+}
+
+const URL_ATTRIBUTE_PATTERN = new RegExp(
+  `${ATTR_BOUNDARY}(href|src|xlink:href|formaction|action|poster)\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
+  'gi',
+);
+const SRCSET_ATTRIBUTE_PATTERN = new RegExp(
+  `${ATTR_BOUNDARY}srcset\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
+  'gi',
+);
 
 const BLOCK_TAGS = [
   'address',
@@ -231,31 +255,47 @@ export function sanitizeHtml(value: string): string {
     /<\s*(script|style|iframe|object|embed|link|meta|base|svg|math)\b[^>]*\/?>/gi,
     '',
   );
+  // Drop event handlers (`onclick`, etc.) and internal editor markers entirely.
+  // A consumed whitespace/`/` separator and a non-consumed quote boundary both
+  // collapse to nothing: the attribute that follows (if any) keeps its own
+  // leading boundary, so removal never needs to leave a separator behind.
   html = html.replace(
-    /(?:\s|\/)+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi,
+    new RegExp(
+      `${ATTR_BOUNDARY}on[a-z]+\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]*)`,
+      'gi',
+    ),
     '',
   );
   html = html.replace(
-    /\s+data-smrt-(?:selected|moving|resizing)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi,
+    new RegExp(
+      `${ATTR_BOUNDARY}data-smrt-(?:selected|moving|resizing)\\s*=\\s*(?:"[^"]*"|'[^']*'|[^\\s>]*)`,
+      'gi',
+    ),
     '',
   );
   html = html.replace(
-    /\s+style\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi,
+    new RegExp(
+      `${ATTR_BOUNDARY}style\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`,
+      'gi',
+    ),
     (
       _match,
+      separator: string | undefined,
       _raw: string,
       doubleValue = '',
       singleValue = '',
       bareValue = '',
     ) => {
       const safeStyle = sanitizeStyle(doubleValue || singleValue || bareValue);
-      return safeStyle ? ` style="${escapeAttribute(safeStyle)}"` : '';
+      const sep = reemitSeparator(separator);
+      return safeStyle ? `${sep}style="${escapeAttribute(safeStyle)}"` : sep;
     },
   );
   html = html.replace(
     SRCSET_ATTRIBUTE_PATTERN,
     (
       _match,
+      separator: string | undefined,
       _raw: string,
       doubleValue = '',
       singleValue = '',
@@ -264,13 +304,15 @@ export function sanitizeHtml(value: string): string {
       const safeSrcset = sanitizeSrcset(
         doubleValue || singleValue || bareValue,
       );
-      return safeSrcset ? ` srcset="${escapeAttribute(safeSrcset)}"` : '';
+      const sep = reemitSeparator(separator);
+      return safeSrcset ? `${sep}srcset="${escapeAttribute(safeSrcset)}"` : sep;
     },
   );
   html = html.replace(
     URL_ATTRIBUTE_PATTERN,
     (
       _match,
+      separator: string | undefined,
       name: string,
       _raw: string,
       doubleValue = '',
@@ -279,7 +321,7 @@ export function sanitizeHtml(value: string): string {
     ) => {
       const quote = doubleValue ? '"' : singleValue ? "'" : '"';
       const rawValue = doubleValue || singleValue || bareValue;
-      return ` ${name}=${quote}${escapeAttribute(sanitizeUrl(rawValue))}${quote}`;
+      return `${reemitSeparator(separator)}${name}=${quote}${escapeAttribute(sanitizeUrl(rawValue))}${quote}`;
     },
   );
 

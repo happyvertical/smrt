@@ -100,8 +100,19 @@ describe('Contents collection helpers', () => {
     const existing = { id: 'existing-content' };
     vi.spyOn(contents, 'get').mockResolvedValueOnce(existing as any);
 
+    const publicResolver = vi.fn(async () => [
+      { address: '93.184.216.34', family: 4 },
+    ]);
+    // No-redirect fetch so resolveSafeFinalUrl resolves to the input URL
+    // without touching the network.
+    const okFetch = vi.fn(async () => new Response(null, { status: 200 }));
+
     await expect(
-      contents.mirror({ url: 'https://example.com/already-there' }),
+      contents.mirror({
+        url: 'https://example.com/already-there',
+        resolveHostname: publicResolver,
+        fetchImpl: okFetch as unknown as typeof fetch,
+      }),
     ).resolves.toBe(existing);
 
     vi.spyOn(contents, 'get').mockResolvedValueOnce(null as any);
@@ -122,6 +133,8 @@ describe('Contents collection helpers', () => {
     const mirrored = await contents.mirror({
       url: 'https://example.com/news/bridge-update.html',
       context: 'news',
+      resolveHostname: publicResolver,
+      fetchImpl: okFetch as unknown as typeof fetch,
     });
 
     expect(mirrored).toMatchObject({
@@ -136,6 +149,112 @@ describe('Contents collection helpers', () => {
       'Invalid URL provided',
     );
     expect(mockLogger.error).toHaveBeenCalled();
+  });
+
+  it('refuses to mirror SSRF targets (loopback/metadata) (S5 #1388)', async () => {
+    const contents = new Contents({} as any);
+    const getSpy = vi.spyOn(contents, 'get');
+    vi.mocked(fetchDocument).mockReset();
+
+    // Literal loopback / cloud-metadata IPs never reach the resolver and must
+    // be rejected before any document fetch.
+    await expect(
+      contents.mirror({ url: 'http://127.0.0.1:6379/internal' }),
+    ).rejects.toThrow('Invalid URL provided');
+    await expect(
+      contents.mirror({ url: 'http://169.254.169.254/latest/meta-data/' }),
+    ).rejects.toThrow('Invalid URL provided');
+
+    // A public hostname that resolves to a private IP is also blocked.
+    await expect(
+      contents.mirror({
+        url: 'https://attacker.example/feed',
+        resolveHostname: async () => [{ address: '10.0.0.5', family: 4 }],
+      }),
+    ).rejects.toThrow('Invalid URL provided');
+
+    // Non-http(s) schemes are rejected too.
+    await expect(
+      contents.mirror({ url: 'file:///etc/passwd' }),
+    ).rejects.toThrow('Invalid URL provided');
+
+    expect(vi.mocked(fetchDocument)).not.toHaveBeenCalled();
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('blocks a public URL that 30x-redirects to an internal host (review #1562)', async () => {
+    const contents = new Contents({} as any);
+    vi.mocked(fetchDocument).mockReset();
+    const getSpy = vi.spyOn(contents, 'get');
+    // Initial host is public, but the server redirects to cloud metadata.
+    const redirectFetch = vi.fn(
+      async () =>
+        new Response(null, {
+          status: 302,
+          headers: { location: 'http://169.254.169.254/latest/meta-data/' },
+        }),
+    );
+
+    await expect(
+      contents.mirror({
+        url: 'https://feed.example/post',
+        resolveHostname: async () => [{ address: '93.184.216.34', family: 4 }],
+        fetchImpl: redirectFetch as unknown as typeof fetch,
+      }),
+    ).rejects.toThrow('Invalid URL provided');
+
+    expect(vi.mocked(fetchDocument)).not.toHaveBeenCalled();
+    expect(getSpy).not.toHaveBeenCalled();
+  });
+
+  it('redacts userinfo credentials from mirror errors/logs (review #1562)', async () => {
+    const contents = new Contents({} as any);
+    mockLogger.error.mockClear();
+
+    let err: Error | undefined;
+    try {
+      await contents.mirror({ url: 'https://user:s3cr3t@example.com/x' });
+    } catch (e) {
+      err = e as Error;
+    }
+    expect(err?.message).toContain('Invalid URL provided');
+    // The password must not appear in the thrown message or the log payload.
+    expect(err?.message).not.toContain('s3cr3t');
+    const loggedUrl =
+      (mockLogger.error.mock.calls.at(-1)?.[1] as { url?: string })?.url ?? '';
+    expect(loggedUrl).not.toContain('s3cr3t');
+  });
+
+  it('refuses to write content files outside the content directory (S5 #1388)', async () => {
+    const contents = new Contents({} as any);
+
+    // A traversal-bearing slug must not let an export escape contentDir.
+    await expect(
+      contents.writeContentFile({
+        content: {
+          title: 'Pwn',
+          slug: '../../../../tmp/evil',
+          context: 'news',
+          body: 'malicious',
+        } as any,
+        contentDir: '/tmp/content',
+      }),
+    ).rejects.toThrow('outside of the content directory');
+
+    // A traversal-bearing context is equally rejected.
+    await expect(
+      contents.writeContentFile({
+        content: {
+          title: 'Pwn',
+          slug: 'ok',
+          context: '../../../../etc/cron.d',
+          body: 'malicious',
+        } as any,
+        contentDir: '/tmp/content',
+      }),
+    ).rejects.toThrow('outside of the content directory');
+
+    expect(vi.mocked(writeFile)).not.toHaveBeenCalled();
   });
 
   it('writes content files, normalizes plain text, and syncs article directories', async () => {
