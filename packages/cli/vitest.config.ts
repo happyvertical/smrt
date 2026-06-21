@@ -26,6 +26,19 @@ export default defineConfig({
       : process.env.CI
         ? 2
         : 0,
+    // Coverage scope: cli does not use smrtVitestPlugin (which supplies this for
+    // other packages), and its tests self-import the built `@happyvertical/smrt-cli`
+    // (→ dist/), so without an explicit scope the v8 provider counted the dist
+    // bundle and reported a misleadingly low package coverage. Restrict to source.
+    coverage: {
+      include: ['src/**/*.ts'],
+      exclude: [
+        '**/*.test.ts',
+        '**/*.spec.ts',
+        '**/__tests__/**',
+        '**/*.d.ts',
+      ],
+    },
   },
   resolve: {
     alias: [
