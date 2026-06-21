@@ -1,5 +1,17 @@
 # @happyvertical/smrt-core
 
+## 0.29.36
+
+### Patch Changes
+
+- ### Bug Fixes
+
+  - address Copilot review on #1558 (agents)
+  - secret-sanitize TenantAgent config in serialized client payload (S5 #1553) (agents)
+  - @happyvertical/smrt-scanner@0.29.36
+  - @happyvertical/smrt-config@0.29.36
+  - @happyvertical/smrt-types@0.29.36
+
 ## 0.29.35
 
 ### Patch Changes
