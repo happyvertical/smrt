@@ -8,6 +8,8 @@
  * This server integrates with Claude Code to help developers write correct SMRT code.
  */
 
+import { realpathSync } from 'node:fs';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -36,8 +38,11 @@ const DEBUG = process.env.DEBUG === 'true';
 
 /**
  * MCP tool definitions with JSON schemas
+ *
+ * Exported so tests can assert the advertised tool surface without spawning the
+ * stdio server.
  */
-const TOOLS = [
+export const TOOLS = [
   {
     name: 'generate-smrt-class',
     description:
@@ -366,8 +371,11 @@ const TOOLS = [
 
 /**
  * Route tool calls to appropriate handler functions
+ *
+ * Exported so the routing switch can be unit-tested in-process (the stdio
+ * entrypoint guard below keeps importing this module side-effect free).
  */
-async function handleToolCall(name: string, args: any): Promise<any> {
+export async function handleToolCall(name: string, args: any): Promise<any> {
   switch (name) {
     case 'generate-smrt-class':
       return generateSmrtClass(args);
@@ -524,8 +532,25 @@ async function main() {
   }
 }
 
-// Start the server
-main().catch((error) => {
-  console.error('[SMRT Advisor] Unhandled error:', error);
-  process.exit(1);
-});
+/**
+ * True only when this module is the process entrypoint (e.g. launched directly
+ * via `node`/`tsx`). Mirrors the guard in packages/smrt-dev-mcp/src/index.ts so
+ * importing this module for testing does not auto-start the stdio server.
+ */
+function isEntrypoint(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry);
+  } catch {
+    return import.meta.url === pathToFileURL(entry).href;
+  }
+}
+
+// Start the server only when run as the entrypoint.
+if (isEntrypoint()) {
+  main().catch((error) => {
+    console.error('[SMRT Advisor] Unhandled error:', error);
+    process.exit(1);
+  });
+}
