@@ -105,7 +105,8 @@ See [§11](#11-forbidden-artifacts) for the full list.
     "@happyvertical/ai": "catalog:"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   }
 }
 ```
@@ -128,7 +129,7 @@ See [§11](#11-forbidden-artifacts) for the full list.
   - Svelte peer always `svelte: ^5.18.0` for packages shipping UI
   - Optional peers explicitly marked in `peerDependenciesMeta`
   - Required peers (e.g. `users` requires `profiles`) documented in `AGENTS.md`
-- **`publishConfig.registry`** always `https://npm.pkg.github.com` for published packages; templates may opt out
+- **`publishConfig.registry`** always `https://registry.npmjs.org` for published packages, with `access: "public"`
 
 ---
 

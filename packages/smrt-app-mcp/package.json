@@ -34,7 +34,7 @@
     "verify:pack": "node ../../scripts/verify-package-types-exports.js ."
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com",
+    "registry": "https://registry.npmjs.org",
     "access": "public"
   },
   "repository": {

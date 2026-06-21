@@ -35,5 +35,9 @@
   "peerDependencies": {
     "@happyvertical/smrt-core": "^0.29.1",
     "@happyvertical/smrt-config": "^0.29.1"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
   }
 }

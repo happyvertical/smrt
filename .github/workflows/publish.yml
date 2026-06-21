@@ -22,7 +22,7 @@ permissions:
   contents: write
   issues: write
   pull-requests: write
-  packages: write
+  packages: read
   id-token: write
   pages: write
 
@@ -56,8 +56,9 @@ jobs:
           node-version: '24'
           install-deps: 'true'
           setup-playwright: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Prepare versioned release workspace
         id: prepare
@@ -65,7 +66,7 @@ jobs:
           CI: true
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "🚀 Preparing Changesets release..."
 
@@ -226,14 +227,15 @@ jobs:
           node-version: '24'
           install-deps: 'true'
           setup-playwright: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate publish pack shard
         env:
           CI: true
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
           PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
         run: node scripts/validate-publish-packages.js
@@ -281,14 +283,24 @@ jobs:
       - name: Extract versioned workspace and build outputs
         run: tar -xf release-artifacts/publish-release-workspace.tar
 
+      - name: Verify npm publish token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "${NPM_TOKEN:-}" ]; then
+            echo "❌ NPM_TOKEN secret is required to publish to registry.npmjs.org"
+            exit 1
+          fi
+
       - name: Setup Environment
         uses: ./.github/actions/setup-environment
         with:
           node-version: '24'
           install-deps: 'true'
           setup-playwright: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Configure Git
         run: |
@@ -300,8 +312,8 @@ jobs:
         env:
           CI: true
           GITHUB_TOKEN: ${{ steps.generate_token.outputs.token }}
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
           RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
         run: |
@@ -378,7 +390,7 @@ jobs:
 
           RELEASE_NOTES="## Published Packages"$'\n\n'
           RELEASE_NOTES="${RELEASE_NOTES}All packages published to"
-          RELEASE_NOTES="${RELEASE_NOTES} GitHub Packages"
+          RELEASE_NOTES="${RELEASE_NOTES} npmjs.org"
           RELEASE_NOTES="${RELEASE_NOTES} at version $RELEASE_VERSION."
           RELEASE_NOTES="${RELEASE_NOTES}"$'\n\n'"Full Changelog: "
           RELEASE_NOTES="${RELEASE_NOTES}https://github.com/"
@@ -418,8 +430,7 @@ jobs:
           node-version: '24'
           install-deps: 'false'
           setup-playwright: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://registry.npmjs.org'
 
       - name: Install docs dependencies
         run: pnpm --dir docs install --frozen-lockfile --ignore-workspace
