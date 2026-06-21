@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.29.38
+
+### Patch Changes
+
+- ### Other Changes
+
+  - test: raise package coverage to T1 80% floor (40%->88%) (cli)
+  - @happyvertical/smrt-scanner@0.29.38
+  - @happyvertical/smrt-config@0.29.38
+  - @happyvertical/smrt-types@0.29.38
+
 ## 0.29.37
 
 ### Patch Changes
