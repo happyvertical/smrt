@@ -77,8 +77,13 @@ function surfaceFromConfig(config: SurfaceConfig): {
   const toInclude = (
     surface: boolean | { include?: string[] } | undefined,
   ): string[] | null => {
-    if (surface === false || surface === undefined) return [];
-    if (surface === true) return null; // generates the full CRUD surface
+    // `false` disables the surface (closed). An OMITTED config (undefined) does
+    // NOT mean closed: the REST + MCP generators emit the FULL CRUD surface by
+    // default (sveltekit-generator `resolveStandardCrudActions`, mcp.ts
+    // `shouldInclude`), exactly like `true`. Model both as `null` so the
+    // assertion rejects them — an authority model must use an explicit list.
+    if (surface === false) return [];
+    if (surface === true || surface === undefined) return null;
     return surface.include ?? null;
   };
   return { api: toInclude(config.api), mcp: toInclude(config.mcp) };
