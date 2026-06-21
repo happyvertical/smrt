@@ -111,10 +111,10 @@ const GATE_EXEMPT = new Set(['smrt-svelte', 'vitest']);
 // work item. Ratchet upward as uplift lands; delete the entry once the package
 // measures at its tier floor.
 const INTERIM_FLOORS = {
-  // core measured ~66% (CI/local) on 2026-06-11, the first time a core-touching
-  // PR hit the gate (#1499). Floor set just below baseline to absorb run-to-run
-  // measurement noise. Uplift to the T1 80% floor is #1500.
-  core: 65,
+  // core: interim floor removed — the #1500 coverage uplift took core from
+  // ~66% to 83.79% lines (2026-06-21), clearing the ratified T1 80% floor. The
+  // gate now enforces the real tier floor for core. Add new entries here only
+  // for packages still measuring below their tier floor.
 };
 
 function flagValue(name) {
