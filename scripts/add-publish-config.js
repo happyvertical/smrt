@@ -9,7 +9,7 @@ const packageDirs = readdirSync(packagesDir, { withFileTypes: true })
   .map((dirent) => dirent.name);
 
 const publishConfig = {
-  registry: 'https://npm.pkg.github.com',
+  registry: 'https://registry.npmjs.org',
   access: 'public',
 };
 

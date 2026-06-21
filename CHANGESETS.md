@@ -11,7 +11,7 @@ No selective commit types, no manual changeset creation needed. The workflow is:
 1. Create PR with conventional commits when possible
 2. Tests pass, merge to main
 3. Version bumps automatically (patch, or minor for breaking changes)
-4. Packages published to GitHub Packages
+4. Packages published to npmjs.org
 
 ## Version Policy (Pre-1.0)
 
@@ -69,7 +69,7 @@ patch release when they land on `main`.
 2. **Build** completes
 3. **Changeset auto-generated** from commits (`scripts/auto-changeset.ts`)
 4. **Versions bumped** across all packages (fixed group)
-5. **Packages published** to GitHub Packages
+5. **Packages published** to npmjs.org
 6. **Git tag created** (e.g., `v0.17.33`)
 7. **GitHub release** created with changelog
 8. **Downstream repos notified** (cascade)
@@ -119,7 +119,7 @@ If version check fails with "exceeds 0.x.x limit":
 ### Publish fails
 
 Common causes:
-- GitHub registry authentication (`NODE_AUTH_TOKEN`)
+- npm registry authentication (`NPM_TOKEN`)
 - Package name conflicts
 - Build failures
 

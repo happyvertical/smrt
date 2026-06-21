@@ -32,15 +32,16 @@ jobs:
           node-version: '24'
           install-deps: 'true'
           setup-playwright: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate release lifecycle without publishing
         id: prepare
         env:
           CI: true
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           echo "🧪 Running publish dry-run validation..."
 
@@ -173,14 +174,15 @@ jobs:
           node-version: '24'
           install-deps: 'true'
           setup-playwright: 'false'
-          registry-url: 'https://npm.pkg.github.com'
-          auth-token: ${{ secrets.GITHUB_TOKEN }}
+          registry-url: 'https://registry.npmjs.org'
+          auth-token: ${{ secrets.NPM_TOKEN }}
+          github-packages-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate publish pack shard
         env:
           CI: true
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           PUBLISH_PACK_SHARD_COUNT: ${{ env.PUBLISH_PACK_SHARD_COUNT }}
           PUBLISH_PACK_SHARD_INDEX: ${{ matrix.shard-index }}
         run: |

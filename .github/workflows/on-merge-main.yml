@@ -20,7 +20,7 @@ env:
 
 permissions:
   contents: write
-  packages: write
+  packages: read
   pull-requests: write
   id-token: write
   pages: write
@@ -132,6 +132,6 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-      packages: write
+      packages: read
       id-token: write
       pages: write

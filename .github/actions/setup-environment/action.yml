@@ -28,6 +28,11 @@ inputs:
     required: false
     default: ''
 
+  github-packages-token:
+    description: 'Authentication token for GitHub Packages installs'
+    required: false
+    default: ''
+
 outputs:
   pnpm-cache-hit:
     description: 'Whether pnpm cache was hit'
@@ -87,6 +92,21 @@ runs:
         } >> "$HOME/.npmrc"
 
         echo "✓ Configured npm auth for ${registry_host}"
+
+    - name: Configure GitHub Packages auth
+      if: inputs.github-packages-token != ''
+      shell: bash
+      env:
+        NODE_AUTH_TOKEN: ${{ inputs.github-packages-token }}
+      run: |
+        touch "$HOME/.npmrc"
+        {
+          echo "@happyvertical:registry=https://npm.pkg.github.com"
+          echo "//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}"
+          echo "//npm.pkg.github.com/:always-auth=true"
+        } >> "$HOME/.npmrc"
+
+        echo "✓ Configured GitHub Packages auth for @happyvertical installs"
 
     # Check if pnpm is already installed (custom ARC runner with corepack)
     - name: Check pnpm
@@ -262,8 +282,8 @@ runs:
       env:
         # Force ONNX Runtime to skip CUDA installation
         ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
-        # Authentication token for GitHub Package Registry
-        # .npmrc uses NPM_TOKEN, setup-node uses NODE_AUTH_TOKEN
+        # Authentication token for the configured npm registry.
+        # Additional GitHub Packages auth can be written above when needed.
         NODE_AUTH_TOKEN: ${{ inputs.auth-token }}
         NODE_OPTIONS: --disable-warning=DEP0169
         NPM_TOKEN: ${{ inputs.auth-token }}
