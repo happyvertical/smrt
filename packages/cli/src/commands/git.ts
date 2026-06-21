@@ -132,6 +132,37 @@ export function mergeArraysByKey(
   return result;
 }
 
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * Recursively strip prototype-polluting keys from a value.
+ *
+ * The merge driver runs over untrusted incoming branch content (`%B` /
+ * "theirs"), so a malicious data file could carry `__proto__`/`constructor`/
+ * `prototype` keys. When a subtree is adopted wholesale (rather than rebuilt
+ * by the merge), those keys survive — and re-merging them later, or any
+ * consumer that copies them with bracket assignment, can mutate prototypes.
+ * This produces a clean copy with the dangerous keys removed at every depth.
+ */
+function sanitizeMergeValue(value: any): any {
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeMergeValue(item));
+  }
+
+  if (value === null || typeof value !== 'object') {
+    return value;
+  }
+
+  const clean: Record<string, any> = {};
+  for (const key of Object.keys(value)) {
+    if (DANGEROUS_KEYS.has(key)) {
+      continue;
+    }
+    clean[key] = sanitizeMergeValue(value[key]);
+  }
+  return clean;
+}
+
 /**
  * Merge two JSON objects (non-array case)
  *
@@ -143,7 +174,7 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
   // Handle arrays at root level
   if (Array.isArray(ours) && Array.isArray(theirs)) {
     const baseArray = Array.isArray(base) ? base : [];
-    return mergeArraysByKey(baseArray, ours, theirs);
+    return sanitizeMergeValue(mergeArraysByKey(baseArray, ours, theirs));
   }
 
   // Handle non-object types
@@ -151,7 +182,10 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
     return ours;
   }
   if (typeof theirs !== 'object' || theirs === null) {
-    return ours;
+    // `ours` is an object here and is returned wholesale — it can still carry
+    // `__proto__`/`constructor`/`prototype` keys (both sides come from
+    // untracked branch content), so sanitize before returning (review #1560).
+    return sanitizeMergeValue(ours);
   }
 
   const result: any = {};
@@ -162,6 +196,16 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
   ]);
 
   for (const key of allKeys) {
+    // Drop prototype-polluting keys. The merge driver runs over untrusted
+    // incoming branch content (`%B` / "theirs"), so a malicious data file
+    // could carry `__proto__`/`constructor`/`prototype` keys. Bracket
+    // assignment on these mutates the result's prototype instead of storing
+    // a normal property; sanitizeMergeValue() strips them from adopted
+    // subtrees, and skipping them here keeps them out of the merged keys.
+    if (DANGEROUS_KEYS.has(key)) {
+      continue;
+    }
+
     const baseVal = base?.[key];
     const oursVal = ours[key];
     const theirsVal = theirs[key];
@@ -179,10 +223,12 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
       );
 
       if (hasIds) {
-        result[key] = mergeArraysByKey(baseArray, oursArray, theirsArray);
+        result[key] = sanitizeMergeValue(
+          mergeArraysByKey(baseArray, oursArray, theirsArray),
+        );
       } else {
         // Simple array - prefer ours, fallback to theirs, then base
-        result[key] = oursVal ?? theirsVal ?? baseVal;
+        result[key] = sanitizeMergeValue(oursVal ?? theirsVal ?? baseVal);
       }
     } else if (
       typeof oursVal === 'object' &&
@@ -194,13 +240,13 @@ export function mergeObjects(base: any, ours: any, theirs: any): any {
       result[key] = mergeObjects(baseVal, oursVal, theirsVal);
     } else if (oursVal !== undefined) {
       // Prefer ours
-      result[key] = oursVal;
+      result[key] = sanitizeMergeValue(oursVal);
     } else if (theirsVal !== undefined) {
       // Fallback to theirs
-      result[key] = theirsVal;
+      result[key] = sanitizeMergeValue(theirsVal);
     } else if (baseVal !== undefined) {
       // Final fallback to base (key exists only in base)
-      result[key] = baseVal;
+      result[key] = sanitizeMergeValue(baseVal);
     }
   }
 
