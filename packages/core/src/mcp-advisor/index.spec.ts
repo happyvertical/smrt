@@ -1,11 +1,13 @@
 /**
  * Integration test for the mcp-advisor stdio server (src/mcp-advisor/index.ts).
  *
- * The advisor entrypoint auto-starts an MCP server over stdio when imported, so
- * it cannot be unit-tested by import. Following the established pattern in
+ * The advisor's main() only runs when the module is the process entrypoint
+ * (guarded by isEntrypoint()), so the stdio transport can only be exercised by
+ * launching it as a subprocess. Following the established pattern in
  * packages/smrt-dev-mcp/src/mcp-stdio.test.ts we spawn it via `tsx` and drive it
  * with a real MCP Client. This exercises the ListTools handler, the CallTool
  * routing switch, the success-response formatter, and the error-response path.
+ * The in-process unit tests for TOOLS and handleToolCall live in index.test.ts.
  */
 
 import { existsSync } from 'node:fs';

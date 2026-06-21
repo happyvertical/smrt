@@ -61,8 +61,11 @@ let db: any;
 
 beforeEach(async () => {
   instance = new SmrtClass({ db: ':memory:' });
+  // initialize() is protected on the bare base class (no public factory exists
+  // for SmrtClass itself), so it stays cast; the db handle and AI-usage methods
+  // below are read through their public API (db getter / public methods).
   await (instance as any).initialize();
-  db = (instance as any)._db;
+  db = instance.db;
 
   // Seed a representative spread of rows.
   await insertUsage(db, {
@@ -118,7 +121,7 @@ afterEach(() => {
 
 describe('SmrtClass.listAiUsage', () => {
   it('lists all rows newest-first by default and maps fields', async () => {
-    const rows = await (instance as any).listAiUsage();
+    const rows = await instance.listAiUsage();
     expect(rows).toHaveLength(3);
     // DESC by created_at → u3 first
     expect(rows[0].id).toBe('u3');
@@ -140,7 +143,7 @@ describe('SmrtClass.listAiUsage', () => {
   });
 
   it('orders ascending when orderBy is "timestamp ASC"', async () => {
-    const rows = await (instance as any).listAiUsage({
+    const rows = await instance.listAiUsage({
       orderBy: 'timestamp ASC',
     });
     expect(rows[0].id).toBe('u1');
@@ -148,11 +151,11 @@ describe('SmrtClass.listAiUsage', () => {
   });
 
   it('applies LIMIT and OFFSET', async () => {
-    const limited = await (instance as any).listAiUsage({ limit: 1 });
+    const limited = await instance.listAiUsage({ limit: 1 });
     expect(limited).toHaveLength(1);
     expect(limited[0].id).toBe('u3'); // newest
 
-    const offset = await (instance as any).listAiUsage({
+    const offset = await instance.listAiUsage({
       limit: 1,
       offset: 1,
     });
@@ -160,25 +163,25 @@ describe('SmrtClass.listAiUsage', () => {
   });
 
   it('filters by provider, model, and operation', async () => {
-    const byProvider = await (instance as any).listAiUsage({
+    const byProvider = await instance.listAiUsage({
       provider: 'openai',
     });
     expect(byProvider.map((r: any) => r.id).sort()).toEqual(['u1', 'u3']);
 
-    const byModel = await (instance as any).listAiUsage({ model: 'claude-3' });
+    const byModel = await instance.listAiUsage({ model: 'claude-3' });
     expect(byModel.map((r: any) => r.id)).toEqual(['u2']);
 
-    const byOp = await (instance as any).listAiUsage({ operation: 'embed' });
+    const byOp = await instance.listAiUsage({ operation: 'embed' });
     expect(byOp.map((r: any) => r.id)).toEqual(['u2']);
   });
 
   it('filters by className and by date window (since/until)', async () => {
-    const byClass = await (instance as any).listAiUsage({
+    const byClass = await instance.listAiUsage({
       className: 'Widget',
     });
     expect(byClass.map((r: any) => r.id).sort()).toEqual(['u1', 'u3']);
 
-    const window = await (instance as any).listAiUsage({
+    const window = await instance.listAiUsage({
       since: new Date('2026-01-02T00:00:00.000Z'),
       until: new Date('2026-01-02T23:59:59.000Z'),
     });
@@ -186,12 +189,12 @@ describe('SmrtClass.listAiUsage', () => {
   });
 
   it('filters by tenantId value and by tenantId === null', async () => {
-    const byTenant = await (instance as any).listAiUsage({
+    const byTenant = await instance.listAiUsage({
       tenantId: 'tenant-a',
     });
     expect(byTenant.map((r: any) => r.id)).toEqual(['u1']);
 
-    const nullTenant = await (instance as any).listAiUsage({
+    const nullTenant = await instance.listAiUsage({
       tenantId: null,
     });
     expect(nullTenant.map((r: any) => r.id)).toEqual(['u2']);
@@ -200,7 +203,7 @@ describe('SmrtClass.listAiUsage', () => {
 
 describe('SmrtClass.summarizeAiUsage', () => {
   it('groups by model by default and aggregates stats', async () => {
-    const summary = await (instance as any).summarizeAiUsage();
+    const summary = await instance.summarizeAiUsage();
     // model bucket = provider:model
     const gpt = summary['openai:gpt-4'];
     expect(gpt).toBeDefined();
@@ -212,7 +215,7 @@ describe('SmrtClass.summarizeAiUsage', () => {
   });
 
   it('groups by provider', async () => {
-    const summary = await (instance as any).summarizeAiUsage({
+    const summary = await instance.summarizeAiUsage({
       groupBy: 'provider',
     });
     expect(summary.openai.callCount).toBe(2);
@@ -220,7 +223,7 @@ describe('SmrtClass.summarizeAiUsage', () => {
   });
 
   it('groups by operation', async () => {
-    const summary = await (instance as any).summarizeAiUsage({
+    const summary = await instance.summarizeAiUsage({
       groupBy: 'operation',
     });
     expect(summary.chat.callCount).toBe(2);
@@ -228,7 +231,7 @@ describe('SmrtClass.summarizeAiUsage', () => {
   });
 
   it('groups by class, bucketing nulls as "unknown"', async () => {
-    const summary = await (instance as any).summarizeAiUsage({
+    const summary = await instance.summarizeAiUsage({
       groupBy: 'class',
     });
     expect(summary.Widget.callCount).toBe(2);
@@ -236,7 +239,7 @@ describe('SmrtClass.summarizeAiUsage', () => {
   });
 
   it('groups by tenant, bucketing nulls as "global"', async () => {
-    const summary = await (instance as any).summarizeAiUsage({
+    const summary = await instance.summarizeAiUsage({
       groupBy: 'tenant',
     });
     expect(summary['tenant-a'].callCount).toBe(1);
@@ -245,7 +248,7 @@ describe('SmrtClass.summarizeAiUsage', () => {
   });
 
   it('groups by day (date bucket via created_at prefix)', async () => {
-    const summary = await (instance as any).summarizeAiUsage({
+    const summary = await instance.summarizeAiUsage({
       groupBy: 'day',
     });
     // three distinct dates → three buckets
@@ -254,7 +257,7 @@ describe('SmrtClass.summarizeAiUsage', () => {
   });
 
   it('honors filter options alongside grouping', async () => {
-    const summary = await (instance as any).summarizeAiUsage({
+    const summary = await instance.summarizeAiUsage({
       groupBy: 'provider',
       provider: 'openai',
     });
@@ -267,7 +270,7 @@ describe('SmrtClass AI-usage without a database', () => {
   it('listAiUsage throws a clear error when no db is configured', async () => {
     const noDb = new SmrtClass({});
     await (noDb as any).initialize();
-    await expect((noDb as any).listAiUsage()).rejects.toThrow(
+    await expect(noDb.listAiUsage()).rejects.toThrow(
       /AI usage requires a database configuration/,
     );
   });
@@ -275,7 +278,7 @@ describe('SmrtClass AI-usage without a database', () => {
   it('summarizeAiUsage throws a clear error when no db is configured', async () => {
     const noDb = new SmrtClass({});
     await (noDb as any).initialize();
-    await expect((noDb as any).summarizeAiUsage()).rejects.toThrow(
+    await expect(noDb.summarizeAiUsage()).rejects.toThrow(
       /AI usage requires a database configuration/,
     );
   });
