@@ -330,6 +330,44 @@ describe('utils/generator generate()', () => {
     expect(out).toBe('git-template');
   });
 
+  // Regression for #1385: for subdir git templates the overlay base must be the
+  // subdir (stored as __templateRoot), not the repo-root __tempDir. The repo
+  // root holds an unrelated `template/` that must NOT be copied.
+  it('overlays from __templateRoot (subdir), not the repo-root __tempDir', async () => {
+    const repoRoot = join(workDir, 'git-repo-root');
+    // A decoy template at the repo root that must be ignored.
+    const rootTpl = join(repoRoot, 'template');
+    mkdirSync(rootTpl, { recursive: true });
+    writeFileSync(join(rootTpl, 'root.txt'), 'should-not-copy');
+    // The real template lives in a subdir.
+    const subdir = join(repoRoot, 'templates', 'site');
+    const subTpl = join(subdir, 'template');
+    mkdirSync(subTpl, { recursive: true });
+    writeFileSync(join(subTpl, 'sub.txt'), 'subdir-template');
+
+    const source: TemplateSource = {
+      type: 'git',
+      location: 'github:user/repo/templates/site',
+      resolved: '',
+    };
+    const config = baseConfig();
+    (config as Record<string, unknown>).__tempDir = repoRoot;
+    (config as Record<string, unknown>).__templateRoot = subdir;
+
+    await generate(source, config, {
+      template: 'test',
+      name: 'site',
+      outputDir,
+    });
+
+    const out = await readFile(join(outputDir, 'sub.txt'), 'utf-8');
+    expect(out).toBe('subdir-template');
+    // The repo-root decoy template must not have been copied.
+    await expect(
+      readFile(join(outputDir, 'root.txt'), 'utf-8'),
+    ).rejects.toThrow();
+  });
+
   it('throws on an unknown source type', async () => {
     const source = {
       type: 'ftp',

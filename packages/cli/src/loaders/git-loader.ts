@@ -371,8 +371,12 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
       // Validate
       validateTemplateConfig(config, configPath);
 
-      // Store temp directory in config for later cleanup
+      // Store the repo-root temp dir for cleanup and the subdir-resolved dir
+      // (`templateDir`) for overlay. For non-subdir templates these are equal;
+      // for `github:user/repo/subdir` the overlay must read from the subdir,
+      // not the repo root (regression #1385).
       (config as any).__tempDir = tempDir;
+      (config as any).__templateRoot = templateDir;
 
       return config;
     } catch (_error) {
@@ -385,6 +389,7 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
 
         validateTemplateConfig(config, tsConfigPath);
         (config as any).__tempDir = tempDir;
+        (config as any).__templateRoot = templateDir;
 
         return config;
       } catch {
@@ -402,13 +407,18 @@ export async function loadGitTemplate(gitUrl: string): Promise<TemplateConfig> {
 
 /**
  * Get the template directory path (for copying overlay files)
+ *
+ * Prefers the subdir-resolved `__templateRoot` so that subdirectory templates
+ * (`github:user/repo/subdir`) overlay from the subdir rather than the repo root.
+ * Falls back to `__tempDir` for configs loaded before the field existed.
  */
 export function getGitTemplateDir(config: TemplateConfig): string {
-  const tempDir = (config as any).__tempDir;
-  if (!tempDir) {
+  const templateRoot =
+    (config as any).__templateRoot ?? (config as any).__tempDir;
+  if (!templateRoot) {
     throw new Error('Template was not loaded from git repository');
   }
-  return tempDir;
+  return templateRoot;
 }
 
 /**
