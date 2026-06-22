@@ -400,10 +400,10 @@ function assertPlanMatchesSubscription(
   plan: SubscriptionPlan | null,
   subscription: TenantSubscription,
 ): void {
-  if (!plan?.id || !subscription.planId) {
+  if (!plan) {
     return;
   }
-  if (plan.id !== subscription.planId) {
+  if (!plan.id || plan.id !== subscription.planId) {
     throw new Error(
       'Provided entitlement context plan does not match subscription.planId',
     );
