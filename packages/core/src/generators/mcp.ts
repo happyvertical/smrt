@@ -515,8 +515,17 @@ export class MCPGenerator {
         throw new Error(`Unknown tool: ${name}`);
       }
 
-      // Parse tool name: objectname_action
-      const [objectName, action] = name.split('_');
+      // Parse tool name: `objectname_action`. Split on the FIRST underscore
+      // only — a custom method name can itself contain underscores (e.g.
+      // `record_payment` → tool `invoice_record_payment`). A naive
+      // `name.split('_')` would take `action` as just `record` and mis-route
+      // the call. The emitted stdio servers switch on the full tool name, so
+      // splitting greedily here also kept the in-process path divergent (#1378).
+      const firstUnderscore = name.indexOf('_');
+      const objectName =
+        firstUnderscore === -1 ? '' : name.slice(0, firstUnderscore);
+      const action =
+        firstUnderscore === -1 ? '' : name.slice(firstUnderscore + 1);
 
       if (!objectName || !action) {
         throw new Error(`Invalid tool name format: ${name}`);
