@@ -1,6 +1,6 @@
 <script lang="ts">
-import { RoleSelector } from '@happyvertical/smrt-svelte';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { RoleSelector } from '@happyvertical/smrt-ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Role, Tenant } from '@happyvertical/smrt-users';
 import { M } from '../i18n.js';
 

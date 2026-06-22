@@ -4,7 +4,7 @@
  * Progressive customization: Auto-generated → Custom components
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../lib/i18n.js';
 import type { ProductData } from '../../lib/types';
 

@@ -13,10 +13,11 @@
  * interval to drive its label/state, so listening/extracting assertions wait
  * for that poll via Testing Library's `findBy*`.
  */
+
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 
 vi.mock('../../../hooks/useAppState.svelte.js', () => ({
   useAppState: () => ({ state: { mode: 'smrt' }, setMode: vi.fn() }),

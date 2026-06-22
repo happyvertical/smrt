@@ -6,10 +6,11 @@
  * 10–11 digit validity check. The hooks throw outside a <Provider>, so
  * useAppState (default mode) + useSTT (non-listening stub) are mocked.
  */
+
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 
 vi.mock('../../../hooks/useAppState.svelte.js', () => ({
   useAppState: () => ({ state: { mode: 'default' }, setMode: vi.fn() }),

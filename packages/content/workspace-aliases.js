@@ -30,20 +30,24 @@ const workspaceAliasEntries = [
   ['@happyvertical/smrt-tags', '../tags/src/index.ts'],
   ['@happyvertical/smrt-tenancy', '../tenancy/src/index.ts'],
   [
-    '@happyvertical/smrt-svelte/layout',
-    '../smrt-svelte/src/components/layout/index.ts',
+    '@happyvertical/smrt-ui/i18n',
+    '../smrt-ui/src/i18n/index.ts',
   ],
   [
-    '@happyvertical/smrt-svelte/ui',
-    '../smrt-svelte/src/components/ui/index.ts',
+    '@happyvertical/smrt-ui/layout',
+    '../smrt-ui/src/components/layout/index.ts',
   ],
   [
-    '@happyvertical/smrt-svelte/registry',
-    '../smrt-svelte/src/registry/index.ts',
+    '@happyvertical/smrt-ui/ui',
+    '../smrt-ui/src/components/ui/index.ts',
   ],
   [
-    '@happyvertical/smrt-svelte/themes',
-    '../smrt-svelte/src/themes/index.ts',
+    '@happyvertical/smrt-ui/registry',
+    '../smrt-ui/src/registry/index.ts',
+  ],
+  [
+    '@happyvertical/smrt-ui/themes',
+    '../smrt-ui/src/themes/index.ts',
   ],
   ['@happyvertical/smrt-types', '../types/src/index.ts'],
 ];

@@ -7,7 +7,7 @@
  * @example Registering components (in module's svelte subpath)
  * ```typescript
  * // packages/commerce/src/svelte/index.ts
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import { COMMERCE_MODULE_META } from '../ui.js';
  * import InvoiceCard from './components/InvoiceCard.svelte';
  *
@@ -20,7 +20,7 @@
  * @example Using components (in host app)
  * ```typescript
  * // SvelteKit app
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import '@happyvertical/smrt-commerce/svelte'; // Auto-registers components
  *
  * const InvoiceCard = ModuleUIRegistry.get('@happyvertical/smrt-commerce', 'invoice-card');
@@ -98,13 +98,13 @@ export function createModuleUIRegistry(): ModuleUIRegistryInterface {
  * @example
  * ```typescript
  * // In module svelte package (e.g., @happyvertical/smrt-commerce/svelte)
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import InvoiceCard from './InvoiceCard.svelte';
  *
  * ModuleUIRegistry.register('@happyvertical/smrt-commerce', 'invoice-card', InvoiceCard);
  *
  * // In host SvelteKit app
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import '@happyvertical/smrt-commerce/svelte'; // Registers components
  *
  * const Component = ModuleUIRegistry.get('@happyvertical/smrt-commerce', 'invoice-card');

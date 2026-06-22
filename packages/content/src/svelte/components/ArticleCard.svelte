@@ -5,7 +5,7 @@
  * Shows article title, excerpt, metadata, and tags in a card format.
  * Links to the full article page.
  */
-import { Badge, Card } from '@happyvertical/smrt-svelte/ui';
+import { Badge, Card } from '@happyvertical/smrt-ui/ui';
 import type { Article } from '../types.js';
 
 export interface Props {

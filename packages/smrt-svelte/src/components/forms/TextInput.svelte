@@ -1,16 +1,18 @@
 <script lang="ts">
+import { Icon, ripple } from '@happyvertical/smrt-ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import {
+  formatEmail,
+  formatText,
+} from '@happyvertical/smrt-ui/utils/forms/formatters.js';
 import { onDestroy, onMount } from 'svelte';
-import { ripple } from '../../actions/ripple.js';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
-import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-import { formatEmail, formatText } from '../../utils/forms/formatters.js';
-import { Icon } from '../display/index.js';
 
 const { t } = useI18n();
 

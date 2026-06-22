@@ -1,5 +1,5 @@
 /**
- * @happyvertical/smrt-svelte/i18n — client i18n layer (Sweep S13 #1418).
+ * @happyvertical/smrt-ui/i18n — client i18n layer (Sweep S13 #1418).
  *
  * Browser-safe. Provides `defineMessages` (register a package's English code
  * defaults), `useI18n()` / `<Trans>` (read + render translations), and the
@@ -24,4 +24,15 @@ export {
   type MessageCatalog,
 } from './registry.js';
 export { default as Trans } from './Trans.svelte';
+// Side-effect: register smrt-ui's own primitive (`ui.*`) English code defaults
+// (DataTable etc.) so a single `@happyvertical/smrt-ui/i18n` import makes every
+// library primitive key resolvable — including in a server snapshot built
+// without loading the components themselves. `strings.ui.js` is registered via
+// the `M` re-export below; this covers the `strings.ts` catalog too.
+import './strings.js';
+
+// smrt-ui primitive (`ui.*`) English code-default catalog. Re-exported so
+// consumers (e.g. smrt-svelte composites) can register the same defaults via a
+// single `@happyvertical/smrt-ui/i18n` import.
+export { M } from './strings.ui.js';
 export { useI18n } from './use-i18n.js';

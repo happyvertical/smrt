@@ -37,7 +37,10 @@ import { join, resolve } from 'node:path';
 
 const ROOT = resolve(import.meta.dirname, '..');
 const PACKAGES = join(ROOT, 'packages');
-const PKG = join(PACKAGES, 'smrt-svelte');
+// The theme system (static preset CSS, JS generator, simple ThemeProvider
+// tokens) lives in the smrt-ui leaf (#1582 Phase 2); emitted tokens are
+// collected from there.
+const PKG = join(PACKAGES, 'smrt-ui');
 const SRC = join(PKG, 'src');
 
 /** Generated/build output that mirrors src — never the source of truth. */

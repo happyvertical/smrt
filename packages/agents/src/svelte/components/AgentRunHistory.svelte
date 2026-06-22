@@ -3,8 +3,8 @@
  * AgentRunHistory - Display run history for an agent
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Badge } from '@happyvertical/smrt-svelte/ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Badge } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import type { AgentRunHistoryEntry } from '../types.js';

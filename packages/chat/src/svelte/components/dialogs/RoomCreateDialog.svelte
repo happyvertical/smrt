@@ -3,7 +3,7 @@
  * RoomCreateDialog - Modal dialog for creating a new chat room
  * Provides name, type selector, and description fields
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 
 const { t } = useI18n();

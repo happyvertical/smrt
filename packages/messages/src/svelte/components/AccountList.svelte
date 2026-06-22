@@ -2,8 +2,8 @@
 /**
  * AccountList - Account management list
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Grid } from '@happyvertical/smrt-svelte/layout';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Grid } from '@happyvertical/smrt-ui/layout';
 import { M } from '../i18n.js';
 import type { AccountData } from '../types.js';
 import AccountCard from './AccountCard.svelte';

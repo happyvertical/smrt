@@ -5,7 +5,7 @@
  * Requires downloading model files (100MB - 4GB+ depending on model).
  */
 
-import { importOptional } from '../../../utils/import-optional.js';
+import { importOptional } from '@happyvertical/smrt-ui/utils/import-optional.js';
 import {
   CapabilityNotAvailableError,
   InitializationError,

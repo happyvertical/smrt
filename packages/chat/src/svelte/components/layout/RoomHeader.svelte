@@ -3,7 +3,7 @@
  * RoomHeader - Room header bar with name, topic, and action buttons
  * Displays room info and provides access to members and search
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.messages.js';
 import type { ChatRoomData } from '../../types.js';
 

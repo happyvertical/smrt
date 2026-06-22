@@ -9,7 +9,7 @@
  * `M` is a typed key map — `M['chat.agent_chat.empty']` is the key literal — so
  * component call sites stay typo-safe.
  */
-import { defineMessages } from '@happyvertical/smrt-svelte/i18n';
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   // AgentChat

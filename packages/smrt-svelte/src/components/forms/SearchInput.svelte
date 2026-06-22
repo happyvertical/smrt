@@ -11,8 +11,8 @@
  * - Material 3 styling
  */
 
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n/strings.forms.js';
-import { useI18n } from '../../i18n/use-i18n.js';
 
 const { t } = useI18n();
 

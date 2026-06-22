@@ -6,7 +6,7 @@ import {
   getThemeContext,
   type ThemeContext,
   tryGetThemeContext,
-} from '../theme/context.js';
+} from '@happyvertical/smrt-ui/theme';
 
 /**
  * Get theme context (throws if not available)

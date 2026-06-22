@@ -11,14 +11,14 @@
  *
  * @example Registry-based discovery
  * ```typescript
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import '@happyvertical/smrt-chat/svelte'; // Auto-registers components
  *
  * const Component = ModuleUIRegistry.get('@happyvertical/smrt-chat', 'chat-layout');
  * ```
  */
 
-import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { CHAT_MODULE_META } from '../ui.js';
 // Agent components
 import AgentChat from './components/agent/AgentChat.svelte';

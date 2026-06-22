@@ -401,37 +401,84 @@ export function getWorkspaceViteAliases(
       );
     }
 
-    if (packageName === '@happyvertical/smrt-svelte') {
+    if (packageName === '@happyvertical/smrt-ui') {
+      // smrt-ui holds the domain-agnostic UI leaf (primitives, feedback,
+      // layout, calendar, chat, registry, theme system, i18n client). These
+      // subpaths map to nested source dirs, so the generic `${packageName}/ui`
+      // → `src/ui.ts` convention misses them; alias the exact source files.
       addAliasIfPresent(
         aliases,
-        '@happyvertical/smrt-svelte/layout',
-        join(packageRoot, 'src/components/layout/index.ts'),
-      );
-      addAliasIfPresent(
-        aliases,
-        '@happyvertical/smrt-svelte/registry',
-        join(packageRoot, 'src/registry/index.ts'),
-      );
-      addAliasIfPresent(
-        aliases,
-        '@happyvertical/smrt-svelte/ui',
+        '@happyvertical/smrt-ui/ui',
         join(packageRoot, 'src/components/ui/index.ts'),
       );
       addAliasIfPresent(
         aliases,
-        '@happyvertical/smrt-svelte/feedback',
+        '@happyvertical/smrt-ui/feedback',
         join(packageRoot, 'src/components/feedback/index.ts'),
       );
       addAliasIfPresent(
         aliases,
-        '@happyvertical/smrt-svelte/themes',
+        '@happyvertical/smrt-ui/layout',
+        join(packageRoot, 'src/components/layout/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/calendar',
+        join(packageRoot, 'src/components/calendar/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/chat',
+        join(packageRoot, 'src/components/chat/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/registry',
+        join(packageRoot, 'src/registry/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/theme',
+        join(packageRoot, 'src/theme/index.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/themes',
         join(packageRoot, 'src/themes/index.ts'),
       );
       addAliasIfPresent(
         aliases,
-        '@happyvertical/smrt-svelte/i18n',
+        '@happyvertical/smrt-ui/i18n',
         join(packageRoot, 'src/i18n/index.ts'),
       );
+      // Test-support harness (a11y helper + setup) moved here with the leaf;
+      // smrt-svelte's surviving component tests import it cross-package.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/test-support/a11y',
+        join(packageRoot, 'src/test-support/a11y.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/test-support/setup',
+        join(packageRoot, 'src/test-support/setup.ts'),
+      );
+      // utils ships nested helpers consumed by smrt-svelte's surviving forms.
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/utils/forms/formatters.js',
+        join(packageRoot, 'src/utils/forms/formatters.ts'),
+      );
+      addAliasIfPresent(
+        aliases,
+        '@happyvertical/smrt-ui/utils/import-optional.js',
+        join(packageRoot, 'src/utils/import-optional.ts'),
+      );
+    }
+
+    if (packageName === '@happyvertical/smrt-svelte') {
+      // The domain-agnostic UI leaf subpaths moved to @happyvertical/smrt-ui
+      // (#1582). smrt-svelte keeps the Node-only server i18n resolver here.
       addAliasIfPresent(
         aliases,
         '@happyvertical/smrt-svelte/i18n/server',

@@ -4,7 +4,7 @@ import {
   CurrencyDisplay,
   DateDisplay,
   StatusBadge,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-ui';
 
 // Sample dates for DateDisplay
 const now = new Date();

@@ -1,10 +1,10 @@
 <script lang="ts">
-import { Badge, Button, Card } from '@happyvertical/smrt-svelte';
+import { Badge, Button, Card } from '@happyvertical/smrt-ui';
 import {
   ColorSchemeToggle,
   getThemeContext,
   ThemeSwitcher,
-} from '@happyvertical/smrt-svelte/themes';
+} from '@happyvertical/smrt-ui/themes';
 
 const theme = getThemeContext();
 

@@ -4,7 +4,7 @@
  * Lists past agent sessions with status, message count, and allowed tools.
  * Allows selecting an existing session or creating a new one.
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 import type { AgentSessionData } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';

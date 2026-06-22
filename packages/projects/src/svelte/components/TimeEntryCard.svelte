@@ -4,7 +4,7 @@
  * Supports selection mode for bulk operations
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import {

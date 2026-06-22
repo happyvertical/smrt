@@ -1,5 +1,5 @@
 /**
- * Chat primitives — subpath `@happyvertical/smrt-svelte/chat`.
+ * Chat primitives — subpath `@happyvertical/smrt-ui/chat`.
  *
  * MessageBubble (user/agent/system), ReactionPicker, TypingIndicator. Generic,
  * tokenised, a11y-checked building blocks for chat UIs (L3 #1422).

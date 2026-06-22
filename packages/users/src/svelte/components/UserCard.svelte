@@ -4,7 +4,7 @@
  * refactored for Material 3
  */
 import type { Profile } from '@happyvertical/smrt-profiles';
-import { ripple } from '@happyvertical/smrt-svelte';
+import { ripple } from '@happyvertical/smrt-ui';
 import type { User } from '@happyvertical/smrt-users';
 import UserAvatar from './UserAvatar.svelte';
 

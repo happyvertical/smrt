@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
+import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
 import { page } from '$app/stores';
 import { CONTENT_DEFAULT_ROUTE_NAVIGATION } from '../svelte/routes/shared.js';
 

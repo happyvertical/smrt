@@ -6,7 +6,7 @@
  * Wraps the generic LoadingOverlay with AI-specific state management.
  */
 
-import LoadingOverlay from '../../../components/feedback/LoadingOverlay.svelte';
+import { LoadingOverlay } from '@happyvertical/smrt-ui/feedback';
 import type { AILoadingState } from '../../../state/app-state.js';
 import { getAppStateContext } from '../../../state/context.js';
 

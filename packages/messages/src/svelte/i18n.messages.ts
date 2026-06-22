@@ -5,7 +5,7 @@
  * Svelte components under `components/`. Keys follow
  * `messages.<component>.<descriptor>`.
  */
-import { defineMessages } from '@happyvertical/smrt-svelte/i18n';
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   // MessageStatusIndicator

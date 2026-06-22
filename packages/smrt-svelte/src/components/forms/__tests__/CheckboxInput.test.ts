@@ -6,10 +6,11 @@
  * to a stub default mode. Its form-context lookup uses `getContext` and safely
  * returns undefined outside a provider, so no further stubbing is needed.
  */
+
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 
 vi.mock('../../../hooks/useAppState.svelte.js', () => ({
   useAppState: () => ({ state: { mode: 'default' }, setMode: vi.fn() }),

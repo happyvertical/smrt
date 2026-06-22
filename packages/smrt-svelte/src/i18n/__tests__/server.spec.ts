@@ -14,14 +14,14 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 let buildI18nSnapshot: typeof import('../server.js').buildI18nSnapshot;
-let defineMessages: typeof import('../registry.js').defineMessages;
-let clearRegisteredMessages: typeof import('../registry.js').clearRegisteredMessages;
+let defineMessages: typeof import('@happyvertical/smrt-ui/i18n').defineMessages;
+let clearRegisteredMessages: typeof import('@happyvertical/smrt-ui/i18n').clearRegisteredMessages;
 
 beforeAll(async () => {
   vi.stubEnv('SMRT_STRICT_REGISTRY', 'false');
   ({ buildI18nSnapshot } = await import('../server.js'));
   ({ defineMessages, clearRegisteredMessages } = await import(
-    '../registry.js'
+    '@happyvertical/smrt-ui/i18n'
   ));
 });
 

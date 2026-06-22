@@ -3,7 +3,7 @@
  * MessageCard - Single message row with type-adaptive rendering
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.messages.js';
 import type { AccountData, MessageData } from '../types.js';

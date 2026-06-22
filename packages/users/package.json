@@ -58,10 +58,10 @@
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
     "jose": "^6.1.3"
   },
   "devDependencies": {
-    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.7",

@@ -15,9 +15,8 @@ import type {
   ModuleUIBaseProps,
   SmrtModuleMeta,
 } from '@happyvertical/smrt-types';
-import { M } from '../../i18n/strings.ui.js';
-import { useI18n } from '../../i18n/use-i18n.js';
-import { ModuleUIRegistry } from '../../registry/module-registry.js';
+import { M, useI18n } from '@happyvertical/smrt-ui/i18n';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 
 const { t } = useI18n();
 

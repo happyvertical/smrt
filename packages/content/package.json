@@ -69,6 +69,7 @@
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/spider": "catalog:",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
@@ -85,7 +86,6 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.2.0",
-    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-playground": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/kit": "^2.0.0",

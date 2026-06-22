@@ -6,9 +6,9 @@
  * metadata, content references ("Used In"), copy utilities, and actions.
  */
 
-import { Modal } from '@happyvertical/smrt-svelte/feedback';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Button } from '@happyvertical/smrt-svelte/ui';
+import { Modal } from '@happyvertical/smrt-ui/feedback';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from './i18n.js';
 import type { PersistedAsset } from './types';

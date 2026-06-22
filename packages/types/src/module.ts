@@ -20,7 +20,7 @@
  * };
  *
  * // In svelte subpath: packages/commerce/src/svelte/index.ts
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import { COMMERCE_MODULE_META } from '../ui.js';
  * import InvoiceCard from './components/InvoiceCard.svelte';
  *
@@ -180,7 +180,7 @@ export interface ModuleUIBaseProps<TData = unknown, TConfig = unknown> {
 /**
  * Registry interface for mapping SMRT module slots to Svelte components.
  *
- * Implemented by `ModuleUIRegistry` in `@happyvertical/smrt-svelte`. Consumers
+ * Implemented by `ModuleUIRegistry` in `@happyvertical/smrt-ui`. Consumers
  * call `register()` once per slot at Svelte package initialisation time and
  * `get()` when rendering to retrieve the correct component.
  *

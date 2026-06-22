@@ -1,7 +1,7 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { M } from '../../i18n/strings.workspace.js';
-import { useI18n } from '../../i18n/use-i18n.js';
 
 const { t } = useI18n();
 

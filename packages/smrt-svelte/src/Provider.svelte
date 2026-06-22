@@ -1,12 +1,12 @@
 <script lang="ts">
-import type { Snippet } from 'svelte';
-import { onDestroy, untrack } from 'svelte';
-import AILoadingOverlay from './browser-ai/svelte/components/AILoadingOverlay.svelte';
 import {
   createI18nContext,
   type I18nSnapshot,
   setI18nContext,
-} from './i18n/index.js';
+} from '@happyvertical/smrt-ui/i18n';
+import type { Snippet } from 'svelte';
+import { onDestroy, untrack } from 'svelte';
+import AILoadingOverlay from './browser-ai/svelte/components/AILoadingOverlay.svelte';
 import type {
   AIConfig,
   AILoadingState,

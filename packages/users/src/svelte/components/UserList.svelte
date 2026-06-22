@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { Profile } from '@happyvertical/smrt-profiles';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { User } from '@happyvertical/smrt-users';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';

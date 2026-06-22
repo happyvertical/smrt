@@ -3,7 +3,7 @@
  * JobActions - Action buttons for job management
  */
 
-import { Button } from '@happyvertical/smrt-svelte/ui';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { JobData } from './types.js';
 
 export interface Props {

@@ -1,7 +1,7 @@
 <script lang="ts">
 import type { ImageLike } from '@happyvertical/smrt-images/svelte';
 import { ImageUploader } from '@happyvertical/smrt-images/svelte';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { untrack } from 'svelte';
 import { extractBodyImages, resolveBodyFormat } from '../../body-format';
 import type {

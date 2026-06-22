@@ -3,7 +3,7 @@
  * ChatTabs - Bottom bar with expandable chat tabs (Facebook Messenger style)
  * Fixed to viewport bottom. Shows collapsed tab headers that expand upward on click.
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatTabState } from '../../types.js';
 import ChatTab from './ChatTab.svelte';

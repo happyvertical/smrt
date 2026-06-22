@@ -2,7 +2,7 @@
 /**
  * AccountCard - Individual account card with status and actions
  */
-import { Card } from '@happyvertical/smrt-svelte/ui';
+import { Card } from '@happyvertical/smrt-ui/ui';
 import type { AccountData } from '../types.js';
 import AccountAvatar from './AccountAvatar.svelte';
 

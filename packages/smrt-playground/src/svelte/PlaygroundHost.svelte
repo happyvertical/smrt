@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
+import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
 import type { Component } from 'svelte';
 import { onMount } from 'svelte';
 import { mergePlaygroundModules } from './runtime.js';

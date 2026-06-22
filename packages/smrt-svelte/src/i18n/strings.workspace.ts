@@ -8,7 +8,7 @@
  * back to these defaults when no server snapshot is present.
  */
 
-import { defineMessages } from './registry.js';
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   // browser-ai/svelte/components/STTTest.svelte

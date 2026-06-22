@@ -1,5 +1,5 @@
 <script lang="ts">
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import type { ContentEditorReference } from '../content-editor-form';
 import { M } from '../i18n.editor.js';

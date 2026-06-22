@@ -2,7 +2,7 @@
 /**
  * MessageTypeBadge - Icon + label badge for message types
  */
-import { Badge } from '@happyvertical/smrt-svelte/ui';
+import { Badge } from '@happyvertical/smrt-ui/ui';
 import type { MessageType } from '../types.js';
 
 export interface Props {

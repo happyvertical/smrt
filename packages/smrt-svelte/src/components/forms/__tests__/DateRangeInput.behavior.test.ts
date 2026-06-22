@@ -6,9 +6,10 @@
  * onchange, and validates start <= end. The hooks throw outside a <Provider>,
  * so useAppState (default mode) + useSTT (stub) are mocked.
  */
+
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 
 vi.mock('../../../hooks/useAppState.svelte.js', () => ({
   useAppState: () => ({ state: { mode: 'default' }, setMode: vi.fn() }),

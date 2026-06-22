@@ -4,7 +4,7 @@
  * Grid/list of available agents with avatars, names, and descriptions.
  * Disabled state for unavailable agents.
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 import type { AgentDescriptor } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';

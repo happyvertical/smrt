@@ -1,5 +1,5 @@
 <script lang="ts">
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.js';
 import { AssetManager } from '../index.js';
 import type { PersistedAsset } from '../types.js';

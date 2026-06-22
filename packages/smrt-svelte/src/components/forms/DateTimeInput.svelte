@@ -1,14 +1,14 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { importOptional } from '@happyvertical/smrt-ui/utils/import-optional.js';
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import { useSTT } from '../../hooks/useSTT.svelte.js';
 import { M } from '../../i18n/strings.forms.js';
-import { useI18n } from '../../i18n/use-i18n.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-import { importOptional } from '../../utils/import-optional.js';
 
 const { t } = useI18n();
 

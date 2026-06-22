@@ -34,7 +34,7 @@ The `smrt playground` commands (`init`, `dev`, `list`) consume this package. The
 
 ## Relationship to `smrt-svelte`
 
-`smrt-playground` does not own component code or theming — it only discovers and renders. UI components themselves come from individual packages (`smrt-content/svelte`, `smrt-jobs/svelte`, etc.) or from `smrt-svelte` for shared primitives.
+`smrt-playground` does not own component code or theming — it only discovers and renders. UI components themselves come from individual packages (`smrt-content/svelte`, `smrt-jobs/svelte`, etc.), from `smrt-ui` for shared domain-agnostic primitives, or from `smrt-svelte` for the top-level integration components.
 
 ## Internal `host/` directory
 

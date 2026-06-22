@@ -1,12 +1,12 @@
 <script lang="ts">
+import { Icon } from '@happyvertical/smrt-ui';
+import { matchOption } from '@happyvertical/smrt-ui/utils/forms/formatters.js';
 import { onDestroy, onMount } from 'svelte';
 import { useAppState } from '../../hooks/useAppState.svelte.js';
 import {
   type FieldDefinition,
   tryGetFormContext,
 } from '../../state/form-context.js';
-import { matchOption } from '../../utils/forms/formatters.js';
-import { Icon } from '../display/index.js';
 import type { SelectOption } from './types.js';
 
 export interface Props {

@@ -2,7 +2,7 @@
  * smrt-content route UI message catalog (S13 #1418).
  * Keys: `content.<route_snake>.<descriptor_snake>`, grouped by route file.
  */
-import { defineMessages } from '@happyvertical/smrt-svelte/i18n';
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   // ContentContributionsRoute.svelte

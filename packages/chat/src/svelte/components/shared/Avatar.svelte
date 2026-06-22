@@ -2,13 +2,13 @@
 /**
  * Avatar — chat profile avatar with online-presence indicator.
  *
- * Thin adapter over the shared `@happyvertical/smrt-svelte` `Avatar` primitive
+ * Thin adapter over the shared `@happyvertical/smrt-ui` `Avatar` primitive
  * (S10 consolidation, #1415): it keeps chat's prop vocabulary
  * (`avatarUrl` / `onlineStatus`) but delegates rendering, the initials +
  * image-error fallback, presence dot, tokens, and a11y to the library so that
  * logic lives in exactly one place.
  */
-import { Avatar as UiAvatar } from '@happyvertical/smrt-svelte';
+import { Avatar as UiAvatar } from '@happyvertical/smrt-ui';
 
 export interface Props {
   /** Display name used for initials fallback. */
