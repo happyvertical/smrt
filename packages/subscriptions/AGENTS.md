@@ -18,5 +18,9 @@ pnpm --filter @happyvertical/smrt-subscriptions build
 - Thresholds are evaluated from tenant usage metrics and optional AI usage
   summaries. Resolve multiple thresholds with the batch usage path where
   available; do not bypass tenant context in application code.
+- Use `SubscriptionResolver.create()` or an explicitly injected
+  `SubscriptionResolver` once per request when resolving entitlements multiple
+  times. Load and pass `EntitlementResolutionContext` to avoid re-reading the
+  current subscription and plan.
 - Subscription UI components should stay provider-neutral and receive actions
   from the host app.

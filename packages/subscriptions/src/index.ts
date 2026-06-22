@@ -33,6 +33,7 @@ export type {
   AiUsageSummary,
   BillingInterval,
   EntitlementResolution,
+  EntitlementResolutionContext,
   JsonObject,
   PlanFeatureGrant,
   PlanThreshold,

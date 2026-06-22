@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SubscriptionPlanCollection } from '../collections/SubscriptionPlanCollection.js';
+import { TenantSubscriptionCollection } from '../collections/TenantSubscriptionCollection.js';
 import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
 import { TenantSubscription } from '../models/TenantSubscription.js';
 import { SubscriptionResolver } from '../services/subscription-resolver.js';
 import { evaluateThreshold } from '../services/threshold-evaluator.js';
+import { TenantUsageMeter } from '../services/usage-meter.js';
 import type { PlanThreshold, UsageSummary } from '../types.js';
 import { isValidThreshold } from '../utils.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('smrt-subscriptions', () => {
   it('stores plan feature grants and thresholds as typed accessors', () => {
@@ -289,6 +296,113 @@ describe('smrt-subscriptions', () => {
     expect(
       resolution.thresholdEvaluations.map((evaluation) => evaluation.state),
     ).toEqual(['warn', 'ok', 'ok']);
+  });
+
+  it('loads entitlement context once and reuses it across resolution', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'team',
+      name: 'Team',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-team' });
+    plan.setFeatureGrants(['smrt:billing']);
+
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-team',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-team' });
+
+    const getPlan = vi.fn(async () => plan);
+    const findCurrentForTenant = vi.fn(async () => subscription);
+    const resolver = new SubscriptionResolver({
+      plans: { get: getPlan },
+      subscriptions: { findCurrentForTenant },
+      usage: {
+        async summarize() {
+          throw new Error('usage should not be read without thresholds');
+        },
+      },
+    });
+
+    const now = new Date('2026-06-15T00:00:00Z');
+    const context = await resolver.loadEntitlementContext('tenant-1', { now });
+    const resolution = await resolver.resolveTenantEntitlements('tenant-1', {
+      context,
+      now,
+    });
+
+    expect(context).toEqual({ subscription, plan });
+    expect(resolution).toMatchObject({
+      tenantId: 'tenant-1',
+      planKey: 'team',
+      featureKeys: ['smrt:billing'],
+      allowed: true,
+    });
+    expect(findCurrentForTenant).toHaveBeenCalledTimes(1);
+    expect(getPlan).toHaveBeenCalledTimes(1);
+  });
+
+  it('creates a resolver with reusable default readers', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'factory',
+      name: 'Factory',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-factory' });
+
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-factory',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-factory' });
+
+    const plans = {
+      async get() {
+        throw new Error('plan reader should not run with provided context');
+      },
+    } as unknown as SubscriptionPlanCollection;
+    const subscriptions = {
+      async findCurrentForTenant() {
+        throw new Error(
+          'subscription reader should not run with provided context',
+        );
+      },
+    } as unknown as TenantSubscriptionCollection;
+    const usage = {
+      async summarize() {
+        throw new Error('usage should not be read without thresholds');
+      },
+    } as unknown as TenantUsageMeter;
+
+    const createPlans = vi
+      .spyOn(SubscriptionPlanCollection, 'create')
+      .mockResolvedValue(plans);
+    const createSubscriptions = vi
+      .spyOn(TenantSubscriptionCollection, 'create')
+      .mockResolvedValue(subscriptions);
+    const createUsage = vi
+      .spyOn(TenantUsageMeter, 'create')
+      .mockResolvedValue(usage);
+
+    const resolver = await SubscriptionResolver.create();
+    const resolution = await resolver.resolveTenantEntitlements('tenant-1', {
+      context: { subscription, plan },
+      now: new Date('2026-06-15T00:00:00Z'),
+    });
+
+    expect(createPlans).toHaveBeenCalledTimes(1);
+    expect(createSubscriptions).toHaveBeenCalledTimes(1);
+    expect(createUsage).toHaveBeenCalledTimes(1);
+    expect(resolution).toMatchObject({
+      tenantId: 'tenant-1',
+      planKey: 'factory',
+      allowed: true,
+    });
   });
 
   it('returns a closed resolution without a subscription', async () => {

@@ -1,4 +1,6 @@
 import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import type { SubscriptionPlan } from './models/SubscriptionPlan.js';
+import type { TenantSubscription } from './models/TenantSubscription.js';
 
 export type SubscriptionStatus =
   | 'active'
@@ -135,9 +137,27 @@ export interface EntitlementResolution {
   allowed: boolean;
 }
 
+export interface EntitlementResolutionContext {
+  /**
+   * Current subscription for the requested subscriber. Set to `null` when a
+   * caller has already resolved that no current subscription exists.
+   */
+  subscription?: TenantSubscription | null;
+  /**
+   * Plan for `subscription.planId`. Set to `null` when the caller has already
+   * resolved the plan as absent or inactive.
+   */
+  plan?: SubscriptionPlan | null;
+}
+
 export interface SubscriptionResolverOptions {
   now?: Date;
   usageWindows?: Partial<Record<ThresholdWindow, UsageWindow>>;
+  /**
+   * Request-scoped context that lets repeated entitlement checks reuse an
+   * already-loaded subscription and plan instead of re-querying readers.
+   */
+  context?: EntitlementResolutionContext;
 }
 
 export interface UsageMeterOptions {
