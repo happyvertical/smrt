@@ -10,6 +10,7 @@
  */
 
 import {
+  isSafeIdentifier,
   isSafeIdentifierPath,
   quoteIdentifier,
   quoteStringLiteral,
@@ -30,7 +31,11 @@ export class SQLiteStrategy extends BaseDDLStrategy {
     jsonColumn: string,
     path: string,
   ): string {
-    if (!isSafeIdentifierPath(jsonColumn)) {
+    // Column must be a simple identifier (no dots); only the path may be dotted.
+    // Mirrors BaseDDLStrategy.assertSafeJsonPathTarget so the SQLite override
+    // doesn't silently accept dotted columns that PG/DuckDB (and renderIndexTarget)
+    // reject.
+    if (!isSafeIdentifier(jsonColumn)) {
       throw new Error(
         `[DDL] Unsafe JSON-path index column "${jsonColumn}": must be a simple identifier`,
       );
