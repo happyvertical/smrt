@@ -1616,8 +1616,11 @@ export class CLIGenerator {
         offset: Number.parseInt(options.offset, 10),
       };
 
-      if (options.orderBy) {
-        listOptions.orderBy = options.orderBy;
+      // `parseCliArgs` returns the declared kebab key verbatim ('order-by'),
+      // so read that first; keep the camel fallback for handler-direct callers.
+      const orderBy = options['order-by'] ?? options.orderBy;
+      if (orderBy) {
+        listOptions.orderBy = orderBy;
       }
 
       if (options.where) {
@@ -1684,10 +1687,13 @@ export class CLIGenerator {
     try {
       let data: any = {};
 
-      if (options.fromFile) {
+      // Declared kebab option ('from-file') arrives verbatim from parseCliArgs;
+      // keep the camel fallback for handler-direct callers.
+      const fromFile = options['from-file'] ?? options.fromFile;
+      if (fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
-        const content = await fs.readFile(options.fromFile, 'utf-8');
+        const content = await fs.readFile(fromFile, 'utf-8');
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode
@@ -1740,10 +1746,13 @@ export class CLIGenerator {
 
       let data: any = {};
 
-      if (options.fromFile) {
+      // Declared kebab option ('from-file') arrives verbatim from parseCliArgs;
+      // keep the camel fallback for handler-direct callers.
+      const fromFile = options['from-file'] ?? options.fromFile;
+      if (fromFile) {
         // Load from file
         const fs = await import('node:fs/promises');
-        const content = await fs.readFile(options.fromFile, 'utf-8');
+        const content = await fs.readFile(fromFile, 'utf-8');
         data = JSON.parse(content);
       } else if (options.interactive && this.config.prompt) {
         // Interactive mode with current values
