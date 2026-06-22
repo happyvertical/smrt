@@ -345,6 +345,48 @@ describe('smrt-subscriptions', () => {
     expect(getPlan).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects unverifiable context plans instead of trusting stale entitlements', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'wrong',
+      name: 'Wrong',
+      status: 'active',
+    });
+    plan.setFeatureGrants(['smrt:wrong']);
+
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-team',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-team' });
+
+    const resolver = new SubscriptionResolver({
+      plans: {
+        async get() {
+          throw new Error('plan reader should not run with provided context');
+        },
+      },
+      subscriptions: {
+        async findCurrentForTenant() {
+          return subscription;
+        },
+      },
+      usage: {
+        async summarize() {
+          throw new Error('usage should not be read with invalid context');
+        },
+      },
+    });
+
+    await expect(
+      resolver.resolveTenantEntitlements('tenant-1', {
+        context: { plan, subscription },
+        now: new Date('2026-06-15T00:00:00Z'),
+      }),
+    ).rejects.toThrow(/context plan/);
+  });
+
   it('creates a resolver with reusable default readers', async () => {
     const plan = new SubscriptionPlan({
       planKey: 'factory',
