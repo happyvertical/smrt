@@ -1394,8 +1394,26 @@ function extractPropertyDefinition(
   let numericValue: number | null = null;
 
   if (node.value) {
-    // Check for numeric literal with decimal point
-    if (node.value.type === 'Literal' && typeof node.value.value === 'number') {
+    // Check for numeric literal with decimal point. Unwrap a leading unary
+    // minus first: a negative initializer (`= -5`, `= -1.5`) parses as a
+    // `UnaryExpression{ operator: '-', argument: Literal }`, not a bare
+    // `Literal`, so without this the 0-vs-0.0 heuristic mis-infers negatives as
+    // `integer` and drops the default. Mirrors the `extractValue` pattern above.
+    if (
+      node.value.type === 'UnaryExpression' &&
+      node.value.operator === '-' &&
+      node.value.argument?.type === 'Literal' &&
+      typeof node.value.argument.value === 'number'
+    ) {
+      numericValue = -node.value.argument.value;
+      // Check the inner literal's raw string for a decimal point (0.0 vs 0).
+      if (node.value.argument.raw) {
+        hasDecimalPoint = node.value.argument.raw.includes('.');
+      }
+    } else if (
+      node.value.type === 'Literal' &&
+      typeof node.value.value === 'number'
+    ) {
       numericValue = node.value.value;
       // Check raw string for decimal point (0.0 vs 0)
       if (node.value.raw) {
