@@ -5,8 +5,39 @@
  * messages sent between agents. They support async processing with retry logic.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import { makeId } from '@happyvertical/utils';
 import type { DispatchMetadata, DispatchStatus } from '../types.js';
+
+const logger = createLogger({ level: 'info' });
+
+/**
+ * Safely parses a JSON column from a `_smrt_dispatch` row.
+ *
+ * A single corrupted `payload`/`metadata` value must not throw out of the
+ * `Dispatch` constructor, since `process()`/`list()` map `fromRow` over a whole
+ * batch — one poison row would otherwise stall every dispatch in the batch
+ * (#1378). On a parse failure, logs the offending row id + field and falls back
+ * to an empty object so the rest of the batch keeps flowing.
+ */
+function parseJsonField(
+  raw: string,
+  field: 'payload' | 'metadata',
+  rowId: string,
+): Record<string, unknown> {
+  try {
+    // Only malformed JSON is treated as a poison value; valid JSON parses as
+    // before (preserving prior behavior for the well-formed path).
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch (error) {
+    logger.warn('Skipping corrupted _smrt_dispatch JSON field', {
+      dispatchId: rowId,
+      field,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return {};
+  }
+}
 
 /**
  * Raw dispatch data as stored in the database
@@ -107,9 +138,14 @@ export class Dispatch {
     this.updatedAt = data.updated_at ? new Date(data.updated_at) : new Date();
     this.processedAt = data.processed_at ? new Date(data.processed_at) : null;
 
-    // Parse JSON fields
-    this.payload = data.payload ? JSON.parse(data.payload) : {};
-    this.metadata = data.metadata ? JSON.parse(data.metadata) : {};
+    // Parse JSON fields. Guarded so a single corrupted row cannot stall an
+    // entire process()/list() batch (#1378).
+    this.payload = data.payload
+      ? parseJsonField(data.payload, 'payload', this.id)
+      : {};
+    this.metadata = data.metadata
+      ? parseJsonField(data.metadata, 'metadata', this.id)
+      : {};
   }
 
   /**

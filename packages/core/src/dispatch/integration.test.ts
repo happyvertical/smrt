@@ -9,6 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createDispatchBus, type DispatchBus } from './bus.js';
 import type { DispatchMetadata } from './types.js';
@@ -153,6 +154,58 @@ describe('Agent-to-Agent Communication', () => {
     const completed = await bus.list({ status: 'completed' });
     expect(completed).toHaveLength(1);
     expect(completed[0].attempts).toBe(2);
+  });
+
+  it('does not let one corrupted _smrt_dispatch row stall list()/process() (#1378)', async () => {
+    await bus.subscribe({ signalType: 'order.placed', subscriber: 'Worker' });
+
+    // A good, processable dispatch.
+    await bus.emit('order.placed', { orderId: 'good' }, { source: 'Checkout' });
+
+    // Inject a poison row directly into the table (corrupted payload JSON),
+    // simulating manual DB tampering / a partial write. A second connection to
+    // the same file is used rather than reaching into the bus internals.
+    const raw = await getDatabase({ type: 'sqlite', url: dbPath });
+    const now = new Date().toISOString();
+    await raw.query(
+      `INSERT INTO _smrt_dispatch
+        (id, type, source, source_id, payload, status, attempts, last_error,
+         processed_at, processed_by, target_subscriber, correlation_id,
+         tenant_id, metadata, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+      'poison-1',
+      'order.placed',
+      'Checkout',
+      null,
+      '{not valid json', // corrupted payload
+      'pending',
+      0,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      '{}',
+      now,
+      now,
+    );
+
+    // list() must not throw on the corrupted row, and must still return both
+    // rows (the poison row falls back to an empty payload).
+    const listed = await bus.list({});
+    expect(listed).toHaveLength(2);
+    const poison = listed.find((d) => d.id === 'poison-1');
+    expect(poison?.payload).toEqual({});
+
+    // process() must not stall on the poison row; the good dispatch is still
+    // delivered with its real payload.
+    const seen: unknown[] = [];
+    const processed = await bus.process('Worker', async (payload) => {
+      seen.push(payload);
+    });
+    expect(processed).toBeGreaterThanOrEqual(1);
+    expect(seen).toContainEqual({ orderId: 'good' });
   });
 
   it('should support multiple subscribers to the same event', async () => {
