@@ -10,6 +10,7 @@
 
 import type { DatabaseEngine } from './ddl/types.js';
 import {
+  isSafeIdentifier,
   isSafeIdentifierPath,
   quoteIdentifier,
   quoteStringLiteral,
@@ -38,7 +39,7 @@ export function renderIndexTarget(
     // literal. Validate both against an identifier allowlist (these are
     // developer-controlled `@meta` field names) so a malformed name can't
     // smuggle structure into the expression even after escaping.
-    if (!isSafeIdentifierPath(col)) {
+    if (!isSafeIdentifier(col)) {
       throw new Error(
         `[index-utils] Unsafe JSON-path index column "${col}": must be a simple identifier`,
       );

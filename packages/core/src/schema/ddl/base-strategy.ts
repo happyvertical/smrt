@@ -8,6 +8,7 @@
 import { createLogger } from '@happyvertical/logger';
 import {
   formatDefaultValue as formatDefaultValueShared,
+  isSafeIdentifier,
   isSafeIdentifierPath,
   quoteIdentifier,
   quoteStringLiteral,
@@ -35,7 +36,7 @@ const logger = createLogger({ level: 'info' });
  * a programming error and throwing is the safest, loudest outcome.
  */
 function assertSafeJsonPathTarget(jsonColumn: string, path: string): void {
-  if (!isSafeIdentifierPath(jsonColumn)) {
+  if (!isSafeIdentifier(jsonColumn)) {
     throw new Error(
       `[DDL] Unsafe JSON-path index column "${jsonColumn}": must be a simple identifier`,
     );
