@@ -202,6 +202,86 @@ describe('MigrationGenerator', () => {
     });
   });
 
+  describe('generateCreateTable without pre-generated ddl', () => {
+    it('delegates to the engine DDL strategy for per-engine column types (Postgres)', () => {
+      // #1378: when a schema has no `ddl`, the generator must delegate to the
+      // engine strategy (like the orchestrator) instead of emitting the
+      // ABSTRACT column type verbatim. Otherwise Postgres would get JSON/REAL
+      // and the next compare() would flag spurious type drift.
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [
+          {
+            tableName: 'metrics',
+            // No `ddl` — forces the delegated fallback path.
+            columns: {
+              id: { type: 'UUID', primaryKey: true },
+              payload: { type: 'JSON' },
+              ratio: { type: 'REAL' },
+            },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [],
+            version: '1.0.0',
+          } as SchemaDefinition,
+        ],
+        dropped_tables: [],
+        changes: [],
+      };
+
+      const generator = new MigrationGenerator({
+        engine: 'postgres',
+        format: 'sql',
+        includeDown: true,
+      });
+
+      const migration = generator.generateFromDiff(diff, {
+        name: '0001_metrics',
+        description: 'Add metrics table',
+      });
+
+      const up = migration.up.join('\n');
+      // Per-engine Postgres types, NOT the abstract JSON/REAL.
+      expect(up).toContain('JSONB');
+      expect(up).toContain('DOUBLE PRECISION');
+      expect(up).not.toMatch(/"payload"\s+JSON\b/);
+      expect(up).not.toMatch(/"ratio"\s+REAL\b/);
+      // Native uuid type for the id column (R11).
+      expect(up).toContain('"id" uuid');
+    });
+
+    it('delegates to the SQLite strategy (JSON→TEXT, REAL stays REAL)', () => {
+      const diff: SchemaDiff = {
+        has_changes: true,
+        added_tables: [
+          {
+            tableName: 'metrics',
+            columns: {
+              id: { type: 'TEXT', primaryKey: true },
+              payload: { type: 'JSON' },
+            },
+            indexes: [],
+            triggers: [],
+            foreignKeys: [],
+            dependencies: [],
+            version: '1.0.0',
+          } as SchemaDefinition,
+        ],
+        dropped_tables: [],
+        changes: [],
+      };
+
+      const generator = new MigrationGenerator({ engine: 'sqlite' });
+      const up = generator
+        .generateFromDiff(diff, { name: '0001_metrics' })
+        .up.join('\n');
+      // SQLite maps JSON → TEXT.
+      expect(up).toContain('"payload" TEXT');
+      expect(up).not.toContain('JSONB');
+    });
+  });
+
   describe('generateFromSQL', () => {
     it('should wrap SQL in migration format', () => {
       const generator = new MigrationGenerator({

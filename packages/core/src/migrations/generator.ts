@@ -5,6 +5,7 @@
  * Supports both SQL and TypeScript formats.
  */
 
+import { getDDLStrategy } from '../schema/ddl/index.js';
 import type {
   MigrationDefinition,
   SchemaChange,
@@ -271,40 +272,16 @@ ${downStatementsStr}
       return schema.ddl;
     }
 
-    const tableName = this.quoteIdentifier(schema.tableName);
-    const columns: string[] = [];
-
-    for (const [colName, colDef] of Object.entries(schema.columns)) {
-      const parts: string[] = [this.quoteIdentifier(colName), colDef.type];
-
-      if (colDef.primaryKey) {
-        parts.push('PRIMARY KEY');
-      }
-      if (colDef.notNull) {
-        parts.push('NOT NULL');
-      }
-      if (colDef.unique && !colDef.primaryKey) {
-        parts.push('UNIQUE');
-      }
-      if (colDef.defaultValue !== undefined) {
-        parts.push(`DEFAULT ${this.formatDefaultValue(colDef.defaultValue)}`);
-      }
-
-      columns.push(parts.join(' '));
-    }
-
-    // Add foreign key constraints
-    for (const fk of schema.foreignKeys) {
-      const fkConstraint = `FOREIGN KEY (${this.quoteIdentifier(fk.column)}) REFERENCES ${this.quoteIdentifier(fk.referencesTable)}(${this.quoteIdentifier(fk.referencesColumn)})`;
-      const actions: string[] = [];
-      if (fk.onDelete) actions.push(`ON DELETE ${fk.onDelete}`);
-      if (fk.onUpdate) actions.push(`ON UPDATE ${fk.onUpdate}`);
-      columns.push(
-        `${fkConstraint}${actions.length > 0 ? ` ${actions.join(' ')}` : ''}`,
-      );
-    }
-
-    return `CREATE TABLE IF NOT EXISTS ${tableName} (\n  ${columns.join(',\n  ')}\n)`;
+    // No pre-generated DDL: delegate to the engine's DDL strategy, exactly as
+    // the migration orchestrator does (orchestrate.ts). Building the statement
+    // inline here previously emitted the *abstract* column type verbatim
+    // (JSON/REAL/UUID) instead of the per-engine type (JSONB/DOUBLE
+    // PRECISION/native uuid), so the very next `compare()` flagged spurious
+    // type drift. The strategy also escapes identifiers/defaults safely. (Like
+    // the orchestrator's CREATE TABLE path, foreign-key constraints are not
+    // emitted here — SMRT manages relationships via cross-package refs and
+    // avoids circular DDL FKs, see #1333.)
+    return getDDLStrategy(this.engine).generateCreateTable(schema);
   }
 
   /**

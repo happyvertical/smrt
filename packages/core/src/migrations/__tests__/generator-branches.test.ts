@@ -18,13 +18,17 @@ import { MigrationGenerator } from '../generator.js';
 
 describe('MigrationGenerator branch coverage', () => {
   describe('generateCreateTable from columns (no pre-supplied ddl)', () => {
-    it('builds CREATE TABLE with all column modifiers and FK constraints', () => {
+    it('delegates to the engine DDL strategy for column modifiers + escaped defaults', () => {
+      // #1378: with no pre-generated `ddl`, generateCreateTable delegates to
+      // the engine DDL strategy (like the orchestrator) rather than building
+      // the statement inline with abstract column types. Column modifiers and
+      // escaped defaults still come through; FK constraints are intentionally
+      // NOT emitted on this path (see the next test).
       const diff: SchemaDiff = {
         has_changes: true,
         added_tables: [
           {
             tableName: 'orders',
-            // No `ddl` field — forces the column-by-column build path.
             columns: {
               id: { type: 'TEXT', primaryKey: true, notNull: true },
               code: { type: 'TEXT', unique: true, notNull: true },
@@ -71,22 +75,24 @@ describe('MigrationGenerator branch coverage', () => {
 
       const up = migration.up.join('\n');
       expect(up).toContain('CREATE TABLE IF NOT EXISTS "orders"');
-      expect(up).toContain('"id" TEXT PRIMARY KEY NOT NULL');
+      // The DDL strategy omits the redundant NOT NULL on a PRIMARY KEY column
+      // (PK implies NOT NULL) — this is the orchestrator-aligned output.
+      expect(up).toContain('"id" TEXT PRIMARY KEY');
       expect(up).toContain('"code" TEXT NOT NULL UNIQUE');
       expect(up).toContain('"quantity" INTEGER NOT NULL DEFAULT 0');
       // String default escapes single quotes.
       expect(up).toContain(`"note" TEXT DEFAULT 'O''Brien'`);
-      // FK constraint with both actions.
-      expect(up).toContain(
-        'FOREIGN KEY ("customer_id") REFERENCES "customers"("id") ON DELETE CASCADE ON UPDATE RESTRICT',
-      );
       // DOWN drops the table.
       expect(migration.down.join('\n')).toContain(
         'DROP TABLE IF EXISTS "orders"',
       );
     });
 
-    it('omits ON DELETE/ON UPDATE when the FK declares no actions', () => {
+    it('does not emit inline FK constraints on the delegated path (orchestrator parity)', () => {
+      // The DDL strategy (and thus the delegated generateCreateTable) does not
+      // emit FOREIGN KEY constraints — SMRT manages relationships via
+      // cross-package refs and avoids circular DDL FKs (#1333). This matches
+      // the migration orchestrator's CREATE TABLE path.
       const diff: SchemaDiff = {
         has_changes: true,
         added_tables: [
@@ -116,11 +122,8 @@ describe('MigrationGenerator branch coverage', () => {
       });
 
       const up = migration.up.join('\n');
-      expect(up).toContain(
-        'FOREIGN KEY ("target_id") REFERENCES "targets"("id")',
-      );
-      expect(up).not.toContain('ON DELETE');
-      expect(up).not.toContain('ON UPDATE');
+      expect(up).toContain('CREATE TABLE IF NOT EXISTS "links"');
+      expect(up).not.toContain('FOREIGN KEY');
     });
   });
 
