@@ -276,4 +276,25 @@ describe('DDL strategy identifier safety (CREATE TABLE / INDEX)', () => {
       ),
     ).toThrow(/Unsafe JSON-path index column/);
   });
+
+  it('rejects a dotted jsonPath column in generateIndexes on every engine', () => {
+    // Regression (codex xhigh on #1578 fixups): SQLiteStrategy overrides
+    // formatJsonPathIndexExpression and used to validate the column with the
+    // dotted isSafeIdentifierPath, so SQLite accepted `a.b` while PG/DuckDB
+    // rejected it. All engines must reject a dotted column consistently.
+    const schema = baseSchema({
+      indexes: [
+        {
+          name: 'idx_meta_path',
+          columns: [],
+          jsonPath: { column: 'a.b', path: 'x' },
+        },
+      ],
+    });
+    for (const engine of ['sqlite', 'postgres', 'duckdb'] as const) {
+      expect(() => getDDLStrategy(engine).generateIndexes(schema)).toThrow(
+        /Unsafe JSON-path index column/,
+      );
+    }
+  });
 });
