@@ -8,6 +8,9 @@
  * extending ProfileRelationship/ProfileRelationshipTerm
  */
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   DEFAULT_BASE_CLASSES,
@@ -182,6 +185,105 @@ describe('Base Class Discovery', () => {
 
       // Pass if we at least have the defaults
       expect(baseClasses.length).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  // Regression for #1378: base-class extraction used to hardcode
+  // `node_modules/{pkg}/dist/manifest.json`, so a workspace package whose
+  // manifest lives at `.smrt/manifest.json` (source-only, not yet built to
+  // dist/) contributed ZERO base classes, silently degrading inheritance
+  // detection. Discovery resolves `.smrt/` and `src/manifest/` too, so base
+  // class extraction must follow the same resolution.
+  describe('non-dist manifest locations (#1378)', () => {
+    let testDir: string | null = null;
+    let originalCwd: string | null = null;
+    const packageName = '@happyvertical/smrt-smrtdir-fixture';
+
+    function buildWorkspaceWithSmrtDirManifest(): void {
+      testDir = mkdtempSync(join(tmpdir(), 'smrt-basecls-smrtdir-'));
+      const packageDir = join(
+        testDir,
+        'node_modules',
+        '@happyvertical',
+        'smrt-smrtdir-fixture',
+      );
+      // Manifest lives under .smrt/, NOT dist/.
+      const smrtDir = join(packageDir, '.smrt');
+      mkdirSync(smrtDir, { recursive: true });
+
+      writeFileSync(
+        join(testDir, 'package.json'),
+        JSON.stringify(
+          {
+            name: 'smrt-basecls-consumer',
+            type: 'module',
+            dependencies: { [packageName]: '1.0.0' },
+          },
+          null,
+          2,
+        ),
+      );
+      writeFileSync(
+        join(packageDir, 'package.json'),
+        JSON.stringify(
+          { name: packageName, type: 'module', main: './index.js' },
+          null,
+          2,
+        ),
+      );
+      writeFileSync(join(packageDir, 'index.js'), 'export {};\n');
+      writeFileSync(
+        join(smrtDir, 'manifest.json'),
+        JSON.stringify(
+          {
+            moduleType: 'smrt',
+            version: '1.0.0',
+            packageName,
+            objects: {
+              [`${packageName}:SmrtDirBase`]: {
+                className: 'SmrtDirBase',
+                qualifiedName: `${packageName}:SmrtDirBase`,
+                packageName,
+                collection: 'smrt_dir_bases',
+                fields: {},
+              },
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      // discoverBaseClasses() calls discoverSmrtPackages() with the default cwd,
+      // while it loads manifests relative to its `cwd` option — point both at
+      // the fixture and bypass the discovery cache.
+      originalCwd = process.cwd();
+      process.chdir(testDir);
+      process.env.SMRT_DISABLE_DISCOVERY_CACHE = 'true';
+    }
+
+    afterEach(() => {
+      if (originalCwd) {
+        process.chdir(originalCwd);
+        originalCwd = null;
+      }
+      delete process.env.SMRT_DISABLE_DISCOVERY_CACHE;
+      if (testDir) {
+        rmSync(testDir, { recursive: true, force: true });
+        testDir = null;
+      }
+    });
+
+    it('contributes base classes from a .smrt/manifest.json package (sync)', () => {
+      buildWorkspaceWithSmrtDirManifest();
+      const baseClasses = discoverBaseClassesSync({ cwd: testDir as string });
+      expect(baseClasses).toContain('SmrtDirBase');
+    });
+
+    it('contributes base classes from a .smrt/manifest.json package (async)', async () => {
+      buildWorkspaceWithSmrtDirManifest();
+      const baseClasses = await discoverBaseClasses({ cwd: testDir as string });
+      expect(baseClasses).toContain('SmrtDirBase');
     });
   });
 });
