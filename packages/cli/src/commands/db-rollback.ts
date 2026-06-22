@@ -51,6 +51,12 @@ export const dbRollbackCommand: CLICommand = {
   handler: async (_args: string[], options: any) => {
     let db: any;
 
+    // `parseCliArgs` returns option keys verbatim, so the declared `'dry-run'`
+    // arrives as the kebab key `options['dry-run']` — not `options.dryRun`.
+    // Read the kebab key first (real CLI path) and keep the camel fallback so
+    // handler-direct callers/tests passing `{ dryRun: true }` still work.
+    const dryRun = options['dry-run'] ?? options.dryRun;
+
     try {
       // 1. Load CLI config
       const { getPackageConfig } = await import('@happyvertical/smrt-config');
@@ -176,7 +182,7 @@ export const dbRollbackCommand: CLICommand = {
       }
 
       // 9. Confirm rollback (unless --force or --dry-run)
-      if (!options.force && !options.dryRun && !options.json) {
+      if (!options.force && !dryRun && !options.json) {
         console.log('⚠️  WARNING: This will revert database changes!');
 
         const readline = await import('node:readline/promises');
@@ -196,7 +202,7 @@ export const dbRollbackCommand: CLICommand = {
       }
 
       // 10. Dry-run mode
-      if (options.dryRun) {
+      if (dryRun) {
         if (options.json) {
           console.log(
             JSON.stringify({
