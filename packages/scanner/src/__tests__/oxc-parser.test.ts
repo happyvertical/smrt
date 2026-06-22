@@ -77,6 +77,40 @@ describe('OXC Parser', () => {
       expect(tagsField?.typeAnnotation).toBe('string[]');
     });
 
+    it('should extract negative numeric defaults (UnaryExpression unwrap)', () => {
+      // A negative initializer parses as UnaryExpression{op:'-', arg:Literal},
+      // not a bare Literal. The 0-vs-0.0 heuristic must unwrap it, otherwise the
+      // default is dropped and `-1.5` mis-infers as integer.
+      const source = `
+        @smrt()
+        class Account extends SmrtObject {
+          price: number = -1.5;
+          count: number = -5;
+          balance = -100;
+        }
+      `;
+
+      const result = parseSource(source);
+
+      expect(result.classes).toHaveLength(1);
+      const fields = result.classes[0].fields;
+
+      // Negative decimal: default captured, decimal point detected.
+      const priceField = fields.find((f) => f.name === 'price');
+      expect(priceField?.numericValue).toBe(-1.5);
+      expect(priceField?.hasDecimalPoint).toBe(true);
+
+      // Negative integer: default captured, no decimal point.
+      const countField = fields.find((f) => f.name === 'count');
+      expect(countField?.numericValue).toBe(-5);
+      expect(countField?.hasDecimalPoint).toBe(false);
+
+      // Unannotated negative integer: numericValue drives integer inference.
+      const balanceField = fields.find((f) => f.name === 'balance');
+      expect(balanceField?.numericValue).toBe(-100);
+      expect(balanceField?.hasDecimalPoint).toBe(false);
+    });
+
     it('should extract decorator config', () => {
       const source = `
         @smrt({
