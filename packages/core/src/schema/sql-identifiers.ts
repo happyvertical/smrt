@@ -333,3 +333,13 @@ function formatJsonDefault(value: unknown): string {
 export function isSafeIdentifierPath(value: string): boolean {
   return /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(value);
 }
+
+/**
+ * Allowlist for a single SQL identifier with no dots (e.g. a column name).
+ * Stricter than {@link isSafeIdentifierPath}: use this for the *column* of a
+ * JSON-path index (a real column name is always a simple identifier), and
+ * {@link isSafeIdentifierPath} for the dotted *path* segment.
+ */
+export function isSafeIdentifier(value: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(value);
+}

@@ -13,6 +13,7 @@ import { getDDLStrategy } from './ddl/index.js';
 import { renderIndexTarget } from './index-utils.js';
 import {
   formatDefaultValue,
+  isSafeIdentifier,
   isSafeIdentifierPath,
   isSafeSqlFunctionDefault,
   quoteIdentifier,
@@ -68,6 +69,23 @@ describe('isSafeIdentifierPath', () => {
     expect(isSafeIdentifierPath('a-b')).toBe(false);
     expect(isSafeIdentifierPath('')).toBe(false);
     expect(isSafeIdentifierPath('.a')).toBe(false);
+  });
+});
+
+describe('isSafeIdentifier (no dots — for column names)', () => {
+  it('accepts a simple identifier', () => {
+    expect(isSafeIdentifier('a')).toBe(true);
+    expect(isSafeIdentifier('_meta_data')).toBe(true);
+  });
+  it('rejects a dotted identifier (unlike isSafeIdentifierPath)', () => {
+    // A JSON-path index *column* is a real column name and must be simple;
+    // only the *path* segment may be dotted.
+    expect(isSafeIdentifier('a.b')).toBe(false);
+    expect(isSafeIdentifierPath('a.b')).toBe(true);
+  });
+  it('rejects injection / malformed input', () => {
+    expect(isSafeIdentifier("x'); DROP TABLE t; --")).toBe(false);
+    expect(isSafeIdentifier('')).toBe(false);
   });
 });
 
@@ -173,7 +191,7 @@ describe('DDL strategy identifier safety (CREATE TABLE / INDEX)', () => {
       baseSchema({
         columns: {
           id: { type: 'TEXT', primaryKey: true },
-          ['evil" ); DROP TABLE x; --']: { type: 'TEXT' },
+          'evil" ); DROP TABLE x; --': { type: 'TEXT' },
         },
       }),
     );
@@ -248,5 +266,14 @@ describe('DDL strategy identifier safety (CREATE TABLE / INDEX)', () => {
         'sqlite',
       ),
     ).toThrow(/Unsafe JSON-path index path/);
+  });
+
+  it('rejects a dotted jsonPath column (must be a simple identifier)', () => {
+    expect(() =>
+      renderIndexTarget(
+        { columns: [], jsonPath: { column: 'a.b', path: 'x' } },
+        'sqlite',
+      ),
+    ).toThrow(/Unsafe JSON-path index column/);
   });
 });
