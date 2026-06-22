@@ -166,12 +166,16 @@ async function overlayTemplate(
       baseDir = dirname(source.resolved);
       break;
     case 'git': {
-      // For git templates, the temp directory is stored in config
-      const tempDir = (config as any).__tempDir;
-      if (!tempDir) {
+      // For git templates the temp directory is stored on the config. Prefer
+      // the subdir-resolved `__templateRoot` so `github:user/repo/subdir`
+      // overlays from the subdir, not the repo root (#1385); fall back to
+      // `__tempDir` for the non-subdir case / older configs.
+      const baseGitDir =
+        (config as any).__templateRoot ?? (config as any).__tempDir;
+      if (!baseGitDir) {
         throw new Error('Git template temp directory not found');
       }
-      baseDir = tempDir;
+      baseDir = baseGitDir;
       break;
     }
     case 'local':

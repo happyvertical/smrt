@@ -160,6 +160,50 @@ describe('git-loader (download + extraction)', () => {
     await expect(cleanupGitTemplate(config)).resolves.toBeUndefined();
   });
 
+  // Regression for #1385: a subdirectory template (github:user/repo/subdir)
+  // resolves its config under <tempDir>/subdir, but the overlay base used to be
+  // stored as the repo-root tempDir, so overlayTemplate copied from the wrong
+  // place and subdir templates were effectively broken. The fix records the
+  // subdir-resolved dir as __templateRoot; getGitTemplateDir must return it.
+  it('uses the subdirectory as the overlay base for subdir templates', async () => {
+    mockExtract.mockImplementation((opts: any) => {
+      extractState.cwd = opts.cwd;
+      const stream = new EventEmitter() as any;
+      stream.write = vi.fn();
+      stream.end = vi.fn();
+      setImmediate(() => {
+        // The real tar extraction lays out the whole repo; the template lives
+        // in a subdirectory. Write the config under <tempDir>/templates/site.
+        const subdir = join(opts.cwd, 'templates', 'site');
+        mkdirSync(subdir, { recursive: true });
+        writeFileSync(
+          join(subdir, 'template.config.js'),
+          `export default ${JSON.stringify({
+            name: 'Subdir Template',
+            description: 'lives in a subdir',
+            dependencies: { dep: '1.0.0' },
+          })};`,
+          'utf-8',
+        );
+        stream.emit('finish');
+      });
+      return stream;
+    });
+    mockHttpsGet.mockImplementation(fakeSuccessfulGet());
+
+    const config = await loadGitTemplate('github:user/repo/templates/site');
+    expect(config.name).toBe('Subdir Template');
+
+    // The overlay base must point at the subdir, not the repo-root temp dir.
+    const overlayBase = getGitTemplateDir(config);
+    expect(overlayBase.endsWith(join('templates', 'site'))).toBe(true);
+    // __tempDir remains the repo root so cleanup removes the whole tree.
+    expect((config as any).__tempDir).not.toBe(overlayBase);
+    expect(overlayBase.startsWith((config as any).__tempDir)).toBe(true);
+
+    await cleanupGitTemplate(config);
+  });
+
   // When the extracted .js config loads but fails validation, loadGitTemplate's
   // outer try/catch swallows the validation error and falls through to the .ts
   // attempt, which then fails to import — surfacing as a "no config" error.
