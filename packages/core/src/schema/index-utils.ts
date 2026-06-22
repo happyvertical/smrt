@@ -9,6 +9,11 @@
  */
 
 import type { DatabaseEngine } from './ddl/types.js';
+import {
+  isSafeIdentifierPath,
+  quoteIdentifier,
+  quoteStringLiteral,
+} from './sql-identifiers.js';
 import type { IndexDefinition } from './types.js';
 
 /**
@@ -29,9 +34,25 @@ export function renderIndexTarget(
   if (index.jsonPath?.column && index.jsonPath.path) {
     const col = index.jsonPath.column;
     const path = index.jsonPath.path;
+    // The column is interpolated as an identifier and the path as a SQL string
+    // literal. Validate both against an identifier allowlist (these are
+    // developer-controlled `@meta` field names) so a malformed name can't
+    // smuggle structure into the expression even after escaping.
+    if (!isSafeIdentifierPath(col)) {
+      throw new Error(
+        `[index-utils] Unsafe JSON-path index column "${col}": must be a simple identifier`,
+      );
+    }
+    if (!isSafeIdentifierPath(path)) {
+      throw new Error(
+        `[index-utils] Unsafe JSON-path index path "${path}": must be a simple (dotted) identifier`,
+      );
+    }
     if (engine === 'sqlite') {
       // SQLite's json_extract is a function call — no extra wrapping needed.
-      return `json_extract("${col}", '$.${path}')`;
+      return `json_extract(${quoteIdentifier(col)}, ${quoteStringLiteral(
+        `$.${path}`,
+      )})`;
     }
     // Postgres / DuckDB JSON path access via `->>`. PostgreSQL requires
     // operator expressions in index elements to be parenthesized — the
@@ -39,9 +60,9 @@ export function renderIndexTarget(
     // the expression itself needs its own parens. Returning the wrapped
     // form here keeps the rule local to this helper and works on DuckDB
     // (extra parens are harmless).
-    return `("${col}"->>'${path}')`;
+    return `(${quoteIdentifier(col)}->>${quoteStringLiteral(path)})`;
   }
-  return (index.columns ?? []).map((c) => `"${c}"`).join(', ');
+  return (index.columns ?? []).map((c) => quoteIdentifier(c)).join(', ');
 }
 
 /**
