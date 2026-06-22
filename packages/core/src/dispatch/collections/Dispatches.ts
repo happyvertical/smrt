@@ -359,11 +359,17 @@ export class DispatchCollection {
   }
 
   /**
-   * Find failed dispatches eligible for retry
+   * Find failed dispatches eligible for retry.
+   *
+   * @param tenantScope - Active tenant scope (S5 #1398). Derived server-side by
+   *   the bus; restricts retryable rows to the active tenant (plus global) so a
+   *   tenant's `retry()` cannot reset another tenant's failed dispatches. See
+   *   {@link pushTenantPredicate} for the exact semantics.
    */
   static async findRetryable(
     db: DatabaseInterface,
     options: DispatchRetryOptions = {},
+    tenantScope?: DispatchTenantScope,
   ): Promise<Dispatch[]> {
     const conditions: string[] = ["status = 'failed'"];
     const params: unknown[] = [];
@@ -385,6 +391,12 @@ export class DispatchCollection {
         .join(', ');
       conditions.push(`type IN (${placeholders})`);
       params.push(...options.signalTypes);
+    }
+
+    if (
+      pushTenantPredicate(conditions, params, tenantScope, `$${paramIndex}`)
+    ) {
+      paramIndex++;
     }
 
     const { rows } = await db.query(
@@ -418,11 +430,17 @@ export class DispatchCollection {
   }
 
   /**
-   * Cleanup old dispatches
+   * Cleanup old dispatches.
+   *
+   * @param tenantScope - Active tenant scope (S5 #1398). Derived server-side by
+   *   the bus; restricts deletions to the active tenant (plus global) so a
+   *   tenant's `cleanup()` cannot delete another tenant's dispatches. See
+   *   {@link pushTenantPredicate} for the exact semantics.
    */
   static async cleanup(
     db: DatabaseInterface,
     options: DispatchCleanupOptions = {},
+    tenantScope?: DispatchTenantScope,
   ): Promise<DispatchCleanupResult> {
     const result: DispatchCleanupResult = {
       completedDeleted: 0,
@@ -433,9 +451,16 @@ export class DispatchCollection {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - options.completedOlderThanDays);
 
+      const conditions: string[] = [
+        "status = 'completed'",
+        'processed_at < $1',
+      ];
+      const params: unknown[] = [cutoff.toISOString()];
+      pushTenantPredicate(conditions, params, tenantScope, '$2');
+
       const { rowCount } = await db.query(
-        `DELETE FROM _smrt_dispatch WHERE status = 'completed' AND processed_at < $1`,
-        cutoff.toISOString(),
+        `DELETE FROM _smrt_dispatch WHERE ${conditions.join(' AND ')}`,
+        ...params,
       );
       result.completedDeleted = rowCount || 0;
     }
@@ -444,9 +469,13 @@ export class DispatchCollection {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - options.failedOlderThanDays);
 
+      const conditions: string[] = ["status = 'failed'", 'updated_at < $1'];
+      const params: unknown[] = [cutoff.toISOString()];
+      pushTenantPredicate(conditions, params, tenantScope, '$2');
+
       const { rowCount } = await db.query(
-        `DELETE FROM _smrt_dispatch WHERE status = 'failed' AND updated_at < $1`,
-        cutoff.toISOString(),
+        `DELETE FROM _smrt_dispatch WHERE ${conditions.join(' AND ')}`,
+        ...params,
       );
       result.failedDeleted = rowCount || 0;
     }
