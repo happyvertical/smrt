@@ -245,6 +245,73 @@ describe('ManifestAdapter', () => {
       });
     });
 
+    describe('negative numeric defaults (0 vs 0.0 heuristic)', () => {
+      // Regression for the negative-initializer gap: the oxc extractor must
+      // unwrap `UnaryExpression('-')` so `numericValue`/`hasDecimalPoint` are
+      // populated for negatives. These assert the downstream inference the
+      // populated fields drive.
+      it('infers decimal with the negative default for `price: number = -1.5`', () => {
+        const field: RawFieldDefinition = {
+          name: 'price',
+          accessibility: 'public',
+          typeAnnotation: 'number',
+          initializer: '-1.5',
+          optional: false,
+          hasDecimalPoint: true,
+          numericValue: -1.5,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.inferFieldType(field);
+        expect(result.type).toBe('decimal');
+        expect(result.defaultValue).toBe(-1.5);
+      });
+
+      it('infers integer with the negative default for `count: number = -5`', () => {
+        const field: RawFieldDefinition = {
+          name: 'count',
+          accessibility: 'public',
+          typeAnnotation: 'number',
+          initializer: '-5',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: -5,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.inferFieldType(field);
+        expect(result.type).toBe('integer');
+        expect(result.defaultValue).toBe(-5);
+      });
+
+      it('infers integer (not text) for unannotated `balance = -100`', () => {
+        const field: RawFieldDefinition = {
+          name: 'balance',
+          accessibility: 'public',
+          typeAnnotation: null,
+          initializer: '-100',
+          optional: false,
+          hasDecimalPoint: false,
+          numericValue: -100,
+          decorators: [],
+          isStatic: false,
+          readonly: false,
+          line: 1,
+        };
+
+        const result = adapter.inferFieldType(field);
+        expect(result.type).toBe('integer');
+        expect(result.defaultValue).toBe(-100);
+        expect(result.source).toBe('heuristic');
+      });
+    });
+
     describe('string literal union types', () => {
       it('should infer text for inline string literal union', () => {
         const field: RawFieldDefinition = {
