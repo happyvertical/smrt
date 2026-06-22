@@ -588,6 +588,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-ledgers':
+        specifier: workspace:*
+        version: link:../ledgers
       '@happyvertical/smrt-tenancy':
         specifier: workspace:*
         version: link:../tenancy
@@ -598,9 +601,6 @@ importers:
         specifier: workspace:*
         version: link:../smrt-ui
     devDependencies:
-      '@happyvertical/smrt-ledgers':
-        specifier: workspace:*
-        version: link:../ledgers
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

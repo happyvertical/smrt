@@ -20,7 +20,7 @@ E-commerce with Contract STI hierarchy, invoice lifecycle, payment tracking, pay
 
 ## Ledger Integration
 
-Dynamic import of `@happyvertical/smrt-ledgers` — optional dependency. Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` returns null if ledgers not available.
+`@happyvertical/smrt-ledgers` is a regular dependency, loaded lazily via dynamic `import()` so the coupling stays runtime-only (no hard static import; the package graph stays a DAG — see #1582). Invoice stores `arJournalId` and `revenueJournalId` as string references. `recognizeRevenue()` creates a balanced AR journal entry; `getArJournal()` returns null when no journal has been recognized yet.
 
 ## Cross-Package References
 

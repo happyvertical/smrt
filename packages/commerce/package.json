@@ -60,6 +60,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*"
@@ -73,7 +74,6 @@
     }
   },
   "devDependencies": {
-    "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.7",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
