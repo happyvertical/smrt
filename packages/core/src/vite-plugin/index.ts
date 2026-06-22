@@ -56,10 +56,6 @@ export interface SmrtPluginOptions {
   typeDeclarationsPath?: string;
   /** Plugin execution mode - controls Node.js vs browser compatibility */
   mode?: 'server' | 'client' | 'auto';
-  /** Pre-generated manifest for client mode (avoids file scanning) */
-  staticManifest?: SmartObjectManifest;
-  /** Path to static manifest file for client mode */
-  manifestPath?: string;
   /**
    * @deprecated OXC scanner is now the only scanner. This option is ignored.
    */
@@ -124,7 +120,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
     followImports = true, // Default true: needed for multi-package inheritance
     typeDeclarationsPath = 'src/types',
     mode = 'auto',
-    manifestPath,
     svelteKit = {
       enabled: false,
       routesDir: 'src/routes/api',
@@ -164,7 +159,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
 
   let server: ViteDevServer | undefined;
   let manifest: SmartObjectManifest | null = null;
-  const manifestGenerator: any = null; // Will be lazily created in server mode
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
   let config: any = null; // Store resolved config for closeBundle hook
@@ -538,98 +532,122 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
         // Watch for file changes
         const watcher = devServer.watcher;
 
+        // Guard each watcher handler: scanAndGenerateManifest re-throws on a
+        // mid-edit scan error, and an unhandled rejection in a watcher callback
+        // can crash the dev server. Log and keep the previous manifest (#1378).
         watcher.on('change', async (file) => {
-          if (await shouldRescan(file)) {
-            console.log(`[smrt] Rescanning due to change in ${file}`);
-            manifest = await scanAndGenerateManifest(projectRoot);
+          try {
+            if (await shouldRescan(file)) {
+              console.log(`[smrt] Rescanning due to change in ${file}`);
+              manifest = await scanAndGenerateManifest(projectRoot);
 
-            // Write local manifest for CLI discovery (Issue #963)
-            if (manifest) {
-              await writeLocalManifest(manifest, projectRoot);
-              warnCliApiCoherenceViolations(manifest);
-            }
+              // Write local manifest for CLI discovery (Issue #963)
+              if (manifest) {
+                await writeLocalManifest(manifest, projectRoot);
+                warnCliApiCoherenceViolations(manifest);
+              }
 
-            // Generate SvelteKit routes if enabled
-            if (svelteKit.enabled && manifest && server) {
-              await generateSvelteKitRoutes(server.config.root, manifest, {
-                enabled: svelteKit.enabled,
-                routesDir: svelteKit.routesDir || 'src/routes/api',
-                objectsDir: svelteKit.objectsDir || 'src/lib/objects',
-                configPath: svelteKit.configPath || 'src/lib/server',
-                configFileName: svelteKit.configFileName || 'smrt.ts',
-                kebabRoutes: svelteKit.kebabRoutes ?? false,
-                knowledge: await resolveKnowledgeConfig(
-                  server.config.root,
-                  manifest,
-                ),
+              // Generate SvelteKit routes if enabled
+              if (svelteKit.enabled && manifest && server) {
+                await generateSvelteKitRoutes(server.config.root, manifest, {
+                  enabled: svelteKit.enabled,
+                  routesDir: svelteKit.routesDir || 'src/routes/api',
+                  objectsDir: svelteKit.objectsDir || 'src/lib/objects',
+                  configPath: svelteKit.configPath || 'src/lib/server',
+                  configFileName: svelteKit.configFileName || 'smrt.ts',
+                  kebabRoutes: svelteKit.kebabRoutes ?? false,
+                  knowledge: await resolveKnowledgeConfig(
+                    server.config.root,
+                    manifest,
+                  ),
+                });
+              }
+
+              // Invalidate virtual modules
+              Object.values(VIRTUAL_MODULES).forEach((id) => {
+                const module = server?.moduleGraph.getModuleById(id);
+                if (module) {
+                  server?.reloadModule(module);
+                }
               });
             }
-
-            // Invalidate virtual modules
-            Object.values(VIRTUAL_MODULES).forEach((id) => {
-              const module = server?.moduleGraph.getModuleById(id);
-              if (module) {
-                server?.reloadModule(module);
-              }
-            });
+          } catch (error) {
+            console.error(
+              `[smrt] Failed to rescan after change in ${file}:`,
+              error,
+            );
           }
         });
 
         watcher.on('add', async (file) => {
-          if (await shouldRescan(file)) {
-            console.log(`[smrt] Rescanning due to new file ${file}`);
-            manifest = await scanAndGenerateManifest(projectRoot);
+          try {
+            if (await shouldRescan(file)) {
+              console.log(`[smrt] Rescanning due to new file ${file}`);
+              manifest = await scanAndGenerateManifest(projectRoot);
 
-            // Write local manifest for CLI discovery (Issue #963)
-            if (manifest) {
-              await writeLocalManifest(manifest, projectRoot);
-              warnCliApiCoherenceViolations(manifest);
-            }
+              // Write local manifest for CLI discovery (Issue #963)
+              if (manifest) {
+                await writeLocalManifest(manifest, projectRoot);
+                warnCliApiCoherenceViolations(manifest);
+              }
 
-            // Generate SvelteKit routes if enabled
-            if (svelteKit.enabled && manifest && server) {
-              await generateSvelteKitRoutes(server.config.root, manifest, {
-                enabled: svelteKit.enabled,
-                routesDir: svelteKit.routesDir || 'src/routes/api',
-                objectsDir: svelteKit.objectsDir || 'src/lib/objects',
-                configPath: svelteKit.configPath || 'src/lib/server',
-                configFileName: svelteKit.configFileName || 'smrt.ts',
-                kebabRoutes: svelteKit.kebabRoutes ?? false,
-                knowledge: await resolveKnowledgeConfig(
-                  server.config.root,
-                  manifest,
-                ),
-              });
+              // Generate SvelteKit routes if enabled
+              if (svelteKit.enabled && manifest && server) {
+                await generateSvelteKitRoutes(server.config.root, manifest, {
+                  enabled: svelteKit.enabled,
+                  routesDir: svelteKit.routesDir || 'src/routes/api',
+                  objectsDir: svelteKit.objectsDir || 'src/lib/objects',
+                  configPath: svelteKit.configPath || 'src/lib/server',
+                  configFileName: svelteKit.configFileName || 'smrt.ts',
+                  kebabRoutes: svelteKit.kebabRoutes ?? false,
+                  knowledge: await resolveKnowledgeConfig(
+                    server.config.root,
+                    manifest,
+                  ),
+                });
+              }
             }
+          } catch (error) {
+            console.error(
+              `[smrt] Failed to rescan after adding ${file}:`,
+              error,
+            );
           }
         });
 
         watcher.on('unlink', async (file) => {
-          if (await shouldRescan(file)) {
-            console.log(`[smrt] Rescanning due to removed file ${file}`);
-            manifest = await scanAndGenerateManifest(projectRoot);
+          try {
+            if (await shouldRescan(file)) {
+              console.log(`[smrt] Rescanning due to removed file ${file}`);
+              manifest = await scanAndGenerateManifest(projectRoot);
 
-            // Write local manifest for CLI discovery (Issue #963)
-            if (manifest) {
-              await writeLocalManifest(manifest, projectRoot);
-              warnCliApiCoherenceViolations(manifest);
-            }
+              // Write local manifest for CLI discovery (Issue #963)
+              if (manifest) {
+                await writeLocalManifest(manifest, projectRoot);
+                warnCliApiCoherenceViolations(manifest);
+              }
 
-            // Generate SvelteKit routes if enabled
-            if (svelteKit.enabled && manifest && server) {
-              await generateSvelteKitRoutes(server.config.root, manifest, {
-                enabled: svelteKit.enabled,
-                routesDir: svelteKit.routesDir || 'src/routes/api',
-                objectsDir: svelteKit.objectsDir || 'src/lib/objects',
-                configPath: svelteKit.configPath || 'src/lib/server',
-                configFileName: svelteKit.configFileName || 'smrt.ts',
-                kebabRoutes: svelteKit.kebabRoutes ?? false,
-                knowledge: await resolveKnowledgeConfig(
-                  server.config.root,
-                  manifest,
-                ),
-              });
+              // Generate SvelteKit routes if enabled
+              if (svelteKit.enabled && manifest && server) {
+                await generateSvelteKitRoutes(server.config.root, manifest, {
+                  enabled: svelteKit.enabled,
+                  routesDir: svelteKit.routesDir || 'src/routes/api',
+                  objectsDir: svelteKit.objectsDir || 'src/lib/objects',
+                  configPath: svelteKit.configPath || 'src/lib/server',
+                  configFileName: svelteKit.configFileName || 'smrt.ts',
+                  kebabRoutes: svelteKit.kebabRoutes ?? false,
+                  knowledge: await resolveKnowledgeConfig(
+                    server.config.root,
+                    manifest,
+                  ),
+                });
+              }
             }
+          } catch (error) {
+            console.error(
+              `[smrt] Failed to rescan after removing ${file}:`,
+              error,
+            );
           }
         });
       }
@@ -772,31 +790,6 @@ export function smrtPlugin(options: SmrtPluginOptions = {}): Plugin {
       }
     },
   };
-
-  async function _loadStaticManifest(): Promise<SmartObjectManifest | null> {
-    if (!manifestPath) return null;
-
-    try {
-      // Conditionally import fs for Node.js environments
-      const { readFileSync } = await import('node:fs');
-      const manifestContent = readFileSync(manifestPath, 'utf-8');
-      return JSON.parse(manifestContent);
-    } catch (error) {
-      console.warn(
-        `[smrt] Could not load static manifest from ${manifestPath}:`,
-        error,
-      );
-      return null;
-    }
-  }
-
-  function createEmptyManifest(): SmartObjectManifest {
-    return {
-      version: '1.0.0',
-      timestamp: Date.now(),
-      objects: {},
-    };
-  }
 
   async function scanAndGenerateManifest(
     rootDir: string,
