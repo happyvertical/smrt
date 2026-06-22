@@ -260,7 +260,8 @@ export class AnalyticsProperty extends SmrtObject {
    * AI-powered: Check if property is performing well
    */
   async isPerformingWell(): Promise<boolean> {
-    return await this.is(`
+    return await this.is(
+      `
       Based on the property configuration and metadata:
       - Property: ${this.displayName}
       - Provider: ${this.provider}
@@ -268,7 +269,10 @@ export class AnalyticsProperty extends SmrtObject {
       - Last sync: ${this.lastSyncAt}
 
       Is this property properly configured and likely performing well?
-    `);
+    `,
+      // Property fields hand-rolled above; skip is()'s object-data injection.
+      { includeData: false },
+    );
   }
 }
 

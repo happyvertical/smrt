@@ -159,4 +159,52 @@ describe('Issue prompt integration', () => {
     expect(explicitMessage).toHaveBeenCalledTimes(1);
     expect(getAI).not.toHaveBeenCalled();
   });
+
+  it('keeps incorporateFeedback curated (no object-dump injection) so the body is not duplicated (#1567)', async () => {
+    // No `template` override → the default feedback template is used, which
+    // interpolates only {body} and {comments}. Setting `profile: 'deep'`
+    // resolves a provider so the synthesis routes through sendPromptMessage().
+    await overrides.create({
+      key: issueIncorporateFeedbackPrompt.key,
+      tenantId: null,
+      profile: 'deep',
+    });
+
+    const issue = new Issue({
+      db,
+      tenantId: null,
+      title: 'Quarterly Analytics Rollout',
+      body: 'Current specification body',
+      state: 'open',
+    });
+
+    vi.spyOn(issue, 'getComments').mockResolvedValue([
+      {
+        author: 'alice',
+        body: 'Please add analytics instrumentation.',
+        createdAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+    ] as any);
+
+    const messageSpy = vi.fn(async () => 'Updated spec body');
+    vi.mocked(getAI).mockResolvedValue({ message: messageSpy } as any);
+
+    await issue.incorporateFeedback();
+
+    expect(messageSpy).toHaveBeenCalledTimes(1);
+    const promptText = messageSpy.mock.calls[0]?.[0] as string;
+
+    // The curated template (body once + comments) is present...
+    expect(promptText).toContain('Current specification body');
+    expect(promptText).toContain(
+      '- alice: Please add analytics instrumentation.',
+    );
+    // ...but the object is NOT dumped on top. The template already curates the
+    // relevant fields, so there is no `toPublicJSON()` content body (which would
+    // duplicate the body and leak unrelated fields like `title`).
+    expect(promptText).not.toContain('--- Beginning of content ---');
+    expect(promptText).not.toContain('Quarterly Analytics Rollout');
+    // The body appears exactly once (no duplication from a content-body dump).
+    expect(promptText.split('Current specification body')).toHaveLength(2);
+  });
 });

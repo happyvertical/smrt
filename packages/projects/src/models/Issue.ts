@@ -362,7 +362,12 @@ export class Issue extends SmrtObject {
         aiOptions,
       );
     } else {
-      synthesized = await this.do(resolvedPrompt.text, aiOptions);
+      // The resolved prompt template already curates the issue body + comments,
+      // so opt out of do()'s object-data injection to avoid duplicating the body.
+      synthesized = await this.do(resolvedPrompt.text, {
+        ...aiOptions,
+        includeData: false,
+      });
     }
 
     const result: IncorporateFeedbackResult = {
@@ -449,6 +454,15 @@ export class Issue extends SmrtObject {
     return this.sendPromptMessage(ai, instructions, options);
   }
 
+  /**
+   * Sends a fully-resolved instruction string to the given AI client.
+   *
+   * `incorporateFeedback()` curates the entire prompt (issue body + comments)
+   * via the resolved prompt template, so this path deliberately does NOT inject
+   * the object's own field data — that would duplicate the body. The `this.do()`
+   * fallback path passes `includeData: false` for the same reason, keeping both
+   * `incorporateFeedback()` paths consistent (#1567).
+   */
   private async sendPromptMessage(
     ai: { message: (prompt: string, options?: any) => Promise<string> },
     instructions: string,

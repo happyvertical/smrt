@@ -128,6 +128,8 @@ export class Comment extends SmrtObject {
       Only return the JSON array, nothing else.
 
       Comment: ${this.body}`,
+      // Body is hand-rolled above; skip do()'s object-data injection (no dup).
+      { includeData: false },
     );
 
     try {
@@ -150,6 +152,8 @@ export class Comment extends SmrtObject {
     return await this.do(
       `Summarize this comment in one sentence.
       Comment by ${this.author}: ${this.body}`,
+      // Author + body hand-rolled above; skip do()'s object-data injection.
+      { includeData: false },
     );
   }
 
@@ -163,6 +167,8 @@ export class Comment extends SmrtObject {
       `Classify the sentiment of this comment as exactly one of: positive, negative, neutral
       Only return one word.
       Comment: ${this.body}`,
+      // Body is hand-rolled above; skip do()'s object-data injection (no dup).
+      { includeData: false },
     );
 
     const normalized = result.toLowerCase().trim();
