@@ -33,8 +33,8 @@
     "directory": "packages/template-site-static-json"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-core": "^0.29.1",
-    "@happyvertical/smrt-config": "^0.29.1"
+    "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-config": "workspace:*"
   },
   "publishConfig": {
     "registry": "https://registry.npmjs.org",
