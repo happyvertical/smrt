@@ -21,6 +21,7 @@
  */
 
 import { ObjectRegistry } from '@happyvertical/smrt-core';
+import { parseCliArgs } from '@happyvertical/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CLIGenerator } from '../cli-generator.js';
 
@@ -758,6 +759,128 @@ describe('CLIGenerator - handlers (in-memory collection)', () => {
     await expect(
       (cli as any).handleDelete('Widget', 'nope', { force: true }),
     ).rejects.toThrow(/not found/);
+  });
+});
+
+/**
+ * Regression for the kebab-vs-camel CRUD option bugs (#1385). The list/create/
+ * update commands declare `'order-by'` and `'from-file'`, and `parseCliArgs`
+ * returns keys verbatim — so the handlers must read the kebab keys. The
+ * handler-direct tests above pass `{ orderBy }` / `{ fromFile }`, the camelCase
+ * keys the real CLI never produces, which masked the bug. These route the real
+ * argv through `parseCliArgs` and the generated command's own handler.
+ */
+describe('CLIGenerator - CRUD options via parseCliArgs (regression #1385)', () => {
+  let cli: CLIGenerator;
+  beforeEach(() => {
+    cli = new CLIGenerator({ prompt: false, colors: false });
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  async function commandFor(objectName: string, suffix: string): Promise<any> {
+    const commands = await (cli as any).generateObjectCommands(objectName, {});
+    const lower = objectName.toLowerCase();
+    const cmd = commands.find((c: any) => c.name === `${lower}:${suffix}`);
+    if (!cmd) throw new Error(`command ${lower}:${suffix} not generated`);
+    return cmd;
+  }
+
+  it('honors --order-by routed through parseCliArgs', async () => {
+    // No fields needed for list; getFields is only consulted by create/update.
+    const listCmd = await commandFor('Widget', 'list');
+    const listSpy = vi.fn().mockResolvedValue([]);
+    vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
+      list: listSpy,
+    } as any);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const parsed = parseCliArgs(
+      ['widget:list', '--order-by', 'name'],
+      [listCmd],
+      {},
+    );
+    // Premise: the kebab key is produced, not a camelCase one.
+    expect(parsed.options['order-by']).toBe('name');
+    expect((parsed.options as any).orderBy).toBeUndefined();
+
+    await listCmd.handler(parsed.args, parsed.options);
+
+    expect(listSpy).toHaveBeenCalledTimes(1);
+    expect(listSpy.mock.calls[0][0]).toMatchObject({ orderBy: 'name' });
+  });
+
+  it('honors --from-file on create routed through parseCliArgs', async () => {
+    vi.spyOn(ObjectRegistry, 'getFields').mockReturnValue(new Map());
+    const createCmd = await commandFor('Widget', 'create');
+
+    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'smrt-cli-ff-'));
+    const filePath = join(dir, 'data.json');
+    await writeFile(filePath, JSON.stringify({ title: 'FromKebabFile' }));
+
+    const created: any[] = [];
+    vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
+      create: async (data: any) => ({
+        ...data,
+        id: 'x1',
+        async save() {
+          created.push(this);
+        },
+      }),
+    } as any);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const parsed = parseCliArgs(
+      ['widget:create', '--from-file', filePath],
+      [createCmd],
+      {},
+    );
+    expect(parsed.options['from-file']).toBe(filePath);
+    expect((parsed.options as any).fromFile).toBeUndefined();
+
+    await createCmd.handler(parsed.args, parsed.options);
+
+    expect(created).toHaveLength(1);
+    expect(created[0].title).toBe('FromKebabFile');
+  });
+
+  it('honors --from-file on update routed through parseCliArgs', async () => {
+    vi.spyOn(ObjectRegistry, 'getFields').mockReturnValue(new Map());
+    const updateCmd = await commandFor('Widget', 'update');
+
+    const { mkdtemp, writeFile } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = await mkdtemp(join(tmpdir(), 'smrt-cli-ffu-'));
+    const filePath = join(dir, 'data.json');
+    await writeFile(filePath, JSON.stringify({ title: 'UpdatedFromFile' }));
+
+    const saved: any[] = [];
+    const existing: any = {
+      id: '1',
+      title: 'Old',
+      async save() {
+        saved.push(this);
+      },
+    };
+    vi.spyOn(cli as any, 'getCollection').mockResolvedValue({
+      get: async () => existing,
+    } as any);
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    const parsed = parseCliArgs(
+      ['widget:update', '1', '--from-file', filePath],
+      [updateCmd],
+      {},
+    );
+    expect(parsed.options['from-file']).toBe(filePath);
+
+    await updateCmd.handler(parsed.args, parsed.options);
+
+    expect(saved).toHaveLength(1);
+    expect(existing.title).toBe('UpdatedFromFile');
   });
 });
 
