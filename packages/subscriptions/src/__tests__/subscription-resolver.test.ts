@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { SubscriptionPlan } from '../models/SubscriptionPlan.js';
 import { TenantSubscription } from '../models/TenantSubscription.js';
 import { SubscriptionResolver } from '../services/subscription-resolver.js';
@@ -195,6 +195,100 @@ describe('smrt-subscriptions', () => {
         now: new Date('2026-06-15T00:00:00Z'),
       }),
     ).rejects.toThrow('ai.tokens.total');
+  });
+
+  it('batches threshold usage summaries by usage window', async () => {
+    const plan = new SubscriptionPlan({
+      planKey: 'scale',
+      name: 'Scale',
+      status: 'active',
+    });
+    Object.assign(plan, { id: 'plan-scale' });
+    plan.setThresholds([
+      {
+        metricKey: 'messages.sent',
+        limit: 100,
+        window: 'month',
+        enforcement: 'warn',
+      },
+      {
+        metricKey: 'ai.tokens.total',
+        limit: 1000,
+        window: 'month',
+        enforcement: 'block',
+      },
+      {
+        metricKey: 'messages.sent',
+        limit: 200,
+        window: 'month',
+        enforcement: 'block',
+      },
+    ]);
+
+    const subscription = new TenantSubscription({
+      tenantId: 'tenant-1',
+      planId: 'plan-scale',
+      status: 'active',
+      currentPeriodEnd: new Date('2026-07-01T00:00:00Z'),
+    });
+    Object.assign(subscription, { id: 'sub-scale' });
+
+    const summarize = vi.fn(async () => {
+      throw new Error('single-metric usage reader should not be called');
+    });
+    const summarizeBatch = vi.fn(async () => [
+      {
+        tenantId: 'tenant-1',
+        metricKey: 'messages.sent',
+        quantity: 150,
+        windowStart: new Date('2026-06-01T00:00:00Z'),
+        windowEnd: new Date('2026-07-01T00:00:00Z'),
+      },
+      {
+        tenantId: 'tenant-1',
+        metricKey: 'ai.tokens.total',
+        quantity: 750,
+        windowStart: new Date('2026-06-01T00:00:00Z'),
+        windowEnd: new Date('2026-07-01T00:00:00Z'),
+      },
+    ]);
+
+    const resolver = new SubscriptionResolver({
+      plans: {
+        async get() {
+          return plan;
+        },
+      },
+      subscriptions: {
+        async findCurrentForTenant() {
+          return subscription;
+        },
+      },
+      usage: {
+        summarize,
+        summarizeBatch,
+      },
+    });
+
+    const resolution = await resolver.resolveTenantEntitlements('tenant-1', {
+      now: new Date('2026-06-15T00:00:00Z'),
+    });
+
+    expect(summarize).not.toHaveBeenCalled();
+    expect(summarizeBatch).toHaveBeenCalledTimes(1);
+    expect(summarizeBatch).toHaveBeenCalledWith({
+      tenantId: 'tenant-1',
+      subscriberKind: 'tenant',
+      subscriberExternalId: undefined,
+      metricKeys: ['messages.sent', 'ai.tokens.total'],
+      window: {
+        start: new Date('2026-06-01T00:00:00Z'),
+        end: new Date('2026-07-01T00:00:00Z'),
+      },
+    });
+    expect(
+      resolution.thresholdEvaluations.map((evaluation) => evaluation.state),
+    ).toEqual(['warn', 'ok', 'ok']);
   });
 
   it('returns a closed resolution without a subscription', async () => {

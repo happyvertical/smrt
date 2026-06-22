@@ -158,6 +158,11 @@ describe('createSessionHandler integration', () => {
           email: 'handler.integration@example.com',
           id: user.id,
         });
+        expect(requestEvent.locals.membership).toMatchObject({
+          id: membership.id,
+          tenantId: tenant.id,
+          userId: user.id,
+        });
         expect(requestEvent.locals.permissions).toEqual(
           expect.arrayContaining(['request_scoped_documents.read']),
         );
@@ -187,6 +192,11 @@ describe('createSessionHandler integration', () => {
     expect(event.locals.user).toMatchObject({
       email: 'handler.integration@example.com',
       id: user.id,
+    });
+    expect(event.locals.membership).toMatchObject({
+      id: membership.id,
+      tenantId: tenant.id,
+      userId: user.id,
     });
     expect(event.locals.permissions).toEqual(
       expect.arrayContaining(['request_scoped_documents.read']),

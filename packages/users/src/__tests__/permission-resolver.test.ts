@@ -12,7 +12,7 @@
 import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { GroupCollection } from '../collections/GroupCollection.js';
 import { GroupMemberCollection } from '../collections/GroupMemberCollection.js';
 import { GroupRoleCollection } from '../collections/GroupRoleCollection.js';
@@ -39,6 +39,7 @@ describe('User', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
@@ -412,6 +413,7 @@ describe('PermissionResolver', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     if (existsSync(dbPath)) {
       try {
         rmSync(dbPath, { force: true });
@@ -465,6 +467,56 @@ describe('PermissionResolver', () => {
     expect(result.permissions.has('articles.create')).toBe(true);
     expect(result.permissions.has('articles.update')).toBe(true);
     expect(result.permissions.has('articles.delete')).toBe(false);
+  });
+
+  it('should reuse a provided membership instead of querying it again', async () => {
+    const user = await users.create({ email: 'cached-member@example.com' });
+    await user.save();
+
+    const tenant = await tenants.create({ name: 'Cached Member Org' });
+    await tenant.save();
+
+    const role = await roles.create({ name: 'Cached Editor' });
+    await role.save();
+
+    const permission = await permissions.create({
+      slug: 'articles.cache-read',
+      name: 'Read Cached Articles',
+    });
+    await permission.save();
+
+    const userId = user.id;
+    const tenantId = tenant.id;
+    const roleId = role.id;
+    const permissionId = permission.id;
+    if (!userId || !tenantId || !roleId || !permissionId) {
+      throw new Error('Expected persisted test records to have ids.');
+    }
+
+    await rolePermissions.addPermission(roleId, permissionId);
+
+    const membership = await memberships.create({
+      userId,
+      tenantId,
+      roleId,
+    });
+    await membership.save();
+
+    const resolver = await PermissionResolver.create({
+      db: { type: 'sqlite', url: dbPath },
+    });
+    const lookupSpy = vi.spyOn(
+      MembershipCollection.prototype,
+      'findByUserAndTenant',
+    );
+
+    const result = await resolver.resolvePermissions(userId, tenantId, {
+      membership,
+    });
+
+    expect(lookupSpy).not.toHaveBeenCalled();
+    expect(result.membershipId).toBe(membership.id);
+    expect(result.permissions.has('articles.cache-read')).toBe(true);
   });
 
   it('should inherit permissions from group roles', async () => {

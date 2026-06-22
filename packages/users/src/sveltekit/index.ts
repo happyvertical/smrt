@@ -240,6 +240,7 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
   return async ({ event, resolve }) => {
     // Initialize locals with defaults (use property assignment for type safety)
     event.locals.user = null;
+    event.locals.membership = null;
     event.locals.permissions = [];
     event.locals.tenantId = null;
     event.locals.sessionId = null;
@@ -268,6 +269,7 @@ export function createSessionHandler(options: SessionHandlerOptions): Handle {
         async (context) => {
           if (context.session) {
             event.locals.user = context.user;
+            event.locals.membership = context.membership ?? null;
             event.locals.permissions = context.permissions;
             event.locals.tenantId = context.tenantId;
             event.locals.sessionId = context.sessionId;

@@ -41,7 +41,7 @@ PermissionResolver evaluates in order (each level can add/remove permissions):
 ```typescript
 // hooks.server.ts
 export const handle = createSessionHandler({ db, ttl: 604800, skipPaths: ['/api/public'] });
-// Populates event.locals: { user, permissions: string[], tenantId, sessionId }
+// Populates event.locals: { user, membership, permissions: string[], tenantId, sessionId }
 
 // +page.server.ts
 await createSessionCookie(event, userId, tenantId, { db });

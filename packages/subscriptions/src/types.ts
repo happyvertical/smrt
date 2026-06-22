@@ -157,6 +157,17 @@ export interface SummarizeUsageOptions {
   window: UsageWindow;
 }
 
+export interface SummarizeUsageBatchOptions {
+  /** Owning/issuing tenant scope. */
+  tenantId: string;
+  /** Defaults to `'tenant'`. */
+  subscriberKind?: SubscriberKind;
+  /** Required when `subscriberKind === 'external'`. */
+  subscriberExternalId?: string;
+  metricKeys: string[];
+  window: UsageWindow;
+}
+
 export interface SummarizeAiUsageOptions {
   tenantId: string;
   window: UsageWindow;

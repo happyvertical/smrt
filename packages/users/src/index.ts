@@ -151,6 +151,7 @@ export {
   type PermissionCatalogSource,
   type PermissionCatalogSyncResult,
   type PermissionDefinition,
+  type PermissionResolutionOptions,
   type PermissionResolutionResult,
   PermissionResolver,
   type PostgresPermissionAction,

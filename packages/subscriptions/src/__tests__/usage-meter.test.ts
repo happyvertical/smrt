@@ -162,6 +162,53 @@ describe('TenantUsageMeter AI usage summaries', () => {
     expect(requests.quantity).toBe(1);
   });
 
+  it('summarizes mixed AI and persisted metrics in one batch call', async () => {
+    await seedAiUsage(metrics, [
+      {
+        tenantId: 'tenant-1',
+        promptTokens: 30,
+        completionTokens: 10,
+        totalTokens: 40,
+        estimatedCost: 0.2,
+        createdAt: '2026-06-10T12:00:00.000Z',
+      },
+    ]);
+
+    const meter = new TenantUsageMeter(metrics);
+    const window = {
+      start: new Date('2026-06-01T00:00:00.000Z'),
+      end: new Date('2026-07-01T00:00:00.000Z'),
+    };
+
+    await meter.record({
+      tenantId: 'tenant-1',
+      metricKey: 'storage.bytes',
+      quantity: 1024,
+      windowStart: new Date('2026-06-12T00:00:00.000Z'),
+      windowEnd: new Date('2026-06-12T01:00:00.000Z'),
+    });
+    await meter.record({
+      tenantId: 'tenant-1',
+      metricKey: 'storage.bytes',
+      quantity: 2048,
+      windowStart: new Date('2026-06-13T00:00:00.000Z'),
+      windowEnd: new Date('2026-06-13T01:00:00.000Z'),
+    });
+
+    const summaries = await meter.summarizeBatch({
+      tenantId: 'tenant-1',
+      metricKeys: ['ai.tokens.total', 'ai.requests', 'storage.bytes'],
+      window,
+    });
+    const quantityByMetric = new Map(
+      summaries.map((summary) => [summary.metricKey, summary.quantity]),
+    );
+
+    expect(quantityByMetric.get('ai.tokens.total')).toBe(40);
+    expect(quantityByMetric.get('ai.requests')).toBe(1);
+    expect(quantityByMetric.get('storage.bytes')).toBe(3072);
+  });
+
   it('returns zeroed totals when no usage matches', async () => {
     const meter = new TenantUsageMeter(metrics);
     const summary = await meter.summarizeAiUsage({

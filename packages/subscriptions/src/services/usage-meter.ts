@@ -4,6 +4,7 @@ import type {
   AiUsageSummary,
   RecordUsageOptions,
   SummarizeAiUsageOptions,
+  SummarizeUsageBatchOptions,
   SummarizeUsageOptions,
   UsageSummary,
 } from '../types.js';
@@ -62,6 +63,60 @@ export class TenantUsageMeter {
     return this.metrics.summarizeUsage(options);
   }
 
+  async summarizeBatch(
+    options: SummarizeUsageBatchOptions,
+  ): Promise<UsageSummary[]> {
+    const subscriber = normalizeSubscriber({
+      tenantId: options.tenantId,
+      subscriberKind: options.subscriberKind,
+      subscriberExternalId: options.subscriberExternalId,
+    });
+    const metricKeys = Array.from(new Set(options.metricKeys));
+    if (metricKeys.length === 0) {
+      return [];
+    }
+
+    const useTenantAiSummary = subscriber.kind === 'tenant';
+    const aiMetricKeys = useTenantAiSummary
+      ? metricKeys.filter((metricKey) => metricKey.startsWith('ai.'))
+      : [];
+    const persistedMetricKeys = useTenantAiSummary
+      ? metricKeys.filter((metricKey) => !metricKey.startsWith('ai.'))
+      : metricKeys;
+
+    const summaries = new Map<string, UsageSummary>();
+    if (aiMetricKeys.length > 0) {
+      const aiSummary = await this.summarizeAiUsage({
+        tenantId: options.tenantId,
+        window: options.window,
+      });
+      const quantityByMetric = aiQuantityByMetric(aiSummary);
+      for (const metricKey of aiMetricKeys) {
+        summaries.set(metricKey, {
+          tenantId: options.tenantId,
+          metricKey,
+          quantity: quantityByMetric[metricKey] ?? 0,
+          windowStart: options.window.start,
+          windowEnd: options.window.end,
+        });
+      }
+    }
+
+    const persistedSummaries = await this.metrics.summarizeUsageBatch({
+      ...options,
+      metricKeys: persistedMetricKeys,
+    });
+    for (const summary of persistedSummaries) {
+      summaries.set(summary.metricKey, summary);
+    }
+
+    return metricKeys.map(
+      (metricKey) =>
+        summaries.get(metricKey) ??
+        emptyUsageSummary(subscriber, metricKey, options.window),
+    );
+  }
+
   async summarizeAiUsage(
     options: SummarizeAiUsageOptions,
   ): Promise<AiUsageSummary> {
@@ -92,11 +147,7 @@ export class TenantUsageMeter {
     });
 
     const quantityByMetric: Record<string, number> = {
-      'ai.tokens.prompt': summary.promptTokens,
-      'ai.tokens.completion': summary.completionTokens,
-      'ai.tokens.total': summary.totalTokens,
-      'ai.cost.estimated': summary.estimatedCost,
-      'ai.requests': summary.requestCount,
+      ...aiQuantityByMetric(summary),
     };
 
     return {
@@ -107,4 +158,36 @@ export class TenantUsageMeter {
       windowEnd: options.window.end,
     };
   }
+}
+
+function aiQuantityByMetric(summary: AiUsageSummary): Record<string, number> {
+  return {
+    'ai.tokens.prompt': summary.promptTokens,
+    'ai.tokens.completion': summary.completionTokens,
+    'ai.tokens.total': summary.totalTokens,
+    'ai.cost.estimated': summary.estimatedCost,
+    'ai.requests': summary.requestCount,
+  };
+}
+
+function emptyUsageSummary(
+  subscriber: ReturnType<typeof normalizeSubscriber>,
+  metricKey: string,
+  window: SummarizeUsageBatchOptions['window'],
+): UsageSummary {
+  const summary: UsageSummary = {
+    tenantId: subscriber.tenantId,
+    metricKey,
+    quantity: 0,
+    windowStart: window.start,
+    windowEnd: window.end,
+  };
+  if (subscriber.kind === 'external') {
+    return {
+      ...summary,
+      subscriberKind: 'external',
+      subscriberExternalId: subscriber.externalId,
+    };
+  }
+  return summary;
 }
