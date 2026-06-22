@@ -1,5 +1,7 @@
+/** Kind of generated surface a knowledge entry describes (REST/CLI/MCP/AI). */
 export type DomainKnowledgeSurfaceKind = 'api' | 'cli' | 'mcp' | 'ai';
 
+/** A single generated surface (one api/cli/mcp/ai operation) exposed by an object. */
 export interface DomainKnowledgeSurface {
   kind: DomainKnowledgeSurfaceKind;
   name: string;
@@ -10,6 +12,7 @@ export interface DomainKnowledgeSurface {
   objectName?: string;
 }
 
+/** Per-object configuration controlling domain-knowledge generation and exposure. */
 export interface DomainKnowledgeConfig {
   enabled?: boolean;
   api?: {
@@ -35,6 +38,7 @@ export interface DomainKnowledgeConfig {
   risks?: string[];
 }
 
+/** One object's entry in the domain-knowledge manifest (fields, relationships, surfaces). */
 export interface DomainKnowledgeObject {
   name: string;
   qualifiedName?: string;
@@ -65,6 +69,7 @@ export interface DomainKnowledgeObject {
   risks: string[];
 }
 
+/** The package-level domain-knowledge artifact (`smrt-knowledge.json`) — the agent/developer contract. */
 export interface DomainKnowledgeManifest {
   schemaVersion: 1;
   generatedAt: string;
@@ -97,6 +102,7 @@ export interface DomainKnowledgeManifest {
   agentDoc?: string;
 }
 
+/** Result of a domain-knowledge freshness check (stale references, error/warning counts). */
 export interface DomainKnowledgeFreshnessResult {
   ok: boolean;
   checkedAt: string;
