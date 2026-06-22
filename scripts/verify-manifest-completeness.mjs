@@ -67,6 +67,19 @@ if (result.status === 'skipped') {
   process.exit(0);
 }
 
+if (result.status === 'scan-error') {
+  // A source parse error drops @smrt classes from the re-scan, so the manifest
+  // cannot be verified — fail loudly rather than waving the package through.
+  console.error(
+    `\n[verify-manifest] ❌ ${label}: source scan failed; manifest completeness cannot be verified.`,
+  );
+  console.error(`[verify-manifest]    ${result.reason}`);
+  console.error(
+    '[verify-manifest]    Fix: resolve the parse error(s) in src/ and rebuild.',
+  );
+  process.exit(1);
+}
+
 // status: 'incomplete' | 'missing-manifest'
 console.error(
   `\n[verify-manifest] ❌ ${label}: published manifest is stale or incomplete.`,
