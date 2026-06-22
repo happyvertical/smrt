@@ -408,6 +408,9 @@ export class Project extends SmrtObject {
       1. Overall health assessment
       2. Potential bottlenecks
       3. Suggestions for improvement`,
+      // Title/description/status counts hand-rolled above; skip do()'s
+      // object-data injection so the board context is not duplicated.
+      { includeData: false },
     );
   }
 

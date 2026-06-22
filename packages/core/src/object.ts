@@ -39,6 +39,18 @@ const logger = createLogger({
 });
 
 /**
+ * Default maximum number of characters of serialized object data injected into
+ * the AI prompts built by `is()`, `do()`, and `describe()`.
+ *
+ * Acts as a coarse token-budget guard so a very large instance (e.g. a long
+ * document body) cannot blow past model context limits or inflate request
+ * costs. At roughly four characters per token this is ~25k tokens of object
+ * data — generous enough for typical records, while still capping pathological
+ * cases. Override per call with the `maxDataLength` option.
+ */
+const AI_PROMPT_DATA_MAX_LENGTH = 100_000;
+
+/**
  * Validate that _meta_type matches the expected class (Issue #713)
  *
  * Accepts both simple class name (e.g., 'Product') and qualified name
@@ -2013,14 +2025,96 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Serializes this instance into the "content body" injected into the AI
+   * prompts used by {@link is}, {@link do}, and {@link describe} so those
+   * methods reason over the object's own field data, not just the caller's
+   * instruction string.
+   *
+   * Uses {@link toPublicJSON} (never {@link toJSON}) so that
+   * `@field({ sensitive: true })` values — API secrets, credentials, tax IDs —
+   * are never sent to the model. The serialized payload is truncated to
+   * `maxLength` characters as a coarse token-budget guard for large instances;
+   * truncation appends a clear marker so the model knows the data was cut.
+   *
+   * @param maxLength - Maximum characters of object data to include
+   *   (defaults to {@link AI_PROMPT_DATA_MAX_LENGTH}). A non-positive value
+   *   disables truncation.
+   * @returns A JSON string of the object's public (sensitive-stripped) fields
+   */
+  private serializeForAiPrompt(
+    maxLength: number = AI_PROMPT_DATA_MAX_LENGTH,
+  ): string {
+    let serialized: string;
+    try {
+      serialized = JSON.stringify(this.toPublicJSON(), null, 2);
+    } catch (error) {
+      // Defensive: never let a serialization edge case break an AI call.
+      // The instruction-only prompt still works; we just lose the data context.
+      logger.warn(
+        `Failed to serialize ${this.constructor.name} for AI prompt: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      serialized = '{}';
+    }
+
+    if (
+      Number.isFinite(maxLength) &&
+      maxLength > 0 &&
+      serialized.length > maxLength
+    ) {
+      serialized = `${serialized.slice(0, maxLength)}\n… [truncated: object data exceeded ${maxLength} characters]`;
+    }
+
+    return serialized;
+  }
+
+  /**
+   * Builds the optional "content body" section prepended to the AI prompts in
+   * {@link is}, {@link do}, and {@link describe}.
+   *
+   * Returns an empty string when the caller opts out with `includeData: false`
+   * — used by callers that already curate the object's relevant fields into
+   * their own instruction/criteria string (so the data is not duplicated, and
+   * the prompt stays exactly as the caller authored it). Otherwise it wraps
+   * {@link serializeForAiPrompt} in `--- Beginning/End of content ---`
+   * delimiters so the methods reason over the instance's own data by default.
+   *
+   * @param includeData - `false` to omit the section; any other value (incl.
+   *   `undefined`) injects it
+   * @param maxLength - Forwarded to {@link serializeForAiPrompt} as the
+   *   truncation budget
+   * @returns The content-body section (with a trailing newline) or `''`
+   */
+  private buildAiContentSection(
+    includeData: boolean | undefined,
+    maxLength?: number,
+  ): string {
+    if (includeData === false) {
+      return '';
+    }
+    const contentBody = this.serializeForAiPrompt(maxLength);
+    return `--- Beginning of content ---\n${contentBody}\n--- End of content ---\n`;
+  }
+
+  /**
    * Evaluates whether this object satisfies the given natural-language criteria using AI.
    *
-   * Sends the object's JSON representation to the AI with the criteria prompt and
-   * asks for a `{ result: boolean }` JSON response. Uses any AI-callable tools
-   * registered on this class (via `@smrt({ ai })`) as part of the function-calling context.
+   * Injects the object's own public field data (via {@link toPublicJSON}, so
+   * `@field({ sensitive: true })` values are excluded) into the prompt as the
+   * "content body", then asks the AI whether that data meets the criteria and
+   * to reply with a `{ result: boolean }` JSON response. Uses any AI-callable
+   * tools registered on this class (via `@smrt({ ai })`) as part of the
+   * function-calling context.
    *
    * @param criteria - Natural-language description of the condition to evaluate
-   * @param options - AI message options passed to `ai.message()` (e.g. model override)
+   * @param options - AI message options passed to `ai.message()` (e.g. model
+   *   override). Two non-standard control keys are consumed here and not
+   *   forwarded to `ai.message()`:
+   *   - `includeData: false` — omit the injected object "content body" (for
+   *     callers that already curate the relevant fields into `criteria`).
+   *   - `maxDataLength` (number of characters) — override the injected
+   *     object-data truncation limit.
    * @returns `true` if the object meets the criteria, `false` otherwise
    * @throws Error if the AI returns a non-boolean or malformed JSON response
    *
@@ -2035,13 +2129,18 @@ export class SmrtObject extends SmrtClass {
    */
   public async is(criteria: string, options: any = {}) {
     const ai = await this.getAiClient();
-    const prompt = `--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
+    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const contentSection = this.buildAiContentSection(
+      includeData,
+      maxDataLength,
+    );
+    const prompt = `${contentSection}--- Beginning of criteria ---\n${criteria}\n--- End of criteria ---\nDoes the content meet all the given criteria? Reply with a json object with a single boolean 'result' property`;
 
     // Get available tools for AI function calling
     const tools = this.getAvailableTools();
 
     const message = await ai.message(prompt, {
-      ...(options as any),
+      ...(aiOptions as any),
       responseFormat: { type: 'json_object' },
       tools: tools.length > 0 ? tools : undefined,
     });
@@ -2059,16 +2158,24 @@ export class SmrtObject extends SmrtClass {
   /**
    * Performs a freeform operation on this object using AI instructions.
    *
-   * Sends the object's JSON representation to the AI together with the given
-   * instructions and returns the raw text response. Unlike `is()`, this method
-   * does not constrain the response format — use it for transformations,
-   * summaries, extractions, or any open-ended AI task.
+   * Injects the object's own public field data (via {@link toPublicJSON}, so
+   * `@field({ sensitive: true })` values are excluded) into the prompt as the
+   * "content body" the instructions operate on, then returns the raw text
+   * response. Unlike `is()`, this method does not constrain the response
+   * format — use it for transformations, summaries, extractions, or any
+   * open-ended AI task.
    *
    * Uses any AI-callable tools registered on this class (via `@smrt({ ai })`)
    * as part of the function-calling context.
    *
    * @param instructions - Natural-language instructions for the AI to follow
-   * @param options - AI message options passed to `ai.message()` (e.g. model override)
+   * @param options - AI message options passed to `ai.message()` (e.g. model
+   *   override). Two non-standard control keys are consumed here and not
+   *   forwarded to `ai.message()`:
+   *   - `includeData: false` — omit the injected object "content body" (for
+   *     callers that already curate the relevant fields into `instructions`).
+   *   - `maxDataLength` (number of characters) — override the injected
+   *     object-data truncation limit.
    * @returns The raw AI response string
    *
    * @example
@@ -2082,13 +2189,18 @@ export class SmrtObject extends SmrtClass {
    */
   public async do(instructions: string, options: any = {}) {
     const ai = await this.getAiClient();
-    const prompt = `--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
+    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const contentSection = this.buildAiContentSection(
+      includeData,
+      maxDataLength,
+    );
+    const prompt = `${contentSection}--- Beginning of instructions ---\n${instructions}\n--- End of instructions ---\nBased on the content body, please follow the instructions and provide a response. Never make use of codeblocks.`;
 
     // Get available tools for AI function calling
     const tools = this.getAvailableTools();
 
     const result = await ai.message(prompt, {
-      ...options,
+      ...aiOptions,
       tools: tools.length > 0 ? tools : undefined,
     });
 
@@ -2099,9 +2211,17 @@ export class SmrtObject extends SmrtClass {
    * Generates a description of this object using AI (Issue #52)
    *
    * Creates a concise, human-readable description based on the object's content
-   * and properties. Useful for summaries, previews, and documentation.
+   * and properties. The object's own public field data (via
+   * {@link toPublicJSON}, so `@field({ sensitive: true })` values are excluded)
+   * is injected into the prompt as the "content body" the description is built
+   * from. Useful for summaries, previews, and documentation.
    *
-   * @param options - AI message options (can include style, length, focus, etc.)
+   * @param options - AI message options (can include style, length, focus,
+   *   etc.). Two non-standard control keys are consumed here and not forwarded
+   *   to `ai.message()`:
+   *   - `includeData: false` — omit the injected object "content body".
+   *   - `maxDataLength` (number of characters) — override the injected
+   *     object-data truncation limit.
    * @returns Promise resolving to the AI-generated description
    *
    * @example
@@ -2117,13 +2237,18 @@ export class SmrtObject extends SmrtClass {
    */
   public async describe(options: any = {}) {
     const ai = await this.getAiClient();
-    const prompt = `Generate a concise, professional description of this object based on its content and properties. The description should be clear, informative, and suitable for display to end users. Focus on the most important and distinctive characteristics.`;
+    const { maxDataLength, includeData, ...aiOptions } = options ?? {};
+    const contentSection = this.buildAiContentSection(
+      includeData,
+      maxDataLength,
+    );
+    const prompt = `${contentSection}Generate a concise, professional description of this object based on its content and properties. The description should be clear, informative, and suitable for display to end users. Focus on the most important and distinctive characteristics.`;
 
     // Get available tools for AI function calling
     const tools = this.getAvailableTools();
 
     const result = await ai.message(prompt, {
-      ...options,
+      ...aiOptions,
       tools: tools.length > 0 ? tools : undefined,
     });
 

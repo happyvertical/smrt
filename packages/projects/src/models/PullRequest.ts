@@ -155,6 +155,8 @@ export class PullRequest extends Issue {
       1. What the PR does
       2. Why it matters
       3. Any notable implementation details`,
+      // Title/body/stats hand-rolled above; skip do()'s object-data injection.
+      { includeData: false },
     );
   }
 
@@ -289,6 +291,8 @@ export class PullRequest extends Issue {
 
       Return only a comma-separated list of GitHub usernames, nothing else.
       If you cannot determine reviewers, return an empty string.`,
+      // Title/description hand-rolled above; skip do()'s object-data injection.
+      { includeData: false },
     );
 
     return suggestion
