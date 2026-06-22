@@ -188,6 +188,23 @@ describe('classifyConstraintError matches all dialects (#1378)', () => {
     ).toBe('not_null');
   });
 
+  it('does not misclassify DuckDB foreign-key/check violations as unique (#1578)', () => {
+    // DuckDB phrases FK and CHECK failures with the same "Constraint Error ...
+    // violates" shape as unique violations. They must fall through to null so
+    // save() preserves the original DatabaseError instead of throwing a bogus
+    // ValidationError.uniqueConstraint('unknown_field').
+    expect(
+      SmrtObject.classifyConstraintError(
+        'Constraint Error: Violates foreign key constraint because key "owner_id: 7" does not exist in the referenced table',
+      ),
+    ).toBeNull();
+    expect(
+      SmrtObject.classifyConstraintError(
+        'Constraint Error: CHECK constraint failed: price_positive',
+      ),
+    ).toBeNull();
+  });
+
   it('returns null for unrelated / empty messages', () => {
     expect(
       SmrtObject.classifyConstraintError('some unrelated database error'),
