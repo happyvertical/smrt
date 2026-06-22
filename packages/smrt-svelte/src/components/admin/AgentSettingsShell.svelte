@@ -3,8 +3,8 @@ import type {
   AgentUIComponentRegistry,
   AgentUISlots,
 } from '@happyvertical/smrt-agents/ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n/strings.workspace.js';
-import { useI18n } from '../../i18n/use-i18n.js';
 import AgentAdminTabs from './AgentAdminTabs.svelte';
 
 const { t } = useI18n();

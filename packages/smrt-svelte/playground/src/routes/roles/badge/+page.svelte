@@ -1,5 +1,5 @@
 <script lang="ts">
-import { RoleBadge } from '@happyvertical/smrt-svelte';
+import { RoleBadge } from '@happyvertical/smrt-ui';
 
 // Mock roles
 const roles = [

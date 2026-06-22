@@ -1,4 +1,4 @@
-import { defineMessages } from '@happyvertical/smrt-svelte/i18n';
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   'commerce.invoice_actions.send_invoice': 'Send Invoice',

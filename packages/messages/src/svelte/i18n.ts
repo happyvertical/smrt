@@ -9,7 +9,7 @@
  * `M` is a typed key map — `M['messages.account_list.loading']` is the key
  * literal — so component call sites stay typo-safe.
  */
-import { defineMessages } from '@happyvertical/smrt-svelte/i18n';
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   // AccountList

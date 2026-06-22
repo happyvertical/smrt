@@ -2,14 +2,14 @@
  * i18n catalog guard.
  *
  * The catalog in `src/lib/i18n.ts` is the single source of UI strings routed
- * through `@happyvertical/smrt-svelte/i18n` (sweep S13 #1418). These tests
+ * through `@happyvertical/smrt-ui/i18n` (sweep S13 #1418). These tests
  * pin its shape: every entry is a `products.`-namespaced key that maps to
  * itself and registers a non-empty English default. This catches typos,
  * accidental empty values, and key/namespace drift at test time rather than
  * in a downstream consumer.
  */
 
-import { getRegisteredDefault } from '@happyvertical/smrt-svelte/i18n';
+import { getRegisteredDefault } from '@happyvertical/smrt-ui/i18n';
 import { describe, expect, it } from 'vitest';
 import { M } from './lib/i18n.js';
 

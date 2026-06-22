@@ -6,10 +6,11 @@
  * the interactive surface is a `role="button"` drop zone. We assert the input's
  * accept/multiple wiring and that selecting a file fires the change handler.
  */
+
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 import FileUpload from '../FileUpload.svelte';
 
 function fileInput(container: HTMLElement): HTMLInputElement {

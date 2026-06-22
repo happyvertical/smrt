@@ -3,8 +3,8 @@
  * JobDetail - Detailed view of a single job
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Card } from '@happyvertical/smrt-svelte/ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Card } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import JobActions from './JobActions.svelte';
 import JobStatusBadge from './JobStatusBadge.svelte';

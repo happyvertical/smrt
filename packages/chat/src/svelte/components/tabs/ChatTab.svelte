@@ -4,7 +4,7 @@
  * Compact header with title, collapse/close buttons. Contains message list and input.
  * Expands upward from the bottom tab bar.
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatTabState } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';

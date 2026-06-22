@@ -5,10 +5,11 @@
  * A `type="search"` input surfaces as a `searchbox` role. The component is
  * Provider-free (its i18n falls back to registered defaults outside a Provider).
  */
+
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 import SearchInput from '../SearchInput.svelte';
 
 describe('SearchInput', () => {

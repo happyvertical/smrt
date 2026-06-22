@@ -10,9 +10,10 @@
  * parses YYYY-MM-DD into a *local* Date, so we derive the expected display the
  * same way (new Date(y, m-1, d).toLocaleDateString) rather than hardcoding.
  */
+
+import { expectNoA11yViolations } from '@happyvertical/smrt-ui/test-support/a11y';
 import { fireEvent, render, screen } from '@testing-library/svelte';
 import { describe, expect, it, vi } from 'vitest';
-import { expectNoA11yViolations } from '../../../test-support/a11y';
 
 vi.mock('../../../hooks/useAppState.svelte.js', () => ({
   useAppState: () => ({ state: { mode: 'default' }, setMode: vi.fn() }),

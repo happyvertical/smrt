@@ -11,9 +11,9 @@
 // consumers of `@happyvertical/smrt-assets/svelte` don't have to resolve the
 // entire smrt-svelte surface — including optional peers like smrt-agents /
 // smrt-users — just to compile this modal.
-import { Modal } from '@happyvertical/smrt-svelte/feedback';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Button } from '@happyvertical/smrt-svelte/ui';
+import { Modal } from '@happyvertical/smrt-ui/feedback';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import { M } from './i18n.js';
 
 const { t } = useI18n();

@@ -6,7 +6,7 @@
  * Compact card view for displaying invoices in lists.
  */
 
-import { ripple } from '@happyvertical/smrt-svelte';
+import { ripple } from '@happyvertical/smrt-ui';
 import type { InvoiceData, InvoiceStatus } from '../types.js';
 
 /** Props for InvoiceCard component */

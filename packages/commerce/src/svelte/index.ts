@@ -11,14 +11,14 @@
  *
  * @example Registry-based discovery
  * ```typescript
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import '@happyvertical/smrt-commerce/svelte'; // Auto-registers components
  *
  * const Component = ModuleUIRegistry.get('@happyvertical/smrt-commerce', 'invoice-card');
  * ```
  */
 
-import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import type { ComponentProps } from 'svelte';
 import { COMMERCE_MODULE_META } from '../ui.js';
 

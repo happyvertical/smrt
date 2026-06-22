@@ -1,6 +1,6 @@
 <script lang="ts">
-import { DataTable } from '@happyvertical/smrt-svelte';
-import type { DataTableColumn } from '@happyvertical/smrt-svelte/components/data/types';
+import type { DataTableColumn } from '@happyvertical/smrt-ui';
+import { DataTable } from '@happyvertical/smrt-ui';
 
 // Sample data
 interface User {

@@ -3,4 +3,4 @@
  */
 
 // Export path to tokens CSS for consumers to import
-// Usage: import '@happyvertical/smrt-svelte/styles/tokens.css'
+// Usage: import '@happyvertical/smrt-ui/styles/tokens.css'

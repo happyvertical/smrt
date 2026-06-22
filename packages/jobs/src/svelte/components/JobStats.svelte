@@ -3,8 +3,8 @@
  * JobStats - Display job statistics overview
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Card } from '@happyvertical/smrt-svelte/ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Card } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type { JobStats, QueueStats } from './types.js';
 import { formatDuration } from './types.js';

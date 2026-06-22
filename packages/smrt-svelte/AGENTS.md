@@ -1,6 +1,6 @@
 # @happyvertical/smrt-svelte
 
-Svelte 5 components for SMRT: generic UI, forms, permissions, browser AI (STT/TTS/LLM), themes, and module UI registry.
+Top-of-stack Svelte 5 integration layer for SMRT: the app `Provider`, auth / AI hooks, browser AI (STT/TTS/LLM), forms, server-side i18n, and the domain-aware composites (admin, module, workspace). The domain-agnostic UI primitives, i18n client, theme system, and module UI registry now live in `@happyvertical/smrt-ui` (#1582) — import those from there (e.g. `@happyvertical/smrt-ui/ui`, `@happyvertical/smrt-ui/i18n`).
 
 ## Provider (Root Component)
 
@@ -38,19 +38,19 @@ Wraps app in `+layout.svelte`. Provides auth state, permissions, WebSocket, and 
 
 ## Components
 
+The domain-agnostic primitives (`ui`, `layout`, `feedback`, `nav`, `display`,
+`calendar`, `chat`, `permissions`, **`roles`/`memberships`**, `theme`) and the
+i18n client / module registry moved to `@happyvertical/smrt-ui` — import them
+from there (`@happyvertical/smrt-ui/{ui,layout,feedback,…}`). This package keeps
+the top-of-stack, domain-aware pieces:
+
 | Category | Components |
 |----------|------------|
 | AI | `Provider`, `AILoadingOverlay`, `CapabilityGate`, `DownloadProgress`, `STTTest`, `VoiceInput` |
-| Forms | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more |
-| Layout | `Container`, `Grid`, `Header`, `Footer`, `Masthead`, `PageHeader`, `EmptyState`, `SummaryCard` |
-| UI | `Button`, `Card`, `Badge`, `Pagination`, `Avatar`, `Chip`, `Skeleton`, `Tooltip`, `Dropdown`, `Tree` |
-| Display | `ConfidenceBadge`, `CurrencyDisplay`, `DateDisplay`, `Icon`, `StatusBadge` |
-| Feedback | `ConfirmDialog`, `LoadingOverlay`, `Modal`, `ProgressBar` |
-| Nav | `FilterChips`, `Tabs` |
-| Chat (`/chat` subpath) | `MessageBubble`, `ReactionPicker`, `TypingIndicator` |
-| Permission | `PermissionCheck`, `RoleBadge`, `RoleSelector` |
-| Admin | `AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell` |
-| Other | `Calendar`, `DayView`, `MembershipCard`, `MembershipList`, `ModulePanel`, `DataTable` |
+| Forms (`/forms`) | `TextInput`, `Select`, `MoneyInput`, `DateTimeInput`, `Toggle`, `FileUpload`, `AddressInput`, + more (AI-wired inputs use the hooks/browser-ai here) |
+| Admin (`/admin`) | `AgentAdminPanel`, `AgentAdminTabs`, `AgentSettingsShell` (import `@happyvertical/smrt-agents/ui`) |
+| Module | `ModulePanel` |
+| Workspace (`/workspace`) | `WorkspaceShell`, `NavTree`, `Breadcrumbs`, `ToolsDock`, `RoleShell` |
 
 ### Gap primitives & S10 consolidation (L3 #1422)
 

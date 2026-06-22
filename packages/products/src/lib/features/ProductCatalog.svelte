@@ -1,5 +1,5 @@
 <script lang="ts">
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { onMount } from 'svelte';
 import { productStore } from '$lib/stores/product-store.svelte';
 import { M } from '../i18n.js';

@@ -25,9 +25,10 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     // Component golden-test harness (L4 #1423): jest-dom matchers + Testing
-    // Library auto-cleanup. The smrt-vitest plugin appends its own setup file
-    // to this list (it merges rather than overrides).
-    setupFiles: ['./src/test-support/setup.ts'],
+    // Library auto-cleanup. The harness moved to the smrt-ui leaf (#1582); we
+    // consume it via the package's test-support export. The smrt-vitest plugin
+    // appends its own setup file to this list (it merges rather than overrides).
+    setupFiles: ['@happyvertical/smrt-ui/test-support/setup'],
     include: ['src/**/*.{test,spec}.ts'],
     // Coverage scope for the per-tier gate (S6 #1411): measure shipped source
     // only. Test infrastructure (fixtures, the test-support harness, *.test.ts)

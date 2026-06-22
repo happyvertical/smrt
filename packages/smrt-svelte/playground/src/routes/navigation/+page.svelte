@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { FilterOption, Tab } from '@happyvertical/smrt-svelte';
-import { FilterChips, Tabs } from '@happyvertical/smrt-svelte';
+import type { FilterOption, Tab } from '@happyvertical/smrt-ui';
+import { FilterChips, Tabs } from '@happyvertical/smrt-ui';
 
 // Filter options for demo
 const statusFilters: FilterOption[] = [

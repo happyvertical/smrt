@@ -101,9 +101,9 @@ const BASE_COMPONENT_COLOR_TOKENS = [
   '--smrt-color-shadow',
 ];
 
-const packageRoot = process.cwd().endsWith('packages/smrt-svelte')
+const packageRoot = process.cwd().endsWith('packages/smrt-ui')
   ? process.cwd()
-  : join(process.cwd(), 'packages/smrt-svelte');
+  : join(process.cwd(), 'packages/smrt-ui');
 
 const STATIC_STYLE_PATHS = {
   material: join(packageRoot, 'src/themes/styles/material.css'),

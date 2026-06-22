@@ -1,7 +1,7 @@
 <script lang="ts">
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { useAppState } from '../../../hooks/useAppState.svelte.js';
 import { M } from '../../../i18n/strings.workspace.js';
-import { useI18n } from '../../../i18n/use-i18n.js';
 import type { GetSTTOptions } from '../../index.js';
 import DownloadProgress from './DownloadProgress.svelte';
 

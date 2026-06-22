@@ -3,7 +3,7 @@
  * JobStatusBadge - Display job status with appropriate styling
  */
 
-import { Badge } from '@happyvertical/smrt-svelte/ui';
+import { Badge } from '@happyvertical/smrt-ui/ui';
 import type { JobStatus } from './types.js';
 import { getStatusVariant } from './types.js';
 

@@ -6,8 +6,8 @@
  * default actions (delete), and any custom actions passed by the consumer.
  */
 
-import { ConfirmDialog } from '@happyvertical/smrt-svelte/feedback';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { ConfirmDialog } from '@happyvertical/smrt-ui/feedback';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from './i18n.js';
 import type { ActionBarProps } from './types';
 

@@ -25,7 +25,7 @@ export default {
   dependencies: {
     '@happyvertical/smrt-core': '^0.24.8',
     '@happyvertical/smrt-config': '^0.24.8',
-    '@happyvertical/smrt-svelte': '^0.24.8',
+    '@happyvertical/smrt-ui': '^0.24.8',
     '@happyvertical/smrt-content': '^0.24.8',
     '@happyvertical/smrt-events': '^0.24.8',
     '@happyvertical/smrt-places': '^0.24.8',

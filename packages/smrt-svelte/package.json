@@ -19,52 +19,16 @@
       "import": "./dist/components/admin/index.js",
       "default": "./dist/components/admin/index.js"
     },
-    "./calendar": {
-      "types": "./dist/components/calendar/index.d.ts",
-      "svelte": "./dist/components/calendar/index.js",
-      "import": "./dist/components/calendar/index.js",
-      "default": "./dist/components/calendar/index.js"
-    },
-    "./chat": {
-      "types": "./dist/components/chat/index.d.ts",
-      "svelte": "./dist/components/chat/index.js",
-      "import": "./dist/components/chat/index.js",
-      "default": "./dist/components/chat/index.js"
-    },
-    "./feedback": {
-      "types": "./dist/components/feedback/index.d.ts",
-      "svelte": "./dist/components/feedback/index.js",
-      "import": "./dist/components/feedback/index.js",
-      "default": "./dist/components/feedback/index.js"
-    },
     "./forms": {
       "types": "./dist/components/forms/index.d.ts",
       "svelte": "./dist/components/forms/index.js",
       "import": "./dist/components/forms/index.js",
       "default": "./dist/components/forms/index.js"
     },
-    "./i18n": {
-      "types": "./dist/i18n/index.d.ts",
-      "svelte": "./dist/i18n/index.js",
-      "import": "./dist/i18n/index.js",
-      "default": "./dist/i18n/index.js"
-    },
     "./i18n/server": {
       "types": "./dist/i18n/server.d.ts",
       "import": "./dist/i18n/server.js",
       "default": "./dist/i18n/server.js"
-    },
-    "./layout": {
-      "types": "./dist/components/layout/index.d.ts",
-      "svelte": "./dist/components/layout/index.js",
-      "import": "./dist/components/layout/index.js",
-      "default": "./dist/components/layout/index.js"
-    },
-    "./ui": {
-      "types": "./dist/components/ui/index.d.ts",
-      "svelte": "./dist/components/ui/index.js",
-      "import": "./dist/components/ui/index.js",
-      "default": "./dist/components/ui/index.js"
     },
     "./workspace": {
       "types": "./dist/components/workspace/index.d.ts",
@@ -76,24 +40,6 @@
       "types": "./dist/components/workspace/server/index.d.ts",
       "import": "./dist/components/workspace/server/index.js",
       "default": "./dist/components/workspace/server/index.js"
-    },
-    "./styles/tokens.css": {
-      "default": "./dist/styles/tokens.css"
-    },
-    "./registry": {
-      "types": "./dist/registry/index.d.ts",
-      "svelte": "./dist/registry/index.js",
-      "import": "./dist/registry/index.js",
-      "default": "./dist/registry/index.js"
-    },
-    "./themes": {
-      "types": "./dist/themes/index.d.ts",
-      "svelte": "./dist/themes/index.js",
-      "import": "./dist/themes/index.js",
-      "default": "./dist/themes/index.js"
-    },
-    "./themes/styles/*": {
-      "default": "./dist/themes/styles/*"
     },
     "./browser-ai": {
       "types": "./dist/browser-ai/index.d.ts",
@@ -145,6 +91,7 @@
   },
   "dependencies": {
     "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*",
     "esm-env": "^1.2.2"
   },
   "peerDependencies": {

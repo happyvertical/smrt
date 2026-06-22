@@ -3,7 +3,7 @@
  * ChatTabList - Minimized tab overview bar
  * Horizontal bar of small avatars/names at bottom. Shows unread badges.
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.messages.js';
 import type { ChatTabState } from '../../types.js';
 import Avatar from '../shared/Avatar.svelte';

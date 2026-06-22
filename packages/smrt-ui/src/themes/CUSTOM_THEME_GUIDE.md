@@ -26,8 +26,8 @@ my-project/
 
 ```typescript
 // src/lib/themes/brand.ts
-import { createTheme, registerTheme } from '@happyvertical/smrt-svelte/themes';
-import type { Theme } from '@happyvertical/smrt-svelte/themes';
+import { createTheme, registerTheme } from '@happyvertical/smrt-ui/themes';
+import type { Theme } from '@happyvertical/smrt-ui/themes';
 
 export const brandTheme: Theme = createTheme({
   id: 'brand',
@@ -93,12 +93,12 @@ export { brandTheme } from './brand.js';
   import '$lib/themes';
   
   // Import base CSS
-  import '@happyvertical/smrt-svelte/themes/styles/all.css';
+  import '@happyvertical/smrt-ui/themes/styles/all.css';
   
   // Your custom theme CSS (optional overrides)
   import '$lib/themes/brand.css';
   
-  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
 </script>
 
 <ThemeProvider preset="brand" colorScheme="system" persist={true}>
@@ -132,7 +132,7 @@ For simpler cases, you can define a theme entirely in CSS:
 /* src/styles/my-theme.css */
 
 /* Import base structure */
-@import '@happyvertical/smrt-svelte/themes/styles/material.css';
+@import '@happyvertical/smrt-ui/themes/styles/material.css';
 
 /* Define light mode */
 [data-theme="mybrand"][data-color-scheme="light"] {
@@ -193,7 +193,7 @@ Combine TypeScript definition with extensive CSS customization:
 
 ```typescript
 // src/lib/themes/hybrid.ts
-import { createTheme, registerTheme } from '@happyvertical/smrt-svelte/themes';
+import { createTheme, registerTheme } from '@happyvertical/smrt-ui/themes';
 
 export const hybridTheme = createTheme({
   id: 'hybrid',
@@ -211,7 +211,7 @@ registerTheme(hybridTheme);
 
 ```css
 /* src/lib/themes/hybrid.css */
-@import '@happyvertical/smrt-svelte/themes/styles/material.css';
+@import '@happyvertical/smrt-ui/themes/styles/material.css';
 
 [data-theme="hybrid"] {
   /* All the CSS customizations */
@@ -262,7 +262,7 @@ npm init
 
 ```typescript
 // packages/my-brand-theme/index.ts
-import { createTheme, registerTheme } from '@happyvertical/smrt-svelte/themes';
+import { createTheme, registerTheme } from '@happyvertical/smrt-ui/themes';
 
 export const myBrandTheme = createTheme({
   id: 'mycompany',
@@ -296,7 +296,7 @@ npm install ./packages/my-brand-theme
 
 ```svelte
 <script>
-  import { getThemeContext, ThemeSwitcher } from '@happyvertical/smrt-svelte/themes';
+  import { getThemeContext, ThemeSwitcher } from '@happyvertical/smrt-ui/themes';
   
   // Import your custom themes to register them
   import '$lib/themes/brand';

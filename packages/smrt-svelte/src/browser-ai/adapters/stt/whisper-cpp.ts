@@ -5,7 +5,7 @@
  * More stable than transformers.js implementation.
  */
 
-import { importOptional } from '../../../utils/import-optional.js';
+import { importOptional } from '@happyvertical/smrt-ui/utils/import-optional.js';
 import {
   CapabilityNotAvailableError,
   InitializationError,

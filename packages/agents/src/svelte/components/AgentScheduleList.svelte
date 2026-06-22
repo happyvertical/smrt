@@ -3,8 +3,8 @@
  * AgentScheduleList - Display a list of scheduled agents
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Button } from '@happyvertical/smrt-svelte/ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import { M } from '../i18n.js';
 import type { AgentScheduleData } from '../types.js';

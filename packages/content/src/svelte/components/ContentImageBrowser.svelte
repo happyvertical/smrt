@@ -3,7 +3,7 @@ import {
   type ImageLike,
   ImageUploader,
 } from '@happyvertical/smrt-images/svelte';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { ContentEditorAsset } from '../content-editor-form';
 import { M } from '../i18n.editor.js';
 

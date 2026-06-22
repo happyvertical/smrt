@@ -1,5 +1,5 @@
 <script lang="ts">
-import { ConfirmDialog, Modal, ProgressBar } from '@happyvertical/smrt-svelte';
+import { ConfirmDialog, Modal, ProgressBar } from '@happyvertical/smrt-ui';
 
 // Dialog state
 let showBasicDialog = $state(false);

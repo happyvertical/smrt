@@ -1,5 +1,5 @@
 <script lang="ts">
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import ContentBodyRenderer from '../components/ContentBodyRenderer.svelte';
 import ContentTransparencyReport from '../components/ContentTransparencyReport.svelte';
 import { M } from '../i18n.routes.js';

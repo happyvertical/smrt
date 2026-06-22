@@ -3,8 +3,8 @@
  * AgentDashboard - Combined overview panel for agent schedules
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Button, Card } from '@happyvertical/smrt-svelte/ui';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Button, Card } from '@happyvertical/smrt-ui/ui';
 import { M } from '../i18n.js';
 import type { AgentRunHistoryEntry, AgentScheduleData } from '../types.js';
 import AgentRunHistory from './AgentRunHistory.svelte';

@@ -11,7 +11,7 @@
  *
  * @example Registry-based discovery
  * ```typescript
- * import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+ * import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
  * import '@happyvertical/smrt-analytics/svelte'; // Auto-registers components
  *
  * const Component = ModuleUIRegistry.get('@happyvertical/smrt-analytics', 'analytics-summary');
@@ -20,7 +20,7 @@
  * @packageDocumentation
  */
 
-import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { ANALYTICS_MODULE_META } from '../ui.js';
 import AnalyticsSummary from './AnalyticsSummary.svelte';
 import EventsTable from './EventsTable.svelte';

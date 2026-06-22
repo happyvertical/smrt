@@ -3,7 +3,7 @@
  * ChatLayout - Main chat container with sidebar and content area
  * Discord/Slack-style layout with resizable room list sidebar
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
 import { M } from '../../i18n.messages.js';
 import type { ChatRoomData } from '../../types.js';

@@ -4,7 +4,7 @@
  * Floating dropdown positioned near cursor. Shows matching profile names
  * with optional avatars. Keyboard navigable.
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 import Avatar from './Avatar.svelte';
 

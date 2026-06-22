@@ -5,7 +5,7 @@
  * `src/components/forms/*.svelte`, registered via `defineMessages`. Keys follow
  * the `ui` namespace (`ui.<component>.<descriptor>`) for smrt-svelte primitives.
  */
-import { defineMessages } from './registry.js';
+import { defineMessages } from '@happyvertical/smrt-ui/i18n';
 
 export const M = defineMessages({
   // AddressInput

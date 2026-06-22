@@ -7,7 +7,7 @@
  * @packageDocumentation
  */
 
-import { ModuleUIRegistry } from '../../registry/index.js';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { BROWSER_AI_MODULE_META } from '../ui.js';
 
 // Import components

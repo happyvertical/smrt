@@ -6,12 +6,12 @@ import {
   Skeleton,
   Tooltip,
   Tree,
-} from '@happyvertical/smrt-svelte';
+} from '@happyvertical/smrt-ui';
 import {
   MessageBubble,
   ReactionPicker,
   TypingIndicator,
-} from '@happyvertical/smrt-svelte/chat';
+} from '@happyvertical/smrt-ui/chat';
 
 let selected = $state<Record<string, boolean>>({ ts: true, svelte: false });
 let chips = $state(['Design', 'A11y', 'Tokens']);

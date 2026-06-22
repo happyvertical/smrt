@@ -1,8 +1,7 @@
 <script lang="ts">
 import type { Membership, Role, Tenant } from '@happyvertical/smrt-types';
+import { M, useI18n } from '@happyvertical/smrt-ui/i18n';
 import type { Snippet } from 'svelte';
-import { M } from '../../i18n/strings.ui.js';
-import { useI18n } from '../../i18n/use-i18n.js';
 import MembershipCard from './MembershipCard.svelte';
 
 const { t } = useI18n();

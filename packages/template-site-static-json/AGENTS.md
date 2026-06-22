@@ -27,4 +27,4 @@ Scaffold template for static community news sites with JSON data. Used by `smrt 
 
 ## Runtime Dependencies
 
-Template projects use: `smrt-content`, `smrt-events`, `smrt-places`, `smrt-profiles`, `smrt-svelte`.
+Template projects use: `smrt-content`, `smrt-events`, `smrt-places`, `smrt-profiles`, `smrt-ui`.

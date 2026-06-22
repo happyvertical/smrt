@@ -3,7 +3,7 @@
  * SearchMessages - Message search interface with results list
  * Provides a search input and displays matching messages
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.js';
 import type { ChatMessageData } from '../../types.js';
 

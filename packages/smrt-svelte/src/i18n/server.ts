@@ -21,15 +21,17 @@ import {
   type ResolveLanguageStringOptions,
   resolveLanguageString,
 } from '@happyvertical/smrt-languages';
-import type { I18nSnapshot } from './context.svelte.js';
-import { getRegisteredDefaults } from './registry.js';
+import {
+  getRegisteredDefaults,
+  type I18nSnapshot,
+} from '@happyvertical/smrt-ui/i18n';
 // Side-effect: register ALL of smrt-svelte's own UI catalogs (ui.*) so they are
 // in every snapshot even when a consumer imports only `buildI18nSnapshot` from
 // this subpath and never the components themselves. Add any new smrt-svelte
-// catalog here so its keys are server-resolvable.
-import './strings.js';
+// catalog here so its keys are server-resolvable. The smrt-ui i18n barrel
+// registers the leaf's own primitive catalogs (`strings.ts` + `strings.ui.ts`).
+import '@happyvertical/smrt-ui/i18n';
 import './strings.forms.js';
-import './strings.ui.js';
 import './strings.workspace.js';
 
 export interface BuildI18nSnapshotOptions {

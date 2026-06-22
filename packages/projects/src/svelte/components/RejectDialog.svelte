@@ -4,7 +4,7 @@
  * Requires a reason to be entered before confirming
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../i18n.js';
 
 const { t } = useI18n();

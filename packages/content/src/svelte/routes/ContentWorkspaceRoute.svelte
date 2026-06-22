@@ -1,5 +1,5 @@
 <script lang="ts">
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { onMount } from 'svelte';
 import type { ContentData } from '../../mock-smrt-client.js';
 import { createClient } from '../../mock-smrt-client.js';

@@ -6,7 +6,7 @@
  */
 
 import { AgentChat } from '@happyvertical/smrt-chat/svelte';
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import type {
   ContentEditorAssistantContext,
   ContentEditorAssistantFieldUpdateAllowList,

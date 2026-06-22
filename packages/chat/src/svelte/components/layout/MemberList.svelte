@@ -3,7 +3,7 @@
  * MemberList - Room member sidebar panel
  * Lists participants grouped by online status with role badges
  */
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.messages.js';
 import type { ChatParticipantData } from '../../types.js';
 

@@ -4,7 +4,7 @@
  * Shows the root message, thread replies, and an input for new replies.
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
 import { M } from '../../i18n.messages.js';
 import type { ChatMessageData, ChatThreadData } from '../../types.js';
 import MessageInput from './MessageInput.svelte';

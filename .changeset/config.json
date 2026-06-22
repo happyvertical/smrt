@@ -46,6 +46,7 @@
       "@happyvertical/smrt-template-site-static-json",
       "@happyvertical/smrt-template-sveltekit",
       "@happyvertical/smrt-types",
+      "@happyvertical/smrt-ui",
       "@happyvertical/smrt-users",
       "@happyvertical/smrt-vitest",
       "@happyvertical/smrt-svelte",

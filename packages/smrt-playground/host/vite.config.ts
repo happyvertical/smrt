@@ -80,20 +80,24 @@ export default defineConfig({
         replacement: resolve(__dirname, '../src/index.ts'),
       },
       {
-        find: /^@happyvertical\/smrt-svelte\/themes$/,
-        replacement: resolve(__dirname, '../../smrt-svelte/src/themes/index.ts'),
+        find: /^@happyvertical\/smrt-ui\/themes$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/themes/index.ts'),
       },
       {
-        find: /^@happyvertical\/smrt-svelte\/layout$/,
-        replacement: resolve(__dirname, '../../smrt-svelte/src/components/layout/index.ts'),
+        find: /^@happyvertical\/smrt-ui\/layout$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/components/layout/index.ts'),
       },
       {
-        find: /^@happyvertical\/smrt-svelte\/ui$/,
-        replacement: resolve(__dirname, '../../smrt-svelte/src/components/ui/index.ts'),
+        find: /^@happyvertical\/smrt-ui\/ui$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/components/ui/index.ts'),
       },
       {
-        find: /^@happyvertical\/smrt-svelte\/registry$/,
-        replacement: resolve(__dirname, '../../smrt-svelte/src/registry/index.ts'),
+        find: /^@happyvertical\/smrt-ui\/registry$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/registry/index.ts'),
+      },
+      {
+        find: /^@happyvertical\/smrt-ui\/i18n$/,
+        replacement: resolve(__dirname, '../../smrt-ui/src/i18n/index.ts'),
       },
     ],
   },

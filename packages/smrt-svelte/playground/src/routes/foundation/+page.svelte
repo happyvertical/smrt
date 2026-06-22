@@ -1,5 +1,5 @@
 <script lang="ts">
-import { Icon, ripple } from '@happyvertical/smrt-svelte';
+import { Icon, ripple } from '@happyvertical/smrt-ui';
 </script>
 
 <h1>Foundation & Infrastructure</h1>

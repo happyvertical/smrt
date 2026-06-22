@@ -8,7 +8,7 @@
  * @packageDocumentation
  */
 
-import { ModuleUIRegistry } from '@happyvertical/smrt-svelte/registry';
+import { ModuleUIRegistry } from '@happyvertical/smrt-ui/registry';
 import { ASSETS_MODULE_META } from '../ui.js';
 
 // Import components

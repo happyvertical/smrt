@@ -3,7 +3,7 @@
  * MessageDetail - Full message view with type-adaptive sections
  */
 
-import { Card } from '@happyvertical/smrt-svelte/ui';
+import { Card } from '@happyvertical/smrt-ui/ui';
 import type { Snippet } from 'svelte';
 import type { AccountData, AttachmentData, MessageData } from '../types.js';
 import AttachmentChip from './AttachmentChip.svelte';

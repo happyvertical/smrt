@@ -300,7 +300,7 @@ function mergeTypography(custom?: Partial<TypographyScale>): TypographyScale {
  *
  * @example
  * ```typescript
- * import { createTheme, registerTheme } from '@happyvertical/smrt-svelte/themes';
+ * import { createTheme, registerTheme } from '@happyvertical/smrt-ui/themes';
  *
  * const myTheme = createTheme({
  *   id: 'brand',
@@ -417,7 +417,7 @@ function materialElevation(): ElevationScale {
  *
  * @example
  * ```typescript
- * import { createTheme, registerTheme } from '@happyvertical/smrt-svelte/themes';
+ * import { createTheme, registerTheme } from '@happyvertical/smrt-ui/themes';
  *
  * const customTheme = createTheme({ id: 'brand', name: 'Brand', ... });
  * registerTheme(customTheme);

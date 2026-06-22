@@ -50,22 +50,18 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
-    "@happyvertical/smrt-types": "workspace:*"
+    "@happyvertical/smrt-types": "workspace:*",
+    "@happyvertical/smrt-ui": "workspace:*"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-svelte": "workspace:*",
     "svelte": "^5.18.0"
   },
   "peerDependenciesMeta": {
-    "@happyvertical/smrt-svelte": {
-      "optional": true
-    },
     "svelte": {
       "optional": true
     }
   },
   "devDependencies": {
-    "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@sveltejs/package": "^2.5.7",

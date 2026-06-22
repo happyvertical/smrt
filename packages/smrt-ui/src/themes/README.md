@@ -14,7 +14,7 @@ A comprehensive, multi-theme system for SMRT Svelte with support for Material De
 ## Installation
 
 ```bash
-npm install @happyvertical/smrt-svelte
+npm install @happyvertical/smrt-ui
 ```
 
 ## Creating Custom Themes
@@ -25,7 +25,7 @@ You can create your own themes and use them alongside or instead of the built-in
 
 ```typescript
 // src/lib/themes/brand.ts
-import { createTheme, registerTheme } from '@happyvertical/smrt-svelte/themes';
+import { createTheme, registerTheme } from '@happyvertical/smrt-ui/themes';
 
 const brandTheme = createTheme({
   id: 'brand',
@@ -54,8 +54,8 @@ export { brandTheme };
 ```svelte
 <!-- +layout.svelte -->
 <script>
-  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
-  import '@happyvertical/smrt-svelte/themes/styles/all.css';
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  import '@happyvertical/smrt-ui/themes/styles/all.css';
   import '$lib/themes/brand'; // Import to register
 </script>
 
@@ -67,7 +67,7 @@ export { brandTheme };
 ### Theme from a Single Color
 
 ```typescript
-import { createThemeFromColor, registerTheme } from '@happyvertical/smrt-svelte/themes';
+import { createThemeFromColor, registerTheme } from '@happyvertical/smrt-ui/themes';
 
 const autoTheme = createThemeFromColor('#6366f1', 'indigo', 'Indigo Theme');
 registerTheme(autoTheme);
@@ -76,7 +76,7 @@ registerTheme(autoTheme);
 ### Full Custom Theme with All Options
 
 ```typescript
-import { createTheme, registerTheme } from '@happyvertical/smrt-svelte/themes';
+import { createTheme, registerTheme } from '@happyvertical/smrt-ui/themes';
 
 const completeTheme = createTheme({
   id: 'fintech',
@@ -152,8 +152,8 @@ If you don't want to register a theme globally, you can pass it directly to Them
 
 ```svelte
 <script>
-  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
-  import { materialTheme } from '@happyvertical/smrt-svelte/themes';
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  import { materialTheme } from '@happyvertical/smrt-ui/themes';
   
   // Create a one-off theme by extending
   const myOneOffTheme = {
@@ -183,7 +183,7 @@ For projects that don't use JavaScript theming, create a CSS file:
 /* src/styles/my-theme.css */
 
 /* Import base tokens */
-@import '@happyvertical/smrt-svelte/themes/styles/material.css';
+@import '@happyvertical/smrt-ui/themes/styles/material.css';
 
 /* Override with custom values */
 [data-theme="custom"] {
@@ -227,8 +227,8 @@ Best for apps that need theme switching and dynamic color schemes.
 ```svelte
 <!-- +layout.svelte -->
 <script>
-  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
-  import '@happyvertical/smrt-svelte/themes/styles/all.css';
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  import '@happyvertical/smrt-ui/themes/styles/all.css';
 </script>
 
 <ThemeProvider preset="material" colorScheme="system">
@@ -244,7 +244,7 @@ Best for static sites or when you want minimal JavaScript overhead.
 <!-- +layout.svelte -->
 <script>
   // Import only the theme you need
-  import '@happyvertical/smrt-svelte/themes/styles/material.css';
+  import '@happyvertical/smrt-ui/themes/styles/material.css';
 </script>
 
 <!-- Set data attributes for the theme -->
@@ -259,7 +259,7 @@ For maximum performance, use CSS only with media queries:
 
 ```css
 /* In your global CSS */
-@import '@happyvertical/smrt-svelte/themes/styles/material.css';
+@import '@happyvertical/smrt-ui/themes/styles/material.css';
 
 /* Override to respect system preference */
 @media (prefers-color-scheme: dark) {
@@ -375,8 +375,8 @@ Google AI Studio-inspired flat design with minimal aesthetics.
 ```svelte
 <!-- src/routes/+layout.svelte -->
 <script>
-  import { ThemeProvider, ThemeSwitcher, ColorSchemeToggle } from '@happyvertical/smrt-svelte/themes';
-  import '@happyvertical/smrt-svelte/themes/styles/all.css';
+  import { ThemeProvider, ThemeSwitcher, ColorSchemeToggle } from '@happyvertical/smrt-ui/themes';
+  import '@happyvertical/smrt-ui/themes/styles/all.css';
 </script>
 
 <ThemeProvider preset="glass" colorScheme="system" persist={true}>
@@ -410,8 +410,8 @@ export const load = async ({ cookies }) => {
 ```svelte
 <!-- src/routes/+layout.svelte -->
 <script>
-  import { ThemeProvider } from '@happyvertical/smrt-svelte/themes';
-  import '@happyvertical/smrt-svelte/themes/styles/all.css';
+  import { ThemeProvider } from '@happyvertical/smrt-ui/themes';
+  import '@happyvertical/smrt-ui/themes/styles/all.css';
   
   let { data, children } = $props();
 </script>
@@ -429,8 +429,8 @@ export const load = async ({ cookies }) => {
 
 ```javascript
 // main.js
-import '@happyvertical/smrt-svelte/themes/styles/all.css';
-import { generateThemeVariables, getTheme } from '@happyvertical/smrt-svelte/themes';
+import '@happyvertical/smrt-ui/themes/styles/all.css';
+import { generateThemeVariables, getTheme } from '@happyvertical/smrt-ui/themes';
 
 // Apply theme
 const theme = getTheme('studio');
@@ -598,9 +598,9 @@ Make sure you've imported the CSS files:
 
 ```typescript
 // In your main entry file (+layout.svelte, main.ts, etc.)
-import '@happyvertical/smrt-svelte/themes/styles/all.css';
+import '@happyvertical/smrt-ui/themes/styles/all.css';
 // or specific theme
-import '@happyvertical/smrt-svelte/themes/styles/material.css';
+import '@happyvertical/smrt-ui/themes/styles/material.css';
 ```
 
 ### Theme flashes on load (FOUC)
@@ -649,7 +649,7 @@ You can extend any theme by overriding CSS variables after import:
 
 ```css
 /* In your global CSS, AFTER theme import */
-@import '@happyvertical/smrt-svelte/themes/styles/material.css';
+@import '@happyvertical/smrt-ui/themes/styles/material.css';
 
 [data-theme="material"] {
   --smrt-color-primary: #your-brand-color;

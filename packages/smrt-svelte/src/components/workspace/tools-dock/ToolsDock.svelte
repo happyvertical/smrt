@@ -30,7 +30,7 @@
 <script lang="ts">
   import { onDestroy, onMount, tick } from 'svelte';
   import { M } from '../../../i18n/strings.workspace.js';
-  import { useI18n } from '../../../i18n/use-i18n.js';
+  import { useI18n } from '@happyvertical/smrt-ui/i18n';
   import type { ToolsDockContext } from '../types.js';
   import type { ToolsDockInstance } from './define-tools-dock.svelte.js';
 

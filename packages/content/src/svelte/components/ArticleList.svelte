@@ -5,8 +5,8 @@
  * Renders articles in a responsive grid layout with configurable columns.
  */
 
-import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import { Grid } from '@happyvertical/smrt-svelte/layout';
+import { useI18n } from '@happyvertical/smrt-ui/i18n';
+import { Grid } from '@happyvertical/smrt-ui/layout';
 import { M } from '../i18n.contribution.js';
 import type { Article } from '../types.js';
 import ArticleCard from './ArticleCard.svelte';

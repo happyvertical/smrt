@@ -1,9 +1,5 @@
 <script lang="ts">
-import {
-  EmptyState,
-  PageHeader,
-  SummaryCard,
-} from '@happyvertical/smrt-svelte';
+import { EmptyState, PageHeader, SummaryCard } from '@happyvertical/smrt-ui';
 
 function handleAction() {
   alert('Action button clicked!');
