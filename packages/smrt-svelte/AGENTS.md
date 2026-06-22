@@ -197,8 +197,8 @@ await expectNoA11yViolations(container); // axe; color-contrast off (jsdom has n
 
 ## Dependencies
 
-- `@happyvertical/smrt-types` (shared types)
-- Peer: `svelte` >=5.18.2, `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs`, `@happyvertical/smrt-profiles`, `@happyvertical/smrt-users` (all optional)
+- `@happyvertical/smrt-types` (shared types) — includes the identity data contracts (`User`, `Role`, `Membership`, `Tenant`) the role/membership components type against, so no dependency on `smrt-users` / `smrt-profiles` is needed
+- Peer: `svelte` >=5.18.2, `@happyvertical/smrt-agents`, `@happyvertical/smrt-jobs` (all optional)
 
 ## Workspace shell primitives
 

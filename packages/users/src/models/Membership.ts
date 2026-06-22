@@ -4,6 +4,7 @@
  */
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { Membership as MembershipContract } from '@happyvertical/smrt-types';
 import { MembershipStatus } from '../types/index.js';
 
 /**
@@ -31,7 +32,7 @@ import { MembershipStatus } from '../types/index.js';
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
-export class Membership extends SmrtObject {
+export class Membership extends SmrtObject implements MembershipContract {
   /**
    * Foreign key to User
    */

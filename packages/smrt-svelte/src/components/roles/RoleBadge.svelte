@@ -3,7 +3,7 @@
  * RoleBadge - Role label component
  * refactored for Material 3
  */
-import type { Role } from '@happyvertical/smrt-users';
+import type { Role } from '@happyvertical/smrt-types';
 
 export interface Props {
   role: Role;

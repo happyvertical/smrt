@@ -9,6 +9,7 @@ Shared TypeScript type definitions. Prevents circular dependencies between packa
 | `signals.ts` | `Signal`, `SignalType`, `SignalAdapter` — universal signaling system |
 | `module.ts` | `SmrtModuleMeta`, `ModuleUISlot`, `ModuleComponentType` — module registration and UI slots |
 | `user.ts` | `UserStatus`, `TenantStatus`, `MembershipStatus`, `SessionStatus`, `OverrideEffect` — status enums |
+| `identity.ts` | `User`, `Tenant`, `Role`, `Membership`, `SmrtEntityFields` — cross-package identity data contracts (runtime classes live in smrt-users, which `implements` these) |
 
 ## Rules
 

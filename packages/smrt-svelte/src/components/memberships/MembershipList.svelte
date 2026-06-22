@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Membership, Role, Tenant } from '@happyvertical/smrt-users';
+import type { Membership, Role, Tenant } from '@happyvertical/smrt-types';
 import type { Snippet } from 'svelte';
 import { M } from '../../i18n/strings.ui.js';
 import { useI18n } from '../../i18n/use-i18n.js';

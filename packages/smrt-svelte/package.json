@@ -150,8 +150,6 @@
   "peerDependencies": {
     "@happyvertical/smrt-agents": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
-    "@happyvertical/smrt-profiles": "workspace:*",
-    "@happyvertical/smrt-users": "workspace:*",
     "@huggingface/transformers": ">=3.0.0",
     "@mlc-ai/web-llm": ">=0.2.0",
     "@remotion/whisper-web": ">=4.0.0",
@@ -165,12 +163,6 @@
       "optional": true
     },
     "@happyvertical/smrt-jobs": {
-      "optional": true
-    },
-    "@happyvertical/smrt-profiles": {
-      "optional": true
-    },
-    "@happyvertical/smrt-users": {
       "optional": true
     },
     "@huggingface/transformers": {

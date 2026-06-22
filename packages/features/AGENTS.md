@@ -12,7 +12,7 @@ Code-first feature flag system with global, app-level, and tenant-hierarchy reso
 ## Resolution chain (priority high → low)
 
 1. User scope (`scopeType: 'user'`) — when context includes a userId
-2. Tenant scope (`scopeType: 'tenant'`) — walks up the tenant hierarchy via `@happyvertical/smrt-users` if present
+2. Tenant scope (`scopeType: 'tenant'`) — walks up the tenant hierarchy when a `FeatureTenantHierarchyProvider` is configured (DI); otherwise resolves a flat tenant scope
 3. Global scope (`scopeType: 'global'`, `scopeId: GLOBAL_FEATURE_SCOPE_ID`)
 4. Definition default (registered in code)
 
@@ -21,7 +21,7 @@ Code-first feature flag system with global, app-level, and tenant-hierarchy reso
 - Feature keys should be namespaced by package or domain, e.g. `commerce.invoice.draft-mode`, `content.editor.ai-suggestions`
 - Definitions are code-owned. Don't write `FeatureDefinition` rows directly — use `FeatureSyncService.syncDefinitions()` at startup with the manifest of expected features
 - Overrides are write-time validated against the matching definition (effect must be a known `FeatureOverrideEffect`, scope must be valid for the definition's `allowedScopes`)
-- The `@happyvertical/smrt-users` peer is optional — without it, tenant-hierarchy resolution falls back to a flat tenant scope
+- Tenant-hierarchy resolution is an optional integration wired by dependency injection (`FeatureTenantHierarchyProvider`), not a static dependency — `smrt-features` never imports `@happyvertical/smrt-users`. Without a configured provider, tenant-hierarchy resolution falls back to a flat tenant scope. (The consumer that wants hierarchy installs `smrt-users` itself and supplies the provider; `smrt-users` is a dev-only dependency here for tests.)
 
 ## Integration with `@happyvertical/smrt-users`
 

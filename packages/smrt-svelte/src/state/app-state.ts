@@ -4,7 +4,7 @@
  * Framework-agnostic state shape - Svelte bindings are in app-state.svelte.ts
  */
 
-import type { User } from '@happyvertical/smrt-users';
+import type { User } from '@happyvertical/smrt-types';
 import type {
   BrowserAICapabilities,
   DownloadProgressInfo,
@@ -14,8 +14,10 @@ import type {
   TTSAdapter,
 } from '../browser-ai/index.js';
 
-// Re-export User type for convenience
-export type { User } from '@happyvertical/smrt-users';
+// Re-export the User data contract for convenience. This is the structural
+// interface from smrt-types (id/email/status/…), not the full smrt-users model
+// class — app state holds user data, not a live model instance.
+export type { User } from '@happyvertical/smrt-types';
 
 /**
  * App mode determines which features are enabled

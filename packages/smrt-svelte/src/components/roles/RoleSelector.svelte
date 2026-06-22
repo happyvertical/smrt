@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Role } from '@happyvertical/smrt-users';
+import type { Role } from '@happyvertical/smrt-types';
 
 export interface Props {
   roles: Role[];

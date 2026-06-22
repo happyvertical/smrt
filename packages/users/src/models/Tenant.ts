@@ -4,6 +4,7 @@
  */
 
 import { field, foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { Tenant as TenantContract } from '@happyvertical/smrt-types';
 import { TenantStatus } from '../types/index.js';
 
 /**
@@ -70,7 +71,7 @@ export const MAX_TENANT_HIERARCHY_DEPTH = 10;
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
-export class Tenant extends SmrtObject {
+export class Tenant extends SmrtObject implements TenantContract {
   /**
    * Display name for the tenant
    */

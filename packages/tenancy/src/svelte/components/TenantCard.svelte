@@ -6,7 +6,7 @@
 
 import { Icon, ripple } from '@happyvertical/smrt-svelte';
 import { useI18n } from '@happyvertical/smrt-svelte/i18n';
-import type { Tenant } from '@happyvertical/smrt-users';
+import type { Tenant } from '@happyvertical/smrt-types';
 import { M } from '../i18n.js';
 
 export interface Props {

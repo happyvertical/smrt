@@ -59,7 +59,6 @@
     "@happyvertical/utils": "catalog:"
   },
   "peerDependencies": {
-    "@happyvertical/smrt-users": "workspace:*",
     "svelte": "^5.46.4"
   },
   "peerDependenciesMeta": {
