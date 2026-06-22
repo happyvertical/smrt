@@ -71,6 +71,7 @@ import { autoDiscoverAndLoad } from '../discovery/index.js';
 import {
   closeDatabaseConnection,
   formatDatabaseDisplayUrl,
+  quoteIdentifier,
 } from './db-command-utils.js';
 
 const UUID_RE =
@@ -178,10 +179,6 @@ export function planUuidConversions(
   }
 
   return { convert, skipDirtyData, skipNotDeclared };
-}
-
-function quoteIdent(value: string): string {
-  return `"${value.replaceAll('"', '""')}"`;
 }
 
 interface RenameSpec {
@@ -386,8 +383,8 @@ export const dbMigrateUuidCommand: CLICommand = {
           );
           let nonUuid = 0;
           if (declared) {
-            const t = quoteIdent(row.table_name);
-            const c = quoteIdent(row.column_name);
+            const t = quoteIdentifier(row.table_name);
+            const c = quoteIdentifier(row.column_name);
             const { rows } = await db.query(
               `SELECT count(*)::text AS n
                  FROM ${t}
@@ -451,8 +448,8 @@ export const dbMigrateUuidCommand: CLICommand = {
         }
 
         for (const { table, column, hasDefault } of convert) {
-          const t = quoteIdent(table);
-          const c = quoteIdent(column);
+          const t = quoteIdentifier(table);
+          const c = quoteIdentifier(column);
           if (hasDefault) {
             const dropDefault = `ALTER TABLE ${t} ALTER COLUMN ${c} DROP DEFAULT`;
             console.log(`  ${dropDefault};`);
@@ -528,9 +525,9 @@ async function applyRenameBackfills(
   if (useOwnTxn) await db.query('BEGIN');
   try {
     for (const spec of renameSpecs) {
-      const t = quoteIdent(spec.table);
-      const from = quoteIdent(spec.from);
-      const to = quoteIdent(spec.to);
+      const t = quoteIdentifier(spec.table);
+      const from = quoteIdentifier(spec.from);
+      const to = quoteIdentifier(spec.to);
 
       // Skip if the old column is already gone (idempotent re-run).
       const fromExists = await columnExists(
@@ -647,7 +644,9 @@ async function columnExists(
   }
   // SQLite / DuckDB: PRAGMA-style introspection.
   try {
-    const { rows } = await db.query(`PRAGMA table_info(${quoteIdent(table)})`);
+    const { rows } = await db.query(
+      `PRAGMA table_info(${quoteIdentifier(table)})`,
+    );
     return (rows as any[]).some((r) => r.name === column);
   } catch {
     return false;

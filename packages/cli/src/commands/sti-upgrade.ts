@@ -3,6 +3,7 @@ import {
   isQualifiedName,
   ObjectRegistry,
 } from '@happyvertical/smrt-core';
+import { quoteIdentifier } from './db-command-utils.js';
 
 type QueryableDb = {
   query(sql: string, ...params: any[]): Promise<any>;
@@ -72,10 +73,6 @@ export function resolveStiDiscriminatorUpgrade(
     currentQualifiedName,
     sourceKind: isQualifiedName(metaType) ? 'stale-qualified' : 'simple',
   };
-}
-
-function quoteIdentifier(name: string): string {
-  return `"${name.replace(/"/g, '""')}"`;
 }
 
 function rowsFromResult(result: any): any[] {
