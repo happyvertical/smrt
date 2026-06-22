@@ -38,13 +38,11 @@
     "@happyvertical/smrt-assets": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
+    "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@happyvertical/utils": "catalog:",
     "@noble/curves": "^1.8.1",
     "bech32": "^2.0.0"
-  },
-  "peerDependencies": {
-    "@happyvertical/smrt-tenancy": "workspace:*"
   },
   "devDependencies": {
     "@faker-js/faker": "^10.2.0",

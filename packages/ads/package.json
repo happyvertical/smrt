@@ -31,27 +31,8 @@
     "@happyvertical/smrt-core": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*"
   },
-  "peerDependencies": {
-    "@happyvertical/smrt-assets": "workspace:*",
-    "@happyvertical/smrt-commerce": "workspace:*",
-    "@happyvertical/smrt-properties": "workspace:*",
-    "@happyvertical/smrt-tags": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-commerce": {
-      "optional": true
-    },
-    "@happyvertical/smrt-properties": {
-      "optional": true
-    },
-    "@happyvertical/smrt-assets": {
-      "optional": true
-    },
-    "@happyvertical/smrt-tags": {
-      "optional": true
-    }
-  },
   "devDependencies": {
+    "@happyvertical/smrt-commerce": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@happyvertical/sql": "catalog:",
     "@types/node": "25.0.9",
