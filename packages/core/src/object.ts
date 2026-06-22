@@ -18,6 +18,7 @@ import {
   DatabaseError,
   ErrorUtils,
   RuntimeError,
+  SmrtError,
   TenantIsolationError,
   ValidationError,
 } from './errors';
@@ -1661,16 +1662,20 @@ export class SmrtObject extends SmrtClass {
               await this.db.upsert(this.tableName, upsertConflictColumns, data);
             }
           } catch (error) {
-            // Detect specific database error types
+            // Detect specific database error types. `@happyvertical/sql` does
+            // not normalize driver errors, so match SQLite, PostgreSQL and
+            // DuckDB constraint strings to preserve the advertised typed-error
+            // parity (#1378) across adapters.
             if (error instanceof Error) {
-              if (error.message.includes('UNIQUE constraint failed')) {
+              const kind = SmrtObject.classifyConstraintError(error.message);
+              if (kind === 'unique') {
                 const field = this.extractConstraintField(error.message);
                 throw ValidationError.uniqueConstraint(
                   field,
                   this.getFieldValue(field),
                 );
               }
-              if (error.message.includes('NOT NULL constraint failed')) {
+              if (kind === 'not_null') {
                 const field = this.extractConstraintField(error.message);
                 throw ValidationError.requiredField(field, className);
               }
@@ -1731,8 +1736,21 @@ export class SmrtObject extends SmrtClass {
 
       return this;
     } catch (error) {
-      // Re-throw SMRT errors as-is, wrap others
-      if (error instanceof ValidationError || error instanceof DatabaseError) {
+      // Re-throw SMRT errors as-is (ValidationError, DatabaseError,
+      // TenantIsolationError, etc. all extend SmrtError) so their stable
+      // `code`/`instanceof` contract survives the save() boundary.
+      if (error instanceof SmrtError) {
+        throw error;
+      }
+
+      // Preserve tenancy errors thrown by the `beforeSave` interceptor. The
+      // `@happyvertical/smrt-tenancy` TenantIsolationError / TenantContextError
+      // extend plain `Error` (core cannot depend on the tenancy package), so
+      // they are NOT instanceof SmrtError. Re-throw them as-is by their stable
+      // `code` (or class name fallback) so handlers can still match
+      // `err.code === 'TENANT_ISOLATION_VIOLATION'` / 'TENANT_CONTEXT_REQUIRED'
+      // on the write path, just like on the relationship-load path.
+      if (this.isTenantContractError(error)) {
         throw error;
       }
 
@@ -1742,6 +1760,35 @@ export class SmrtObject extends SmrtClass {
         error instanceof Error ? error : new Error(String(error)),
       );
     }
+  }
+
+  /**
+   * Detects tenant-boundary errors that must propagate from `save()` unwrapped.
+   *
+   * Matches both core's {@link TenantIsolationError} and the duck-typed
+   * tenancy-package errors (`TenantIsolationError` / `TenantContextError`) that
+   * the `beforeSave` interceptor throws. Those tenancy classes extend plain
+   * `Error` — core cannot import the tenancy package (the dependency runs the
+   * other way) — so they are matched by their stable `code` constants, with a
+   * class-name fallback for resilience.
+   */
+  private isTenantContractError(error: unknown): boolean {
+    if (error instanceof TenantIsolationError) {
+      return true;
+    }
+    const candidate = error as
+      | { code?: unknown; name?: unknown }
+      | null
+      | undefined;
+    const code = candidate?.code;
+    if (
+      code === 'TENANT_ISOLATION_VIOLATION' ||
+      code === 'TENANT_CONTEXT_REQUIRED'
+    ) {
+      return true;
+    }
+    const name = candidate?.name;
+    return name === 'TenantIsolationError' || name === 'TenantContextError';
   }
 
   /**
@@ -1899,13 +1946,70 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
-   * Extracts field name from database constraint error messages
+   * Classifies a raw database driver error message as a unique-constraint or
+   * not-null-constraint violation, across SQLite, PostgreSQL and DuckDB.
+   *
+   * `@happyvertical/sql` does not normalize driver errors, so each dialect's
+   * native wording is matched case-insensitively. Returns `null` when the
+   * message is not a recognized unique/not-null violation (the caller then
+   * falls back to a generic `DatabaseError`). Kept as a pure static so the
+   * cross-dialect matching can be unit-tested directly without a live PG/DuckDB
+   * connection (#1378).
+   *
+   * @param message - The raw driver error message.
+   * @returns `'unique'`, `'not_null'`, or `null`.
+   */
+  static classifyConstraintError(
+    message: string,
+  ): 'unique' | 'not_null' | null {
+    if (!message) {
+      return null;
+    }
+
+    // NOT NULL — checked first because DuckDB's "violates" wording would
+    // otherwise be misread as a unique violation below.
+    // SQLite/DuckDB: "NOT NULL constraint failed: t.col"
+    // PostgreSQL:    'null value in column "col" ... violates not-null constraint'
+    if (
+      /NOT NULL constraint failed/i.test(message) ||
+      /null value in column .* violates not-null/i.test(message)
+    ) {
+      return 'not_null';
+    }
+
+    // UNIQUE
+    // SQLite:     "UNIQUE constraint failed: t.col"
+    // PostgreSQL: "duplicate key value violates unique constraint ..."
+    // DuckDB:     "Constraint Error: ... violates unique/primary key constraint"
+    if (
+      /UNIQUE constraint failed/i.test(message) ||
+      /duplicate key value violates unique/i.test(message) ||
+      (/constraint error/i.test(message) && /violates/i.test(message))
+    ) {
+      return 'unique';
+    }
+
+    return null;
+  }
+
+  /**
+   * Extracts field name from database constraint error messages.
+   *
+   * Handles SQLite, PostgreSQL and DuckDB phrasings. Returns
+   * `'unknown_field'` when no column name can be recovered.
    */
   protected extractConstraintField(errorMessage: string): string {
-    // Try to extract field name from common SQLite constraint patterns
+    // Try to extract field name from common constraint patterns across dialects.
     const patterns = [
-      /UNIQUE constraint failed: \w+\.(\w+)/,
-      /NOT NULL constraint failed: \w+\.(\w+)/,
+      // SQLite / DuckDB: "UNIQUE constraint failed: products.slug"
+      /UNIQUE constraint failed: \w+\.(\w+)/i,
+      // SQLite / DuckDB: "NOT NULL constraint failed: products.name"
+      /NOT NULL constraint failed: \w+\.(\w+)/i,
+      // PostgreSQL not-null: 'null value in column "name" ...'
+      /null value in column "([^"]+)"/i,
+      // PostgreSQL unique DETAIL line: 'Key (slug)=(foo) already exists.'
+      /Key \(([^)]+)\)=/i,
+      // SQLite / DuckDB generic fallback: "constraint failed: slug"
       /constraint failed: (\w+)/i,
     ];
 
@@ -2991,7 +3095,20 @@ export class SmrtObject extends SmrtClass {
     }
 
     if (result) {
-      return JSON.parse(result.value);
+      // Guard against a corrupted _smrt_contexts row: a single malformed value
+      // must not throw an uncaught SyntaxError out of recall(). Treat it as a
+      // miss and continue to the ancestor fallback (#1378).
+      try {
+        return JSON.parse(result.value);
+      } catch (error) {
+        logger.warn('Skipping corrupted _smrt_contexts value in recall()', {
+          ownerClass: this._className,
+          ownerId: this.id,
+          scope: options.scope,
+          key: options.key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     // Hierarchical fallback to parent scopes
@@ -3077,7 +3194,18 @@ export class SmrtObject extends SmrtClass {
     const rows = await this.systemDb.list('_smrt_contexts', where);
 
     for (const row of rows) {
-      results.set(row.key, JSON.parse(row.value));
+      // Skip a corrupted row rather than aborting the whole recallAll() (#1378).
+      try {
+        results.set(row.key, JSON.parse(row.value));
+      } catch (error) {
+        logger.warn('Skipping corrupted _smrt_contexts value in recallAll()', {
+          ownerClass: this._className,
+          ownerId: this.id,
+          scope: options.scope,
+          key: row.key,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     }
 
     return results;
