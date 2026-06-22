@@ -295,8 +295,11 @@ export function formatDataJs(
     });
   }
 
-  // STI: If _meta_data exists, merge it into data first
-  // This ensures meta fields are available during formatting
+  // STI: If _meta_data exists, merge it into a FRESH object first so meta
+  // fields are available during formatting. This must never mutate the caller's
+  // `data` argument — `formatDataJs` is a public export and external callers may
+  // pass shared objects that would otherwise get silent field injection (#1378).
+  let mergedData: Record<string, any> = data;
   if (data._meta_data) {
     const metaData =
       typeof data._meta_data === 'string'
@@ -310,17 +313,18 @@ export function formatDataJs(
       });
     }
 
-    // Merge meta fields into data (will be formatted below)
-    Object.assign(data, metaData);
+    // Merge meta fields into a copy (will be formatted below). Spreading
+    // `metaData` last preserves the original precedence of Object.assign.
+    mergedData = { ...data, ...metaData };
 
     if (process.env.DEBUG_STI) {
       logger.debug('[formatDataJs] After merge, data keys', {
-        keys: Object.keys(data),
+        keys: Object.keys(mergedData),
       });
     }
   }
 
-  for (const [key, value] of Object.entries(data)) {
+  for (const [key, value] of Object.entries(mergedData)) {
     // Preserve keys with leading underscore (e.g., _meta_type, _meta_data)
     // These are special STI/framework fields that should not be camelCased
     const camelKey = key.startsWith('_') ? key : toCamelCase(key);

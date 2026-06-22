@@ -167,4 +167,44 @@ describe('formatDataJs', () => {
       expect(result.price).toBe(3.14);
     });
   });
+
+  describe('input immutability (#1378)', () => {
+    it('does not mutate the caller object when merging _meta_data', () => {
+      const data = {
+        id: 'abc',
+        _meta_type: 'Image',
+        _meta_data: '{"width":100,"height":50}',
+      };
+      const snapshot = { ...data };
+
+      const result = formatDataJs(data);
+
+      // Meta fields are surfaced on the RESULT...
+      expect(result.width).toBe(100);
+      expect(result.height).toBe(50);
+
+      // ...but the caller's object must be untouched: no injected meta fields
+      // and the original keys/values preserved.
+      expect(data).toEqual(snapshot);
+      expect('width' in data).toBe(false);
+      expect('height' in data).toBe(false);
+    });
+
+    it('does not mutate the caller object with an object-form _meta_data', () => {
+      const data: Record<string, any> = {
+        id: 'def',
+        _meta_data: { color: 'red' },
+      };
+      const originalMeta = data._meta_data;
+
+      const result = formatDataJs(data);
+
+      expect(result.color).toBe('red');
+      // Top-level meta field not injected onto the input...
+      expect('color' in data).toBe(false);
+      // ...and the nested _meta_data object reference is unchanged.
+      expect(data._meta_data).toBe(originalMeta);
+      expect(data._meta_data).toEqual({ color: 'red' });
+    });
+  });
 });
