@@ -46,6 +46,16 @@ export function redactConnectionString(value: string): string {
   );
 }
 
+/**
+ * Quote a SQL identifier (table name, column name, etc.).
+ *
+ * Uses double quotes, the ANSI SQL standard understood by SQLite, PostgreSQL,
+ * and DuckDB, and escapes embedded double quotes by doubling them.
+ */
+export function quoteIdentifier(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 export function formatDatabaseDisplayUrl(
   dbType: string,
   dbUrl: string,
