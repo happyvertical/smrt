@@ -74,6 +74,17 @@ const SECRET_PATTERNS = [
   /encryption[_-]?key/i,
   /private[_-]?key/i,
   /public[_-]?key/i,
+  // camelCase `<vendor>Key` keys — `consumerKey`, `masterKey`, `sslKey`,
+  // `hmacKey`, `sharedKey`, `rootKey`, `clientKey`, `serverKey`, `deployKey`,
+  // `sshKey`, etc. The hardcoded prefixes above and the segment-anchored
+  // standalone-`key` pattern below only fire on a `_`/`-`/start boundary, so a
+  // camelCase secret key with an unlisted vendor prefix slips through (a raw
+  // hex/base64 secret then exports verbatim into the public SSG artifact).
+  // Mirrors the `[a-z0-9]Pass`/`[a-z0-9]Pwd` idiom: a capital `K` after a
+  // letter/digit, followed by a segment/`Id`/end boundary, so `consumerKey` and
+  // `masterKeyId` are stripped while benign `keywords`/`monkey`/
+  // `keyboardShortcuts` (lowercase `key`) are kept.
+  /[a-z0-9]Key([_-]|Id|$)/,
   /(^|[_-])key([_-]|id$|$)/i, // standalone `key`, `key_id`, `keyId`, `aws…KeyId`
   // Connection / database URLs that commonly embed credentials.
   /connection[_-]?string/i,
