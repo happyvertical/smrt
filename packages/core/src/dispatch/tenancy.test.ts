@@ -361,6 +361,58 @@ describe('DispatchBus tenant isolation (S5 #1398)', () => {
     });
   });
 
+  describe('retry()/cleanup() are tenant-scoped (#1378)', () => {
+    // Drives a dispatch to `failed` status in the currently-active tenant by
+    // subscribing a worker and processing it with a throwing handler.
+    async function emitAndFail(signalType: string, id: string): Promise<void> {
+      await bus.subscribe({ signalType, subscriber: 'worker' });
+      await bus.emit(signalType, { id }, { source: 'test' });
+      await bus.process('worker', async () => {
+        throw new Error('boom');
+      });
+    }
+
+    it("tenant A retry() does not reset tenant B's failed dispatch", async () => {
+      activeTenant = 'tenant-a';
+      await emitAndFail('order.placed', 'a-1');
+      activeTenant = 'tenant-b';
+      await emitAndFail('order.placed', 'b-1');
+
+      // Both tenants have exactly one failed dispatch (tenant-scoped list).
+      activeTenant = 'tenant-a';
+      expect(await bus.list({ status: 'failed' })).toHaveLength(1);
+      activeTenant = 'tenant-b';
+      expect(await bus.list({ status: 'failed' })).toHaveLength(1);
+
+      // Tenant A retries — only its own failed dispatch is reset.
+      activeTenant = 'tenant-a';
+      const resetCount = await bus.retry({ maxAttempts: 5 });
+      expect(resetCount).toBe(1);
+      expect(await bus.list({ status: 'pending' })).toHaveLength(1);
+      expect(await bus.list({ status: 'failed' })).toHaveLength(0);
+
+      // Tenant B's failed dispatch is untouched.
+      activeTenant = 'tenant-b';
+      expect(await bus.list({ status: 'failed' })).toHaveLength(1);
+      expect(await bus.list({ status: 'pending' })).toHaveLength(0);
+    });
+
+    it("tenant A cleanup() does not delete tenant B's failed dispatch", async () => {
+      activeTenant = 'tenant-a';
+      await emitAndFail('order.placed', 'a-1');
+      activeTenant = 'tenant-b';
+      await emitAndFail('order.placed', 'b-1');
+
+      // Tenant A cleans up failed dispatches — must not reach tenant B's rows.
+      activeTenant = 'tenant-a';
+      await bus.cleanup({ failedOlderThanDays: 0 });
+
+      // Tenant B's failed dispatch survives regardless of A's cleanup.
+      activeTenant = 'tenant-b';
+      expect(await bus.list({ status: 'failed' })).toHaveLength(1);
+    });
+  });
+
   describe('atomic claim prevents double processing (S5 #1398)', () => {
     it('a single global dispatch is processed at most once across concurrent processors', async () => {
       // No tenancy → both processors share the same global compete dispatch.

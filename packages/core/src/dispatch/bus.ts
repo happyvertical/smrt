@@ -662,7 +662,15 @@ export class DispatchBus {
   async retry(options: DispatchRetryOptions = {}): Promise<number> {
     await this.initialize();
 
-    const retryable = await DispatchCollection.findRetryable(this.db, options);
+    // Tenant isolation (S5 #1398): only the active tenant's failed dispatches
+    // (plus global ones) are eligible — a tenant's retry() must not reset
+    // another tenant's rows. Scope is derived server-side; callers cannot widen
+    // it.
+    const retryable = await DispatchCollection.findRetryable(
+      this.db,
+      options,
+      resolveDispatchTenantScope(),
+    );
 
     for (const dispatch of retryable) {
       dispatch.resetForRetry();
@@ -682,7 +690,14 @@ export class DispatchBus {
     options: DispatchCleanupOptions = {},
   ): Promise<DispatchCleanupResult> {
     await this.initialize();
-    return DispatchCollection.cleanup(this.db, options);
+    // Tenant isolation (S5 #1398): only the active tenant's dispatches (plus
+    // global ones) are deleted — a tenant's cleanup() must not delete another
+    // tenant's rows. Scope is derived server-side; callers cannot widen it.
+    return DispatchCollection.cleanup(
+      this.db,
+      options,
+      resolveDispatchTenantScope(),
+    );
   }
 
   /**
