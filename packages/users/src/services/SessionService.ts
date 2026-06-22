@@ -22,7 +22,7 @@ export interface SessionContext {
   /** The User record */
   user: User;
   /** Active membership for the current tenant, if one was resolved */
-  membership: Membership | null;
+  membership?: Membership | null;
   /** Resolved permission slugs */
   permissions: string[];
   /** Tenant ID from session (if any) */
