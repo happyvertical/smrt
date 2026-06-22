@@ -39,6 +39,21 @@ describe('sanitizeConfig — secret-key stripping (issue #1357)', () => {
     'private_key',
     'secretKey',
     'secret_key',
+    // camelCase <vendor>Key keys — verified leaks until the `[a-z0-9]Key`
+    // pattern was added; their unlisted vendor prefix bypassed the hardcoded
+    // api/access/secret/signing/encryption/private/public prefixes and the
+    // segment-anchored standalone-`key` pattern.
+    'consumerKey',
+    'masterKey',
+    'sslKey',
+    'hmacKey',
+    'sharedKey',
+    'rootKey',
+    'clientKey',
+    'serverKey',
+    'deployKey',
+    'sshKey',
+    'consumerKeyId',
     // auth family
     'auth',
     'authorization',
@@ -419,6 +434,29 @@ describe('exportConfig — secret handling', () => {
     expect(parsed).not.toHaveProperty('api_key');
     expect(parsed).not.toHaveProperty('accessToken');
     expect(parsed.label).toBe('ok');
+  });
+
+  // Regression: camelCase `<vendor>Key` keys used to leak into the public SSG
+  // artifact because their unlisted vendor prefix bypassed `isSecretKey` and the
+  // raw hex/base64 *value* matched none of the value-level token shapes. The
+  // `[a-z0-9]Key` pattern closes the gap. Benign `key`-bearing keys must survive.
+  it('strips camelCase <vendor>Key secrets with raw values from the export', () => {
+    const json = exportConfig({
+      consumerKey: 'a3f1c0deadbeefcafe1234567890abcd',
+      masterKey: 'AAAABBBBCCCCDDDDEEEEFFFF0000',
+      sslKey: 'deadbeefdeadbeefdeadbeefdeadbeef',
+      // benign — must remain in the public artifact
+      keywords: ['news', 'sports'],
+      monkey: 'business',
+      keyboardShortcuts: { save: 'cmd+s' },
+    });
+    const parsed = JSON.parse(json) as Record<string, unknown>;
+    expect(parsed).not.toHaveProperty('consumerKey');
+    expect(parsed).not.toHaveProperty('masterKey');
+    expect(parsed).not.toHaveProperty('sslKey');
+    expect(parsed.keywords).toEqual(['news', 'sports']);
+    expect(parsed.monkey).toBe('business');
+    expect(parsed.keyboardShortcuts).toEqual({ save: 'cmd+s' });
   });
 });
 
