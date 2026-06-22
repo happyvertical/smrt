@@ -43,6 +43,7 @@ export type {
   SubscriptionResolverOptions,
   SubscriptionStatus,
   SummarizeAiUsageOptions,
+  SummarizeUsageBatchOptions,
   SummarizeUsageOptions,
   ThresholdEnforcement,
   ThresholdEvaluation,

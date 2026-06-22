@@ -45,6 +45,7 @@ export {
   type UsersConfig,
 } from './PermissionCatalogService.js';
 export {
+  type PermissionResolutionOptions,
   type PermissionResolutionResult,
   PermissionResolver,
   type TenantPermissionInheritanceResult,

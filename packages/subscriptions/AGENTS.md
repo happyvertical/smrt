@@ -16,6 +16,7 @@ pnpm --filter @happyvertical/smrt-subscriptions build
 - Keep Stripe-specific fields as provider binding metadata. Runtime Stripe API
   calls belong in the HappyVertical SDK accounting provider.
 - Thresholds are evaluated from tenant usage metrics and optional AI usage
-  summaries. Do not bypass tenant context in application code.
+  summaries. Resolve multiple thresholds with the batch usage path where
+  available; do not bypass tenant context in application code.
 - Subscription UI components should stay provider-neutral and receive actions
   from the host app.

@@ -3,6 +3,7 @@
  * @packageDocumentation
  */
 
+import type { Membership } from '../models/Membership.js';
 import type { User } from '../models/User.js';
 
 /**
@@ -20,6 +21,8 @@ import type { User } from '../models/User.js';
 export interface SessionLocals {
   /** The authenticated user (null if not authenticated) */
   user: User | null;
+  /** Active membership for the current tenant (null if none) */
+  membership: Membership | null;
   /** User's resolved permissions */
   permissions: string[];
   /** Current tenant context (null if no tenant selected) */
@@ -33,6 +36,7 @@ export interface SessionLocals {
  */
 export const defaultSessionLocals: SessionLocals = {
   user: null,
+  membership: null,
   permissions: [],
   tenantId: null,
   sessionId: null,

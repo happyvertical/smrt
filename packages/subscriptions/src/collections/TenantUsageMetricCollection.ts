@@ -4,6 +4,7 @@ import type {
   AiUsageSummary,
   RecordUsageOptions,
   SummarizeAiUsageOptions,
+  SummarizeUsageBatchOptions,
   SummarizeUsageOptions,
   UsageSummary,
 } from '../types.js';
@@ -90,6 +91,77 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
     return baseSummary;
   }
 
+  async summarizeUsageBatch(
+    options: SummarizeUsageBatchOptions,
+  ): Promise<UsageSummary[]> {
+    const metricKeys = Array.from(new Set(options.metricKeys));
+    if (metricKeys.length === 0) {
+      return [];
+    }
+
+    const subscriber = normalizeSubscriber({
+      tenantId: options.tenantId,
+      subscriberKind: options.subscriberKind,
+      subscriberExternalId: options.subscriberExternalId,
+    });
+    const columns = subscriberToColumns(subscriber);
+
+    const metricPlaceholders = metricKeys.map(() => '?').join(', ');
+    const params: unknown[] = [
+      columns.tenantId,
+      columns.subscriberKind,
+      ...metricKeys,
+      options.window.end.toISOString(),
+      options.window.start.toISOString(),
+    ];
+    let subscriberSql = '';
+    if (subscriber.kind === 'external') {
+      subscriberSql = 'AND subscriber_external_id = ?';
+      params.splice(2, 0, columns.subscriberExternalId);
+    }
+
+    const result = await this.db.query(
+      `SELECT
+          metric_key,
+          COALESCE(SUM(quantity), 0) AS quantity
+        FROM _smrt_tenant_usage_metrics
+        WHERE tenant_id = ?
+          AND subscriber_kind = ?
+          ${subscriberSql}
+          AND metric_key IN (${metricPlaceholders})
+          AND window_start < ?
+          AND window_end > ?
+        GROUP BY metric_key`,
+      ...params,
+    );
+
+    const quantityByMetric = new Map<string, number>();
+    for (const row of resultRows(result)) {
+      const metricKey = String(row.metric_key ?? row.metricKey ?? '');
+      if (metricKey) {
+        quantityByMetric.set(metricKey, numberFromRow(row, 'quantity'));
+      }
+    }
+
+    return metricKeys.map((metricKey) => {
+      const baseSummary: UsageSummary = {
+        tenantId: columns.tenantId,
+        metricKey,
+        quantity: quantityByMetric.get(metricKey) ?? 0,
+        windowStart: options.window.start,
+        windowEnd: options.window.end,
+      };
+      if (subscriber.kind === 'external') {
+        return {
+          ...baseSummary,
+          subscriberKind: 'external',
+          subscriberExternalId: subscriber.externalId,
+        };
+      }
+      return baseSummary;
+    });
+  }
+
   /**
    * Summarize persisted AI usage for a tenant within a window.
    *
@@ -136,10 +208,14 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
 }
 
 function firstRow(result: unknown): Record<string, unknown> {
-  const rows = Array.isArray(result)
+  const rows = resultRows(result);
+  return (rows[0] ?? {}) as Record<string, unknown>;
+}
+
+function resultRows(result: unknown): Record<string, unknown>[] {
+  return Array.isArray(result)
     ? (result as Record<string, unknown>[])
     : ((result as { rows?: Record<string, unknown>[] })?.rows ?? []);
-  return (rows[0] ?? {}) as Record<string, unknown>;
 }
 
 function numberFromRow(row: Record<string, unknown>, key: string): number {

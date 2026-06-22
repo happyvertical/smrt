@@ -9,7 +9,11 @@ import type {
   UsageSummary,
   UsageWindow,
 } from '../types.js';
-import { getWindowForThreshold, isValidThreshold } from '../utils.js';
+import {
+  getWindowForThreshold,
+  getWindowKey,
+  isValidThreshold,
+} from '../utils.js';
 import { evaluateThreshold } from './threshold-evaluator.js';
 
 export interface SubscriptionPlanReader {
@@ -54,6 +58,13 @@ export interface UsageSummaryReader {
     metricKey: string;
     window: UsageWindow;
   }): Promise<UsageSummary>;
+  summarizeBatch?(options: {
+    tenantId: string;
+    subscriberKind?: Subscriber['kind'];
+    subscriberExternalId?: string;
+    metricKeys: string[];
+    window: UsageWindow;
+  }): Promise<UsageSummary[]>;
 }
 
 export interface SubscriptionResolverReaders {
@@ -96,22 +107,12 @@ export class SubscriptionResolver {
     }
 
     const thresholds = plan.getThresholds().filter(isValidThreshold);
-    const thresholdEvaluations: ThresholdEvaluation[] = [];
-
-    for (const threshold of thresholds) {
-      const window =
-        options.usageWindows?.[threshold.window] ??
-        getWindowForThreshold(threshold.window, now);
-      const usage = await this.readers.usage.summarize({
-        tenantId: subscriber.tenantId,
-        subscriberKind: subscriber.kind,
-        subscriberExternalId:
-          subscriber.kind === 'external' ? subscriber.externalId : undefined,
-        metricKey: threshold.metricKey,
-        window,
-      });
-      thresholdEvaluations.push(evaluateThreshold(threshold, usage));
-    }
+    const thresholdEvaluations = await this.resolveThresholdEvaluations(
+      subscriber,
+      thresholds,
+      now,
+      options,
+    );
 
     return {
       tenantId: subscriber.tenantId,
@@ -202,6 +203,83 @@ export class SubscriptionResolver {
         'that implements findCurrentForSubscriber()',
     );
   }
+
+  private async resolveThresholdEvaluations(
+    subscriber: Subscriber,
+    thresholds: PlanThreshold[],
+    now: Date,
+    options: SubscriptionResolverOptions,
+  ): Promise<ThresholdEvaluation[]> {
+    if (thresholds.length === 0) {
+      return [];
+    }
+
+    if (!this.readers.usage.summarizeBatch) {
+      const evaluations: ThresholdEvaluation[] = [];
+      for (const threshold of thresholds) {
+        const window =
+          options.usageWindows?.[threshold.window] ??
+          getWindowForThreshold(threshold.window, now);
+        const usage = await this.readers.usage.summarize({
+          tenantId: subscriber.tenantId,
+          subscriberKind: subscriber.kind,
+          subscriberExternalId:
+            subscriber.kind === 'external' ? subscriber.externalId : undefined,
+          metricKey: threshold.metricKey,
+          window,
+        });
+        evaluations.push(evaluateThreshold(threshold, usage));
+      }
+      return evaluations;
+    }
+
+    const groups = new Map<
+      string,
+      {
+        window: UsageWindow;
+        entries: Array<{ index: number; threshold: PlanThreshold }>;
+      }
+    >();
+
+    thresholds.forEach((threshold, index) => {
+      const window =
+        options.usageWindows?.[threshold.window] ??
+        getWindowForThreshold(threshold.window, now);
+      const key = getWindowKey(window);
+      const group = groups.get(key) ?? { window, entries: [] };
+      group.entries.push({ index, threshold });
+      groups.set(key, group);
+    });
+
+    const evaluations: ThresholdEvaluation[] = new Array(thresholds.length);
+    await Promise.all(
+      Array.from(groups.values()).map(async ({ window, entries }) => {
+        const metricKeys = uniqueMetricKeys(
+          entries.map((entry) => entry.threshold.metricKey),
+        );
+        const summaries = await this.readers.usage.summarizeBatch?.({
+          tenantId: subscriber.tenantId,
+          subscriberKind: subscriber.kind,
+          subscriberExternalId:
+            subscriber.kind === 'external' ? subscriber.externalId : undefined,
+          metricKeys,
+          window,
+        });
+        const summaryByMetric = new Map(
+          (summaries ?? []).map((summary) => [summary.metricKey, summary]),
+        );
+
+        for (const { index, threshold } of entries) {
+          const usage =
+            summaryByMetric.get(threshold.metricKey) ??
+            emptyUsageSummary(subscriber, threshold.metricKey, window);
+          evaluations[index] = evaluateThreshold(threshold, usage);
+        }
+      }),
+    );
+
+    return evaluations;
+  }
 }
 
 function toSubscriber(input: Subscriber | string): Subscriber {
@@ -224,6 +302,32 @@ function emptyResolution(subscriber: Subscriber): EntitlementResolution {
     thresholdEvaluations: [],
     allowed: false,
   };
+}
+
+function uniqueMetricKeys(metricKeys: string[]): string[] {
+  return Array.from(new Set(metricKeys));
+}
+
+function emptyUsageSummary(
+  subscriber: Subscriber,
+  metricKey: string,
+  window: UsageWindow,
+): UsageSummary {
+  const summary: UsageSummary = {
+    tenantId: subscriber.tenantId,
+    metricKey,
+    quantity: 0,
+    windowStart: window.start,
+    windowEnd: window.end,
+  };
+  if (subscriber.kind === 'external') {
+    return {
+      ...summary,
+      subscriberKind: 'external',
+      subscriberExternalId: subscriber.externalId,
+    };
+  }
+  return summary;
 }
 
 export type { PlanThreshold };

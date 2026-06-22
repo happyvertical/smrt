@@ -28,6 +28,7 @@ export interface SessionPermissionRuntimeContext {
   database?: QueryableDatabase;
   permissions: string[];
   permissionSet: Set<string>;
+  membership: SessionContext['membership'];
   postgresRls: boolean;
   session: SessionContext | null;
   sessionId: string | null;
@@ -225,6 +226,7 @@ export async function withSessionPermissionContext<T>(
     database: transaction ?? baseDatabase,
     permissions: session?.permissions ?? [],
     permissionSet,
+    membership: session?.membership ?? null,
     postgresRls: usePostgresRls,
     session,
     sessionId: session?.sessionId ?? null,

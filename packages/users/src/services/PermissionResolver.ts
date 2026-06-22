@@ -12,6 +12,7 @@ import { PermissionCollection } from '../collections/PermissionCollection.js';
 import { RolePermissionCollection } from '../collections/RolePermissionCollection.js';
 import { TenantCollection } from '../collections/TenantCollection.js';
 import { TenantPermissionOverrideCollection } from '../collections/TenantPermissionOverrideCollection.js';
+import type { Membership } from '../models/Membership.js';
 import type { Tenant } from '../models/Tenant.js';
 
 /**
@@ -28,6 +29,15 @@ export interface PermissionResolutionResult {
   groupIds: string[];
   /** Permission IDs explicitly denied */
   deniedPermissionIds: string[];
+}
+
+export interface PermissionResolutionOptions {
+  /**
+   * Active membership already resolved by the caller for this user/tenant.
+   * Passing this lets request-scoped session loaders avoid re-querying the
+   * same membership row before resolving permissions.
+   */
+  membership?: Membership | null;
 }
 
 /**
@@ -315,6 +325,7 @@ export class PermissionResolver {
   async resolvePermissions(
     userId: string,
     tenantId: string,
+    options: PermissionResolutionOptions = {},
   ): Promise<PermissionResolutionResult> {
     const result: PermissionResolutionResult = {
       permissions: new Set<string>(),
@@ -324,12 +335,16 @@ export class PermissionResolver {
       deniedPermissionIds: [],
     };
 
-    // 1. Get membership
-    const membership = await this.membershipCollection.findByUserAndTenant(
-      userId,
-      tenantId,
-    );
+    // 1. Get membership, reusing a request-scoped row when the caller already
+    // resolved it for this exact user/tenant.
+    const membership =
+      options.membership === undefined
+        ? await this.membershipCollection.findByUserAndTenant(userId, tenantId)
+        : options.membership;
     if (!membership || !membership.isActive()) {
+      return result;
+    }
+    if (membership.userId !== userId || membership.tenantId !== tenantId) {
       return result;
     }
 
@@ -459,8 +474,9 @@ export class PermissionResolver {
     userId: string,
     tenantId: string,
     permissionSlug: string,
+    options: PermissionResolutionOptions = {},
   ): Promise<boolean> {
-    const result = await this.resolvePermissions(userId, tenantId);
+    const result = await this.resolvePermissions(userId, tenantId, options);
     return result.permissions.has(permissionSlug);
   }
 
@@ -471,8 +487,9 @@ export class PermissionResolver {
     userId: string,
     tenantId: string,
     permissionSlugs: string[],
+    options: PermissionResolutionOptions = {},
   ): Promise<boolean> {
-    const result = await this.resolvePermissions(userId, tenantId);
+    const result = await this.resolvePermissions(userId, tenantId, options);
     return permissionSlugs.every((slug) => result.permissions.has(slug));
   }
 
@@ -483,8 +500,9 @@ export class PermissionResolver {
     userId: string,
     tenantId: string,
     permissionSlugs: string[],
+    options: PermissionResolutionOptions = {},
   ): Promise<boolean> {
-    const result = await this.resolvePermissions(userId, tenantId);
+    const result = await this.resolvePermissions(userId, tenantId, options);
     return permissionSlugs.some((slug) => result.permissions.has(slug));
   }
 

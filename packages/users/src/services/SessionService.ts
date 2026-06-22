@@ -10,6 +10,7 @@ import {
   SessionCollection,
 } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
+import type { Membership } from '../models/Membership.js';
 import { DEFAULT_SESSION_TTL } from '../models/Session.js';
 import type { User } from '../models/User.js';
 import { PermissionResolver } from './PermissionResolver.js';
@@ -20,6 +21,8 @@ import { PermissionResolver } from './PermissionResolver.js';
 export interface SessionContext {
   /** The User record */
   user: User;
+  /** Active membership for the current tenant, if one was resolved */
+  membership: Membership | null;
   /** Resolved permission slugs */
   permissions: string[];
   /** Tenant ID from session (if any) */
@@ -137,10 +140,19 @@ export class SessionService {
 
     // Resolve permissions (only if tenant context exists)
     let permissions: string[] = [];
+    let membership: Membership | null = null;
     if (session.tenantId) {
+      const resolvedMembership =
+        await this.membershipCollection.findByUserAndTenant(
+          session.userId,
+          session.tenantId,
+        );
+      membership = resolvedMembership?.isActive() ? resolvedMembership : null;
+
       const result = await this.permissionResolver.resolvePermissions(
         session.userId,
         session.tenantId,
+        { membership },
       );
       permissions = Array.from(result.permissions);
     }
@@ -155,6 +167,7 @@ export class SessionService {
 
     return {
       user,
+      membership,
       permissions,
       tenantId: session.tenantId,
       sessionId: session.id as string,

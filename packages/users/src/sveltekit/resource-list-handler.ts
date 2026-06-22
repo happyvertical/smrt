@@ -117,6 +117,7 @@ export interface CliResource {
 
 export interface ResolvedSession {
   user: SessionLocals['user'];
+  membership: SessionLocals['membership'];
   permissions: string[];
   tenantId: string | null;
   sessionId: string | null;
@@ -897,6 +898,7 @@ async function defaultResolveSession(
   if (locals.user) {
     return {
       user: locals.user,
+      membership: locals.membership ?? null,
       permissions: locals.permissions ?? [],
       tenantId: locals.tenantId ?? null,
       sessionId: locals.sessionId ?? null,
@@ -913,6 +915,7 @@ async function defaultResolveSession(
     }
     return {
       user: ctx.user,
+      membership: ctx.membership ?? null,
       permissions: ctx.permissions,
       tenantId: ctx.tenantId,
       sessionId: ctx.sessionId,
@@ -922,6 +925,7 @@ async function defaultResolveSession(
   // 3. Truly anonymous.
   return {
     user: null,
+    membership: null,
     permissions: [],
     tenantId: null,
     sessionId: null,
