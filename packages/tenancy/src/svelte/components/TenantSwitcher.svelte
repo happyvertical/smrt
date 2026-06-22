@@ -1,5 +1,5 @@
 <script lang="ts">
-import type { Membership, Tenant } from '@happyvertical/smrt-users';
+import type { Membership, Tenant } from '@happyvertical/smrt-types';
 
 export interface Props {
   memberships: Membership[];

@@ -9,6 +9,7 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import type { User as UserContract } from '@happyvertical/smrt-types';
 import { UserStatus } from '../types/index.js';
 
 /**
@@ -60,7 +61,7 @@ export function normalizeEmail(email: string): string {
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
-export class User extends SmrtObject {
+export class User extends SmrtObject implements UserContract {
   /**
    * Foreign key to smrt-profiles Profile (cross-package)
    */

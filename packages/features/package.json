@@ -32,14 +32,6 @@
   "dependencies": {
     "@happyvertical/smrt-core": "workspace:*"
   },
-  "peerDependencies": {
-    "@happyvertical/smrt-users": "workspace:*"
-  },
-  "peerDependenciesMeta": {
-    "@happyvertical/smrt-users": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "@happyvertical/smrt-cli": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",

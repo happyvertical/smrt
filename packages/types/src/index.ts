@@ -17,6 +17,15 @@ export type {
   SmrtAiUsageEvent,
   SmrtAiUsageRecord,
 } from './ai-usage.js';
+// Cross-package identity & tenancy data contracts (zero-runtime structural
+// interfaces; runtime classes live in smrt-users / smrt-profiles)
+export type {
+  Membership,
+  Role,
+  SmrtEntityFields,
+  Tenant,
+  User,
+} from './identity.js';
 export type {
   DomainKnowledgeConfig,
   DomainKnowledgeFreshnessResult,

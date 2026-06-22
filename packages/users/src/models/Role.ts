@@ -4,6 +4,7 @@
  */
 
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
+import type { Role as RoleContract } from '@happyvertical/smrt-types';
 
 /**
  * Role represents a permission template that can be assigned to users.
@@ -37,7 +38,7 @@ import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
   mcp: { include: ['list', 'get'] },
   cli: true,
 })
-export class Role extends SmrtObject {
+export class Role extends SmrtObject implements RoleContract {
   /**
    * Foreign key to Tenant
    * null = system role available to all tenants
